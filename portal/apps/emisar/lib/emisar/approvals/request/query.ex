@@ -269,7 +269,7 @@ defmodule Emisar.Approvals.Request.Query do
     do: lock(queryable, "FOR NO KEY UPDATE")
 
   @doc """
-  Conditional UPDATE used by `Approvals.guarded_transition/4`: matches only rows still
+  Conditional UPDATE used by `Approvals.guarded_transition/5`: matches only rows still
   `status == "pending"` AND not past `expires_at` — so two concurrent
   operators racing to decide can't both win, and a request that lapsed
   past its expiry can't be approved in the window before the expiry sweep
@@ -277,8 +277,11 @@ defmodule Emisar.Approvals.Request.Query do
   boundary is the row predicate here, not the sweep, so the advertised
   hard expiry holds even if the sweep is delayed. Mirrors how
   `Grant.Query.consumable_by_id/2` guards `expires_at` at consumption.
+  `overridden?` marks a release by override on the row itself, in the same
+  write as the decision it stands for.
   """
-  def decide_pending(id, status, by_user_id, reason, now) do
+  def decide_pending(id, status, by_user_id, reason, now, overridden?)
+      when is_boolean(overridden?) do
     all()
     |> where(
       [requests: r],
@@ -290,7 +293,8 @@ defmodule Emisar.Approvals.Request.Query do
         status: ^status,
         decided_by_id: ^by_user_id,
         decided_at: ^now,
-        decision_reason: ^reason
+        decision_reason: ^reason,
+        overridden: ^overridden?
       ]
     )
   end

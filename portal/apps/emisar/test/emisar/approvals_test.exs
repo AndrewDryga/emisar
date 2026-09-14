@@ -1212,78 +1212,6 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "fetch_approval_request_by_run_id/2" do
-    setup do
-      {account, run} = run_fixture()
-      operator = Fixtures.Users.create_user()
-      {:ok, request} = Approvals.create_request(run, operator.id, "x")
-      subject = operator_subject(account)
-      %{account: account, run: run, operator: operator, request: request, subject: subject}
-    end
-
-    test "finds the run's single request, account-scoped", %{
-      run: run,
-      request: request,
-      subject: subject
-    } do
-      assert {:ok, %Request{id: id}} = Approvals.fetch_approval_request_by_run_id(run.id, subject)
-      assert id == request.id
-
-      {other_account, _run_b} = run_fixture()
-      other_subject = operator_subject(other_account)
-
-      assert Approvals.fetch_approval_request_by_run_id(run.id, other_subject) ==
-               {:error, :not_found}
-    end
-
-    test "a viewer (no view_approvals) is refused with :unauthorized", %{
-      account: account,
-      run: run
-    } do
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
-
-      _viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
-
-      # view_approvals is granted to viewers, so they CAN read — instead pin the
-      # rejection with a crafted empty-permission subject.
-      no_perms = %Emisar.Auth.Subject{
-        account: account,
-        role: :viewer,
-        permissions: MapSet.new()
-      }
-
-      assert Approvals.fetch_approval_request_by_run_id(run.id, no_perms) ==
-               {:error, :unauthorized}
-    end
-
-    test "still returns a DENIED request — the decision record persists", %{
-      run: run,
-      request: request,
-      subject: subject
-    } do
-      {:ok, _} = Approvals.deny_request(request, subject, "not during the change freeze")
-
-      # Denying UPDATES status (no delete, no soft-delete) and the fetch is
-      # status-agnostic (`all()`), so a denied request stays fetchable — the
-      # run_detail banner, approval-detail page, and "Review approval" links all
-      # depend on it. (2026-06-14 investigation: the dev-time {:ok}→:not_found
-      # flake was a sandbox/broadcast artifact, NOT a worker removing denied
-      # requests — the expiry sweeper is pending-only. This test guards the
-      # conclusion against a future status filter that would re-break it.)
-      assert {:ok, %Request{id: id, status: :denied}} =
-               Approvals.fetch_approval_request_by_run_id(run.id, subject)
-
-      assert id == request.id
-    end
-  end
-
   describe "list_requests_for_runbook_executions/2" do
     test "returns only visible requests for the bounded execution set" do
       account = Fixtures.Accounts.create_account()
@@ -1566,6 +1494,130 @@ defmodule Emisar.ApprovalsTest do
 
       assert overridden.override.reason ==
                "A second reviewer is unavailable; we need this read-only check during the incident."
+    end
+
+    # A request decided before per-vote rows existed keeps its whole decision
+    # on its own final columns, and the console's approval page reads it from
+    # there — so the receipt lists that one decision rather than a decided
+    # request nobody decided.
+    test "a request decided without vote rows lists the decision its own record holds" do
+      %{account: account, request: request, run: run} = gated_request()
+      subject = operator_subject(account)
+      reviewer = named_reviewer(account, "Jane Doe")
+
+      approved =
+        Fixtures.Approvals.approve_request(request, reviewer.actor.id, "Validated on staging.")
+
+      assert {:ok, review} = project_review(run, subject)
+      assert review.status == :approved
+      assert review.approved_count == 1
+      assert review.override == nil
+      assert review.decisions_omitted == 0
+
+      assert [
+               %{
+                 actor: "Jane Doe",
+                 decision: :approve,
+                 decided_at: %DateTime{},
+                 reason: "Validated on staging."
+               }
+             ] = review.decisions
+
+      # A decider this account no longer knows still leaves the decision, unnamed.
+      account.id
+      |> Fixtures.Memberships.fetch_membership(reviewer.actor.id)
+      |> Fixtures.Memberships.mark_membership_as_deleted()
+
+      assert {:ok, %{approved_count: 1, decisions: [%{actor: nil, decision: :approve}]}} =
+               project_review(run, subject)
+
+      # The same record denied with a blank note: one denial, nothing quoted,
+      # and no approver to count.
+      approved
+      |> Ecto.Changeset.change(status: :denied, decision_reason: "")
+      |> Repo.update!()
+
+      assert {:ok, denied} = project_review(run, subject)
+      assert denied.status == :denied
+      assert denied.approved_count == 0
+      assert [%{actor: nil, decision: :deny, reason: nil}] = denied.decisions
+    end
+
+    # Only an override releases a quorum request without a vote row, and its
+    # receipt is an audit event retention can prune: with the receipt gone the
+    # overrider must not resurface as a vote, and while it stands the receipt
+    # path wins outright.
+    test "a quorum request with no vote rows never mints a vote from its final columns" do
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
+      subject = operator_subject(account)
+      reviewer = named_reviewer(account, "Jane Doe")
+
+      Fixtures.Approvals.approve_request(request, reviewer.actor.id, "Released by hand.")
+
+      assert {:ok, review} = project_review(run, subject)
+      assert review.status == :approved
+      assert review.approved_count == 0
+      assert review.decisions == []
+      assert review.override == nil
+
+      %{account: account, request: request, run: run} = gated_request(min_approvals: 2)
+      subject = operator_subject(account)
+      admin = named_reviewer(account, "Alex Admin")
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{}}} =
+               Approvals.override_request(request, "Nobody else is on call tonight.", admin)
+
+      assert {:ok, overridden} = project_review(run, subject)
+      assert overridden.approved_count == 0
+      assert overridden.decisions == []
+
+      assert %{
+               actor: "Alex Admin",
+               waived_approvals: 2,
+               reason: "Nobody else is on call tonight."
+             } =
+               overridden.override
+    end
+
+    test "a single-approver override never becomes a vote after retention prunes its receipt" do
+      %{account: account, request: request, run: run} = gated_request()
+      subject = operator_subject(account)
+      admin = named_reviewer(account, "Alex Admin")
+
+      assert {:ok, {%Request{status: :approved, overridden: true}, %ActionRun{}}} =
+               Approvals.override_request(request, "Nobody else is on call tonight.", admin)
+
+      assert {:ok, %{approved_count: 0, decisions: [], override: %{actor: "Alex Admin"}}} =
+               project_review(run, subject)
+
+      Fixtures.Approvals.prune_override_receipt(request)
+
+      assert {:ok, review} = project_review(run, subject)
+      assert review.status == :approved
+      assert review.approved_count == 0
+      assert review.decisions == []
+      assert review.override == nil
+    end
+
+    test "an old override writer leaves a new request unclassified after its receipt is pruned" do
+      %{account: account, request: request, run: run} = gated_request()
+      subject = operator_subject(account)
+      reviewer = named_reviewer(account, "Alex Admin")
+
+      assert request.overridden == nil
+
+      Fixtures.Approvals.override_with_old_writer(request, reviewer, "Emergency release.")
+
+      assert {:ok, %{decisions: [], override: %{actor: "Alex Admin"}}} =
+               project_review(run, subject)
+
+      Fixtures.Approvals.prune_override_receipt(request)
+
+      assert {:ok, review} = project_review(run, subject)
+      assert review.status == :approved
+      assert review.approved_count == 0
+      assert review.decisions == []
+      assert review.override == nil
     end
 
     test "a pending request past its deadline reads expired and keeps the earlier vote" do
@@ -2841,6 +2893,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, subject, at_limit)
 
       assert decided.decision_reason == at_limit
+      assert decided.overridden == false
     end
 
     test "rejects a decision note carrying a bidi override", %{run: run, subject: subject} do
@@ -3691,6 +3744,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert overridden.decided_by_id == admin.id
       assert overridden.decision_reason == "Production recovery cannot wait"
+      assert overridden.overridden
       assert approved_count(request.id) == 1
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
       assert %ActionRun{status: :sent} = Repo.reload!(run)
@@ -3901,7 +3955,7 @@ defmodule Emisar.ApprovalsTest do
       assert Approvals.override_request(request, "initiator lost access", owner) ==
                {:error, :initiator_no_longer_authorized}
 
-      assert %Request{status: :pending} = Repo.reload!(request)
+      assert %Request{status: :pending, overridden: nil} = Repo.reload!(request)
       assert approved_count(request.id) == 0
     end
 
@@ -3937,7 +3991,7 @@ defmodule Emisar.ApprovalsTest do
           min_approvals: 2
         )
 
-      assert {:ok, {%Request{status: :approved}, :runbook_execution}} =
+      assert {:ok, {%Request{status: :approved, overridden: true}, :runbook_execution}} =
                Approvals.override_request(request, "Restore the database now", owner)
 
       execution = Repo.get!(Runbooks.RunbookExecution, request.runbook_execution_id)

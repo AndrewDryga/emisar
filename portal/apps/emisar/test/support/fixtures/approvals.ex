@@ -5,7 +5,7 @@ defmodule Emisar.Fixtures.Approvals do
   """
 
   import Ecto.Changeset, only: [change: 2]
-  alias Emisar.{ActionContract, Approvals, Fixtures, Repo, Runbooks}
+  alias Emisar.{ActionContract, Approvals, Audit, Fixtures, Repo, Runbooks}
   alias Emisar.Catalog.{MCPProjection, TrustedManifest}
 
   @doc """
@@ -35,6 +35,7 @@ defmodule Emisar.Fixtures.Approvals do
         request
         |> change(
           status: status,
+          overridden: if(status in [:approved, :denied], do: false),
           decided_at: attrs[:decided_at] || DateTime.utc_now(),
           decided_by_id: attrs[:decided_by_id],
           decision_reason: attrs[:decision_reason]
@@ -46,11 +47,51 @@ defmodule Emisar.Fixtures.Approvals do
     end
   end
 
-  @doc "Marks a request approved as setup state for concurrent-flow tests."
-  def approve_request(%Approvals.Request{} = request, decided_by_id) do
+  @doc """
+  Marks a request approved by flipping its final columns, without a vote row:
+  setup state for concurrent-flow tests and the shape of a request decided
+  before per-vote rows existed.
+  """
+  def approve_request(%Approvals.Request{} = request, decided_by_id, reason \\ nil) do
     request
-    |> change(status: :approved, decided_at: DateTime.utc_now(), decided_by_id: decided_by_id)
+    |> change(
+      status: :approved,
+      overridden: false,
+      decided_at: DateTime.utc_now(),
+      decided_by_id: decided_by_id,
+      decision_reason: reason
+    )
     |> Repo.update!()
+  end
+
+  @doc "Models a historical finalization whose provenance was not recorded."
+  def clear_finalization_provenance(%Approvals.Request{} = request) do
+    request |> change(overridden: nil) |> Repo.update!()
+  end
+
+  @doc "Finalizes as an old override writer, without touching the provenance column."
+  def override_with_old_writer(%Approvals.Request{} = request, subject, reason) do
+    overridden =
+      request
+      |> change(
+        status: :approved,
+        decided_at: DateTime.utc_now(),
+        decided_by_id: subject.actor.id,
+        decision_reason: reason
+      )
+      |> Repo.update!()
+
+    subject |> Audit.Events.approval_overridden(request, reason, 0) |> Repo.insert!()
+    overridden
+  end
+
+  @doc "Removes the override receipt, modeling its audit retention horizon."
+  def prune_override_receipt(%Approvals.Request{} = request) do
+    Audit.Event.Query.all()
+    |> Audit.Event.Query.by_account_id(request.account_id)
+    |> Audit.Event.Query.by_target_id(request.id)
+    |> Audit.Event.Query.by_event_types(~w[approval.overridden])
+    |> Repo.delete_all()
   end
 
   @doc "Persists one pending whole-execution request for approval UI tests."

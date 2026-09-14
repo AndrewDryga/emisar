@@ -515,6 +515,7 @@ defmodule Emisar.Seeds.ActionRuns do
       approved_req
       |> Ecto.Changeset.change(
         status: :approved,
+        overridden: false,
         decided_by_id: jordan.id,
         decided_at: approved_decided_at,
         decision_reason: approved_decision_reason
@@ -588,6 +589,7 @@ defmodule Emisar.Seeds.ActionRuns do
       denied_req
       |> Ecto.Changeset.change(
         status: :denied,
+        overridden: false,
         decided_by_id: jordan.id,
         decided_at: denied_at,
         decision_reason: denied_decision_reason

@@ -1,6 +1,6 @@
 defmodule EmisarWeb.RunDetailLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Approvals, Audit, Runners, Runs, Users}
+  alias Emisar.{Approvals, Audit, Runners, Runs}
   alias EmisarWeb.Permissions
   alias EmisarWeb.RunStatuses
 
@@ -63,18 +63,19 @@ defmodule EmisarWeb.RunDetailLive do
             {[], :loading}
           end
 
-        # All three approval reads are deferred together. Deferring only the
-        # decider left the dead render holding a real request and a nil decider,
-        # which falls through to `decider_label/2`'s deleted-user clause — so the
-        # static HTML of EVERY approved run said "Approved by a former member",
-        # on the page an auditor opens to answer exactly that question. Omitting
-        # the row until the socket connects states nothing instead of stating
-        # something false.
-        approval_request = if connected?(socket), do: lookup_approval(subject, run)
-        approval_decider = if connected?(socket), do: approval_decider(approval_request)
+        # The review and its audit refs are deferred together. A half-loaded
+        # pair once left the dead render holding a real decision and no decider,
+        # so the static HTML of EVERY approved run named "a former member" on the
+        # page an auditor opens to answer exactly that question. Omitting the row
+        # until the socket connects states nothing instead of something false.
+        {review, approval_events} =
+          if connected?(socket), do: load_review(subject, run), else: {nil, nil}
 
-        approval_event_id =
-          if connected?(socket), do: approval_event_id(approval_request, subject)
+        # A vote below quorum changes the request, not the run, so the ledger
+        # follows the request's own feed — the one the approval page repaints from.
+        if review && connected?(socket) do
+          Approvals.subscribe_request(run.account_id, review.request_id)
+        end
 
         {:ok,
          socket
@@ -82,9 +83,8 @@ defmodule EmisarWeb.RunDetailLive do
          |> assign(:run, run)
          |> refresh_action_access()
          |> assign(:action_args, visible_action_args(run, subject))
-         |> assign(:approval_request, approval_request)
-         |> assign(:approval_decider, approval_decider)
-         |> assign(:approval_event_id, approval_event_id)
+         |> assign(:review, review)
+         |> assign(:approval_events, approval_events)
          |> assign(:runner_connection, runner_connection(run))
          # Whether any output was persisted — gates the output panel for an
          # errored run so "result never arrived" doesn't render an empty terminal.
@@ -96,44 +96,80 @@ defmodule EmisarWeb.RunDetailLive do
     end
   end
 
-  defp lookup_approval(_subject, %{requires_approval: false}), do: nil
+  # The review a gated run stood through, from the SAME projection the agent
+  # reads on `wait_for_run`, so the two surfaces cannot disagree. Its gate is
+  # the run's: view_runs and the caller's own account (the votes-permission
+  # decision — anyone who can view a run can see its review); the approvals
+  # permission belongs to deciding, not to reading what was decided. A run
+  # policy never gated has no review, and a refused or failed read renders no
+  # row rather than an empty ledger presented as "nobody voted".
+  defp load_review(subject, run) do
+    review =
+      case Approvals.project_reviews_for_visible_runs([run], subject) do
+        {:ok, reviews} -> Map.get(reviews, run.id)
+        {:error, _reason} -> nil
+      end
 
-  defp lookup_approval(subject, run) do
-    case Approvals.fetch_approval_request_by_run_id(run.id, subject) do
-      {:ok, req} -> req
-      {:error, _reason} -> nil
-    end
+    {review, approval_event_refs(review, subject)}
   end
 
-  # The decider behind an approved run's "Approval" row — the human the record
-  # answers "who let this run" with.
-  defp approval_decider(%Approvals.Request{decided_by_id: id}) when is_binary(id) do
-    case Users.fetch_user_by_id(id) do
-      {:ok, user} -> user
-      _ -> nil
-    end
-  end
-
-  defp approval_decider(_), do: nil
-
-  defp approval_event_id(%Approvals.Request{id: id}, subject) do
+  # The audit page's own gate decides whether the record link renders: a member
+  # who cannot read the audit log still reads the review, just without it.
+  defp approval_event_refs(%{request_id: id}, subject) do
     case Audit.approval_event_refs([id], subject) do
-      {:ok, %{^id => %{final: event_id}}} -> event_id
+      {:ok, %{^id => refs}} -> refs
       _ -> nil
     end
   end
 
-  defp approval_event_id(_, _subject), do: nil
+  defp approval_event_refs(nil, _subject), do: nil
 
-  defp decider_label(%Users.User{full_name: name}, _id) when is_binary(name) and name != "",
-    do: name
+  # A bare single-approver hold with nothing recorded yet is told by the
+  # "Waiting for approval" block above; the row earns its place once there is a
+  # decision, a vote, an override, or a quorum to count toward.
+  defp show_review?(nil), do: false
+  defp show_review?(%{decisions: [_ | _]}), do: true
+  defp show_review?(%{override: %{}}), do: true
+  defp show_review?(%{status: status}) when status in [:approved, :denied, :expired], do: true
+  defp show_review?(%{required_approvals: required}), do: required > 1
 
-  defp decider_label(%Users.User{email: email}, _id), do: email
-  # The deciding user's row is gone — an honest label beats an id fragment
-  # (the approvals surfaces render the same deleted-user state as "Former
-  # member"); the full decider id stays on the audit trail.
-  defp decider_label(_, id) when is_binary(id), do: "a former member"
-  defp decider_label(_, _), do: "—"
+  defp review_verdict(:pending), do: "Pending"
+  defp review_verdict(:approved), do: "Approved"
+  defp review_verdict(:denied), do: "Denied"
+  defp review_verdict(:expired), do: "Expired"
+  defp review_verdict(:cancelled), do: "Cancelled"
+
+  # The ledger in decision order; an override closes it as its own receipt and
+  # is never counted as a vote — the projection keeps the two apart, so the
+  # page only lays them end to end.
+  defp review_entries(%{decisions: votes, override: nil}), do: votes
+
+  defp review_entries(%{decisions: votes, override: override}),
+    do: votes ++ [Map.put(override, :decision, :override)]
+
+  # The name is the membership's fact: a reviewer this account no longer knows
+  # keeps their vote but not a name (the approvals surfaces say the same).
+  defp reviewer_label(nil), do: "Former member"
+  defp reviewer_label(name), do: name
+
+  defp decision_icon(:approve), do: "action.approve"
+  defp decision_icon(:deny), do: "action.deny"
+  defp decision_icon(:override), do: "state.warning"
+
+  defp decision_icon_class(:approve), do: "text-brand-400"
+  defp decision_icon_class(:deny), do: "text-rose-400"
+  defp decision_icon_class(:override), do: "text-amber-400"
+
+  defp decision_verb(%{decision: :approve}), do: "approved"
+  defp decision_verb(%{decision: :deny}), do: "denied"
+
+  defp decision_verb(%{decision: :override, waived_approvals: waived}),
+    do: "overrode the review requirement · #{plural(waived, "approval")} waived"
+
+  defp omitted_label(count), do: "#{plural(count, "earlier decision")} not shown"
+
+  defp plural(1, noun), do: "1 #{noun}"
+  defp plural(count, noun), do: "#{count} #{noun}s"
 
   def handle_info({:run_updated, run}, socket) do
     # The broadcast carries a preload-less run; keep the associations loaded at
@@ -144,21 +180,18 @@ defmodule EmisarWeb.RunDetailLive do
     old = socket.assigns.run
     run = %{run | runner: old.runner, api_key: old.api_key, requested_by: old.requested_by}
 
-    # If status flips to/from pending_approval, refresh the linked
-    # approval row so the banner updates without a page reload.
-    approval_request = lookup_approval(socket.assigns.current_subject, run)
-
+    # If status flips to/from pending_approval, refresh the review so the
+    # banner and the ledger update without a page reload.
     {:noreply,
      socket
      |> assign(:run, run)
      |> refresh_action_access()
      |> assign(:action_args, visible_action_args(run, socket.assigns.current_subject))
-     |> assign(:approval_request, approval_request)
-     |> assign(:approval_decider, approval_decider(approval_request))
-     |> assign(
-       :approval_event_id,
-       approval_event_id(approval_request, socket.assigns.current_subject)
-     )}
+     |> assign_review(run)}
+  end
+
+  def handle_info({:approval_request_updated, _request}, socket) do
+    {:noreply, assign_review(socket, socket.assigns.run)}
   end
 
   # A live-appending stream never evicts on its own, so a chatty run streaming
@@ -192,6 +225,14 @@ defmodule EmisarWeb.RunDetailLive do
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
+
+  defp assign_review(socket, run) do
+    {review, approval_events} = load_review(socket.assigns.current_subject, run)
+
+    socket
+    |> assign(:review, review)
+    |> assign(:approval_events, approval_events)
+  end
 
   defp refresh_action_access(socket) do
     can_cancel? =
@@ -470,10 +511,10 @@ defmodule EmisarWeb.RunDetailLive do
                EVENT BLOCKS (the icon-capped-spine grammar, §8.1), not wash
                boxes: amber = pending on someone/something, rose = a dead
                outcome. --%>
-          <div :if={attention?(@run, @approval_request, @runner_connection)} class="mt-8 space-y-8">
+          <div :if={attention?(@run, @review, @runner_connection)} class="mt-8 space-y-8">
             <%!-- Approval hold — the run is waiting on a human decision. --%>
             <.event_block
-              :if={@run.status == :pending_approval and @approval_request}
+              :if={@run.status == :pending_approval and @review}
               icon="state.awaiting_human"
               title="Waiting for approval"
             >
@@ -483,7 +524,7 @@ defmodule EmisarWeb.RunDetailLive do
                   tone={:amber}
                   size={:md}
                   class="group"
-                  navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+                  navigate={~p"/app/#{@current_account}/approvals/#{@review.request_id}"}
                 >
                   View approval <.cta_arrow />
                 </.button>
@@ -504,13 +545,13 @@ defmodule EmisarWeb.RunDetailLive do
               <:body>
                 <span class="whitespace-pre-wrap">{cancellation_reason(@run.reason_text)}</span>
               </:body>
-              <div :if={@approval_request} class="mt-4">
+              <div :if={@review} class="mt-4">
                 <.button
                   variant={:secondary}
                   tone={:amber}
                   size={:md}
                   class="group"
-                  navigate={~p"/app/#{@current_account}/approvals/#{@approval_request.id}"}
+                  navigate={~p"/app/#{@current_account}/approvals/#{@review.request_id}"}
                 >
                   View approval <.cta_arrow />
                 </.button>
@@ -590,7 +631,7 @@ defmodule EmisarWeb.RunDetailLive do
              `allow` (the boring default the run wouldn't exist without). --%>
         <section :if={
           @run.reason not in [nil, ""] or @run.evidence not in [nil, ""] or
-            @run.expected not in [nil, ""] or show_policy?(@run)
+            @run.expected not in [nil, ""] or show_policy?(@run) or show_review?(@review)
         }>
           <.section_header title="Request details" />
           <dl class="space-y-5">
@@ -653,30 +694,56 @@ defmodule EmisarWeb.RunDetailLive do
                 </span>
               </dd>
             </div>
-            <%!-- The human release behind an approved run — who, when, and the
-                 note they logged. The record's answer to "who let this run". --%>
-            <div :if={@approval_request && @approval_request.status == :approved}>
+            <%!-- The human review this run stood through — the record's answer
+                 to "who let this run" (or refused it). The verdict and its
+                 tally are told once; the ledger below is the approval detail's
+                 own vote grammar: who, what, when, and the note they logged, an
+                 owner's override closing it as its own receipt, never a vote. --%>
+            <div :if={show_review?(@review)} id="run-approval" data-shot="run-approval">
               <dt class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Approval
               </dt>
               <dd class="mt-1 text-sm leading-relaxed text-zinc-200">
-                Approved by {decider_label(@approval_decider, @approval_request.decided_by_id)}
-                <span :if={@approval_request.decided_at} class="text-zinc-400">·
-                <.local_time
-                  value={@approval_request.decided_at}
-                  mode={:forensic}
-                  class="tabular-nums"
-                /></span>
+                {review_verdict(@review.status)}
+                <span :if={@review.required_approvals > 1} class="text-zinc-400">
+                  · {@review.approved_count} of {@review.required_approvals} approvals
+                </span>
               </dd>
-              <dd
-                :if={@approval_request.decision_reason && @approval_request.decision_reason != ""}
-                class="mt-1 text-sm leading-relaxed text-zinc-300"
-              >
-                “{@approval_request.decision_reason}”
+              <dd :if={review_entries(@review) != []} class="mt-1">
+                <ul class="divide-y divide-zinc-800/70">
+                  <li
+                    :for={entry <- review_entries(@review)}
+                    class="flex items-start gap-3 py-3 text-sm"
+                  >
+                    <.icon
+                      name={decision_icon(entry.decision)}
+                      class={"mt-0.5 h-4 w-4 flex-none " <> decision_icon_class(entry.decision)}
+                    />
+                    <div class="min-w-0 flex-1">
+                      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span class="min-w-0 flex-1 truncate text-zinc-200">
+                          {reviewer_label(entry.actor)}
+                        </span>
+                        <span class="text-xs text-zinc-400">{decision_verb(entry)}</span>
+                        <.local_time
+                          value={entry.decided_at}
+                          mode={:forensic}
+                          class="text-xs tabular-nums text-zinc-400"
+                        />
+                      </div>
+                      <p :if={entry.reason} class="mt-1.5 text-sm leading-relaxed text-zinc-300">
+                        “{entry.reason}”
+                      </p>
+                    </div>
+                  </li>
+                </ul>
               </dd>
-              <dd :if={@approval_event_id} class="mt-2">
+              <dd :if={@review.decisions_omitted > 0} class="text-xs text-zinc-400">
+                {omitted_label(@review.decisions_omitted)}
+              </dd>
+              <dd :if={@approval_events && @approval_events.final} class="mt-2">
                 <.link
-                  navigate={~p"/app/#{@current_account}/audit/#{@approval_event_id}"}
+                  navigate={~p"/app/#{@current_account}/audit/#{@approval_events.final}"}
                   class="group inline-flex min-h-10 items-center gap-1 text-xs font-medium text-brand-400 hover:text-brand-300"
                 >
                   View audit record <.cta_arrow />
@@ -891,8 +958,8 @@ defmodule EmisarWeb.RunDetailLive do
 
   # Whether any attention banner renders — the stack's wrapper must vanish with
   # them, or its empty div would double the wrapper's 48px gap.
-  defp attention?(run, approval_request, runner_connection) do
-    (run.status == :pending_approval and approval_request != nil) or
+  defp attention?(run, review, runner_connection) do
+    (run.status == :pending_approval and review != nil) or
       (run.status == :cancelled and run.reason_text not in [nil, ""]) or
       run.status == :cancelling or
       run.error_message != nil or

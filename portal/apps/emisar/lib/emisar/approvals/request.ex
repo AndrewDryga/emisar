@@ -11,36 +11,41 @@ defmodule Emisar.Approvals.Request do
   use Emisar, :schema
 
   schema "approval_requests" do
-    field :requested_at, :utc_datetime_usec
+    field(:requested_at, :utc_datetime_usec)
     # Snapshot of the run's dispatch justification chain at request creation, so
     # the decision surface renders the full reason → evidence → expected the
     # agent gave without depending on the run row surviving.
-    field :reason, :string
-    field :evidence, :string
-    field :expected, :string
-    field :context, :map, default: %{}
+    field(:reason, :string)
+    field(:evidence, :string)
+    field(:expected, :string)
+    field(:context, :map, default: %{})
 
-    field :status, Ecto.Enum,
+    field(:status, Ecto.Enum,
       values: [:pending, :approved, :denied, :expired, :cancelled],
       default: :pending
+    )
 
-    field :decided_at, :utc_datetime_usec
-    field :decision_reason, :string
-    field :expires_at, :utc_datetime_usec
+    field(:decided_at, :utc_datetime_usec)
+    field(:decision_reason, :string)
+    # True is an override, false an ordinary finalization, nil unknown history.
+    # Pending requests stay nil, including when an old writer later decides them.
+    # Finalization stamps true or false atomically; receipt retention cannot erase it.
+    field(:overridden, :boolean)
+    field(:expires_at, :utc_datetime_usec)
 
     # Approval-gate posture snapshotted from the policy at request creation,
     # mirroring the run-level policy_version snapshot — a later policy edit
     # can't move an in-flight request's bar.
-    field :min_approvals, :integer, default: 1
-    field :allow_self_approval, :boolean, default: true
+    field(:min_approvals, :integer, default: 1)
+    field(:allow_self_approval, :boolean, default: true)
 
-    belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
-    belongs_to :run, Emisar.Runs.ActionRun
-    belongs_to :runbook_execution, Emisar.Runbooks.RunbookExecution
-    belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
-    belongs_to :decided_by, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to(:account, Emisar.Accounts.Account, where: [deleted_at: nil])
+    belongs_to(:run, Emisar.Runs.ActionRun)
+    belongs_to(:runbook_execution, Emisar.Runbooks.RunbookExecution)
+    belongs_to(:requested_by, Emisar.Users.User, where: [deleted_at: nil])
+    belongs_to(:decided_by, Emisar.Users.User, where: [deleted_at: nil])
 
-    has_many :decisions, Emisar.Approvals.Decision
+    has_many(:decisions, Emisar.Approvals.Decision)
 
     timestamps()
   end

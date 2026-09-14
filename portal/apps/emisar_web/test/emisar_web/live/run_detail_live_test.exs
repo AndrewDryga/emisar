@@ -38,6 +38,57 @@ defmodule EmisarWeb.RunDetailLiveTest do
     run
   end
 
+  # A run the approve gate can release: the runner still advertises the action
+  # and the run snapshots its trusted contract, so every recorded vote takes the
+  # real decision path instead of a fixture flipping request columns without a
+  # vote row — the ledger lists only votes that were actually cast.
+  defp gated_run(account, requested_by, attrs \\ %{}) do
+    initiating_membership = Fixtures.Memberships.fetch_membership(account.id, requested_by.id)
+
+    runner =
+      Fixtures.Runners.create_runner(
+        account_id: account.id,
+        name: "runner-1",
+        group: "default",
+        hostname: "10.0.5.12"
+      )
+
+    Fixtures.Catalog.create_action(runner: runner)
+
+    run_with(
+      account,
+      Map.merge(
+        %{
+          runner_id: runner.id,
+          requested_by_id: requested_by.id,
+          initiating_membership_id: initiating_membership.id,
+          status: :pending_approval,
+          requires_approval: true,
+          policy_decision: "require_approval",
+          policy_reason: "High-risk config reload requires an admin approval",
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash()
+        },
+        attrs
+      )
+    )
+  end
+
+  # A named member who can decide — distinct full names keep each ledger row
+  # attributable (every other fixture user is "Test User").
+  defp reviewer(account, full_name, role \\ "admin") do
+    user = Fixtures.Users.create_user(full_name: full_name)
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: role
+      )
+
+    Fixtures.Subjects.membership_subject(membership)
+  end
+
   defp output_index(html, needle) do
     {position, _length} = :binary.match(html, needle)
     position
@@ -135,80 +186,266 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert html =~ ~r/·\s*v4/
   end
 
-  test "an approved run's request details name the approver — who, when, why",
+  test "an approved run's request details record the vote — who, when, why",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, user, account} = register_and_log_in(conn)
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "reload after validation")
 
-    run =
-      run_with(account, %{
-        status: "success",
-        requires_approval: true,
-        policy_decision: "require_approval",
-        policy_reason: "High-risk config reload requires an admin approval"
-      })
-
-    approver = Fixtures.Users.create_user(full_name: "Jordan Approver")
-
-    request =
-      Fixtures.Approvals.create_request(
-        run_id: run.id,
-        account_id: account.id,
-        status: :approved,
-        decided_by_id: approver.id,
-        decision_reason: "window open, config validated"
+    {:ok, _} =
+      Approvals.approve_request(
+        request,
+        reviewer(account, "Jordan Approver"),
+        "window open, config validated"
       )
 
-    {:ok, event} =
-      Audit.log(account.id, "approval.approved",
-        actor_kind: "user",
-        actor_id: approver.id,
-        target_kind: "approval_request",
-        target_id: request.id
-      )
+    request_id = request.id
+
+    {:ok, %{^request_id => %{final: event_id}}} =
+      Audit.approval_event_refs([request_id], owner_subject(user, account))
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
     assert html =~ "Approval"
-    assert html =~ "Approved by Jordan Approver"
-    assert html =~ "window open, config validated"
+    assert has_element?(lv, "#run-approval", "Approved")
+    assert has_element?(lv, "#run-approval", "Jordan Approver")
+    assert has_element?(lv, "#run-approval", "approved")
+    assert has_element?(lv, "#run-approval", "“window open, config validated”")
+    # A single approver has no quorum to count toward.
+    refute html =~ "of 1 approvals"
 
     assert has_element?(
              lv,
-             ~s(a[href="/app/#{account.slug}/audit/#{event.id}"]),
+             ~s(#run-approval a[href="/app/#{account.slug}/audit/#{event_id}"]),
              "View audit record"
            )
   end
 
   test "the first paint omits the Approval row instead of naming a former member",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, user, account} = register_and_log_in(conn)
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "reload after validation")
 
-    run =
-      run_with(account, %{
-        status: "success",
-        requires_approval: true,
-        policy_decision: "require_approval",
-        policy_reason: "High-risk config reload requires an admin approval"
-      })
-
-    approver = Fixtures.Users.create_user(full_name: "Jordan Approver")
-
-    _request =
-      Fixtures.Approvals.create_request(
-        run_id: run.id,
-        account_id: account.id,
-        status: :approved,
-        decided_by_id: approver.id,
-        decision_reason: "window open, config validated"
+    {:ok, _} =
+      Approvals.approve_request(
+        request,
+        reviewer(account, "Jordan Approver"),
+        "window open, config validated"
       )
 
     static = conn |> get(~p"/app/#{account}/runs/#{run.id}") |> html_response(200)
 
-    refute static =~ "a former member"
+    refute static =~ "Former member"
+    refute static =~ "Jordan Approver"
 
-    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ "Approved by Jordan Approver"
+    assert has_element?(lv, "#run-approval", "Jordan Approver")
+  end
+
+  # A request decided before per-vote rows existed holds its decision on its
+  # own final columns; the page still answers "who let this run" for it.
+  test "a request decided without vote rows still names its decider, time, and note",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "reload after validation")
+    jordan = reviewer(account, "Jordan Approver")
+
+    Fixtures.Approvals.approve_request(
+      request,
+      jordan.actor.id,
+      "validated config, deploy window open"
+    )
+
+    Fixtures.Runs.put_status(run, :sent)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    refute html =~ "Waiting for approval"
+    assert has_element?(lv, "#run-approval", "Approved")
+    assert has_element?(lv, "#run-approval", "Jordan Approver")
+    assert has_element?(lv, "#run-approval", "approved")
+    assert has_element?(lv, "#run-approval", "“validated config, deploy window open”")
+    assert has_element?(lv, "#run-approval time")
+  end
+
+  test "a multi-approver hold lists each vote with its note and the running tally",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "needs two", min_approvals: 2)
+
+    {:ok, {%Approvals.Request{status: :pending}, :pending}} =
+      Approvals.approve_request(request, reviewer(account, "Casey Approver"), "first")
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert html =~ "Waiting for approval"
+    assert has_element?(lv, "#run-approval", "Pending")
+    assert has_element?(lv, "#run-approval", "1 of 2 approvals")
+    assert has_element?(lv, "#run-approval", "Casey Approver")
+    assert has_element?(lv, "#run-approval", "“first”")
+
+    # The releasing vote lands while the page is open. It both closes the
+    # request and flips the run, so either feed could repaint this one — the
+    # sub-quorum test below is what pins the request subscription. The
+    # broadcast is sent from this process after commit, so it is ordered ahead
+    # of the render call below.
+    {:ok, _} = Approvals.approve_request(request, reviewer(account, "Jordan Approver"), "second")
+
+    assert has_element?(lv, "#run-approval", "Approved")
+    assert has_element?(lv, "#run-approval", "2 of 2 approvals")
+    assert has_element?(lv, "#run-approval", "Jordan Approver")
+    assert has_element?(lv, "#run-approval", "“second”")
+  end
+
+  # The reason the page subscribes to the request at all: a vote below quorum
+  # changes the request and leaves the run untouched, so the run feed the page
+  # already had cannot repaint it. Without Approvals.subscribe_request the
+  # ledger would sit on its mount-time paint until something else moved the run.
+  test "a vote that leaves the hold short of quorum repaints the open ledger",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "needs three", min_approvals: 3)
+
+    {:ok, {%Approvals.Request{status: :pending}, :pending}} =
+      Approvals.approve_request(request, reviewer(account, "Casey Approver"), "first")
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#run-approval", "1 of 3 approvals")
+    refute has_element?(lv, "#run-approval", "Jordan Approver")
+
+    {:ok, {%Approvals.Request{status: :pending}, :pending}} =
+      Approvals.approve_request(request, reviewer(account, "Jordan Approver"), "second")
+
+    # The run never moved: only the request's own feed carries this vote.
+    assert Repo.reload!(run).status == :pending_approval
+
+    assert has_element?(lv, "#run-approval", "Pending")
+    assert has_element?(lv, "#run-approval", "2 of 3 approvals")
+    assert has_element?(lv, "#run-approval", "Jordan Approver")
+    assert has_element?(lv, "#run-approval", "“second”")
+  end
+
+  test "an owner's override closes the ledger as its own receipt, never a vote",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn, %{user: %{full_name: "Maya Owner"}})
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "needs three", min_approvals: 3)
+
+    {:ok, _} =
+      Approvals.approve_request(request, reviewer(account, "Jordan Approver"), "one route")
+
+    {:ok, {%Approvals.Request{status: :approved}, _run}} =
+      Approvals.override_request(
+        request,
+        "Reviewers are unavailable during the incident.",
+        owner_subject(user, account)
+      )
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#run-approval", "Approved")
+    assert has_element?(lv, "#run-approval", "1 of 3 approvals")
+    assert has_element?(lv, "#run-approval", "Jordan Approver")
+    assert has_element?(lv, "#run-approval", "“one route”")
+    assert has_element?(lv, "#run-approval", "Maya Owner")
+
+    assert has_element?(
+             lv,
+             "#run-approval",
+             "overrode the review requirement · 2 approvals waived"
+           )
+
+    assert has_element?(lv, "#run-approval", "“Reviewers are unavailable during the incident.”")
+
+    # One vote and one override: the override is neither tallied nor drawn as
+    # a vote, and the page no longer names the overrider as "the approver".
+    ledger = lv |> element("#run-approval") |> render()
+    assert output_count(ledger, ~s(data-icon="action.approve")) == 1
+    assert output_count(ledger, ~s(data-icon="state.warning")) == 1
+    refute html =~ "Approved by"
+  end
+
+  test "an override whose receipt retention pruned still never reads as a vote",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn, %{user: %{full_name: "Maya Owner"}})
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "needs one")
+
+    {:ok, {%Approvals.Request{status: :approved}, _run}} =
+      Approvals.override_request(request, "Nobody else is on call.", owner_subject(user, account))
+
+    Fixtures.Approvals.prune_override_receipt(request)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#run-approval", "Approved")
+    ledger = lv |> element("#run-approval") |> render()
+    assert output_count(ledger, ~s(data-icon="action.approve")) == 0
+    refute ledger =~ "Maya Owner"
+    refute ledger =~ "Nobody else is on call."
+    refute html =~ "Approved by"
+  end
+
+  test "unknown historical finalization keeps its status without inventing an approver",
+       %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn, %{user: %{full_name: "Maya Owner"}})
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "needs one")
+
+    request
+    |> Fixtures.Approvals.approve_request(user.id, "Emergency release.")
+    |> Fixtures.Approvals.clear_finalization_provenance()
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#run-approval", "Approved")
+    ledger = lv |> element("#run-approval") |> render()
+    assert output_count(ledger, ~s(data-icon="action.approve")) == 0
+    refute ledger =~ "Maya Owner"
+    refute ledger =~ "Emergency release."
+  end
+
+  test "a viewer reads the review by the names this account knows; a departed reviewer is a Former member",
+       %{conn: conn} do
+    {_conn, user, account} = register_and_log_in(conn)
+    run = gated_run(account, user)
+    {:ok, request} = Approvals.create_request(run, user.id, "needs two", min_approvals: 2)
+    jordan = reviewer(account, "Jordan Approver")
+    {:ok, _} = Approvals.approve_request(request, jordan, "looks fine")
+
+    viewer = Fixtures.Users.create_user(full_name: "Vic Viewer")
+
+    _ =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: viewer.id,
+        role: "viewer"
+      )
+
+    conn = log_in_user(conn, viewer)
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#run-approval", "1 of 2 approvals")
+    assert has_element?(lv, "#run-approval", "Jordan Approver")
+    assert has_element?(lv, "#run-approval", "“looks fine”")
+
+    # The label is the membership's fact, never a guess from a global profile.
+    account.id
+    |> Fixtures.Memberships.fetch_membership(jordan.actor.id)
+    |> Fixtures.Memberships.mark_membership_as_deleted()
+
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
+
+    assert has_element?(lv, "#run-approval", "Former member")
+    refute has_element?(lv, "#run-approval", "Jordan Approver")
+    assert has_element?(lv, "#run-approval", "“looks fine”")
   end
 
   test "request details render optional evidence and expected outcome only when present",
@@ -270,6 +507,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert has_element?(lv, ~s(#run-cancelled [data-icon="state.cancelled"].text-amber-300))
     assert has_element?(lv, ~s(#run-cancelled [class~="bg-amber-300/40"]))
     refute has_element?(lv, "#run-cancelled .text-rose-400")
+
+    # …and the review records who refused it and the note they logged.
+    assert has_element?(lv, "#run-approval", "Denied")
+    assert has_element?(lv, "#run-approval", "Test User")
+    assert has_element?(lv, "#run-approval", "denied")
+    assert has_element?(lv, "#run-approval", "“not during the change freeze”")
+    assert has_element?(lv, ~s(#run-approval [data-icon="action.deny"]))
   end
 
   test "the held-run approval CTA uses the shared arrow, not a literal glyph", %{conn: conn} do

@@ -313,27 +313,6 @@ defmodule Emisar.Approvals do
   defp pending_review_block(_request, _reason), do: nil
 
   @doc """
-  Looks up the (single) approval request for a run. There is a
-  unique-by-design relationship: one run produces at most one approval
-  request, since policy is evaluated once at dispatch time.
-
-  Status-agnostic by design (`Query.all()`, no status filter): returns the
-  request whatever its status, because the run-detail banner + approval-detail
-  page must show a DECIDED request's outcome. Denying/approving updates status
-  (never deletes), and the expiry sweeper only touches pending rows, so a
-  decided request always persists and stays fetchable.
-  """
-  def fetch_approval_request_by_run_id(run_id, %Subject{} = subject) do
-    with {:ok, subject} <-
-           Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
-      Request.Query.all()
-      |> Request.Query.by_run_id(run_id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(Request.Query)
-    end
-  end
-
-  @doc """
   Lists visible approval requests for the given runbook executions.
   """
   def list_requests_for_runbook_executions(execution_ids, %Subject{} = subject)
@@ -492,7 +471,12 @@ defmodule Emisar.Approvals do
   by and that vote's own retained note, and an `override` only when its explicit
   `approval.overridden` audit receipt exists — carrying the real tally it
   released, the requirement it waived, and its mandatory reason. An override is
-  never inferred from a short tally and never becomes a vote.
+  never inferred from a short tally and never becomes a vote. The request's
+  durable override marker survives audit retention. A proven ordinary
+  single-approver decision without per-vote rows uses its final columns —
+  decider, time, and note. Historical requests whose finalization cannot be
+  classified keep their status, but those columns do not become votes or
+  increase the tally. Existing vote rows remain visible in every case.
 
   Returns `{:ok, %{run_id => receipt}}`, `{:error, :unauthorized}`, or
   `{:error, :not_found}` for a run outside the caller's account. A page
@@ -557,7 +541,7 @@ defmodule Emisar.Approvals do
       |> Map.new()
 
     receipts = Audit.approval_decision_receipts(request_ids, subject.account.id)
-    labels = review_actor_labels(decisions, receipts, subject)
+    labels = review_actor_labels(requests, decisions, receipts, subject)
     runs_by_id = Map.new(runs, &{&1.id, &1})
     now = DateTime.utc_now()
     statuses = Map.new(requests, &{&1.run_id, request_facts(&1, now).status})
@@ -603,23 +587,28 @@ defmodule Emisar.Approvals do
   defp command_wanted?(_run, :pending), do: true
   defp command_wanted?(_run, _status), do: false
 
-  defp review_actor_labels(decisions, receipts, subject) do
+  defp review_actor_labels(requests, decisions, receipts, subject) do
+    # The request's own decider covers a record decided without vote rows.
+    final_ids =
+      for request <- requests, is_binary(request.decided_by_id), do: request.decided_by_id
+
     decider_ids = for {_request_id, votes} <- decisions, vote <- votes, do: vote.decider_id
     override_ids = for {_request_id, %{override: %{actor_id: id}}} <- receipts, do: id
 
-    Accounts.user_labels_for_ids(decider_ids ++ override_ids, subject.account.id)
+    Accounts.user_labels_for_ids(final_ids ++ decider_ids ++ override_ids, subject.account.id)
   end
 
   defp review_receipt(%Request{} = request, run, subject, facts) do
     {reason, reason_cut?} = projected_justification(run, request.reason, :reason)
     {evidence, evidence_cut?} = projected_justification(run, request.evidence, :evidence)
     {expected, expected_cut?} = projected_justification(run, request.expected, :expected)
+    {decisions, approved_count} = projected_decisions(request, facts)
 
     %{
       request_id: request.id,
       status: facts.status,
       required_approvals: request.min_approvals,
-      approved_count: facts.count,
+      approved_count: approved_count,
       argument_count: run_argument_count(run, subject),
       reason: reason,
       reason_truncated: reason_cut?,
@@ -628,24 +617,51 @@ defmodule Emisar.Approvals do
       expected: expected,
       expected_truncated: expected_cut?,
       command: facts.command,
-      decisions: projected_decisions(facts.decisions, facts.receipt, facts.labels),
+      decisions: decisions,
       decisions_omitted: max(length(facts.decisions) - @max_projected_decisions, 0),
       override: projected_override(facts.receipt.override, facts.labels)
     }
   end
 
-  defp projected_decisions(decisions, receipt, labels) do
-    decisions
-    |> Enum.take(-@max_projected_decisions)
-    |> Enum.map(fn decision ->
-      %{
-        actor: Map.get(labels, decision.decider_id),
-        decision: decision.decision,
-        decided_at: decision.decided_at,
-        reason: Map.get(receipt.decisions, decision.decider_id)
-      }
-    end)
+  # Only proven ordinary finalizations may use the pre-vote-row decision.
+  # An override writes the same final columns, but is not a vote. Its durable
+  # marker survives audit retention; nil means historical provenance is unknown
+  # and cannot justify synthesizing a vote or incrementing the tally.
+  defp projected_decisions(
+         %Request{status: status, min_approvals: 1, overridden: false} = request,
+         %{decisions: [], receipt: %{override: nil}, labels: labels}
+       )
+       when status in [:approved, :denied] do
+    decision = if status == :approved, do: :approve, else: :deny
+
+    {[
+       %{
+         actor: Map.get(labels, request.decided_by_id),
+         decision: decision,
+         decided_at: request.decided_at,
+         reason: presence(request.decision_reason)
+       }
+     ], if(decision == :approve, do: 1, else: 0)}
   end
+
+  defp projected_decisions(%Request{}, facts) do
+    decisions =
+      facts.decisions
+      |> Enum.take(-@max_projected_decisions)
+      |> Enum.map(fn decision ->
+        %{
+          actor: Map.get(facts.labels, decision.decider_id),
+          decision: decision.decision,
+          decided_at: decision.decided_at,
+          reason: Map.get(facts.receipt.decisions, decision.decider_id)
+        }
+      end)
+
+    {decisions, facts.count}
+  end
+
+  defp presence(text) when is_binary(text) and text != "", do: text
+  defp presence(_text), do: nil
 
   defp projected_override(nil, _labels), do: nil
 
@@ -2030,7 +2046,8 @@ defmodule Emisar.Approvals do
         by_user_id,
         reason,
         %{duration: :once, scope: :exact_args, max_uses: nil},
-        count
+        count,
+        true
       )
     else
       {:error, :quorum_already_met}
@@ -2076,6 +2093,11 @@ defmodule Emisar.Approvals do
   # Threshold met: flip to :approved on the locked row and mint the grant HERE
   # (only on the finalizing approve, so sub-threshold votes never mint). The
   # run dispatches after-commit.
+  # `overridden?` identifies the override's release: the row records it in the
+  # same write as the decision, since the audit receipt alone does not outlive
+  # retention.
+  defp finalize_approved(repo, locked, by_user_id, reason, attrs, count, overridden? \\ false)
+
   defp finalize_approved(
          repo,
          %Request{
@@ -2085,12 +2107,14 @@ defmodule Emisar.Approvals do
          by_user_id,
          reason,
          _attrs,
-         count
+         count,
+         overridden?
        )
        when is_binary(execution_id) do
     with {:ok, execution} <-
            Emisar.Runbooks.activate_pending_approval(repo, execution_id),
-         {:ok, approved} <- guarded_transition(locked, :approved, by_user_id, reason) do
+         {:ok, approved} <-
+           guarded_transition(locked, :approved, by_user_id, reason, overridden?) do
       {:ok,
        %{
          action: :advance_runbook_execution,
@@ -2103,7 +2127,7 @@ defmodule Emisar.Approvals do
     end
   end
 
-  defp finalize_approved(repo, %Request{} = locked, by_user_id, reason, attrs, count) do
+  defp finalize_approved(repo, %Request{} = locked, by_user_id, reason, attrs, count, overridden?) do
     # Lock the gated run IN THIS transaction and confirm it's still
     # `:pending_approval` — a cancel/expiry between parking and this approval
     # makes it non-dispatchable, so the approve must abort rather than resurrect
@@ -2111,7 +2135,8 @@ defmodule Emisar.Approvals do
     with {:ok, run} <- Runs.fetch_and_lock_pending_approval_run(repo, locked.run_id),
          :ok <- Runbooks.ensure_attempt_approvable(repo, run),
          :ok <- Runs.ensure_run_initiator_authorized(repo, run),
-         {:ok, approved} <- guarded_transition(locked, :approved, by_user_id, reason),
+         {:ok, approved} <-
+           guarded_transition(locked, :approved, by_user_id, reason, overridden?),
          {:ok, released_run} <- Runs.release_pending_approval_run(run, repo: repo),
          {:ok, grant} <- mint_grant(locked, released_run, by_user_id, attrs) do
       {:ok,
@@ -2145,13 +2170,14 @@ defmodule Emisar.Approvals do
   end
 
   # The guarded UPDATE — flips a still-pending, non-expired row to `status`,
-  # stamping decider/reason. 0 rows means another decision or the expiry landed
-  # between the lock and here → classify so the caller flashes the right cause.
-  defp guarded_transition(%Request{} = locked, status, by_user_id, reason) do
+  # stamping decider/reason and whether an override released it. 0 rows means
+  # another decision or the expiry landed between the lock and here → classify
+  # so the caller flashes the right cause.
+  defp guarded_transition(%Request{} = locked, status, by_user_id, reason, overridden? \\ false) do
     now = DateTime.utc_now()
 
     {affected, _} =
-      Request.Query.decide_pending(locked.id, status, by_user_id, reason, now)
+      Request.Query.decide_pending(locked.id, status, by_user_id, reason, now, overridden?)
       |> Repo.update_all([])
 
     case affected do

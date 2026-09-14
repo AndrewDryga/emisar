@@ -1124,7 +1124,14 @@ their vote still stands), the vote, its time, and that reviewer's own note when
 they left one. A request with more votes than the page holds returns its most
 recent ones — a deny finalizes on the spot and the approve that meets quorum is
 the last vote, so the decision itself is always present — and counts the older
-ones in `decisions_omitted`.
+ones in `decisions_omitted`. A proven ordinary single-approver decision without
+per-vote rows lists the decision its own record holds — the decider, time,
+and note. The request's durable override marker prevents an override from
+becoming a vote after audit retention removes its receipt. Historical requests
+with unknown finalization provenance keep their status, but their final columns
+are not presented as votes and do not increase the tally. Existing vote rows
+remain visible. The `override` object is present only while its audit receipt
+is retained.
 
 `override` appears only from its own `approval.overridden` audit receipt, never
 inferred from a short tally. It carries the mandatory reason an override cannot

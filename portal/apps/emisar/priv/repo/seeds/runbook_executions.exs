@@ -204,6 +204,7 @@ defmodule Emisar.Seeds.RunbookExecutions do
     |> fetch_execution_request()
     |> Ecto.Changeset.change(
       status: :approved,
+      overridden: false,
       decided_by_id: jordan.id,
       decided_at: DateTime.add(succeeded_at, 5, :second),
       decision_reason: "Validated config, drained connections, and an open change window."
