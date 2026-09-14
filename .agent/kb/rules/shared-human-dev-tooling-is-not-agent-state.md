@@ -44,6 +44,9 @@ Disposable screenshots and visual-audit output live under the owning task's
 basic one before capturing, so task archive cleanup removes its evidence too.
 Generated images that are committed as product or documentation assets stay in
 their implementation-owned destination instead.
+UX changes get inspected screenshots of the affected states; non-UX tasks do not
+need screenshots unless explicitly required. Unavailable required visual evidence
+is an outstanding check, not something an agent silently replaces with unit tests.
 When multiple generators share an ignored output root such
 as `dist/`, each generator owns a named subtree and cleans only that subtree.
 

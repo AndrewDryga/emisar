@@ -73,6 +73,11 @@ func TestChromeArgsKeepHostSandboxAndScopeTLSException(t *testing.T) {
 	if !slices.Contains(box, "--no-sandbox") || !slices.Contains(box, "--disable-dev-shm-usage") {
 		t.Fatalf("box args lack container flags: %v", box)
 	}
+	for _, arg := range chromeArgs(Config{Profile: "/tmp/profile", InBox: true}) {
+		if strings.Contains(arg, "ignore-certificate-errors") {
+			t.Fatalf("browser without a Keycloak pin relaxes TLS: %s", arg)
+		}
+	}
 }
 
 func TestWriteStateIsAtomicAndPrivate(t *testing.T) {
@@ -88,6 +93,14 @@ func TestWriteStateIsAtomicAndPrivate(t *testing.T) {
 	info, _ := os.Stat(path)
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("state mode = %v", info.Mode().Perm())
+	}
+}
+
+func TestRunDaemonRejectsMalformedTLSPin(t *testing.T) {
+	for _, pin := range []string{"invalid", base64.StdEncoding.EncodeToString([]byte("short"))} {
+		if err := RunDaemon(t.Context(), Config{SPKI: pin}); err == nil || !strings.Contains(err.Error(), "TLS SPKI") {
+			t.Fatalf("malformed pin %q: %v", pin, err)
+		}
 	}
 }
 
@@ -272,7 +285,8 @@ func TestRemoteSessionCanCreateIsolatedContext(t *testing.T) {
 	config := Config{
 		State: filepath.Join(root, "state.json"), Profile: filepath.Join(root, "profile"),
 		Marker: filepath.Join(root, "profile", "marker"), Log: filepath.Join(root, "browser.log"),
-		SPKI: base64.StdEncoding.EncodeToString(make([]byte, 32)), Out: io.Discard, Err: io.Discard,
+		// No Keycloak here: both persistent and isolated browsers use normal TLS.
+		Out: io.Discard, Err: io.Discard,
 		InBox: testInBox(),
 	}
 	ctx, cancel := context.WithCancel(context.Background())

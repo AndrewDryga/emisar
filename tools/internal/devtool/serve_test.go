@@ -21,6 +21,9 @@ func serveWorkspace(t *testing.T, urls map[workspaceDependency]string) *App {
 	t.Setenv("COOP_FORWARD", "")
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if urls[needKeycloak] == "" {
+		return app
+	}
 	if err := os.MkdirAll(app.Certs, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -96,9 +99,8 @@ func TestServeDetachedRequiresWhatTheForegroundChildDoes(t *testing.T) {
 	}{
 		{name: "a complete workspace launches the child and reports the log", present: true},
 		{name: "no Postgres refuses by name", absent: needDatabase, wantError: "this command needs Postgres"},
-		{name: "no Keycloak refuses by name", absent: needKeycloak, wantError: "this command needs Keycloak"},
-		{name: "no Metrics refuses by name", absent: needMetrics, wantError: "this command needs Metrics"},
-		{name: "no Portal refuses by name", absent: needPortal, wantError: "this command needs Portal"},
+		{name: "no Keycloak still launches the ordinary preview", absent: needKeycloak},
+		{name: "unpublished Metrics uses its local listener", absent: needMetrics},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			urls := maps.Clone(complete)

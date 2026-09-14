@@ -53,5 +53,6 @@ test. Follow that pattern; don't reach for a mocking library.
 
 ## Run
 
-`cd portal && mix test <path>` (or `<path>:<line>`). Green + the denial/cross-account
-cases present = done (IL-20).
+Use `./run test portal <path>` (or `<path>:<line>`) from the repository root for
+focused feedback, including the denial/cross-account cases. A focused pass is
+not completion: the lead runs the final gate required by `portal/AGENTS.md`.

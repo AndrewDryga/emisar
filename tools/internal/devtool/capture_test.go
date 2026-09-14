@@ -22,23 +22,6 @@ func TestCaptureDocsRequiresKeycloakOnlyForTheShotsThatDriveIt(t *testing.T) {
 		wantError string
 	}{
 		{
-			// The route this exists for: one Portal page, no Keycloak in the box.
-			// It gets past dependency loading and stops where every capture stops
-			// without a browser profile to pin.
-			name:      "a Portal shot needs no Keycloak",
-			only:      []string{"policy-editor"},
-			portalURL: portal,
-			wantError: "the Keycloak certificate is missing",
-		},
-		{
-			// loopFrames drive the product through BaseURL; captureLoopTake never
-			// opens the admin console.
-			name:      "an approval-loop frame needs no Keycloak",
-			only:      []string{"loop-approval-pending"},
-			portalURL: portal,
-			wantError: "the Keycloak certificate is missing",
-		},
-		{
 			name:      "a Keycloak shot still requires the service",
 			only:      []string{"keycloak-client-secret"},
 			portalURL: portal,
@@ -64,10 +47,10 @@ func TestCaptureDocsRequiresKeycloakOnlyForTheShotsThatDriveIt(t *testing.T) {
 			wantError: `unknown docs shot "policy-editr"`,
 		},
 		{
-			name:      "the Portal is still required",
+			name:      "configured Keycloak still requires its certificate",
 			only:      []string{"policy-editor"},
 			keycloak:  "https://localhost:30344",
-			wantError: "this command needs Portal",
+			wantError: "the Keycloak certificate is missing",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -80,5 +63,16 @@ func TestCaptureDocsRequiresKeycloakOnlyForTheShotsThatDriveIt(t *testing.T) {
 				t.Fatalf("capture docs %v error = %v, want one containing %q", testCase.only, err, testCase.wantError)
 			}
 		})
+	}
+}
+
+func TestBrowserManagerWithoutKeycloakUsesNormalTLS(t *testing.T) {
+	app := serveWorkspace(t, nil)
+	manager, workspace, err := app.browserManager(t.Context(), needPortal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.SPKI != "" || workspace.PortalURL != "http://localhost:4000" {
+		t.Fatalf("unpublished browser: SPKI=%q workspace=%+v", manager.SPKI, workspace)
 	}
 }

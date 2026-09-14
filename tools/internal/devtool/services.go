@@ -43,8 +43,10 @@ func (a *App) up(ctx context.Context, needs ...workspaceDependency) (Workspace, 
 		return Workspace{}, nil, err
 	}
 	env := a.workspaceEnv(workspace)
-	if err := a.makeCABundle(ctx); err != nil {
-		return Workspace{}, nil, err
+	if workspace.KeycloakURL != "" {
+		if err := a.makeCABundle(ctx); err != nil {
+			return Workspace{}, nil, err
+		}
 	}
 	return workspace, env, nil
 }
@@ -317,19 +319,26 @@ func (a *App) installGitHooks(ctx context.Context) error {
 }
 
 func (a *App) seed(ctx context.Context) error {
-	workspace, env, err := a.up(ctx, everyDependency...)
+	workspace, env, err := a.up(ctx, needDatabase)
 	if err != nil {
 		return err
 	}
-	if err := a.configureKeycloak(ctx, workspace); err != nil {
+	if err := a.waitForDatabase(ctx, workspace); err != nil {
 		return err
+	}
+	if workspace.KeycloakURL != "" {
+		if err := a.configureKeycloak(ctx, workspace); err != nil {
+			return err
+		}
+		env["EMISAR_DEV_FIXED_OIDC_CLIENT_SECRET"] = oidcSecret
+		env["EMISAR_DEV_KEYCLOAK_PROVIDER_ID"] = "11111111-1111-7111-8111-111111111111"
+		env["EMISAR_DEV_FIXED_SCIM_TOKEN"] = scimToken
+	} else {
+		fmt.Fprintln(a.Out, "Keycloak is not configured; seeding demo data without SSO.")
 	}
 	if err := a.prepareDatabase(ctx, env); err != nil {
 		return err
 	}
-	env["EMISAR_DEV_FIXED_OIDC_CLIENT_SECRET"] = oidcSecret
-	env["EMISAR_DEV_KEYCLOAK_PROVIDER_ID"] = "11111111-1111-7111-8111-111111111111"
-	env["EMISAR_DEV_FIXED_SCIM_TOKEN"] = scimToken
 	return a.run(ctx, a.Portal, env, "mix", "run", "--no-start", "-e", `Logger.configure(level: :info); {:ok, _} = Application.ensure_all_started(:emisar); Code.eval_file("apps/emisar/priv/repo/seeds.exs")`)
 }
 

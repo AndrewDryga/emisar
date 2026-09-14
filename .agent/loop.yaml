@@ -35,8 +35,8 @@ between:
   prompt: |
     Audit ONLY the task named above — nothing else. Hold it against its own task.md,
     trusting evidence over prose:
-    - Every acceptance criterion is demonstrably met — point at the commit, diff, or test
-      that proves it, not at a claim in log.md.
+    - Every acceptance criterion is demonstrably met — point at the commit, diff,
+      or recorded check result that proves it.
     - The failure/denial path is tested, not just the happy path — this is a security
       product; a new ingestion surface without an abuse-path test is a fail.
     - The gate of EVERY project the diff touched ran green on the committed tree — the
@@ -48,13 +48,12 @@ between:
       may be corrected only with evidence that production has not run it; Git history
       alone is not deployment evidence. Follow portal/AGENTS.md section 8.
     - The commit says WHY and carries its `Coop-Task: <id>` trailer.
-    A FAIL means a defect in the work itself. An acceptance check this box cannot run
-    (root, docker, platform) is NOT a defect: first try to gather the evidence yourself
-    the way the manual demands of every agent; when the box genuinely cannot produce it
-    and the task's log states the limit plus compensating evidence (CI coverage, an
-    alternate harness), verify THAT evidence and report the residual gap in your receipt
-    — do not reopen. A reopen for a check the work box also could not run just forces a
-    verification-only rework with no commit to bind, which the completion window rejects.
+    The worker owns test execution. Review the code, test coverage, and its recorded
+    commands, results, and tested revision; do not rerun tests yourself. If evidence
+    is missing or a change needs another check, ask the worker for that specific check.
+    A check unavailable in this box is not proof of a code defect, but required evidence
+    remains outstanding. State the gap and the needed environment or human decision;
+    do not silently replace a required screenshot or live check with unit tests.
     Verdict: REPORT it — never apply it. Your verdict and evidence go in your OUTPUT
     (the receipt lines coop asks for), with a failed audit's concrete gap — what to fix,
     where — stated right above the verdict line. Do not move task folders, do not edit
@@ -82,6 +81,8 @@ signoff:
   # Extra checks APPENDED to coop's built-in senior review (goal, standards,
   # failure-path tests, polish, the gate). The reviewer reopens a task that fails one.
   prompt: |
+    - The worker owns test execution. Review its recorded commands, results, and tested
+      revision without rerunning tests. Request specific missing checks from the worker.
     - The gate of every project the batch touched is green (exact command in that
       project's AGENTS.md); root-level agent-setup changes keep
       `./run check agent-setup` passing.

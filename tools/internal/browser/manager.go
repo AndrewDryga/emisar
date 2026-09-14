@@ -353,8 +353,10 @@ func watchLifeline(cancel context.CancelFunc) {
 }
 
 func RunDaemon(ctx context.Context, config Config) error {
-	if decoded, err := base64.StdEncoding.DecodeString(config.SPKI); err != nil || len(decoded) != 32 {
-		return fmt.Errorf("TLS SPKI must be one base64-encoded SHA-256 hash")
+	if config.SPKI != "" {
+		if decoded, err := base64.StdEncoding.DecodeString(config.SPKI); err != nil || len(decoded) != 32 {
+			return fmt.Errorf("TLS SPKI must be one base64-encoded SHA-256 hash")
+		}
 	}
 	if config.InBox {
 		lifelineCtx, cancelLifeline := context.WithCancel(ctx)
@@ -452,7 +454,9 @@ func chromeArgs(config Config) []string {
 		"--force-prefers-reduced-motion",
 		"--no-first-run",
 		"--no-default-browser-check",
-		"--ignore-certificate-errors-spki-list=" + config.SPKI,
+	}
+	if config.SPKI != "" {
+		args = append(args, "--ignore-certificate-errors-spki-list="+config.SPKI)
 	}
 	if config.InBox {
 		args = append(args, "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu")

@@ -3,7 +3,7 @@ name: development-keycloak-certificates
 description: workspace Keycloak uses a long-lived ignored CA plus a 397-day leaf; macOS trust is fingerprint-specific, automated Chrome is SPKI-scoped, and changed material recreates sidecars
 subsystem: agent-stack
 sources: [run, tools/internal/devtool/certs.go, tools/internal/browser/manager.go]
-updated: 2026-08-04
+updated: 2026-09-15
 ---
 
 Each workspace generates an ignored CA and Keycloak leaf under
@@ -18,6 +18,8 @@ Parallel workspaces may have the same CA common name, so fingerprint selection
 distinguishes the active workspace. Automated Chromium does not depend on host
 trust: `./run` derives the current leaf SPKI, and the browser launch permits
 only that exact hash while normal TLS validation remains active.
+When the box has no Keycloak service, ordinary preview commands need no generated
+certificates: Erlang keeps system roots and Chromium starts without a TLS exception.
 
 Coop boxes receive decoys at private-key paths. `./run doctor` therefore checks
 the public CA, hostname, validity window, and leaf signature inside a box, while
@@ -33,6 +35,7 @@ running sidecar serving stale material.
 Related rule: [development TLS trust stays workspace-scoped](rules/shared-development-tls-trust-stays-workspace-scoped.md).
 
 ## Changelog
+- 2026-09-15 — separated no-Keycloak previews from workspace certificate setup.
 - 2026-08-04 — split public-chain validation from host-only private-key
   validation so secret-shadowed Coop boxes can run the complete doctor safely
 - 2026-07-22 — created after verifying macOS trust, exact-fingerprint removal, SPKI-only Chromium access, and sidecar recreation

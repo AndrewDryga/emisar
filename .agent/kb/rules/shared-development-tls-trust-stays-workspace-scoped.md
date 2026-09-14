@@ -5,6 +5,8 @@ workspace CA by exact fingerprint, and automated browser exceptions permit only
 the current leaf certificate's SPKI. Never delete trust by a shared certificate
 name or disable TLS validation globally. Certificate rotation goes through the
 development command that also recreates processes holding the old material.
+When Keycloak is absent, ordinary previews use normal system TLS trust and no
+certificate exception; they do not require an unrelated CA or leaf file.
 
 **Why.** Parallel workspaces can use identical certificate names while carrying
 different keys. Name-based deletion can remove another workspace's trust, and a
@@ -26,3 +28,7 @@ instructions, and rotations that omit dependent process recreation.
 **Enforced.** Browser resolver tests pin the SPKI-scoped launch arguments;
 `./run` tests and review cover exact-fingerprint trust mutation and sidecar
 recreation.
+
+**2026-09-15 sweep.** Made Keycloak pins optional in both persistent and isolated
+browser launchers. Nonempty malformed pins still fail, and a configured Keycloak
+still requires its certificate. No global certificate bypass was introduced.

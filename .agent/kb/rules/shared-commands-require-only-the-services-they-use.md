@@ -7,8 +7,9 @@ shadows the Keycloak TLS key, so a box that was never granted it has no Keycloak
 service at all, and a Portal gate that never speaks OIDC must still run.
 
 In `tools/internal/devtool`, a command names its dependencies at the call site —
-`a.up(ctx, needDatabase)` for the test and gate routes, `a.up(ctx,
-everyDependency...)` for `serve`, `setup`, `doctor`, and the rest. Readiness
+`a.up(ctx, needDatabase)` for the test and gate routes; ordinary `serve` and
+`seed` require the database and configure Keycloak only when supplied. Full
+`setup` and `doctor` require `everyDependency`. Readiness
 waits follow the same set, so the DB-only routes wait for Postgres and nothing
 else.
 
@@ -20,9 +21,14 @@ Absence is reported, never filled in:
 2. Export nothing built around an empty URL. `"" + "/realms/emisar"` is not an
    issuer, and the seeds would have registered it as one. A variable whose
    service is absent stays unset.
-3. Never substitute an endpoint of your own. When Coop loses a URL for a service
+3. Never invent a sidecar endpoint. When Coop loses a URL for a service
    that is genuinely running, that upstream bug must stay visible; supplying the
    real endpoint is the operator's explicit act, not the tool's inference.
+
+Owned app listeners are different from sidecars: an unpublished Coop box uses
+`http://localhost:4000` and `http://localhost:9091` for the Phoenix process it
+starts itself. Supplied serve URLs still win. Host port publication is not a
+prerequisite for an in-container browser, and an equal-port listener needs no proxy.
 
 **Good.** `./run test portal` requires Postgres, waits for it, and runs with no
 Keycloak URL in the environment. `./run doctor` in the same box refuses with
@@ -36,6 +42,10 @@ deriving a service URL from another variable so the gap stops showing.
 `tools/internal/devtool/workspace_test.go`, which cover the database-only load,
 the strict full-workspace refusal, malformed and out-of-range URLs, and the
 environment that omits absent services.
+
+**2026-09-15 sweep.** Removed host-publication and Keycloak prerequisites from
+ordinary in-box serve, seed and browser paths. Kept full setup/doctor and SSO
+capture checks strict; no database or identity-provider address is inferred.
 
 Related references: [keep Docker out of Coop boxes](shared-coop-box-gates-stay-docker-free.md),
 [human development tooling is not agent state](shared-human-dev-tooling-is-not-agent-state.md),

@@ -26,9 +26,12 @@ func (a *App) browserManager(ctx context.Context, needs ...workspaceDependency) 
 	if err != nil {
 		return nil, Workspace{}, err
 	}
-	spki, err := a.tlsSPKI()
-	if err != nil {
-		return nil, Workspace{}, err
+	spki := ""
+	if workspace.KeycloakURL != "" {
+		spki, err = a.tlsSPKI()
+		if err != nil {
+			return nil, Workspace{}, err
+		}
 	}
 	root := browserCacheRoot(a.cacheRoot(), a.Root, port)
 	if err := os.MkdirAll(filepath.Dir(root), 0o700); err != nil {
@@ -267,7 +270,7 @@ func (a *App) browserDaemon(ctx context.Context, args []string) error {
 	flags.StringVar(&config.Marker, "marker", "", "")
 	flags.StringVar(&config.SPKI, "spki", "", "")
 	flags.BoolVar(&config.InBox, "box", false, "")
-	if err := flags.Parse(args); err != nil || config.State == "" || config.Profile == "" || config.Marker == "" || config.SPKI == "" {
+	if err := flags.Parse(args); err != nil || config.State == "" || config.Profile == "" || config.Marker == "" {
 		return usage("invalid browser daemon arguments")
 	}
 	return devbrowser.RunDaemon(ctx, config)

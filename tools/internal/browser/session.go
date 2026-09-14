@@ -68,7 +68,9 @@ func (m *Manager) isolatedSessionWithOptions(ctx context.Context, baseURL string
 		chromedp.NoFirstRun, chromedp.NoDefaultBrowserCheck,
 		chromedp.Flag("headless", "new"),
 		chromedp.Flag("force-prefers-reduced-motion", true),
-		chromedp.Flag("ignore-certificate-errors-spki-list", m.SPKI),
+	}
+	if m.SPKI != "" {
+		options = append(options, chromedp.Flag("ignore-certificate-errors-spki-list", m.SPKI))
 	}
 	if m.InBox {
 		options = append(options,

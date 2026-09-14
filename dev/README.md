@@ -40,6 +40,13 @@ database client, browser, image, and shell tools. Run `./run seed` and `./run
 serve` from the interactive shell; use `./run serve --iex` when the loop needs
 an attached IEx session.
 
+Loop boxes need no host-published ports for previews: `./run serve --detach`
+starts the local Portal at `http://localhost:4000` (metrics at `:9091`) when
+Coop supplied no serve URLs. `./run seed` prepares ordinary demo data using the
+supplied database; without Keycloak it skips SSO setup and says so. Use `./run
+shot` in that same box. Full `setup`, `doctor`, and SSO-specific captures still
+require Keycloak. Missing database addresses are never guessed.
+
 Native development is also supported. Install `.tool-versions` with asdf plus
 Git, Coop, Docker, the PostgreSQL client, ShellCheck, Chrome/Chromium, and
 ImageMagick, then run `./run setup`. It checks all prerequisites before it
@@ -214,7 +221,8 @@ seeded workspace and reuse the persistent browser. Naming shots after
 `keycloak-*` SSO steps requires the Keycloak service. Documentation captures are
 committed product assets, while console captures are disposable task evidence.
 Automated Chromium allows only the active Keycloak leaf certificate's SPKI;
-certificate validation is not disabled globally.
+without Keycloak it uses normal TLS validation and needs no development
+certificate. Certificate validation is never disabled globally.
 
 The same Go implementation carries the real Paddle sandbox browser driver,
 exposed as `./run e2e billing`. Its ignored credentials remain in

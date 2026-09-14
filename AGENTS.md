@@ -122,6 +122,9 @@ Outside Coop, use the runtime's available subagents for the same responsibilitie
 In a Coop box, follow the [Docker-free gate rule](.agent/kb/rules/shared-coop-box-gates-stay-docker-free.md):
 Docker access is intentionally absent. Finish or terminate owned jobs before ending;
 the box is destroyed with the turn, so await long-running commands in that turn.
+Run checks in the foreground unless independent work justifies backgrounding them.
+When a tool returns a running-job identifier, wait on that job with its completion
+tool instead of guessing a sleep duration.
 
 Give a short initial update, then concise findings and next checks during long
 work. Ground progress claims in this session's evidence. The final answer stands

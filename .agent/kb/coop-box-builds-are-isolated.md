@@ -3,7 +3,7 @@ name: coop-box-builds-are-isolated
 description: host and box use workspace-local service URLs; box BEAM/Go builds live under the coop-cache volume; the portal output guard warms dependencies unscanned
 subsystem: agent-stack
 sources: [.agent/Dockerfile, .agent/project.yaml, dev/compose.yml, run, tools/internal/devtool, portal/config/dev.exs, portal/config/test.exs]
-updated: 2026-09-10
+updated: 2026-09-15
 ---
 
 Eight constraints make every gate run green inside a coop box; break any one and you get
@@ -63,6 +63,10 @@ confusing, hard-to-attribute failures:
    branches on that marker instead of `/.dockerenv` or a conditional port mapping.
    `COOP_SERVE_URL_*` carries the workspace's assigned URLs for configuration even
    when an existing host listener means the current box cannot publish them.
+   Loop boxes without these variables use their own Portal/metrics listeners at
+   localhost:4000/9091; no host publication or same-port proxy is needed. Sidecar
+   URLs still come from Coop. Ordinary serve/seed work without Keycloak; full
+   setup/doctor and SSO captures still require it.
 
 7. **Diagnostics stay workspace-scoped:** `./run status` probes without calling
    the mutating `up` path, `./run logs` selects the one Compose project whose
@@ -92,6 +96,8 @@ Coop-owned behavior and cache layers.
 Related rules: [keep Docker out of Coop boxes](rules/shared-coop-box-gates-stay-docker-free.md), [human development tooling is not agent state](rules/shared-human-dev-tooling-is-not-agent-state.md), and [Docker inputs enter at their narrowest layer](rules/shared-docker-inputs-enter-at-narrowest-layer.md).
 
 ## Changelog
+- 2026-09-15 — documented unpublished local listeners and separated ordinary
+  previews from optional Keycloak setup and browser trust.
 - 2026-09-10 — documented the Docker-free box boundary and separated ordinary
   project gates from the Docker-based tests that run outside it.
 - 2026-09-10 — made the Portal test-environment compile the one build preparation step;

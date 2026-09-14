@@ -203,7 +203,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		if err := exact(rest, 0, "usage: ./run urls"); err != nil {
 			return err
 		}
-		workspace, err := a.loadWorkspace(ctx, everyDependency...)
+		workspace, err := a.loadWorkspace(ctx)
 		if err != nil {
 			return err
 		}

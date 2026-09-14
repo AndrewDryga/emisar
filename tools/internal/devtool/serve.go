@@ -207,13 +207,13 @@ func (a *App) serveDetached(ctx context.Context) error {
 		return nil
 	}
 	// Only a NEW server needs the rest: the child is this same command's
-	// foreground serve, which loads every dependency and then configures
-	// Keycloak and the database before Phoenix starts. Requiring them here, and
+	// foreground serve, which prepares the database before Phoenix starts.
+	// Keycloak is optional for ordinary previews. Requiring the database here, and
 	// only here, refuses an absent service by name — while `already serving` and
 	// `--status` keep answering in a workspace that holds the Portal alone. A
 	// child that exits on a missing service opens no port, so without this the
 	// parent spent three minutes waiting and then blamed the port.
-	if _, err := a.loadWorkspace(ctx, everyDependency...); err != nil {
+	if _, err := a.loadWorkspace(ctx, needPortal, needMetrics, needDatabase); err != nil {
 		return err
 	}
 	logPath, err := a.serveLogPath()
@@ -357,7 +357,7 @@ func serveInvocation(interactive bool) (string, []string) {
 }
 
 func (a *App) serve(ctx context.Context, interactive bool) error {
-	workspace, env, err := a.up(ctx, everyDependency...)
+	workspace, env, err := a.up(ctx, needPortal, needMetrics, needDatabase)
 	if err != nil {
 		return err
 	}
@@ -390,11 +390,15 @@ func (a *App) serve(ctx context.Context, interactive bool) error {
 	if portListening(metricsPort) {
 		return fmt.Errorf("cannot serve metrics: port %d is already held by an untracked process", metricsPort)
 	}
-	if err := a.waitForDependencies(ctx, workspace); err != nil {
+	if err := a.waitForDatabase(ctx, workspace); err != nil {
 		return err
 	}
-	if err := a.configureKeycloak(ctx, workspace); err != nil {
-		return err
+	if workspace.KeycloakURL != "" {
+		if err := a.configureKeycloak(ctx, workspace); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintln(a.Out, "Keycloak is not configured; the preview is available without SSO.")
 	}
 	if err := a.prepareDatabase(ctx, env); err != nil {
 		return err
@@ -408,6 +412,9 @@ func (a *App) serve(ctx context.Context, interactive bool) error {
 	}()
 	if a.inBox() {
 		for _, pair := range [][2]int{{portalPublicPort, listenPort}, {metricsPublicPort, metricsPort}} {
+			if pair[0] == pair[1] {
+				continue // The unpublished box already uses the local listener.
+			}
 			stop, proxyErr := proxy(ctx,
 				net.JoinHostPort("127.0.0.1", strconv.Itoa(pair[0])),
 				net.JoinHostPort("127.0.0.1", strconv.Itoa(pair[1])),

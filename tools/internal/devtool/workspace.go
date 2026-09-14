@@ -78,6 +78,14 @@ func (a *App) discoverWorkspace(ctx context.Context) (Workspace, error) {
 		for _, dependency := range everyDependency {
 			*workspace.dependencyURL(dependency) = os.Getenv(dependency.boxVariable())
 		}
+		// Loop boxes do not publish host ports. These listeners belong to our
+		// own Phoenix process, unlike sidecars whose URLs must come from Coop.
+		if workspace.PortalURL == "" {
+			workspace.PortalURL = "http://localhost:4000"
+		}
+		if workspace.MetricsURL == "" {
+			workspace.MetricsURL = "http://localhost:9091"
+		}
 		return workspace, nil
 	}
 	data, err := a.output(ctx, a.Root, nil, "coop", "fork", "ls", "--json")
@@ -145,7 +153,7 @@ func (a *App) missingDependency(need workspaceDependency) error {
 // an empty URL: "/realms/emisar" is not an issuer, and the seeds would have
 // taken it for one.
 func (a *App) workspaceEnv(workspace Workspace) map[string]string {
-	env := map[string]string{"EMISAR_DEV_CA_BUNDLE": a.caBundle()}
+	env := map[string]string{}
 	if workspace.DBPort != 0 {
 		databaseHost := "localhost"
 		databasePort := strconv.Itoa(workspace.DBPort)
@@ -165,6 +173,7 @@ func (a *App) workspaceEnv(workspace Workspace) map[string]string {
 		env["EMISAR_DEV_URL"] = workspace.PortalURL
 	}
 	if workspace.KeycloakURL != "" {
+		env["EMISAR_DEV_CA_BUNDLE"] = a.caBundle()
 		env["EMISAR_DEV_KEYCLOAK_ISSUER"] = workspace.KeycloakURL + "/realms/emisar"
 	}
 	return env
