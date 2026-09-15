@@ -96,7 +96,9 @@ jobs:
           push-to-registry: true
 
       - name: Attest SBOM
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        # actions/attest-sbom v4 is a deprecated wrapper over actions/attest,
+        # which takes the same sbom-path input.
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ghcr.io/andrewdryga/emisar
           subject-digest: ${{ steps.push.outputs.digest }}
