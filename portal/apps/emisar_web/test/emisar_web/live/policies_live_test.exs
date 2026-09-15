@@ -1921,7 +1921,17 @@ defmodule EmisarWeb.PoliciesLiveTest do
     assert Process.alive?(lv.pid)
   end
 
-  defp settle_previews(lv) do
+  # Previews run one at a time: a flushed editor queues behind whatever is
+  # already in flight — including the mount preview `load_all/1` starts — and
+  # each completion chains the next. `render_async/2` only awaits the processes
+  # running when it is called, so a single call returns while the chained
+  # preview is still running whenever the database is slow enough. Loop until
+  # nothing is left to run.
+  defp settle_previews(lv, rounds \\ 10)
+
+  defp settle_previews(lv, 0), do: render(lv)
+
+  defp settle_previews(lv, rounds) do
     state = :sys.get_state(lv.pid).socket.assigns
 
     Enum.each([state.account | state.rulesets], fn
@@ -1935,7 +1945,17 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     render(lv)
     render_async(lv, 2_000)
-    render(lv)
+
+    if previews_settled?(lv),
+      do: render(lv),
+      else: settle_previews(lv, rounds - 1)
+  end
+
+  defp previews_settled?(lv) do
+    state = :sys.get_state(lv.pid).socket.assigns
+
+    is_nil(state.preview_active) and state.preview_queue == [] and
+      Enum.all?([state.account | state.rulesets], &is_nil(&1.preview_timer))
   end
 
   defp deny_all do
