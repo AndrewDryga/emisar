@@ -27,7 +27,7 @@
 #   docker buildx imagetools inspect golang:1.26-alpine --format '{{.Manifest.Digest}}'
 # then paste the new digest below (keep the tag in sync).
 
-FROM golang:1.26-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS builder
+FROM golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS builder
 
 WORKDIR /src
 COPY mcp/go.mod ./
@@ -44,7 +44,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # --- runtime -------------------------------------------------------
 
 # Digest-pinned (refresh via the buildx imagetools command noted above).
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 RUN apk add --no-cache ca-certificates \
     && adduser -S -D -H emisar \

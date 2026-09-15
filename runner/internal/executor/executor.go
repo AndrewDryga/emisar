@@ -118,10 +118,8 @@ func (e *Executor) Execute(ctx context.Context, p Plan) (*Result, error) {
 	cmd.Dir = p.CWD
 	cmd.Env = e.buildEnv(p.Env)
 	applyProcAttr(cmd)
-	if p.User != "" {
-		if err := applyCredential(cmd, p.User); err != nil {
-			return nil, fmt.Errorf("executor: drop privileges to %s: %w", p.User, err)
-		}
+	if err := applyCredential(cmd, p.User); err != nil {
+		return nil, fmt.Errorf("executor: drop privileges to %s: %w", p.User, err)
 	}
 
 	// Graceful cancellation: SIGTERM the whole process group first, then

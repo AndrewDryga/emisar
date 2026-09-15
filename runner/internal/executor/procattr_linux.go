@@ -93,6 +93,9 @@ func killGroup(pid int, sig syscall.Signal) error {
 // user's primary GID. Supplementary groups are NOT loaded (keeping
 // the dropped child to the minimum set declared on the user record).
 func applyCredential(cmd *exec.Cmd, username string) error {
+	if username == "" {
+		return nil
+	}
 	u, err := lookupUser(username)
 	if err != nil {
 		return err

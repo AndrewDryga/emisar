@@ -38,7 +38,7 @@ func (a *App) gatePhase(label string, action func() error) error {
 }
 
 // Keep this in step with the version any workflow installs directly.
-const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.1"
+const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.2.1"
 
 // Keep this in step with the version any workflow installs directly.
 const actionlintVersion = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
