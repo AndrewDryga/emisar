@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
@@ -18,10 +19,12 @@ import (
 // moves here when its copies are identical, or when someone has re-captured
 // every affected flow and can say so.
 
-// Screenshot writes a full-page PNG named name into outDir.
+// Screenshot writes a full-page PNG named name into outDir. The tab is brought
+// to the front first: Chrome composites no frames for a tab it considers
+// hidden, and a capture of such a tab never returns (see browser.FullScreenshot).
 func Screenshot(ctx context.Context, outDir, name string) error {
 	var buffer []byte
-	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&buffer, 90)); err != nil {
+	if err := chromedp.Run(ctx, page.BringToFront(), chromedp.FullScreenshot(&buffer, 90)); err != nil {
 		return err
 	}
 	path := filepath.Join(outDir, name+".png")

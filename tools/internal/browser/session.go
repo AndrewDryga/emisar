@@ -15,7 +15,6 @@ import (
 	"os/exec"
 
 	"github.com/chromedp/cdproto/emulation"
-	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
@@ -133,51 +132,17 @@ func (s *Session) Navigate(target string) error {
 	navigationContext, cancel := context.WithTimeout(s.Context, 15*time.Second)
 	defer cancel()
 	if strings.Contains(target, "[") {
-		if err := chromedp.Run(navigationContext, navigateAndSettle(s.BaseURL)); err != nil {
+		if err := chromedp.Run(navigationContext, chromedp.Navigate(s.BaseURL)); err != nil {
 			return err
 		}
 		encoded, _ := json.Marshal(target)
 		if err := chromedp.Run(navigationContext, chromedp.Evaluate(`location.href=`+string(encoded), nil)); err != nil {
 			return err
 		}
-	} else if err := chromedp.Run(navigationContext, navigateAndSettle(target)); err != nil {
+	} else if err := chromedp.Run(navigationContext, chromedp.Navigate(target)); err != nil {
 		return err
 	}
 	return s.Ready(10*time.Second, "")
-}
-
-// navigateAndSettle starts a navigation and waits for the document it commits
-// to finish loading. chromedp.Navigate waits on the lifecycle and load events
-// of the loader it started, and on a fast same-origin navigation inside a tab
-// that already loaded a page those events can arrive before the listener
-// knows the loader; the wait then runs out its deadline with the page long
-// since loaded. Polling the frame's committed loader and document.readyState
-// asks the browser for the state instead of trusting event delivery, and
-// still follows redirects: a redirected navigation keeps its loader.
-func navigateAndSettle(target string) chromedp.ActionFunc {
-	return func(ctx context.Context) error {
-		_, loaderID, errorText, _, err := page.Navigate(target).Do(ctx)
-		if err != nil {
-			return err
-		}
-		if errorText != "" {
-			return fmt.Errorf("page load error %s", errorText)
-		}
-		for {
-			tree, err := page.GetFrameTree().Do(ctx)
-			if err == nil && tree != nil && tree.Frame != nil && tree.Frame.LoaderID == loaderID {
-				var state string
-				if err := chromedp.Evaluate(`document.readyState`, &state).Do(ctx); err == nil && state == "complete" {
-					return nil
-				}
-			}
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("navigation did not settle: %w", ctx.Err())
-			case <-time.After(50 * time.Millisecond):
-			}
-		}
-	}
 }
 
 const readyScript = `(() => {

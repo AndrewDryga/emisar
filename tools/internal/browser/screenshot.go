@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
@@ -70,11 +71,17 @@ func writeImage(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+// FullScreenshot captures the whole document. The tab is brought to the front
+// first: Chrome composites no frames for a tab it considers hidden, and a
+// capture of such a tab never returns. The isolated browser runs without
+// chromedp's occluded-window flags, so a second tab in the same window — the
+// shape of a batch of shots after a sign-in — could sit behind the first one
+// and hang its capture until the budget ran out.
 func (s *Session) FullScreenshot(path string) error {
 	ctx, cancel := context.WithTimeout(s.Context, 20*time.Second)
 	defer cancel()
 	var image []byte
-	if err := chromedp.Run(ctx, chromedp.FullScreenshot(&image, 100)); err != nil {
+	if err := chromedp.Run(ctx, page.BringToFront(), chromedp.FullScreenshot(&image, 100)); err != nil {
 		return err
 	}
 	return writeImage(path, image)
@@ -84,7 +91,7 @@ func (s *Session) ViewportScreenshot(path string) error {
 	ctx, cancel := context.WithTimeout(s.Context, 20*time.Second)
 	defer cancel()
 	var image []byte
-	if err := chromedp.Run(ctx, chromedp.CaptureScreenshot(&image)); err != nil {
+	if err := chromedp.Run(ctx, page.BringToFront(), chromedp.CaptureScreenshot(&image)); err != nil {
 		return err
 	}
 	return writeImage(path, image)
@@ -94,7 +101,7 @@ func (s *Session) ElementScreenshot(selector, path string, scale float64) error 
 	ctx, cancel := context.WithTimeout(s.Context, 20*time.Second)
 	defer cancel()
 	var image []byte
-	if err := chromedp.Run(ctx, chromedp.ScreenshotScale(selector, scale, &image, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Run(ctx, page.BringToFront(), chromedp.ScreenshotScale(selector, scale, &image, chromedp.ByQuery)); err != nil {
 		return err
 	}
 	return writeImage(path, image)
