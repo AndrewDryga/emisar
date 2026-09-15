@@ -2,7 +2,11 @@ defmodule Emisar.MixProject do
   use Mix.Project
 
   # Product version — single source: portal/VERSION (bumped by /ops-release).
-  @version "../../VERSION" |> Path.expand(__DIR__) |> File.read!() |> String.trim()
+  # Dependabot copies only the manifests, so a missing VERSION falls back.
+  @version (case File.read(Path.expand("../../VERSION", __DIR__)) do
+              {:ok, version} -> String.trim(version)
+              {:error, :enoent} -> "0.0.0"
+            end)
 
   def project do
     [
@@ -92,7 +96,7 @@ defmodule Emisar.MixProject do
       {:jason, "~> 1.4"},
       # Draft 2020-12 compilation at the runner-manifest trust boundary.
       # Wrapped by Emisar.OutputSchema; remote refs stay disabled.
-      {:jsonschex, "~> 0.8"},
+      {:jsonschex, "~> 0.9"},
 
       # Already an umbrella-root dep (that's where `mix credo` runs); declared
       # here too so `Emisar.WebBoundaryChecksTest` can parse a probe source and

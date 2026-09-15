@@ -4,7 +4,12 @@ defmodule Emisar.Umbrella.MixProject do
   # Single source of the product version: portal/VERSION. The /ops-release skill
   # bumps that one file; the umbrella, both apps, the OTP release, and the
   # marketing footer (Application.spec(:emisar_web, :vsn)) all read it.
-  @version "VERSION" |> Path.expand(__DIR__) |> File.read!() |> String.trim()
+  # Dependabot resolves the umbrella from a copy that holds only the manifests,
+  # so a missing VERSION falls back instead of failing its hex lane.
+  @version (case File.read(Path.expand("VERSION", __DIR__)) do
+              {:ok, version} -> String.trim(version)
+              {:error, :enoent} -> "0.0.0"
+            end)
 
   def project do
     [
@@ -36,7 +41,7 @@ defmodule Emisar.Umbrella.MixProject do
       # Security gate (run in CI). Sobelow = static analysis for the
       # Phoenix surface; mix_audit = CVE/advisory scan of the lockfile.
       # dev/test only + runtime: false — never compiled into the release.
-      {:sobelow, "~> 0.14.1", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.15.0", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]

@@ -2,7 +2,11 @@ defmodule EmisarWeb.MixProject do
   use Mix.Project
 
   # Product version — single source: portal/VERSION (bumped by /ops-release).
-  @version "../../VERSION" |> Path.expand(__DIR__) |> File.read!() |> String.trim()
+  # Dependabot copies only the manifests, so a missing VERSION falls back.
+  @version (case File.read(Path.expand("../../VERSION", __DIR__)) do
+              {:ok, version} -> String.trim(version)
+              {:error, :enoent} -> "0.0.0"
+            end)
 
   def project do
     [
@@ -47,7 +51,7 @@ defmodule EmisarWeb.MixProject do
       # Phoenix.LiveViewTest's HTML parser. Floki was the previous one
       # and is no longer used (LV 1.0+ uses LazyHTML exclusively).
       {:lazy_html, ">= 0.1.0", only: :test},
-      {:phoenix_live_dashboard, "~> 0.8.7"},
+      {:phoenix_live_dashboard, "~> 0.9.1"},
       {:ecto_psql_extras, "~> 0.8.8"},
       {:esbuild, "~> 0.10.0", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.5.1", runtime: Mix.env() == :dev},

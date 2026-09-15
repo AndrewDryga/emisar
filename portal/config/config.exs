@@ -95,7 +95,7 @@ config :emisar_web, EmisarWeb.Endpoint,
 
 # Configure esbuild (the version is required)
 config :esbuild,
-  version: "0.17.11",
+  version: "0.28.2",
   emisar_web: [
     args:
       ~w(js/app.js js/marketing.js --bundle --target=es2017 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
@@ -105,7 +105,7 @@ config :esbuild,
 
 # Configure tailwind (the version is required)
 config :tailwind,
-  version: "3.4.3",
+  version: "3.4.19",
   emisar_web: [
     args: ~w(
       --config=tailwind.config.js
