@@ -3,7 +3,7 @@ services:
     network_mode: service:traefik
 
   traefik:
-    image: traefik:${PACKTEST_VERSION:-v3.7.10}${PACKTEST_DIGEST-}
+    image: traefik:${PACKTEST_VERSION:-v3.7.13}${PACKTEST_DIGEST-}
     command:
       - --api.insecure=true
       - --global.checknewversion=false

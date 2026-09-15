@@ -1,4 +1,4 @@
-ARG PACKTEST_VERSION=4.3.3-management
+ARG PACKTEST_VERSION=4.3.4-management
 ARG PACKTEST_DIGEST
 FROM rabbitmq:${PACKTEST_VERSION}${PACKTEST_DIGEST}
 # A minimal AMQP client so a behavior case can HOLD a live connection open —

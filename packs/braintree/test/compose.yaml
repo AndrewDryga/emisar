@@ -1,10 +1,10 @@
 services:
   braintree-api:
-    image: emisar-braintree-fixture:${PACKTEST_VERSION:-3.14.0-alpine3.22}
+    image: emisar-braintree-fixture:${PACKTEST_VERSION:-3.14.7-alpine3.24}
     build:
       context: ${EMISAR_ROOT}/packs/braintree/test
       args:
-        PACKTEST_IMAGE: python:${PACKTEST_VERSION:-3.14.0-alpine3.22}${PACKTEST_DIGEST-}
+        PACKTEST_IMAGE: python:${PACKTEST_VERSION:-3.14.7-alpine3.24}${PACKTEST_DIGEST-}
     entrypoint: [python3, /fixture/server.py]
     volumes:
       - ${EMISAR_ROOT}/packs/braintree/test/fixtures/server.py:/fixture/server.py:ro

@@ -1,7 +1,7 @@
 services: [vault]
 versions:
-  - version: "2.0.3"
-    digest: "@sha256:a296a888b118615dc01d5f1a6846e6d4a7277946caaed5b447008fff5fe06b54"
+  - version: "2.1.0"
+    digest: "@sha256:5520cc26271c024e6ffa45cdf95255bd26b70d71ba4b7e0bc18925bef4128adb"
     default: true
 secret_env: [VAULT_TOKEN]
 env:

@@ -1,7 +1,7 @@
 services: [haproxy]
 versions:
-  - version: "3.4.2"
-    digest: "@sha256:728fec0da177a4010e53a0a1327d2aaef70dfd2151798507c8a0d503d01e4d7f"
+  - version: "3.4.4"
+    digest: "@sha256:0e81cf4a7fac4f689289ae2afd29e1153e9e6d69ae3fb0c1f0345f998643c258"
     default: true
 env:
   HAPROXY_SOCK: /run/haproxy/admin.sock

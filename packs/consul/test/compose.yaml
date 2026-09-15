@@ -5,12 +5,12 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-2.0.2}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-2.1.0}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-consul-tools:latest
 
   consul:
-    image: hashicorp/consul:${PACKTEST_VERSION:-2.0.2}${PACKTEST_DIGEST-}
+    image: hashicorp/consul:${PACKTEST_VERSION:-2.1.0}${PACKTEST_DIGEST-}
     command: agent -dev -client=0.0.0.0 -config-file=/consul/config/packtest-tls.hcl
     volumes:
       - ${EMISAR_ROOT}/packs/consul/test/fixtures/consul-tls.hcl:/consul/config/packtest-tls.hcl:ro

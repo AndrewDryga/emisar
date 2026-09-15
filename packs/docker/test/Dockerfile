@@ -7,7 +7,7 @@
 # the CLI — including the jq built --with-oniguruma=no at /opt/jq-without-regex
 # that the compatibility case puts first on PATH.
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
-ARG PACKTEST_VERSION=29.7.1-cli
+ARG PACKTEST_VERSION=29.8.0-cli
 ARG PACKTEST_DIGEST
 FROM docker:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS client
 

@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-1.15.8}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-1.16.1}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-terraform-readonly-tools:latest
     # Terraform's local backend reads `terraform.tfstate` by that exact name and
@@ -22,7 +22,7 @@ services:
       - ${EMISAR_ROOT}/packs/terraform-readonly/test/fixtures/candidates/flood.fixture:/fixture/candidates/flood.tfstate:ro
 
   terraform:
-    image: hashicorp/terraform:${PACKTEST_VERSION:-1.15.8}${PACKTEST_DIGEST-}
+    image: hashicorp/terraform:${PACKTEST_VERSION:-1.16.1}${PACKTEST_DIGEST-}
     entrypoint: ["/bin/sh", "-c"]
     command: ["terraform version >/dev/null && sleep 3600"]
     healthcheck:

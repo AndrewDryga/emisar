@@ -2,7 +2,7 @@
 # pinned image as the SUT so the state-format fixtures are tested by the exact
 # Terraform version declared in the behavior matrix.
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
-ARG PACKTEST_VERSION=1.15.8
+ARG PACKTEST_VERSION=1.16.1
 ARG PACKTEST_DIGEST
 FROM hashicorp/terraform:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS client
 

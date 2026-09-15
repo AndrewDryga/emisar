@@ -1,6 +1,6 @@
 services:
   artifactory:
-    image: releases-docker.jfrog.io/jfrog/artifactory-oss:${PACKTEST_VERSION:-7.146.34}${PACKTEST_DIGEST-}
+    image: releases-docker.jfrog.io/jfrog/artifactory-oss:${PACKTEST_VERSION:-7.161.26}${PACKTEST_DIGEST-}
     depends_on:
       artifactory-db:
         condition: service_healthy
@@ -52,7 +52,7 @@ services:
   # The metadata database is a helper, not the product under test, so its
   # version is pinned independently of PACKTEST_VERSION.
   artifactory-db:
-    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    image: postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
     environment:
       POSTGRES_USER: artifactory
       POSTGRES_PASSWORD: packtest-artifactory-db-3c7a

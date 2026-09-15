@@ -1,7 +1,7 @@
 services: [typesense]
 versions:
-  - version: "29.0"
-    digest: "@sha256:316b7e71c21f7e5e5caa8daa150e1b3f2be8c876081ee1f77bc2d92cd7f137d0"
+  - version: "30.2"
+    digest: "@sha256:610f2d34b1f93d00762869da2c67736775e5798d19a2c8b91b014b8a0cc1e110"
     default: true
 secret_env: [TYPESENSE_API_KEY]
 env:

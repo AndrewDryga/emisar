@@ -4,12 +4,12 @@ services:
       context: ${EMISAR_ROOT}/packs/kafka/test
       dockerfile: Dockerfile
       args:
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-4.1.1}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-4.3.1}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-kafka-tools:latest
 
   kafka:
-    image: apache/kafka:${PACKTEST_VERSION:-4.1.1}${PACKTEST_DIGEST-}
+    image: apache/kafka:${PACKTEST_VERSION:-4.3.1}${PACKTEST_DIGEST-}
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller

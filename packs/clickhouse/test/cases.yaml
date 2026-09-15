@@ -1,10 +1,10 @@
 services: [clickhouse]
 versions:
-  - version: 26.6.2.81-alpine
-    digest: "@sha256:9acc2bb14b5a55bdaf08485fba63200092f9c04cfa50f70a92f1fccc51482d7f"
+  - version: 26.8.2.7-alpine
+    digest: "@sha256:8f1dd1ec7213410276c8e9aee11b25b458fe9d53eee13ad8cfdf7c79e36aad17"
     default: true
-  - version: 25.8.28.1-alpine
-    digest: "@sha256:f40cd6034fb8c54dce6a85338750fbad79f387e2705e1991a85f2e7086b5b9ea"
+  - version: 25.8.33.6-alpine
+    digest: "@sha256:87e0a5b72f5465b18eacca7c76850e7ff551c9795c50e451f5646299e5e24146"
 secret_env: [CH_PASSWORD]
 env:
   CH_HOST: clickhouse

@@ -1,7 +1,7 @@
 services: [elasticsearch]
 versions:
-  - version: "9.4.4"
-    digest: "@sha256:a3545404e436e348721786bed638042a81f2181ebe2e2636501bb43940677747"
+  - version: "9.5.3"
+    digest: "@sha256:f456578fc2a620a8a4f4c21d070fff1f6070345adb2be5e5626b65be72aea350"
     default: true
 secret_env: [ELASTIC_PASSWORD]
 env:

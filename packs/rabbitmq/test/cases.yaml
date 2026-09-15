@@ -1,7 +1,7 @@
 services: [rabbitmq]
 versions:
-  - version: 4.3.3-management
-    digest: "@sha256:d8b3d416236ae5ba3f6a9f4e4651fdacda01780181a7d83a71b640248d8f0a69"
+  - version: 4.3.4-management
+    digest: "@sha256:eb5295d083325da5929a5ade766684d4019ffd2bce8bc7e43d6f9a05cafc8646"
     default: true
 secret_env: [RABBITMQ_ERLANG_COOKIE]
 env:

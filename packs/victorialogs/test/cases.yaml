@@ -1,7 +1,7 @@
 services: [victorialogs]
 versions:
-  - version: v1.35.0
-    digest: "@sha256:70f4e739c3594a603487491355d9480f9483e9124c841bc61352951c323a7842"
+  - version: v1.52.0
+    digest: "@sha256:47b820890d64c4575a2a0a46415dcd8a4fd59a0f1fcd6a377693d7aea639442e"
     default: true
   # v1.8.0 is the oldest safe LogsQL boundary: earlier releases did not
   # propagate HTTP extra filters into every subquery.

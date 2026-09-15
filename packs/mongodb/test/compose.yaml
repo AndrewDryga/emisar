@@ -5,12 +5,12 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-8.2.5}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-8.2.12}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-mongodb-tools:latest
 
   mongodb:
-    image: mongo:${PACKTEST_VERSION:-8.2.5}${PACKTEST_DIGEST-}
+    image: mongo:${PACKTEST_VERSION:-8.2.12}${PACKTEST_DIGEST-}
     entrypoint: ["/bin/bash", "/fixture/bootstrap.sh"]
     environment:
       PACKTEST_ROOT_PASSWORD: packtest-canary-mongodb-c936

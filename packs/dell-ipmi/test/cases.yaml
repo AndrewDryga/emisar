@@ -1,7 +1,7 @@
 services: [approved-bmc]
 versions:
-  - version: "3.14.0-slim"
-    digest: "@sha256:0aecac02dc3d4c5dbb024b753af084cafe41f5416e02193f1ce345d671ec966e"
+  - version: "3.14.7-slim"
+    digest: "@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6"
     default: true
 secret_env: [IPMI_PASSWORD]
 env:

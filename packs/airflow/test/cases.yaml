@@ -1,11 +1,11 @@
 services: [airflow]
 versions:
-  - version: "3.3.0"
-    digest: "@sha256:fb2c895e33395e4224c3de041e1751b095ee2c214cdf2d330bbaf62fcce0f54b"
+  - version: "3.3.1"
+    digest: "@sha256:0c4bcc0370e526de1b7892a3bf4343d260c6c82359c66f77155b53cd773d6339"
     default: true
     env: {AIRFLOW_API_VERSION: v2}
-  - version: "2.10.4-python3.11"
-    digest: "@sha256:5afa55b7c6087112770605f9b9851afd665f5c7f3719b390fcb4bd28a47a7f9a"
+  - version: "2.11.2-python3.11"
+    digest: "@sha256:aac8468234dfa802c5ac4d6318bbf3b620793b55569ac230f584dc3c1f0ca49d"
     env: {AIRFLOW_API_VERSION: v1}
 # Each fresh stack takes over two minutes in CI. Five shards keep the two-worker
 # waves inside the execution budget while leaving time for cleanup and reports.
@@ -34,7 +34,7 @@ defaults:
 cases:
   - action: airflow.backfill_cancel
     name: airflow.backfill_cancel-v1-unsupported
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     args: {backfill_id: 1}
     expect:
       status: failure
@@ -43,7 +43,7 @@ cases:
 
   - action: airflow.backfill_pause
     name: airflow.backfill_pause-v1-unsupported
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     args: {backfill_id: 1}
     expect:
       status: failure
@@ -52,7 +52,7 @@ cases:
 
   - action: airflow.backfill_create
     name: airflow.backfill_create-v1-unsupported
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     args: {dag_id: packtest_scheduled, from_date: "2026-01-01T00:00:00Z", to_date: "2026-01-03T00:00:00Z"}
     expect:
       status: failure
@@ -61,7 +61,7 @@ cases:
 
   - action: airflow.backfills
     name: airflow.backfills-v1-unsupported
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     args: {dag_id: packtest_scheduled}
     expect:
       status: failure
@@ -70,7 +70,7 @@ cases:
 
   - action: airflow.asset_events
     name: airflow.asset_events-v1-unsupported
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     expect:
       status: failure
       exit: [1]
@@ -78,7 +78,7 @@ cases:
 
   - action: airflow.assets
     name: airflow.assets-v1-unsupported
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     expect:
       status: failure
       exit: [1]
@@ -86,7 +86,7 @@ cases:
 
   - action: airflow.jobs
     name: airflow.jobs-v1-unsupported
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     expect:
       status: failure
       exit: [1]
@@ -104,7 +104,7 @@ cases:
       stdout_contains: ['"version"', '"git_version"']
 
   - action: airflow.jobs
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     expect:
       stdout_contains: [SchedulerJob, TriggererJob]
 
@@ -142,7 +142,7 @@ cases:
   # is listening.
   - action: airflow.dags
     name: airflow.dags-accepts-a-literal-ipv6-endpoint
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     env:
       AIRFLOW_URL: "http://[::1]:8080"
     expect:
@@ -227,7 +227,7 @@ cases:
   # its extra document; the plan-wide stdout_not_contains is what proves
   # neither leaves the host.
   - action: airflow.connections
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     expect:
       stdout_contains: [packtest_conn, warehouse.packtest.invalid, '"has_auth":true', '"has_extra":true']
 
@@ -236,19 +236,19 @@ cases:
       stdout_contains: [packtest_variable, '"value_bytes":37']
 
   - action: airflow.assets
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     expect:
       json:
         /total_entries: 0
 
   - action: airflow.asset_events
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     expect:
       json:
         /total_entries: 0
 
   - action: airflow.backfills
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     args: {dag_id: packtest_scheduled}
     expect:
       json:
@@ -325,7 +325,7 @@ cases:
           json: {/state: failed}
 
   - action: airflow.dag_run_clear
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed}
     expect:
       json:
@@ -427,7 +427,7 @@ cases:
   # Airflow refuses a backfill on a DAG without a periodic schedule, so the
   # backfill cases use packtest_scheduled.
   - action: airflow.backfill_create
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     args:
       dag_id: packtest_scheduled
       from_date: "2026-01-01T00:00:00Z"
@@ -444,7 +444,7 @@ cases:
           stdout_contains: ['"id":1', packtest_scheduled]
 
   - action: airflow.backfill_pause
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     args: {backfill_id: 1}
     arrange:
       - name: create the backfill this case pauses
@@ -469,7 +469,7 @@ cases:
           stdout_contains: ['"is_paused":true']
 
   - action: airflow.backfill_cancel
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     args: {backfill_id: 1}
     arrange:
       - name: create the backfill this case cancels
@@ -498,7 +498,7 @@ cases:
   # A wrong password must fail the action, not return an empty success.
   - action: airflow.dags
     name: airflow.dags-invalid-credentials
-    versions: ["3.3.0"]
+    versions: ["3.3.1"]
     env:
       AIRFLOW_PASSWORD: packtest-canary-airflow-wrong-1c4a
     expect:
@@ -508,7 +508,7 @@ cases:
 
   - action: airflow.dags
     name: airflow.dags-invalid-basic-credentials
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     env:
       AIRFLOW_PASSWORD: packtest-canary-airflow-wrong-1c4a
     expect:
@@ -534,7 +534,7 @@ cases:
 
   - action: airflow.dags
     name: airflow.dags-v1-unsupported-filter
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     args: {last_dag_run_state: failed}
     expect:
       status: failure
@@ -543,7 +543,7 @@ cases:
 
   - action: airflow.connections
     name: airflow.connections-v1-unknown-auth-flags
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     expect:
       stdout_contains: [packtest_conn, warehouse.packtest.invalid, '"has_auth":null', '"has_extra":null']
 
@@ -556,7 +556,7 @@ cases:
 
   - action: airflow.dag_run_clear
     name: airflow.dag_run_clear-v1
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed}
     expect:
       stdout_contains: [probe]
@@ -607,7 +607,7 @@ cases:
 
   - action: airflow.task_instance_set_state
     name: airflow.task_instance_set_state-v1-mapped-downstream-unsupported
-    versions: ["2.10.4-python3.11"]
+    versions: ["2.11.2-python3.11"]
     args: {dag_id: packtest_pipeline, dag_run_id: packtest_seed_success, task_id: mapped, map_index: 1, state: failed, include_downstream: "true"}
     expect:
       status: failure

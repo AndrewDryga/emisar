@@ -5,12 +5,12 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-2.0.3}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-2.1.0}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-vault-tools:latest
 
   vault:
-    image: hashicorp/vault:${PACKTEST_VERSION:-2.0.3}${PACKTEST_DIGEST-}
+    image: hashicorp/vault:${PACKTEST_VERSION:-2.1.0}${PACKTEST_DIGEST-}
     cap_add: [IPC_LOCK]
     environment:
       VAULT_ADDR: "http://127.0.0.1:8200"

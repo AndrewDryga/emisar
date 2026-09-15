@@ -9,7 +9,7 @@ services:
       - sentinel-state:/packtest-sentinel:ro
 
   redis:
-    image: redis:${PACKTEST_VERSION:-8.8.0}${PACKTEST_DIGEST-}
+    image: redis:${PACKTEST_VERSION:-8.10.1}${PACKTEST_DIGEST-}
     command:
       - /bin/sh
       - -ec

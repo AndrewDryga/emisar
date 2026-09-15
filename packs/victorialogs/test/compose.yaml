@@ -4,4 +4,4 @@ services:
       - ${EMISAR_ROOT}/packs/victorialogs/test/fixtures/curl-spy.sh:/usr/local/bin/curl:ro
 
   victorialogs:
-    image: victoriametrics/victoria-logs:${PACKTEST_VERSION:-v1.35.0}${PACKTEST_DIGEST-}
+    image: victoriametrics/victoria-logs:${PACKTEST_VERSION:-v1.52.0}${PACKTEST_DIGEST-}

@@ -8,7 +8,7 @@ services:
     image: emisar-packtest-network-tls-tools:latest
 
   tcp:
-    image: nginx:${PACKTEST_VERSION:-1.31.3}${PACKTEST_DIGEST-}
+    image: nginx:${PACKTEST_VERSION:-1.31.5}${PACKTEST_DIGEST-}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/ >/dev/null"]
       interval: 2s

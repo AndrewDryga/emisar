@@ -1,5 +1,5 @@
 x-spark: &spark
-  image: apache/spark:${PACKTEST_VERSION:-4.0.4}${PACKTEST_DIGEST-}
+  image: apache/spark:${PACKTEST_VERSION:-4.2.0}${PACKTEST_DIGEST-}
   volumes:
     - ${EMISAR_ROOT}/packs/spark/test/fixtures/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
     - ${EMISAR_ROOT}/packs/spark/test/fixtures/live_app.py:/opt/packtest/live_app.py:ro

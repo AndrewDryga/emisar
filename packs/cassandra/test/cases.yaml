@@ -3,8 +3,8 @@ versions:
   - version: "5.0.8"
     digest: "@sha256:e52bb93c21f69cc5c2f5eb9e7d9736b10a047ad38bc7776480c7dbbf7d4e0ba7"
     default: true
-  - version: "4.1.8"
-    digest: "@sha256:8b774810a1a6cf1c5974c4a719b84b3f9096d5d12e923c56e3f8031a942e8bf9"
+  - version: "4.1.11"
+    digest: "@sha256:dad4cd7ee4281df4e96944a1faebfebd2e50ee19a9f0a1d42ac0bb17c820dd74"
 # A JVM node takes about a minute to gossip and answer cqlsh, and every case
 # pays that boot for its own SUT. Split the cases across matrix rows instead of
 # sharing a node between them.

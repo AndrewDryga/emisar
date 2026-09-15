@@ -1,7 +1,7 @@
 services: [traefik]
 versions:
-  - version: v3.7.10
-    digest: "@sha256:9c3b91d5fb7770853ca5c1124a23c34bf2d9b47ffaebeab2614cbaf410dcb2ac"
+  - version: v3.7.13
+    digest: "@sha256:f86a2cab1b5c649070c49f883c743dd32d8485a56e3368c5f93b9e91f1e91259"
     default: true
 env:
   TRAEFIK_URL: http://127.0.0.1:8080

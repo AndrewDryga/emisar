@@ -5,12 +5,12 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-v26.2.4}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-v26.3.1}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-cockroach-tools:latest
 
   cockroach:
-    image: cockroachdb/cockroach:${PACKTEST_VERSION:-v26.2.4}${PACKTEST_DIGEST-}
+    image: cockroachdb/cockroach:${PACKTEST_VERSION:-v26.3.1}${PACKTEST_DIGEST-}
     command: start-single-node --insecure
     healthcheck:
       test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]

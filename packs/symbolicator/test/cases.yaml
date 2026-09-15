@@ -1,7 +1,7 @@
 services: [symbolicator]
 versions:
-  - version: "25.9.0"
-    digest: "@sha256:ff16ec0110c73c0ce644f2a56f8e5ff6ed31adc9a3cf731788d425e1dc5f8ecb"
+  - version: "25.12.1"
+    digest: "@sha256:6885a72b10e360c2eb6889be72c83c815f9f9c19a913bb2a578ccdf5d7e95139"
     default: true
 env:
   SYMBOLICATOR_URL: http://127.0.0.1:3021

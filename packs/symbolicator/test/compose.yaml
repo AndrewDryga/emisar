@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       target: client
       args:
-        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-getsentry/symbolicator:${PACKTEST_VERSION:-25.9.0}${PACKTEST_DIGEST-}}
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-getsentry/symbolicator:${PACKTEST_VERSION:-25.12.1}${PACKTEST_DIGEST-}}
     image: emisar-packtest-symbolicator-tools:latest
     # Shares the SUT's network namespace, so the HTTP actions reach it on the
     # loopback address a real host would use.
@@ -17,7 +17,7 @@ services:
       dockerfile: Dockerfile
       target: sut
       args:
-        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-getsentry/symbolicator:${PACKTEST_VERSION:-25.9.0}${PACKTEST_DIGEST-}}
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-getsentry/symbolicator:${PACKTEST_VERSION:-25.12.1}${PACKTEST_DIGEST-}}
     image: emisar-packtest-symbolicator-sut:latest
     command: ["run"]
     healthcheck:

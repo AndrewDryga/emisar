@@ -2,7 +2,7 @@
 # pack already runs as its SUT, so extracting it costs no extra pull, and the
 # client version tracks the server version under test.
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
-ARG PACKTEST_VERSION=2.0.3
+ARG PACKTEST_VERSION=2.1.0
 ARG PACKTEST_DIGEST
 FROM hashicorp/vault:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS client
 

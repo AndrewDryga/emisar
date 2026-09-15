@@ -4,8 +4,8 @@ services: [zookeeper]
 # words, and a starved one closes the connection without a reply.
 workers: 2
 versions:
-  - version: "7.9.8"
-    digest: "@sha256:48ca7843cdf2e9d35f96b86efd290e81fcedd595cd5d7df8fde3a6724c3c5869"
+  - version: "7.9.9"
+    digest: "@sha256:45c52af17d5eaea5fb7f395d7918949c71293df42da157e31e8bebd66e48127f"
     default: true
 defaults:
   expect:

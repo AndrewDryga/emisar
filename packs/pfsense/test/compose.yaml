@@ -11,7 +11,7 @@
 # own script, auth header and jq filter run unchanged.
 services:
   pfsense-api:
-    image: nginx:${PACKTEST_VERSION:-1.29-alpine}${PACKTEST_DIGEST-}
+    image: nginx:${PACKTEST_VERSION:-1.31-alpine}${PACKTEST_DIGEST-}
     volumes:
       - ${EMISAR_ROOT}/packs/pfsense/test/fixtures/api:/usr/share/nginx/html/api:ro
       - ${EMISAR_ROOT}/packs/pfsense/test/fixtures/nginx.conf:/etc/nginx/conf.d/default.conf:ro

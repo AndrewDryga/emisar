@@ -1,10 +1,10 @@
 services: [redis]
 versions:
-  - version: "8.8.0"
-    digest: "@sha256:234c902a2db49461a129e2d4aeff85b28cf20187ed274a67f6e50995fa713c7b"
+  - version: "8.10.1"
+    digest: "@sha256:298e5b3bc566bade82f46ad5511777a4a07a294097ce16ada2f6a42be5239df5"
     default: true
-  - version: "7.4.2"
-    digest: "@sha256:fbdbaea47b9ae4ecc2082ecdb4e1cea81e32176ffb1dcf643d422ad07427e5d9"
+  - version: "7.4.11"
+    digest: "@sha256:71da9275c5f3fcb97d0fa0c8c5b36cc995327265420f17a04bfd544f458059f7"
 secret_env: [REDISCLI_AUTH]
 env:
   REDISCLI_AUTH: packtest-canary-redis-c08d17

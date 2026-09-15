@@ -9,8 +9,8 @@ services: [docker-cli, docker-dind]
 env:
   DOCKER_HOST: tcp://docker-dind:2375
 versions:
-  - version: "29.7.1-cli"
-    digest: "@sha256:27a51d5ab1cd38d9eeaba7b415b8c07bc10c31e1cf1ec8d78f6413fcfab3f44f"
+  - version: "29.8.0-cli"
+    digest: "@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66"
     default: true
 cases:
   # docker.compose_config is the one action in this pack that needs no daemon —
