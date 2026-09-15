@@ -9,7 +9,7 @@ env:
 cases:
   - action: traefik.version
     expect:
-      stdout_contains: ['"Version":"3.7.10"']
+      stdout_contains: ['"Version":"3.7.13"']
   - action: traefik.ping
     expect:
       stdout_contains: [OK]

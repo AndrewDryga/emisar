@@ -506,6 +506,9 @@ cases:
       exit: [1]
       stderr_contains: ["minting an Airflow API token"]
 
+  # Airflow 2.11 answers a wrong password on the v1 API with 403; 2.10 said
+  # 401. The assertion is that the action fails and carries the provider's
+  # status, not which of the two auth statuses this release chose.
   - action: airflow.dags
     name: airflow.dags-invalid-basic-credentials
     versions: ["2.11.2-python3.11"]
@@ -514,7 +517,7 @@ cases:
     expect:
       status: failure
       exit: [1]
-      stderr_contains: ["Airflow API request failed", "401"]
+      stderr_contains: ["Airflow API request failed", "returned error: 403"]
 
   - action: airflow.dags
     name: airflow.dags-missing-credentials

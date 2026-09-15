@@ -1,6 +1,6 @@
 services:
   artifactory:
-    image: releases-docker.jfrog.io/jfrog/artifactory-oss:${PACKTEST_VERSION:-7.161.26}${PACKTEST_DIGEST-}
+    image: releases-docker.jfrog.io/jfrog/artifactory-oss:${PACKTEST_VERSION:-7.146.34}${PACKTEST_DIGEST-}
     depends_on:
       artifactory-db:
         condition: service_healthy
