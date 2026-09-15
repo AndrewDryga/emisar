@@ -120,6 +120,22 @@ config :emisar, postmark_webhook_secret: "pm_webhook_test"
 # `owner #PID<...> exited` warnings during teardown.
 config :emisar, notify_approvers_async?: false
 
+# ExUnit's 100ms `assert_receive_timeout` is a "the message is already on its way"
+# budget, but `render_async/1`, `assert_redirect/2` and friends inherit it as the
+# budget for real work: an `assign_async` task or a LiveView `handle_info` that has
+# to reach the database first. Under this suite's `--max-cases 24`, that work queues
+# behind the same write-path contention the pool settings above already allow for,
+# so the default fails a passing test on latency alone. Measured 2026-09-15 over 21
+# full `emisar_web` runs at `--max-cases 24`, timing the assertions inside the tests
+# that flaked: median 2.4-2.9ms, but a tail of 257ms (BillingLive's invoice-PDF
+# `render_async`) and 335ms (RunnerInstallLive's connect redirect) — a 100x spread on
+# work that is never itself slow. Match the ceiling to `queue_target` above: a
+# connection is allowed to stall 5s, so an assertion waiting on work behind it must
+# allow at least as long. This only widens how long a passing assertion may take —
+# a message that never arrives still fails, and `refute_receive` keeps its own
+# separate (unchanged) `refute_receive_timeout`.
+config :ex_unit, assert_receive_timeout: 5_000
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 
