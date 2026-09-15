@@ -34,8 +34,10 @@ func hashHex(contentHash string) string {
 // invariant: the archived bytes are precisely the bytes the content hash
 // covers, so no unreferenced file (a stray README, a .DS_Store, an editor
 // backup) can ride along inside the content-addressed object outside the hash,
-// and an unchanged pack always reproduces identical archive bytes (entry order,
-// mtime, ownership, and mode are all fixed) — a true no-op republish.
+// and an unchanged pack always reproduces an identical tar stream (entry order,
+// mtime, ownership, and mode are all fixed) — a true no-op republish. Only the
+// gzip layer above it belongs to the Go release that built it; Publish judges
+// an already-published object by the tar stream for that reason.
 func Tarball(files []packs.PackFile) ([]byte, error) {
 	sorted := make([]packs.PackFile, len(files))
 	copy(sorted, files)

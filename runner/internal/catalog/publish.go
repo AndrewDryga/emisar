@@ -16,9 +16,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
+	"github.com/andrewdryga/emisar/runner/internal/packs"
 )
 
 // DefaultGCSEndpoint is the Google Cloud Storage JSON API base. Overridable
@@ -124,7 +126,7 @@ func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResu
 			logf("uploaded %s (%d bytes)", obj.Path, len(data))
 			res.Uploaded = append(res.Uploaded, obj.Path)
 		} else {
-			logf("skipped %s (already published, identical bytes)", obj.Path)
+			logf("skipped %s (already published, same content)", obj.Path)
 			res.Skipped = append(res.Skipped, obj.Path)
 		}
 	}
@@ -204,14 +206,21 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		return true, nil
 	case resp.StatusCode == http.StatusPreconditionFailed && obj.Immutable:
-		stored, err := getObject(ctx, client, endpoint, "", bucket, obj.Path, len(data))
+		// A plain object must match byte for byte, so its own size bounds the
+		// read. A tarball's stored copy may be another compressor's encoding of
+		// the same archive, so it is bounded by the pack ceiling instead.
+		expected := len(data)
+		if obj.ContentEncoding == "" && strings.HasSuffix(obj.Path, ".tar.gz") {
+			expected = packs.MaxPackBytes
+		}
+		stored, err := getObject(ctx, client, endpoint, "", bucket, obj.Path, expected)
 		if errors.Is(err, errPrivateRead) {
-			stored, err = getObject(ctx, client, endpoint, token, bucket, obj.Path, len(data))
+			stored, err = getObject(ctx, client, endpoint, token, bucket, obj.Path, expected)
 		}
 		if err != nil {
 			return false, fmt.Errorf("catalog: verify existing immutable object %s: %w", obj.Path, err)
 		}
-		if !bytes.Equal(stored, data) {
+		if !bytes.Equal(stored, data) && !sameArchive(stored, data) {
 			return false, fmt.Errorf(
 				"catalog: immutable object %s already exists with different bytes (expected sha256 %s, stored sha256 %s)",
 				obj.Path, hex.EncodeToString(sha256Sum(data)), hex.EncodeToString(sha256Sum(stored)))
@@ -224,6 +233,44 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 	default:
 		return false, fmt.Errorf("catalog: upload %s: HTTP %d: %s", obj.Path, resp.StatusCode, string(respBody))
 	}
+}
+
+// sameArchive reports whether two gzip members carry identical bytes. The tar
+// layer of a pack tarball is deterministic (Tarball fixes entry order, mtime,
+// ownership, and mode) and is what `emisar pack install` extracts and
+// re-hashes; the gzip layer above it is whatever compress/flate emitted, and a
+// Go release may change that encoding without changing what it decodes to.
+// A stored object whose archive decodes to the same bytes is therefore the
+// same immutable content, not a conflict. Anything that is not gzip compares
+// as different so the raw-byte guard above still decides for plain objects.
+func sameArchive(stored, data []byte) bool {
+	storedTar, err := gunzipBytes(stored)
+	if err != nil {
+		return false
+	}
+	dataTar, err := gunzipBytes(data)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(storedTar, dataTar)
+}
+
+func gunzipBytes(data []byte) ([]byte, error) {
+	zr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	// The same ceiling `emisar pack install` enforces on an extracted pack.
+	const limit = packs.MaxPackBytes
+	out, err := io.ReadAll(io.LimitReader(zr, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > limit {
+		return nil, fmt.Errorf("gzip member inflates past %d bytes", limit)
+	}
+	return out, nil
 }
 
 func gzipBytes(data []byte) ([]byte, error) {

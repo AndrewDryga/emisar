@@ -21,7 +21,7 @@ import (
 // (decompression bomb, runaway entry count) rather than to constrain
 // legitimate packs.
 const (
-	maxPackBytes   = 32 << 20 // 32 MiB total uncompressed
+	MaxPackBytes   = 32 << 20 // 32 MiB total uncompressed; the publisher judges immutable archives by this same ceiling
 	maxPackFiles   = 4000
 	maxSingleBytes = 8 << 20 // 8 MiB per file
 )
@@ -151,8 +151,8 @@ func extractTarGz(r io.Reader, dest string) error {
 				return fmt.Errorf("entry %s exceeded size limit", hdr.Name)
 			}
 			total += n
-			if total > maxPackBytes {
-				return fmt.Errorf("archive exceeded total size limit (%d bytes)", maxPackBytes)
+			if total > MaxPackBytes {
+				return fmt.Errorf("archive exceeded total size limit (%d bytes)", MaxPackBytes)
 			}
 		default:
 			// Reject symlinks, hardlinks, devices, fifos — a pack is

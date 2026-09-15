@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -421,6 +422,79 @@ func TestPublish_ExistingImmutableWithDifferentBytesFails(t *testing.T) {
 		t.Fatalf("expected immutable-byte mismatch, got %v", err)
 	}
 	assertMutablePointersUntouched(t, f, dir)
+}
+
+// A stored tarball that a different compressor produced still holds the same
+// archive; the pack is the tar layer and the gzip layer above it may differ
+// between Go releases without the content changing.
+func TestPublish_ExistingImmutableTarballWithAnotherCompressionIsTheSameObject(t *testing.T) {
+	dir := buildTree(t)
+	f := newFakeGCS()
+	var name string
+	for _, obj := range readManifest(t, dir).Objects {
+		if obj.Immutable && strings.HasSuffix(obj.Path, "/pack.tar.gz") {
+			name = obj.Path
+			break
+		}
+	}
+	if name == "" {
+		t.Fatal("fixture tree carries no immutable tarball")
+	}
+	built, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := gunzipBytes(built)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recompressed bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&recompressed, gzip.BestSpeed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := zw.Write(archive); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(recompressed.Bytes(), built) {
+		t.Fatal("the fixture needs a stored object whose gzip bytes differ from the build")
+	}
+	f.status[name] = http.StatusPreconditionFailed
+	f.objects[name] = recompressed.Bytes()
+	srv := f.server(t)
+
+	res, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Token:    "tok",
+		Endpoint: srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("a re-encoded copy of the same archive must not be a conflict: %v", err)
+	}
+	if !slices.Contains(res.Skipped, name) {
+		t.Errorf("the existing tarball was not reported as skipped: %v", res.Skipped)
+	}
+
+	// The same guard still refuses an archive whose content differs.
+	other := newFakeGCS()
+	var different bytes.Buffer
+	zw, _ = gzip.NewWriterLevel(&different, gzip.BestSpeed)
+	_, _ = zw.Write(append([]byte("not the pack"), archive[12:]...))
+	_ = zw.Close()
+	other.status[name] = http.StatusPreconditionFailed
+	other.objects[name] = different.Bytes()
+	otherSrv := other.server(t)
+	_, err = Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Token:    "tok",
+		Endpoint: otherSrv.URL,
+	})
+	if err == nil || !strings.Contains(err.Error(), "different bytes") {
+		t.Fatalf("a different archive under the same path must still fail, got %v", err)
+	}
 }
 
 func TestPublish_ExistingImmutableThatCannotBeReadFails(t *testing.T) {
