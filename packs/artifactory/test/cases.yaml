@@ -7,9 +7,11 @@ versions:
   - version: "7.146.34"
     digest: "@sha256:1414de23e962f326a49c7e18f2d333ea0168e47a3143c7abd59977505081ee89"
     default: true
-# A case boots an Artifactory JVM and database. Four concurrent SUTs starve on
-# the hosted runner; split the plan and keep only two SUTs active per row.
-shards: 3
+# A case boots an Artifactory JVM and database — about four and a half
+# minutes each on a starved CI core, and one slow cluster join runs past six.
+# Four shards keep every row at three cases, inside the seventeen-minute
+# budget with a slow boot in it; three shards lost a row to that boot twice.
+shards: 4
 workers: 2
 secret_env: [ARTIFACTORY_PASSWORD]
 env:
