@@ -756,8 +756,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      TERRAFORM_VERSION: 1.15.8
-      TERRAFORM_SHA256: d25ce7b6902013ad905db3d2eab0be4cd905887fe88b81a6171b8d5503c31f3d
+      TERRAFORM_VERSION: 1.16.1
+      TERRAFORM_SHA256: 745d33b4b02b7980c62a38ec1beea24ee084ea8caf3f503c200554bd9a0cbe49
       TFLINT_VERSION: v0.64.0
       TFLINT_SHA256: cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
     steps:
