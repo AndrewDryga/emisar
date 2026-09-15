@@ -15,7 +15,7 @@
 # Base images are digest-pinned for reproducible builds. Refresh with:
 #   docker buildx imagetools inspect debian:bookworm-slim --format '{{.Manifest.Digest}}'
 
-FROM debian:bookworm-20260713-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS packset
+FROM debian:bookworm-20260824-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS packset
 
 COPY runner/release/container-packs.txt /src/container-packs.txt
 COPY packs /src/packs
@@ -29,13 +29,14 @@ RUN mkdir -p /out/packs \
         cp -R "/src/packs/${pack}" "/out/packs/${pack}"; \
     done < /src/container-packs.txt
 
-FROM debian:bookworm-20260713-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+FROM debian:bookworm-20260824-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 
 # Only what the baked packs execute (see container-packs.txt), plus CA
 # roots for the TLS dial-out and tini as PID 1. Anything more belongs in
 # an operator-built extension image — the image contents are part of the
 # runner's capability boundary.
 RUN apt-get update -y \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
         bind9-dnsutils ca-certificates curl file iproute2 iputils-ping \
         mtr-tiny netcat-openbsd openssl procps sysstat tini \
