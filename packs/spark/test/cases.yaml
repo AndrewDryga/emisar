@@ -8,6 +8,10 @@ versions:
 # CI runner has, and a cluster that never finishes starting fails every case in
 # the batch rather than the one that was actually wrong.
 workers: 2
+# Twenty-seven cases at two workers need about nineteen minutes of a
+# seventeen-minute row budget; the deadline killed the last five in CI.
+# Two shards keep each row near ten minutes with room for cleanup and reports.
+shards: 2
 secret_env: [SPARK_API_TOKEN]
 env:
   SPARK_MASTER_URL: "http://spark-master:8080"

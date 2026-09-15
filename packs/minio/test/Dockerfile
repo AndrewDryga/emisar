@@ -4,7 +4,7 @@
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
 ARG PACKTEST_VERSION=latest
 ARG PACKTEST_DIGEST
-FROM minio/minio:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS client
+FROM quay.io/minio/minio:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS client
 
 FROM ${PACKTEST_RUNNER_IMAGE}
 COPY --from=client /usr/bin/mc /usr/local/bin/mc

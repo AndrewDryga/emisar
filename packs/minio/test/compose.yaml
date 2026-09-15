@@ -10,7 +10,7 @@ services:
     image: emisar-packtest-minio-tools:latest
 
   minio:
-    image: minio/minio:${PACKTEST_VERSION:-latest}${PACKTEST_DIGEST-}
+    image: quay.io/minio/minio:${PACKTEST_VERSION:-latest}${PACKTEST_DIGEST-}
     command: server /data1 /data2 /data3 /data4 --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minio_admin
