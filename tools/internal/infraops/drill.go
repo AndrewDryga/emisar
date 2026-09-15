@@ -17,8 +17,8 @@ set -euo pipefail
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl postgresql-client
 curl -fsSLo /usr/local/bin/cloud-sql-proxy \
-  https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.23.0/cloud-sql-proxy.linux.amd64
-printf '%s  %s\n' cd689d582b826fa5bc82c01ccc14e45a58200c3cefbf923ce96c422825e4e6f6 \
+  https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.25.4/cloud-sql-proxy.linux.amd64
+printf '%s  %s\n' b780c0d2c445ffd5d2fdba0925f2722c19fcd0d2c27c538e85713732698561f2 \
   /usr/local/bin/cloud-sql-proxy | sha256sum -c -
 chmod 0755 /usr/local/bin/cloud-sql-proxy
 /usr/local/bin/cloud-sql-proxy --private-ip --auto-iam-authn --address 127.0.0.1 --port 5432 \
