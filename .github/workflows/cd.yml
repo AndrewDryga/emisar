@@ -325,10 +325,20 @@ jobs:
           cmp /tmp/canonical-packs.json /tmp/canonical-v1-catalog.json
           cmp /tmp/canonical-packs-suggest.json /tmp/canonical-v1-suggest.json
 
+          # A tarball is its tar stream: the object path is the pack's content
+          # hash and `emisar pack install` re-hashes the extracted files, while
+          # the gzip layer above the stream belongs to the Go release that
+          # built it. A stored object from an earlier toolchain inflates to the
+          # same archive, so the published copy is judged on that, not on its
+          # compressed bytes — the publisher applies the same rule.
+          same_archive() {
+            cmp <(gzip -dc "$1") <(gzip -dc "$2")
+          }
+
           pack_object=$(jq -er '.objects[] | select(.path | startswith("v1/packs/linux-core/")) | .path' dist/packs/manifest.json)
           curl -fsS --retry 3 --retry-delay 2 \
             "${REGISTRY_BASE}/${pack_object}" -o /tmp/gcs-linux-core.tar.gz
-          cmp "dist/packs/${pack_object}" /tmp/gcs-linux-core.tar.gz
+          same_archive "dist/packs/${pack_object}" /tmp/gcs-linux-core.tar.gz
 
           # Collected into a variable, not piped through process substitution: a
           # `done < <(jq ...)` hides jq's exit status, so a manifest this build
@@ -343,7 +353,7 @@ jobs:
             published=/tmp/"$(basename "$(dirname "$path")")-$(basename "$path")"
             curl -fsS --retry 3 --retry-delay 2 \
               "https://registry.emisar.dev/${path}" -o "$published"
-            cmp "dist/packs/${path}" "$published"
+            same_archive "dist/packs/${path}" "$published"
           done <<<"$tarball_paths"
 
           tarball_urls=$(jq -er '.packs[] | .tarball_url, (.previous_versions[]?.tarball_url)' /tmp/canonical-v1-catalog.json | sort -u)
