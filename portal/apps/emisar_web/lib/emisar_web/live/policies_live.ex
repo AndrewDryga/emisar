@@ -1573,7 +1573,7 @@ defmodule EmisarWeb.PoliciesLive do
         "@container space-y-8 rounded-xl border border-dashed border-zinc-800 p-5 sm:p-6"
       ]}
     >
-      <input type="hidden" name="editor" value={@editor_id} />
+      <input type="hidden" name="editor" value={@editor_id} hidden />
 
       <%!-- The policy is structured data assembled server-side into one
            `rules` map, so a validation error keys to `:rules`, not a field.

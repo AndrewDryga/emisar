@@ -262,7 +262,7 @@ defmodule EmisarWeb.TemplateHygieneTest do
   # The docs inline-code chip has ONE owner (`<.docs_inline_code>` in
   # docs_components.ex); 500 hand-rolled copies of its class string drifted
   # before the 2026-08-27 sweep. A raw respelling is the drift coming back.
-  @raw_docs_code_chip ~r/<code class="rounded bg-zinc-900 px-1 py-0\.5 text-xs/
+  @raw_docs_code_chip ~r/<code class="rounded-sm bg-zinc-900 px-1 py-0\.5 text-xs/
 
   test "docs inline code renders through docs_inline_code, never the raw chip classes" do
     offenders = offending_source_matches(@raw_docs_code_chip)
@@ -272,7 +272,7 @@ defmodule EmisarWeb.TemplateHygieneTest do
            A template hand-rolls the docs inline-code chip. Use the component:
 
                ✅  <.docs_inline_code>emisar pack install</.docs_inline_code>
-               ❌  <code class="rounded bg-zinc-900 px-1 py-0.5 text-xs">…</code>
+               ❌  <code class="rounded-sm bg-zinc-900 px-1 py-0.5 text-xs">…</code>
 
            Offending lines (relative to apps/emisar_web/lib):
            #{Enum.map_join(offenders, "\n", &"  #{&1}")}

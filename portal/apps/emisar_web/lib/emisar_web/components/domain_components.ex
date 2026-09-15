@@ -620,7 +620,7 @@ defmodule EmisarWeb.DomainComponents do
     ~H"""
     <span
       class={[
-        "inline-flex max-w-full items-stretch overflow-hidden rounded font-mono text-[11px] ring-1 ring-zinc-700/60",
+        "inline-flex max-w-full items-stretch overflow-hidden rounded-sm font-mono text-[11px] ring-1 ring-zinc-700/60",
         @class
       ]}
       {@rest}
@@ -1396,7 +1396,7 @@ defmodule EmisarWeb.DomainComponents do
   defp risk_pill_face(assigns) do
     ~H"""
     <span class={[
-      "rounded font-semibold uppercase tracking-wider ring-1 ring-inset",
+      "rounded-sm font-semibold uppercase tracking-wider ring-1 ring-inset",
       risk_pill_geometry(@variant),
       risk_classes(@risk),
       @class

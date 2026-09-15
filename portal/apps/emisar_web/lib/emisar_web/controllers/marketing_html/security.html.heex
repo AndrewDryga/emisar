@@ -84,7 +84,7 @@
             </span>
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-mono text-sm font-semibold text-sky-300">LLM client</span>
-              <span class="rounded bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-sky-300/90">
+              <span class="rounded-sm bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-sky-300/90">
                 untrusted
               </span>
             </div>
@@ -98,11 +98,11 @@
 
         <%!-- the boundary — the line everything the LLM asks for must cross --%>
         <div class="flex items-center gap-3 px-1 py-4">
-          <span class="h-px flex-1 bg-gradient-to-r from-transparent via-brand-500/40 to-brand-500/60"></span>
+          <span class="h-px flex-1 bg-linear-to-r from-transparent via-brand-500/40 to-brand-500/60"></span>
           <span class="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-400">
             <.icon name="trust.permission_boundary" class="h-3 w-3" /> trust boundary
           </span>
-          <span class="h-px flex-1 bg-gradient-to-l from-transparent via-brand-500/40 to-brand-500/60"></span>
+          <span class="h-px flex-1 bg-linear-to-l from-transparent via-brand-500/40 to-brand-500/60"></span>
         </div>
 
         <%!-- Trusted zone — gate → runner → audit, lit by the brand glow --%>
@@ -160,7 +160,7 @@
           </div>
 
           <div class="flex justify-center" aria-hidden="true">
-            <span class="h-4 w-px bg-gradient-to-b from-brand-500/50 to-brand-500/20"></span>
+            <span class="h-4 w-px bg-linear-to-b from-brand-500/50 to-brand-500/20"></span>
           </div>
 
           <div class="relative rounded-2xl border border-zinc-800 bg-zinc-950/70 p-5">

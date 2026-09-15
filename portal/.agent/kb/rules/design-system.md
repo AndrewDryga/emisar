@@ -4,7 +4,7 @@
 > brand, components, patterns, and the **plan to bring the operator console into
 > line with the redesigned marketing site**. Read this before any visual change
 > to `emisar_web` (marketing **or** console). Grounded in
-> `assets/tailwind.config.js`, `assets/css/app.css`, and
+> `assets/css/app.css` (the `@theme` block and the layer rules) and
 > `lib/emisar_web/components/core_components.ex` — when those change, change this.
 
 ---
@@ -103,7 +103,7 @@ tile so it reads on any browser tab.
 ### 3.1 Color
 
 **Brand emerald (the one accent + the "pass" semantic).** Defined in
-`tailwind.config.js` (`theme.extend.colors.brand`). This is the *only* green —
+`assets/css/app.css` (`@theme` `--color-brand-*`). This is the *only* green —
 use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 
 | Token | Hex | Role |
@@ -657,8 +657,10 @@ after being taught, so every one is checked EVERY time, mechanically:
 
 ## 9. Source of truth (read the code, not just this)
 
-- **Tokens:** `assets/tailwind.config.js` (the `brand` scale; everything else is
-  Tailwind default — `zinc`/`amber`/`rose`/Heroicons).
+- **Tokens:** the `@theme` block in `assets/css/app.css` (the `brand` scale and
+  the Tailwind 3 line-heights the rhythm was tuned on; everything else is
+  Tailwind default — `zinc`/`amber`/`rose`/Heroicons). The same file keeps the
+  `space-*` contract: a parent owns the gap between its children.
 - **CSS layer:** `assets/css/app.css` (`@font-face` Inter, `.font-display`, the
   a11y tokens, materiality primitives, all motion keyframes).
 - **Components:** `lib/emisar_web/components/core_components.ex` (shared chrome),

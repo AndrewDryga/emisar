@@ -1523,7 +1523,7 @@ defmodule EmisarWeb.PacksLive do
                       phx-value-version={v.version}
                       aria-expanded={to_string(MapSet.member?(@open_versions, v.id))}
                       aria-label={"Contents of #{pack.id} v#{v.version}"}
-                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-500 hover:text-zinc-200"
+                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-zinc-500 hover:text-zinc-200"
                     >
                       <.icon
                         name="action.disclose"
@@ -1564,7 +1564,7 @@ defmodule EmisarWeb.PacksLive do
                       <%= if @can_manage_packs? do %>
                         <.dropdown
                           class="inline-block shrink-0 text-left"
-                          summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                          summary_class="rounded-sm px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
                           panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
                         >
                           <:trigger>

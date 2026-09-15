@@ -142,7 +142,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
                 id={"group-role-#{group.id}"}
                 aria-label={"Role for #{directory_group_name(group)}"}
                 class="inline-block text-left"
-                summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                summary_class="rounded-sm px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
                 panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
               >
                 <:trigger>
@@ -945,7 +945,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
               >
                 <.dropdown
                   class="inline-block text-left"
-                  summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                  summary_class="rounded-sm px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
                   panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
                 >
                   <:trigger>

@@ -81,7 +81,7 @@
           <div class="mt-2.5 flex flex-wrap gap-1.5">
             <code
               :for={bin <- @pack.requires_binaries}
-              class="rounded bg-amber-500/15 px-2 py-0.5 font-mono text-xs font-medium text-amber-200"
+              class="rounded-sm bg-amber-500/15 px-2 py-0.5 font-mono text-xs font-medium text-amber-200"
             >
               {bin}
             </code>
@@ -93,9 +93,9 @@
       <section class="mt-10">
         <h2 class="text-xl font-semibold text-zinc-50">Install</h2>
         <p class="mt-2 text-sm text-zinc-400">
-          <code class="rounded bg-zinc-900 px-1 py-0.5">emisar pack install</code>
+          <code class="rounded-sm bg-zinc-900 px-1 py-0.5">emisar pack install</code>
           fetches this pack, re-validates it, and verifies its content hash against the
-          <code class="rounded bg-zinc-900 px-1 py-0.5">--hash</code>
+          <code class="rounded-sm bg-zinc-900 px-1 py-0.5">--hash</code>
           below — the exact bytes this page was rendered against, so a tampered copy is
           rejected — before copying it into the runner's packs dir. The command reloads a
           running daemon itself; no manual restart.
@@ -145,7 +145,7 @@
           <h3 class="text-sm font-semibold text-zinc-200">Environment</h3>
           <p class="mt-1 text-sm leading-relaxed text-zinc-400">
             Set these on the runner host, then add each name to
-            <code class="rounded bg-zinc-900 px-1 py-0.5 font-mono text-xs text-zinc-300">execution.inherit_env</code>
+            <code class="rounded-sm bg-zinc-900 px-1 py-0.5 font-mono text-xs text-zinc-300">execution.inherit_env</code>
             so the value reaches the action.
           </p>
           <ul class="mt-3 overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40">
@@ -157,13 +157,13 @@
                 <code class="font-mono text-sm text-zinc-100">{env.name}</code>
                 <span
                   :if={env.required}
-                  class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200"
+                  class="rounded-sm bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200"
                 >
                   required
                 </span>
                 <span
                   :if={env.default}
-                  class="rounded bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300"
+                  class="rounded-sm bg-zinc-800/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300"
                 >
                   default {env.default}
                 </span>
@@ -302,7 +302,7 @@
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="truncate font-mono text-sm text-zinc-100">{action.id}</span>
-                    <span class="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300">
+                    <span class="rounded-sm bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300">
                       {action.kind}
                     </span>
                     <.risk_pill id={"pack-action-#{action.id}-risk"} risk={action.risk} />

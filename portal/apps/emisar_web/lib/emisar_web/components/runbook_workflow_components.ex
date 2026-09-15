@@ -1275,7 +1275,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         @disabled? && "cursor-not-allowed text-zinc-500 opacity-50"
       ]}
     >
-      <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-black/30 ring-1 ring-white/[0.07]">
+      <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-black/30 ring-1 ring-white/[0.07]">
         <.target_scope_icon kind={@option.kind} />
       </span>
       <span class="flex min-w-0 flex-1 items-baseline gap-2">

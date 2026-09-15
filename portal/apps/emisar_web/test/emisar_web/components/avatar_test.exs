@@ -30,7 +30,7 @@ defmodule EmisarWeb.Components.AvatarTest do
         rendered_to_string(~H|<CoreComponents.avatar name="acme" shape={:square} size={:xs} />|)
 
       assert html =~ ~r{>\s*a\s*</span>}
-      assert html =~ "rounded-sm"
+      assert html =~ "rounded-xs"
       assert html =~ "h-4 w-4"
     end
 
@@ -43,7 +43,7 @@ defmodule EmisarWeb.Components.AvatarTest do
         )
 
       assert html =~ ~r{>\s*B\s*</span>}
-      assert html =~ "rounded-sm"
+      assert html =~ "rounded-xs"
       assert html =~ "bg-brand-500 text-zinc-950"
       refute html =~ "rounded-full"
       refute html =~ "text-zinc-400"

@@ -2722,7 +2722,7 @@ defmodule EmisarWeb.TeamLive do
                          tracks permission, not access-state. --%>
                           <.dropdown
                             class="inline-block text-left"
-                            summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                            summary_class="rounded-sm px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
                             panel_class="z-10 mt-2 w-40 p-1 text-xs shadow-xl"
                           >
                             <:trigger>
@@ -3212,7 +3212,7 @@ defmodule EmisarWeb.TeamLive do
       <% @can_manage? -> %>
         <.dropdown
           class="inline-block text-left"
-          summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+          summary_class="rounded-sm px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
           panel_class="z-10 mt-2 w-56 p-1 text-xs shadow-xl"
         >
           <:trigger>

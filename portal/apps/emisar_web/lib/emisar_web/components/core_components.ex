@@ -69,7 +69,7 @@ defmodule EmisarWeb.CoreComponents do
           # emisar-icon-mono: the container is tinted with the kind's own tone, so a
           # same-hue accent inside the icon has no contrast against it — the icon
           # rides the text tone instead (the rose ! mark vanished on rose-950).
-          "emisar-icon-mono fixed top-4 right-4 z-[60] w-80 sm:w-96 overflow-hidden rounded-xl p-4 pr-10 ring-1 backdrop-blur shadow-lg cursor-pointer",
+          "emisar-icon-mono fixed top-4 right-4 z-[60] w-80 sm:w-96 overflow-hidden rounded-xl p-4 pr-10 ring-1 backdrop-blur-sm shadow-lg cursor-pointer",
           @kind == :info && "bg-brand-950/80 text-brand-100 ring-brand-500/40",
           @kind == :error && "bg-rose-950/80 text-rose-100 ring-rose-500/40",
           @kind == :neutral && "bg-zinc-900 text-zinc-200 ring-white/10"
@@ -285,13 +285,13 @@ defmodule EmisarWeb.CoreComponents do
   # `emisar-icon-mono`: the fill IS the accent here, so the icon drops its
   # semantic emphasis and paints in the label's near-black.
   defp button_face(:primary, :brand) do
-    "emisar-icon-mono bg-brand-500 font-semibold text-zinc-950 shadow-sm hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
+    "emisar-icon-mono bg-brand-500 font-semibold text-zinc-950 shadow-xs hover:bg-brand-400 active:bg-brand-600 focus-visible:outline-brand-400"
   end
 
   # Filled amber for attention-worthy actions where brand-green would wrongly
   # read as "safe" — e.g. trusting a pack's new contents.
   defp button_face(:primary, :amber) do
-    "emisar-icon-mono bg-amber-500 font-semibold text-amber-950 shadow-sm hover:bg-amber-400 active:bg-amber-600 focus-visible:outline-amber-400"
+    "emisar-icon-mono bg-amber-500 font-semibold text-amber-950 shadow-xs hover:bg-amber-400 active:bg-amber-600 focus-visible:outline-amber-400"
   end
 
   defp button_face(:secondary, :neutral) do
@@ -512,7 +512,7 @@ defmodule EmisarWeb.CoreComponents do
 
   ## Example
 
-      <.dropdown summary_class="rounded px-2 py-1 ring-1 ring-zinc-800" panel_class="z-10 mt-2 w-56 p-1 text-xs shadow-xl">
+      <.dropdown summary_class="rounded-sm px-2 py-1 ring-1 ring-zinc-800" panel_class="z-10 mt-2 w-56 p-1 text-xs shadow-xl">
         <:trigger>Actions <span class="group-open:hidden">▾</span></:trigger>
         <.menu_item phx-click="edit">Edit</.menu_item>
         <.menu_item tone={:rose} phx-click="remove">Remove</.menu_item>
@@ -626,7 +626,7 @@ defmodule EmisarWeb.CoreComponents do
             do: "border-brand-500/60 focus:border-brand-400 focus:ring-brand-400/20",
             else: "border-zinc-700 focus:border-zinc-600 focus:ring-zinc-600/20"
           ),
-          "focus:outline-none focus:ring-2"
+          "focus:outline-hidden focus:ring-2"
         ]}
       >
         <span class="truncate">{@selected_label}</span>
@@ -800,7 +800,7 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp menu_item_base do
-    "emisar-icon-mono flex w-full items-center gap-2 rounded px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-40"
+    "emisar-icon-mono flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-40"
   end
 
   # Toned rows tint like their ghost-button siblings. Neutral steps to
@@ -902,7 +902,7 @@ defmodule EmisarWeb.CoreComponents do
           name={@name}
           value="true"
           checked={@checked}
-          class="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0"
+          class="h-4 w-4 rounded-sm border-zinc-700 bg-zinc-900 text-brand-500 focus:ring-2 focus:ring-brand-500/40 focus:ring-offset-0"
           {@rest}
         />
         {@label}
@@ -1198,7 +1198,7 @@ defmodule EmisarWeb.CoreComponents do
         type="checkbox"
         checked={@checked}
         class={[
-          "h-4 w-4 rounded border-zinc-700 bg-zinc-900 focus:ring-2 focus:ring-offset-0 disabled:opacity-50",
+          "h-4 w-4 rounded-sm border-zinc-700 bg-zinc-900 focus:ring-2 focus:ring-offset-0 disabled:opacity-50",
           checkbox_tone(@tone)
         ]}
         {@rest}
@@ -1802,7 +1802,7 @@ defmodule EmisarWeb.CoreComponents do
   defp avatar_size(:md), do: "h-10 w-10 text-sm"
 
   defp avatar_shape(:circle), do: "rounded-full"
-  defp avatar_shape(:square), do: "rounded-sm"
+  defp avatar_shape(:square), do: "rounded-xs"
 
   defp avatar_tone(:neutral, :xs), do: "bg-zinc-800 text-zinc-400"
 
@@ -2351,7 +2351,7 @@ defmodule EmisarWeb.CoreComponents do
     <%= for {segment, idx} <- @segments do %>
       <code
         :if={rem(idx, 2) == 1}
-        class="rounded bg-zinc-900 px-1 py-0.5 font-mono text-[0.92em] text-zinc-300"
+        class="rounded-sm bg-zinc-900 px-1 py-0.5 font-mono text-[0.92em] text-zinc-300"
       >{segment}</code>
       <span :if={rem(idx, 2) == 0}>{segment}</span>
     <% end %>
@@ -2367,16 +2367,16 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   defp inline_code_surface(:default),
-    do: "rounded bg-zinc-900 px-1 py-0.5 font-mono text-zinc-200"
+    do: "rounded-sm bg-zinc-900 px-1 py-0.5 font-mono text-zinc-200"
 
   defp inline_code_surface(:quiet),
-    do: "rounded bg-black/30 px-1 py-0.5 font-mono text-zinc-200"
+    do: "rounded-sm bg-black/30 px-1 py-0.5 font-mono text-zinc-200"
 
   defp inline_code_surface(:diff),
-    do: "rounded bg-zinc-800/60 px-1.5 py-0.5 font-mono text-zinc-200"
+    do: "rounded-sm bg-zinc-800/60 px-1.5 py-0.5 font-mono text-zinc-200"
 
   defp inline_code_surface(:prominent),
-    do: "rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-zinc-200 ring-1 ring-white/10"
+    do: "rounded-sm bg-zinc-900 px-1.5 py-0.5 font-mono text-zinc-200 ring-1 ring-white/10"
 
   defp inline_code_size(:inherit), do: nil
   defp inline_code_size(:compact), do: "text-[11px]"
@@ -2465,7 +2465,7 @@ defmodule EmisarWeb.CoreComponents do
         data-copy-label-copied="✓"
         aria-label="Copy"
         title="Copy"
-        class="shrink-0 rounded p-0.5 leading-none text-zinc-500 transition hover:text-zinc-200 focus-visible:text-zinc-200"
+        class="shrink-0 rounded-sm p-0.5 leading-none text-zinc-500 transition hover:text-zinc-200 focus-visible:text-zinc-200"
       >
         <.icon name="action.copy" class="h-3.5 w-3.5" />
       </button>
@@ -2882,7 +2882,7 @@ defmodule EmisarWeb.CoreComponents do
     <span
       :if={@count && @count > 0}
       class={[
-        "rounded px-1.5 py-0.5 text-xs font-medium tabular-nums",
+        "rounded-sm px-1.5 py-0.5 text-xs font-medium tabular-nums",
         count_badge_tone(@tone),
         @class
       ]}
@@ -3136,7 +3136,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <span
       class={[
-        "whitespace-nowrap rounded px-1.5 py-0.5 text-[10px]",
+        "whitespace-nowrap rounded-sm px-1.5 py-0.5 text-[10px]",
         @icon &&
           if(@baseline,
             do: "inline-flex items-baseline gap-1 align-baseline",
@@ -3239,7 +3239,7 @@ defmodule EmisarWeb.CoreComponents do
             do: "Show fewer #{@label}",
             else: "Show all #{length(@items)} #{@label}"
         }
-        class="whitespace-nowrap rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400 transition-colors hover:bg-zinc-700/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-zinc-600"
+        class="whitespace-nowrap rounded-sm bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400 transition-colors hover:bg-zinc-700/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-zinc-600"
       >
         {if @expanded?, do: "Show fewer", else: "+#{@hidden}"}
       </button>
@@ -3552,7 +3552,7 @@ defmodule EmisarWeb.CoreComponents do
       data-copy-text={@text}
       data-copy-label-copied="Copied"
       class={[
-        "rounded bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700",
+        "rounded-sm bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700",
         @class
       ]}
       {@rest}
@@ -3776,7 +3776,7 @@ defmodule EmisarWeb.CoreComponents do
       <%!-- Backdrop — clicking it closes the dialog. --%>
       <div
         id={"#{@id}-backdrop"}
-        class="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        class="fixed inset-0 bg-black/70 backdrop-blur-xs"
         phx-click={@close_dialog}
         aria-hidden="true"
       >
@@ -4297,7 +4297,7 @@ defmodule EmisarWeb.CoreComponents do
     ~H"""
     <div class={["relative h-px w-full overflow-hidden", @class]} aria-hidden="true">
       <div class={[
-        "h-px w-full bg-gradient-to-r from-transparent to-transparent",
+        "h-px w-full bg-linear-to-r from-transparent to-transparent",
         scan_via_class(@state)
       ]}>
       </div>
@@ -4305,7 +4305,7 @@ defmodule EmisarWeb.CoreComponents do
         :if={@animate}
         class={[
           if(@loop, do: "scan-sweep-loop", else: "scan-sweep"),
-          "absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-transparent to-transparent blur-[1px]",
+          "absolute inset-y-0 left-0 w-1/4 bg-linear-to-r from-transparent to-transparent blur-[1px]",
           scan_sweep_via_class(@state)
         ]}
       >

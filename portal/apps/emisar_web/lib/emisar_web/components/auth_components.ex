@@ -58,7 +58,7 @@ defmodule EmisarWeb.AuthComponents do
             aria-label={"Character #{i} of 6"}
             class={[
               "h-14 w-12 min-w-0 rounded-lg border border-zinc-700 bg-zinc-950 text-center",
-              "text-xl font-semibold tracking-widest text-zinc-100 shadow-sm outline-none transition",
+              "text-xl font-semibold tracking-widest text-zinc-100 shadow-xs outline-hidden transition",
               "focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30",
               not @numeric && "uppercase"
             ]}
@@ -110,7 +110,7 @@ defmodule EmisarWeb.AuthComponents do
       data-shot="oidc-step-dialog"
     >
       <div
-        class="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        class="fixed inset-0 bg-black/70 backdrop-blur-xs"
         phx-click={@close}
         aria-hidden="true"
       >
@@ -239,7 +239,7 @@ defmodule EmisarWeb.AuthComponents do
   def auth_layout(assigns) do
     ~H"""
     <div class="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-      <div class="hidden bg-gradient-to-br from-brand-950 via-zinc-950 to-zinc-950 p-12 lg:flex lg:flex-col">
+      <div class="hidden bg-linear-to-br from-brand-950 via-zinc-950 to-zinc-950 p-12 lg:flex lg:flex-col">
         <a href="/" class="text-zinc-100">
           <.brand />
         </a>

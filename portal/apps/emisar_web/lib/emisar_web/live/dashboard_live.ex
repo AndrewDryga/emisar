@@ -1065,7 +1065,6 @@ defmodule EmisarWeb.DashboardLive do
       icon="trust.untrusted"
       title={"#{@count} pack version#{if @count == 1, do: "", else: "s"} need#{if @count == 1, do: "s", else: ""} a decision"}
       navigate={~p"/app/#{@current_account}/packs"}
-      class="mt-10"
     >
       Dispatch is blocked against these until an admin reviews the advertised hash or
       resolves the retired version.

@@ -357,7 +357,7 @@ defmodule EmisarWeb.AuditDetailLive do
               Added overrides ({length(@added)})
             </p>
             <ul class="space-y-1 text-xs">
-              <li :for={ov <- @added} class="rounded bg-brand-500/[0.04] px-2 py-1">
+              <li :for={ov <- @added} class="rounded-sm bg-brand-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
                 <code class="font-mono text-zinc-200">{policy_decision_label(ov["decision"])}</code>
@@ -375,7 +375,7 @@ defmodule EmisarWeb.AuditDetailLive do
               Removed overrides ({length(@removed)})
             </p>
             <ul class="space-y-1 text-xs">
-              <li :for={ov <- @removed} class="rounded bg-rose-500/[0.04] px-2 py-1">
+              <li :for={ov <- @removed} class="rounded-sm bg-rose-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{ov["action"]}</code>
                 <span class="text-zinc-500">→</span>
                 <code class="font-mono text-zinc-200">{policy_decision_label(ov["decision"])}</code>
@@ -390,7 +390,7 @@ defmodule EmisarWeb.AuditDetailLive do
               Changed overrides ({length(@changed)})
             </p>
             <ul class="space-y-1 text-xs">
-              <li :for={c <- @changed} class="rounded bg-amber-500/[0.04] px-2 py-1">
+              <li :for={c <- @changed} class="rounded-sm bg-amber-500/[0.04] px-2 py-1">
                 <code class="font-mono text-zinc-200">{c["action"]}</code>:
                 <%= for {label, from, to} <- override_changes(c) do %>
                   <span class="text-zinc-400">{label}:</span>

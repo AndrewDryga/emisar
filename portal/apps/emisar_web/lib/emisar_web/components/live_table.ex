@@ -661,7 +661,7 @@ defmodule EmisarWeb.LiveTable do
           name={"#{@prefix}#{@filter.name}"}
           value="true"
           checked={@value == "true"}
-          class="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-brand-500 focus:ring-brand-500 disabled:cursor-not-allowed"
+          class="h-4 w-4 rounded-sm border-zinc-700 bg-zinc-950 text-brand-500 focus:ring-brand-500 disabled:cursor-not-allowed"
         />
         {@filter.title}
       </span>
@@ -682,7 +682,7 @@ defmodule EmisarWeb.LiveTable do
         type="datetime-local"
         name={"#{@prefix}#{@filter.name}"}
         value={@value}
-        phx-debounce="blur"
+        phx-debounce="blur-sm"
         class={[
           "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark] disabled:cursor-not-allowed",
           filter_control_class(@active?)

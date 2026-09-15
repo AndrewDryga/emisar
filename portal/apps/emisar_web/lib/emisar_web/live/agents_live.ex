@@ -1437,7 +1437,7 @@ defmodule EmisarWeb.AgentsLive do
                   <%= if not facts.revoked? and ApiKeys.subject_can_manage_api_key?(key, @current_subject) do %>
                     <.dropdown
                       class="inline-block shrink-0 text-left"
-                      summary_class="rounded px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
+                      summary_class="rounded-sm px-2 py-1 text-xs font-medium text-zinc-300 ring-1 ring-zinc-800 hover:bg-zinc-900"
                       panel_class="z-10 mt-2 w-48 p-1 text-xs shadow-xl"
                     >
                       <:trigger>

@@ -74,7 +74,7 @@ defmodule EmisarWeb.ShellComponents do
       <%!-- The sidebar sits on the SAME black plane as the work canvas — one
            surface, a single landed hairline between nav and work (the old
            zinc-950 panel read as separate admin chrome beside the canvas). --%>
-      <aside class="hidden w-64 flex-shrink-0 flex-col border-r border-zinc-800/70 bg-black lg:sticky lg:top-0 lg:flex lg:h-screen">
+      <aside class="hidden w-64 shrink-0 flex-col border-r border-zinc-800/70 bg-black lg:sticky lg:top-0 lg:flex lg:h-screen">
         <.shell_brand
           current_account={@current_account}
           switchable_accounts={@chrome.switchable_accounts}

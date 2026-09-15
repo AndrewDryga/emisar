@@ -1,6 +1,98 @@
-@import "tailwindcss/base";
-@import "tailwindcss/components";
-@import "tailwindcss/utilities";
+@import "tailwindcss";
+
+/* Tailwind 4 reads its configuration from this file. The Elixir templates
+   live outside assets/, so they are named as sources explicitly; @plugin
+   loads the first-party forms plugin the standalone CLI bundles; container
+   queries are built in. The phx-* variants add rules only while LiveView
+   applies its loading classes, e.g. `phx-click-loading:animate-ping`. */
+@source "../js";
+@source "../../lib";
+@plugin "@tailwindcss/forms";
+@custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
+@custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
+@custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
+
+@theme {
+  /* emisar brand accent — the emerald gate. `brand-400` is the exact logo
+     green (#36E6A5, see images/emisar-icon.svg); `brand-500` is the button
+     resting fill (dark text reads on it) that hovers up to the logo green.
+     The marketing site uses this as its accent; semantic pass/pending/deny
+     chips stay on emerald/amber/rose via `<.chip>`. */
+  --color-brand-50: #e7fdf4;
+  --color-brand-100: #c8fae5;
+  --color-brand-200: #95f3cd;
+  --color-brand-300: #57ecb2;
+  --color-brand-400: #36e6a5;
+  --color-brand-500: #14cf8d;
+  --color-brand-600: #05a974;
+  --color-brand-700: #07835b;
+  --color-brand-800: #0a6749;
+  --color-brand-900: #0a543c;
+  --color-brand-950: #032f22;
+
+  /* Tailwind 3 line-heights. v4 ships the type scale with unitless ratios,
+     which a child that sets only a font-size (text-[10px] labels, nested
+     sizes) inherits as a ratio; v3's fixed rem values are what the console's
+     vertical rhythm was tuned on, so the scale keeps them. */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+  --text-5xl--line-height: 1;
+  --text-6xl--line-height: 1;
+  --text-7xl--line-height: 1;
+  --text-8xl--line-height: 1;
+  --text-9xl--line-height: 1;
+}
+
+/* The vertical rhythm contract: a space-y parent owns the gap between its
+   children, and a child's own margin never changes it. That is how Tailwind 3
+   applied space-y (margin-top on every visible sibling after the first, at a
+   specificity a child's mt-* could not beat) and how every console and
+   marketing page was reviewed. Tailwind 4 moved the gap to margin-bottom on
+   :not(:last-child) inside :where(), so a child's stale mt-10 or mb-2 would
+   start to add or shrink gaps page by page. Keep the contract instead. */
+@utility space-y-* {
+  /* v4's own rule still emits for the same class; zero it so the gap is
+     defined once. (0,2,0) beats its :where() and loses to the rule below. */
+  & > :not(:last-child) {
+    margin-block-start: 0;
+    margin-block-end: 0;
+  }
+  & > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(calc(var(--spacing) * --value(number)) * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(calc(var(--spacing) * --value(number)) * var(--tw-space-y-reverse));
+  }
+}
+@utility space-x-* {
+  & > :not(:last-child) {
+    margin-inline-start: 0;
+    margin-inline-end: 0;
+  }
+  & > :not([hidden]) ~ :not([hidden]) {
+    --tw-space-x-reverse: 0;
+    margin-inline-start: calc(calc(var(--spacing) * --value(number)) * calc(1 - var(--tw-space-x-reverse)));
+    margin-inline-end: calc(calc(var(--spacing) * --value(number)) * var(--tw-space-x-reverse));
+  }
+}
+
+/* Tailwind 3 parity the pages were built on. v4's preflight gives buttons the
+   default cursor and placeholders the text colour at half opacity. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+}
 
 /* ---------------------------------------------------------------------------
    The semantic icon system — `EmisarWeb.Icons` and `<.icon>`. Anatomy paints
@@ -47,24 +139,24 @@
    icon stays whole and distinct without these, so colour never carries the
    meaning alone. */
 .emisar-icon .accent {
-  stroke: theme(colors.brand.400);
+  stroke: var(--color-brand-400);
 }
 .emisar-icon .accent-fill {
-  fill: theme(colors.brand.400);
+  fill: var(--color-brand-400);
   stroke: none;
 }
 .emisar-icon .warn {
-  stroke: theme(colors.amber.300);
+  stroke: var(--color-amber-300);
 }
 .emisar-icon .warn-fill {
-  fill: theme(colors.amber.300);
+  fill: var(--color-amber-300);
   stroke: none;
 }
 .emisar-icon .danger {
-  stroke: theme(colors.rose.400);
+  stroke: var(--color-rose-400);
 }
 .emisar-icon .danger-fill {
-  fill: theme(colors.rose.400);
+  fill: var(--color-rose-400);
   stroke: none;
 }
 /* `selection` fills a whole silhouette rather than emphasising one part, so it

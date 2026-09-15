@@ -569,7 +569,7 @@ defmodule EmisarWeb.AuditLive do
            control. Each group stays intact when the outer row wraps. --%>
       <div
         data-shot="audit-quick-filters"
-        class="mb-2 flex flex-wrap items-center gap-x-5 gap-y-3 text-xs"
+        class="flex flex-wrap items-center gap-x-5 gap-y-3 text-xs"
       >
         <%!-- Quick relative-range presets — set the unified bar's From to
              (now − window); the date filter below consumes it. Re-adds the
@@ -630,7 +630,7 @@ defmodule EmisarWeb.AuditLive do
         type="button"
         phx-click="toggle_filters"
         aria-expanded={to_string(@filters_open?)}
-        class="group -mx-2 mb-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs transition hover:bg-white/[0.04]"
+        class="group -mx-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs transition hover:bg-white/[0.04]"
       >
         <%!-- w-3 + gap-2 = 20px to the label — the SAME x as the row labels
              (8px dot + gap-3), so the fold sits on the table's rail. --%>

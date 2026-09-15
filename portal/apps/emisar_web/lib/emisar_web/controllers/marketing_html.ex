@@ -34,7 +34,7 @@ defmodule EmisarWeb.MarketingHTML do
     <%= for segment <- @segments do %>
       <%= case segment do %>
         <% {:code, value} -> %>
-          <code class="rounded bg-zinc-900 px-1 py-0.5 font-mono text-xs text-zinc-300">{value}</code>
+          <code class="rounded-sm bg-zinc-900 px-1 py-0.5 font-mono text-xs text-zinc-300">{value}</code>
         <% {:link, label, url} -> %>
           <.external_link href={url} class="text-brand-400 hover:text-brand-300">{label}</.external_link>
         <% {:text, value} -> %>
@@ -389,7 +389,7 @@ defmodule EmisarWeb.MarketingHTML do
     {33, "llm", "cc-result-cont",
      "# formatDevice runs mkfs unconditionally, and nothing on this path reads node.format.disabled — it's a no-op in v1.9.5."},
     {34, "llm", "cc-text",
-     "So the flag won't help. I'll shadow mkfs inside the CSI container so the driver can't reformat a live Pure LUN, and still set format.disabled (commented) so we pick up the upstream fix when it lands."},
+     "So the flag won't help. I'll shadow-sm mkfs inside the CSI container so the driver can't reformat a live Pure LUN, and still set format.disabled (commented) so we pick up the upstream fix when it lands."},
     {35, "llm", "cc-tool",
      "git · open PR \"csi: guard against the driver reformatting live LUNs\""},
     {36, "llm", "cc-result", "1 file changed, 38 insertions(+)"},
@@ -399,7 +399,7 @@ defmodule EmisarWeb.MarketingHTML do
     {40, "llm", "cc-diff-add",
      "+      # ignored by v1.9.5 (filesystem.formatDevice); kept for when upstream honors it"},
     {41, "llm", "cc-diff-add", "+      disabled: true"},
-    {42, "llm", "cc-diff-note", "@@ task node · shadow mkfs before exec democratic-csi @@"},
+    {42, "llm", "cc-diff-note", "@@ task node · shadow-sm mkfs before exec democratic-csi @@"},
     {43, "llm", "cc-diff-add",
      "+  for n in mkfs mkfs.ext4 mkfs.xfs …; do mv \"$d/$n\" \"$d/$n.real\"; cp guard \"$d/$n\"; done"},
     {44, "llm", "cc-diff-note", "@@ new file local/mkfs.guard @@"},
@@ -585,7 +585,7 @@ defmodule EmisarWeb.MarketingHTML do
                  (NOT @tailwindcss/typography — that plugin isn't installed, so
                  every `prose-*` class was a silent no-op). Section dividers on
                  each h2, airy paragraph spacing, brighter lead-in strongs. --%>
-            <article class="text-base text-zinc-400 [&_h2]:mb-5 [&_h2]:mt-14 [&_h2]:scroll-mt-24 [&_h2]:border-t [&_h2]:border-zinc-900 [&_h2]:pt-14 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:text-balance [&_h2]:text-zinc-50 [&>h2:first-of-type]:mt-0 [&>h2:first-of-type]:border-t-0 [&>h2:first-of-type]:pt-0 [&_p]:my-7 [&_p]:leading-8 [&_p]:text-zinc-400 [&_strong]:font-semibold [&_strong]:text-zinc-100 [&_ul]:my-7 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_li]:text-zinc-400 [&_li]:marker:text-zinc-500 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-zinc-300">
+            <article class="text-base text-zinc-400 [&_h2]:mb-5 [&_h2]:mt-14 [&_h2]:scroll-mt-24 [&_h2]:border-t [&_h2]:border-zinc-900 [&_h2]:pt-14 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:text-balance [&_h2]:text-zinc-50 [&>h2:first-of-type]:mt-0 [&>h2:first-of-type]:border-t-0 [&>h2:first-of-type]:pt-0 [&_p]:my-7 [&_p]:leading-8 [&_p]:text-zinc-400 [&_strong]:font-semibold [&_strong]:text-zinc-100 [&_ul]:my-7 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_li]:text-zinc-400 [&_li]:marker:text-zinc-500 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200 [&_code]:rounded-sm [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-zinc-300">
               {render_slot(@inner_block)}
             </article>
           </div>
@@ -628,7 +628,7 @@ defmodule EmisarWeb.MarketingHTML do
 
       <section class="py-14 sm:py-16">
         <div class="mx-auto max-w-3xl px-6 lg:px-8">
-          <article class="text-base [&_blockquote]:my-6 [&_blockquote]:border-l-2 [&_blockquote]:border-brand-500/40 [&_blockquote]:pl-5 [&_blockquote]:text-zinc-300 [&_code]:rounded [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-zinc-300 [&_h2]:mb-5 [&_h2]:mt-14 [&_h2]:scroll-mt-24 [&_h2]:border-t [&_h2]:border-zinc-900 [&_h2]:pt-12 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:text-balance [&_h2]:text-zinc-50 [&>h2:first-of-type]:mt-0 [&>h2:first-of-type]:border-t-0 [&>h2:first-of-type]:pt-0 [&_h3]:mb-3 [&_h3]:mt-10 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-zinc-100 [&_p]:my-6 [&_p]:leading-8 [&_p]:text-zinc-400 [&_strong]:font-semibold [&_strong]:text-zinc-100 [&_ul]:my-6 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_ol]:my-6 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-5 [&_li]:text-zinc-400 [&_li]:marker:text-zinc-500 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200">
+          <article class="text-base [&_blockquote]:my-6 [&_blockquote]:border-l-2 [&_blockquote]:border-brand-500/40 [&_blockquote]:pl-5 [&_blockquote]:text-zinc-300 [&_code]:rounded-sm [&_code]:bg-zinc-900 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-zinc-300 [&_h2]:mb-5 [&_h2]:mt-14 [&_h2]:scroll-mt-24 [&_h2]:border-t [&_h2]:border-zinc-900 [&_h2]:pt-12 [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:text-balance [&_h2]:text-zinc-50 [&>h2:first-of-type]:mt-0 [&>h2:first-of-type]:border-t-0 [&>h2:first-of-type]:pt-0 [&_h3]:mb-3 [&_h3]:mt-10 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-zinc-100 [&_p]:my-6 [&_p]:leading-8 [&_p]:text-zinc-400 [&_strong]:font-semibold [&_strong]:text-zinc-100 [&_ul]:my-6 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5 [&_ol]:my-6 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-5 [&_li]:text-zinc-400 [&_li]:marker:text-zinc-500 [&_a]:font-medium [&_a]:text-brand-300 [&_a:hover]:text-brand-200">
             {render_slot(@inner_block)}
           </article>
         </div>

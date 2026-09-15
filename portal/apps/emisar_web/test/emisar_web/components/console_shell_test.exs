@@ -56,7 +56,7 @@ defmodule EmisarWeb.Components.ConsoleShellTest do
 
       assert [_, _] = Regex.scan(~r/bg-brand-500 text-zinc-950/, html)
       refute Regex.match?(~r/data-icon="state.selected"/, html)
-      assert [_, _] = Regex.scan(~r/rounded-sm bg-brand-500 text-zinc-950/, html)
+      assert [_, _] = Regex.scan(~r/rounded-xs bg-brand-500 text-zinc-950/, html)
     end
   end
 end

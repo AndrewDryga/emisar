@@ -144,7 +144,7 @@ defmodule EmisarWeb.DocsComponents do
         open={group.label == DocsNav.group_label(@current)}
         class="group/nav"
       >
-        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 rounded px-2.5 py-1 font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm px-2.5 py-1 font-mono text-xs font-semibold uppercase tracking-widest text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
           {group.label}
           <.icon
             name="action.disclose"
@@ -407,7 +407,7 @@ defmodule EmisarWeb.DocsComponents do
         <button
           type="button"
           data-copy-text={@copy_text}
-          class="shrink-0 rounded px-2 py-1 font-mono text-[11px] font-medium text-zinc-400 transition-colors hover:text-zinc-200"
+          class="shrink-0 rounded-sm px-2 py-1 font-mono text-[11px] font-medium text-zinc-400 transition-colors hover:text-zinc-200"
         >
           Copy
         </button>
@@ -525,7 +525,10 @@ defmodule EmisarWeb.DocsComponents do
 
   def docs_risk(assigns) do
     ~H"""
-    <code class={["rounded px-1 py-0.5 font-mono text-xs ring-1 ring-inset", docs_risk_classes(@tier)]}>{@tier}</code>
+    <code class={[
+      "rounded-sm px-1 py-0.5 font-mono text-xs ring-1 ring-inset",
+      docs_risk_classes(@tier)
+    ]}>{@tier}</code>
     """
   end
 
@@ -801,10 +804,10 @@ defmodule EmisarWeb.DocsComponents do
                "there's more — expand" rather than an abrupt cut. --%>
           <span
             :if={@preview_h}
-            class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-zinc-950/90 to-transparent"
+            class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-zinc-950/90 to-transparent"
           ></span>
           <%!-- The Expand affordance also reveals on keyboard focus, not hover only. --%>
-          <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30 opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
+          <span class="pointer-events-none absolute right-3 top-3 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-brand-300 ring-1 ring-brand-500/30 opacity-0 backdrop-blur-sm transition group-hover:opacity-100 group-focus-visible:opacity-100">
             <.icon name="action.expand" class="h-3.5 w-3.5" /> Expand
           </span>
         </button>
@@ -814,13 +817,13 @@ defmodule EmisarWeb.DocsComponents do
           role="dialog"
           aria-modal="true"
           aria-label={@title}
-          class="fixed inset-0 z-[60] hidden cursor-zoom-out items-center justify-center bg-black/90 p-4 backdrop-blur-sm sm:p-10"
+          class="fixed inset-0 z-[60] hidden cursor-zoom-out items-center justify-center bg-black/90 p-4 backdrop-blur-xs sm:p-10"
         >
           <button
             type="button"
             data-lightbox-close
             aria-label="Close screenshot"
-            class="absolute right-4 top-4 rounded-md bg-black/60 p-2 text-zinc-200 ring-1 ring-white/20 backdrop-blur hover:bg-black/80 hover:text-white"
+            class="absolute right-4 top-4 rounded-md bg-black/60 p-2 text-zinc-200 ring-1 ring-white/20 backdrop-blur-sm hover:bg-black/80 hover:text-white"
           >
             <.icon name="action.close" class="h-5 w-5" />
           </button>
@@ -926,7 +929,7 @@ defmodule EmisarWeb.DocsComponents do
 
   def docs_inline_code(assigns) do
     ~H"""
-    <code class={["rounded bg-zinc-900 px-1 py-0.5 text-xs", @class]} {@rest}>{render_slot(
+    <code class={["rounded-sm bg-zinc-900 px-1 py-0.5 text-xs", @class]} {@rest}>{render_slot(
       @inner_block
     )}</code>
     """

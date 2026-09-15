@@ -114,7 +114,7 @@ defmodule EmisarWeb.MarketingComponents do
   def marketing_nav(assigns) do
     ~H"""
     <header class={[
-      "border-b border-zinc-900/80 bg-zinc-950/80 backdrop-blur",
+      "border-b border-zinc-900/80 bg-zinc-950/80 backdrop-blur-sm",
       @sticky && "sticky top-0 z-50"
     ]}>
       <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-8">
@@ -194,7 +194,7 @@ defmodule EmisarWeb.MarketingComponents do
              same px-6 py-5 + <.brand/>), so the menu reads as the same chrome and
              the checkered body below it lines up with the hero's grid (both sit below an
              equal-height nav). --%>
-        <div class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 bg-zinc-950/80 px-6 py-5 backdrop-blur">
+        <div class="flex shrink-0 items-center justify-between border-b border-zinc-900/80 bg-zinc-950/80 px-6 py-5 backdrop-blur-sm">
           <.link href={~p"/"}>
             <.brand />
           </.link>
@@ -222,7 +222,7 @@ defmodule EmisarWeb.MarketingComponents do
               <nav class="relative flex flex-1 flex-col px-6 pb-8 pt-8">
                 <%!-- the gate track the route-nodes sit on --%>
                 <span
-                  class="pointer-events-none absolute bottom-16 left-[2.125rem] top-16 w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-zinc-700/60 to-transparent"
+                  class="pointer-events-none absolute bottom-16 left-[2.125rem] top-16 w-px -translate-x-1/2 bg-linear-to-b from-transparent via-zinc-700/60 to-transparent"
                   aria-hidden="true"
                 ></span>
                 <ul class="flex flex-1 flex-col justify-around">
@@ -482,7 +482,7 @@ defmodule EmisarWeb.MarketingComponents do
   defp marketing_button_class(variant, size, block, extra) do
     [
       if(block, do: "flex w-full", else: "inline-flex"),
-      "group/btn items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
+      "group/btn items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold transition active:scale-[0.96] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950",
       marketing_button_size(size),
       marketing_button_variant(variant),
       extra
@@ -702,7 +702,7 @@ defmodule EmisarWeb.MarketingComponents do
                 autocomplete="email"
                 required
                 placeholder="you@company.com"
-                class="min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:border-brand-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand-500"
+                class="min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:border-brand-500 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-brand-500"
               />
               <.marketing_button type="submit" variant={:secondary} size={:sm}>
                 Subscribe

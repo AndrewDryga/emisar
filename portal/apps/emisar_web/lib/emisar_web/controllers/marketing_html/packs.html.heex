@@ -131,13 +131,13 @@
             <div class="mt-4 flex flex-wrap gap-1.5">
               <span
                 :for={os <- pack.requires_os}
-                class="rounded bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300"
+                class="rounded-sm bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300"
               >
                 os: {os}
               </span>
               <span
                 :for={bin <- pack.requires_binaries}
-                class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
+                class="rounded-sm bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-amber-500/30"
               >
                 needs: {bin}
               </span>
