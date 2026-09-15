@@ -266,6 +266,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "An AI agent is an app, such as Claude, ChatGPT, or Cursor"
       assert has_element?(lv, "a[href='/docs/connect-agent-sandboxes#coop']", "co:op")
       assert html =~ "The sandbox limits access to local secrets, SSH keys, and CLI tools"
+      assert html =~ "and to the network destinations you allow"
       refute html =~ "[co:op](...)"
       refute html =~ "Connections and access"
 

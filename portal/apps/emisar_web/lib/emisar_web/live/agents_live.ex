@@ -2148,8 +2148,8 @@ defmodule EmisarWeb.AgentsLive do
             }>co:op</.doc_link>. The sandbox limits access to local secrets, SSH keys, and CLI tools
             such as
             <.inline_code>gcloud</.inline_code>
-            or <.inline_code>aws</.inline_code>. emisar extends that control to infrastructure and
-            third-party tools.
+            or <.inline_code>aws</.inline_code>, and to the network destinations you allow. emisar
+            extends that control to infrastructure and third-party tools.
           </p>
         </.docs_rail>
       </div>

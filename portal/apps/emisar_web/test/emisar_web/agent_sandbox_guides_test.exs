@@ -27,7 +27,7 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
       |> Enum.map(&(&1 |> LazyHTML.text() |> String.replace(~r/\s+/, " ") |> String.trim()))
 
     assert rows == [
-             "co:op Recommended Codex, Claude Code, Gemini CLI, Grok CLI You want precise control over which local files, secrets, and tools the agent can access.",
+             "co:op Recommended Codex, Claude Code, Gemini CLI, Grok CLI You want precise control over which local files, secrets, tools, and network destinations the agent can access.",
              "Docker Sandboxes Claude Code, Codex, Devin, Gemini CLI, Kiro, OpenCode You already use Docker's sandbox workflow.",
              "nono Any terminal agent with a suitable profile You want fast startup without a container and are comfortable using an operating-system profile as the sandbox boundary.",
              "Dev Containers Any CLI agent installed in the container Your project already uses a Dev Container."
@@ -63,6 +63,9 @@ defmodule EmisarWeb.AgentSandboxGuidesTest do
     assert text =~ ".coopignore"
     assert text =~ ".gitignore"
     assert text =~ "Anything you mount or pass into the sandbox"
+    assert text =~ "box.egress: filtered"
+    assert text =~ "coop approve"
+    assert text =~ "coop net blocked <host>"
     assert text =~ "coop doctor"
     assert text =~ "coop check-secrets"
     refute text =~ "COOP_*_CMD"
