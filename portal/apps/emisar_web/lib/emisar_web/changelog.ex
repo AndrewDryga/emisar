@@ -17,6 +17,49 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-09-15],
+      slug: "approval-receipts-on-the-run-and-safer-packs",
+      title: "Approval receipts on the run and safer packs",
+      tag: "v0.49.0",
+      summary:
+        "A gated run now carries its own review: the command the approver saw, each vote with its note, the tally, and a separate receipt when an owner overrode the quorum. The run page shows it, and wait_for_run and recent_runs return it to the agent, so a teammate reading a Slack card or a transcript sees the same decision the console does. Packs that answer the same operator intent now share one risk tier, and every packaged script stops on its first failed step instead of reporting success from whatever ran last.",
+      details: [
+        {"Console",
+         [
+           "The run page lists the approval votes, reviewer names, notes, and tally under the run-view permission, repaints as votes arrive, and shows an override receipt separately from an ordinary approval.",
+           "Access forms for invites, members, and directory groups ask the runner and pack question once with the same wording, and the agent connect panel is split by client surface without changing the setup copy.",
+           "Required update icons are fully red, optional pack updates stay in header tooltips, and per-OS agent installer commands are copyable."
+         ]},
+        {"MCP",
+         [
+           "Run summaries include a review object for policy-gated runs: dispatch rationale, the trusted command line, votes, and the override receipt. It is a read under view_runs; approving stays a separate permission.",
+           "The review receipt is bounded in encoded bytes after masking, so a justification that quotes a secret cannot push a wait_for_run page past its 64 KiB budget, and an ungated page no longer pays a membership query."
+         ]},
+        {"Packs",
+         [
+           "Reloading a config is high risk in every pack, and cancelling a query carries the same tier on Postgres and CockroachDB. The fail2ban and cockroach versions that still auto-ran those actions are retired below 0.2.0.",
+           "Every script runs under set -e and a packs lint enforces it, so a failed step ends the action instead of exiting 0 on the last command's status.",
+           "The six on-host diagnostic packs carry the words operators type when something is wrong, so symptom searches reach linux-core before airflow. podman, zfs, wireguard, and nodejs-pm2 are suggested on hosts that run them, and linux-core alone owns start, stop, restart, and reload for systemd units.",
+           "Stripe and Braintree actions each ship one worked example, and the JSON packs return the provider's error body instead of discarding it."
+         ]},
+        {"Runner",
+         [
+           "The installer runs the staged binary against the host config before stopping the service again, so a config the new runner rejects is a refusal that names config.yaml rather than a crash loop. When rollback cannot restore the previous binary, the service is kept stopped and the summary says so.",
+           "The installer cleans its own staging directory on success and on refusal, and signing init, new-ca, and new-cert mint certificates through one path."
+         ]},
+        {"Security",
+         [
+           "Every approval tally read is scoped through the approvals authorizer immediately before the query, SSO mapping mutations open with one account-scoped locked read, and inviting a member from the admin pack now requires approval like every other membership change.",
+           "The portal image tracks a current Debian security snapshot and upgrades its base packages at build time; the two pcre2 findings are fixed."
+         ]},
+        {"Platform",
+         [
+           "First-touch referrer attribution is persisted, the portal serves one MTA-STS policy owned by infra, both HTML mailers share one document shell, and the Cursor plugin is 0.2.0 with its bundled skills current.",
+           "The portal builds on Elixir 1.20.4 and Erlang/OTP 29.0.6, and the runner and MCP bridge on Go 1.27.1. Phoenix, LiveView, Ecto, Sentry, Swoosh, esbuild, the Terraform google provider, and the Postgres, Keycloak, and Debian base images moved to current releases that had cleared their release-age window."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-09-09],
       slug: "sandboxed-agents-and-clearer-account-pages",
       title: "Sandboxed agents and clearer account pages",
