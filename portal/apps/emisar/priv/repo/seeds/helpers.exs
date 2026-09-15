@@ -161,19 +161,6 @@ defmodule Emisar.Seeds.Helpers do
     %{"version" => version, "hash" => hash}
   end
 
-  def action_descriptor(pack_id, attrs) do
-    Map.merge(
-      %{
-        "kind" => "exec",
-        "risk" => "low",
-        "side_effects" => [],
-        "args" => [],
-        "pack_id" => pack_id
-      },
-      attrs
-    )
-  end
-
   @doc """
   Every shipped action descriptor for `pack_id` at `version` (nil: the current
   published version), shaped as a runner advertises them.

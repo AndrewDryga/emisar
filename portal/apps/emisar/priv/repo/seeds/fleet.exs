@@ -174,20 +174,8 @@ defmodule Emisar.Seeds.Fleet do
 
   defp api_actions do
     [
-      Helpers.action_descriptor("systemd-deep", %{
-        "id" => "systemd.failed_units",
-        "title" => "Failed systemd units",
-        "risk" => "low",
-        "description" => "Lists units not in active state with their last failure reason.",
-        "args" => []
-      }),
-      Helpers.action_descriptor("systemd-deep", %{
-        "id" => "systemd.unit_show",
-        "title" => "systemctl show <unit>",
-        "risk" => "high",
-        "description" => "Shows systemd properties for one unit.",
-        "args" => [%{"name" => "unit", "type" => "string", "required" => true}]
-      }),
+      Helpers.baseline_action_descriptor("systemd-deep", "systemd.failed_units"),
+      Helpers.baseline_action_descriptor("systemd-deep", "systemd.unit_show"),
       # The unit lifecycle lives in linux-core, so the API host carries that
       # pack's restart beside the systemd-deep reads; the pending approval and
       # the old cancellation in the run history both dispatch it. It advertises
