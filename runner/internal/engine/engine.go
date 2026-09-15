@@ -566,7 +566,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		hits = redact.MergeHits(hs1, hs2)
 	}
 
-	out := e.classifyOutcome(act, reg, execRes, redactedStdout, jsonRedactionFailed, redactionOverflow)
+	out := classifyOutcome(act, reg, execRes, redactedStdout, jsonRedactionFailed, redactionOverflow)
 	evType := out.eventType
 	status := out.status
 	parsed := out.parsed
@@ -708,11 +708,6 @@ func (e *Engine) emitExecError(ctx context.Context, req Request, act *actionspec
 	}, nil
 }
 
-// actionEvent stamps the identity every event about a KNOWN action carries:
-// its pack, its id, and the metadata the journal indexes it by. Five sites
-// wrote those three lines out — four refusals and the execution events — and a
-// site that missed one produced a journal entry indistinguishable from an
-// event about some other action.
 // outcome is what the classification stage decides: how the run ended, what
 // the journal calls it, and the parsed or schema-validated output. It exists
 // so `Run` reads as the pipeline runner/AGENTS.md names — validate, clamp,
@@ -734,7 +729,7 @@ type outcome struct {
 // intact, then the action's own output schema. A redaction failure downgrades
 // a successful exit, because output that could not be redacted must not be
 // reported as a success.
-func (e *Engine) classifyOutcome(
+func classifyOutcome(
 	act *actionspec.Action,
 	reg *packs.Registry,
 	execRes *executor.Result,
@@ -771,7 +766,7 @@ func (e *Engine) classifyOutcome(
 		out.resultError = "redacted structured output exceeded its byte limit"
 		out.parserError = out.resultError
 	case out.status == StatusSuccess && act.Output.HasSchema():
-		e.validateStructuredOutput(act, reg, execRes, redactedStdout, &out)
+		validateStructuredOutput(act, reg, execRes, redactedStdout, &out)
 	case !act.Output.HasSchema():
 		out.parsed, out.parserError = parseOutput(act.Output.Parser, redactedStdout)
 		if out.status == StatusSuccess && act.Output.ParserRequired && out.parserError != "" {
@@ -790,7 +785,7 @@ func (e *Engine) classifyOutcome(
 // action's declared schema. Truncated output fails closed: a document cut
 // short may still parse, and reporting it as validated would hand the model a
 // partial result it cannot tell from a whole one.
-func (e *Engine) validateStructuredOutput(
+func validateStructuredOutput(
 	act *actionspec.Action,
 	reg *packs.Registry,
 	execRes *executor.Result,
@@ -824,6 +819,11 @@ func (e *Engine) validateStructuredOutput(
 	out.structuredOutput = raw
 }
 
+// actionEvent stamps the identity every event about a KNOWN action carries:
+// its pack, its id, and the metadata the journal indexes it by. Five sites
+// wrote those three lines out — four refusals and the execution events — and a
+// site that missed one produced a journal entry indistinguishable from an
+// event about some other action.
 func (e *Engine) actionEvent(req Request, act *actionspec.Action, t audit.EventType, now time.Time) audit.Event {
 	ev := e.baseEvent(req, t, now)
 	ev.PackID = act.PackID
