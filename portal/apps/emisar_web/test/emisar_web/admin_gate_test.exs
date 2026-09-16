@@ -97,6 +97,27 @@ defmodule EmisarWeb.AdminGateTest do
                "Admin access requires multi-factor authentication. Sign in again to continue."
     end
 
+    test "a tenant IdP's satisfies_mfa stamp does not stand in for the staff second factor", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
+      Fixtures.Users.mark_user_as_staff(user)
+
+      # The session shape `Auth.complete_sso_account_sign_in/4` mints when the
+      # provider a customer configured says `satisfies_mfa: true`: `:sso` with
+      # `mfa_verified_at` set and no local enrollment proof.
+      user = Emisar.Repo.reload!(user)
+      token = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
+      conn = conn |> put_session(:user_token, token) |> get("/ops/live")
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert get_session(conn, :user_token) == nil
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
+               "Admin access requires multi-factor authentication. Sign in again to continue."
+    end
+
     test "an authenticated non-admin is denied with a flash + redirect to /app", %{conn: conn} do
       # /T02
       {conn, _user, _account} = register_and_log_in(conn)

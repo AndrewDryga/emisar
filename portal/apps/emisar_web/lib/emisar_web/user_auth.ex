@@ -233,14 +233,19 @@ defmodule EmisarWeb.UserAuth do
   # `:ensure_admin` on_mount so the request and socket layers cannot drift. The
   # factor comes from the session row, never a session key, so it records what
   # this session proved rather than what the user owns — and it goes through
-  # `Auth.session_mfa_verified?/2`, so a proof taken against an enrollment the
-  # operator has since replaced stops counting without anyone being signed out.
+  # `Auth.session_mfa_enrollment_verified_at/2`, so a proof taken against an
+  # enrollment the operator has since replaced stops counting without anyone
+  # being signed out. Only the LOCAL proof opens this door: an `:sso` session's
+  # `mfa_verified_at` is a stamp a customer's identity provider earned under
+  # that customer's own `satisfies_mfa` setting, which must never stand in for
+  # a platform staff member's second factor (an SSO session that later clears
+  # the local challenge carries the local proof too, and still qualifies).
   # Enrollment is judged FIRST: an unenrolled admin can never mint a verified
   # session, so sending one back through sign-in would never terminate.
   defp admin_access(%{is_admin: true, mfa_enabled_at: nil}, _auth), do: {:error, :mfa_unenrolled}
 
   defp admin_access(%{is_admin: true} = user, auth) do
-    if Auth.session_mfa_verified?(user, auth),
+    if Auth.session_mfa_enrollment_verified_at(user, auth),
       do: :ok,
       else: {:error, :mfa_unverified}
   end
