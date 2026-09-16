@@ -529,7 +529,7 @@ defmodule Emisar.MailTest do
       )
 
       assert_email_sent(fn email ->
-        assert email.subject == "Join Globex on emisar"
+        assert email.subject == "You've been invited to a workspace on emisar"
         assert email.text_body =~ "Dana Inviter"
         assert email.text_body =~ "Globex"
         assert email.text_body =~ "/app/#{account.slug}"

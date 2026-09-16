@@ -4220,9 +4220,21 @@ defmodule Emisar.Accounts do
         %Subject{account: %Account{} = account} = subject
       )
       when is_map(attrs) do
-    with {:ok, invitation} <- invite_user_to_account(attrs, subject) do
+    with :ok <- check_invitation_send_budget(account),
+         {:ok, invitation} <- invite_user_to_account(attrs, subject) do
       {:ok, invited_result(invitation, inviter, account)}
     end
+  end
+
+  # Invitations are the one email any self-signed-up owner can aim at any
+  # address, from our authenticated sender. The budget is per workspace and far
+  # above hand-typed onboarding (one invite every 36 seconds for an hour); it
+  # exists so a throwaway workspace cannot turn the stream that also carries
+  # every customer's sign-in codes into a relay. Resends share it.
+  @invitation_sends_per_hour 100
+
+  defp check_invitation_send_budget(%Account{id: account_id}) do
+    Emisar.Throttle.check("invitation_send", account_id, @invitation_sends_per_hour, 3_600_000)
   end
 
   # The authoritative gate: the SAME input changeset the form uses, rebuilt
@@ -4377,7 +4389,8 @@ defmodule Emisar.Accounts do
         %{} = inviter,
         %Subject{account: %Account{} = account} = subject
       ) do
-    with {:ok, invitation} <- resend_account_invitation(membership, subject) do
+    with :ok <- check_invitation_send_budget(account),
+         {:ok, invitation} <- resend_account_invitation(membership, subject) do
       {:ok, invited_result(invitation, inviter, account)}
     end
   end

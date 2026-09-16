@@ -571,10 +571,14 @@ defmodule Emisar.Mailers.UserNotifier do
     inviter_name = one_line(inviter.full_name || inviter.email)
     account_name = one_line(account.name)
 
+    # The subject and preview are the inbox-visible lines, and both names are
+    # whatever the inviting workspace typed, so neither goes there: an owner of
+    # a throwaway workspace must not get to write our sender's subject line.
+    # The names stay in the body, where they read as facts about the invitation.
     deliver_transactional(
       invitee,
-      "Join #{account_name} on emisar",
-      "#{inviter_name} invited you to join #{account_name}. The invitation expires in 7 days.",
+      "You've been invited to a workspace on emisar",
+      "An invitation to join a workspace on emisar. It expires in 7 days.",
       [
         {:paragraph, "#{inviter_name} invited you to join #{account_name} on emisar."},
         {:facts,

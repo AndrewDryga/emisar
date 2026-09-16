@@ -1444,6 +1444,9 @@ defmodule EmisarWeb.TeamLive do
         email = params |> Map.get("email", "") |> String.trim()
         {:noreply, put_flash(socket, :error, "#{email} is already a member.")}
 
+      {:error, :rate_limited} ->
+        {:noreply, put_flash(socket, :error, MemberErrors.message(:rate_limited))}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Could not send invitation.")}
     end

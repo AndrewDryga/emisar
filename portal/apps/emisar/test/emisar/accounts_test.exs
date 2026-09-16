@@ -6762,7 +6762,7 @@ defmodule Emisar.AccountsTest do
 
   describe "invite_user_to_account_and_deliver/3" do
     test "emails the join link and reports it sent, without handing back the token" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
       email = "deliver-#{System.unique_integer([:positive])}@example.test"
 
       assert {:ok, result} =
@@ -6779,12 +6779,43 @@ defmodule Emisar.AccountsTest do
 
       assert_receive {:email, sent}
       assert sent.to == [{"", email}]
-      assert sent.subject == "Join #{account.name} on emisar"
+      assert sent.subject == "You've been invited to a workspace on emisar"
       assert sent.text_body =~ "/accept_invitation/"
       assert sent.text_body =~ "Role:"
       assert sent.text_body =~ "Operator"
       assert sent.text_body =~ "Invitation expires:"
       assert is_binary(sent.html_body)
+    end
+
+    test "a workspace that spent its hourly invitation budget is refused before any write" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      # Spend the budget through the same counter the guard reads (no emails).
+      for _ <- 1..100 do
+        assert Emisar.RateLimiter.check({"invitation_send", account.id}, 100, 3_600_000) == :ok
+      end
+
+      email = "over-budget-#{System.unique_integer([:positive])}@example.test"
+
+      assert Accounts.invite_user_to_account_and_deliver(
+               Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
+               owner,
+               subject
+             ) == {:error, :rate_limited}
+
+      refute_received {:email, _}
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
+
+      # Resends draw on the same budget.
+      pending =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          invitation_token_digest: "d"
+        )
+
+      assert Accounts.resend_account_invitation_and_deliver(pending, owner, subject) ==
+               {:error, :rate_limited}
     end
 
     test "the invitation lands in the subject's account, never another the invitee belongs to" do
