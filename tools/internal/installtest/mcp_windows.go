@@ -706,11 +706,13 @@ if (-not $refused) { throw ('unsafe archive entry accepted: ' + %s) }
 // Only the first and the final URI were checked while the handler followed the
 // chain itself, so an intermediate cleartext hop was never seen. Redirects are
 // followed by hand now: every hop faces the same trust check, and the chain is
-// bounded.
+// bounded. The artifact download shares that loop: GitHub answers every
+// release asset with a 302 to its CDN, and a Save-WebFile that treated the
+// redirect as a failure left the Releases fallback unable to download anything.
 func testWindowsRedirectChain(root, shell, temp string) error {
 	installer := filepath.Join(root, "install-mcp.ps1")
 	var parts strings.Builder
-	for _, name := range []string{"Test-Truthy", "Test-TrustedWebUri", "New-WebClient", "Get-WebBytes"} {
+	for _, name := range []string{"Test-Truthy", "Test-TrustedWebUri", "New-WebClient", "Get-WebResponse", "Get-WebBytes", "Save-WebFile"} {
 		function, err := powershellFunction(installer, name)
 		if err != nil {
 			return err
@@ -753,7 +755,16 @@ if (-not $refused) { throw "an intermediate redirect to a non-loopback cleartext
 $bounded = $false
 try { [void](Get-WebBytes "%[1]s/loop") } catch { $bounded = $true }
 if (-not $bounded) { throw "a redirect loop was not bounded" }
-`, server.URL)
+
+$saved = Join-Path %[2]s "artifact"
+Save-WebFile "%[1]s/one-hop" $saved
+if ([IO.File]::ReadAllText($saved) -ne "payload") { throw "a redirected artifact download was not followed" }
+
+$refused = $false
+try { Save-WebFile "%[1]s/offsite" (Join-Path %[2]s "offsite") } catch { $refused = $true }
+if (-not $refused) { throw "an artifact download followed a redirect to a non-loopback cleartext host" }
+if (Test-Path (Join-Path %[2]s "offsite")) { throw "a refused artifact download left a file behind" }
+`, server.URL, powershellLiteral(temp))
 
 	scriptPath := filepath.Join(temp, "redirect-chain.ps1")
 	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {

@@ -140,19 +140,30 @@ function New-WebClient([hashtable]$Headers = @{}) {
     return $client
 }
 
-function Get-WebBytes([string]$Url, [hashtable]$Headers = @{}) {
+# Follows validated redirects and returns the final successful response with
+# the client that owns it, as @{ Client; Response }; the caller reads the
+# content and disposes both. One loop serves the JSON reads and the artifact
+# downloads alike: GitHub answers every release asset with a 302 to its CDN,
+# so a download that refused redirects could never use the Releases fallback.
+function Get-WebResponse([string]$Url, [hashtable]$Headers = @{}, [Net.Http.HttpCompletionOption]$Completion = [Net.Http.HttpCompletionOption]::ResponseContentRead) {
     $uri = [Uri]$Url
     Test-TrustedWebUri $uri
     $client = New-WebClient $Headers
     try {
         for ($hop = 0; $hop -le $script:MaximumRedirects; $hop++) {
-            $response = $client.GetAsync($uri).GetAwaiter().GetResult()
+            $response = $client.GetAsync($uri, $Completion).GetAwaiter().GetResult()
             $status = [int]$response.StatusCode
             if (@(301, 302, 303, 307, 308) -notcontains $status) {
-                if (-not $response.IsSuccessStatusCode) { throw "HTTP $status" }
-                return ,$response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+                if (-not $response.IsSuccessStatusCode) {
+                    $response.Dispose()
+                    throw "HTTP $status"
+                }
+                $result = @{ Client = $client; Response = $response }
+                $client = $null
+                return $result
             }
             $location = $response.Headers.Location
+            $response.Dispose()
             if (-not $location) { throw "HTTP $status without a Location header" }
             if (-not $location.IsAbsoluteUri) { $location = New-Object Uri($uri, $location) }
             Test-TrustedWebUri $location
@@ -173,7 +184,17 @@ function Get-WebBytes([string]$Url, [hashtable]$Headers = @{}) {
         }
         Stop-Install "too many redirects fetching $Url"
     } finally {
-        $client.Dispose()
+        if ($client) { $client.Dispose() }
+    }
+}
+
+function Get-WebBytes([string]$Url, [hashtable]$Headers = @{}) {
+    $web = Get-WebResponse $Url $Headers
+    try {
+        return ,$web.Response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+    } finally {
+        $web.Response.Dispose()
+        $web.Client.Dispose()
     }
 }
 
@@ -184,18 +205,11 @@ function Get-WebJson([string]$Url, [hashtable]$Headers = @{}) {
 }
 
 function Save-WebFile([string]$Url, [string]$Path) {
-    $uri = [Uri]$Url
-    Test-TrustedWebUri $uri
-    $client = New-WebClient
-    $response = $null
+    $web = Get-WebResponse $Url @{} ([Net.Http.HttpCompletionOption]::ResponseHeadersRead)
     $inputStream = $null
     $outputStream = $null
     try {
-        $response = $client.GetAsync($uri, [Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
-        if (-not $response.IsSuccessStatusCode) {
-            throw "HTTP $([int]$response.StatusCode)"
-        }
-        $inputStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $inputStream = $web.Response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
         $outputStream = [IO.File]::Open($Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
         $buffer = New-Object byte[] 81920
         while (($read = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
@@ -208,8 +222,8 @@ function Save-WebFile([string]$Url, [string]$Path) {
     } finally {
         if ($outputStream) { $outputStream.Dispose() }
         if ($inputStream) { $inputStream.Dispose() }
-        if ($response) { $response.Dispose() }
-        $client.Dispose()
+        $web.Response.Dispose()
+        $web.Client.Dispose()
     }
 }
 
