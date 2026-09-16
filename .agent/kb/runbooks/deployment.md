@@ -197,7 +197,8 @@ previously published `ghcr.io/andrewdryga/emisar@sha256:...` digest. An
 application rollback does not reverse database changes; expand/contract
 compatibility keeps the prior image runnable. Data recovery restores Cloud SQL
 to a new instance or point in time and promotes it only after isolated
-verification.
+verification; the promotion steps are in `infra/README.md` → "Promoting a
+restored clone".
 
 Images published before IAM database runtime was added are not rollback
 candidates: production has no database password or DATABASE_URL secret. The

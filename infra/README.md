@@ -427,6 +427,41 @@ migrations. Run the verifier against the restored database before serving
 traffic. The repository does not retain completed one-time database-bootstrap
 or project-cleanup mutation scripts.
 
+### Promoting a restored clone
+
+PITR always produces a NEW instance, and everything in this configuration that
+names the database derives from `google_sql_database_instance.emisar` — the
+proxy connection name baked into cloud-init, every Cloud SQL IAM condition
+(`cloudsql_instance_only_condition`), and the four `google_sql_user` rows — so a
+restore is served by teaching Terraform that the clone IS `emisar`, never by
+re-creating the instance. The old instance carries `prevent_destroy` and both
+deletion-protection flags, so nothing below can destroy it by accident. In
+order, from a workstation with `./run ops database` authority:
+
+1. Clone: `gcloud sql instances clone emisar emisar-restore-<yyyymmddhhmm>
+   --point-in-time=<RFC 3339>` (the drill does exactly this at now−5 min).
+2. Verify in isolation: `./run ops drill pitr` proves the clone answers as
+   `emisar_owner`; run `infra/tests/database/verify-iam.sql` against it and
+   check the newest application row is the one you expect.
+3. Point Terraform at the clone: set `name = "emisar-restore-<stamp>"` on the
+   `emisar` instance resource, then in the HCP workspace run
+   `terraform state rm google_sql_database_instance.emisar` and
+   `terraform import google_sql_database_instance.emisar
+   projects/<project>/instances/emisar-restore-<stamp>` (workspace RBAC; the
+   sensitive variables never leave HCP).
+4. Plan and Confirm & Apply: the plan updates the IAM conditions in place,
+   re-creates the `google_sql_user` rows on the clone, and replaces the instance
+   template with the clone's connection name, which rolls the MIG — the
+   application cutover that the ≈30-minute slice of the 2 h RTO budget covers.
+5. Verify from outside (sign-in, a run, the audit page) and only then stop the
+   old instance with `gcloud sql instances patch emisar --activation-policy
+   NEVER`; keep it for the backup retention window before deleting it and
+   removing it from the `emisar_database_only` condition history.
+
+Rehearse the clone-and-verify half with `./run ops drill pitr --apply` and keep
+its manifest as the RPO evidence; steps 3–5 are the RTO half and are exercised
+only in a real recovery.
+
 pgAudit records only `ROLE` and `DDL`. In Cloud Audit Logs these are Data Access
 entries with `protoPayload.methodName=cloudsql.instances.query`; parameters are
 disabled and normal `SELECT`, `INSERT`, `UPDATE`, and `DELETE` workload traffic
