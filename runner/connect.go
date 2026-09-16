@@ -19,6 +19,7 @@ import (
 	"github.com/andrewdryga/emisar/runner/internal/admission"
 	"github.com/andrewdryga/emisar/runner/internal/cloud"
 	"github.com/andrewdryga/emisar/runner/internal/config"
+	"github.com/andrewdryga/emisar/runner/internal/executor"
 	"github.com/andrewdryga/emisar/runner/internal/fsutil"
 	"github.com/andrewdryga/emisar/runner/internal/redact"
 	"github.com/andrewdryga/emisar/runner/internal/signing"
@@ -39,6 +40,15 @@ websocket. Subsequent boots reuse the cached token, so the enrollment key
 env var can be unset after the first successful connect.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// First, before anything else touches the secrets this process
+			// carries: the environment systemd loaded from runner.env is
+			// already in the kernel's copy, and the bearer token is about to
+			// be read into memory. Fail closed like no_new_privs does — a
+			// runner that cannot keep its children out of its own /proc
+			// entries must not run them.
+			if err := executor.ProtectProcess(); err != nil {
+				return err
+			}
 			cfg, err := loadConfig()
 			if err != nil {
 				return err

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/andrewdryga/emisar/runner/internal/config"
@@ -332,6 +333,12 @@ func TestBoot_AdmissionCompileErrorWrapped(t *testing.T) {
 }
 
 func TestProtectedPaths(t *testing.T) {
+	// The runner's own /proc entry rides along with the configured roots: the
+	// kernel's copies of runner.env (environ) and the bearer token (mem) live
+	// there, and the validator's canonical resolution turns /proc/self into
+	// this pid.
+	self := filepath.Join("/proc", strconv.Itoa(os.Getpid()))
+
 	tests := []struct {
 		name string
 		cfg  *config.Config
@@ -344,7 +351,7 @@ func TestProtectedPaths(t *testing.T) {
 				Paths:  config.Paths{DataDir: "/var/lib/emisar"},
 				Cloud:  config.Cloud{TokenPath: "/var/lib/emisar/token"},
 			},
-			want: []string{"/var/lib/emisar", "/etc/emisar"},
+			want: []string{"/var/lib/emisar", self, "/etc/emisar"},
 		},
 		{
 			// The journal lives under --log-dir, apart from the data dir on a
@@ -358,7 +365,7 @@ func TestProtectedPaths(t *testing.T) {
 				Cloud:  config.Cloud{TokenPath: "/var/lib/emisar/token"},
 				Events: config.Events{JSONLPath: "/var/log/emisar/events.jsonl"},
 			},
-			want: []string{"/var/lib/emisar", "/etc/emisar", "/var/log/emisar"},
+			want: []string{"/var/lib/emisar", self, "/etc/emisar", "/var/log/emisar"},
 		},
 		{
 			name: "a token stored away from the data dir is protected too",
@@ -367,7 +374,7 @@ func TestProtectedPaths(t *testing.T) {
 				Paths:  config.Paths{DataDir: "/opt/emisar/state"},
 				Cloud:  config.Cloud{TokenPath: "/var/secrets/emisar/token"},
 			},
-			want: []string{"/opt/emisar/state", "/opt/emisar", "/var/secrets/emisar"},
+			want: []string{"/opt/emisar/state", self, "/opt/emisar", "/var/secrets/emisar"},
 		},
 		{
 			// "/" would refuse every path arg on the host instead of the
@@ -379,14 +386,14 @@ func TestProtectedPaths(t *testing.T) {
 				Paths:  config.Paths{DataDir: "/"},
 				Cloud:  config.Cloud{TokenPath: "state/token"},
 			},
-			want: []string{},
+			want: []string{self},
 		},
 		{
 			name: "an unset data dir contributes nothing",
 			cfg: &config.Config{
 				Source: "/etc/emisar/config.yaml",
 			},
-			want: []string{"/etc/emisar"},
+			want: []string{self, "/etc/emisar"},
 		},
 	}
 

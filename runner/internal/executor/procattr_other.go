@@ -12,3 +12,9 @@ func applyProcAttr(_ *exec.Cmd) {}
 func startCommand(cmd *exec.Cmd) error {
 	return cmd.Start()
 }
+
+// ProtectProcess has no dumpable attribute to clear on these platforms; Linux
+// carries the guard.
+func ProtectProcess() error {
+	return nil
+}

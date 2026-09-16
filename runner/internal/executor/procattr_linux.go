@@ -17,6 +17,47 @@ import (
 // than referenced and silently failing to build the primary release target.
 const prSetNoNewPrivs = 0x26
 
+// prSetDumpable and prGetDumpable are PR_SET_DUMPABLE / PR_GET_DUMPABLE from
+// linux/prctl.h, spelled out for the same reason.
+const (
+	prSetDumpable = 0x4
+	prGetDumpable = 0x3
+)
+
+// ProtectProcess marks the runner non-dumpable, so the kernel's own copies of
+// its secrets stop being readable by the actions it runs. /proc/<pid>/environ
+// is runner.env — the enrollment key plus every pack credential systemd
+// loaded — and /proc/<pid>/mem holds the control-plane bearer token. Both are
+// gated by ptrace access, which a same-uid process passes whenever the target
+// is dumpable, and every action runs as the runner's user unless its pack
+// drops further: an approved read of the runner's pid, or a third-party pack
+// with a deny-only path rule pointed at /proc/self, handed those copies over,
+// and on a ptrace_scope=0 host (Debian's default) a child could attach and
+// impersonate the runner outright. Non-dumpable, the entries are root-owned
+// and same-uid ptrace is refused whatever the Yama scope; core dumps of a
+// process holding tokens stop with it.
+//
+// Dumpable lives on the address space, so one call covers every thread, and
+// it is reset on exec, so each action still gets an ordinary process of its
+// own — other pids stay exactly as inspectable as before.
+func ProtectProcess() error {
+	if _, _, errno := syscall.RawSyscall6(
+		syscall.SYS_PRCTL, prSetDumpable, 0, 0, 0, 0, 0,
+	); errno != 0 {
+		return fmt.Errorf("set dumpable=0: %w", errno)
+	}
+	return nil
+}
+
+// processDumpable reports the calling process's dumpable attribute.
+func processDumpable() (int, error) {
+	value, _, errno := syscall.RawSyscall6(syscall.SYS_PRCTL, prGetDumpable, 0, 0, 0, 0, 0)
+	if errno != 0 {
+		return 0, fmt.Errorf("get dumpable: %w", errno)
+	}
+	return int(value), nil
+}
+
 // applyProcAttr sets process attributes that protect against orphaned
 // children. On Linux:
 //

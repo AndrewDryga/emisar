@@ -255,7 +255,14 @@ func bootWithConfig(cfg *config.Config) (*runtime, error) {
 // they are read from the loaded config rather than hardcoded into a pack's
 // denylist.
 func protectedPaths(cfg *config.Config) []string {
-	candidates := []string{cfg.Paths.DataDir}
+	// The kernel keeps two more copies of the same secrets under this
+	// process's /proc entry — environ (runner.env) and mem (the bearer token).
+	// The daemon marks itself non-dumpable so a child cannot read them, and
+	// the validator refuses the path before exec: the canonical resolution it
+	// applies rewrites /proc/self into this very pid, so a pack that named
+	// /proc/self/environ was pointed straight at the runner. Other pids stay
+	// inspectable; on a host without /proc the root simply never matches.
+	candidates := []string{cfg.Paths.DataDir, filepath.Join("/proc", strconv.Itoa(os.Getpid()))}
 	if cfg.Source != "" {
 		candidates = append(candidates, filepath.Dir(cfg.Source))
 	}

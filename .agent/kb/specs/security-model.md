@@ -1,7 +1,7 @@
 ---
 name: security-model
 sources: [runner/internal/engine, runner/internal/admission, runner/internal/validation, runner/internal/redact, runner/internal/packs, runner/internal/attest, portal/apps/emisar/lib/emisar/auth/authorizer.ex, portal/apps/emisar/lib/emisar/policies.ex, portal/apps/emisar/lib/emisar/runs.ex, portal/apps/emisar/lib/emisar/runners/runner.ex]
-updated: 2026-09-12
+updated: 2026-09-16
 ---
 
 # Security model
@@ -169,6 +169,7 @@ its actions from itself:
 | LLM passes unexpected arguments          | Unknown args rejected; declared schema enforced on runner.     |
 | Cloud bug sends bogus opts (huge timeout)| Opts clamped to action min/max.                               |
 | LLM tries to read /etc/shadow            | Path arg `allowed_prefixes`/`allowed_paths` confine it to the intended location (`denied_*` only carves extra exclusions out of that allowlist, and alone admits every unnamed path); the runner's own config/state roots are refused whatever the pack declares; OS perms still apply. |
+| Action reads the runner's own secrets through `/proc` | The daemon is non-dumpable (`PR_SET_DUMPABLE=0`), so `/proc/<runner pid>/environ` (runner.env) and `mem` (the bearer token) are root-owned and refuse same-user ptrace whatever the Yama scope, and the runner's own `/proc/<pid>` tree is a protected root for every path argument. Other pids stay inspectable. |
 | Output contains a stray bearer token     | Default + per-action redaction rules; size caps.              |
 | Runaway process                          | Timeouts enforced via `context.WithTimeout`.                  |
 | Output flood                             | Stdout/stderr byte caps; buffered progress is bounded, dropped chunks are counted structurally, and portal summaries mark incomplete delivery. |
@@ -296,6 +297,9 @@ available.
 
 ## Changelog
 
+- 2026-09-16 — added the non-dumpable daemon and the runner's own `/proc`
+  tree as a protected root to the threat table (`executor.ProtectProcess`,
+  `protectedPaths`).
 - 2026-09-12 — restored the one-runner-one-account tenancy fact in the
   control-plane boundary section, verified against `runners.account_id`
   (`null: false`), the per-account `name`/`external_id` unique indexes, and

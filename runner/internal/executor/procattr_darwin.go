@@ -24,6 +24,12 @@ func startCommand(cmd *exec.Cmd) error {
 	return cmd.Start()
 }
 
+// ProtectProcess has nothing to hide here: there is no /proc, and this
+// platform is development-only. Linux carries the non-dumpable guard.
+func ProtectProcess() error {
+	return nil
+}
+
 func killGroup(pid int, sig syscall.Signal) error {
 	return syscall.Kill(-pid, sig)
 }

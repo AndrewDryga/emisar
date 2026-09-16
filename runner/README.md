@@ -280,6 +280,16 @@ not an optional hardening setting. It prevents setuid/setgid helpers and file
 capabilities on action binaries from adding privileges anywhere in the action's
 process tree.
 
+The daemon also marks itself non-dumpable at start. The kernel keeps a copy of
+the environment `runner.env` loaded (the enrollment key and every pack
+credential) under `/proc/<pid>/environ`, and the bearer token lives in the
+process memory behind `/proc/<pid>/mem`; non-dumpable, those entries are
+root-owned and no same-user action child can read or attach to them, whatever
+the host's `ptrace_scope`. The runner's own `/proc/<pid>` tree is also a
+protected root for every path argument, so `/proc/self/environ` is refused
+before an action runs. Every other process stays as inspectable as before, so
+`ProtectProc=` is still the directive that breaks `/proc` diagnostics, not this.
+
 The installed systemd unit is deliberately modest because every service
 sandbox directive also constrains the actions it launches. For example:
 
