@@ -100,6 +100,41 @@ defmodule Emisar.Billing.CheckoutsTest do
     refute_received {:paddle, :create, _attrs, _caller}
   end
 
+  # Paddle creates transactions synchronously, so a reservation whose clean
+  # discovery is still empty an hour later is one whose create never landed.
+  # Failing it is what lets the workspace ever check out (or close) again.
+  test "an hour-old reservation with a clean empty discovery fails, and the next click reserves fresh",
+       %{account: account, subject: subject} do
+    abandoned = Fixtures.Billing.create_checkout_intent(account)
+
+    abandoned
+    |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(), -3_601, :second))
+    |> Repo.update!()
+
+    assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
+    assert Repo.reload!(abandoned).state == :failed
+    assert intent(account).state == :payable
+    assert_received {:paddle, :create, _attrs, _caller}
+    refute_received {:paddle, :create, _attrs, _caller}
+  end
+
+  test "an abandoned reservation no longer blocks closing the account", %{account: account} do
+    abandoned = Fixtures.Billing.create_checkout_intent(account)
+
+    abandoned
+    |> Ecto.Changeset.change(inserted_at: DateTime.add(DateTime.utc_now(), -3_601, :second))
+    |> Repo.update!()
+
+    assert Emisar.Billing.Checkouts.cancel_for_close(account.id) == :ok
+    assert Repo.reload!(abandoned).state == :failed
+    refute_received {:paddle, :create, _attrs, _caller}
+
+    # A young reservation still holds closure: its create may yet land.
+    young = Fixtures.Billing.create_checkout_intent(account)
+    assert Emisar.Billing.Checkouts.cancel_for_close(account.id) == {:error, :checkout_pending}
+    assert Repo.reload!(young).state == :creating
+  end
+
   test "captures the provider ID before a missing URL and recovers it", %{
     account: account,
     subject: subject

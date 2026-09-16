@@ -132,7 +132,20 @@ defmodule Emisar.Billing.Checkouts do
            transition(intent, &CheckoutIntent.Changeset.capture(&1, transaction["id"])) do
       recover(captured)
     else
-      _unresolved -> pending(intent, :ambiguous_create)
+      # A complete, clean scan with nothing correlated to this reservation.
+      # Paddle creates transactions synchronously, so once the reservation is
+      # older than the grace window no transaction is still on its way: the
+      # create never landed (a timeout, a 429, a 5xx). Failing it lets the
+      # next click reserve fresh instead of answering "checkout pending"
+      # forever — and blocking account closure with it. A younger reservation
+      # stays pending, and nothing here submits a create.
+      [] ->
+        if reservation_abandoned?(intent),
+          do: fail_creating(intent),
+          else: pending(intent, :ambiguous_create)
+
+      _unresolved ->
+        pending(intent, :ambiguous_create)
     end
   end
 
@@ -525,6 +538,19 @@ defmodule Emisar.Billing.Checkouts do
     end)
   end
 
+  # An hour is generous for a synchronous create whose response was merely lost.
+  @creating_grace_seconds 3_600
+
+  defp reservation_abandoned?(%CheckoutIntent{inserted_at: inserted_at}),
+    do: DateTime.diff(DateTime.utc_now(), inserted_at) > @creating_grace_seconds
+
+  defp fail_creating(intent) do
+    case transition(intent, &CheckoutIntent.Changeset.fail/1) do
+      {:ok, failed} -> {:ok, failed}
+      _failure -> pending(intent, :ambiguous_create)
+    end
+  end
+
   defp pending(intent, category) do
     case transition(intent, &CheckoutIntent.Changeset.record_failure(&1, category)) do
       {:ok, _intent} -> {:error, :checkout_pending}
@@ -574,8 +600,15 @@ defmodule Emisar.Billing.Checkouts do
       nil ->
         :ok
 
-      %CheckoutIntent{state: :creating} ->
-        {:error, :checkout_pending}
+      # Recovery either discovers the transaction (and the intent moves on to
+      # the retirement branch below) or fails an abandoned reservation; only a
+      # young one whose create may still land keeps closure waiting.
+      %CheckoutIntent{state: :creating} = intent ->
+        case recover(intent) do
+          {:ok, %CheckoutIntent{state: :failed}} -> :ok
+          {:ok, %CheckoutIntent{}} -> cancel_for_close(account_id)
+          _unresolved -> {:error, :checkout_pending}
+        end
 
       %CheckoutIntent{state: :payment_reconciling} = intent ->
         case recover(intent) do
