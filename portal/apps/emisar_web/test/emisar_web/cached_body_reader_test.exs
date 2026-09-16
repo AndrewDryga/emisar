@@ -81,6 +81,33 @@ defmodule EmisarWeb.CachedBodyReaderTest do
     refute Map.has_key?(conn.assigns, :raw_body)
   end
 
+  # Bandit hands the plug the raw request target (`request_path`) and the
+  # router matches the cleaned segments (`path_info`), so a spelling the router
+  # accepts must meet the same cap. Plug.Test reads `//host/path` as a URL, so
+  # the doubled-slash conns are shaped by hand the way Bandit shapes them.
+  test "a trailing or doubled slash meets the same cap and cache as the canonical path" do
+    body = String.duplicate("x", 64 * 1024 + 1)
+
+    assert {:more, _partial, _conn} =
+             CachedBodyReader.read_body(build_conn(:post, "/webhooks/postmark/", body), [])
+
+    doubled = %{
+      build_conn(:post, "/webhooks/postmark", body)
+      | request_path: "//webhooks/postmark"
+    }
+
+    assert doubled.path_info == ["webhooks", "postmark"]
+    assert {:more, _partial, _conn} = CachedBodyReader.read_body(doubled, [])
+
+    conn = build_conn(:post, "/api/mcp/rpc/", "{}")
+    assert {:ok, "{}", conn} = CachedBodyReader.read_body(conn, [])
+    assert conn.assigns.raw_body == "{}"
+
+    scim = String.duplicate("x", 2 * 1024 * 1024 + 1)
+    doubled = %{build_conn(:post, "/scim/v2/Users", scim) | request_path: "//scim/v2/Users"}
+    assert {:more, _partial, _conn} = CachedBodyReader.read_body(doubled, [])
+  end
+
   test "does not cache bodies for other routes" do
     conn = build_conn(:post, "/api/other", "{}")
 

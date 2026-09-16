@@ -7,6 +7,7 @@ defmodule EmisarWeb.Plugs.JSONRPCParseError do
   `Plug.Parsers`' default behavior (the `ParseError` is re-raised unchanged).
   """
   @behaviour Plug
+  alias EmisarWeb.CachedBodyReader
   alias EmisarWeb.MCP.BoundaryResponse
 
   @rpc_path "/api/mcp/rpc"
@@ -19,7 +20,7 @@ defmodule EmisarWeb.Plugs.JSONRPCParseError do
     Plug.Parsers.call(conn, opts)
   rescue
     error in Plug.Parsers.ParseError ->
-      if conn.request_path == @rpc_path do
+      if CachedBodyReader.canonical_path(conn) == @rpc_path do
         BoundaryResponse.send_error(conn, :bad_request, -32_700, "Parse error",
           inspect_body: false
         )
@@ -28,7 +29,7 @@ defmodule EmisarWeb.Plugs.JSONRPCParseError do
       end
 
     error in Plug.Parsers.RequestTooLargeError ->
-      if conn.request_path == @rpc_path do
+      if CachedBodyReader.canonical_path(conn) == @rpc_path do
         BoundaryResponse.send_error(conn, 413, -32_600, "Request body too large",
           inspect_body: false
         )

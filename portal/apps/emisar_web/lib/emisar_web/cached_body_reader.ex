@@ -50,7 +50,7 @@ defmodule EmisarWeb.CachedBodyReader do
   }
 
   def read_body(conn, opts) do
-    opts = bound_length(opts, body_limit(conn.request_path))
+    opts = bound_length(opts, body_limit(canonical_path(conn)))
 
     case Plug.Conn.read_body(conn, opts) do
       {:ok, body, conn} ->
@@ -68,12 +68,24 @@ defmodule EmisarWeb.CachedBodyReader do
   end
 
   defp maybe_cache_body(conn, body) do
-    if Map.has_key?(@cached_body_limits, conn.request_path) do
+    if Map.has_key?(@cached_body_limits, canonical_path(conn)) do
       {:ok, body, Plug.Conn.assign(conn, :raw_body, body)}
     else
       {:ok, body, conn}
     end
   end
+
+  @doc """
+  The path the router will match, spelled the way these tables spell it.
+
+  `conn.request_path` is the raw request target; the router matches
+  `conn.path_info`, which drops empty segments and decodes each one. Keyed on
+  the raw string, `/webhooks/postmark/` and `//scim/v2/Users` reached the same
+  controllers with `Plug.Parsers`' ~8 MB default instead of these caps, and
+  `/api/mcp/rpc/` skipped the raw-body cache the signature check needs.
+  """
+  @spec canonical_path(Plug.Conn.t()) :: String.t()
+  def canonical_path(%Plug.Conn{path_info: segments}), do: "/" <> Enum.join(segments, "/")
 
   defp body_limit(path) do
     case Map.get(@cached_body_limits, path) do
