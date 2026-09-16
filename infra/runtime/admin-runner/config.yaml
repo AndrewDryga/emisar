@@ -47,6 +47,16 @@ admission:
   deny:
     - "debugging.pid_environ"
     - "docker.inspect"
+    # TFE_TOKEN is an organization-owner token (HCP Free has no RBAC), and
+    # Confirm & Apply in HCP is the one human deploy gate the delivery runbook
+    # promises: GitHub never calls the apply API. Neither may this runner,
+    # so the run-mutating half of the pack is subtracted while its reads,
+    # plan-only runs, and the ordinary lock/unlock stay for incident work.
+    - "tfc.apply_run"
+    - "tfc.discard_run"
+    - "tfc.cancel_run"
+    - "tfc.retry_run"
+    - "tfc.force_unlock_workspace"
   max_risk: critical
 
 events:

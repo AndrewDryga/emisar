@@ -142,7 +142,12 @@ group `emisar-admin` with `purpose=emisar-admin`; local admission
 allows the private actions, those eight host packs, `hcp-terraform`, and the GCP
 certificate, Cloud SQL, compute, DNS, IAM, load-balancing, monitoring,
 networking, and storage packs at every declared risk tier. The GCP credentials
-remain read-only, so mutation actions are visible but Google refuses them.
+remain read-only, so mutation actions are visible but Google refuses them. The
+HCP token is organization-owner-equivalent (Free has no RBAC), so the runner's
+admission subtracts the run-mutating HCP actions (`tfc.apply_run`,
+`discard_run`, `cancel_run`, `retry_run`, `force_unlock_workspace`); reads,
+plan-only runs, and the ordinary lock/unlock stay. Confirm & Apply in HCP
+remains the one deploy gate, reachable from no runner.
 
 Set the reusable runner enrollment credential as the sensitive HCP
 Terraform variable `emisar_runner_enrollment_key`. A regional MIG can create

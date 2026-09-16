@@ -1,7 +1,7 @@
 ---
 name: deployment
 sources: [.github/workflows/ci.yml, .github/workflows/cd.yml, infra/iam.tf, infra/github_oidc.tf, infra/versions.tf, portal/config/runtime.exs, portal/apps/emisar/lib/emisar/release.ex]
-updated: 2026-09-12
+updated: 2026-09-16
 ---
 
 # CI/CD production setup
@@ -56,7 +56,10 @@ portal deployment decision.
 Keep HCP Terraform workspace auto-apply disabled. Never store an HCP token as a
 repository secret. The token remains organization-owner-equivalent because Free
 has no team RBAC; the workflow never calls the apply API, and the environment's
-branch policy exposes the token only to protected `main`.
+branch policy exposes the token only to protected `main`. The colocated admin
+runner holds the same token for the HCP pack's reads; its admission denies
+`tfc.apply_run`, `discard_run`, `cancel_run`, `retry_run`, and
+`force_unlock_workspace`, so no MCP path reaches the apply either.
 Treat HCP's Confirm & Apply as the production gate: review the saved plan
 there before applying. Do not change CD back to standard plan-and-apply
 runs: an unconfirmed standard plan holds the workspace lock indefinitely.
