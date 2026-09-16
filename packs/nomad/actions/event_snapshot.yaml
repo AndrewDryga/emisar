@@ -2,7 +2,7 @@ schema_version: 1
 id: nomad.event_snapshot
 title: Snapshot recent Nomad events (bounded /v1/event/stream)
 kind: script
-risk: low
+risk: high
 description: >
   Show a bounded snapshot of the Nomad event stream — recent Job, Allocation,
   Evaluation, Deployment, and Node events for incident triage, with no local CLI
@@ -11,7 +11,10 @@ description: >
   it from index=1 (replays the buffer, then live events) for `seconds` seconds,
   capped at 256 KiB, then returns — so it never hangs. Optionally filter to one
   `topic` or one `namespace`. Output is NDJSON: one {Index, Events:[...]} batch
-  per line. Requires a token that can read the event stream.
+  per line. Requires a token that can read the event stream. High because every
+  Job event embeds the complete job, `env` and `template` blocks included — the
+  same secret-bearing content as `nomad.job_inspect` — and the runner's
+  redaction is a pattern-bound backstop, not a guarantee.
 side_effects:
   - Opens the Nomad event stream for a bounded time window.
   - Read-only.

@@ -3,7 +3,10 @@ id: nomad.job_history
 title: nomad job history <id>
 kind: script
 risk: low
-description: List all versions of one job with submitter + timestamp.
+description: >
+  List all versions of one job with submitter + timestamp. Version lines only:
+  no diff and no spec, so nothing from the job's `env` or `template` blocks is
+  printed. For the content of a version, `nomad.job_inspect` (high) is the read.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: job
@@ -23,7 +26,7 @@ execution:
   script:
     path: scripts/nomad_nsr.sh
     interpreter: /bin/sh
-  argv: ["{{ args.namespace }}", "", "job history -p", "{{ args.job }}"]
+  argv: ["{{ args.namespace }}", "", "job history", "{{ args.job }}"]
   timeout: 30s
 output:
   parser: text

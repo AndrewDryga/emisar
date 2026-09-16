@@ -3,7 +3,10 @@ id: nginx.bytes_by_url
 title: Top URLs by total bytes sent
 kind: exec
 risk: low
-description: List top N URLs ordered by `$body_bytes_sent` summed per URL (column 10). Read-only.
+description: >
+  List top N URLs ordered by `$body_bytes_sent` summed per URL (column 10),
+  keyed on the request path without its query string so a credential in a
+  URL never enters the table. Read-only.
 side_effects:
   - Reads /var/log/nginx/access.log.
   - Read-only.
@@ -34,7 +37,7 @@ execution:
       - |
         log="${NGINX_ACCESS_LOG:-/var/log/nginx/access.log}"
         [ -r "$log" ] || { echo "access log not readable: $log" >&2; exit 1; }
-        tail -n {{ args.lines }} "$log" | awk '{bytes[$7]+=$10} END{for(u in bytes) printf "%d %s\n", bytes[u], u}' | sort -rn | head -n {{ args.limit }}
+        tail -n {{ args.lines }} "$log" | awk '{split($7, p, "?"); bytes[p[1]]+=$10} END{for(u in bytes) printf "%d %s\n", bytes[u], u}' | sort -rn | head -n {{ args.limit }}
   timeout: 60s
 output:
   parser: text
