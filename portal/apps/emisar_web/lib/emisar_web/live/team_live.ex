@@ -1528,6 +1528,11 @@ defmodule EmisarWeb.TeamLive do
           |> assign(:mfa_reset_sso_facts, sso_facts)
           |> assign(:mfa_reset_error, nil)
 
+        {:ok, %{member_of_other_workspaces?: true}} ->
+          socket
+          |> put_flash(:error, MemberErrors.message(:member_of_other_workspaces))
+          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
+
         {:ok, _facts} ->
           socket
           |> put_flash(:error, "That member no longer has MFA to reset.")
@@ -3289,7 +3294,9 @@ defmodule EmisarWeb.TeamLive do
                authenticator and their recovery codes. It's an
                MFA-BYPASS action (it lets them enroll a NEW factor), so
                the screen spells out the account-takeover risk if the
-               admin is wrong about who's really asking. --%>
+               admin is wrong about who's really asking. A member who
+               also belongs to other workspaces keeps the item, disabled
+               with the reason: their factor guards those workspaces too. --%>
           <.menu_item
             :if={@member.reset_mfa?}
             tone={:amber}
@@ -3297,6 +3304,13 @@ defmodule EmisarWeb.TeamLive do
           >
             Reset MFA
           </.menu_item>
+          <.tooltip
+            :if={@member.mfa_enrolled? and @member.member_of_other_workspaces?}
+            id={"reset-mfa-elsewhere-#{@membership.id}"}
+            text={MemberErrors.message(:member_of_other_workspaces)}
+          >
+            <.menu_item tone={:amber} disabled>Reset MFA</.menu_item>
+          </.tooltip>
           <.menu_item
             phx-click="open_member_action"
             phx-value-action="end_sessions"

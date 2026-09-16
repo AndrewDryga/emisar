@@ -1179,6 +1179,7 @@ defmodule Emisar.Accounts do
       access_by_membership = runner_access_for_memberships(memberships)
       manager? = subject_can_manage_team?(subject)
       suspended_by_labels = suspended_by_labels(memberships, account_id, manager?)
+      users_elsewhere = users_with_other_tenancies(memberships, account_id)
 
       facts =
         Enum.map(
@@ -1187,6 +1188,7 @@ defmodule Emisar.Accounts do
             &1,
             access_by_membership,
             suspended_by_labels,
+            users_elsewhere,
             manager?,
             subject
           )
@@ -1223,12 +1225,14 @@ defmodule Emisar.Accounts do
       access_by_membership = runner_access_for_memberships([membership])
       manager? = subject_can_manage_team?(subject)
       suspended_by_labels = suspended_by_labels([membership], membership.account_id, manager?)
+      users_elsewhere = users_with_other_tenancies([membership], membership.account_id)
 
       {:ok,
        team_member_facts(
          membership,
          access_by_membership,
          suspended_by_labels,
+         users_elsewhere,
          manager?,
          subject
        )}
@@ -1254,6 +1258,7 @@ defmodule Emisar.Accounts do
          %Membership{} = membership,
          access_by_membership,
          suspended_by_labels,
+         users_elsewhere,
          manager?,
          %Subject{} = subject
        ) do
@@ -1262,6 +1267,7 @@ defmodule Emisar.Accounts do
     mfa_enrolled? = member_mfa_enrolled?(membership.user)
     confirmation_pending? = member_confirmation_pending?(membership.user)
     self_owner? = self_owner?(membership, subject)
+    member_of_other_workspaces? = MapSet.member?(users_elsewhere, membership.user_id)
 
     facts = %{
       # The digest is credential material behind the join link, and the raw
@@ -1284,7 +1290,13 @@ defmodule Emisar.Accounts do
       resend_invitation?: pending_invitation? and not disabled?,
       resend_confirmation?:
         confirmation_pending? and membership.user_id == Subject.actor_id(subject),
-      reset_mfa?: mfa_enrolled? and not pending_invitation?
+      # A second factor belongs to the person, not to this workspace: an admin
+      # here may take it away only when this workspace is the only one the
+      # person belongs to. Otherwise the member resets it themselves with a
+      # recovery code, or asks support — a co-tenant admin plus that person's
+      # mailbox must never add up to their other workspaces.
+      member_of_other_workspaces?: member_of_other_workspaces?,
+      reset_mfa?: mfa_enrolled? and not pending_invitation? and not member_of_other_workspaces?
     }
 
     if manager? do
@@ -1292,6 +1304,18 @@ defmodule Emisar.Accounts do
     else
       facts
     end
+  end
+
+  # The user ids among `memberships` that hold a live membership in another
+  # workspace — a disabled or still-pending one counts, the same tenancy test
+  # `sole_tenancy?/3` applies one row at a time.
+  defp users_with_other_tenancies(memberships, account_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_user_ids(Enum.map(memberships, & &1.user_id))
+    |> Membership.Query.excluding_account_id(account_id)
+    |> Membership.Query.select_user_ids()
+    |> Repo.all()
+    |> MapSet.new()
   end
 
   defp suspended_by_labels(memberships, account_id, true) do
@@ -3683,12 +3707,21 @@ defmodule Emisar.Accounts do
            ),
          %Users.User{} = actor <- Enum.find(users, &(&1.id == actor_membership.user_id)),
          %Users.User{} = target <- Enum.find(users, &(&1.id == target_membership.user_id)),
-         :ok <- ensure_member_mfa_reset_target_user(target, payload) do
+         :ok <- ensure_member_mfa_reset_target_user(target, payload),
+         # Under the target's user-row lock, so a membership granted elsewhere
+         # while this decides waits behind it (see fetch_and_lock_active_memberships_for_user/2).
+         :ok <- ensure_member_mfa_reset_target_sole_tenant(repo, target, target_membership) do
       {:ok, %{actor: actor, target: target}}
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp ensure_member_mfa_reset_target_sole_tenant(repo, %Users.User{} = target, membership) do
+    if sole_tenancy?(repo, target.id, membership.account_id),
+      do: :ok,
+      else: {:error, :member_of_other_workspaces}
   end
 
   defp ensure_member_mfa_reset_target_user(%Users.User{mfa_enabled_at: nil}, nil),

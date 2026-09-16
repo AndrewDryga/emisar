@@ -2376,6 +2376,29 @@ defmodule Emisar.AccountsTest do
       refute facts_by_id[owner_membership.id].reset_mfa?
     end
 
+    test "a member who also belongs to another workspace cannot have MFA reset from here", %{
+      account: account,
+      subject: subject
+    } do
+      elsewhere = Fixtures.Users.create_user()
+      enroll_mfa(elsewhere)
+      other_account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: elsewhere.id)
+
+      elsewhere_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: elsewhere.id)
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      facts_by_id = Map.new(facts, &{&1.membership.id, &1})
+
+      assert facts_by_id[elsewhere_membership.id].mfa_enrolled?
+      assert facts_by_id[elsewhere_membership.id].member_of_other_workspaces?
+      refute facts_by_id[elsewhere_membership.id].reset_mfa?
+
+      assert {:ok, %{member_of_other_workspaces?: true, reset_mfa?: false}} =
+               Accounts.fetch_team_member_facts(elsewhere_membership.id, subject)
+    end
+
     test "confirmation state drives the badge and only the actor's resend action", %{
       account: account,
       subject: subject
@@ -5677,6 +5700,26 @@ defmodule Emisar.AccountsTest do
                |> AuditEvent.Query.by_event_type("user.mfa_reset_by_admin"),
                :count
              ) == 1
+    end
+
+    test "a target who belongs to another workspace is refused before and after the proof" do
+      reset = member_mfa_reset_fixture()
+      other_account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: reset.target_user.id
+      )
+
+      # The refusal lands at verification, before the actor's own factor is spent.
+      assert Accounts.verify_member_mfa_reset(
+               reset.target_membership,
+               {:totp, current_totp()},
+               reset.actor_session_token_digest,
+               reset.subject
+             ) == {:error, :member_of_other_workspaces}
+
+      assert Repo.reload!(reset.target_user).mfa_enabled_at != nil
     end
 
     test "a recovery-code proof consumes only the presented actor code" do

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="teams-and-access"
-      updated="September 8, 2026"
+      updated="September 16, 2026"
       toc={[
         {"roles", "Roles"},
         {"inviting", "Inviting your team"},
@@ -172,6 +172,12 @@
           navigate={~p"/docs/authentication" <> "#enforcement"}
           class="text-brand-400 hover:text-brand-300"
         >Enforce account sign-in</.link>.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        A member's authenticator belongs to the person, not to one account. An owner or admin
+        can reset it from the Team page only while this account is the only one the member
+        belongs to; a member of other accounts resets it themselves with a recovery code, or
+        asks Emisar support. Either reset ends every session the member has.
       </p>
 
       <.docs_h2 id="sessions">Sessions &amp; credentials</.docs_h2>

@@ -3097,6 +3097,32 @@ defmodule EmisarWeb.TeamLiveTest do
       refute has_element?(lv, ~s|a[href="#{pending_path}"]|, "Reset MFA")
     end
 
+    test "a member who belongs to another workspace gets a disabled action and no reset page", %{
+      conn: conn,
+      account: account,
+      member: member,
+      membership: membership
+    } do
+      enroll_mfa(member)
+      other_account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: member.id)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      path = ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa"
+      refute has_element?(lv, ~s|a[href="#{path}"]|, "Reset MFA")
+      assert has_element?(lv, "button[disabled]", "Reset MFA")
+      assert render(lv) =~ "also belongs to other workspaces"
+
+      # The dialog route is not a back door: it returns to the roster with the reason.
+      {:ok, _lv, html} =
+        conn
+        |> live(path)
+        |> follow_redirect(conn, ~p"/app/#{account}/settings/team")
+
+      assert html =~ "also belongs to other workspaces"
+      assert Emisar.Repo.reload!(member).mfa_enabled_at != nil
+    end
+
     test "an owner must prove their own current TOTP before the member is reset", %{
       conn: conn,
       owner: owner,

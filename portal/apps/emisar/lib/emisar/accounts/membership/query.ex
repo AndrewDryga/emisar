@@ -97,6 +97,8 @@ defmodule Emisar.Accounts.Membership.Query do
 
   def select_account_ids(queryable), do: select(queryable, [memberships: m], m.account_id)
 
+  def select_user_ids(queryable), do: select(queryable, [memberships: m], m.user_id)
+
   def by_account_and_user(queryable, account_id, user_id) do
     queryable
     |> where([memberships: m], m.account_id == ^account_id and m.user_id == ^user_id)

@@ -201,6 +201,11 @@ defmodule Emisar.AccountsConcurrencyTest do
     end)
   end
 
+  # Two owners who each belong to both workspaces reset each other: the two
+  # transactions lock the same pair of user rows, so they must take them in one
+  # global order. Neither reset lands — a member of other workspaces keeps their
+  # factor — but the refusal is decided UNDER the locks, after the queueing this
+  # test observes, so the ordering is still what keeps them from deadlocking.
   test "cross-account peer owners take globally ordered user locks" do
     unboxed_cross_account_mfa_reset(fn lower_reset, higher_reset, higher_user, accounts ->
       parent = self()
@@ -223,26 +228,20 @@ defmodule Emisar.AccountsConcurrencyTest do
             send(user_blocker.pid, :release)
             assert {:ok, :ok} = Task.await(user_blocker, 30_000)
 
-            assert {:ok, %User{mfa_enabled_at: nil}} = Task.await(lower_resetter, 30_000)
+            assert Task.await(lower_resetter, 30_000) == {:error, :member_of_other_workspaces}
+            assert Task.await(higher_resetter, 30_000) == {:error, :member_of_other_workspaces}
 
-            assert Task.await(higher_resetter, 30_000) ==
-                     {:error, :mfa_reset_proof_stale}
-
-            expected_topic =
-              Auth.live_socket_topic_for_session(higher_reset.actor_session_token)
-
-            assert_receive {:mfa_reset_disconnect, [^expected_topic], false}, 5_000
             refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
-            assert is_nil(Repo.reload!(higher_reset.actor).mfa_enabled_at)
+            refute is_nil(Repo.reload!(higher_reset.actor).mfa_enabled_at)
             refute is_nil(Repo.reload!(lower_reset.actor).mfa_enabled_at)
 
-            assert Auth.fetch_user_and_token_by_session_token(higher_reset.actor_session_token) ==
-                     {:error, :not_found}
+            assert {:ok, _actor, _session} =
+                     Auth.fetch_user_and_token_by_session_token(higher_reset.actor_session_token)
 
             assert {:ok, _actor, _session} =
                      Auth.fetch_user_and_token_by_session_token(lower_reset.actor_session_token)
 
-            assert Enum.map(accounts, &mfa_reset_audit_count(&1.id)) |> Enum.sum() == 1
+            assert Enum.map(accounts, &mfa_reset_audit_count(&1.id)) |> Enum.sum() == 0
           after
             stop_tasks([higher_resetter])
           end
