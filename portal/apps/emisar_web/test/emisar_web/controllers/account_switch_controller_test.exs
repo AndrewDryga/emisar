@@ -45,6 +45,48 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
       assert Enum.any?(audit, &(&1.event_type == "session.account_switched"))
     end
 
+    # An SSO session is the provider's workspace's credential only. The person
+    # reaches their other workspaces by signing in with their email.
+    test "an SSO session can neither switch to nor open the user's other workspace", %{
+      conn: conn
+    } do
+      {_conn, user, first} = register_and_log_in(conn)
+      Fixtures.Accounts.maybe_seed_plan(first, "team")
+      provider = Fixtures.SSO.create_identity_provider(%{account_id: first.id, name: "Okta"})
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: first.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
+      second = second_account_for(user)
+
+      token =
+        Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
+          user_identity_id: identity.id
+        )
+
+      sso_conn = build_conn() |> init_test_session(%{}) |> put_session(:user_token, token)
+
+      conn = post(sso_conn, ~p"/app/accounts/switch", account_id: second.id)
+      assert redirected_to(conn) == ~p"/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "aren't a member"
+
+      refute Event.Query.all()
+             |> Event.Query.by_account_id(second.id)
+             |> Event.Query.by_event_type("session.account_switched")
+             |> Repo.one()
+
+      assert_error_sent 404, fn -> get(sso_conn, ~p"/app/#{second}/runners") end
+
+      # The provider's own workspace opens, and the switcher says where the rest are.
+      html = sso_conn |> get(~p"/app/#{first}") |> html_response(200)
+      assert html =~ "Sign in with your email to open"
+      refute html =~ second.name
+    end
+
     test "rejects switching to an account the user is NOT a member of", %{conn: conn} do
       {conn, _user, _first} = register_and_log_in(conn)
 

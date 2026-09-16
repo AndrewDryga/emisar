@@ -290,7 +290,7 @@ defmodule Emisar.RunnerAccessTest do
       account: account,
       owner: owner
     } do
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
 
       assert membership.runner_access_mode == :all
 
@@ -603,7 +603,7 @@ defmodule Emisar.RunnerAccessTest do
   describe "runner_access_for_subject/1" do
     test "re-reads the current active membership instead of trusting subject state" do
       {account, owner, _owner_subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
       membership = Fixtures.Memberships.force_role(membership, "admin")
       subject = Fixtures.Subjects.membership_subject(membership)
       assert Accounts.runner_access_for_subject(subject) == RunnerAccess.all()
@@ -618,7 +618,7 @@ defmodule Emisar.RunnerAccessTest do
     test "a membership id from another account resolves to no reach" do
       {account, _owner, _subject} = account_with_owner()
       {other_account, other_owner, _other_subject} = account_with_owner()
-      {:ok, other_membership} = Accounts.fetch_membership_for_session(other_owner, nil)
+      {:ok, other_membership} = Accounts.fetch_membership_for_session(other_owner, nil, nil)
 
       assert Accounts.runner_access_for_membership(
                other_account.id,
@@ -641,7 +641,7 @@ defmodule Emisar.RunnerAccessTest do
   describe "runner_access_for_membership/2" do
     test "returns explicit access only for a current membership in that account" do
       {account, owner, _subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
 
       assert Accounts.runner_access_for_membership(account.id, membership.id) ==
                RunnerAccess.all()
@@ -674,7 +674,7 @@ defmodule Emisar.RunnerAccessTest do
   describe "runner_access_for_locked_membership/2" do
     test "loads the explicit aggregate through the caller's transaction repo" do
       {account, owner, _subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
 
       assert Accounts.runner_access_for_locked_membership(Repo, membership) ==
                RunnerAccess.all()
@@ -686,7 +686,7 @@ defmodule Emisar.RunnerAccessTest do
   describe "fetch_and_lock_active_membership/3" do
     test "returns only the active membership in the requested account" do
       {account, owner, _subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
 
       assert {:ok, locked} =
                Accounts.fetch_and_lock_active_membership(Repo, account.id, membership.id)
@@ -813,7 +813,7 @@ defmodule Emisar.RunnerAccessTest do
     test "a subject pointing at a foreign membership grants nothing" do
       {account, _owner, _subject} = account_with_owner()
       {_other_account, other_owner, _other_subject} = account_with_owner()
-      {:ok, other_membership} = Accounts.fetch_membership_for_session(other_owner, nil)
+      {:ok, other_membership} = Accounts.fetch_membership_for_session(other_owner, nil, nil)
 
       # The other account's owner holds full reach; borrowing their membership
       # id must not lend it across the tenant boundary.
@@ -868,7 +868,7 @@ defmodule Emisar.RunnerAccessTest do
 
     test "a human owner keeps the owner role and full access during directory sync" do
       {account, owner, _owner_subject} = account_with_owner()
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
       assert {:ok, updated} =
@@ -943,7 +943,7 @@ defmodule Emisar.RunnerAccessTest do
     test "the authenticated membership is re-read and forged attrs are ignored" do
       {account, owner, _owner_subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
       membership = Fixtures.Memberships.force_role(membership, "admin")
       subject = Fixtures.Subjects.membership_subject(membership)
       {:ok, restricted} = RunnerAccess.restricted(["db"], [])
@@ -967,7 +967,7 @@ defmodule Emisar.RunnerAccessTest do
       {account, owner, _owner_subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
       _action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
       membership = Fixtures.Memberships.force_role(membership, "admin")
       subject = Fixtures.Subjects.membership_subject(membership)
 
@@ -1034,7 +1034,7 @@ defmodule Emisar.RunnerAccessTest do
       {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(owner_subject)
       assert {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, owner_subject)
 
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
       {:ok, other_packs} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
       Fixtures.Memberships.force_runner_access(membership, other_packs)
 
@@ -1058,7 +1058,7 @@ defmodule Emisar.RunnerAccessTest do
         pack_id: "linux-core"
       )
 
-      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, membership} = Accounts.fetch_membership_for_session(owner, nil, nil)
       membership = Fixtures.Memberships.force_role(membership, "admin")
 
       {:ok, run} =

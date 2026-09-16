@@ -489,12 +489,49 @@ defmodule Emisar.Accounts do
   The subject's user is the only authorization that applies — you can
   only ever list your own memberships.
   """
-  def list_accounts_for_user(%Subject{actor: %Users.User{id: user_id}}, opts \\ []) do
+  def list_accounts_for_user(%Subject{actor: %Users.User{id: user_id}} = subject, opts \\ []) do
     Account.Query.active()
     |> Account.Query.by_membership_user_id(user_id)
+    |> scope_accounts_to_session(session_account_scope(subject))
     |> Account.Query.ordered_by_name()
     |> Repo.list(Account.Query, opts)
   end
+
+  # An SSO session is authority only inside the account whose identity provider
+  # minted it. Users are global rows keyed by email, and a provider may create
+  # one for any address it asserts as verified; if the session it later mints
+  # for that row could reach every workspace the row belongs to, the provider's
+  # owner would inherit any workspace the real person joins or creates. So the
+  # scope of a session is a fact of HOW it was authenticated: a magic-link
+  # session (a proof of the person's own inbox) reaches all of their
+  # memberships; an `:sso` session reaches its provider's account and nothing
+  # else, and a person with several workspaces signs in to the others by
+  # email. `require_sso` accounts already impose the same rule in reverse.
+  # Every pre-auth membership resolver, the switcher, and the switch itself
+  # apply it, so it holds for existing sessions too.
+  defp session_account_scope(%{auth_method: :sso, user_identity_id: identity_id})
+       when is_binary(identity_id) do
+    case SSO.fetch_identity_account_id(identity_id) do
+      {:ok, account_id} -> {:only, account_id}
+      {:error, :not_found} -> :none
+    end
+  end
+
+  # An SSO session with no identity behind it cannot name its account: nothing.
+  defp session_account_scope(%{auth_method: :sso}), do: :none
+  defp session_account_scope(_session), do: :any
+
+  defp scope_memberships_to_session(queryable, :any), do: queryable
+  defp scope_memberships_to_session(queryable, :none), do: Membership.Query.none(queryable)
+
+  defp scope_memberships_to_session(queryable, {:only, account_id}),
+    do: Membership.Query.by_account_id(queryable, account_id)
+
+  defp scope_accounts_to_session(queryable, :any), do: queryable
+  defp scope_accounts_to_session(queryable, :none), do: Account.Query.none(queryable)
+
+  defp scope_accounts_to_session(queryable, {:only, account_id}),
+    do: Account.Query.by_id(queryable, account_id)
 
   @doc """
   Internal — pre-auth self-serve signup. Validates the proposed workspace first,
@@ -2300,17 +2337,21 @@ defmodule Emisar.Accounts do
   (non-deleted) account, return it; otherwise fall back to the most
   recently-joined authorized membership — the default for first sign-in or after
   a stale session value is cleared. Unresolved invitations grant no access.
-  Returns
+  `session` is the `%Auth.UserToken{}` behind the request (or nil): an `:sso`
+  session resolves only inside its provider's account. Returns
   `{:ok, membership} | {:error, :not_found}`.
   """
-  def fetch_membership_for_session(%Users.User{id: user_id}, account_id) do
-    case maybe_fetch_session_membership(user_id, account_id) do
+  def fetch_membership_for_session(%Users.User{id: user_id}, account_id, session) do
+    scope = session_account_scope(session)
+
+    case maybe_fetch_session_membership(user_id, account_id, scope) do
       {:ok, membership} ->
         {:ok, membership}
 
       {:error, :not_found} ->
         Membership.Query.authorized()
         |> Membership.Query.by_user_id(user_id)
+        |> scope_memberships_to_session(scope)
         |> Membership.Query.with_preloaded_account()
         |> Membership.Query.with_preloaded_user()
         |> Membership.Query.latest()
@@ -2318,10 +2359,11 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp maybe_fetch_session_membership(user_id, account_id) do
+  defp maybe_fetch_session_membership(user_id, account_id, scope) do
     if Repo.valid_uuid?(account_id) do
       Membership.Query.authorized()
       |> Membership.Query.by_account_and_user(account_id, user_id)
+      |> scope_memberships_to_session(scope)
       |> Membership.Query.with_preloaded_account()
       |> Membership.Query.with_preloaded_user()
       |> Repo.fetch(Membership.Query)
@@ -2340,12 +2382,20 @@ defmodule Emisar.Accounts do
   UI form). A non-member or unknown ref both return `{:error, :not_found}` —
   indistinguishable, so a slugged URL never confirms a tenant exists (404, never
   403). Suspended (`disabled_at`) members, unresolved invitations, and
-  soft-deleted accounts/users are excluded.
+  soft-deleted accounts/users are excluded. `session` is the `%Auth.UserToken{}`
+  or `%Subject{}` behind the request (nil for an API key, which is bound to its
+  own account): an `:sso` session resolves only inside its provider's account,
+  and an account outside that scope is `:not_found` like any other.
   """
-  def fetch_membership_by_account_id_or_slug(%Users.User{id: user_id}, account_id_or_slug) do
+  def fetch_membership_by_account_id_or_slug(
+        %Users.User{id: user_id},
+        account_id_or_slug,
+        session
+      ) do
     Membership.Query.authorized()
     |> Membership.Query.by_user_id(user_id)
     |> scope_to_account_ref(account_id_or_slug)
+    |> scope_memberships_to_session(session_account_scope(session))
     |> Membership.Query.with_preloaded_account()
     |> Membership.Query.with_preloaded_user()
     |> Repo.fetch(Membership.Query)
@@ -2424,6 +2474,7 @@ defmodule Emisar.Accounts do
     |> Multi.run(:membership, fn repo, _changes ->
       Membership.Query.authorized()
       |> Membership.Query.by_account_and_user(account_id, user_id)
+      |> scope_memberships_to_session(session_account_scope(subject))
       |> Membership.Query.with_preloaded_account()
       |> Membership.Query.with_preloaded_user()
       |> Membership.Query.lock_for_update()

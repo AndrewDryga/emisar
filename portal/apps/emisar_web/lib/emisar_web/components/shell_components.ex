@@ -78,6 +78,7 @@ defmodule EmisarWeb.ShellComponents do
         <.shell_brand
           current_account={@current_account}
           switchable_accounts={@chrome.switchable_accounts}
+          sso_session?={@current_subject.auth_method == :sso}
         />
         <.shell_nav
           current_account={@current_account}
@@ -122,6 +123,7 @@ defmodule EmisarWeb.ShellComponents do
             <.shell_brand
               current_account={@current_account}
               switchable_accounts={@chrome.switchable_accounts}
+              sso_session?={@current_subject.auth_method == :sso}
             />
             <button
               type="button"
@@ -283,6 +285,7 @@ defmodule EmisarWeb.ShellComponents do
 
   attr :current_account, :map, required: true
   attr :switchable_accounts, :list, required: true
+  attr :sso_session?, :boolean, default: false
 
   defp shell_brand(assigns) do
     others =
@@ -318,6 +321,12 @@ defmodule EmisarWeb.ShellComponents do
       <div class="border-b border-zinc-900 px-3 py-2">
         <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Switch workspace
+        </p>
+        <%!-- An SSO session is this workspace's credential only, so the list
+             below holds nothing else; say where the others are. --%>
+        <p :if={@sso_session?} class="mt-1 text-xs leading-5 text-zinc-500">
+          You signed in with this workspace's single sign-on. Sign in with your email to open
+          another workspace.
         </p>
       </div>
 

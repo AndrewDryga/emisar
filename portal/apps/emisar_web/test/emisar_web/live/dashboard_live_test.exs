@@ -232,7 +232,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     test "a viewer sees truthful setup state but no setup actions", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
@@ -775,7 +775,7 @@ defmodule EmisarWeb.DashboardLiveTest do
         collection_mode: "automatic"
       )
 
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")

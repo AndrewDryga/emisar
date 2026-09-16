@@ -103,6 +103,24 @@ defmodule EmisarWeb.OnboardingLive do
   def handle_event("create", %{"account" => %{"name" => name}}, socket) do
     user = socket.assigns.current_user
 
+    # An SSO session is authority only inside its provider's account, so it may
+    # not stand up a new workspace under this person's identity — the person
+    # signs in with their email first (the same rule the workspace switcher
+    # explains). IL-15: the check is here, at the action, not just in the UI.
+    if socket.assigns.current_auth.auth_method == :sso do
+      {:noreply,
+       socket
+       |> put_flash(
+         :error,
+         "Sign in with your email to create a workspace — this session used a workspace's single sign-on."
+       )
+       |> redirect(to: ~p"/sign_in")}
+    else
+      create_workspace(socket, user, name)
+    end
+  end
+
+  defp create_workspace(socket, user, name) do
     case Accounts.create_account_with_owner_from_name(name, user) do
       {:ok, account} ->
         # `trigger_submit: true` fires the form's `action=` POST in the

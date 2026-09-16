@@ -16,7 +16,7 @@ defmodule Emisar.Auth.CurrentSubject do
       ) do
     with true <- valid_ids?([account_id, user_id, membership_id]),
          {:ok, %Accounts.Membership{id: ^membership_id} = membership} <-
-           Accounts.fetch_membership_by_account_id_or_slug(user, account_id) do
+           Accounts.fetch_membership_by_account_id_or_slug(user, account_id, subject) do
       role = Subject.effective_membership_role(membership)
       {:ok, refreshed(subject, membership.account, membership.user, role)}
     else
@@ -39,7 +39,8 @@ defmodule Emisar.Auth.CurrentSubject do
          {:ok, %Accounts.Membership{id: ^membership_id} = membership} <-
            Accounts.fetch_membership_by_account_id_or_slug(
              %Users.User{id: key.created_by_id},
-             account_id
+             account_id,
+             nil
            ) do
       {:ok, refreshed(subject, membership.account, key, :api_client)}
     else

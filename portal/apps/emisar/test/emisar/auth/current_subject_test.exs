@@ -81,7 +81,19 @@ defmodule Emisar.Auth.CurrentSubjectTest do
       membership = Fixtures.Memberships.create_membership(role: "admin")
       original = Fixtures.Subjects.membership_subject(membership)
       proof_epoch = DateTime.add(DateTime.utc_now(), -60, :second)
-      identity_id = Repo.generate_id()
+      # A real identity in the membership's account — an :sso session is
+      # authority only inside its provider's account, so the refresh resolves
+      # the membership only when the identity actually belongs there.
+      provider =
+        Fixtures.SSO.create_identity_provider(%{account_id: original.account.id, name: "Okta"})
+
+      identity_id =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: original.account.id,
+          provider_id: provider.id,
+          user_id: original.actor.id
+        }).id
+
       context = RequestContext.new(request_id: "current-subject", ip_address: "127.0.0.1")
 
       subject =

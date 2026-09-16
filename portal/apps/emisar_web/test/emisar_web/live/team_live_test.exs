@@ -120,7 +120,7 @@ defmodule EmisarWeb.TeamLiveTest do
       conn: conn
     } do
       {_conn, owner, account} = register_and_log_in(conn)
-      {:ok, owner_membership} = Emisar.Accounts.fetch_membership_for_session(owner, nil)
+      {:ok, owner_membership} = Emisar.Accounts.fetch_membership_for_session(owner, nil, nil)
       admin = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(
@@ -168,7 +168,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "member controls stack with the identity until desktop width", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(
@@ -933,7 +933,7 @@ defmodule EmisarWeb.TeamLiveTest do
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
 
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -1160,7 +1160,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "a viewer hitting the invite route directly is refused (IL-15)", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerInvite"}})
-      {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
       Fixtures.Memberships.force_role(m, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
@@ -1223,7 +1223,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "shows the read-only banner and no invite action", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})
 
-      {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
       Fixtures.Memberships.force_role(m, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -1239,7 +1239,7 @@ defmodule EmisarWeb.TeamLiveTest do
       _provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Private IdP")
 
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -1259,7 +1259,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "an unconfigured account reads as Not configured, still locked", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
 
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")

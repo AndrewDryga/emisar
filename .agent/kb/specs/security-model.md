@@ -1,7 +1,7 @@
 ---
 name: security-model
 sources: [runner/internal/engine, runner/internal/admission, runner/internal/validation, runner/internal/redact, runner/internal/packs, runner/internal/attest, portal/apps/emisar/lib/emisar/auth/authorizer.ex, portal/apps/emisar/lib/emisar/policies.ex, portal/apps/emisar/lib/emisar/runs.ex, portal/apps/emisar/lib/emisar/runners/runner.ex]
-updated: 2026-09-16
+updated: 2026-09-17
 ---
 
 # Security model
@@ -169,6 +169,7 @@ its actions from itself:
 | LLM passes unexpected arguments          | Unknown args rejected; declared schema enforced on runner.     |
 | Cloud bug sends bogus opts (huge timeout)| Opts clamped to action min/max.                               |
 | LLM tries to read /etc/shadow            | Path arg `allowed_prefixes`/`allowed_paths` confine it to the intended location (`denied_*` only carves extra exclusions out of that allowlist, and alone admits every unnamed path); the runner's own config/state roots are refused whatever the pack declares; OS perms still apply. |
+| A customer's identity provider asserts an email it does not own | Users are global rows keyed by email, and a provider may JIT- or SCIM-create one for any address it asserts as verified. The session such a provider mints is authority only inside the provider's own account: every pre-auth membership resolver, the workspace switcher, and the switch itself scope an `:sso` session to the account of the identity behind it, so whoever runs that IdP inherits nothing the person later creates or joins. A magic-link session — proof of the person's own inbox — reaches all of their memberships. |
 | Action reads the runner's own secrets through `/proc` | The daemon is non-dumpable (`PR_SET_DUMPABLE=0`), so `/proc/<runner pid>/environ` (runner.env) and `mem` (the bearer token) are root-owned and refuse same-user ptrace whatever the Yama scope, and the runner's own `/proc/<pid>` tree is a protected root for every path argument. Other pids stay inspectable. |
 | Output contains a stray bearer token     | Default + per-action redaction rules; size caps.              |
 | Runaway process                          | Timeouts enforced via `context.WithTimeout`.                  |
@@ -297,6 +298,9 @@ available.
 
 ## Changelog
 
+- 2026-09-17 — added the SSO-session tenant boundary to the threat table
+  (`Accounts.session_account_scope/1`, applied by every pre-auth membership
+  resolver, the switcher, and `switch_account/2`).
 - 2026-09-16 — added the non-dumpable daemon and the runner's own `/proc`
   tree as a protected root to the threat table (`executor.ProtectProcess`,
   `protectedPaths`).

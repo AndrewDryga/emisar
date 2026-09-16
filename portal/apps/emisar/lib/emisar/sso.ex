@@ -4185,6 +4185,27 @@ defmodule Emisar.SSO do
 
   def identity_belongs_to_account?(_user_identity_id, _account_id), do: false
 
+  @doc """
+  Internal — pre-auth: the account whose identity provider owns this SSO
+  identity, i.e. the one account an `:sso` session is authority for. Same
+  liveness filters as `identity_belongs_to_account?/2`, so a retired or
+  soft-deleted binding answers `{:error, :not_found}` and the session it minted
+  reaches nothing.
+  """
+  def fetch_identity_account_id(user_identity_id) when is_binary(user_identity_id) do
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_id(user_identity_id)
+
+    case Repo.peek(queryable) do
+      %UserIdentity{account_id: account_id} -> {:ok, account_id}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def fetch_identity_account_id(_user_identity_id), do: {:error, :not_found}
+
   defp provider_satisfies_mfa_by_id?(provider_id) do
     queryable =
       IdentityProvider.Query.not_deleted() |> IdentityProvider.Query.by_id(provider_id)

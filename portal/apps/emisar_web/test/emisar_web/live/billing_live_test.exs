@@ -69,7 +69,7 @@ defmodule EmisarWeb.BillingLiveTest do
   alias EmisarWeb.BillingLiveTest.InvoicePaddleClient
 
   defp downgrade_to(user, role) when is_binary(role) do
-    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
     Fixtures.Memberships.force_role(membership, role)
   end
 

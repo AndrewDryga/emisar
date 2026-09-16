@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="authentication"
-      updated="August 23, 2026"
+      updated="September 17, 2026"
       toc={[
         {"sign-in", "Choose a sign-in method"},
         {"enforcement", "Enforce account sign-in"},
@@ -47,7 +47,9 @@
               <td class="whitespace-nowrap px-4 py-3 font-semibold text-zinc-100">OIDC SSO</td>
               <td class="px-4 py-3">
                 emisar redirects the member to your identity provider to sign in, and matches
-                the returning identity by the provider's stable subject, never by email.
+                the returning identity by the provider's stable subject, never by email. The
+                session it starts opens this account only; a member of other accounts opens
+                those by signing in with their email.
               </td>
               <td class="px-4 py-3">
                 Your identity provider owns authentication and its MFA policy.

@@ -15,7 +15,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   alias Emisar.SSO.IdentityProvider
 
   defp make_viewer(user) do
-    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
     Fixtures.Memberships.force_role(membership, "viewer")
   end
 

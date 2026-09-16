@@ -129,11 +129,13 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       assert response(conn, 200) =~ "alice"
     end
 
-    test "a session SSO-authed via ANOTHER account's IdP is NOT MFA-exempt here", %{conn: conn} do
-      # The MFA exemption is account-scoped: an SSO session whose provider
-      # satisfies MFA but belongs to a DIFFERENT account earns no exemption for
-      # THIS one — it never proved a second factor here. So a foreign-IdP session
-      # on a require_mfa account is funnelled to enrollment, not waved through.
+    test "a session SSO-authed via ANOTHER account's IdP cannot reach this account at all", %{
+      conn: conn
+    } do
+      # An SSO session is authority only inside its provider's account, so a
+      # foreign-IdP session never reaches THIS account's page — 404, the same
+      # as a non-member, stronger than the account-scoped MFA exemption it used
+      # to be funnelled through.
       {_conn, user, account} = register_and_log_in(conn)
       require_mfa!(account)
 
@@ -142,9 +144,9 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       other_provider = enabled_provider(other)
       foreign_identity = identity_for(other, other_provider, user)
 
-      conn = get(sso_session(user, foreign_identity), ~p"/app/#{account}/audit/download")
-
-      assert redirected_to(conn) == ~p"/app/mfa_setup"
+      assert_error_sent 404, fn ->
+        get(sso_session(user, foreign_identity), ~p"/app/#{account}/audit/download")
+      end
     end
 
     test "an SSO session whose provider satisfies MFA FOR THIS account stays exempt", %{

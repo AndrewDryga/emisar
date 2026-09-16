@@ -89,7 +89,7 @@ defmodule EmisarWeb.RequireSSOTest do
       assert {:ok, _lv, _html} = live(sso_session(user, identity), ~p"/app/#{account}/runners")
     end
 
-    test "require_sso ON — an SSO session for a DIFFERENT account is still bounced", %{
+    test "require_sso ON — an SSO session for a DIFFERENT account cannot reach this one", %{
       user: user,
       account: account
     } do
@@ -98,14 +98,16 @@ defmodule EmisarWeb.RequireSSOTest do
       require_sso!(account)
 
       # …but the user's SSO identity belongs to some OTHER account, not this one.
+      # An :sso session is authority only inside its provider's account, so it
+      # never reaches this account: 404 (no leak), stronger than the sso_required
+      # step-up a same-account SSO gap gets.
       {_c2, _u2, other} = register_and_log_in(build_conn())
       other_provider = enabled_provider(other)
       foreign_identity = identity_for(other, other_provider, user)
 
-      assert {:error, {:redirect, %{to: to}}} =
-               live(sso_session(user, foreign_identity), ~p"/app/#{account}/runners")
-
-      assert to == ~p"/app/#{account}/sso_required"
+      assert_error_sent 404, fn ->
+        live(sso_session(user, foreign_identity), ~p"/app/#{account}/runners")
+      end
     end
 
     test "require_sso ON — a magic-link session is bounced (only :sso provenance passes)", %{

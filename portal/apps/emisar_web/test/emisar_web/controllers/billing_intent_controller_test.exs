@@ -139,7 +139,7 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     conn: conn
   } do
     {conn, user, _account} = register_and_log_in(conn)
-    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil)
+    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
     Fixtures.Memberships.force_role(membership, "viewer")
     token = BillingIntent.sign("team", :month)
     captured = get(conn, ~p"/start/team/#{token}")

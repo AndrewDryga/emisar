@@ -24,6 +24,37 @@ defmodule EmisarWeb.OnboardingLiveTest do
       assert name in names
     end
 
+    test "an SSO session cannot create a workspace — it signs in with email first", %{conn: conn} do
+      {_conn, user, account} = register_and_log_in(conn)
+      Fixtures.Accounts.maybe_seed_plan(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(%{account_id: account.id, name: "Okta"})
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
+      token =
+        Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
+          user_identity_id: identity.id
+        )
+
+      sso_conn = build_conn() |> init_test_session(%{}) |> put_session(:user_token, token)
+      {:ok, lv, _html} = live(sso_conn, ~p"/onboarding")
+
+      before = Accounts.Account.Query.not_deleted() |> Repo.aggregate(:count)
+
+      {:ok, _conn} =
+        lv
+        |> form("#onboarding_form", %{"account" => %{"name" => "Second Workspace"}})
+        |> render_submit()
+        |> follow_redirect(sso_conn, ~p"/sign_in")
+
+      assert Accounts.Account.Query.not_deleted() |> Repo.aggregate(:count) == before
+    end
+
     test "a name colliding with an existing slug is deduped, both coexist", %{conn: conn} do
       # `suggest_unique_slug` appends a counter when the base
       # slug is taken, so a second workspace named identically to an existing one

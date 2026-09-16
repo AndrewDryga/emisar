@@ -2013,7 +2013,7 @@ defmodule EmisarWeb.MarketingTest do
 
     test "authentication docs expose review dates without a dead edit action", %{conn: conn} do
       review_dates = [
-        {"/docs/authentication", "August 23, 2026"},
+        {"/docs/authentication", "September 17, 2026"},
         {"/docs/teams-and-access", "September 16, 2026"},
         {"/docs/sso", "September 7, 2026"},
         {"/docs/scim", "September 7, 2026"}

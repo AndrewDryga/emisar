@@ -106,9 +106,25 @@ defmodule EmisarWeb.AdminGateTest do
 
       # The session shape `Auth.complete_sso_account_sign_in/4` mints when the
       # provider a customer configured says `satisfies_mfa: true`: `:sso` with
-      # `mfa_verified_at` set and no local enrollment proof.
+      # `mfa_verified_at` set and no local enrollment proof. A real identity in
+      # the staff user's own account so the session resolves that account and
+      # the staff gate — not the tenant boundary — is what rejects it.
+      provider = Fixtures.SSO.create_identity_provider(%{account_id: account.id, name: "Okta"})
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
       user = Emisar.Repo.reload!(user)
-      token = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
+
+      token =
+        Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
+          user_identity_id: identity.id
+        )
+
       conn = conn |> put_session(:user_token, token) |> get("/ops/live")
 
       assert redirected_to(conn) == ~p"/sign_in"

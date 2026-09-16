@@ -13,7 +13,7 @@ defmodule Emisar.SSOTest do
   resolution/JIT/gate logic with canned claims and no live IdP.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, SSO, Users}
+  alias Emisar.{Accounts, Audit, Auth, Crypto, Repo, RequestContext, SSO, Users}
   alias Emisar.Accounts.RunnerAccess
   alias Emisar.Fixtures
   alias Emisar.SSO.{DirectoryGroup, DirectoryGroupMember, GroupRoleMapping}
@@ -2952,6 +2952,97 @@ defmodule Emisar.SSOTest do
 
       assert Fixtures.Memberships.fetch_membership(account_a.id, user.id)
       refute Fixtures.Memberships.fetch_membership(account_b.id, user.id)
+    end
+  end
+
+  describe "complete_auth/3 — a provider-created user's other workspaces" do
+    # The chain the 2026-09-16 audit reproduced: a provider JIT-creates the
+    # global user row for an email it does not own; the real person later signs
+    # in by magic link, becomes that row, and creates their own workspace; the
+    # provider then mints a session for the row. That session must stay inside
+    # the provider's account — the person's own workspace is reachable through
+    # their own inbox, never through someone else's IdP.
+    test "a session the provider mints never reaches a workspace the person created later" do
+      {_owner, attacker_account, _subject} = enterprise_owner()
+      provider = provider_fixture(attacker_account, default_role: :viewer)
+      victim_email = "victim-#{Fixtures.Random.unique_int()}@corp.test"
+
+      claims = %{
+        "sub" => "attacker|victim",
+        "email" => victim_email,
+        "email_verified" => true,
+        "name" => "Victim"
+      }
+
+      assert {:ok, %{user: user, identity: identity, created?: true}} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      assert user.email == victim_email
+
+      # The person signs in through their inbox (a magic-link session is the
+      # user's own credential) and creates their workspace.
+      assert {:ok, %{id: same_id}} = Users.fetch_user_by_email(victim_email)
+      assert same_id == user.id
+      {:ok, own_account} = Accounts.create_account_with_owner_from_name("Victim Corp", user)
+
+      magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      {:ok, _user, magic_session} = Auth.fetch_user_and_token_by_session_token(magic_token)
+
+      assert {:ok, %Accounts.Membership{role: :owner}} =
+               Accounts.fetch_membership_by_account_id_or_slug(
+                 user,
+                 own_account.id,
+                 magic_session
+               )
+
+      # The provider signs the row in again and holds its session.
+      assert {:ok, %{user: returning, identity: %UserIdentity{id: identity_id}, created?: false}} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      assert identity_id == identity.id
+
+      assert {:ok, sso_token, _mfa} =
+               Auth.complete_sso_account_sign_in(
+                 returning,
+                 attacker_account.id,
+                 %RequestContext{},
+                 user_identity_id: identity.id,
+                 provider_identifier: identity.provider_identifier
+               )
+
+      {:ok, session_user, sso_session} = Auth.fetch_user_and_token_by_session_token(sso_token)
+      assert sso_session.auth_method == :sso
+      assert sso_session.user_identity_id == identity.id
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(
+               session_user,
+               own_account.id,
+               sso_session
+             ) ==
+               {:error, :not_found}
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(
+               session_user,
+               own_account.slug,
+               sso_session
+             ) ==
+               {:error, :not_found}
+
+      attacker_id = attacker_account.id
+
+      assert {:ok, %Accounts.Membership{account_id: ^attacker_id}} =
+               Accounts.fetch_membership_for_session(session_user, nil, sso_session)
+
+      sso_subject =
+        Fixtures.Subjects.subject_for(session_user, attacker_account,
+          auth_method: :sso,
+          user_identity_id: identity.id
+        )
+
+      assert {:ok, [%Accounts.Account{id: ^attacker_id}], _meta} =
+               Accounts.list_accounts_for_user(sso_subject)
+
+      assert Accounts.switch_account(own_account.id, sso_subject) == {:error, :not_found}
     end
   end
 
@@ -9095,6 +9186,28 @@ defmodule Emisar.SSOTest do
   end
 
   # -- identity_belongs_to_account?/2 (pre-Subject) --------------------
+
+  describe "fetch_identity_account_id/1" do
+    test "returns the account of a live identity, and not-found for a retired or unknown one" do
+      {_owner, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account)
+      user = Fixtures.Users.create_user()
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
+      assert SSO.fetch_identity_account_id(identity.id) == {:ok, account.id}
+      assert SSO.fetch_identity_account_id(Ecto.UUID.generate()) == {:error, :not_found}
+      assert SSO.fetch_identity_account_id(nil) == {:error, :not_found}
+
+      identity |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
+      assert SSO.fetch_identity_account_id(identity.id) == {:error, :not_found}
+    end
+  end
 
   describe "identity_belongs_to_account?/2" do
     setup do

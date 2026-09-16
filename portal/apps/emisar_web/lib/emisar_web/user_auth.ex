@@ -279,7 +279,7 @@ defmodule EmisarWeb.UserAuth do
     account_ref = conn.path_params["account_id_or_slug"]
     session_account_id = get_session(conn, :current_account_id)
 
-    case resolve_membership_for_request(user, account_ref, session_account_id) do
+    case resolve_membership_for_request(conn, user, account_ref, session_account_id) do
       {:error, :not_found} when not is_nil(account_ref) ->
         # A slugged route whose ref isn't a (non-suspended) membership the user
         # holds: 404, never a redirect — indistinguishable from a nonexistent
@@ -318,11 +318,17 @@ defmodule EmisarWeb.UserAuth do
 
   # Slugged tenant route → resolve+authorize from the URL ref (id-or-slug);
   # bare /app + the unslugged /app routes (switch, mfa_setup) → the session hint.
-  defp resolve_membership_for_request(user, nil, session_account_id),
-    do: Accounts.fetch_membership_for_session(user, session_account_id)
+  defp resolve_membership_for_request(conn, user, nil, session_account_id) do
+    Accounts.fetch_membership_for_session(user, session_account_id, conn.assigns[:current_auth])
+  end
 
-  defp resolve_membership_for_request(user, account_ref, _session_account_id),
-    do: Accounts.fetch_membership_by_account_id_or_slug(user, account_ref)
+  defp resolve_membership_for_request(conn, user, account_ref, _session_account_id) do
+    Accounts.fetch_membership_by_account_id_or_slug(
+      user,
+      account_ref,
+      conn.assigns[:current_auth]
+    )
+  end
 
   @doc """
   Builds a `%Subject{}` for the signed-in user against an explicit account ref
@@ -337,7 +343,12 @@ defmodule EmisarWeb.UserAuth do
   def subject_for_account(conn, account_ref) do
     user = conn.assigns.current_user
 
-    with {:ok, membership} <- Accounts.fetch_membership_by_account_id_or_slug(user, account_ref) do
+    with {:ok, membership} <-
+           Accounts.fetch_membership_by_account_id_or_slug(
+             user,
+             account_ref,
+             conn.assigns[:current_auth]
+           ) do
       context = RequestContext.from_conn(conn)
 
       {:ok,
@@ -518,7 +529,12 @@ defmodule EmisarWeb.UserAuth do
   def on_mount(:ensure_account_slug, %{"account_id_or_slug" => account_ref}, _session, socket) do
     user = socket.assigns.current_user
 
-    with {:ok, membership} <- Accounts.fetch_membership_by_account_id_or_slug(user, account_ref),
+    with {:ok, membership} <-
+           Accounts.fetch_membership_by_account_id_or_slug(
+             user,
+             account_ref,
+             socket.assigns[:current_auth]
+           ),
          {:ok, membership} <-
            subscribe_and_refetch_account(socket, user, account_ref, membership) do
       subject =
@@ -705,7 +721,12 @@ defmodule EmisarWeb.UserAuth do
     if Phoenix.LiveView.connected?(socket) do
       :ok = Accounts.subscribe_account_lifecycle(membership.account_id)
       :ok = Accounts.subscribe_account_team(membership.account_id)
-      Accounts.fetch_membership_by_account_id_or_slug(user, account_ref)
+
+      Accounts.fetch_membership_by_account_id_or_slug(
+        user,
+        account_ref,
+        socket.assigns[:current_auth]
+      )
     else
       {:ok, membership}
     end
@@ -729,7 +750,11 @@ defmodule EmisarWeb.UserAuth do
          } = socket
        ) do
     with {:ok, membership} <-
-           Accounts.fetch_membership_by_account_id_or_slug(subject.actor, subject.account.id),
+           Accounts.fetch_membership_by_account_id_or_slug(
+             subject.actor,
+             subject.account.id,
+             subject
+           ),
          true <- membership.id == subject.membership_id,
          true <- is_nil(membership.directory_authorization_pending_version),
          true <- is_nil(previous_membership.directory_authorization_pending_version),
@@ -1051,7 +1076,11 @@ defmodule EmisarWeb.UserAuth do
           {nil, nil, nil, []}
 
         user ->
-          case Accounts.fetch_membership_for_session(user, requested_id) do
+          case Accounts.fetch_membership_for_session(
+                 user,
+                 requested_id,
+                 socket.assigns[:current_auth]
+               ) do
             {:error, :not_found} ->
               {nil, nil, nil, []}
 
