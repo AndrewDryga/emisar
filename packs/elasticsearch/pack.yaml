@@ -2,7 +2,8 @@ schema_version: 1
 
 id: elasticsearch
 name: Elasticsearch / OpenSearch ops
-version: 0.1.21
+version: 0.1.22
+retired_below: 0.1.22
 description: >
   Cluster + index introspection plus narrow mutators (cache_clear,
   force_merge, flush, close_index). Auth via ELASTIC_USER +

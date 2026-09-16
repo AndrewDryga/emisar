@@ -2,7 +2,7 @@ schema_version: 1
 id: cockroach.cancel_session
 title: Cancel a session (CANCEL SESSION)
 kind: exec
-risk: medium
+risk: high
 description: >
   End one client session by its session_id (from cluster_sessions) — its
   current query is cancelled and the connection closed; an open transaction is

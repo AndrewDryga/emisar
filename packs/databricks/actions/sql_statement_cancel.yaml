@@ -2,7 +2,7 @@ schema_version: 1
 id: databricks.sql_statement_cancel
 title: POST /sql/statements/<id>/cancel
 kind: script
-risk: medium
+risk: high
 description: >
   Cancel a running SQL statement so it stops consuming the warehouse, then
   report the state the statement actually reached. Cancellation is

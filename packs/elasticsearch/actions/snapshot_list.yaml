@@ -13,7 +13,7 @@ args:
     required: true
     description: Snapshot repository.
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
+      pattern: "^\\.?[a-zA-Z0-9][a-zA-Z0-9_.\\-]{0,126}$"
 execution:
   script: {path: scripts/es_api.sh, interpreter: /bin/bash}
   argv: [snapshot-list, "{{ args.repository }}"]

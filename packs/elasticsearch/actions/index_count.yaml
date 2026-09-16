@@ -13,7 +13,7 @@ args:
     required: true
     description: Index name.
     validation:
-      pattern: "^[a-zA-Z0-9_.\\-]{1,255}$"
+      pattern: "^\\.?[a-zA-Z0-9][a-zA-Z0-9_.\\-]{0,253}$"
 execution:
   script: {path: scripts/es_api.sh, interpreter: /bin/bash}
   argv: [index-count, "{{ args.index }}"]

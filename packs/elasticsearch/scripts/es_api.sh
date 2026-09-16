@@ -50,6 +50,18 @@ require_arg() {
   [[ -n "${2:-}" ]] || fail "$1 is required"
 }
 
+# A name that becomes one whole path segment. Elasticsearch reads `_all` as
+# every index, and curl collapses `.` and `..` out of the path, so any of them
+# turns a one-index action into a cluster-wide one — the action's own contract
+# and its risk tier promise one index. ES forbids a leading `_`, `-`, or `+`
+# anyway; `.kibana`-style hidden names stay admitted.
+require_name() {
+  require_arg "$1" "${2:-}"
+  case "$2" in
+    . | .. | _* | -* | +*) fail "$1 must name one $1, not $2" ;;
+  esac
+}
+
 command="${1:-}"
 shift || true
 
@@ -68,36 +80,36 @@ case "$command" in
   cat-thread-pool) request GET "/_cat/thread_pool?v" ;;
 
   index-count)
-    require_arg index "${1:-}"
+    require_name index "${1:-}"
     request GET "/$1/_count?pretty"
     ;;
   index-mapping)
-    require_arg index "${1:-}"
+    require_name index "${1:-}"
     request GET "/$1/_mapping?pretty"
     ;;
   index-settings)
-    require_arg index "${1:-}"
+    require_name index "${1:-}"
     request GET "/$1/_settings?pretty"
     ;;
   index-stats)
-    require_arg index "${1:-}"
+    require_name index "${1:-}"
     request GET "/$1/_stats?pretty"
     ;;
 
   cache-clear)
-    require_arg index "${1:-}"
+    require_name index "${1:-}"
     request POST "/$1/_cache/clear?pretty"
     ;;
   close-index)
-    require_arg index "${1:-}"
+    require_name index "${1:-}"
     request POST "/$1/_close?pretty"
     ;;
   flush)
-    require_arg index "${1:-}"
+    require_name index "${1:-}"
     request POST "/$1/_flush?pretty"
     ;;
   force-merge)
-    require_arg index "${1:-}"
+    require_name index "${1:-}"
     require_arg max_segments "${2:-}"
     # The action bounds max_segments to 1..100, and the loader only lets a
     # two-sided bounded number render into program text; it is re-checked here
@@ -110,12 +122,12 @@ case "$command" in
     ;;
 
   snapshot-list)
-    require_arg repository "${1:-}"
+    require_name repository "${1:-}"
     request GET "/_snapshot/$1/_all?pretty"
     ;;
   snapshot-status)
-    require_arg repository "${1:-}"
-    require_arg snapshot "${2:-}"
+    require_name repository "${1:-}"
+    require_name snapshot "${2:-}"
     request GET "/_snapshot/$1/$2/_status?pretty"
     ;;
 

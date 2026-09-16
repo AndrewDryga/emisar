@@ -2,7 +2,7 @@ schema_version: 1
 id: cockroach.cancel_job
 title: Cancel a job (CANCEL JOB)
 kind: exec
-risk: medium
+risk: high
 description: >
   Cancel one job by id (from jobs). The job stops and rolls back any partial
   work where applicable. Use to abort a wrong or stuck schema change / backup /
