@@ -165,7 +165,7 @@ the management account advertise — the version travels with the pack, so read 
 off the advertisement rather than from here. Critical erasure actions remain
 subject to the management account's normal policy and approval rules.
 
-The pinned `runner-v0.23.1` release understands the current pack setup and
+The pinned `runner-v0.28.0` release understands the current pack setup and
 structured output schemas; the private pack does not require a custom runner
 build.
 
