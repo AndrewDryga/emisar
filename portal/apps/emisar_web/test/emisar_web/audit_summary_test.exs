@@ -324,6 +324,7 @@ defmodule EmisarWeb.AuditSummaryTest do
         {"approval.grant_revoked", %{"action_id" => "linux.reboot"},
          [{"Action", "linux.reboot"}]},
         {"approval.grant_revoked", %{}, []},
+        {"approval.decision_revoked", %{"decision" => "approve"}, [{"Decision", "approve"}]},
         {"run.cancel_requested", %{"reason" => "wrong host"}, [{"Reason", "wrong host"}]},
         {"action_run.failed", %{"exit_code" => 1, "duration_ms" => 1_500},
          [{"Exit code", "1"}, {"Duration", "1.5s"}]},

@@ -1453,6 +1453,21 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc """
+  A membership lifecycle change retired an approve vote its author had cast on
+  a request still pending. One row per vote, so the ledger explains why a
+  request's tally went down. System actor for the same reason as
+  `approval_grant_revoked/1`; the payload names whose vote it was.
+  """
+  def approval_decision_revoked(%Approvals.Decision{} = decision) do
+    Audit.changeset(decision.account_id, "approval.decision_revoked",
+      actor_kind: "system",
+      target_kind: "approval_request",
+      target_id: decision.request_id,
+      payload: %{decider_id: decision.decider_id, decision: decision.decision}
+    )
+  end
+
   # -- Runs (dispatch decisions, cancel) -------------------------------
 
   # The gate supplies its exact rejected pack snapshot and the authenticated

@@ -19,6 +19,26 @@ defmodule Emisar.Approvals.Decision.Query do
   def select_decider_ids(queryable),
     do: select(queryable, [approval_decisions: d], d.decider_id)
 
+  def select_all(queryable), do: select(queryable, [approval_decisions: d], d)
+
+  def approve_votes(queryable),
+    do: where(queryable, [approval_decisions: d], d.decision == :approve)
+
+  @doc "Votes whose request is still pending — the only votes a quorum still counts."
+  def on_pending_requests(queryable) do
+    queryable
+    |> with_named_binding(:requests, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [approval_decisions: d],
+        request in ^Emisar.Approvals.Request.Query.pending(),
+        on: request.id == d.request_id,
+        as: ^binding
+      )
+    end)
+  end
+
   def ordered_by_decided(queryable \\ all()),
     do: order_by(queryable, [approval_decisions: d], asc: d.decided_at)
 

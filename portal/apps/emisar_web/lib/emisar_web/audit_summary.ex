@@ -379,6 +379,8 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("approval.grant_revoked", p),
     do: pairs(action: get(p, :action_id))
 
+  defp summarize("approval.decision_revoked", p), do: pairs(decision: get(p, :decision))
+
   defp summarize("run.cancel_requested", p),
     do: pairs(action: get(p, :action), reason: get(p, :reason))
 

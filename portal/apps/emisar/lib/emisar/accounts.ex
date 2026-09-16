@@ -2681,8 +2681,9 @@ defmodule Emisar.Accounts do
   # long after its approver was suspended, removed, or deprovisioned.
   defp revoke_membership_delegations(repo, %Membership{} = membership) do
     with {:ok, credentials} <- ApiKeys.revoke_credentials_for_membership(repo, membership.id),
-         {:ok, grants} <- Approvals.revoke_grants_granted_by_membership(repo, membership) do
-      {:ok, Map.put(credentials, :approval_grants, grants)}
+         {:ok, grants} <- Approvals.revoke_grants_granted_by_membership(repo, membership),
+         {:ok, decisions} <- Approvals.revoke_decisions_by_membership(repo, membership) do
+      {:ok, Map.merge(credentials, %{approval_grants: grants, approval_decisions: decisions})}
     end
   end
 

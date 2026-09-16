@@ -188,7 +188,8 @@ defmodule Emisar.Audit.Event.Query do
        {"approval.expired", "Expired", "Approval expired"},
        {"approval.decision_recorded", "Decision recorded", "Approval decision recorded"},
        {"approval.grant_used", "Standing grant used", "Standing grant used"},
-       {"approval.grant_revoked", "Standing grant revoked", "Standing grant revoked"}
+       {"approval.grant_revoked", "Standing grant revoked", "Standing grant revoked"},
+       {"approval.decision_revoked", "Vote revoked", "Approval vote revoked"}
      ]},
     {"Run",
      [
@@ -964,6 +965,9 @@ defmodule Emisar.Audit.Event.Query do
     "approval.grant_revoked" =>
       {true, true, true,
        "A standing grant was revoked by a user or because its approver’s membership changed."},
+    "approval.decision_revoked" =>
+      {false, false, true,
+       "An approve vote on a pending request was revoked because its author’s membership changed."},
     "run.cancel_requested" => {true, true, true, "Someone requested cancellation of a run."},
     "action_run.success" =>
       {true, false, true, "A dispatched action completed successfully on its runner."},

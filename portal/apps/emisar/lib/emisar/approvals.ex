@@ -3055,6 +3055,36 @@ defmodule Emisar.Approvals do
   end
 
   @doc """
+  Internal — the membership lifecycle (removal, suspension, demotion) retires
+  the approve votes this member cast on requests still pending in the account,
+  in the same transaction as the membership write. A vote is a delegation of
+  the member's judgment exactly like a standing grant, and a request that reads
+  "2 approvals required" must not release on a vote whose author no longer
+  holds that authority; a request that already finalized keeps its history.
+  One `approval.decision_revoked` row per vote. Returns `{:ok, count}`.
+  """
+  def revoke_decisions_by_membership(repo, %Accounts.Membership{} = membership) do
+    queryable =
+      Decision.Query.all()
+      |> Decision.Query.by_account_id(membership.account_id)
+      |> Decision.Query.by_decider_ids([membership.user_id])
+      |> Decision.Query.approve_votes()
+      |> Decision.Query.on_pending_requests()
+      |> Decision.Query.select_all()
+
+    # RETURNING, not read-then-delete: a vote cast between the two statements
+    # would vanish with no audit row explaining it.
+    {_count, revoked} = repo.delete_all(queryable)
+
+    Enum.reduce_while(revoked, {:ok, 0}, fn decision, {:ok, count} ->
+      case repo.insert(Audit.Events.approval_decision_revoked(decision)) do
+        {:ok, _event} -> {:cont, {:ok, count + 1}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @doc """
   Changeset for the account's standing-grant guardrail — the raw `seconds` cap,
   where a blank value means no cap and `0` disables standing grants entirely.
   Accepts the rail form's string keys or an atom-keyed map / keyword list; a

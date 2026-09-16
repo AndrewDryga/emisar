@@ -349,6 +349,14 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  defp insert_decision(account, request, decider) do
+    Decision.Changeset.create(account.id, request.id, decider.id, %{
+      decision: :approve,
+      decided_at: DateTime.utc_now()
+    })
+    |> Repo.insert!()
+  end
+
   defp insert_grant(account, key, opts) do
     Fixtures.Approvals.create_grant(
       Map.merge(
@@ -5897,6 +5905,88 @@ defmodule Emisar.ApprovalsTest do
                )
 
       refute Repo.reload!(grant).revoked_at
+    end
+  end
+
+  describe "revoke_decisions_by_membership/2" do
+    test "retires the member's approve votes on pending requests, each with an audit row" do
+      account = Fixtures.Accounts.create_account()
+      leaver = Fixtures.Users.create_user()
+
+      leaver_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: leaver.id,
+          role: "admin"
+        )
+
+      stayer = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: stayer.id,
+        role: "admin"
+      )
+
+      pending = Fixtures.Approvals.create_request(account_id: account.id)
+      pending |> Ecto.Changeset.change(min_approvals: 2) |> Repo.update!()
+      decided = Fixtures.Approvals.create_request(account_id: account.id, status: :approved)
+
+      mine = insert_decision(account, pending, leaver)
+      theirs = insert_decision(account, pending, stayer)
+      historical = insert_decision(account, decided, leaver)
+
+      assert {:ok, %{revoked: 1}} =
+               Repo.commit_multi(
+                 Multi.run(Multi.new(), :revoked, fn repo, _changes ->
+                   Approvals.revoke_decisions_by_membership(repo, leaver_membership)
+                 end)
+               )
+
+      refute Repo.reload(mine)
+      assert Repo.reload!(theirs)
+      assert Repo.reload!(historical)
+      assert Repo.one!(Decision.Query.approved_distinct_decider_count(pending.id)) == 1
+
+      event =
+        Audit.Event.Query.all()
+        |> Audit.Event.Query.by_account_id(account.id)
+        |> Audit.Event.Query.by_event_type("approval.decision_revoked")
+        |> Repo.one()
+
+      assert event.actor_kind == "system"
+      assert event.target_id == pending.id
+      assert event.payload["decider_id"] == leaver.id
+    end
+
+    test "removing a member voids their pending vote, so one remaining vote cannot release a two-approver request" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
+
+      subject = Fixtures.Subjects.subject_for(owner, account)
+      leaver = Fixtures.Users.create_user()
+
+      leaver_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: leaver.id,
+          role: "admin"
+        )
+
+      request = Fixtures.Approvals.create_request(account_id: account.id)
+      request |> Ecto.Changeset.change(min_approvals: 2) |> Repo.update!()
+      insert_decision(account, request, leaver)
+
+      assert {:ok, _} = Accounts.delete_membership(leaver_membership, subject)
+
+      assert Repo.one!(Decision.Query.approved_distinct_decider_count(request.id)) == 0
+      assert Repo.reload!(request).status == :pending
     end
   end
 
