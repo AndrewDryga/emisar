@@ -88,8 +88,8 @@ The following are real vulnerabilities:
   bypassing that refusal is in scope.
 - **Privilege escalation** through the runner's process attributes
   (failure of Pdeathsig + Setpgid hardening, leaking caps to children).
-- **Outbox / dedup ring** corruption that causes a result to be sent
-  for a request the runner never received.
+- **Durable dispatch log / dedup journal** corruption that causes a result
+  to be sent for a request the runner never received.
 
 ## Safe harbor
 

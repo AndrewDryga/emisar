@@ -24,8 +24,8 @@ Claude Desktop, Claude Code, Cursor local mode, VS Code, Codex CLI, Gemini CLI,
 Grok CLI, Zed, Windsurf, and similar stdio clients can use the bridge.
 
 The current per-client instructions are at
-[emisar.dev/docs/connect-an-llm](https://emisar.dev/docs/connect-an-llm). The
-console's **LLM agents** page generates the exact configuration for the
+[emisar.dev/docs/connect-cli-agent](https://emisar.dev/docs/connect-cli-agent). The
+console's **AI agents** page generates the exact configuration for the
 signed-in operator and their runner scope.
 
 ## Install the stdio bridge
@@ -467,7 +467,7 @@ another origin.
 If a direct command stops authenticating, run `emisar-mcp auth` again and choose
 that account. If an MCP client stops authenticating,
 reconnect it from `/app/agents/connect`. Reconnecting does not revoke old keys;
-revoke connected keys in LLM agents. Never-used installer keys stay hidden
+revoke connected keys in AI agents. Never-used installer keys stay hidden
 there and expire after 30 days.
 
 If durable storage is unavailable, the bridge keeps using the configured key

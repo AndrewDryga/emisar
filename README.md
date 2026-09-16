@@ -41,7 +41,7 @@ GitHub is the optional release fallback. To permit that fallback, also allow
 3. Confirm the runner is online in the console, then dispatch
    `linux.uptime` with a reason. You are done when the output appears and the
    run is present in the audit trail.
-4. Open **LLM agents** and connect your client. Remote MCP clients use OAuth;
+4. Open **AI agents** and connect your client. Remote MCP clients use OAuth;
    local stdio clients can use the `emisar-mcp` bridge and its browser approval
    flow.
 

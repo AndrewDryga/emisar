@@ -54,9 +54,13 @@ server-rendered** — that's what crawlers and LLM bots get. Keep it that way:
 ## On-page checklist (per page)
 
 - **One clear `<h1>`** stating the value for that page's intent; one page = one topic.
-- **`<title>` + meta description** unique per page, written for the searcher's
-  intent, not the brand. Open Graph/Twitter tags for shareable pages (home, use-cases,
-  compare).
+- **`<title>` + meta description** unique per page, ≤160 chars, written for the
+  searcher's intent, not the brand. Open Graph/Twitter tags for shareable pages
+  (home, use-cases, compare).
+- **Bump the `updated=`/`Last reviewed` date in the SAME edit that changes a page's
+  prose or facts** — a docs colophon and a legal page's revision date are the reader's
+  only freshness signal, and a subprocessor or policy change must move it. A pure
+  formatting sweep does not.
 - **Structured data** where it fits: `SoftwareApplication`/`Product` on home/pricing,
   `FAQPage` on pages with Q&A, `BreadcrumbList` on docs.
 - **Internal links** with descriptive anchors between related pages (use-case →

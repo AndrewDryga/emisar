@@ -81,7 +81,7 @@ validation.
 ## Security boundary
 
 The plugin stores no static credential. OAuth tokens are issued through emisar
-and can be revoked from **LLM agents** in the console or from Cursor's MCP
+and can be revoked from **AI agents** in the console or from Cursor's MCP
 settings.
 
 The runner is outbound-only and executes only actions declared in locally

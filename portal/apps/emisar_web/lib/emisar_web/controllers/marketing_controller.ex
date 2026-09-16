@@ -244,7 +244,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :home,
       page_title: "Give AI tools approved infrastructure actions, not SSH",
       meta_description:
-        "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, human approvals, and a hash-chained on-host journal.",
+        "One governed MCP server connects any AI agent to a finite action catalog, enforced on-host with pack trust, policy gates, approvals, and an audit trail.",
       canonical_url: @base <> "/",
       faqs: @home_faqs,
       pack_count: Catalog.published_pack_count(),
@@ -485,7 +485,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :changelog,
       page_title: "Changelog",
       meta_description:
-        "Shipping notes for emisar — the control plane that gives AI agents approved infrastructure actions instead of SSH. Signed dispatch, SSO and SCIM, approvals and audit, the action-pack catalog, and the redesigned site and identity.",
+        "emisar changelog: signed dispatch, SSO and SCIM, approvals, audit, and the action-pack catalog — approved infrastructure actions for AI agents.",
       canonical_url: @base <> "/changelog",
       entries: EmisarWeb.Changelog.entries(),
       json_ld: json_ld
@@ -576,7 +576,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :use_cases,
       page_title: "Use cases — real incidents emisar contained",
       meta_description:
-        "Real production work handled through emisar: a live Cassandra migration from GCP to bare metal, a CSI driver's 33-hour data wipe, and a fleet-wide 502 — investigated through declared actions, with risky changes gated and every step audited.",
+        "Real production work through emisar: a live Cassandra migration, a 33-hour CSI data wipe, and a fleet-wide 502 — gated, declared, and audited.",
       canonical_url: @base <> "/use-cases",
       json_ld: json_ld
     )
@@ -886,7 +886,7 @@ defmodule EmisarWeb.MarketingController do
       action_count: delimit_int(Catalog.published_action_count()),
       page_title: "Action packs registry",
       meta_description:
-        "Browse the registry of action packs you can install on your emisar runner — Postgres, Cassandra, Linux core, Docker, AWS, and more. Each pack ships a typed catalog of actions an LLM can call.",
+        "Browse the registry of action packs for your emisar runner — Postgres, Cassandra, Linux, Docker, AWS, and more, each a typed catalog an AI agent can call.",
       canonical_url: @base <> "/packs",
       json_ld: json_ld
     )
