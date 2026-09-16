@@ -729,6 +729,47 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert finalized.structured_output == %{"ratio" => 0.12345678901234568}
     end
 
+    test "a result whose event_id carries a NUL is stored with the NUL stripped", %{
+      state: state,
+      run: run
+    } do
+      frame_in = result_frame(run.request_id, "success", event_id: "evt-\0-1")
+
+      assert {:push, ack, _state} = RunnerSocket.handle_in({frame_in, text()}, state)
+      assert %{"type" => "ack_result"} = decode(ack)
+
+      finalized = Repo.get!(ActionRun, run.id)
+      assert finalized.status == :success
+      assert finalized.event_id == "evt--1"
+    end
+
+    test "a NUL inside structured output finalizes the run as validation_failed", %{
+      state: state,
+      run: run
+    } do
+      run
+      |> Ecto.Changeset.change(
+        structured_output_expected: true,
+        output_schema_snapshot: %{
+          "type" => "object",
+          "required" => ["name"],
+          "properties" => %{"name" => %{"type" => "string"}},
+          "additionalProperties" => false
+        }
+      )
+      |> Repo.update!()
+
+      frame_in = result_frame(run.request_id, "success", structured_output: %{"name" => "a\0b"})
+
+      assert {:push, ack, _state} = RunnerSocket.handle_in({frame_in, text()}, state)
+      assert %{"type" => "ack_result"} = decode(ack)
+
+      finalized = Repo.get!(ActionRun, run.id)
+      assert finalized.status == :validation_failed
+      assert finalized.structured_output == nil
+      assert finalized.error_message == "runner sent an invalid structured output value"
+    end
+
     test "an unpersistable result answers finalize_failed without echoing runner bytes", %{
       state: state,
       run: run
@@ -1257,6 +1298,34 @@ defmodule EmisarWeb.RunnerSocketTest do
       progress = Enum.find(events, &(&1.kind == :progress))
       assert progress.payload["chunk"] == "hello world\n"
       assert progress.payload["stream"] == "stdout"
+    end
+
+    # NUL is valid UTF-8, so the runner's normalization keeps it, and Postgres
+    # refuses it in text and jsonb with a raise — which used to leave handle_in/2
+    # and kill the socket for one honest `tail` of a NUL-padded log.
+    test "stores a NUL in a chunk or stream as U+FFFD and keeps the socket up", %{
+      state: state,
+      run: run
+    } do
+      raw =
+        runner_frame(%{
+          "type" => "action_progress",
+          "request_id" => run.request_id,
+          "seq" => 1,
+          "stream" => "std\0out",
+          "chunk" => "before\0after\n"
+        })
+
+      assert {:ok, ^state} = RunnerSocket.handle_in({raw, text()}, state)
+
+      progress =
+        Emisar.Runs.RunEvent.Query.all()
+        |> Emisar.Runs.RunEvent.Query.by_run_id(run.id)
+        |> Repo.all()
+        |> Enum.find(&(&1.kind == :progress))
+
+      assert progress.stream == "std\uFFFDout"
+      assert progress.payload == %{"chunk" => "before\uFFFDafter\n", "stream" => "std\uFFFDout"}
     end
 
     test "progress and results recheck lease ownership in their transactions", %{

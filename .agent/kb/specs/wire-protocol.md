@@ -1,7 +1,7 @@
 ---
 name: wire-protocol
 sources: [runner/internal/cloud, runner/internal/attest, mcp/internal/attest, portal/apps/emisar_web/lib/emisar_web/runner_socket.ex, portal/apps/emisar_web/lib/emisar_web/runner_socket_drain.ex]
-updated: 2026-09-08
+updated: 2026-09-16
 ---
 
 # Runner wire protocol
@@ -323,7 +323,11 @@ run without relying on output as an implicit acknowledgement.
 `action_progress` carries a monotonically increasing sequence, stream, and one
 already-redacted, valid-UTF-8 output chunk. The runner normalizes invalid bytes
 after redaction and before progress emission, parsing, audit hashing, or byte
-counting, so every downstream representation uses one byte stream.
+counting, so every downstream representation uses one byte stream. U+0000 is
+valid UTF-8 and survives that normalization, but the portal's database refuses
+it, so the portal stores a NUL in a chunk or stream name as U+FFFD, strips it
+from a result's `event_id`, and refuses structured output that carries one
+(`validation_failed`).
 
 **`seq` counts messages, not output lines.** A chunk holds as many consecutive
 same-stream lines as accumulated while an earlier message was still waiting to

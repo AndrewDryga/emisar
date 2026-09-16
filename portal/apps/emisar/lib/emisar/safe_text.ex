@@ -53,4 +53,13 @@ defmodule Emisar.SafeText do
     |> String.replace_invalid("")
     |> String.replace(@unsafe_beyond_line_breaks, "")
   end
+
+  @doc """
+  Replaces every NUL with U+FFFD, the way the runner already replaces invalid
+  UTF-8. For output that must be stored as it was emitted (a progress chunk):
+  NUL is valid UTF-8, so the runner's normalization keeps it, and Postgres then
+  refuses it in every text and jsonb column with a raise, not a changeset error.
+  """
+  @spec replace_nul(String.t()) :: String.t()
+  def replace_nul(value) when is_binary(value), do: String.replace(value, <<0>>, "\uFFFD")
 end

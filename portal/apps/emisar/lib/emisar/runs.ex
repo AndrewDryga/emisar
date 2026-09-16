@@ -3536,6 +3536,9 @@ defmodule Emisar.Runs do
            ),
          {:ok, encoded} <- Jason.encode(output),
          true <- byte_size(encoded) <= @max_structured_output_bytes,
+         # jsonb refuses U+0000 (Jason spells it \u0000), so a value carrying
+         # one is refused here, as an invalid value, rather than raised on insert.
+         false <- String.contains?(encoded, ~S(\u0000)),
          :ok <- Emisar.OutputSchema.validate_instance(schema, output) do
       {:ok, output}
     else

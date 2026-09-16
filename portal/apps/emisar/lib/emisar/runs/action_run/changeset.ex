@@ -163,6 +163,15 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     end)
   end
 
+  defp strip_unsafe_text(changeset, fields) do
+    Enum.reduce(fields, changeset, fn field, acc ->
+      update_change(acc, field, fn
+        value when is_binary(value) -> SafeText.strip(value)
+        value -> value
+      end)
+    end)
+  end
+
   defp strip_unsafe_multiline_text(changeset, fields) do
     Enum.reduce(fields, changeset, fn field, acc ->
       update_change(acc, field, fn
@@ -238,6 +247,10 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     # investigation reads, and it carries a rendered shell program, so its line
     # breaks survive.
     |> strip_unsafe_multiline_text([:executed_command, :error_message, :reason_text])
+    # The runner's journal event id is an identifier, so it keeps no line
+    # breaks either; a NUL in it raised Postgrex 22021 past the socket's
+    # {:error, changeset} branch and replayed on every reconnect.
+    |> strip_unsafe_text([:event_id])
     # reason_text is the runner's terminal reason — a varchar(255) column, so it
     # keeps the DB string cap. Only the dispatch justification `reason` (now a
     # text column) carries the raised @max_reason_length.
@@ -276,7 +289,9 @@ defmodule Emisar.Runs.ActionRun.Changeset do
       with true <- is_map(output),
            :ok <- Emisar.JSONValue.validate(output, max_depth: 16, max_nodes: 1_024),
            {:ok, encoded} <- Jason.encode(output),
-           true <- byte_size(encoded) <= @max_structured_output_bytes do
+           true <- byte_size(encoded) <= @max_structured_output_bytes,
+           # jsonb refuses U+0000, which Jason spells \u0000 and nothing else.
+           false <- String.contains?(encoded, ~S(\u0000)) do
         []
       else
         _other -> [structured_output: "must be a bounded JSON object"]

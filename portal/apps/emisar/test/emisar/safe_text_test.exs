@@ -63,4 +63,11 @@ defmodule Emisar.SafeTextTest do
       refute SafeText.unsafe_multiline?(SafeText.strip_multiline("x" <> @rlo <> "\n" <> @null))
     end
   end
+
+  describe "replace_nul/1" do
+    test "replaces every NUL with U+FFFD and nothing else" do
+      assert SafeText.replace_nul("a\0b\0\e[0m\n") == "a\uFFFDb\uFFFD\e[0m\n"
+      assert SafeText.replace_nul("clean") == "clean"
+    end
+  end
 end
