@@ -262,7 +262,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each audit event gets a fixed retention deadline when it is written, so a plan change
         affects only later events: an upgrade keeps new history longer, and a downgrade shortens
-        the window for new events without deleting older retained history. The windows are in the <a
+        the window for new events without deleting older retained history. Run history and run
+        output are different: they follow the plan you are on right now, so a downgrade or a
+        lapsed subscription shortens the window for existing runs too — export anything you
+        need to keep before changing plans. The windows are in the <a
           href="#plans"
           class="text-brand-400 hover:text-brand-300"
         >table above</a>;

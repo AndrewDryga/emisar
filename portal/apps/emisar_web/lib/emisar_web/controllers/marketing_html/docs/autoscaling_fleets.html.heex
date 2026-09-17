@@ -103,9 +103,12 @@
       </p>
       <.docs_callout kind={:warn} title="A reusable key is a fleet-wide credential">
         <p>
-          Anyone holding this key can enroll a runner into your account — the limits above and
-          account policy still apply, but treat it like the credential it is. Rotating and
-          revoking it, and what each step reaches, is covered in <.link
+          Anyone holding this key can enroll a runner into your account — and, because
+          re-enrollment binds by runner id or hostname, mint a fresh token for an existing
+          runner's identity (its name, group, trust, and dispatch queue) without touching that
+          host. The limits above and account policy still apply, but treat it like a
+          fleet-root credential. Rotating and revoking it, and what each step reaches, is
+          covered in <.link
             navigate={~p"/docs/runner-credentials"}
             class="text-brand-400 hover:text-brand-300"
           >Runner credentials</.link>.

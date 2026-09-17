@@ -295,7 +295,10 @@
     --repo andrewdryga/emisar \
     --signer-workflow {release_artifact(:runner).workflow} \
     --source-ref refs/tags/{release_artifact(:runner).tag} --deny-self-hosted-runners
-<span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:&lt;version&gt; --owner andrewdryga</pre>
+<span class="text-zinc-500">$</span> gh attestation verify oci://ghcr.io/andrewdryga/emisar-runner:&lt;version&gt; \
+    --repo andrewdryga/emisar \
+    --signer-workflow {release_artifact(:runner).workflow} \
+    --source-ref refs/tags/{release_artifact(:runner).tag} --deny-self-hosted-runners</pre>
         </div>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           The signed checksum check is the installer's trust path when GitHub CLI is installed. It
