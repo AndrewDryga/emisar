@@ -207,6 +207,11 @@ defmodule EmisarWeb.RunnerDetailLive do
     end
   end
 
+  # A mutation event that arrives before the runner is loaded (a fast client, a
+  # not-found detail) has nothing to act on — no-op rather than raise.
+  def handle_event(_event, _params, %{assigns: %{runner: nil}} = socket),
+    do: {:noreply, socket}
+
   # Filtering is a URL patch (handle_params re-runs the catalog read, which is
   # `view_catalog`-gated in the context) — no mutation, so no gate here.
   def handle_event("filter", params, socket) do

@@ -17,10 +17,13 @@ defmodule Emisar.Audit.Events do
   alias Emisar.RequestContext
   alias Emisar.{Runbooks, Runners, Runs, SafeText, SSO, Users}
 
-  # Staff access renders to the CUSTOMER as the team, never the employee:
-  # `actor_id` keeps internal traceability while this label keeps a support
-  # engineer's identity out of the customer's own audit trail. Shared by the
-  # staff read event and every staff mutation (via `actor/1`).
+  # Staff access renders to the CUSTOMER as the team, never the employee: this
+  # label keeps a support engineer's identity out of the customer's own audit
+  # trail. It is set explicitly by the events that carry it — the staff read
+  # event and the two support erasures. Ordinary staff mutations run through the
+  # actorless support Subject and `actor/1`, which records them as `system` with
+  # no label (the authenticated staff action run in the employee's own account
+  # is the internal who); see `Emisar.Admin.support_subject/1`.
   @staff_actor_label "Emisar staff"
 
   # -- Account ---------------------------------------------------------

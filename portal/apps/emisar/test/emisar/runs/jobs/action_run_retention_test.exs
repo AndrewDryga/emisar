@@ -122,6 +122,30 @@ defmodule Emisar.Runs.Jobs.ActionRunRetentionTest do
     assert Repo.reload(run)
   end
 
+  test "prunes an old policy-denied run — it is terminal at creation" do
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        args: %{},
+        reason: "retention test",
+        source: "operator",
+        status: :denied
+      })
+
+    # A denied run is terminal at creation with no finished_at, so it ages by
+    # queued_at (which create_run stamps to now).
+    old = DateTime.utc_now() |> DateTime.add(-@beyond_window_days * 86_400, :second)
+    run |> Ecto.Changeset.change(queued_at: old) |> Repo.update!()
+
+    assert ActionRunRetention.execute([]) == :ok
+    refute Repo.reload(run)
+  end
+
   test "does not create housekeeping markers for an inactive account" do
     account = Fixtures.Accounts.create_account()
     old = DateTime.utc_now() |> DateTime.add(-@beyond_window_days * 86_400, :second)

@@ -1521,6 +1521,15 @@ defmodule Emisar.PoliciesTest do
                )
     end
 
+    test "an empty or unrecognized risk denies — no fail-open low default" do
+      policy = %Policy{rules: Policies.default_rules()}
+
+      for risk <- ["", "bogus"] do
+        assert {:deny, [], _} =
+                 Policies.evaluate(policy, %{"action_id" => "x", "risk" => risk})
+      end
+    end
+
     test "the evaluator ignores `kind` in match_ctx — action_id + risk decide" do
       # `kind` was dead plumbing in the evaluator: overrides match on the
       # action glob and defaults on the risk tier. Passing it (any value)

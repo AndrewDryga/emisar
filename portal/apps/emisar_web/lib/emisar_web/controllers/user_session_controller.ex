@@ -132,7 +132,10 @@ defmodule EmisarWeb.UserSessionController do
     # Resend without a retype and count the code down to expiry. Both are uniform
     # for any address (their own input + a fixed window), so neither leaks whether
     # the address is an account.
-    |> put_session(:magic_link_email, email)
+    # Bound the typed address before it enters the ~4 KiB cookie: a 5 KB value
+    # would overflow it and 500 an anonymous request. 320 is the max email
+    # length; a longer input never resolves an account anyway.
+    |> put_session(:magic_link_email, if(byte_size(email) <= 320, do: email, else: ""))
     |> put_session(:magic_link_expires_at, magic_link_expiry())
     |> put_magic_return_to(return_to)
     |> redirect(to: ~p"/sign_in/magic?sent=1")

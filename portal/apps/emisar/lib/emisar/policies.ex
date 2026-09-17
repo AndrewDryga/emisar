@@ -432,7 +432,7 @@ defmodule Emisar.Policies do
 
     match_ctx = %{
       "action_id" => target.action_id,
-      "risk" => to_string(target[:risk] || "low")
+      "risk" => to_string(target[:risk])
     }
 
     {decision, matched, reason} = evaluate(policy, match_ctx)
@@ -1224,7 +1224,7 @@ defmodule Emisar.Policies do
     # key their tier defaults by string, so bridge here.
     match_ctx = %{
       "action_id" => attrs[:action_id],
-      "risk" => to_string(attrs[:risk] || "low")
+      "risk" => to_string(attrs[:risk])
     }
 
     {decision, matched, reason} = evaluate(policy, match_ctx)

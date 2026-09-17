@@ -2406,6 +2406,23 @@ defmodule Emisar.RunnersTest do
       assert meta.action_load == 7
       assert is_integer(meta.last_heartbeat_at)
 
+      # A hostile or malformed action_load (a map, a negative int, a string)
+      # is ignored — the prior value stands — so Presence never carries an
+      # arbitrary runner-supplied blob to every node and console.
+      for bad <- [%{"x" => String.duplicate("a", 100)}, -1, "lots"] do
+        assert {:ok, _} =
+                 Runners.record_heartbeat(
+                   runner.account_id,
+                   runner.id,
+                   claimed.connection_generation,
+                   claimed.connection_lease_id,
+                   bad
+                 )
+
+        assert %{metas: [%{action_load: 7} | _]} =
+                 Runners.connection_metas(runner.account_id) |> Map.fetch!(runner.id)
+      end
+
       assert DateTime.compare(
                renewed.connection_lease_expires_at,
                claimed.connection_lease_expires_at

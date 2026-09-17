@@ -169,7 +169,14 @@ defmodule Emisar.Runs.ActionRun.Query do
   def finished_before_ids(queryable \\ all(), account_id, %DateTime{} = ts) do
     queryable
     |> by_account_id(account_id)
-    |> where([runs: r], not is_nil(r.finished_at) and r.finished_at < ^ts)
+    # A policy-denied run is terminal at creation and never gets a
+    # `finished_at`, so it is aged by its `queued_at` — otherwise a denied
+    # run's exact args would be retained forever, past the plan's window.
+    |> where(
+      [runs: r],
+      (not is_nil(r.finished_at) and r.finished_at < ^ts) or
+        (r.status == :denied and r.queued_at < ^ts)
+    )
     |> select([runs: r], r.id)
   end
 

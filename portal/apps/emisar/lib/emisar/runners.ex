@@ -1747,9 +1747,13 @@ defmodule Emisar.Runners do
     with {:ok, runner} <- renew_connection_lease(queryable),
          {:ok, _ref} <-
            Presence.update(self(), Presence.topic(account_id), runner_id, fn meta ->
+             # The runner supplies action_load; accept it only as a non-negative
+             # integer, else keep the prior value. A hostile runner could
+             # otherwise put any JSON (a 1.9 MiB map) into Presence, which is
+             # CRDT-replicated to every node and every console session.
              %{
                meta
-               | action_load: action_load || meta.action_load,
+               | action_load: valid_action_load(action_load, meta.action_load),
                  last_heartbeat_at: System.system_time(:second)
              }
            end) do
@@ -1788,6 +1792,12 @@ defmodule Emisar.Runners do
     do: DateTime.diff(expires_at, now, :second) <= div(@connection_lease_seconds, 2)
 
   defp lease_renewal_due?(%Runner{}, _now), do: true
+
+  # action_load is runner-supplied, so accept only a non-negative integer;
+  # anything else keeps the prior value rather than landing arbitrary JSON in
+  # the cluster-replicated Presence meta.
+  defp valid_action_load(load, _previous) when is_integer(load) and load >= 0, do: load
+  defp valid_action_load(_load, previous), do: previous
 
   @doc "Internal — true only while the supplied socket still owns this runner identity."
   def connection_owner?(account_id, runner_id, generation, lease_id) do

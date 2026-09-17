@@ -197,8 +197,14 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  defp maybe_store_return_to(%{method: "GET"} = conn),
-    do: put_session(conn, :user_return_to, current_path(conn))
+  defp maybe_store_return_to(%{method: "GET"} = conn) do
+    path = current_path(conn)
+    # The cookie session is ~4 KiB; a long query string would overflow it and
+    # turn an anonymous GET into a 500. Keep only a path that fits, else drop
+    # the query and store the bare request path.
+    return_to = if byte_size(path) <= 1024, do: path, else: conn.request_path
+    put_session(conn, :user_return_to, return_to)
+  end
 
   defp maybe_store_return_to(conn), do: conn
 
