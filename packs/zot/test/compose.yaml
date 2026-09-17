@@ -1,0 +1,11 @@
+services:
+  runner-tools:
+    network_mode: service:zot
+
+  zot:
+    image: ghcr.io/project-zot/zot:${PACKTEST_VERSION:-v2.1.8}${PACKTEST_DIGEST-}
+    # The default entrypoint runs `serve /etc/zot/config.json`; this mount
+    # replaces the image's bundled config to enable the mgmt, metrics, and
+    # GraphQL search extensions the pack's read actions exercise.
+    volumes:
+      - ${EMISAR_ROOT}/packs/zot/test/fixtures/config.json:/etc/zot/config.json:ro

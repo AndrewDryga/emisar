@@ -1,0 +1,36 @@
+services: [zot]
+versions:
+  - version: v2.1.8
+    digest: "@sha256:cd2aea942f428630bcb4190542be6abd35e14177aab84fc7ccad0dca8ecb363d"
+    default: true
+cases:
+  # Every action runs the one shared zotget.sh; covering the OCI-distribution
+  # read (catalog), both zot extension reads (mgmt, search), the Prometheus
+  # scrape (metrics), and a 404 on a missing repo proves the script's success
+  # and curl-failure branches. v2_base and manifest reuse the same script.
+  - action: zot.catalog
+    expect:
+      stdout_contains: ['"repositories":[]']
+
+  - action: zot.mgmt
+    expect:
+      stdout_contains: ['"distSpecVersion"', '"releaseTag":"v2.1.8"']
+
+  - action: zot.metrics
+    expect:
+      stdout_contains: [go_gc_duration_seconds]
+
+  - action: zot.search
+    expect:
+      stdout_contains: ['"RepoListWithNewestImage"']
+
+  # -fsS turns the registry's 404 for an unknown repository into a curl exit 22,
+  # so an inventory read against a missing repo fails loudly instead of looking
+  # like an empty-but-healthy registry.
+  - name: zot.tags-missing-repo-fails
+    action: zot.tags
+    args: { repo: nope }
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["curl: (22)"]

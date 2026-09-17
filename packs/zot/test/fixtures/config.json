@@ -1,0 +1,11 @@
+{
+  "distSpecVersion": "1.1.0",
+  "storage": { "rootDirectory": "/var/lib/registry" },
+  "http": { "address": "0.0.0.0", "port": "5000" },
+  "log": { "level": "error" },
+  "extensions": {
+    "search": { "enable": true },
+    "mgmt": { "enable": true },
+    "metrics": { "enable": true, "prometheus": { "path": "/metrics" } }
+  }
+}
