@@ -1,4 +1,9 @@
 locals {
+  # Monthly runtime-image review: bump these two digests, the Livebook image,
+  # AND `var.cos_image` (the portal VM host OS, in variables.tf) together. COS
+  # was skipped in the 2026-09-15 bump because it lives in a different file and
+  # is a TFC variable; keep it on this same cadence so the host layer does not
+  # drift while the app and proxy layers stay current.
   cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.25.4@sha256:88501f0a695a586988add1b8a206fdf3f29f9a1a3deeb9b45ef2b1481ea6be83"
   gcloud_image          = "gcr.io/google.com/cloudsdktool/google-cloud-cli:583.0.0-stable@sha256:c458b41dcd5fa7fa66934a7ffe872b8a06e7134f51b01c007ed025858bc75b9c"
   # Boot verifies this release against SHA256SUMS from the same release, which

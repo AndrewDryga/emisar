@@ -314,6 +314,11 @@ startup script. Never use `latest`: an out-of-band newer version is not
 necessarily the value running VMs use. This command intentionally fails until
 the new exact-version template has fully rolled out.
 
+The `gcloud secrets versions access` below reads `emisar-secret-key-base` as
+your own principal, which is not one of the expected readers, so expect and
+acknowledge one "Unexpected Secret Manager Access" alert for yourself — it is
+the guard working, not a separate incident.
+
 ```sh
 mig=$(terraform output -raw mig_name)
 instances=$(gcloud compute instance-groups managed list-instances "$mig" \

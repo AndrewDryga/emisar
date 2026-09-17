@@ -195,13 +195,8 @@ jobs:
       - name: Attest build provenance
         # Generates a SLSA Build Level 2 provenance attestation for the tarball.
         # The attestation is signed by Sigstore using a workflow-bound
-        # ambient OIDC identity (no long-lived keys). Verify it against the
-        # exact repo, signer workflow, and source ref, not `--owner` alone
-        # (which accepts any workflow in any repo the owner controls):
-        #   gh attestation verify <tarball> --repo andrewdryga/emisar \
-        #     --signer-workflow andrewdryga/emisar/.github/workflows/runner-release-trusted.yml \
-        #     --source-ref refs/tags/<tag> --deny-self-hosted-runners
-        # The full recipe lives in .agent/kb/runbooks/release.md.
+        # ambient OIDC identity (no long-lived keys). Verifiable later
+        # with `gh attestation verify <tarball> --owner andrewdryga`.
         #
         # GitHub's attestation API rejects user-owned private repos
         # (free-tier feature gate). Skip on private; the step kicks
