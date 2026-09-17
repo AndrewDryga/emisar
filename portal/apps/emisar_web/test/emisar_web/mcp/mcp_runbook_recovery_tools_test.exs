@@ -2095,7 +2095,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     runner = setup_runner!(account, subject, "oversized-receipt-node")
     {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
     pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
-    filler = fn n -> String.duplicate("\\", n) end
+    filler = &String.duplicate("\\", &1)
 
     run =
       create_mcp_history_run!(account, runner, key, 1, %{

@@ -437,7 +437,8 @@ defmodule Emisar.SSOIdentityLinkTest do
                Auth.fetch_user_and_token_by_session_token(context.raw_session)
     end
 
-    test "refuses a provider that belongs to another account", context do
+    test "refuses a provider that belongs to another account",
+         %{provider: _provider, subject: _subject} = context do
       {_other_user, other_account, _other_subject} =
         Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
 
