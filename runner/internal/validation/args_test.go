@@ -71,6 +71,24 @@ func TestValidate_Pattern(t *testing.T) {
 	}
 }
 
+func TestValidate_PatternAnchorsWholeValue(t *testing.T) {
+	// An unanchored pattern must still bind the ENTIRE argument: Go's
+	// MatchString succeeds on a substring, so `[a-z]+` would otherwise accept a
+	// value that merely contains a lowercase run.
+	schema := []actionspec.Arg{{
+		Name: "x", Type: actionspec.ArgString,
+		Validation: &actionspec.Validation{Pattern: "[a-z]+"},
+	}}
+	if _, err := Validate(schema, map[string]any{"x": "abc"}, nil); err != nil {
+		t.Fatalf("a fully-matching value should pass: %v", err)
+	}
+	for _, bad := range []string{"a; rm -rf /", "ABC", "a b", "a\nb"} {
+		if _, err := Validate(schema, map[string]any{"x": bad}, nil); err == nil {
+			t.Fatalf("%q must fail an anchored [a-z]+", bad)
+		}
+	}
+}
+
 func TestValidate_MaxLength(t *testing.T) {
 	schema := []actionspec.Arg{{
 		Name: "x", Type: actionspec.ArgString,

@@ -270,7 +270,12 @@ var patterns sync.Map // pattern -> *regexp.Regexp
 func matchesPattern(pattern, s string) bool {
 	cached, ok := patterns.Load(pattern)
 	if !ok {
-		compiled, err := regexp.Compile(pattern)
+		// Anchor the whole value. Go's MatchString succeeds on a SUBSTRING, so
+		// an unanchored pattern like `[a-z]+` would accept `a; rm -rf` because
+		// it contains a lowercase run. Every shipped pattern is already `^…$`
+		// (re-anchoring one is a no-op), but a third-party pack's unanchored
+		// pattern must still bind the entire argument, not a fragment of it.
+		compiled, err := regexp.Compile("^(?:" + pattern + ")$")
 		if err != nil {
 			// Arg.Validate compiled this at pack load, so it cannot fail for a
 			// loaded action; refuse the value rather than admit it unchecked.
