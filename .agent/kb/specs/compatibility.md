@@ -679,14 +679,21 @@ CLICOLOR                set to `0`: same
 TERM                    `dumb`: same
 XDG_CONFIG_HOME         Unix config root the bridge reads and rewrites
 APPDATA                 the Windows equivalent
+HERMES_HOME             overrides which Hermes config `connect`/`disconnect` edit
+GOOSE_PATH_ROOT         overrides which Goose config `connect`/`disconnect` edit
+LOCALAPPDATA            Windows root for the Hermes/Goose config files
 ```
 
-The last five are conventions the bridge honours rather than names it owns, and
-they freeze as honoured. The config-root pair is the load-bearing one:
-`XDG_CONFIG_HOME` and `APPDATA` decide which files `connect` and `disconnect`
-edit in the operator's home directory, and which directory holds the bridge's own
-stored credentials — so a change to how they are resolved changes where an
-already-connected operator's configuration lives.
+The last eight are conventions the bridge honours rather than names it owns, and
+they freeze as honoured. The config-root group is the load-bearing one:
+`XDG_CONFIG_HOME`, `APPDATA`, and the three client-specific roots above decide
+which files `connect` and `disconnect` edit in the operator's home directory,
+and which directory holds the bridge's own stored credentials — so a change to
+how they are resolved changes where an already-connected operator's
+configuration lives. On Linux the Goose, OpenCode, and Zed adapters read a
+literal `~/.config` rather than `XDG_CONFIG_HOME`, so a custom
+`XDG_CONFIG_HOME` can move Goose's own config out from under the bridge; this
+asymmetry is part of the frozen contract, not a bug to silently "fix".
 
 With no command, it reads and writes line-delimited JSON-RPC 2.0 over stdio. In
 stdio mode both authentication variables are required. Direct commands use the

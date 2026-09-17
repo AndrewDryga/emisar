@@ -144,9 +144,10 @@ func TestConnectPreflightDoesNotRequestAKeyForAnUnwritableConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// Goose owns this top-level key, but without an existing Emisar child the
-	// deliberately small YAML editor cannot safely merge into it.
-	if err := os.WriteFile(client.ConfigFile, []byte("extensions:\n  developer:\n    enabled: true\n"), 0o600); err != nil {
+	// Goose owns this top-level key as an inline collection, which the
+	// deliberately small YAML editor cannot insert a child into — so the config
+	// is unwritable and preflight must fail before any credential is requested.
+	if err := os.WriteFile(client.ConfigFile, []byte("extensions: {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

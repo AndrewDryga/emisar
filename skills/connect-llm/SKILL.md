@@ -25,10 +25,12 @@ Verify commands before running them:
 
 - Download `${EMISAR_URL%/}/install-mcp.sh` and run its local copy with
   `--help`; follow the installed help, not remembered flags.
-- Before a local bridge install, require GitHub CLI and confirm `gh attestation
-  verify --help` advertises `--bundle`. Install or update GitHub CLI through the
-  workstation's supported package method when it does not. Do not use the
-  checksum-only break glass as a substitute.
+- Before a local bridge install, check for GitHub CLI and confirm `gh
+  attestation verify --help` advertises `--bundle`. Prefer installing or
+  updating GitHub CLI through the workstation's supported package method. When
+  the operator declines, ask before continuing: without GitHub CLI the installer
+  verifies only the release checksum, printing a warning under `--yes`. Never
+  make that choice silently, and name the path taken in the report.
 - After installation, use `emisar-mcp --help` as the installed-version
   contract.
 - Use the signed-in **Agents** page for current client configuration and the
@@ -144,14 +146,13 @@ PY
 esac
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
-command -v gh >/dev/null 2>&1 || {
-  echo "GitHub CLI is required to authenticate the release checksum" >&2
-  exit 1
-}
-gh attestation verify --help 2>&1 | grep -q -- '--bundle' || {
-  echo "GitHub CLI must support attestation bundle verification" >&2
-  exit 1
-}
+if ! command -v gh >/dev/null 2>&1 ||
+  ! gh attestation verify --help 2>&1 | grep -q -- '--bundle'; then
+  # Prefer installing GitHub CLI; if the operator declines, the installer
+  # verifies only the release checksum and warns (ask before continuing).
+  echo "GitHub CLI with attestation bundle support is not available;" >&2
+  echo "install it, or let the installer fall back to checksum-only (see its --help)." >&2
+fi
 curl -fsSL "$EMISAR_URL/install-mcp.sh" -o "$installer"
 bash "$installer" --help
 sudo EMISAR_URL="$EMISAR_URL" bash "$installer"

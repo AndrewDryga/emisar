@@ -417,6 +417,27 @@ invoking_user_home() {
   printf '%s\n' "${HOME}"
 }
 
+# The numeric owner "uid:gid" of a path — GNU stat, then BSD/macOS stat.
+dir_owner() {
+  stat -c '%u:%g' "$1" 2>/dev/null || stat -f '%u:%g' "$1" 2>/dev/null
+}
+
+# A sudo run that upgrades a user-owned directory (e.g. ~/.local/bin) must leave
+# the binary owned by that user, not root: otherwise a later no-sudo upgrade
+# cannot hard-link the root-owned file for rollback on any host with
+# protected_hardlinks (the Linux default), and sudo becomes mandatory forever.
+# Root-owned destinations (e.g. /usr/local/bin) are left untouched.
+preserve_owner_for_sudo() {
+  local dir="$1" file="$2" dir_uidgid
+  [ "$(id -u)" -eq 0 ] || return 0
+  dir_uidgid=$(dir_owner "${dir}")
+  case "${dir_uidgid}" in
+    ""|0:*) return 0;;
+    *) chown "${dir_uidgid}" "${file}" || \
+      die "could not set ${dir_uidgid} ownership on ${file}";;
+  esac
+}
+
 # A prior no-sudo install is common, while the portal's one-line upgrade uses
 # sudo. Upgrade every conventional location that already contains the bridge
 # so an LLM client cannot keep launching a stale copy after a successful run.
@@ -792,6 +813,7 @@ while IFS= read -r INSTALL_DIR; do
   bin_staged="${INSTALL_DIR}/.emisar-mcp.new.$$"
   log "staging → ${bin_staged}"
   install -m 0755 "${bin_src}" "${bin_staged}"
+  preserve_owner_for_sudo "${INSTALL_DIR}" "${bin_staged}"
 
   staged_paths="${staged_paths}${staged_paths:+
 }${bin_staged}"

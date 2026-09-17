@@ -40,6 +40,7 @@ func MCP(root string, out io.Writer) error {
 		{"installation and rollback", mcpInstallRollback},
 		{"temporary directory privilege boundary", mcpTempDirectoryPrivilegeBoundary},
 		{"staging integrity", mcpStagingIntegrity},
+		{"sudo keeps a user-owned destination user-owned", mcpSudoPreservesDestinationOwner},
 		{"atomic multi-target activation", mcpActivationTransaction},
 		{"bridge runs as the invoking user", mcpCLISudoCredentialBoundary},
 		{"uninstall bridge privilege boundary", mcpUninstallSudoBoundary},
@@ -643,6 +644,55 @@ chmod +x "$destination"
 	}
 	if err := requireAbsent(hostileExecuted); err != nil {
 		return err
+	}
+	return nil
+}
+
+// A sudo upgrade of a user-owned directory (the portal one-liner touches
+// ~/.local/bin) must chown the binary back to that user, or a later no-sudo
+// upgrade cannot hard-link the root-owned file (protected_hardlinks) and sudo
+// becomes mandatory forever. A root-owned destination is left untouched.
+func mcpSudoPreservesDestinationOwner(h *harness) error {
+	installer := h.repoPath("install-mcp.sh")
+	dir := h.path("owner-dest")
+	file := filepath.Join(dir, "emisar-mcp")
+	if err := h.mkdir(dir); err != nil {
+		return err
+	}
+	if err := writeFile(file, "new\n", 0o755); err != nil {
+		return err
+	}
+
+	for _, tc := range []struct {
+		name  string
+		uid   string
+		owner string
+		want  string // empty = chown must not run
+	}{
+		{name: "root, user-owned dir", uid: "0", owner: "1000:1000", want: "chown 1000:1000 " + file},
+		{name: "root, root-owned dir", uid: "0", owner: "0:0", want: ""},
+		{name: "non-root", uid: "1000", owner: "1000:1000", want: ""},
+	} {
+		trace := h.path("chown-trace-" + tc.name)
+		result := h.functions(installer, []string{"preserve_owner_for_sudo"}, fmt.Sprintf(`
+id() { [ "${1:-}" = -u ] && printf '%%s\n' "$FIXTURE_UID"; }
+dir_owner() { printf '%%s\n' "$FIXTURE_OWNER"; }
+chown() { printf 'chown %%s\n' "$*" >"$CHOWN_TRACE"; }
+die() { printf '%%s\n' "$*" >&2; exit 1; }
+preserve_owner_for_sudo %q %q
+`, dir, file), map[string]string{
+			"FIXTURE_UID":   tc.uid,
+			"FIXTURE_OWNER": tc.owner,
+			"CHOWN_TRACE":   trace,
+		})
+		if _, err := requireOutput(result); err != nil {
+			return fmt.Errorf("%s: %w", tc.name, err)
+		}
+		data, _ := os.ReadFile(trace)
+		got := strings.TrimSpace(string(data))
+		if got != tc.want {
+			return fmt.Errorf("%s: chown trace = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 	return nil
 }

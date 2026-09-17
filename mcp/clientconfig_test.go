@@ -716,19 +716,52 @@ func TestQuotedValuesSurviveJSONTOMLAndYAML(t *testing.T) {
 	}
 }
 
-func TestYAMLClientRefusesToMergeAnExistingKey(t *testing.T) {
+func TestYAMLClientInsertsUnderAnExistingKey(t *testing.T) {
 	adapter, _ := lookupClientAdapter("goose")
 	roots := testConfigRoots(t)
 	client := adapter.resolve(roots)
 	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// The shape every configured Goose has: `extensions:` with a built-in child
+	// and no emisar entry. The bridge must add itself under it, not refuse.
 	existing := "extensions:\n  developer:\n    enabled: true\n"
 	if err := os.WriteFile(client.ConfigFile, []byte(existing), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", "goose")); err != nil {
+		t.Fatalf("expected the emisar entry to be inserted under extensions: %v", err)
+	}
+	raw, err := readConfigFile(client.ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, "  developer:\n    enabled: true\n") {
+		t.Errorf("the existing developer extension was not preserved byte for byte:\n%s", raw)
+	}
+	if !strings.Contains(raw, "\n  emisar:\n") {
+		t.Errorf("no emisar entry was inserted under extensions:\n%s", raw)
+	}
+	if strings.Contains(raw, "\nemisar:\n") {
+		t.Errorf("emisar was added as a new top-level key, not under extensions:\n%s", raw)
+	}
+}
+
+func TestYAMLClientRefusesToMergeAnInlineCollection(t *testing.T) {
+	adapter, _ := lookupClientAdapter("goose")
+	roots := testConfigRoots(t)
+	client := adapter.resolve(roots)
+	if err := os.MkdirAll(filepath.Dir(client.ConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// An inline map has no line to insert a child under; refuse rather than
+	// mangle it, and leave the file untouched.
+	existing := "extensions: {}\n"
+	if err := os.WriteFile(client.ConfigFile, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := client.install(testEntryRequest("/usr/local/bin/emisar-mcp", "goose")); err == nil {
-		t.Fatal("expected a refusal rather than a duplicate YAML key")
+		t.Fatal("expected a refusal rather than mangling an inline collection")
 	}
 	raw, err := readConfigFile(client.ConfigFile)
 	if err != nil {

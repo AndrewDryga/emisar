@@ -369,7 +369,21 @@ func replaceYAMLEntry(raw, top, entry string) (string, error) {
 		}
 	}
 	if entryStart < 0 {
-		return "", fmt.Errorf("this config already defines %s without an emisar entry", top)
+		// An existing top-level block with no emisar child yet: insert one under
+		// it rather than refusing. A Goose that has run `goose configure` always
+		// carries `extensions:` with a built-in child and no emisar entry — the
+		// common configured shape. (Inline maps like `extensions: {}` never reach
+		// here: they fail the exact `top:` match and are refused above.)
+		indent := childIndent
+		if indent < 0 {
+			indent = 2
+		}
+		insertion := strings.Split(strings.TrimSuffix(indentYAMLBlock(entry, indent), "\n"), "\n")
+		edited := make([]string, 0, len(lines)+len(insertion))
+		edited = append(edited, lines[:topEnd]...)
+		edited = append(edited, insertion...)
+		edited = append(edited, lines[topEnd:]...)
+		return strings.Join(edited, "\n"), nil
 	}
 
 	entryEnd := topEnd
