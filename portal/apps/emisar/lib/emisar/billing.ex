@@ -380,6 +380,18 @@ defmodule Emisar.Billing do
   # there's no Subject path here.
   defp peek_subscription_for_account(account_id), do: subscription_for_account(account_id, [])
 
+  @doc """
+  Whether the account's plan is governed by a live Paddle subscription — the
+  case a manual plan flip cannot hold, because the hourly `SyncSubscriptions`
+  re-mirrors the plan from Paddle within the hour.
+  """
+  def paddle_managed?(account_id) when is_binary(account_id) do
+    match?(
+      %Subscription{paddle_subscription_id: id} when is_binary(id),
+      subscription_for_account(account_id, [])
+    )
+  end
+
   defp subscription_for_account(account_id, opts) do
     repo = Keyword.get(opts, :repo, Repo)
 
@@ -2128,6 +2140,10 @@ defmodule Emisar.Billing do
     |> put_present(:unit_price_amount, non_negative_integer(unit_price["amount"]))
     |> put_present(:currency_code, currency_code(unit_price["currency_code"]))
     |> put_present(:quantity, positive_integer(item["quantity"]))
+    |> put_present(
+      :trial_end,
+      parse_optional_iso8601(map_or_empty(item["trial_dates"])["ends_at"])
+    )
   end
 
   defp map_or_empty(value) when is_map(value), do: value

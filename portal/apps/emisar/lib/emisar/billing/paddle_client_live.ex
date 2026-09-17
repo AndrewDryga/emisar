@@ -272,8 +272,9 @@ defmodule Emisar.Billing.PaddleClient.Live do
     end
   end
 
-  # Paddle's recommended tolerance window. Webhooks delivered outside
-  # this window are rejected to prevent replay of captured payloads.
+  # A generous freshness window. It is not Paddle's default (5 s); replay is
+  # already a no-op, bounded by the event-id dedup table, so the window only
+  # tolerates clock skew and delivery lag.
   @tolerance_seconds 300
 
   defp verify_signature(payload, signature_header, secret) do
@@ -282,18 +283,19 @@ defmodule Emisar.Billing.PaddleClient.Live do
       |> String.split(";")
       |> Enum.map(&String.trim/1)
       |> Enum.map(&String.split(&1, "=", parts: 2))
-      |> Enum.into(%{}, fn
-        [k, v] -> {k, v}
-        _ -> {nil, nil}
-      end)
 
-    with {:ok, timestamp_str} <- Map.fetch(parts, "ts"),
-         {:ok, expected} <- Map.fetch(parts, "h1"),
+    timestamps = for [k, v] <- parts, k == "ts", do: v
+    # Paddle returns more than one h1 during a secret rotation; accept the
+    # delivery if any of them matches, not only the last one parsed.
+    signatures = for [k, v] <- parts, k == "h1", do: v
+
+    with [timestamp_str | _] <- timestamps,
+         [_ | _] <- signatures,
          {timestamp, ""} <- Integer.parse(timestamp_str),
          :ok <- check_timestamp(timestamp),
          signed_payload = "#{timestamp}:#{payload}",
          computed = Emisar.Crypto.paddle_webhook_signature(secret, signed_payload),
-         true <- Emisar.Crypto.secure_compare(computed, expected) do
+         true <- Enum.any?(signatures, &Emisar.Crypto.secure_compare(computed, &1)) do
       :ok
     else
       {:error, reason} -> {:error, reason}

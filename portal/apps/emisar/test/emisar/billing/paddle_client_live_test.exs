@@ -294,6 +294,43 @@ defmodule Emisar.Billing.PaddleClientLiveTest do
       assert Live.construct_webhook_event(payload, signature, @secret) ==
                {:error, :timestamp_too_old}
     end
+
+    test "accepts a rotation header carrying more than one h1, in either order" do
+      timestamp = System.system_time(:second)
+      payload = ~s({"event_type":"subscription.created","event_id":"evt_1"})
+
+      digest = :crypto.mac(:hmac, :sha256, @secret, "#{timestamp}:#{payload}")
+      valid = "h1=" <> Base.encode16(digest, case: :lower)
+      # Paddle returns the old and new secrets' h1 during a rotation.
+      foreign = "h1=" <> String.duplicate("0", 64)
+
+      assert {:ok, _} =
+               Live.construct_webhook_event(
+                 payload,
+                 "ts=#{timestamp};#{foreign};#{valid}",
+                 @secret
+               )
+
+      assert {:ok, _} =
+               Live.construct_webhook_event(
+                 payload,
+                 "ts=#{timestamp};#{valid};#{foreign}",
+                 @secret
+               )
+    end
+
+    test "rejects a header whose every h1 is foreign" do
+      timestamp = System.system_time(:second)
+      payload = ~s({"event_type":"subscription.created","event_id":"evt_1"})
+      foreign = String.duplicate("0", 64)
+
+      assert Live.construct_webhook_event(
+               payload,
+               "ts=#{timestamp};h1=#{foreign};h1=#{foreign}",
+               @secret
+             ) ==
+               {:error, :signature_mismatch}
+    end
   end
 
   describe "parse_subscription_page/1" do

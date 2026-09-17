@@ -37,6 +37,13 @@ defmodule Mix.Tasks.Emisar.SetPlan do
 
     case Emisar.Accounts.fetch_account_by_id_or_slug_including_disabled(id_or_slug) do
       {:ok, account} ->
+        if Emisar.Billing.paddle_managed?(account.id) do
+          Mix.raise(
+            "#{account.slug} has a live Paddle subscription — a manual flip would be reverted " <>
+              "within the hour by SyncSubscriptions. Change the plan in Paddle, or cancel it first."
+          )
+        end
+
         {:ok, _sub} =
           Emisar.Billing.upsert_subscription(account.id, %{plan: plan, status: "active"},
             manual: true

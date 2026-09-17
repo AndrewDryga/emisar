@@ -380,6 +380,21 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "paddle_managed?/1" do
+    test "true only when a live Paddle subscription id is set" do
+      free = Fixtures.Accounts.create_account()
+      refute Billing.paddle_managed?(free.id)
+
+      manual = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(manual, "team")
+      refute Billing.paddle_managed?(manual.id)
+
+      paddle = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(paddle, "team", paddle_subscription_id: "sub_123")
+      assert Billing.paddle_managed?(paddle.id)
+    end
+  end
+
   describe "directory_sync_available?/1" do
     setup do
       %{account: Fixtures.Accounts.create_account()}
@@ -1707,7 +1722,8 @@ defmodule Emisar.BillingTest do
       # `upsert_from_subscription/1` now maps cancel_at_period_end / current_period_start
       # / quantity from the Paddle payload (see the scheduled-cancel test below), but a
       # plain subscription.created carrying none of those must leave them at their
-      # defaults, not invent values. `trial_end` is not yet mapped (BACKLOG).
+      # defaults, not invent values. `trial_end` maps from the item's trial_dates,
+      # which this payload does not carry, so it stays nil.
       account = Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_cyclenote_01"})
 
       event =
@@ -2918,6 +2934,23 @@ defmodule Emisar.BillingTest do
                paddle_price_id: "pri_valid",
                quantity: 2
              }
+    end
+
+    test "mirrors the item's trial end when Paddle sends trial_dates" do
+      payload = %{
+        "items" => [
+          %{
+            "quantity" => 1,
+            "product" => %{"name" => "Team", "custom_data" => %{"plan" => "team"}},
+            "trial_dates" => %{"ends_at" => "2026-10-01T00:00:00Z"},
+            "price" => %{"id" => "pri_team_01"}
+          }
+        ]
+      }
+
+      attrs = Billing.subscription_item_attrs(payload)
+      assert attrs.paddle_price_id == "pri_team_01"
+      assert %DateTime{year: 2026, month: 10, day: 1} = attrs.trial_end
     end
   end
 
