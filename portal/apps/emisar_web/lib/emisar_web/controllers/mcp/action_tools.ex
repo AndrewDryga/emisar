@@ -102,13 +102,28 @@ defmodule EmisarWeb.MCP.ActionTools do
         not_allowed(conn, input)
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:error,
-         error(
-           "dispatch_failed",
-           "The action call failed persistence validation. No target was dispatched.",
-           false,
-           %{fields: changeset_errors(changeset)}
-         )}
+        case unsafe_text_issues(changeset) do
+          [] ->
+            {:error,
+             error(
+               "dispatch_failed",
+               "The action call failed persistence validation. No target was dispatched.",
+               false,
+               %{fields: changeset_errors(changeset)}
+             )}
+
+          # A control/formatting character in the justification chain is a caller
+          # input fault, not a transient persistence failure: `dispatch_failed`
+          # reads as "safe to retry" and loops the model on the same bytes. Route
+          # it through the argument-validation contract instead.
+          issues ->
+            {:error,
+             ValidationError.payload(
+               "reason, evidence, or expected contains control or formatting characters. Send plain text and retry.",
+               stage: :arguments,
+               issues: issues
+             )}
+        end
 
       {:error, %{} = payload} ->
         {:error, payload}
@@ -235,5 +250,17 @@ defmodule EmisarWeb.MCP.ActionTools do
         String.replace(rendered, "%{#{key}}", to_string(value))
       end)
     end)
+  end
+
+  @justification_fields [:reason, :evidence, :expected]
+
+  # The justification chain rejects control/formatting characters with a tagged
+  # changeset error; surface it as an argument-format validation issue.
+  defp unsafe_text_issues(%Ecto.Changeset{errors: errors}) do
+    for {field, {_message, opts}} <- errors,
+        field in @justification_fields,
+        Keyword.get(opts, :validation) == :unsafe_text do
+      ValidationError.issue([field], :format)
+    end
   end
 end

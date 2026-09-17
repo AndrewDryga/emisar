@@ -345,11 +345,14 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   # An LLM caller retries, so the generic execution_failed would loop it on the
-  # same rejected text forever. Name the argument and what is wrong with it.
+  # same rejected text forever. Name the argument and what is wrong with it, and
+  # return the full validation payload the frozen `invalid_args` schema requires
+  # (the `details` object also drives the `mcp.validation_failed` event).
   defp execution_failure(:reason_unsafe_text, _allow_draft) do
-    error(
-      "invalid_args",
-      "reason contains control or formatting characters. Send plain text and retry."
+    ValidationError.payload(
+      "reason contains control or formatting characters. Send plain text and retry.",
+      stage: :arguments,
+      issues: [ValidationError.issue([:reason], :format)]
     )
   end
 

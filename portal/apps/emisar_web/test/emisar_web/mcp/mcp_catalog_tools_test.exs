@@ -1082,7 +1082,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
              %{
                "code" => "pack_load_failed",
                "message" =>
-                 "Pack cloud-init failed to load on this runner: packs: parse modules_config.yaml: yaml: unmarshal"
+                 "Pack cloud-init failed to load on this runner (runner-reported reason: \"packs: parse modules_config.yaml: yaml: unmarshal\")."
              }
            ] = issues
   end

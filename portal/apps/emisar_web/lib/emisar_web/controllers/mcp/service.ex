@@ -189,23 +189,42 @@ defmodule EmisarWeb.MCP.Service do
     # model whose artifact/context budget is substantially smaller.
     if fits_frame?(summary),
       do: summary,
-      else: build.(largest_fitting(build, 0, total, 0))
+      else: build.(tail_take(build, total))
+  end
+
+  # The largest model-page allowance — but when even an empty page overflows
+  # because the non-output content alone exceeds 64 KiB (chiefly the review
+  # receipt, already delivered in the snapshot), a model-page fit returns 0, no
+  # fragment ships, the cursor never advances, and `next` re-emits the same
+  # position forever. Fall back to the 512 KiB transport ceiling so at least one
+  # fragment always drains: the page is oversized for the model, but the run
+  # makes progress instead of hot-looping.
+  defp tail_take(build, total) do
+    case largest_fitting(build, 0, total, 0) do
+      0 when total > 0 -> largest_fitting(build, &fits_transport?/1, 0, total, 0)
+      best -> best
+    end
   end
 
   defp fits_frame?(summary), do: ResponseBudget.fits_model_page?(%{ok: true, run: summary})
 
+  defp fits_transport?(summary), do: ResponseBudget.fits_payload?(%{ok: true, run: summary})
+
   # The largest byte allowance in `lo..hi` whose assembled frame still fits.
   # Both callers build monotonically in their allowance, so a binary search
   # finds it in a bounded number of encodings.
-  defp largest_fitting(build, lo, hi, best) when lo <= hi do
+  defp largest_fitting(build, lo, hi, best),
+    do: largest_fitting(build, &fits_frame?/1, lo, hi, best)
+
+  defp largest_fitting(build, fits?, lo, hi, best) when lo <= hi do
     mid = div(lo + hi, 2)
 
-    if fits_frame?(build.(mid)),
-      do: largest_fitting(build, mid + 1, hi, mid),
-      else: largest_fitting(build, lo, mid - 1, best)
+    if fits?.(build.(mid)),
+      do: largest_fitting(build, fits?, mid + 1, hi, mid),
+      else: largest_fitting(build, fits?, lo, mid - 1, best)
   end
 
-  defp largest_fitting(_build, _lo, _hi, best), do: best
+  defp largest_fitting(_build, _fits?, _lo, _hi, best), do: best
 
   defp tail_summary(context, take) do
     {output, {next_seq, next_offset, remaining}, cut?} =

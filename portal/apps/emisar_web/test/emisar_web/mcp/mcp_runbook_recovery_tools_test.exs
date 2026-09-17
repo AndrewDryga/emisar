@@ -2079,6 +2079,80 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     assert {^chunk, _frames} = drain_tail!(conn, run, cursor, "", 0)
   end
 
+  # A terminal run whose review receipt alone overruns the 64 KiB model page fit
+  # (backslashes escape to six wire bytes across the structured content and the
+  # mirrored text block) used to deliver an empty page, never advance the cursor,
+  # and re-emit the same `next` forever (MCP-1). The tail now falls back to the
+  # 512 KiB transport ceiling so at least one fragment always ships and it drains.
+  test "an oversized review receipt still drains the output tail instead of looping", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    user: user,
+    key: key,
+    membership: membership
+  } do
+    runner = setup_runner!(account, subject, "oversized-receipt-node")
+    {_action, pack_ref} = Fixtures.Catalog.create_published_action(runner: runner)
+    pack = Emisar.Catalog.PublishedRegistry.get("linux-core")
+    filler = fn n -> String.duplicate("\\", n) end
+
+    run =
+      create_mcp_history_run!(account, runner, key, 1, %{
+        action_id: "linux.disk_usage",
+        pack_ref: pack_ref,
+        expected_pack_hash: pack.content_hash,
+        status: :pending_approval,
+        requires_approval: true,
+        initiating_membership_id: membership.id,
+        args_raw: ~s({"paths":["/srv"]}),
+        reason: filler.(2_000),
+        evidence: filler.(4_000),
+        expected: filler.(2_000)
+      })
+
+    {:ok, request} = Approvals.create_request(run, user.id, filler.(2_000), min_approvals: 20)
+
+    # Stack votes so the projected receipt fills its whole decisions byte budget
+    # on top of the maxed reason/evidence/expected — enough that the receipt
+    # alone overruns the model page and the tail must fall back to draining.
+    for i <- 1..9 do
+      assert {:ok, _} =
+               Approvals.approve_request(
+                 request,
+                 named_reviewer(account, "Reviewer #{i}"),
+                 filler.(1_000)
+               )
+    end
+
+    assert {:ok, _} =
+             Approvals.override_request(
+               request,
+               filler.(1_000),
+               named_reviewer(account, "Alex Admin")
+             )
+
+    # The override released the run; take it to a terminal state with a backlog
+    # of undrained output, the exact shape that used to loop.
+    run = Repo.reload!(run) |> ActionRun.Changeset.transition(:sent, %{}) |> Repo.update!()
+    backlog = String.duplicate("y", 40_000)
+    append_progress!(run, 1, "stdout", backlog)
+
+    assert {:ok, _finished} =
+             Fixtures.Runs.finish(run, %{"status" => "success", "progress_chunks" => 1})
+
+    summary = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+    cursor = summary["next"]["arguments"]["cursor"]
+    assert is_binary(cursor)
+
+    {drained, frames, any_oversized?} = drain_oversized_tail!(conn, run, cursor, "", 0)
+    assert drained == backlog
+    assert frames > 0
+    # The receipt genuinely forced the fallback: at least one delivered frame did
+    # not fit the model page (without the fix this run looped on empty pages).
+    assert any_oversized?
+  end
+
   test "recent history pages on the final mirrored frame size", %{
     conn: conn,
     account: account,
@@ -4053,6 +4127,38 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
   defp drain_tail!(_conn, _run, _cursor, _acc, _frames),
     do: flunk("output tail did not drain within 100 frames")
+
+  # Like drain_tail!, but for a run whose oversized receipt forces every frame
+  # past the model page: the contract is only that each frame stays under the
+  # transport ceiling and the cursor keeps advancing to completion. Returns the
+  # reassembled output, the frame count, and the largest frame seen (the caller
+  # asserts it overran the model page, proving the transport-ceiling fallback ran
+  # rather than the run simply fitting).
+  defp drain_oversized_tail!(conn, run, cursor, acc, frames, oversized? \\ false)
+
+  defp drain_oversized_tail!(conn, run, cursor, acc, frames, oversized?) when frames < 100 do
+    response =
+      rpc(conn, "tools/call", %{
+        "name" => "wait_for_run",
+        "arguments" => %{"run_id" => run.id, "cursor" => cursor, "timeout" => "0"}
+      })
+
+    assert byte_size(response.resp_body) <= ResponseBudget.max_frame_bytes()
+    result = response |> json_response(200) |> get_in(["result", "structuredContent"])
+    assert_valid_tool_result("wait_for_run", result)
+    oversized? = oversized? or not ResponseBudget.fits_model_page?(result)
+
+    summary = result["run"] || flunk("tail frame did not return a run: #{inspect(result)}")
+    acc = acc <> tail_text(summary)
+
+    case get_in(summary, ["next", "arguments", "cursor"]) do
+      nil -> {acc, frames + 1, oversized?}
+      next_cursor -> drain_oversized_tail!(conn, run, next_cursor, acc, frames + 1, oversized?)
+    end
+  end
+
+  defp drain_oversized_tail!(_conn, _run, _cursor, _acc, _frames, _oversized?),
+    do: flunk("oversized-receipt tail did not drain within 100 frames")
 
   defp drain_execution_outputs!(conn, continuation, outputs, frames) when frames < 100 do
     response =

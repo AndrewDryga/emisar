@@ -1,6 +1,7 @@
 defmodule EmisarWeb.MCPRunbookRejectionLogTest do
   use EmisarWeb.ConnCase, async: false
   import ExUnit.CaptureLog
+  import EmisarWeb.MCPContractAssertions
   alias Emisar.{ApiKeys, Catalog, Runbooks}
   alias Emisar.Auth.Subject
   alias EmisarWeb.MCP.RunbookTools
@@ -125,6 +126,10 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
 
     assert result["error"]["code"] == "invalid_args"
     assert result["error"]["message"] =~ "control or formatting characters"
+    # The frozen invalid_args schema requires the details object; a bare code +
+    # message (MCP-2) passed this test but failed a strict client.
+    assert_valid_tool_result("execute_runbook", result)
+    assert result["error"]["details"]["issues"] == [%{"path" => "$.reason", "code" => "format"}]
   end
 
   # A key inherits the minting member's runner scope, so a draft naming a group

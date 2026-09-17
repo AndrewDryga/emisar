@@ -211,9 +211,56 @@ defmodule Emisar.Catalog.MCPProjectionTest do
              %{code: "pack_load_failed", message: "Pack acme failed to load on this runner."},
              %{
                code: "pack_load_failed",
-               message: "Pack other failed to load on this runner: missing configuration"
+               message:
+                 "Pack other failed to load on this runner (runner-reported reason: \"missing configuration\")."
              }
            ]
+  end
+
+  test "a runner that never advertised a hostname projects its name, not an empty string" do
+    runner = %Runner{
+      id: Ecto.UUID.generate(),
+      account_id: Ecto.UUID.generate(),
+      name: "edge-runner",
+      external_id: Ecto.UUID.generate(),
+      hostname: nil,
+      group: "default",
+      labels: %{},
+      packs: %{},
+      degraded_packs: [],
+      online?: true,
+      enforce_signatures: false
+    }
+
+    assert %{runners: [projected]} = MCPProjection.build([], [], [runner])
+
+    assert projected.hostname == "edge-runner"
+    assert "runner_metadata_invalid" in Enum.map(projected.issues, & &1.code)
+  end
+
+  test "more than eight runner issues fold into one counted summary" do
+    degraded =
+      for n <- 1..12, do: %{"pack" => "pack-#{n}", "reason" => "loader error #{n}"}
+
+    runner = %Runner{
+      id: Ecto.UUID.generate(),
+      account_id: Ecto.UUID.generate(),
+      name: "runner",
+      external_id: Ecto.UUID.generate(),
+      hostname: "db-prod",
+      group: "default",
+      labels: %{},
+      packs: %{},
+      degraded_packs: degraded,
+      online?: true,
+      enforce_signatures: false
+    }
+
+    assert %{runners: [projected]} = MCPProjection.build([], [], [runner])
+
+    assert length(projected.issues) == 8
+    assert [summary] = Enum.filter(projected.issues, &(&1.code == "issues_truncated"))
+    assert summary.message == "5 more issue(s) omitted."
   end
 
   defp deployment(pack_id, version, hash) do

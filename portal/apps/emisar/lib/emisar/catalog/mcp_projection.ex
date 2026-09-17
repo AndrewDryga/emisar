@@ -68,7 +68,10 @@ defmodule Emisar.Catalog.MCPProjection do
 
     projected_runners =
       Enum.map(projected_runners, fn runner ->
-        %{runner | issues: unique_issues(runner_issues(runner, pack_issues_by_runner))}
+        %{
+          runner
+          | issues: cap_issues(unique_issues(runner_issues(runner, pack_issues_by_runner)))
+        }
       end)
 
     %{packs: packs, runners: projected_runners}
@@ -158,6 +161,10 @@ defmodule Emisar.Catalog.MCPProjection do
     case runner_ref(runner) do
       {:ok, runner_ref} ->
         {hostname, hostname_valid?} = safe_field(runner.hostname, 1, 255)
+        # The schema floors hostname at one character; a runner that never
+        # advertised one (or advertised only unsafe bytes) projects "" here, so
+        # fall back to its durable name. metadata_valid? already flags it.
+        hostname = if hostname == "", do: String.slice(runner.name, 0, 255), else: hostname
         {group, group_valid?} = safe_field(runner.group, 1, 80)
         {labels, labels_valid?} = safe_labels(runner.labels)
         metadata_valid? = hostname_valid? and group_valid? and labels_valid?
@@ -526,10 +533,14 @@ defmodule Emisar.Catalog.MCPProjection do
   # caller rejects nil) rather than raising on the whole projection.
   defp degraded_pack_issue(%{"pack" => pack, "reason" => reason})
        when is_binary(pack) and is_binary(reason) do
+    # The reason is runner-authored text. Ingest already strips control
+    # characters, but the model is told runner OUTPUT is untrusted, and a bare
+    # concatenation reads as an Emisar diagnostic — so quote and label it as
+    # runner-reported rather than letting it masquerade as a system message.
     issue(
       "pack_load_failed",
-      "Pack #{Emisar.SafeText.strip(pack)} failed to load on this runner: " <>
-        Emisar.SafeText.strip(reason)
+      "Pack #{Emisar.SafeText.strip(pack)} failed to load on this runner " <>
+        "(runner-reported reason: #{inspect(Emisar.SafeText.strip(reason))})."
     )
   end
 
@@ -582,7 +593,46 @@ defmodule Emisar.Catalog.MCPProjection do
     runner.last_heartbeat_at || runner.last_disconnected_at || runner.last_connected_at
   end
 
-  defp issue(code, message), do: %{code: code, message: message}
+  # The MCP output schema bounds every issue message at 512 code points and
+  # 1,024 UTF-8 bytes. Runner-reported reasons and multi-action summaries can
+  # exceed that, so cap centrally rather than trusting each caller.
+  @max_issue_chars 512
+  @max_issue_bytes 1_024
+  @ellipsis "…"
+
+  defp issue(code, message), do: %{code: code, message: cap_message(message)}
+
+  defp cap_message(message) do
+    if String.length(message) <= @max_issue_chars and byte_size(message) <= @max_issue_bytes do
+      message
+    else
+      slice_to_bounds(message, @max_issue_chars - 1, @max_issue_bytes - byte_size(@ellipsis)) <>
+        @ellipsis
+    end
+  end
+
+  defp slice_to_bounds(message, max_chars, max_bytes) do
+    sliced = String.slice(message, 0, max_chars)
+
+    if byte_size(sliced) <= max_bytes,
+      do: sliced,
+      else: slice_to_bounds(sliced, String.length(sliced) - 1, max_bytes)
+  end
+
+  # The schema caps a runner's issue list at 8. Structural issues (connection,
+  # drift, missing executables, skew) are few and kept; the repetitive per-pack
+  # load failures are folded into one counted summary so nothing is silently
+  # lost and a strict client never sees a ninth entry.
+  @max_runner_issues 8
+
+  defp cap_issues(issues) when length(issues) <= @max_runner_issues, do: issues
+
+  defp cap_issues(issues) do
+    {degraded, structural} = Enum.split_with(issues, &(&1.code == "pack_load_failed"))
+    structural = Enum.take(structural, @max_runner_issues - 1)
+    kept = structural ++ Enum.take(degraded, @max_runner_issues - 1 - length(structural))
+    kept ++ [issue("issues_truncated", "#{length(issues) - length(kept)} more issue(s) omitted.")]
+  end
 
   defp unique_issues(issues) do
     issues

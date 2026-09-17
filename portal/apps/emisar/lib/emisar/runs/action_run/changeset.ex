@@ -157,7 +157,10 @@ defmodule Emisar.Runs.ActionRun.Changeset do
     Enum.reduce(fields, changeset, fn field, acc ->
       validate_change(acc, field, fn ^field, value ->
         if SafeText.unsafe_multiline?(value),
-          do: [{field, "must not contain control or formatting characters"}],
+          do: [
+            {field,
+             {"must not contain control or formatting characters", validation: :unsafe_text}}
+          ],
           else: []
       end)
     end)
