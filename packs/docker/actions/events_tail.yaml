@@ -30,7 +30,7 @@ args:
     type: boolean
     required: false
     default: false
-    description: When true, also show the routine exec_create/exec_start/exec_die events (health-check chatter). Default false.
+    description: When true, also show the routine exec_create/exec_start/exec_die events (health-check chatter); an exec_create carries the command line it ran, so this can surface `docker exec` arguments. Default false.
 execution:
   script:
     path: scripts/events_tail.sh

@@ -106,6 +106,13 @@ auth_header() {
 request() {
   local method=$1 url=$2 status=0 response
   shift 2
+  # curl collapses a `..` segment out of the path before sending, which would
+  # reach a different Airflow endpoint than the id the caller validated. The id
+  # patterns admit `.`, so this is the containment. Same guard, same reason as
+  # artifactory_api.sh's reject_dotdot.
+  case "${url#"$base"}" in
+    *..*) fail "Airflow path may not contain '..'" ;;
+  esac
   response=$(auth_header | bounded_transfer curl -q --globoff --proto '=http,https' --max-filesize "$max_response_bytes" -fsS -H @- \
     -X "$method" --connect-timeout "$connect_timeout" --max-time "$max_time" \
     "$@" "$url") || status=$?

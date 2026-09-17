@@ -7,6 +7,7 @@ description: Write a Raft snapshot to a local file. Use before risky operations 
 side_effects:
   - One read of the entire state store.
   - File written at the configured path on the runner host.
+  - The snapshot contains every KV value and ACL token secret in cleartext; protect the file.
   - Brief leader IO; no service impact.
 search_terms:
   - cluster backup
@@ -26,7 +27,6 @@ args:
         - /var/lib/consul
         - /var/backups
         - /opt
-        - /tmp
 execution:
   command: {binary: consul, argv: ["snapshot", "save", "{{ args.path }}"]}
   timeout: 5m

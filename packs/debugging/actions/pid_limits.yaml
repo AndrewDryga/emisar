@@ -33,6 +33,11 @@ execution:
     binary: cat
     argv:
       - "/proc/{{ args.pid }}/limits"
+  # Twin of elixir-beam's `beam.process_limits`, which reads the same
+  # /proc/<pid>/limits. This copy keeps a tight 5s/8 KiB envelope for a generic
+  # host pid; the BEAM copy runs wider (15s/16 KiB) because it is reached during
+  # a live node investigation where the process table is larger. Keep them in
+  # sync when the read itself changes.
   timeout: 5s
 
 output:

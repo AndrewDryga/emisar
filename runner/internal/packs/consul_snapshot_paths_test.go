@@ -20,11 +20,19 @@ func TestDispatch_ConsulSnapshotPaths_ScopedToBackupRoots(t *testing.T) {
 
 	for _, id := range []string{"consul.snapshot_save", "consul.snapshot_restore", "consul.snapshot_inspect"} {
 		t.Run(id, func(t *testing.T) {
-			// A portable backup root — in scope even when the test process cannot
-			// traverse the host's root-owned /var/backups directory.
-			accepted(t, dispatchValidate(t, reg, id, map[string]any{"path": "/tmp/consul-pre-migration.snap"}))
-			// Consul's data dir — also in scope.
+			// Consul's data dir — in scope for all three.
 			accepted(t, dispatchValidate(t, reg, id, map[string]any{"path": "/var/lib/consul/snap.snap"}))
+
+			// /tmp is world-readable, and a saved snapshot carries every KV
+			// value and ACL token secret in cleartext, so snapshot_save no
+			// longer allows it; restore/inspect (which read a file the operator
+			// placed) still do.
+			tmpPath := map[string]any{"path": "/tmp/consul-pre-migration.snap"}
+			if id == "consul.snapshot_save" {
+				rejected(t, dispatchValidate(t, reg, id, tmpPath), "path", "allowed_prefixes")
+			} else {
+				accepted(t, dispatchValidate(t, reg, id, tmpPath))
+			}
 
 			// A plain out-of-scope absolute path (still .snap-suffixed) — the
 			// arbitrary write/read the finding named — is rejected before consul.

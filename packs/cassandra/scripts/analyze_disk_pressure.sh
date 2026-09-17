@@ -28,7 +28,7 @@ df -P -h /var/lib/cassandra /var/log/cassandra 2>/dev/null || df -P -h /
 echo
 echo "== cassandra data tree (top-level sizes) =="
 if [[ -d /var/lib/cassandra/data ]]; then
-  du -sh /var/lib/cassandra/data/* 2>/dev/null | sort -h | tail -20
+  du -sh /var/lib/cassandra/data/* | sort -h | tail -20
 else
   echo "(no /var/lib/cassandra/data on this host)"
 fi
@@ -36,13 +36,13 @@ fi
 if [[ -n "$keyspace_filter" && -d "/var/lib/cassandra/data/${keyspace_filter}" ]]; then
   echo
   echo "== keyspace ${keyspace_filter} tables =="
-  du -sh "/var/lib/cassandra/data/${keyspace_filter}"/* 2>/dev/null | sort -h | tail -20
+  du -sh "/var/lib/cassandra/data/${keyspace_filter}"/* | sort -h | tail -20
 fi
 
 echo
 echo "== commitlog usage =="
 if [[ -d /var/lib/cassandra/commitlog ]]; then
-  du -sh /var/lib/cassandra/commitlog 2>/dev/null
+  du -sh /var/lib/cassandra/commitlog
 else
   echo "(no /var/lib/cassandra/commitlog on this host)"
 fi

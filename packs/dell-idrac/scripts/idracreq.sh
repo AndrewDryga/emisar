@@ -58,8 +58,8 @@ fi
 # keep '.' for resource ids like System.Embedded.1, so the confinement lives
 # here. Same guard as artifactory_api.sh's reject_dotdot, same reason.
 case "$path" in
-*..*)
-	echo "dell-idrac: path may not contain '..' — reads are confined to /redfish/v1" >&2
+*..* | *%2[eE]*)
+	echo "dell-idrac: path may not contain '..' (encoded or literal) — reads are confined to /redfish/v1" >&2
 	exit 1
 	;;
 esac

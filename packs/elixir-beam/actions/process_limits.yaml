@@ -21,6 +21,9 @@ execution:
     binary: cat
     argv:
       - "/proc/{{ args.pid }}/limits"
+  # Twin of debugging's `debugging.pid_limits` (same /proc/<pid>/limits read).
+  # The wider 15s/16 KiB envelope here is deliberate: this is reached during a
+  # live BEAM node investigation. Keep them in sync when the read changes.
   timeout: 15s
 output:
   parser: text

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nginx
 name: Nginx operations pack
-version: 0.2.27
+version: 0.2.28
 retired_below: 0.2.27
 description: >
   Operator pack for nginx — read-only status + access-log analysis,
@@ -16,8 +16,10 @@ requires:
   os:
     - linux
   binaries:
-    - nginx
     - curl
+    - nginx
+    - openssl
+    - pgrep
 
 detect:
   processes:
