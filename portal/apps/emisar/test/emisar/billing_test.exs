@@ -1093,12 +1093,26 @@ defmodule Emisar.BillingTest do
       assert Billing.list_recent_invoices(account, subject) == {:ok, []}
     end
 
+    test "an account with no subscription shows nothing even if it shares a Paddle customer", %{
+      account: account,
+      subject: subject
+    } do
+      # Two workspaces of one owner can share a customer id; without its own
+      # subscription this account must not read the other's invoices.
+      account =
+        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_shared_owner") |> Repo.update!()
+
+      assert Billing.list_recent_invoices(account, subject) == {:ok, []}
+    end
+
     test "a grand_total we cannot read is nil, never zero", %{
       account: account,
       subject: subject
     } do
       account =
         account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_02") |> Repo.update!()
+
+      Fixtures.Accounts.create_subscription(account, "team", paddle_subscription_id: "sub_inv_02")
 
       # Paddle's contract is minor-unit digits. `Integer.parse` stops at the
       # first non-digit, so "20.00" came back as 20 — twenty CENTS — and
@@ -1114,6 +1128,8 @@ defmodule Emisar.BillingTest do
     } do
       account =
         account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
+
+      Fixtures.Accounts.create_subscription(account, "team", paddle_subscription_id: "sub_inv_01")
 
       assert {:ok, [first | _] = invoices} = Billing.list_recent_invoices(account, subject)
       assert length(invoices) == 3
@@ -1148,6 +1164,8 @@ defmodule Emisar.BillingTest do
       account =
         account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
 
+      Fixtures.Accounts.create_subscription(account, "team", paddle_subscription_id: "sub_ledger")
+
       for role <- ["admin", "billing_manager"] do
         subject = role_subject(account, role)
 
@@ -1176,6 +1194,10 @@ defmodule Emisar.BillingTest do
 
       account =
         account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_pdf_setup"
+      )
 
       %{account: account, subject: subject}
     end
@@ -3053,9 +3075,14 @@ defmodule Emisar.BillingTest do
       assert {:ok, before} = Billing.billing_summary(account, subject)
       refute before.billing_portal_available?
 
-      account
-      |> Ecto.Changeset.change(paddle_customer_id: "ctm_summary_fresh")
-      |> Repo.update!()
+      account =
+        account
+        |> Ecto.Changeset.change(paddle_customer_id: "ctm_summary_fresh")
+        |> Repo.update!()
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_summary"
+      )
 
       assert {:ok, after_update} = Billing.billing_summary(account, subject)
       assert after_update.billing_portal_available?

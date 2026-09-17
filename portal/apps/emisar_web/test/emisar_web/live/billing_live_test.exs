@@ -1463,6 +1463,9 @@ defmodule EmisarWeb.BillingLiveTest do
         account_id: account.id,
         plan: "team",
         status: status,
+        # A real paid subscription carries a Paddle id; the invoice ledger is
+        # scoped to it (see Billing.do_list_recent_invoices/2).
+        paddle_subscription_id: "sub_#{account.id}",
         collection_mode: if(status == "past_due", do: "automatic")
       }
       |> Emisar.Billing.Subscription.Changeset.upsert()

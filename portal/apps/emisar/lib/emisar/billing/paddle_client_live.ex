@@ -233,8 +233,15 @@ defmodule Emisar.Billing.PaddleClient.Live do
     # Only the statuses that represent an actual invoice (a draft/canceled txn
     # isn't one); newest first, a single page — this is "recent invoices", not
     # a full ledger. The portal link owns the complete history + PDFs.
+    subscription_filter =
+      case attrs[:subscription_id] do
+        id when is_binary(id) -> "&subscription_id=#{id}"
+        _ -> ""
+      end
+
     query =
       "customer_id=#{customer_id}&status=billed,completed,past_due" <>
+        subscription_filter <>
         "&order_by=billed_at[DESC]&per_page=#{limit}"
 
     case get("/transactions?#{query}") do

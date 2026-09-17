@@ -1323,13 +1323,30 @@ defmodule Emisar.Billing do
 
   defp do_list_recent_invoices(%Accounts.Account{paddle_customer_id: nil}, _opts), do: {:ok, []}
 
-  defp do_list_recent_invoices(%Accounts.Account{paddle_customer_id: customer_id}, opts)
+  defp do_list_recent_invoices(
+         %Accounts.Account{paddle_customer_id: customer_id, id: account_id},
+         opts
+       )
        when is_binary(customer_id) do
     limit = Keyword.get(opts, :limit, 6)
 
-    case Emisar.Billing.PaddleClient.list_transactions(%{customer: customer_id, limit: limit}) do
-      {:ok, txns} -> {:ok, Enum.map(txns, &to_invoice/1)}
-      {:error, reason} -> {:error, reason}
+    # Two workspaces of one owner can share a Paddle customer (the sync adopts
+    # an existing customer by owner email), so a customer-scoped ledger would
+    # let a billing manager of one read the other's invoices. Scope to THIS
+    # account's own subscription; no subscription id means no invoices to show.
+    case peek_subscription_for_account(account_id) do
+      %Subscription{paddle_subscription_id: subscription_id} when is_binary(subscription_id) ->
+        case Emisar.Billing.PaddleClient.list_transactions(%{
+               customer: customer_id,
+               subscription_id: subscription_id,
+               limit: limit
+             }) do
+          {:ok, txns} -> {:ok, Enum.map(txns, &to_invoice/1)}
+          {:error, reason} -> {:error, reason}
+        end
+
+      _no_subscription ->
+        {:ok, []}
     end
   end
 
