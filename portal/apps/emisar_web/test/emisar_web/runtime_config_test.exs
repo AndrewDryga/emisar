@@ -7,7 +7,7 @@ defmodule EmisarWeb.RuntimeConfigTest do
   # Everything the prod branch reads that a test here sets, blanks, or must not
   # inherit from the developer's shell.
   @managed_vars ~w[
-    SECRET_KEY_BASE DATABASE_URL EMISAR_DISABLE_BILLING EMISAR_DEV_ROUTES
+    SECRET_KEY_BASE DATABASE_URL EMISAR_DISABLE_BILLING EMISAR_DISABLE_MAIL EMISAR_DEV_ROUTES
     PHX_HOST FORCE_SSL POSTMARK_API_TOKEN POSTMARK_WEBHOOK_SECRET SENTRY_DSN
     MIXPANEL_TOKEN STATUS_PAGE_URL X_ADS_CONVERSIONS_JSON MAILER_FROM_EMAIL
   ]
@@ -19,7 +19,10 @@ defmodule EmisarWeb.RuntimeConfigTest do
     System.put_env(%{
       "SECRET_KEY_BASE" => String.duplicate("s", 64),
       "DATABASE_URL" => "ecto://user:pass@localhost/emisar_runtime_config_test",
-      "EMISAR_DISABLE_BILLING" => "1"
+      "EMISAR_DISABLE_BILLING" => "1",
+      # Most cases don't exercise mail, and a prod build with no Postmark now
+      # raises unless mail is explicitly disabled — so the base env disables it.
+      "EMISAR_DISABLE_MAIL" => "1"
     })
 
     on_exit(fn ->
@@ -33,12 +36,19 @@ defmodule EmisarWeb.RuntimeConfigTest do
   end
 
   describe "blank optional variables count as absent" do
-    test "a blank POSTMARK_API_TOKEN keeps the Logger mailer instead of a keyless Postmark" do
+    test "a blank POSTMARK_API_TOKEN with mail disabled keeps the Logger mailer" do
       System.put_env("POSTMARK_API_TOKEN", "")
 
       config = read_prod_config()
 
       assert config[:emisar][Emisar.Mailer][:adapter] == Swoosh.Adapters.Logger
+    end
+
+    test "no Postmark and no EMISAR_DISABLE_MAIL raises rather than booting mail-less" do
+      System.delete_env("EMISAR_DISABLE_MAIL")
+      System.delete_env("POSTMARK_API_TOKEN")
+
+      assert_raise RuntimeError, ~r/POSTMARK_API_TOKEN is missing/, fn -> read_prod_config() end
     end
 
     test "a real POSTMARK_API_TOKEN still selects Postmark" do

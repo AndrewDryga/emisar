@@ -33,7 +33,7 @@ import Config
 #   DATABASE_NAME          — database for passwordless proxy connections
 #   DATABASE_PORT          — proxy port (default 5432)
 #   DATABASE_ROLE          — PostgreSQL role assumed at connection startup
-#   POSTMARK_API_TOKEN     — mailer adapter (Postmark); unset logs mail instead
+#   POSTMARK_API_TOKEN     — mailer adapter (Postmark); OR set EMISAR_DISABLE_MAIL=1
 #   MAILER_FROM_EMAIL      — override the "From" address (default no-reply@emisar.dev)
 #   MAILER_FROM_NAME       — override the "From" display name (default emisar)
 #   SENTRY_DSN             — enables error uploads when set
@@ -265,11 +265,12 @@ if config_env() == :prod do
   # -- Mailer (Postmark by default; Mailgun and SMTP available as
   # fallbacks if you swap providers later) --------------------------
   cond do
-    System.get_env("EMISAR_DEV_ROUTES") == "1" ->
-      # Dev stack (EMISAR_DEV_ROUTES=1): deliver into the in-memory mailbox the
-      # /dev/mailbox preview reads, so passwordless magic-link sign-in works
-      # locally with no mail provider. Re-enables the Swoosh memory storage that
-      # prod.exs turns off. Never set on a real deploy.
+    EmisarWeb.Router.dev_routes?() ->
+      # A dev-routes BUILD (the docker-compose stack): deliver into the
+      # in-memory mailbox the /dev/mailbox preview reads, so passwordless
+      # magic-link sign-in works locally with no mail provider. Keyed on the
+      # compile-time flag, not a runtime env var, so a stray EMISAR_DEV_ROUTES=1
+      # on a production image can no longer silently swallow all mail.
       config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Local
       config :swoosh, local: true
 
@@ -280,12 +281,20 @@ if config_env() == :prod do
 
       config :swoosh, api_client: Swoosh.ApiClient.Finch, finch_name: Emisar.Finch
 
-    true ->
-      # No mail provider configured — log every send instead of crashing
-      # at delivery. `Swoosh.Adapters.Local` needs a Memory storage
-      # GenServer that only exists in dev; the Logger adapter is process-
-      # free, ideal for staging/disabled-mail prod builds.
+    env.("EMISAR_DISABLE_MAIL") in ~w(true 1) ->
+      # An intentional mail-less prod build (CI smoke, a self-host without
+      # email): log every send. The Logger adapter is process-free.
       config :emisar, Emisar.Mailer, adapter: Swoosh.Adapters.Logger
+
+    true ->
+      # This is a passwordless product, so a prod build with no mail provider
+      # boots healthy yet cannot sign anyone in. Fail loud like Paddle does
+      # rather than fall through to a silent Logger adapter.
+      raise """
+      POSTMARK_API_TOKEN is missing in production. Set it to deliver
+      magic-link sign-in and notification email, or set EMISAR_DISABLE_MAIL=1
+      to run a build with mail intentionally disabled.
+      """
   end
 
   # Postmark bounce/complaint webhook auth (optional — unset or blank disables
