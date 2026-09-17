@@ -134,6 +134,12 @@ func shellCommandPosition(prefix string) bool {
 	switch fields[len(fields)-1] {
 	case "if", "elif", "then", "else", "do", "!", "{":
 		return true
+	// A wrapper that hands off to the command in the SAME shell keeps the next
+	// word in command position, so `exec curl`/`command curl` must still be
+	// scored by the HTTP-failure and curl-URL-safety lints. Without this an
+	// `exec curl` shipped past both.
+	case "exec", "command":
+		return true
 	default:
 		return false
 	}

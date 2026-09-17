@@ -55,6 +55,20 @@ func TestValidatePackHTTPFailures(t *testing.T) {
 			wantErrMsg: "fixture.unsafe_script",
 		},
 		{
+			name:       "exec curl is scored in command position",
+			id:         "fixture.unsafe_exec",
+			execution:  "script:\n    path: scripts/request.sh",
+			script:     "#!/bin/sh\nexec curl -sS http://service/resource\n",
+			wantErr:    true,
+			wantErrMsg: "fixture.unsafe_exec",
+		},
+		{
+			name:      "exec curl with a failure flag passes",
+			id:        "fixture.safe_exec",
+			execution: "script:\n    path: scripts/request.sh",
+			script:    "#!/bin/sh\nexec curl --fail --silent --show-error http://service/resource\n",
+		},
+		{
 			name:      "packaged script explicitly checks 2xx",
 			id:        "fixture.manual_status",
 			execution: "script:\n    path: scripts/request.sh",
