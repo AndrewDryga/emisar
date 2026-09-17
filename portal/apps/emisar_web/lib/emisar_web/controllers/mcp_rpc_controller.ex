@@ -379,24 +379,28 @@ defmodule EmisarWeb.MCPRpcController do
         end
 
       true ->
-        :ok = ValidationError.log_unknown_tool(conn, name)
+        # Gate on the key kind first: a wrong-kind key must get "wrong key kind"
+        # rather than learning the fixed tool count from the unknown-tool reply.
+        with :ok <- require_mcp_key(conn) do
+          :ok = ValidationError.log_unknown_tool(conn, name)
 
-        fixed_tool_result(
-          conn,
-          name,
-          %{
-            ok: false,
-            error: %{
-              code: "unknown_tool",
-              message:
-                "Unknown tool. Emisar exposes only its #{SchemaRegistry.tool_count()} fixed API tools; " <>
-                  "an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action.",
-              retryable: false
+          fixed_tool_result(
+            conn,
+            name,
+            %{
+              ok: false,
+              error: %{
+                code: "unknown_tool",
+                message:
+                  "Unknown tool. Emisar exposes only its #{SchemaRegistry.tool_count()} fixed API tools; " <>
+                    "an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action.",
+                retryable: false
+              },
+              dispatch_started: false
             },
-            dispatch_started: false
-          },
-          true
-        )
+            true
+          )
+        end
     end
   end
 

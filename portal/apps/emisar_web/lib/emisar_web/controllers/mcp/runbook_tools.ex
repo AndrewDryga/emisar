@@ -356,6 +356,17 @@ defmodule EmisarWeb.MCP.RunbookTools do
     )
   end
 
+  # The execution committed; only its projection overran the frame. Report it as
+  # started so the caller retrieves the result with wait_for_run rather than
+  # re-executing it under a fresh operation id.
+  defp execution_failure(:response_too_large, _allow_draft) do
+    error(
+      "response_too_large",
+      "The runbook executed, but its result is too large to return here. Retrieve it with wait_for_run using the run's operation id.",
+      true
+    )
+  end
+
   defp execution_failure(:runner_requires_attestation, _allow_draft) do
     error(
       "signed_runbook_unsupported",
@@ -771,10 +782,18 @@ defmodule EmisarWeb.MCP.RunbookTools do
 
   # The envelope must fit in the transport's bounded frame before the domain
   # spends a transaction on it; the definition contract itself is Runbooks'.
+  # Every documented field at its own ceiling has to pass: the definition, the
+  # title, the derived slug (bounded by the title), the description, and the
+  # JSON keys wrapping them. The prior `definition + 8 KiB` undercounted the
+  # title and description and refused a draft the console accepts.
+  @draft_envelope_bytes Runbooks.definition_limit!(:max_definition_bytes) +
+                          Runbooks.metadata_limit!(:title_bytes) * 2 +
+                          Runbooks.metadata_limit!(:description_bytes) + 1_024
+
   defp validate_draft_envelope(facts) do
     facts
     |> Map.take([:title, :slug, :description, :definition])
-    |> encoded_size(Runbooks.definition_limit!(:max_definition_bytes) + 8_192)
+    |> encoded_size(@draft_envelope_bytes)
   end
 
   defp draft_result(conn, operation) do

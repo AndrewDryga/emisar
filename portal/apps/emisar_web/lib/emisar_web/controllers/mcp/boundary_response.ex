@@ -10,7 +10,7 @@ defmodule EmisarWeb.MCP.BoundaryResponse do
 
   import Plug.Conn
   import Phoenix.Controller, only: [json: 2]
-  alias EmisarWeb.MCP.ValidationError
+  alias EmisarWeb.MCP.{ResponseBudget, ValidationError}
 
   @type option :: {:inspect_body, boolean()} | {:data, map()}
 
@@ -60,8 +60,11 @@ defmodule EmisarWeb.MCP.BoundaryResponse do
   defp notification?(_request), do: false
 
   defp request_id(%{"jsonrpc" => "2.0", "method" => method, "id" => id}, true)
-       when is_binary(method) and (is_binary(id) or is_integer(id)),
-       do: id
+       when is_binary(method) and (is_binary(id) or is_integer(id)) do
+    # A pre-dispatch error echoes this id; drop one past the envelope bound
+    # rather than reflecting a 128 KiB body-sized string back into the frame.
+    if ResponseBudget.valid_request_id?(id), do: id
+  end
 
   defp request_id(_request, _inspect_body?), do: nil
 end

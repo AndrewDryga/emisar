@@ -276,6 +276,26 @@ defmodule EmisarWeb.MCPRpcControllerTest do
                  "an action id like 'postgres.restart' is not a tool. Discover with find_actions/get_action, then dispatch via run_action."
     end
 
+    test "an unknown tool from a wrong-kind key is refused before the tool count leaks", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      {:ok, audit_raw, _key} =
+        ApiKeys.create_key(%{name: "audit", kind: :audit_export}, subject)
+
+      body =
+        conn
+        |> authorize(audit_raw)
+        |> rpc("tools/call", %{"name" => "linux.uptime", "arguments" => %{}})
+        |> json_response(200)
+
+      assert body["error"]["code"] == -32_002
+      refute body["result"]
+    end
+
     test "unknown tool telemetry correlates calls without logging their contents", %{raw: raw} do
       :ok = Logger.put_application_level(:emisar_web, :info)
       on_exit(fn -> Logger.delete_application_level(:emisar_web) end)

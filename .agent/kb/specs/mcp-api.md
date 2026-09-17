@@ -782,8 +782,9 @@ owns them.
 `reason` is required; `evidence` and `expected` are unenforced — nothing
 validates the cited run ids and no policy requires them — but Emisar persists
 all three with the run and renders the chain to approvers and in run history.
-The terminal audit event does not copy this justification chain; its optional
-`reason` is the cancellation explanation. A caller that states what it observed
+The terminal audit event carries the dispatch `reason` as `dispatch_reason`
+(beside `policy_reason` and the `reason` cancellation explanation); it does not
+copy `evidence` or `expected`. A caller that states what it observed
 and what it expects still leaves a record an operator can follow in run history.
 
 ### Exact argument-byte contract
@@ -840,6 +841,13 @@ This produces a stable 128-bit digest across every retry of that admitted
 request, while a later request reusing the same JSON-RPC ID receives a distinct
 identity. The digest is encoded as 26 Crockford-base32 characters and has no
 timestamp semantics. Models never supply or invent operation IDs.
+
+A reserved operation is recoverable for 24 hours: within the window
+`get_operation` returns its committed result, so a lost transport response is
+recovered rather than replayed. After the retention job prunes it,
+`get_operation` answers `operation_not_found`, and a native-HTTP retry of an
+identical request body reserves a fresh operation rather than resolving the old
+one.
 
 The bridge sends the operation ID for every request-shaped `tools/call` in a
 bounded private header over authenticated HTTPS. The portal ignores it for
@@ -1619,7 +1627,8 @@ advertisements, and are returned verbatim once the runbook is visible.
 
 Input accepts `query` (case-insensitive words matched against slug, title, and
 summary), `limit` (1 through 50, default 15), and cursor. The cursor is bound to
-`query`, `limit`, the account, and the rotation-stable credential lineage. A
+`query`, the account, and the rotation-stable credential lineage — not `limit`,
+which is a per-call page ceiling a caller may change while paging. A
 legitimate successor key can resume the page; an unrelated key cannot. Results
 order by slug, one entry per runbook — there is no status filter, because one
 entry states both sides.
