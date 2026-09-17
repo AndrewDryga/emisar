@@ -164,5 +164,13 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
       assert {:ok, unsupported} = ApiKeys.record_auto_rotation_support(nil, nil, subject)
       refute unsupported.auto_rotation_supported
     end
+
+    test "refuses a subject that is not an MCP api key acting on itself" do
+      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_next_raw, prefix, hash} = Crypto.mint("emk-", 12)
+
+      assert ApiKeys.record_auto_rotation_support(prefix, hash, subject) ==
+               {:error, :unauthorized}
+    end
   end
 end

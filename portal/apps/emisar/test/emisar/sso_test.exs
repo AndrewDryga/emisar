@@ -2515,6 +2515,23 @@ defmodule Emisar.SSOTest do
       assert begun.provider_id == reset.provider.id
       assert is_integer(begun.started_at)
     end
+
+    test "refuses an actor whose current session did not authenticate through the IdP" do
+      reset = member_mfa_reset_sso_fixture()
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingResetOIDC)
+
+      local_subject =
+        Fixtures.Subjects.subject_for(reset.actor, reset.account,
+          auth_method: :magic_link,
+          mfa: true
+        )
+
+      assert SSO.begin_member_mfa_reset_reauthentication(
+               "https://portal.test/sign_in/sso/callback",
+               reset.actor_session_token_digest,
+               local_subject
+             ) == {:error, :mfa_reset_reauthentication_unavailable}
+    end
   end
 
   describe "complete_member_mfa_reset_reauthentication/4" do

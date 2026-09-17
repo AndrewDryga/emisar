@@ -436,6 +436,26 @@ defmodule Emisar.SSOIdentityLinkTest do
       assert {:ok, _user, %UserToken{auth_method: :magic_link, user_identity_id: nil}} =
                Auth.fetch_user_and_token_by_session_token(context.raw_session)
     end
+
+    test "refuses a provider that belongs to another account", context do
+      {_other_user, other_account, _other_subject} =
+        Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+
+      foreign =
+        Fixtures.SSO.create_identity_provider(account_id: other_account.id, name: "Other")
+
+      proof = local_proof(context, :link)
+
+      assert {:error, :not_found} =
+               SSO.begin_identity_link(
+                 foreign.id,
+                 :link,
+                 "https://emisar.test/sign_in/sso/callback",
+                 proof,
+                 context.session_digest,
+                 context.subject
+               )
+    end
   end
 
   describe "complete_identity_link/4" do
