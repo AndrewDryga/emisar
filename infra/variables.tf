@@ -141,7 +141,11 @@ variable "instance_count" {
 variable "cos_image" {
   type        = string
   description = "Exact Container-Optimized OS image name for portal VMs. Keep this pinned so an unchanged Terraform configuration always boots the same host bytes; update deliberately after reviewing a newer cos-stable image, on the same monthly cadence as the runtime image digests in compute.tf (the fleet never reboots, so the host bytes only advance when this changes)."
-  default     = "cos-stable-121-18867-528-7"
+  # 2026-09-17 build of the 121 LTS line: kernel COS-6.6.153, Docker 27.5.1,
+  # containerd 2.0.10, 16 kernel CVEs fixed since the July 528-7 build. Kept on
+  # milestone 121 (supported to March 2027) on purpose — the jump to 129 (the
+  # newest LTS) changes kernel and runtime majors and is its own deliberate step.
+  default = "cos-stable-121-18867-584-23"
 
   validation {
     condition     = can(regex("^cos-stable-[0-9]+-[0-9]+-[0-9]+-[0-9]+$", var.cos_image))
