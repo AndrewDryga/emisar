@@ -3261,10 +3261,10 @@ defmodule EmisarWeb.MarketingTest do
       # {route, title, date} — the title suffix proves the right head, and
       # Each legal surface declares the date of its current published text.
       for {route, date} <- [
-            {"/privacy", "September 4, 2026"},
+            {"/privacy", "September 20, 2026"},
             {"/terms", "August 26, 2026"},
             {"/refund-policy", "August 26, 2026"},
-            {"/dpa", "August 28, 2026"}
+            {"/dpa", "September 20, 2026"}
           ] do
         html = conn |> get(route) |> html_response(200)
         assert html =~ "· emisar", "missing title suffix on #{route}"

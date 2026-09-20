@@ -3,7 +3,7 @@
 ============================================================ --%>
 <.legal_page
   title="Privacy Policy"
-  updated="September 4, 2026"
+  updated="September 20, 2026"
   summary="The plain version: we collect what's needed to run the service, we don't sell your data or train AI on it, and you can request a complete copy or deletion at any time."
   toc={[
     {"collect", "1. What we collect"},
@@ -37,9 +37,13 @@
   </p>
   <p>
     <strong>Billing information.</strong>
-    Paid plans are processed via Paddle. We never see or store your full card
-    number; Paddle gives us back a customer identifier, the last four digits, and
-    the card brand. Your billing email and address sit in Paddle.
+    Our payment processor is Paddle. When a workspace is created we register a
+    customer record with Paddle — the owner's email address and the workspace
+    name — so a later upgrade can be billed; this happens for every workspace,
+    including ones that never pay. Payments for paid plans run through Paddle. We
+    never see or store your full card number; Paddle gives us back a customer
+    identifier, the last four digits, and the card brand. Your billing email and
+    address sit in Paddle.
   </p>
   <p>
     <strong>Marketing list.</strong>
@@ -88,7 +92,9 @@
   <ul>
     <li>
       <strong>Paddle</strong>
-      — payment processing and subscription retention (Paddle Retain, checkout page only).
+      — payment processing, and a billing customer record (owner email and workspace name)
+      for every workspace; its subscription-retention scripts (Paddle Retain) load on the
+      checkout page only.
     </li>
     <li>
       <strong>Postmark</strong>
