@@ -14,6 +14,7 @@ defmodule Emisar.Mailers.Transactional do
   @ground Style.ground()
   @surface Style.surface()
   @hairline Style.hairline()
+  @edge Style.edge()
   @ink Style.ink()
   @ink_soft Style.ink_soft()
   @brand Style.brand()
@@ -125,7 +126,7 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp html_block({:section, title}) do
-    ~s(<tr><td style="padding:10px 0 10px;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@brand};">#{HTML.escape(title)}</td></tr>)
+    ~s(<tr><td style="padding:10px 0 10px;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink_soft};">#{HTML.escape(title)}</td></tr>)
   end
 
   defp html_block({:facts, []}), do: ""
@@ -134,8 +135,8 @@ defmodule Emisar.Mailers.Transactional do
     """
     <tr>
       <td style="padding:0 0 18px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@surface};border:1px solid #{@hairline};border-radius:10px;">
-          <tr><td align="center" style="padding:18px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:24px;line-height:1.1;font-weight:700;letter-spacing:0.16em;color:#{@ink};">#{HTML.escape(code)}</td></tr>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@surface};border:1px solid #{@edge};border-radius:10px;">
+          <tr><td align="center" style="padding:20px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:28px;line-height:1.1;font-weight:700;letter-spacing:0.16em;text-indent:0.16em;color:#{@ink};">#{HTML.escape(code)}</td></tr>
         </table>
       </td>
     </tr>
@@ -155,7 +156,7 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp html_block({:pre, value}) do
-    ~s(<tr><td style="padding:14px 16px 16px;background-color:#{@surface};border:1px solid #{@hairline};border-radius:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:#{@ink_soft};">#{HTML.escape(value)}</td></tr><tr><td style="height:18px;"></td></tr>)
+    ~s(<tr><td style="padding:14px 16px 16px;background-color:#{@surface};border:1px solid #{@edge};border-radius:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:#{@ink_soft};">#{HTML.escape(value)}</td></tr><tr><td style="height:18px;"></td></tr>)
   end
 
   defp fact_row(label, value) do
@@ -199,7 +200,7 @@ defmodule Emisar.Mailers.Transactional do
   end
 
   defp action_cell({:secondary, {label, url}}) do
-    ~s(<td style="border:1px solid #{@hairline};border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:12px 21px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ink};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
+    ~s(<td style="border:1px solid #{@edge};border-radius:8px;"><a href="#{HTML.escape(url)}" target="_top" style="display:inline-block;padding:12px 21px;font-family:#{@font};font-size:14px;line-height:1;font-weight:600;color:#{@ink};text-decoration:none;border-radius:8px;">#{HTML.escape(label)}</a></td>)
   end
 
   defp html_footer(footer) when is_binary(footer) and footer != "" do

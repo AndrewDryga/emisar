@@ -889,7 +889,7 @@ defmodule Emisar.MailTest do
         assert email.html_body =~ ">View run</a>"
 
         assert email.html_body =~
-                 ~s(style="border:1px solid #{Style.hairline()};border-radius:8px;")
+                 ~s(style="border:1px solid #{Style.edge()};border-radius:8px;")
 
         refute email.text_body =~ "not proof that the action ran"
         # The approval page is the only place arguments are shown.

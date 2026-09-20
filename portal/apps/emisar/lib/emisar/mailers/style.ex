@@ -3,6 +3,12 @@ defmodule Emisar.Mailers.Style do
   Shared colors, font stack, inbox-preview padding, and the document shell for
   HTML email. The two HTML mailers had each hand-written the shell and the
   masthead, and the masthead had already drifted by one property.
+
+  The Gmail apps rewrite an email's colors by flipping each one's HSL lightness,
+  so every ink here is chosen to clear 4.5:1 on both grounds as authored and
+  after that flip; `Emisar.Mailers.StyleTest` holds the line. `hairline` divides
+  rows inside a table; `edge` outlines a container (a code plate, a `<pre>`, a
+  report card) so it reads as one on the near-black ground.
   """
   alias Emisar.Mailers.HTML
   alias Emisar.PublicUrl
@@ -10,6 +16,7 @@ defmodule Emisar.Mailers.Style do
   def ground, do: "#09090b"
   def surface, do: "#111114"
   def hairline, do: "#27272a"
+  def edge, do: "#3f3f46"
   def ink, do: "#fafafa"
   def ink_soft, do: "#a1a1aa"
   def brand, do: "#8df0ca"
@@ -59,17 +66,23 @@ defmodule Emisar.Mailers.Style do
   end
 
   @doc """
-  The logo row. The lockup carries its own dark ground (SVG doesn't render in
-  Gmail), because a client that force-inverts the email cannot invert an image
-  with it — a transparent white-ink logo would be white ink on a white ground.
-  The alt text is styled so a client with images blocked still shows the
-  wordmark.
+  The logo row. The lockup is a raster tile with its own dark ground (SVG doesn't
+  render in Gmail), because a client that force-inverts the email cannot invert
+  an image with it — a transparent white-ink logo would be white ink on a white
+  ground. On our ground the tile is invisible; inverted, it is a brand chip.
+
+  The tile pads the mark 4px on the left, 7px on the right, and 6px above and
+  below (3x raster: 459x120 for a 153x40 box). The left pad is smaller because
+  the chevron's diagonal recedes from the column edge, so the mark reads flush
+  with the text beneath it while the chip keeps its air when a client inverts
+  the body. The alt text is styled so a client with images blocked still shows
+  the wordmark.
   """
   def masthead do
     """
     <tr>
-      <td style="padding:0 0 20px;">
-        <img src="#{PublicUrl.url("/images/brand/emisar-email-logo.png")}" width="166" height="50" alt="emisar" style="display:block;border:0;outline:none;text-decoration:none;width:166px;height:50px;font-family:#{font()};font-size:19px;font-weight:600;letter-spacing:-0.01em;color:#{ink()};" />
+      <td style="padding:0 0 22px;">
+        <img src="#{PublicUrl.url("/images/brand/emisar-email-lockup.png")}" width="153" height="40" alt="emisar" style="display:block;border:0;outline:none;text-decoration:none;width:153px;height:40px;font-family:#{font()};font-size:19px;font-weight:600;letter-spacing:-0.01em;color:#{ink()};" />
       </td>
     </tr>
     """

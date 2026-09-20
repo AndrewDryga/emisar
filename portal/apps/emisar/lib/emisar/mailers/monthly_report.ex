@@ -21,6 +21,7 @@ defmodule Emisar.Mailers.MonthlyReport do
   @ground Style.ground()
   @surface Style.surface()
   @hairline Style.hairline()
+  @edge Style.edge()
   @ink Style.ink()
   @ink_soft Style.ink_soft()
   @brand Style.brand()
@@ -202,7 +203,7 @@ defmodule Emisar.Mailers.MonthlyReport do
     """
     <tr>
       <td style="padding:0 0 16px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@surface};border:1px solid #{@hairline};border-radius:12px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#{@surface};border:1px solid #{@edge};border-radius:12px;">
           <tr>
             <td style="padding:22px 22px 0;font-family:#{@font};font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#{@ink_soft};">#{title}</td>
           </tr>
