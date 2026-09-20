@@ -594,6 +594,59 @@ defmodule Emisar.AccountsTest do
                {:error, :sso_required}
     end
 
+    # The org's other workspace on the SAME IdP: one login must satisfy each
+    # workspace's require_sso, and each workspace applies its OWN MFA policy to
+    # that shared login. Without this, federation resolved the sibling only for
+    # the compliance gate to reject it.
+    test "require_sso and require_mfa are satisfied through a federated sibling's IdP", %{
+      user: user,
+      account: account,
+      subject: subject
+    } do
+      issuer = "https://acme-federated.okta.test"
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      own_provider =
+        Fixtures.SSO.create_identity_provider(
+          account_id: account.id,
+          issuer: issuer,
+          satisfies_mfa: true
+        )
+
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: own_provider.id,
+        user_id: user.id
+      )
+
+      sibling = Fixtures.Accounts.create_account()
+
+      sibling_provider =
+        Fixtures.SSO.create_identity_provider(account_id: sibling.id, issuer: issuer)
+
+      sibling_identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: sibling.id,
+          provider_id: sibling_provider.id,
+          user_id: user.id
+        )
+
+      # The session authenticated at the sibling, through the shared IdP.
+      sibling_sso_subject = %{subject | auth_method: :sso, user_identity_id: sibling_identity.id}
+
+      account =
+        Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
+
+      assert Accounts.ensure_account_compliant(account, sibling_sso_subject) == :ok
+
+      # This workspace stops trusting the IdP's second factor: SSO still
+      # satisfied, MFA no longer waived.
+      own_provider |> Ecto.Changeset.change(satisfies_mfa: false) |> Repo.update!()
+
+      assert Accounts.ensure_account_compliant(account, sibling_sso_subject) ==
+               {:error, :mfa_required}
+    end
+
     test "require_sso fails open when the retained provider's paid access has expired", %{
       account: account,
       subject: subject
@@ -3527,12 +3580,13 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "an SSO session is authority only inside its provider's account" do
+  describe "an SSO session is authority in the accounts that federate with its IdP" do
     # A provider may create the global user row for any email it asserts as
     # verified; the person behind that address later signs up, creates a
     # workspace, or accepts an invitation elsewhere. Every resolver keeps the
-    # provider's session inside the provider's own account, so whoever runs
-    # that IdP inherits nothing the person joins or creates later.
+    # provider's session inside the accounts that federate with that same IdP
+    # identity — the org's own workspaces — so whoever runs that IdP inherits
+    # nothing the person joins or creates elsewhere.
     setup do
       {_owner, provider_account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
@@ -3569,11 +3623,61 @@ defmodule Emisar.AccountsTest do
       %{
         user: user,
         identity: identity,
+        provider: provider,
         provider_account: provider_account,
         other_account: other_account,
         sso_session: sso_session,
         magic_session: magic_session
       }
+    end
+
+    test "the switcher lists, and the switch reaches, a sibling workspace on the same IdP", %{
+      user: user,
+      identity: identity,
+      provider: provider,
+      provider_account: provider_account,
+      other_account: other_account,
+      sso_session: sso_session
+    } do
+      # The same org runs a second workspace on the same identity provider and
+      # provisioned the person there too: one SSO login reaches both. A workspace
+      # on a DIFFERENT IdP, and the person's self-created workspace, stay out.
+      sibling_account = federated_sibling(user, provider.issuer)
+      foreign_idp_account = federated_sibling(user, "https://elsewhere.okta.test")
+
+      sso_subject =
+        Fixtures.Subjects.subject_for(user, provider_account,
+          auth_method: :sso,
+          user_identity_id: identity.id
+        )
+
+      assert {:ok, accounts, _meta} = Accounts.list_accounts_for_user(sso_subject)
+
+      assert Enum.map(accounts, & &1.id) |> Enum.sort() ==
+               Enum.sort([provider_account.id, sibling_account.id])
+
+      assert {:ok, %Membership{account_id: switched}} =
+               Accounts.switch_account(sibling_account.id, sso_subject)
+
+      assert switched == sibling_account.id
+
+      assert {:ok, %Membership{account_id: resolved}} =
+               Accounts.fetch_membership_by_account_id_or_slug(
+                 user,
+                 sibling_account.id,
+                 sso_session
+               )
+
+      assert resolved == sibling_account.id
+
+      assert Accounts.switch_account(foreign_idp_account.id, sso_subject) == {:error, :not_found}
+      assert Accounts.switch_account(other_account.id, sso_subject) == {:error, :not_found}
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(
+               user,
+               foreign_idp_account.id,
+               sso_session
+             ) == {:error, :not_found}
     end
 
     test "the slug and session resolvers reach the other workspace by magic link only", %{
@@ -8211,5 +8315,33 @@ defmodule Emisar.AccountsTest do
       mfa_enabled_at: DateTime.utc_now(),
       mfa_recovery_codes: ["digest-a", "digest-b"]
     )
+  end
+
+  # Another workspace that federates with `issuer` and provisioned `user` there:
+  # an enabled provider on that issuer, the person's identity under it, and an
+  # operator membership. The fixture behind the SSO federation-scope tests.
+  defp federated_sibling(user, issuer) do
+    {_owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+
+    provider =
+      Fixtures.SSO.create_identity_provider(%{
+        account_id: account.id,
+        name: "Sibling IdP",
+        issuer: issuer
+      })
+
+    Fixtures.SSO.create_user_identity(%{
+      account_id: account.id,
+      provider_id: provider.id,
+      user_id: user.id
+    })
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      role: "operator"
+    )
+
+    account
   end
 end

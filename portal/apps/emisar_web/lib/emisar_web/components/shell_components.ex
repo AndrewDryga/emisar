@@ -322,11 +322,11 @@ defmodule EmisarWeb.ShellComponents do
         <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Switch workspace
         </p>
-        <%!-- An SSO session is this workspace's credential only, so the list
-             below holds nothing else; say where the others are. --%>
+        <%!-- An SSO session reaches only the workspaces that use the same identity
+             provider, so the list below is that set; say where any others are. --%>
         <p :if={@sso_session?} class="mt-1 text-xs leading-5 text-zinc-500">
-          You signed in with this workspace's single sign-on. Sign in with your email to open
-          another workspace.
+          You signed in with single sign-on, so this list shows the workspaces on that identity
+          provider. Sign in with your email to open any other workspace.
         </p>
       </div>
 

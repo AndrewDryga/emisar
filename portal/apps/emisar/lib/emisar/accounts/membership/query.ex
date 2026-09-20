@@ -41,6 +41,9 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [memberships: m], m.account_id == ^account_id)
 
+  def by_account_ids(queryable, account_ids) when is_list(account_ids),
+    do: where(queryable, [memberships: m], m.account_id in ^account_ids)
+
   # Read credential validity and membership scope in one database snapshot.
   # A revoked or expired bearer cannot resolve the membership's current scope.
   def by_active_api_key_id(queryable, key_id, now) do

@@ -33,6 +33,9 @@ defmodule Emisar.SSO.IdentityProvider.Query do
   def enabled(queryable),
     do: where(queryable, [providers: p], p.enabled)
 
+  def by_issuer(queryable, issuer) when is_binary(issuer),
+    do: where(queryable, [providers: p], p.issuer == ^issuer)
+
   # The SCIM bearer lookup — resolves the live provider by its token prefix.
   def by_scim_token_prefix(queryable, prefix),
     do: where(queryable, [providers: p], p.scim_token_prefix == ^prefix)

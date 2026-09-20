@@ -147,6 +147,23 @@ defmodule Emisar.SSOTest do
     Fixtures.SSO.create_identity_provider(attrs)
   end
 
+  # A user's SSO identity in `account`, under a provider with a given issuer,
+  # enabled flag, and MFA policy — the fixture for the federation-scope tests.
+  defp federated_identity(account, user, opts) do
+    provider =
+      provider_fixture(account, %{
+        issuer: Keyword.fetch!(opts, :issuer),
+        enabled: Keyword.get(opts, :enabled, true),
+        satisfies_mfa: Keyword.get(opts, :satisfies_mfa, false)
+      })
+
+    Fixtures.SSO.create_user_identity(%{
+      account_id: account.id,
+      provider_id: provider.id,
+      user_id: user.id
+    })
+  end
+
   defp callback(claims), do: %{"_claims" => claims}
 
   defp callback_after_verified(provider, claims, while_verified) do
@@ -9175,37 +9192,58 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- identity_satisfies_mfa?/1 (pre-Subject) -------------------------
+  # -- federated_provider_satisfies_mfa?/2 (pre-Subject) ---------------
 
-  describe "identity_satisfies_mfa?/1" do
-    test "true when the identity's provider has satisfies_mfa set" do
+  describe "federated_provider_satisfies_mfa?/2" do
+    test "true for the identity's own account when its provider has satisfies_mfa set" do
       {_user, account, _subject} = enterprise_owner()
       provider = provider_fixture(account, %{satisfies_mfa: true})
       claims = %{"sub" => "okta|mfa-yes", "email" => "y@acme.test", "email_verified" => true}
       {:ok, %{identity: identity}} = SSO.complete_auth(provider, callback(claims), %{})
 
-      assert SSO.identity_satisfies_mfa?(identity.id)
+      assert SSO.federated_provider_satisfies_mfa?(identity.id, account.id)
     end
 
-    test "false when the identity's provider has satisfies_mfa cleared" do
+    test "false for the identity's own account when its provider has satisfies_mfa cleared" do
       {_user, account, _subject} = enterprise_owner()
       provider = provider_fixture(account, %{satisfies_mfa: false})
       claims = %{"sub" => "okta|mfa-no", "email" => "n@acme.test", "email_verified" => true}
       {:ok, %{identity: identity}} = SSO.complete_auth(provider, callback(claims), %{})
 
-      refute SSO.identity_satisfies_mfa?(identity.id)
+      refute SSO.federated_provider_satisfies_mfa?(identity.id, account.id)
+    end
+
+    test "a federated sibling applies its OWN provider's MFA policy" do
+      issuer = "https://acme-mfa.okta.test"
+      {_o1, account_a, _s1} = enterprise_owner()
+      {_o2, sibling_trusting, _s2} = enterprise_owner()
+      {_o3, sibling_strict, _s3} = enterprise_owner()
+      {_o4, stranger, _s4} = enterprise_owner()
+      user = Fixtures.Users.create_user()
+
+      identity = federated_identity(account_a, user, issuer: issuer, satisfies_mfa: true)
+      # Same IdP; this workspace trusts its second factor.
+      federated_identity(sibling_trusting, user, issuer: issuer, satisfies_mfa: true)
+      # Same IdP; this workspace still wants emisar TOTP.
+      federated_identity(sibling_strict, user, issuer: issuer, satisfies_mfa: false)
+
+      assert SSO.federated_provider_satisfies_mfa?(identity.id, sibling_trusting.id)
+      refute SSO.federated_provider_satisfies_mfa?(identity.id, sibling_strict.id)
+      # An account that does not federate at all gets no exemption.
+      refute SSO.federated_provider_satisfies_mfa?(identity.id, stranger.id)
     end
 
     test "false for a nil / unknown identity (fail closed)" do
-      refute SSO.identity_satisfies_mfa?(nil)
-      refute SSO.identity_satisfies_mfa?(Ecto.UUID.generate())
+      {_user, account, _subject} = enterprise_owner()
+      refute SSO.federated_provider_satisfies_mfa?(nil, account.id)
+      refute SSO.federated_provider_satisfies_mfa?(Ecto.UUID.generate(), account.id)
     end
   end
 
   # -- identity_belongs_to_account?/2 (pre-Subject) --------------------
 
-  describe "fetch_identity_account_id/1" do
-    test "returns the account of a live identity, and not-found for a retired or unknown one" do
+  describe "fetch_federated_account_ids/1" do
+    test "returns the identity's own account, and not-found for a retired or unknown one" do
       {_owner, account, _subject} = enterprise_owner()
       provider = provider_fixture(account)
       user = Fixtures.Users.create_user()
@@ -9217,36 +9255,75 @@ defmodule Emisar.SSOTest do
           user_id: user.id
         })
 
-      assert SSO.fetch_identity_account_id(identity.id) == {:ok, account.id}
-      assert SSO.fetch_identity_account_id(Ecto.UUID.generate()) == {:error, :not_found}
-      assert SSO.fetch_identity_account_id(nil) == {:error, :not_found}
+      assert SSO.fetch_federated_account_ids(identity.id) == {:ok, [account.id]}
+      assert SSO.fetch_federated_account_ids(Ecto.UUID.generate()) == {:error, :not_found}
+      assert SSO.fetch_federated_account_ids(nil) == {:error, :not_found}
 
       identity |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
-      assert SSO.fetch_identity_account_id(identity.id) == {:error, :not_found}
+      assert SSO.fetch_federated_account_ids(identity.id) == {:error, :not_found}
+    end
+
+    test "federates to every account whose enabled provider shares the same issuer" do
+      issuer = "https://acme.okta.test"
+      {_o1, account_a, _s1} = enterprise_owner()
+      {_o2, account_b, _s2} = enterprise_owner()
+      {_o3, account_c, _s3} = enterprise_owner()
+      {_o4, account_d, _s4} = enterprise_owner()
+      user = Fixtures.Users.create_user()
+
+      identity_a = federated_identity(account_a, user, issuer: issuer)
+      # Same org, second workspace on the same IdP — reachable.
+      _identity_b = federated_identity(account_b, user, issuer: issuer)
+      # Same person, but this workspace federates with a DIFFERENT IdP.
+      _identity_c = federated_identity(account_c, user, issuer: "https://other.okta.test")
+      # Same issuer, but this workspace turned that SSO off — not reachable.
+      _identity_d = federated_identity(account_d, user, issuer: issuer, enabled: false)
+
+      assert {:ok, ids} = SSO.fetch_federated_account_ids(identity_a.id)
+      assert Enum.sort(ids) == Enum.sort([account_a.id, account_b.id])
+      refute account_c.id in ids
+      refute account_d.id in ids
+    end
+
+    test "keeps the identity's own account even after its provider is disabled" do
+      {_owner, account, _subject} = enterprise_owner()
+      user = Fixtures.Users.create_user()
+
+      identity =
+        federated_identity(account, user, issuer: "https://solo.okta.test", enabled: false)
+
+      assert SSO.fetch_federated_account_ids(identity.id) == {:ok, [account.id]}
     end
   end
 
-  describe "identity_belongs_to_account?/2" do
+  describe "identity_federates_with_account?/2" do
     setup do
       {_user, account, _subject} = enterprise_owner()
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|belong", "email" => "b@acme.test", "email_verified" => true}
       {:ok, %{identity: identity}} = SSO.complete_auth(provider, callback(claims), %{})
-      %{account: account, identity: identity}
+      %{account: account, provider: provider, identity: identity}
     end
 
-    test "true when the identity's account_id matches", %{account: account, identity: identity} do
-      assert SSO.identity_belongs_to_account?(identity.id, account.id)
+    test "true for the identity's own account", %{account: account, identity: identity} do
+      assert SSO.identity_federates_with_account?(identity.id, account.id)
     end
 
-    test "false for another account's id", %{identity: identity} do
-      {_ub, account_b, _sb} = enterprise_owner()
-      refute SSO.identity_belongs_to_account?(identity.id, account_b.id)
+    test "true for a sibling on the same IdP, false for an unrelated account", %{
+      provider: provider,
+      identity: identity
+    } do
+      {_ub, sibling, _sb} = enterprise_owner()
+      {_uc, stranger, _sc} = enterprise_owner()
+      federated_identity(sibling, %{id: identity.user_id}, issuer: provider.issuer)
+
+      assert SSO.identity_federates_with_account?(identity.id, sibling.id)
+      refute SSO.identity_federates_with_account?(identity.id, stranger.id)
     end
 
     test "false for a nil / unknown identity (fail closed)", %{account: account} do
-      refute SSO.identity_belongs_to_account?(nil, account.id)
-      refute SSO.identity_belongs_to_account?(Ecto.UUID.generate(), account.id)
+      refute SSO.identity_federates_with_account?(nil, account.id)
+      refute SSO.identity_federates_with_account?(Ecto.UUID.generate(), account.id)
     end
   end
 

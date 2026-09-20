@@ -174,9 +174,13 @@ defmodule Emisar.Accounts do
     end
   end
 
+  # The session authenticated through an IdP this account federates with — its
+  # own provider or a sibling's on the same issuer — the same relationship the
+  # membership resolvers scope by, so a workspace that require_sso's is satisfied
+  # by the org's one login rather than rejecting its own federated siblings.
   defp sso_session_for_account?(%Subject{} = subject, %Account{} = account) do
     subject.auth_method == :sso and
-      SSO.identity_belongs_to_account?(subject.user_identity_id, account.id)
+      SSO.identity_federates_with_account?(subject.user_identity_id, account.id)
   end
 
   # require_mfa: an enforcing account needs proof bound to THIS session and the
@@ -206,12 +210,14 @@ defmodule Emisar.Accounts do
 
   defp local_mfa_session_current?(%Subject{}), do: false
 
-  # Account-scoped: the SSO identity must belong to THIS account AND its provider
-  # must satisfy MFA. A session SSO-authed via a DIFFERENT account's IdP inherits
-  # no MFA exemption here — it never proved a second factor to THIS account.
+  # Account-scoped: the SSO identity must federate with THIS account AND the
+  # provider it federates through — this account's own, on the same issuer —
+  # must satisfy MFA, so each workspace applies its own policy to a login proved
+  # at the shared IdP. A session SSO-authed via an unrelated IdP inherits no MFA
+  # exemption here — it never proved a second factor to THIS account.
   defp sso_session_satisfies_mfa?(%Subject{} = subject, %Account{} = account) do
     sso_session_for_account?(subject, account) and
-      SSO.identity_satisfies_mfa?(subject.user_identity_id)
+      SSO.federated_provider_satisfies_mfa?(subject.user_identity_id, account.id)
   end
 
   @doc """
@@ -497,41 +503,42 @@ defmodule Emisar.Accounts do
     |> Repo.list(Account.Query, opts)
   end
 
-  # An SSO session is authority only inside the account whose identity provider
-  # minted it. Users are global rows keyed by email, and a provider may create
-  # one for any address it asserts as verified; if the session it later mints
+  # An SSO session's authority follows the identity provider it proved, not a
+  # single account. Users are global rows keyed by email, and a provider may
+  # create one for any address it asserts as verified; if the session it mints
   # for that row could reach every workspace the row belongs to, the provider's
-  # owner would inherit any workspace the real person joins or creates. So the
-  # scope of a session is a fact of HOW it was authenticated: a magic-link
-  # session (a proof of the person's own inbox) reaches all of their
-  # memberships; an `:sso` session reaches its provider's account and nothing
-  # else, and a person with several workspaces signs in to the others by
-  # email. `require_sso` accounts already impose the same rule in reverse.
-  # Every pre-auth membership resolver, the switcher, and the switch itself
-  # apply it, so it holds for existing sessions too.
+  # owner would inherit any workspace the real person joins. So the scope of a
+  # session is a fact of HOW it was authenticated: a magic-link session (a proof
+  # of the person's own inbox) reaches all of their memberships; an `:sso`
+  # session reaches every account that INDEPENDENTLY federates with the same
+  # provider identity — the org running several workspaces on one IdP — and
+  # nothing else. A workspace the person joined by email or a different IdP is
+  # reached by signing in the matching way. `require_sso` accounts already
+  # impose the same rule in reverse. Every pre-auth membership resolver, the
+  # switcher, and the switch itself apply it, so it holds for existing sessions.
   defp session_account_scope(%{auth_method: :sso, user_identity_id: identity_id})
        when is_binary(identity_id) do
-    case SSO.fetch_identity_account_id(identity_id) do
-      {:ok, account_id} -> {:only, account_id}
+    case SSO.fetch_federated_account_ids(identity_id) do
+      {:ok, account_ids} -> {:accounts, account_ids}
       {:error, :not_found} -> :none
     end
   end
 
-  # An SSO session with no identity behind it cannot name its account: nothing.
+  # An SSO session with no identity behind it cannot name its accounts: nothing.
   defp session_account_scope(%{auth_method: :sso}), do: :none
   defp session_account_scope(_session), do: :any
 
   defp scope_memberships_to_session(queryable, :any), do: queryable
   defp scope_memberships_to_session(queryable, :none), do: Membership.Query.none(queryable)
 
-  defp scope_memberships_to_session(queryable, {:only, account_id}),
-    do: Membership.Query.by_account_id(queryable, account_id)
+  defp scope_memberships_to_session(queryable, {:accounts, account_ids}),
+    do: Membership.Query.by_account_ids(queryable, account_ids)
 
   defp scope_accounts_to_session(queryable, :any), do: queryable
   defp scope_accounts_to_session(queryable, :none), do: Account.Query.none(queryable)
 
-  defp scope_accounts_to_session(queryable, {:only, account_id}),
-    do: Account.Query.by_id(queryable, account_id)
+  defp scope_accounts_to_session(queryable, {:accounts, account_ids}),
+    do: Account.Query.by_ids(queryable, account_ids)
 
   @doc """
   Internal — pre-auth self-serve signup. Validates the proposed workspace first,

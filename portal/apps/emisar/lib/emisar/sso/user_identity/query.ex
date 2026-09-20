@@ -97,6 +97,22 @@ defmodule Emisar.SSO.UserIdentity.Query do
   @doc "Just the ids, for a caller that needs them before and after a bulk write."
   def select_ids(queryable), do: select(queryable, [identities: i], i.id)
 
+  # Identities whose live provider is enabled and shares this issuer — the
+  # federation set. An `:sso` session proves the person at one issuer, so it is
+  # authority in every account that CURRENTLY enables a provider with that same
+  # issuer and holds an identity for the person. A disabled or differently-issued
+  # provider does not match, so a workspace that turned that SSO off, or federates
+  # with a different IdP, is not reachable.
+  def by_active_provider_issuer(queryable, issuer) when is_binary(issuer) do
+    queryable
+    |> with_joined_provider()
+    |> where([provider: p], p.enabled == true and p.issuer == ^issuer)
+  end
+
+  @doc "Distinct account ids the matched identities belong to."
+  def select_account_ids(queryable),
+    do: queryable |> select([identities: i], i.account_id) |> distinct(true)
+
   def by_user_ids(queryable, user_ids),
     do: where(queryable, [identities: i], i.user_id in ^user_ids)
 

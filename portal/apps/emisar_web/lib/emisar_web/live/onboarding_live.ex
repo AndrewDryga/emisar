@@ -103,10 +103,12 @@ defmodule EmisarWeb.OnboardingLive do
   def handle_event("create", %{"account" => %{"name" => name}}, socket) do
     user = socket.assigns.current_user
 
-    # An SSO session is authority only inside its provider's account, so it may
-    # not stand up a new workspace under this person's identity — the person
-    # signs in with their email first (the same rule the workspace switcher
-    # explains). IL-15: the check is here, at the action, not just in the UI.
+    # An SSO session is authority only in the workspaces that federate with its
+    # identity provider. A brand-new workspace has no provider to federate with,
+    # so the session could not hold it past this request — and letting an SSO
+    # session into a non-federated workspace is exactly the hole the scope
+    # closes. The person signs in with their email first (the same rule the
+    # switcher explains). IL-15: the check is here, at the action, not the UI.
     if socket.assigns.current_auth.auth_method == :sso do
       {:noreply,
        socket

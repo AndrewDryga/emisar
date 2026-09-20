@@ -4139,81 +4139,125 @@ defmodule Emisar.SSO do
   def provider_satisfies_mfa?(%IdentityProvider{satisfies_mfa: satisfies}), do: satisfies
 
   @doc """
-  Internal — SSO sign-in flow: true when an SSO session (identified by its
-  `user_identity_id`) satisfies the account's MFA requirement — its provider's
-  `satisfies_mfa` is set and the OIDC binding is still active. Evaluated on the
-  freshly-resolved identity before the session subject exists. The `require_mfa`
-  exemption gates on THIS, not merely on the session being SSO, so a provider
-  marked `satisfies_mfa: false` still forces emisar TOTP. Returns false for a
-  nil/unknown identity (fail closed).
+  Internal — require_mfa enforcement: does the provider through which this SSO
+  identity federates with `account_id` satisfy MFA? For the identity's own
+  account that is its own provider's `satisfies_mfa`; for a federated sibling it
+  is the sibling's enabled provider on the same issuer, so each workspace applies
+  its OWN policy to a login proved at the shared IdP. The `require_mfa` exemption
+  gates on THIS, not merely on the session being SSO, so a provider marked
+  `satisfies_mfa: false` still forces emisar TOTP. False for a nil, unknown, or
+  retired identity, or an account that does not federate (fail closed).
   """
-  def identity_satisfies_mfa?(user_identity_id) when is_binary(user_identity_id) do
-    queryable =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.provider_identifier_active()
-      |> UserIdentity.Query.by_id(user_identity_id)
-
-    case Repo.peek(queryable) do
-      %UserIdentity{provider_id: provider_id} -> provider_satisfies_mfa_by_id?(provider_id)
-      nil -> false
-    end
-  end
-
-  def identity_satisfies_mfa?(_), do: false
-
-  @doc """
-  Internal — require_sso enforcement: is this session's SSO identity one of the
-  account's own? (Pre-Subject.) Matches by the identity's `account_id` and an
-  active OIDC binding — it deliberately does NOT duplicate provider-state
-  authorization here. Provider disable/delete owns exact credential revocation
-  after its transaction commits; once its identities are soft-deleted this
-  predicate also fails closed. The last-enabled-provider removal guard
-  (`update_provider`/`delete_provider`) keeps the account from being stranded.
-  """
-  def identity_belongs_to_account?(user_identity_id, account_id)
+  def federated_provider_satisfies_mfa?(user_identity_id, account_id)
       when is_binary(user_identity_id) and is_binary(account_id) do
-    queryable =
+    identity =
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_id(user_identity_id)
+      |> UserIdentity.Query.with_preloaded_provider()
+      |> Repo.peek()
 
-    case Repo.peek(queryable) do
-      %UserIdentity{account_id: ^account_id} -> true
-      _ -> false
+    case identity do
+      # The identity's own account: its own provider's policy, as before.
+      %UserIdentity{account_id: ^account_id, provider: %IdentityProvider{} = provider} ->
+        provider_satisfies_mfa?(provider)
+
+      # A federated sibling: that workspace's own enabled provider on the same
+      # issuer decides whether a login proved at the shared IdP counts as MFA.
+      %UserIdentity{provider: %IdentityProvider{issuer: issuer}} ->
+        sibling_providers_satisfy_mfa?(account_id, issuer)
+
+      nil ->
+        false
     end
   end
 
-  def identity_belongs_to_account?(_user_identity_id, _account_id), do: false
+  def federated_provider_satisfies_mfa?(_user_identity_id, _account_id), do: false
+
+  # Fail-safe on both edges: no matching provider means the account does not
+  # federate (no exemption), and a mixed set of same-issuer providers must all
+  # agree before a second factor is waived.
+  defp sibling_providers_satisfy_mfa?(account_id, issuer) do
+    providers =
+      IdentityProvider.Query.not_deleted()
+      |> IdentityProvider.Query.by_account_id(account_id)
+      |> IdentityProvider.Query.enabled()
+      |> IdentityProvider.Query.by_issuer(issuer)
+      |> Repo.all()
+
+    providers != [] and Enum.all?(providers, &provider_satisfies_mfa?/1)
+  end
 
   @doc """
-  Internal — pre-auth: the account whose identity provider owns this SSO
-  identity, i.e. the one account an `:sso` session is authority for. Same
-  liveness filters as `identity_belongs_to_account?/2`, so a retired or
-  soft-deleted binding answers `{:error, :not_found}` and the session it minted
-  reaches nothing.
+  Internal — require_sso enforcement: does this session's SSO identity federate
+  with `account_id`? (Pre-Subject.) True for the identity's own account and for
+  every sibling in its federation set — an enabled provider on the same issuer
+  holding this user's identity — so an org running several workspaces on one IdP
+  satisfies each workspace's `require_sso` with one login. Provider disable/delete
+  owns exact credential revocation after its transaction commits; once an
+  identity is soft-deleted or retired this predicate fails closed.
   """
-  def fetch_identity_account_id(user_identity_id) when is_binary(user_identity_id) do
-    queryable =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.provider_identifier_active()
-      |> UserIdentity.Query.by_id(user_identity_id)
-
-    case Repo.peek(queryable) do
-      %UserIdentity{account_id: account_id} -> {:ok, account_id}
-      nil -> {:error, :not_found}
+  def identity_federates_with_account?(user_identity_id, account_id)
+      when is_binary(user_identity_id) and is_binary(account_id) do
+    case fetch_federated_account_ids(user_identity_id) do
+      {:ok, account_ids} -> account_id in account_ids
+      {:error, :not_found} -> false
     end
   end
 
-  def fetch_identity_account_id(_user_identity_id), do: {:error, :not_found}
+  def identity_federates_with_account?(_user_identity_id, _account_id), do: false
 
-  defp provider_satisfies_mfa_by_id?(provider_id) do
-    queryable =
-      IdentityProvider.Query.not_deleted() |> IdentityProvider.Query.by_id(provider_id)
+  @doc """
+  Internal — pre-auth: the set of accounts an `:sso` session is authority for.
 
-    case Repo.peek(queryable) do
-      %IdentityProvider{} = provider -> provider_satisfies_mfa?(provider)
-      nil -> false
+  An SSO session proves the person at one identity provider, so it is authority
+  in every account that INDEPENDENTLY federates with that same provider identity
+  — where this same user holds a live identity under an enabled provider with the
+  same issuer. That is the org running several workspaces on one IdP: one login
+  reaches all of them. A workspace the person joined by email or a different IdP,
+  or one that turned this SSO off, is not in the set.
+
+  The authenticating identity's own account is always included, even if its
+  provider was since disabled — the session it minted stays authority there. A
+  retired or soft-deleted binding (or a soft-deleted provider, which the inner
+  join drops) answers `{:error, :not_found}` and the session reaches nothing.
+  """
+  def fetch_federated_account_ids(user_identity_id) when is_binary(user_identity_id) do
+    identity =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_id(user_identity_id)
+      |> UserIdentity.Query.with_preloaded_provider()
+      |> Repo.peek()
+
+    case identity do
+      %UserIdentity{
+        user_id: user_id,
+        account_id: account_id,
+        provider: %IdentityProvider{issuer: issuer}
+      } ->
+        {:ok, federated_account_ids(user_id, account_id, issuer)}
+
+      nil ->
+        {:error, :not_found}
     end
+  end
+
+  def fetch_federated_account_ids(_user_identity_id), do: {:error, :not_found}
+
+  # issuer is a required, URL-validated provider field, so it is always a
+  # non-empty string here; a hypothetical NULL would match no provider and
+  # collapse to the identity's own account, which stays safe.
+  defp federated_account_ids(user_id, account_id, issuer) do
+    ids =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_user_id(user_id)
+      |> UserIdentity.Query.by_active_provider_issuer(issuer)
+      |> UserIdentity.Query.select_account_ids()
+      |> Repo.all()
+
+    Enum.uniq([account_id | ids])
   end
 
   # -- Authorization ---------------------------------------------------
