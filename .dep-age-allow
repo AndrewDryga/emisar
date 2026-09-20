@@ -20,3 +20,4 @@
 # fresh reason. An exemption also covers a DOWNGRADE, because a patched older
 # line is a real answer to an urgent advisory; the date is what keeps that a
 # decision rather than a permanent hole.
+hex mint 1.10.1 2026-09-26 EEF-CVE-2026-82672 / CVE-2026-82672 / GHSA-rj5m-69wp-cxq9 — unvalidated chunk-size line tail in the Mint HTTP/1 client enables response smuggling against strict intermediaries on pooled connections; the advisory fails mix hex.audit on 1.10.0 in every CI run, so the patch (published 2026-09-19) cannot wait out its 7-day window
