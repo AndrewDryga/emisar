@@ -2,7 +2,7 @@ emisar --config:string --help/-h:bool --json:bool --packs-dir:stringSlice --vers
 emisar action
 emisar action describe [+json]
 emisar action list [+json]
-emisar action run --arg:stringArray --reason:string --stream:bool --timeout:duration
+emisar action run --arg:stringArray --reason:string --stream:bool --timeout:duration [+json]
 emisar audit
 emisar audit verify --all:bool [+json]
 emisar completion

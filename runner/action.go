@@ -22,7 +22,7 @@ func actionCmd() *cobra.Command {
 	}
 	cmd.AddCommand(emitsJSON(actionListCmd()))
 	cmd.AddCommand(emitsJSON(actionDescribeCmd()))
-	cmd.AddCommand(actionRunCmd())
+	cmd.AddCommand(emitsJSON(actionRunCmd()))
 	return cmd
 }
 
@@ -146,6 +146,6 @@ func actionRunCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&argList, "arg", nil, "argument as key=value (may repeat)")
 	cmd.Flags().StringVar(&reason, "reason", "", "free-text reason recorded on the event")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "override timeout (clamped to action min/max)")
-	cmd.Flags().BoolVar(&stream, "stream", false, "stream output to stdout/stderr as it arrives")
+	cmd.Flags().BoolVar(&stream, "stream", false, "stream live output to stderr; stdout keeps the result JSON")
 	return cmd
 }

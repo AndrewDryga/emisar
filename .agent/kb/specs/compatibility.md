@@ -601,6 +601,11 @@ invisible, and dropping a command's `--json` annotation — which turns a frozen
 flags: after 1.0 they change only additively. That includes the complete
 `status --json` report and its embedded `runtime` object.
 
+`action run` uses Result JSON as its normal output and accepts explicit `--json` too.
+With `--stream`, live action output goes to stderr; stdout remains one Result
+document. A denied or failed action still returns that document and exits nonzero.
+Invocation or setup failures can occur before a Result is produced.
+
 The golden records commands and flags, not payload shape, so the emitted keys
 are pinned separately by `TestJSONPayloadKeysAreFrozen`, which asserts the exact
 top-level key set of each payload from a fully-populated value:

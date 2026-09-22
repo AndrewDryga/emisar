@@ -93,7 +93,7 @@ func checkRuntimeStatus(cfg *config.Config, now time.Time) (*cloud.RuntimeStatus
 	if !heldBefore || !heldAfter {
 		return status, []checkResult{{
 			"connection", checkFail,
-			"daemon is not running — start it with `sudo systemctl start emisar`, then run status again",
+			"daemon is not running — start it through your service manager or run `emisar connect` in the foreground, then run status again",
 		}}, false
 	}
 	if pidBefore != pidAfter {

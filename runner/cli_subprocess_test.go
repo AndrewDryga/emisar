@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -657,8 +658,7 @@ func TestCLI_ConnectConfigFatals(t *testing.T) {
 
 // `action run <id> --arg k=v --reason …` builds an engine.Request, runs the
 // full local pipeline, and prints the Result JSON (exit 0). A second run with
-// --stream interleaves live output before the final Result. closes
-// ,.
+// --stream sends live output to stderr without contaminating the Result JSON.
 func TestCLI_ActionRunSuccessAndStream(t *testing.T) {
 	cfg := writeRunnableConfig(t, t.TempDir(), false)
 
@@ -697,6 +697,28 @@ func TestCLI_ActionRunSuccessAndStream(t *testing.T) {
 			t.Errorf("status = %v, want success", result["status"])
 		}
 	})
+}
+
+func TestCLI_ActionRunExplicitJSON(t *testing.T) {
+	for _, denied := range []bool{false, true} {
+		t.Run(fmt.Sprintf("denied_%t", denied), func(t *testing.T) {
+			cfg := writeRunnableConfig(t, t.TempDir(), denied)
+			stdout, stderr, code := runCLI(t, []string{
+				"--config", cfg, "--json", "action", "run", "linux.ping", "--reason", "why", "--stream",
+			}, nil)
+			wantStatus, wantCode := "success", 0
+			if denied {
+				wantStatus, wantCode = "blocked_by_admission", 1
+			}
+			var result map[string]any
+			if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+				t.Fatalf("stdout must be one Result JSON: %v; stderr=%s", err, stderr)
+			}
+			if code != wantCode || result["status"] != wantStatus {
+				t.Fatalf("exit=%d, result=%v; want %d/%s; stderr=%s", code, result, wantCode, wantStatus, stderr)
+			}
+		})
+	}
 }
 
 // `action run` reports the ACTION's outcome in its exit code, like `doctor`:
