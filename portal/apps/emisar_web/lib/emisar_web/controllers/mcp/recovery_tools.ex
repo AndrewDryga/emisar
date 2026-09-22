@@ -1,9 +1,12 @@
 defmodule EmisarWeb.MCP.RecoveryTools do
   @moduledoc """
-  Fixed operation recovery, state waiting, and run-history boundary.
+  Fixed operation recovery, state waiting, run-history, and own-run
+  cancellation boundary.
 
   Operation lookup is credential-lineage scoped. Run reads retain the product's
   account/user scope, but expose only rows with the complete fixed MCP contract.
+  Cancellation reaches only runs the calling lineage created; Runs owns the
+  locked authority, the status rule, the approval-request close, and the audit.
   """
 
   alias Emisar.{MCPOperations, Runbooks, Runs}
@@ -18,10 +21,11 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     defstruct ~w[operation_id runbook_execution_id step_id runner_ref action_id pack_ref statuses scope limit cursor]a
   end
 
-  @doc "Executes one of the three fixed recovery tools."
+  @doc "Executes one of the fixed recovery, waiting, history, and cancellation tools."
   def call(conn, "get_operation", args), do: get_operation(conn, args)
   def call(conn, "wait_for_run", args), do: wait_for_run(conn, args)
   def call(conn, "recent_runs", args), do: recent_runs(conn, args)
+  def call(conn, "cancel_run", args), do: cancel_run(conn, args)
 
   defp get_operation(conn, args) do
     with {:ok, operation} <-
@@ -469,6 +473,39 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
   defp page_opts(limit, nil), do: [limit: limit]
   defp page_opts(limit, cursor), do: [limit: limit, cursor: cursor]
+
+  # The result is the same snapshot summary `wait_for_run` returns for the run,
+  # rendered from the row the transaction left behind: cancelled, or already
+  # terminal when the call repeated or a decision landed first.
+  defp cancel_run(conn, args) do
+    subject = conn.assigns.current_subject
+
+    with {:ok, run} <- Runs.cancel_mcp_run(args["run_id"], subject, args["reason"]),
+         {:ok, summary} <-
+           Service.fixed_run_summary(run, subject, tail_scope: Service.cursor_scope(conn)) do
+      {:ok, %{ok: true, run: summary}}
+    else
+      {:error, :not_found} ->
+        {:error, error("run_not_found", "No run created by this credential lineage has that id.")}
+
+      {:error, :unauthorized} ->
+        {:error, error("not_allowed", "This key cannot cancel that run.")}
+
+      {:error, :run_already_dispatched} ->
+        {:error,
+         error(
+           "run_not_cancellable",
+           "The run already reached a runner. Only an operator can stop it from the console."
+         )}
+
+      {:error, :response_too_large} ->
+        {:error,
+         error(
+           "response_too_large",
+           "The run was cancelled, but its summary exceeds the MCP response limit."
+         )}
+    end
+  end
 
   defp wait_for_change(deadline, cancellation_topic, wake_seq) do
     timeout = min(max(deadline - System.monotonic_time(:millisecond), 0), @recheck_ms)

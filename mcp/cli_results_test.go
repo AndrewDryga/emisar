@@ -59,6 +59,12 @@ func TestCLIFixedToolsHavePurposeBuiltHumanOutput(t *testing.T) {
 			want:   []string{"db-1~abc — pending approval", "Run ID  run-1", "Approval  https://emisar.dev/app/demo/approvals/approval-1"},
 		},
 		{
+			name:   "run cancel",
+			tool:   cancelRunToolName,
+			result: `{"ok":true,"run":{"run_id":"run-1","runner_ref":"db-1~abc","status":"cancelled","run_url":"https://emisar.dev/app/demo/runs/run-1"}}`,
+			want:   []string{"db-1~abc — cancelled", "Run ID  run-1"},
+		},
+		{
 			name:   "recent runs",
 			tool:   recentRunsToolName,
 			result: `{"ok":true,"runs":[{"run_id":"run-1","runner_ref":"db-1~abc","status":"failed","error_message":"command failed"}],"next_cursor":"cursor"}`,

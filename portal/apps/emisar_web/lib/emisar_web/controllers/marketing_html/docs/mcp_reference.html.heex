@@ -4,12 +4,12 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="mcp-reference"
-      updated="September 8, 2026"
+      updated="September 22, 2026"
       toc={[
         {"calling-the-endpoint", "Calling the endpoint"},
         {"command-line", "Use tools from the shell"},
         {"protocol-methods", "Protocol methods"},
-        {"tools", "Thirteen fixed tools"},
+        {"tools", "Fourteen fixed tools"},
         {"discovery", "Discovery"},
         {"running-an-action", "Running an action"},
         {"operations", "Operations and recovery"},
@@ -342,7 +342,7 @@
           mutation needs a request ID for safe recovery.
         </p>
 
-        <h2 id="tools">Thirteen fixed tools</h2>
+        <h2 id="tools">Fourteen fixed tools</h2>
         <p>
           Actions are data, not MCP tool descriptors. Runner and pack changes appear in discovery
           results. Clients never need a hand-maintained action allowlist and never load hundreds
@@ -365,6 +365,7 @@
                 {"run_action", "Dispatch one exact action to one or more selected runners."},
                 {"get_operation", "Recover one exact mutation after an ambiguous response."},
                 {"wait_for_run", "Wait for one run to change or reach a terminal state."},
+                {"cancel_run", "Cancel one of your own runs while it is still queued or waiting for approval."},
                 {"recent_runs", "Inspect workspace run history with exact identity filters."},
                 {"list_runbooks", "List every runbook with its live release and any unpublished change."},
                 {"get_runbook", "Read one runbook's live release, or its unpublished change."},
@@ -489,6 +490,12 @@
           responsive during a wait. Legacy clients can also use <code>ping</code>.
           Cancellation stops observation only — it does not undo committed infrastructure
           work.
+        </p>
+        <p>
+          To withdraw a run that has not reached a runner, call <code>cancel_run</code>
+          with its <code>run_id</code>. The run is cancelled, its approval request closes, and
+          the result is the same summary <code>wait_for_run</code>
+          returns. A run already delivered to a runner is refused with <code>run_not_cancellable</code>; an operator stops it from the console.
         </p>
 
         <h2 id="runbooks-signing">Runbooks and signing</h2>

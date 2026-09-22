@@ -1,7 +1,9 @@
 defmodule Emisar.RunsCancellationTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts.RunnerAccess
-  alias Emisar.{Approvals, Audit, Fixtures, Repo, Runners, Runs}
+  alias Emisar.{ApiKeys, Approvals, Audit, Fixtures, Repo, Runners, Runs}
+  alias Emisar.Auth.Subject
+  alias Emisar.Runs.ActionRun
 
   describe "cancellation_allowed?/2" do
     test "checks the complete frozen targets without requiring a live catalog" do
@@ -239,6 +241,199 @@ defmodule Emisar.RunsCancellationTest do
                ) == {:error, :unauthorized}
       end
     end
+  end
+
+  describe "cancel_mcp_run/3" do
+    test "a key cancels its own run while it waits for approval and closes the request" do
+      %{account: account, runner: runner, key: key, subject: subject} = mcp_cancel_setup()
+      run = own_mcp_run(account, runner, key, :pending_approval)
+      request = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
+      :ok = Runs.subscribe_run(account.id, run.id)
+
+      assert {:ok, cancelled} =
+               Runs.cancel_mcp_run(run.id, subject, "No longer needed after the rollback.")
+
+      assert cancelled.id == run.id
+      assert cancelled.status == :cancelled
+      assert cancelled.reason_text == "No longer needed after the rollback."
+      assert %DateTime{} = cancelled.cancelled_at
+      assert Repo.reload!(request).status == :cancelled
+      assert_receive {:run_updated, %ActionRun{status: :cancelled}}
+
+      events = cancellation_events()
+
+      assert Enum.sort(Enum.map(events, & &1.event_type)) ==
+               ["action_run.cancelled", "run.cancel_requested"]
+
+      requested = Enum.find(events, &(&1.event_type == "run.cancel_requested"))
+      assert requested.actor_kind == "api_key"
+      assert requested.actor_id == key.id
+      assert requested.payload["reason"] == "No longer needed after the rollback."
+
+      # Repeating the call is a no-op on the terminal row.
+      assert {:ok, unchanged} = Runs.cancel_mcp_run(run.id, subject)
+      assert unchanged.status == :cancelled
+      assert unchanged.reason_text == "No longer needed after the rollback."
+      assert length(cancellation_events()) == 2
+    end
+
+    test "a queued run that never reached its runner is cancelled with the default reason" do
+      %{account: account, runner: runner, key: key, subject: subject} = mcp_cancel_setup()
+      run = own_mcp_run(account, runner, key, :pending)
+
+      assert {:ok, cancelled} = Runs.cancel_mcp_run(run.id, subject)
+      assert cancelled.status == :cancelled
+      assert cancelled.reason_text == "cancelled by the requesting agent"
+      assert length(cancellation_events()) == 2
+    end
+
+    test "a run already delivered to a runner is refused without side effects" do
+      %{account: account, runner: runner, key: key, subject: subject} = mcp_cancel_setup()
+      Runners.subscribe_runner_transport(runner)
+
+      for status <- [:sent, :running, :cancelling] do
+        run = own_mcp_run(account, runner, key, status)
+        request = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
+
+        assert Runs.cancel_mcp_run(run.id, subject, "too late") ==
+                 {:error, :run_already_dispatched}
+
+        assert Repo.reload!(run) == run
+        assert Repo.reload!(request) == request
+      end
+
+      finished = own_mcp_run(account, runner, key, :success)
+      assert {:ok, unchanged} = Runs.cancel_mcp_run(finished.id, subject)
+      assert unchanged.status == :success
+      assert cancellation_events() == []
+      refute_received {:cloud_to_runner, _, %{"type" => "cancel"}}
+    end
+
+    test "runs outside the key's lineage or account are indistinguishable from absence" do
+      %{account: account, runner: runner, subject: subject} = mcp_cancel_setup()
+      {_raw, other_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      peer = own_mcp_run(account, runner, other_key, :pending_approval)
+      foreign = Fixtures.Runs.create_run(status: :pending_approval)
+
+      operator =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: runner.id,
+          status: :pending_approval
+        )
+
+      for run <- [peer, foreign, operator] do
+        assert Runs.cancel_mcp_run(run.id, subject) == {:error, :not_found}
+        assert Repo.reload!(run) == run
+      end
+
+      assert Runs.cancel_mcp_run("not-a-run", subject) == {:error, :not_found}
+      assert cancellation_events() == []
+    end
+
+    test "human subjects and a stripped key hold no cancel-own authority" do
+      %{account: account, runner: runner, key: key, membership: membership, subject: subject} =
+        mcp_cancel_setup()
+
+      run = own_mcp_run(account, runner, key, :pending_approval)
+      human = Fixtures.Subjects.membership_subject(membership)
+
+      assert Runs.cancel_mcp_run(run.id, human) == {:error, :unauthorized}
+
+      assert Runs.cancel_mcp_run(run.id, %{subject | permissions: MapSet.new()}) ==
+               {:error, :unauthorized}
+
+      assert Repo.reload!(run) == run
+      assert cancellation_events() == []
+    end
+
+    test "a revoked key, suspended seat, narrowed scope, or deleted runner cannot withdraw work" do
+      invalidations = [
+        revoked_key: &Fixtures.ApiKeys.mark_revoked(&1.key),
+        suspended_seat: &Fixtures.Memberships.suspend_membership(&1.membership),
+        runner_out_of_scope: fn ctx ->
+          {:ok, access} = RunnerAccess.new(:restricted, ["staging"], [])
+          Fixtures.Memberships.force_runner_access(ctx.membership, access)
+        end,
+        pack_out_of_scope: fn ctx ->
+          {:ok, access} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
+          Fixtures.Memberships.force_runner_access(ctx.membership, access)
+        end,
+        deleted_runner: &Fixtures.Runners.mark_deleted(&1.runner)
+      ]
+
+      for {case_name, invalidate} <- invalidations do
+        ctx = mcp_cancel_setup()
+        run = own_mcp_run(ctx.account, ctx.runner, ctx.key, :pending_approval)
+        request = Fixtures.Approvals.create_request(account_id: ctx.account.id, run_id: run.id)
+        invalidate.(ctx)
+
+        assert Runs.cancel_mcp_run(run.id, ctx.subject, "stale") == {:error, :unauthorized},
+               "#{case_name} still cancelled the run"
+
+        assert Repo.reload!(run) == run, "#{case_name} changed the run"
+        assert Repo.reload!(request) == request, "#{case_name} changed the request"
+      end
+
+      assert cancellation_events() == []
+    end
+
+    test "a rotated successor key still owns the runs its predecessor created" do
+      %{account: account, runner: runner, key: key, membership: membership} = mcp_cancel_setup()
+      run = own_mcp_run(account, runner, key, :pending_approval)
+      minter = Fixtures.Subjects.membership_subject(membership)
+      assert {:ok, _raw, successor} = ApiKeys.rotate_api_key(key, minter)
+
+      assert {:ok, %ActionRun{status: :cancelled}} =
+               Runs.cancel_mcp_run(run.id, Subject.for_api_key(successor, account))
+    end
+  end
+
+  # The key belongs to an admin, not an owner: owner access is account-wide by
+  # design, so only a non-owner seat can prove that a narrowed runner or pack
+  # scope is re-read under the cancellation lock.
+  defp mcp_cancel_setup do
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id, group: "production")
+    user = Fixtures.Users.create_user()
+
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "admin"
+      )
+
+    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+    %{
+      account: account,
+      runner: runner,
+      key: key,
+      membership: membership,
+      subject: Subject.for_api_key(key, account)
+    }
+  end
+
+  defp own_mcp_run(account, runner, key, status) do
+    {:ok, runner_ref} = Runners.public_ref(runner)
+
+    Fixtures.Runs.create_run(
+      account_id: account.id,
+      runner_id: runner.id,
+      status: status,
+      source: :mcp,
+      api_key_id: key.id,
+      pack_ref: pack_ref("postgres"),
+      operation_id: "op_724NN9NMDZ1T76NARWCKM5A0D6",
+      runner_ref: runner_ref
+    )
+  end
+
+  defp cancellation_events do
+    Audit.Event
+    |> Repo.all()
+    |> Enum.filter(&(&1.event_type in ["run.cancel_requested", "action_run.cancelled"]))
   end
 
   defp pack_ref(pack_id), do: pack_id <> "@1.0.0/sha256:" <> String.duplicate("a", 64)

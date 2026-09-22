@@ -3008,10 +3008,147 @@ defmodule Emisar.Runs do
   end
 
   @doc """
+  Cancels one of the calling key's own runs while it is still undispatched
+  (`:pending` or `:pending_approval`) and closes its pending approval request in
+  the same transaction. Requires the machine-only cancel-own-run permission on
+  an `%ApiKeys.ApiKey{}` subject; the account, creator membership, key, and
+  frozen target are re-locked and re-authorized before the write. A run the
+  lineage did not create is `:not_found`; one already delivered to a runner is
+  `:run_already_dispatched` and stays the console's to stop. Returns
+  `{:ok, run}` with the current row (an already-terminal run is a no-op) or
+  `{:error, :not_found | :unauthorized | :run_already_dispatched}`.
+  """
+  def cancel_mcp_run(run_id, subject, reason \\ nil)
+
+  def cancel_mcp_run(run_id, %Subject{actor: %ApiKeys.ApiKey{}} = subject, reason) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.cancel_own_run_permission()
+           ),
+         {:ok, run} <- fetch_own_mcp_run_by_id(run_id, subject) do
+      cancel_mcp_run_for_status(run, subject, reason)
+    end
+  end
+
+  def cancel_mcp_run(_run_id, %Subject{}, _reason), do: {:error, :unauthorized}
+
+  # A key's own runs are the ones its credential lineage created, rotated
+  # predecessors included — the same `own` scope `list_recent_mcp_runs/3` uses.
+  defp fetch_own_mcp_run_by_id(
+         run_id,
+         %Subject{actor: %ApiKeys.ApiKey{credential_lineage_id: lineage_id}} = subject
+       ) do
+    if Repo.valid_uuid?(run_id) do
+      ActionRun.Query.all()
+      |> ActionRun.Query.fixed_mcp_contract()
+      |> ActionRun.Query.by_id(run_id)
+      |> ActionRun.Query.by_credential_lineage(lineage_id)
+      |> Authorizer.for_subject(subject)
+      |> Repo.fetch(ActionRun.Query)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp cancel_mcp_run_for_status(%ActionRun{} = run, subject, reason) do
+    reason = reason || "cancelled by the requesting agent"
+
+    Multi.new()
+    |> put_active_account_lock(run.account_id, :active_account)
+    |> Multi.run(:cancellation_access, fn repo, _changes ->
+      fetch_and_lock_mcp_cancellation_access(subject, repo)
+    end)
+    |> Multi.run(:run_cancel, fn repo, %{cancellation_access: access} ->
+      cancel_own_run_locked(repo, run, access, reason)
+    end)
+    |> Multi.run(:run_cancel_audit, fn
+      repo, %{run_cancel: {:cancelled, cancelled}} ->
+        repo.insert(Audit.run_event_changeset(cancelled))
+
+      _repo, %{run_cancel: _} ->
+        {:ok, nil}
+    end)
+    |> add_cancel_requested_audit(subject, reason)
+    |> Multi.merge(fn
+      %{run_cancel: {:cancelled, _run}} ->
+        Approvals.cancel_request_for_run_in_multi(Multi.new(), run.id)
+
+      _changes ->
+        Multi.run(Multi.new(), :request_cancel, fn _repo, _changes -> {:ok, :none} end)
+    end)
+    |> Repo.commit_multi(
+      after_commit: fn changes ->
+        broadcast_cancellation(changes.run_cancel)
+        :ok = Approvals.broadcast_request_cancelled(changes.request_cancel)
+      end
+    )
+    |> cancellation_request_result()
+  end
+
+  # The subject's membership and key are boundary snapshots. Re-lock both in the
+  # order key rotation takes (membership, then key) so a seat suspended or a key
+  # revoked since the request was authenticated cannot withdraw work, and read
+  # the member's runner access under that lock.
+  defp fetch_and_lock_mcp_cancellation_access(
+         %Subject{
+           account: %Accounts.Account{id: account_id},
+           actor: %ApiKeys.ApiKey{id: key_id},
+           membership_id: membership_id
+         } = subject,
+         repo
+       ) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.cancel_own_run_permission()
+           ),
+         {:ok, membership} <-
+           Accounts.fetch_and_lock_membership(account_id, membership_id, repo: repo),
+         true <- ApiKeys.api_key_usable_in_account?(repo, key_id, account_id) do
+      {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  # Undispatched work only: a run already delivered to a runner is the
+  # operator's to stop from the console. The row is re-read under lock so a
+  # dispatch or decision that landed since the scoped read wins.
+  defp cancel_own_run_locked(repo, %ActionRun{} = expected_run, access, reason) do
+    loaded_run =
+      ActionRun.Query.all()
+      |> ActionRun.Query.by_account_id(expected_run.account_id)
+      |> ActionRun.Query.by_id(expected_run.id)
+      |> ActionRun.Query.lock_for_update()
+      |> repo.one()
+
+    cond do
+      is_nil(loaded_run) ->
+        {:ok, :no_run}
+
+      ActionRun.terminal?(loaded_run.status) ->
+        {:ok, {:noop, loaded_run}}
+
+      loaded_run.status not in [:pending, :pending_approval] ->
+        {:error, :run_already_dispatched}
+
+      true ->
+        with :ok <-
+               ensure_cancellation_targets_authorized(loaded_run.account_id, [loaded_run], access,
+                 repo: repo
+               ) do
+          cancel_loaded_run(repo, loaded_run, reason)
+        end
+    end
+  end
+
+  @doc """
   Internal — current human cancellation authority inside the caller's account
   transaction. Lock the actor's exact membership and user before target locks;
   a stale role, suspended seat, or mismatched actor cannot cancel visible work.
-  API clients retain their own role and have no cancellation permission.
+  API clients hold no operator cancellation permission; they withdraw only
+  their own undispatched runs through `cancel_mcp_run/3`.
   """
   def fetch_and_lock_cancellation_access(subject, opts \\ [])
 

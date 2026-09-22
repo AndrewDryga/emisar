@@ -16,6 +16,7 @@ const (
 	getOperationToolName       = "get_operation"
 	waitForRunToolName         = "wait_for_run"
 	recentRunsToolName         = "recent_runs"
+	cancelRunToolName          = "cancel_run"
 	listRunbooksToolName       = "list_runbooks"
 	getRunbookToolName         = "get_runbook"
 	executeRunbookToolName     = "execute_runbook"
@@ -99,7 +100,7 @@ func writeCLIOperatorOutput(
 		rendered, ok = renderCLIRunAction(w, raw, account)
 	case getOperationToolName:
 		rendered, ok = renderCLIGetOperation(w, raw, account)
-	case waitForRunToolName:
+	case waitForRunToolName, cancelRunToolName:
 		rendered, ok = renderCLIWaitForRun(w, raw)
 	case recentRunsToolName:
 		rendered, ok = renderCLIRecentRuns(w, raw)

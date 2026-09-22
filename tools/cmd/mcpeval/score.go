@@ -19,7 +19,7 @@ var terminalStatuses = map[string]bool{
 // on the first attempt; discovery reads self-heal by design.
 var mutationTools = map[string]bool{
 	"run_action": true, "execute_runbook": true, "create_runbook_draft": true,
-	"update_runbook_draft": true,
+	"update_runbook_draft": true, "cancel_run": true,
 }
 
 // riskReadOnly is the pack schema's read-only risk tier — "low = read-only

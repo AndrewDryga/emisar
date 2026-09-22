@@ -190,7 +190,7 @@ so attribution and revocation stay precise.
 
 The same binary exposes the control plane's live MCP catalog as direct commands.
 Names, descriptions, annotations, and argument schemas come from `tools/list`.
-The thirteen fixed tools have purpose-built human output; an unknown future
+The fourteen fixed tools have purpose-built human output; an unknown future
 tool still appears and remains callable through the generic fallback.
 
 An interactive install authenticates these commands. Discover and inspect the
@@ -273,6 +273,7 @@ use `--json` to copy the returned cursor or continuation exactly.
 | `get_action` | Description, side effects, trusted arguments, an editable `run_action` template, and compatible runner refs. |
 | `run_action` | Operation ID and inspection command, per-runner status, approvals, exit codes, and action output. |
 | `get_operation` | The durable mutation identity and its safe recovery command. |
+| `cancel_run` | The cancelled run's terminal status, or the refusal when it already reached a runner. |
 | `recent_runs` | Recent run status, errors, output, and exact run IDs. |
 
 Human `run_action` waits when the response contains an exact `wait_for_run`
@@ -290,6 +291,7 @@ emisar-mcp find_actions "postgres replication"
 emisar-mcp get_action \
   '{"action_id":"postgres.replication_lag","pack_ref":"<pack_ref from find_actions>"}'
 emisar-mcp get_operation '{"operation_id":"op_..."}'
+emisar-mcp cancel_run '{"run_id":"<run_id from run_action>","reason":"No longer needed."}'
 emisar-mcp recent_runs '{"scope":"own","limit":10}'
 ```
 

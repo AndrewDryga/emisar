@@ -1,7 +1,7 @@
 ---
 name: mcp-api
 sources: [portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar_web/lib/emisar_web/controllers/mcp, portal/apps/emisar_web/lib/emisar_web/controllers/mcp_rpc_controller.ex, portal/apps/emisar/lib/emisar/mcp_operations.ex, mcp/protocol.go]
-updated: 2026-09-14
+updated: 2026-09-22
 ---
 
 # MCP action API specification
@@ -68,7 +68,7 @@ rather than this specification.
 
 ## Fixed tool catalog
 
-`tools/list` returns exactly these thirteen tools:
+`tools/list` returns exactly these fourteen tools:
 
 | Tool | Purpose |
 | --- | --- |
@@ -79,6 +79,7 @@ rather than this specification.
 | `run_action` | Dispatch one exact action to explicit runner references. |
 | `get_operation` | Recover one exact bridge mutation after an ambiguous response. |
 | `wait_for_run` | Wait for one run or runbook execution to change or finish, and stream its output forward. |
+| `cancel_run` | Cancel one of the caller's own runs while it is still queued or waiting for approval. |
 | `recent_runs` | Inspect and paginate account run activity. |
 | `list_runbooks` | List every visible runbook with its live release and its unpublished change. |
 | `get_runbook` | Inspect one runbook's live release, or its single unpublished change. |
@@ -94,7 +95,7 @@ serialized JSON in one text content block for clients that do not consume
 structured results. Each fixed wire descriptor publishes its complete
 `inputSchema`, carrying only the canonical `$defs` it transitively references.
 The wire descriptors intentionally omit the optional MCP `outputSchema`:
-resolving the full response schemas into all thirteen descriptors grows
+resolving the full response schemas into all fourteen descriptors grows
 `tools/list` from roughly 17 KiB to roughly 140 KiB, and a client that relays
 descriptors into model context would pay that on every session — recreating the
 large-catalog problem this API exists to avoid. The complete response schemas remain normative
@@ -1055,7 +1056,9 @@ trust, advertised signing requirements, and attestation freshness immediately
 before release. Approval expiry cancels the run; an enforcing runner
 independently refuses a stale approval release or signature. The model follows
 `next` until terminal or `wait_until`, without asking for a second client-side
-confirmation.
+confirmation. If the work is no longer needed while the run waits, the model
+calls [`cancel_run`](#cancel_run) on that run instead of leaving the request
+open until a human decides or it expires.
 
 An approval is bound to the exact run facts. A standing grant is narrower than
 the API key: it matches the exact key, action ID, runner generation, and either
@@ -1570,6 +1573,59 @@ This is run history and the per-run detail path for a runbook execution.
 `get_operation` is the mutation recovery path after an ambiguous transport
 error when the operation ID was returned or recorded before a process loss.
 
+### `cancel_run`
+
+`cancel_run` withdraws one run the calling credential lineage created — the
+same `own` scope `recent_runs` uses, rotated successors included — while it is
+still `pending` or `pending_approval`. It takes the exact `run_id` and an
+optional one-sentence `reason` of at most 255 characters that is recorded as
+the run's cancellation reason. The run never reaches a runner: in one
+transaction the portal re-locks the account, the key's creator membership and
+the key itself, re-checks the frozen runner and pack against the member's
+current runner access, flips the run to `cancelled`, writes the
+`run.cancel_requested` and `action_run.cancelled` audit rows, and flips the
+run's still-pending approval request to `cancelled` so a racing approve cannot
+release it. Approvers and the requester are notified after the commit, and the
+run's review receipt reads **cancelled** from then on.
+
+The result is the same snapshot summary `wait_for_run` returns for that run,
+now terminal. The call is naturally idempotent and reserves no operation: a
+repeated call, or one that arrives after an approver already decided, returns
+the run's current terminal summary without a second audit row. A run already
+delivered to a runner — `sent`, `running`, or `cancelling` — is refused with
+`run_not_cancellable` and stays the console operator's to stop; the API never
+sends a cancel to a runner on a model's behalf. A run another lineage or
+account created is `run_not_found`, indistinguishable from absence. A revoked
+key, an inactive or suspended creator membership, a deleted runner, or a target
+outside the member's current runner or pack scope is `not_allowed`, with no
+side effect.
+
+```json
+{
+  "ok": true,
+  "run": {
+    "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
+    "operation_id": "op_01J0D85Q1BKR5W6N7E2T4Y8P3C",
+    "action_id": "postgres.restart",
+    "pack_ref": "postgres@1.4.0/sha256:b54e88d5b39f84f8c2a50f05ba26e1f3627b78464272ecf5b36797c148db4120",
+    "runner_ref": "postgres-primary~18a65e2f86b2548f847095a6f36d2fc9",
+    "status": "cancelled",
+    "created_at": "2026-07-13T14:42:10Z",
+    "finished_at": "2026-07-13T14:47:02Z",
+    "review": {
+      "request_id": "apr_01J0D85QB2BWAAGXX9YZFZJEPR",
+      "status": "cancelled",
+      "required_approvals": 1,
+      "approved_count": 0,
+      "argument_count": 0,
+      "reason": "Restart the primary to apply the reviewed memory settings.",
+      "decisions": []
+    },
+    "run_url": "https://emisar.dev/app/example/runs/019f61cf-59b4-71d9-a78c-4ece74d1e164"
+  }
+}
+```
+
 ### Cancellation and notifications
 
 - The bridge never executes a `tools/call` notification. It emits no response.
@@ -1581,6 +1637,8 @@ error when the operation ID was returned or recorded before a process loss.
   The portal operation remains queryable by its operation ID when that ID was
   already returned or recorded by the client.
 - Cancelling `wait_for_run` stops observation only; it never cancels the run.
+  `cancel_run` is the explicit, audited way to withdraw a run that has not
+  reached a runner.
 - The bridge maps cancellation by the original typed JSON-RPC ID and never emits
   a response to the cancelled request.
 - Across HTTP, the bridge sends only a fixed-length digest naming that one
@@ -2294,6 +2352,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 | `operation_not_found` | Exact operation is absent or belongs to another credential lineage. | Keep ambiguous mutations unresolved. |
 | `pack_unavailable` | A target has no current trusted pack exposing the declared action. | Deploy or trust the pack, or edit the runbook; do not substitute one silently. |
 | `response_too_large` | One result item cannot fit the bounded MCP response. | Read it in the console or reduce the output; retrying unchanged will not help. |
+| `run_not_cancellable` | The run already reached a runner, so `cancel_run` cannot withdraw it. | Do not retry; an operator stops it from the console. |
 | `run_not_found` | Exact visible run or execution is absent. | Check the ID; do not probe other scopes. |
 | `runbook_capacity_exceeded` | The account already has the maximum 1,024 active runbook items. | Wait for work to finish or cancel an execution, then retry. |
 | `runbook_not_found` | No readable trusted live release answers that slug or ref in this account. | `list_runbooks` names every visible runbook; do not probe other slugs. |

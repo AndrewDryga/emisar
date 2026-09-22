@@ -428,7 +428,7 @@ defmodule EmisarWeb.MCPRpcController do
        do: handle_runbook_tool(conn, name, args)
 
   defp dispatch_tool(conn, name, args)
-       when name in ~w(get_operation wait_for_run recent_runs),
+       when name in ~w(get_operation wait_for_run recent_runs cancel_run),
        do: handle_recovery_tool(conn, name, args)
 
   defp validate_tool_input(conn, name, args) do

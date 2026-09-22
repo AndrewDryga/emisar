@@ -607,7 +607,7 @@ func renderToolList(rawDescriptors []json.RawMessage) (string, error) {
 		names []string
 	}{
 		{"FLEET", []string{"list_runners", "list_packs"}},
-		{"ACTIONS", []string{"find_actions", "get_action", "run_action", "get_operation", "recent_runs"}},
+		{"ACTIONS", []string{"find_actions", "get_action", "run_action", "get_operation", "cancel_run", "recent_runs"}},
 		{"RUNBOOKS", []string{"list_runbooks", "get_runbook", "execute_runbook", "create_runbook_draft", "update_runbook_draft"}},
 		{"CONTINUATIONS", []string{"wait_for_run"}},
 	}

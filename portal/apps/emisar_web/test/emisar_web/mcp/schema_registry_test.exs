@@ -13,6 +13,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     run_action
     get_operation
     wait_for_run
+    cancel_run
     recent_runs
     list_runbooks
     get_runbook
@@ -49,6 +50,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     operation_not_found
     pack_unavailable
     response_too_large
+    run_not_cancellable
     run_not_found
     runbook_capacity_exceeded
     runbook_not_found
@@ -107,7 +109,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
   test "publishes exactly the normative descriptors in contract order" do
     tools = SchemaRegistry.tools()
 
-    assert length(tools) == 13
+    assert length(tools) == 14
     assert SchemaRegistry.tool_names() == @tool_names
     assert Enum.map(tools, & &1["name"]) == @tool_names
 
@@ -118,9 +120,10 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     # The wire catalog stays lean: response schemas live in the internal
     # contracts, never in tools/list. Every session pays for this in tokens, so
     # Budget 2 KiB above the prior ceiling for output-source guidance and the
-    # extractor constraint, bundled once per draft tool. Keep the full wire
-    # frame bound below as a separate limit.
-    assert byte_size(Jason.encode!(tools)) <= 36_352
+    # extractor constraint, bundled once per draft tool, plus 1.5 KiB for the
+    # cancel_run descriptor. Keep the full wire frame bound below as a separate
+    # limit.
+    assert byte_size(Jason.encode!(tools)) <= 37_888
 
     frame = %{
       jsonrpc: "2.0",

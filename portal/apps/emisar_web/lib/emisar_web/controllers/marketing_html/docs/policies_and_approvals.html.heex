@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="policies-and-approvals"
-      updated="September 8, 2026"
+      updated="September 22, 2026"
       toc={[
         {"how-decisions", "How a decision is made"},
         {"first-policy", "A sensible first policy"},
@@ -206,6 +206,13 @@
             An LLM waiting on an approval long-polls
             <.docs_inline_code>wait_for_run</.docs_inline_code>
             and picks the result up the moment a human decides.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            An LLM that no longer needs the action cancels its own held run with <.docs_inline_code>cancel_run</.docs_inline_code>. The request closes and the
+            approvers are notified.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

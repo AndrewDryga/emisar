@@ -1,7 +1,7 @@
 ---
 name: compatibility
 sources: [runner/pkg/packspec, runner/pkg/actionspec, runner/testdata/cli_surface.golden, portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar/lib/emisar/canonical_json.ex, install.sh, install-mcp.sh, runner/release/container-packs.txt]
-updated: 2026-09-15
+updated: 2026-09-22
 ---
 
 # Compatibility and deprecation policy
@@ -192,18 +192,18 @@ deprecation window. Additive fields still need either optional v1 semantics
 that old consumers safely ignore where allowed, or a new schema version when
 the strict v1 object would reject them.
 
-### MCP transport and the 13-tool surface
+### MCP transport and the 14-tool surface
 
 **What it is.** The portal exposes stateless, JSON-only Streamable HTTP at
 `/api/mcp/rpc`. `tools/list` is server-authoritative and currently returns
-these thirteen tools:
+these fourteen tools:
 
 ```text
-list_packs          list_runners          find_actions
-get_action          run_action             get_operation
-wait_for_run        recent_runs           list_runbooks
-get_runbook         execute_runbook        create_runbook_draft
-update_runbook_draft
+list_packs           list_runners          find_actions
+get_action           run_action            get_operation
+wait_for_run         cancel_run            recent_runs
+list_runbooks        get_runbook           execute_runbook
+create_runbook_draft update_runbook_draft
 ```
 
 The tool catalog advertises `tools.listChanged: false`. Packs and runner state
@@ -652,7 +652,7 @@ surface: `list_tools [--json]` lists the live server catalog, `help <tool>
 descriptor. `<tool> [JSON | -]` calls any exact tool name with an omitted `{}`,
 one inline JSON object, or an object read from stdin. `-- <tool> [JSON | -]`
 bypasses the local command namespace for an exact conflicting name. Calls print
-purpose-built readable text for the thirteen fixed tools by default; an unknown
+purpose-built readable text for the fourteen fixed tools by default; an unknown
 future tool falls back to the generic structured-object renderer. `list_tools`
 groups the live catalog for people, while `list_tools --json` remains the exact
 descriptor array. `--json` makes one logical tool invocation, follows no

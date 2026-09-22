@@ -92,6 +92,18 @@
         "destructive_justification": "Ending or timing out the wait cannot alter the underlying work or its target."
       }
     },
+    "cancel_run": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Cancels one run the caller's own credential created while it is still queued or waiting for approval, changing that run's state in Emisar.",
+        "open_world_justification": "Changes only private Emisar run and approval records; the run never reaches a runner and no external system is contacted.",
+        "destructive_justification": "Withdraws a request that has not executed yet; it cannot stop running work, delete data, or alter a target system."
+      }
+    },
     "recent_runs": {
       "annotations": {
         "readOnlyHint": true,

@@ -25,7 +25,9 @@ defmodule Emisar.Fixtures.Runs do
   `:status`, `:action_id`, `:source`, `:request_id`, `:args_raw`,
   `:sensitive_arg_names`, `:expected_pack_hash`, `:inserted_at` (to land a run
   in a report window), and `:sent_at` (to model work handed to a runner) as
-  needed.
+  needed. `:operation_id`, `:runner_ref`, and `:reason` complete the fixed MCP
+  contract for a run the MCP tools must read back; `:requires_approval` marks a
+  policy-gated run whose review receipt those tools render.
   """
   def create_run(attrs \\ %{}) do
     attrs = Map.new(attrs)
@@ -51,7 +53,15 @@ defmodule Emisar.Fixtures.Runs do
     params =
       Map.merge(
         params,
-        Map.take(attrs, [:requested_by_id, :initiating_membership_id, :api_key_id])
+        Map.take(attrs, [
+          :requested_by_id,
+          :initiating_membership_id,
+          :api_key_id,
+          :operation_id,
+          :runner_ref,
+          :reason,
+          :requires_approval
+        ])
       )
 
     {:ok, run} = params |> ActionRun.Changeset.create() |> Repo.insert()

@@ -213,7 +213,9 @@ When evidence supports containment and **Contain** mode is active:
    invent operation IDs.
 5. For `pending_approval`, show the approval state and URL, then follow the same
    run's continuation. Do not ask for a second client-side approval or submit a
-   substitute action.
+   substitute action. If the operator withdraws the request or the action is no
+   longer needed while the run waits, cancel that run with `cancel_run` instead
+   of leaving the request open.
 6. For mixed fan-out results, handle each returned run. Never retry the whole
    fan-out because one target failed.
 7. Follow a supplied contract refresh once. Do not loop deterministic failures,

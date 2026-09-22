@@ -113,6 +113,7 @@ defmodule Emisar.Auth.RoleGrantsTest do
     {Emisar.Runbooks.Runbook, :draft},
     {Emisar.Runbooks.Runbook, :view},
     {Emisar.Runners.Runner, :view},
+    {Emisar.Runs.ActionRun, :cancel_own},
     {Emisar.Runs.ActionRun, :dispatch},
     {Emisar.Runs.ActionRun, :view}
   ]
@@ -126,19 +127,20 @@ defmodule Emisar.Auth.RoleGrantsTest do
     api_client: @api_client
   }
 
-  # The three permissions a machine credential holds that no human role does.
+  # The four permissions a machine credential holds that no human role does.
   # Every function they gate matches `%Subject{actor: %ApiKeys.ApiKey{}}` in its
   # HEAD — `MCPOperations.reserve_in_multi/3`, `fetch_recovery/2`,
-  # `resource_id/3`, and the `Runbooks.create_or_replay_mcp_*` family — so a
-  # human subject falls to the `{:error, :unauthorized}` clause before the
-  # permission is ever consulted; granting them to an owner would unlock
-  # nothing. `:api_client` is not an assignable role either (`Auth.Role.all/0`
-  # and the `Membership` enum both exclude it), so no delegation guard ever asks
-  # whether an owner covers it.
+  # `resource_id/3`, the `Runbooks.create_or_replay_mcp_*` family, and
+  # `Runs.cancel_mcp_run/3` — so a human subject falls to the
+  # `{:error, :unauthorized}` clause before the permission is ever consulted;
+  # granting them to an owner would unlock nothing. `:api_client` is not an
+  # assignable role either (`Auth.Role.all/0` and the `Membership` enum both
+  # exclude it), so no delegation guard ever asks whether an owner covers it.
   @machine_only [
     {Emisar.MCPOperations.Operation, :reserve},
     {Emisar.MCPOperations.Operation, :view},
-    {Emisar.Runbooks.Runbook, :draft}
+    {Emisar.Runbooks.Runbook, :draft},
+    {Emisar.Runs.ActionRun, :cancel_own}
   ]
 
   # Deliberate deviations from "owner and admin can do anything any role can".

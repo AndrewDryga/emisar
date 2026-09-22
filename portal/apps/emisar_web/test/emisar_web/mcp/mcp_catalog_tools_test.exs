@@ -36,6 +36,7 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
              run_action
              get_operation
              wait_for_run
+             cancel_run
              recent_runs
              list_runbooks
              get_runbook

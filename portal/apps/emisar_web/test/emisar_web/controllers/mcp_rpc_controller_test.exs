@@ -763,7 +763,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     test "tools/list returns exactly the schema-registry descriptors", %{conn: conn, raw: raw} do
       body = conn |> authorize(raw) |> rpc("tools/list") |> json_response(200)
       assert body["result"]["tools"] == SchemaRegistry.tools()
-      assert length(body["result"]["tools"]) == 13
+      assert length(body["result"]["tools"]) == 14
     end
 
     test "non-MCP keys are refused at the tool boundary", %{

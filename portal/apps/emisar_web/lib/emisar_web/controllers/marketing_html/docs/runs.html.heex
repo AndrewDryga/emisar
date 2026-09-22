@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="runs"
-      updated="September 6, 2026"
+      updated="September 22, 2026"
       toc={[
         {"the-list", "The Runs list"},
         {"statuses", "Run statuses"},
@@ -261,6 +261,12 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Cancellation is recorded in the audit trail. Repeating the request does not change
         a run that has already finished.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        An agent can cancel its own run through the MCP
+        <.docs_inline_code>cancel_run</.docs_inline_code>
+        tool while the run is queued or waiting for approval, for example when the work is no
+        longer needed. Once the run reaches a runner, only the console can stop it.
       </p>
 
       <.docs_h2 id="operations">Operations and retries</.docs_h2>
