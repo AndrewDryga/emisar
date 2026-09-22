@@ -21,9 +21,9 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
 
     second = %{first | id: "019ec7d0-1001-7000-8000-000000000002"}
 
-    UserNotifier.deliver_approval_request(subject, first, run)
+    UserNotifier.deliver_approval_request(membership, subject, first, run)
     assert_receive {:email, first_email}
-    UserNotifier.deliver_approval_request(subject, second, run)
+    UserNotifier.deliver_approval_request(membership, subject, second, run)
     assert_receive {:email, second_email}
 
     refute first_email.subject == second_email.subject
@@ -31,7 +31,7 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
     assert second_email.subject =~ second.id
     refute first_email.headers["Message-ID"] == second_email.headers["Message-ID"]
 
-    UserNotifier.deliver_approval_event(subject, first, %{kind: :approved, approved_count: 1})
+    UserNotifier.deliver_approval_event(membership, first, %{kind: :approved, approved_count: 1})
     assert_receive {:email, update}
 
     assert update.subject == first_email.subject
@@ -52,12 +52,14 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
       context: %{"runbook" => %{"title" => String.duplicate("Maintenance ", 30)}}
     }
 
-    UserNotifier.deliver_runbook_execution_approval_request(subject, request)
+    UserNotifier.deliver_runbook_execution_approval_request(membership, request)
     assert_receive {:email, initial}
     request = %{request | account: %{request.account | name: "Renamed account"}}
-    UserNotifier.deliver_approval_event(subject, request, %{kind: :approved, approved_count: 1})
+
+    UserNotifier.deliver_approval_event(membership, request, %{kind: :approved, approved_count: 1})
+
     assert_receive {:email, update}
-    UserNotifier.deliver_approval_decision(subject.actor, request, 1)
+    UserNotifier.deliver_approval_decision(membership, request, 1)
     assert_receive {:email, decision}
 
     assert String.length(initial.subject) <= 180
@@ -68,7 +70,7 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
     assert decision.headers["References"] == initial.headers["Message-ID"]
 
     other_request = %{request | id: "019ec7d0-1001-7000-8000-000000000002"}
-    UserNotifier.deliver_approval_decision(subject.actor, other_request, 1)
+    UserNotifier.deliver_approval_decision(membership, other_request, 1)
     assert_receive {:email, other_decision}
 
     assert String.ends_with?(other_decision.subject, other_request.id)
@@ -91,7 +93,7 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
       }
     }
 
-    UserNotifier.deliver_runbook_execution_approval_request(subject, request)
+    UserNotifier.deliver_runbook_execution_approval_request(membership, request)
     assert_receive {:email, initial}
 
     for {status, event_kind} <- [
@@ -102,7 +104,7 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
           {:approved, :overridden}
         ] do
       UserNotifier.deliver_approval_decision(
-        subject.actor,
+        membership,
         %{request | status: status},
         1,
         event_kind
@@ -125,8 +127,6 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
     second_membership =
       Fixtures.Memberships.create_membership(account_id: first_subject.account.id, role: "admin")
 
-    second_subject = Fixtures.Subjects.membership_subject(second_membership)
-
     request = %{
       id: Ecto.UUID.generate(),
       account: first_subject.account,
@@ -134,9 +134,9 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
       context: %{"action_id" => "linux.uptime"}
     }
 
-    UserNotifier.deliver_approval_decision(first_subject.actor, request, 1)
+    UserNotifier.deliver_approval_decision(first_membership, request, 1)
     assert_receive {:email, first}
-    UserNotifier.deliver_approval_decision(second_subject.actor, request, 1)
+    UserNotifier.deliver_approval_decision(second_membership, request, 1)
     assert_receive {:email, second}
 
     assert first.subject == second.subject

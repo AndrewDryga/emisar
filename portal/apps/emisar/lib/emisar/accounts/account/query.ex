@@ -57,8 +57,8 @@ defmodule Emisar.Accounts.Account.Query do
   @doc """
   Accounts whose Paddle Customer is missing or stale. The billing contact is
   stable while the stored user remains an active owner with a confirmed email;
-  when that owner is removed, suspended, demoted, deleted, or changes email, the
-  next customer-sync sweep reselects/updates Paddle.
+  when that owner is removed, suspended, demoted, deleted, or the workspace
+  contact changes, the next customer-sync sweep reselects/updates Paddle.
   """
   def needing_paddle_customer_sync(queryable) do
     queryable
@@ -77,9 +77,8 @@ defmodule Emisar.Accounts.Account.Query do
         is_nil(m.id) or
         m.updated_at > a.paddle_customer_synced_at or
         is_nil(u.id) or
-        is_nil(u.email) or
-        is_nil(u.confirmed_at) or
-        u.updated_at > a.paddle_customer_synced_at
+        is_nil(m.contact_email) or
+        is_nil(u.confirmed_at)
     )
   end
 

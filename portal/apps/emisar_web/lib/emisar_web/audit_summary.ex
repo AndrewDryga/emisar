@@ -189,6 +189,14 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("user.email_changed", p),
     do: recorded_change(p, :from, :to, "Email", &display_setting/1)
 
+  defp summarize("membership.profile_updated", p) do
+    case fetch(p, :display_name) do
+      {:ok, name} when name in [nil, ""] -> [{"Name", "Removed"}]
+      {:ok, name} -> pairs(name: name)
+      :error -> []
+    end
+  end
+
   defp summarize(type, p)
        when type in ["user.profile_updated", "user.updated_by_admin", "user.renamed_via_scim"] do
     case fetch(p, :full_name) do

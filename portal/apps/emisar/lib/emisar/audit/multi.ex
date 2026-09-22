@@ -17,7 +17,7 @@ defmodule Emisar.Audit.Multi do
 
   @doc """
   Adds an audit step that logs an event for a `%Users.User{}`, looking up
-  the user's primary membership to derive `account_id` — the same
+  the user's active memberships to derive each `account_id` — the same
   shape as `Audit.log_for_user/3` but transactional.
 
   `user` may be `nil` when the user is only known mid-transaction (an

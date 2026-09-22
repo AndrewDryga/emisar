@@ -76,7 +76,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
       limit,
       false,
       &list_recipients(account, &1, &2),
-      fn membership, found? -> found? or not Mail.suppressed?(membership.user.email) end
+      fn membership, found? -> found? or not Mail.suppressed?(membership.contact_email) end
     )
   end
 
@@ -91,7 +91,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
         Jobs.Sweep.each_row(
           limit,
           &list_recipients(claimed_account, &1, &2),
-          &send_report(&1.user, claimed_account, report)
+          &send_report(&1, claimed_account, report)
         )
 
       {:error, reason} when reason in [:already_reported, :report_opted_out] ->

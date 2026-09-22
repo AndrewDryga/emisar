@@ -145,9 +145,7 @@ defmodule Emisar.Runs do
 
   # The membership is the account-local naming authority, so it only names
   # anyone once it is provably THIS run's, in THIS account, for THIS person.
-  # An absent (or mismatched) membership degrades to the email, which still
-  # identifies the accountable human without exposing the cross-account
-  # `users.full_name` or a directory name another workspace owns.
+  # An absent or mismatched membership cannot disclose personal profile facts.
   defp accountable_name(_run, _user, :unknown), do: nil
 
   defp accountable_name(
@@ -157,13 +155,13 @@ defmodule Emisar.Runs do
        ) do
     if membership.id == run.initiating_membership_id and
          membership.account_id == run.account_id and membership.user_id == user.id do
-      Accounts.member_display_name(membership, user)
+      Accounts.member_display_name(membership)
     else
-      user.email
+      nil
     end
   end
 
-  defp accountable_name(_run, %Users.User{} = user, nil), do: user.email
+  defp accountable_name(_run, %Users.User{}, nil), do: nil
 
   defp run_via(%ActionRun{source: :mcp, api_key: %ApiKeys.ApiKey{name: name}})
        when is_binary(name) and name != "",

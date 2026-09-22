@@ -700,7 +700,7 @@ defmodule EmisarWeb.AgentsLive do
           owners,
           subject.actor.id,
           0,
-          {subject.actor.id, subject.actor.email || "You"}
+          {subject.actor.id, "You"}
         )
       else
         owners
@@ -721,7 +721,7 @@ defmodule EmisarWeb.AgentsLive do
 
     case ApiKeys.list_api_keys_for_account(
            socket.assigns.current_subject,
-           Keyword.put(opts, :preload, [:created_by, :replaces])
+           Keyword.put(opts, :preload, [:created_by_membership, :replaces])
          ) do
       {:ok, keys, meta} ->
         # One `now` for the whole page, so every row's activity, expiry and
@@ -843,8 +843,13 @@ defmodule EmisarWeb.AgentsLive do
   # The issuing human — the grouping key for the list, carrying the membership
   # id so the header's bulk revoke can act on the group. Falls back to "Auto"
   # for system-minted keys with no creator.
-  defp owner_group({%{created_by: %{} = user} = key, _facts}),
-    do: {Accounts.user_display_name(user), key.created_by_membership_id}
+  defp owner_group({%{created_by_membership: %Accounts.Membership{} = member} = key, _facts}) do
+    fallback = if member.deleted_at, do: "Former member", else: "Account member"
+    {Accounts.member_display_name(member) || fallback, key.created_by_membership_id}
+  end
+
+  defp owner_group({%{created_by_membership_id: id}, _facts}) when is_binary(id),
+    do: {"Former member", id}
 
   defp owner_group({_key, _facts}), do: {"Auto-minted", nil}
 

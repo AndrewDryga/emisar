@@ -852,7 +852,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="truncate text-sm text-zinc-200">
-                {Accounts.member_display_name(member.membership, member.identity.user)}
+                {Accounts.member_display_name(member.membership)}
               </span>
               <.chip :if={member.membership && member.membership.user_id == @current_user_id}>
                 You
@@ -874,7 +874,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
             </div>
             <%!-- Keep the email and last-seen time readable at narrow widths. --%>
             <div class="mt-0.5 text-xs text-zinc-400">
-              <span :if={email = Accounts.secondary_user_email(member.identity.user)}>{email}</span>
+              <span :if={email = Accounts.secondary_member_email(member.membership)}>{email}</span>
               <span :if={member.identity.last_seen_at}>
                 · last seen
                 <.local_time
@@ -992,7 +992,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
                   tone={:amber}
                   title={
                     RoleCopy.change_title(
-                      Accounts.member_display_name(member.membership, member.identity.user),
+                      Accounts.member_display_name(member.membership),
                       role
                     )
                   }

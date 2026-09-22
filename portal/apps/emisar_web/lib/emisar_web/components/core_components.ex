@@ -1771,7 +1771,7 @@ defmodule EmisarWeb.CoreComponents do
   account switcher rows). A selected workspace keeps that square identity and
   changes to the `:brand` tone instead of changing silhouette.
 
-      <.avatar name={Accounts.user_display_name(@current_user)} size={:sm} />
+      <.avatar name={Accounts.member_display_name(@current_membership)} size={:sm} />
       <.avatar name={account.name} shape={:square} size={:xs} />
       <.avatar name={account.name} shape={:square} size={:xs} tone={:brand} />
   """
@@ -2253,7 +2253,7 @@ defmodule EmisarWeb.CoreComponents do
       <.meta_line class="text-[11px]">
         <:seg mono>{key.key_prefix}…</:seg>
         <:seg>last used{" "}<.local_time id={"key-used-\#{key.id}"} value={key.last_used_at} mode={:relative} /></:seg>
-        <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
+        <:seg :if={key.created_by_label}>by {key.created_by_label}</:seg>
       </.meta_line>
   """
   attr :id, :string, default: nil
@@ -3711,14 +3711,14 @@ defmodule EmisarWeb.CoreComponents do
         id={"remove-#{m.id}"}
         title="Remove from team"
         confirm_label="Remove member"
-        confirm_token={m.user.email}
+        confirm_token={m.contact_email || m.id}
         typed={@typed}
         on_confirm={
           JS.push("remove", value: %{membership_id: m.id}) |> hide_confirm_dialog("remove-#{m.id}")
         }
       >
         <:body>
-          Permanently removes <span class="font-medium text-zinc-200">{m.user.email}</span>;
+          Permanently removes <span class="font-medium text-zinc-200">{Accounts.member_display_name(m)}</span>;
           they lose access immediately and need a fresh invite to return.
         </:body>
       </.confirm_dialog>

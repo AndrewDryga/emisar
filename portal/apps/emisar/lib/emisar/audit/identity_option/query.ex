@@ -200,10 +200,9 @@ defmodule Emisar.Audit.IdentityOption.Query do
       id: u.id,
       label:
         fragment(
-          "COALESCE(NULLIF(BTRIM(?), ''), NULLIF(BTRIM(?), ''), ?::text)",
-          m.directory_display_name,
-          u.full_name,
-          u.email
+          "COALESCE(NULLIF(BTRIM(?), ''), ?::text)",
+          m.display_name,
+          m.contact_email
         )
     })
     |> wrap_labels()

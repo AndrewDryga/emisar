@@ -3808,6 +3808,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
     account_attrs = Fixtures.Accounts.account_attrs(%{name: "Acme & Co. (Ops)"})
     {:ok, account} = Accounts.create_account_with_owner(account_attrs, user)
     subject = Fixtures.Subjects.subject_for(user, account)
+    user |> Ecto.Changeset.change(email: "private-billing@example.test") |> Repo.update!()
 
     assert {:ok, "ctm_captured_01", _account} = Billing.ensure_paddle_customer(account, subject)
 
@@ -3815,6 +3816,23 @@ defmodule Emisar.BillingCheckoutArgsTest do
     assert paddle_attrs.email == "billing-owner@example.test"
     assert paddle_attrs.name == "Acme & Co. (Ops)"
     assert paddle_attrs.account_id == account.id
+  end
+
+  test "a personal edit does not dirty or retarget the workspace billing contact" do
+    {user, account, _subject} = Fixtures.Subjects.owner_subject()
+
+    {:ok, account} =
+      Accounts.put_account_paddle_customer_sync(account, "ctm_existing_private", user.id)
+
+    user
+    |> Ecto.Changeset.change(email: "private-after-sync@example.test", full_name: "Private Name")
+    |> Repo.update!()
+
+    refute Enum.any?(Accounts.list_paddle_customer_sync_accounts(), &(&1.id == account.id))
+    assert {:ok, "ctm_existing_private", _} = Billing.sync_paddle_customer_for_account(account.id)
+    assert_received {:update_customer, attrs}
+    assert attrs.email == user.email
+    refute attrs.email == "private-after-sync@example.test"
   end
 
   test "update_customer switches to a new active owner when the prior contact is demoted" do

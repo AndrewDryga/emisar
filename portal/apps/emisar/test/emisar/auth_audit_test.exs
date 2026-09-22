@@ -452,10 +452,11 @@ defmodule Emisar.AuthAuditTest do
       {:ok, _} = Users.update_user_profile(%{full_name: "New Name"}, subject)
 
       assert [event] = events_of(account, "user.profile_updated")
-      assert event.payload["full_name"] == "New Name"
+      assert event.payload == %{}
+      assert event.target_label == "Test User"
     end
 
-    test "confirm_email_change success audits with from/to addresses", %{
+    test "a completed email change audits the security event without personal addresses", %{
       user: user,
       account: account,
       subject: subject
@@ -481,8 +482,8 @@ defmodule Emisar.AuthAuditTest do
                )
 
       assert [event] = events_of(account, "user.email_changed")
-      assert event.payload["from"] == user.email
-      assert event.payload["to"] == new
+      assert event.payload == %{}
+      assert event.target_label == "Test User"
     end
   end
 

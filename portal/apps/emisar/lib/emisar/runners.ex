@@ -2242,10 +2242,10 @@ defmodule Emisar.Runners do
   end
 
   # Rendering concerns are the caller's: pass `preload:` only for the
-  # associations the page actually shows. Unknown atoms raise (caller bug).
+  # projections the page actually shows. Unknown atoms raise (caller bug).
   defp apply_enrollment_key_preloads(queryable, preloads) do
     Enum.reduce(preloads, queryable, fn
-      :created_by, queryable -> EnrollmentKey.Query.with_preloaded_created_by(queryable)
+      :created_by_label, queryable -> EnrollmentKey.Query.with_created_by_label(queryable)
     end)
   end
 

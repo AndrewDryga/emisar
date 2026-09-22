@@ -1,6 +1,6 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
-  alias Emisar.{ApiKeys, Auth, SSO, Users}
+  alias Emisar.{Accounts, ApiKeys, Auth, SSO, Users}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MfaEnrollment}
   alias EmisarWeb.{MfaErrors, OIDCStepUp, UserAgent}
   alias Phoenix.LiveView.JS
@@ -28,6 +28,11 @@ defmodule EmisarWeb.ProfileLive do
        Auth.Subject.ensure_personal_user(socket.assigns.current_subject) == :ok
      )
      |> assign(:profile_editing?, false)
+     |> assign(:workspace_profile_editing?, false)
+     |> assign(:workspace_profile_editable?, false)
+     |> assign(:workspace_profile_error?, false)
+     |> assign(:workspace_profile_loaded?, false)
+     |> assign_workspace_profile_form(socket.assigns.current_membership)
      |> assign(:mfa_recovery_codes, nil)
      |> assign(:codes_saved?, false)
      |> assign(:mfa_start_error, nil)
@@ -64,10 +69,40 @@ defmodule EmisarWeb.ProfileLive do
   # empty result. Session pagination preserves its URL state.
   defp maybe_load_sessions(socket, params) do
     if connected?(socket) do
-      socket |> load_sessions(params) |> load_oidc_identities()
+      socket |> load_sessions(params) |> load_oidc_identities() |> load_workspace_profile()
     else
       assign(socket, :filter_params, params)
     end
+  end
+
+  defp load_workspace_profile(socket) do
+    socket = assign(socket, :workspace_profile_loaded?, true)
+
+    case Accounts.fetch_own_member_profile(socket.assigns.current_subject) do
+      {:ok, %{membership: member, editable?: editable?}} ->
+        socket =
+          socket
+          |> assign(:current_membership, member)
+          |> assign(:workspace_profile_editable?, editable?)
+          |> assign(:workspace_profile_error?, false)
+
+        if socket.assigns.workspace_profile_editing?,
+          do: socket,
+          else: assign_workspace_profile_form(socket, member)
+
+      {:error, _} ->
+        socket
+        |> assign(:workspace_profile_editable?, false)
+        |> assign(:workspace_profile_error?, true)
+    end
+  end
+
+  defp assign_workspace_profile_form(socket, member, attrs \\ %{}) do
+    assign(
+      socket,
+      :workspace_profile_form,
+      to_form(Accounts.change_member_profile(member, attrs), as: "workspace_profile")
+    )
   end
 
   defp load_oidc_identities(socket) do
@@ -217,6 +252,61 @@ defmodule EmisarWeb.ProfileLive do
          socket
          |> assign(:profile_form, to_form(changeset, as: "profile"))
          |> put_flash(:error, "Couldn't update your name. Try again.")}
+    end
+  end
+
+  def handle_event("edit_workspace_profile", _params, socket) do
+    socket = load_workspace_profile(socket)
+
+    cond do
+      socket.assigns.workspace_profile_error? ->
+        {:noreply, socket}
+
+      socket.assigns.workspace_profile_editable? ->
+        {:noreply, assign(socket, :workspace_profile_editing?, true)}
+
+      true ->
+        {:noreply,
+         put_flash(socket, :error, "Your workspace name is managed by your identity provider.")}
+    end
+  end
+
+  def handle_event("cancel_workspace_profile", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:workspace_profile_editing?, false)
+     |> assign_workspace_profile_form(socket.assigns.current_membership)}
+  end
+
+  def handle_event("validate_workspace_profile", %{"workspace_profile" => attrs} = event, socket) do
+    changeset =
+      socket.assigns.current_membership
+      |> Accounts.change_member_profile(attrs)
+      |> LiveForm.on_change(event)
+
+    {:noreply,
+     assign(socket, :workspace_profile_form, to_form(changeset, as: "workspace_profile"))}
+  end
+
+  def handle_event("save_workspace_profile", %{"workspace_profile" => attrs}, socket) do
+    case Accounts.update_own_member_profile(attrs, socket.assigns.current_subject) do
+      {:ok, member} ->
+        {:noreply,
+         socket
+         |> assign(:current_membership, member)
+         |> assign(:workspace_profile_editing?, false)
+         |> assign_workspace_profile_form(member)
+         |> put_flash(:info, "Workspace name updated.")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         assign(socket, :workspace_profile_form, to_form(changeset, as: "workspace_profile"))}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign_workspace_profile_form(socket.assigns.current_membership, attrs)
+         |> put_flash(:error, EmisarWeb.MemberErrors.message(reason))}
     end
   end
 
@@ -1077,7 +1167,7 @@ defmodule EmisarWeb.ProfileLive do
       <:title>Profile</:title>
 
       <.page_intro>
-        Your identity and sign-in security — the same across every workspace you belong to.
+        Your profile in this workspace, personal sign-in, and security settings.
         <.doc_link href="/security">Security overview</.doc_link>
       </.page_intro>
 
@@ -1085,6 +1175,69 @@ defmodule EmisarWeb.ProfileLive do
         id="profile-layout"
         class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
       >
+        <.section_with_note id="workspace-details">
+          <:header>
+            <.section_header title="Workspace profile">
+              <:subtitle>
+                How you appear in {@current_account.name}. Other workspaces are unchanged.
+              </:subtitle>
+            </.section_header>
+          </:header>
+          <p :if={@workspace_profile_error?} role="alert" class="mb-4 text-sm text-rose-300">
+            Couldn't load your workspace profile. Refresh to try again.
+          </p>
+          <.simple_form
+            :if={@workspace_profile_editing?}
+            for={@workspace_profile_form}
+            id="workspace-profile-form"
+            phx-change="validate_workspace_profile"
+            phx-submit="save_workspace_profile"
+          >
+            <.input
+              field={@workspace_profile_form[:display_name]}
+              type="text"
+              label="Workspace display name"
+              autocomplete="name"
+              maxlength="255"
+            />
+            <:actions>
+              <.button type="submit" phx-disable-with="Saving…">Save name</.button>
+              <.button type="button" variant={:secondary} phx-click="cancel_workspace_profile">Cancel</.button>
+            </:actions>
+          </.simple_form>
+          <dl :if={not @workspace_profile_editing?} class="divide-y divide-zinc-800/70">
+            <div class="pb-4">
+              <dt class="mb-1 text-sm text-zinc-400">Display name</dt>
+              <dd class="flex items-center justify-between gap-4">
+                <span class="min-w-0 break-words text-base text-zinc-100">{@current_membership.display_name ||
+                  "No display name"}</span>
+                <.button
+                  :if={@workspace_profile_editable?}
+                  id="change-workspace-name"
+                  variant={:secondary}
+                  size={:sm}
+                  phx-click="edit_workspace_profile"
+                >Change name</.button>
+              </dd>
+              <p
+                :if={
+                  @workspace_profile_loaded? and not @workspace_profile_editable? and
+                    not @workspace_profile_error?
+                }
+                class="mt-2 text-xs text-zinc-400"
+              >
+                Your identity provider manages this name.
+              </p>
+            </div>
+            <div class="pt-4">
+              <dt class="mb-1 text-sm text-zinc-400">Workspace contact</dt>
+              <dd class="break-words text-base text-zinc-100">
+                {@current_membership.contact_email || "No contact address"}
+              </dd>
+            </div>
+          </dl>
+        </.section_with_note>
+
         <.section_with_note id="personal-details">
           <:header>
             <.section_header title="Personal details" />
@@ -1098,7 +1251,7 @@ defmodule EmisarWeb.ProfileLive do
             Use a personal email-link sign-in in a workspace that allows it.
             These controls are unavailable in SSO-only workspaces.
           </p>
-          <dl class="divide-y divide-zinc-800/70">
+          <dl :if={@personal_sign_in?} class="divide-y divide-zinc-800/70">
             <div id="display-name" class="pb-4">
               <dt class="mb-1 text-sm text-zinc-400">Display name</dt>
               <dd>
@@ -1110,7 +1263,6 @@ defmodule EmisarWeb.ProfileLive do
                     {@current_user.full_name || "No display name"}
                   </p>
                   <.button
-                    :if={@personal_sign_in?}
                     id="change-name"
                     variant={:secondary}
                     size={:sm}
@@ -1179,7 +1331,6 @@ defmodule EmisarWeb.ProfileLive do
                         </p>
                       </div>
                       <.button
-                        :if={@personal_sign_in?}
                         id="change-email"
                         variant={:secondary}
                         size={:sm}

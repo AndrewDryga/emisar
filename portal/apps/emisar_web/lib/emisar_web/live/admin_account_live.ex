@@ -144,9 +144,9 @@ defmodule EmisarWeb.AdminAccountLive do
                      stays reachable rather than ending in an ellipsis. --%>
                 <span
                   class="truncate text-sm font-medium text-zinc-100"
-                  title={membership.user.email}
+                  title={membership.contact_email}
                 >
-                  {membership.user.email}
+                  {membership.contact_email || "No contact address"}
                 </span>
               </:title>
               <:chips>
@@ -158,7 +158,7 @@ defmodule EmisarWeb.AdminAccountLive do
                 </.chip>
                 <.chip :if={membership.disabled_at}>Suspended</.chip>
               </:chips>
-              <:meta :if={membership.user.full_name}>{membership.user.full_name}</:meta>
+              <:meta :if={membership.display_name}>{membership.display_name}</:meta>
             </.list_row>
           </ul>
         </div>

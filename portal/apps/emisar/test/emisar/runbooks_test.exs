@@ -1077,7 +1077,7 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.execution_who_via(result.execution) == {"Test User", "execution client"}
     end
 
-    test "a gone membership degrades the key owner to their email" do
+    test "a removed membership keeps its exact historical local profile" do
       fixture = mcp_execution_fixture()
       owner_user = fixture.owner.actor
       admin = membership_subject(fixture.account, "admin")
@@ -1089,7 +1089,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, result} = Runbooks.fetch_execution_result(fixture.execution_id, admin)
 
       assert Runbooks.execution_who_via(result.execution) ==
-               {owner_user.email, "execution client"}
+               {"Test User", "execution client"}
     end
 
     test "missing actor rows degrade honestly" do
@@ -1151,7 +1151,7 @@ defmodule Emisar.RunbooksTest do
       )
 
       assert {:ok, [execution]} = Runbooks.list_recent_executions(owner)
-      assert Runbooks.execution_who_via(execution) == {user.email, nil}
+      assert Runbooks.execution_who_via(execution) == {nil, nil}
     end
   end
 

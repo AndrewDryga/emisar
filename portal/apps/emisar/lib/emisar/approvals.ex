@@ -1331,6 +1331,7 @@ defmodule Emisar.Approvals do
       request,
       fn ->
         Emisar.Mailers.UserNotifier.deliver_approval_request(
+          membership,
           subject,
           request,
           run,
@@ -1341,14 +1342,12 @@ defmodule Emisar.Approvals do
   end
 
   defp deliver_approval_email(membership, request, :runbook_execution, :requested) do
-    subject = Subject.for_user(membership.user, request.account, membership)
-
     deliver_approval_email_result(
       membership,
       request,
       fn ->
         Emisar.Mailers.UserNotifier.deliver_runbook_execution_approval_request(
-          subject,
+          membership,
           request,
           approval_actor_label(request.account_id, request.requested_by_id)
         )
@@ -1357,12 +1356,10 @@ defmodule Emisar.Approvals do
   end
 
   defp deliver_approval_email(membership, request, _target, event) when is_map(event) do
-    subject = Subject.for_user(membership.user, request.account, membership)
-
     deliver_approval_email_result(
       membership,
       request,
-      fn -> Emisar.Mailers.UserNotifier.deliver_approval_event(subject, request, event) end
+      fn -> Emisar.Mailers.UserNotifier.deliver_approval_event(membership, request, event) end
     )
   end
 
@@ -2421,10 +2418,8 @@ defmodule Emisar.Approvals do
   defp requester_event_kind(_changes), do: nil
 
   defp approval_actor_label(account_id, user_id) do
-    with {:ok, user} <- Users.fetch_user_by_id(user_id),
-         {:ok, membership} <- Accounts.fetch_active_membership_for_user(account_id, user_id) do
-      Accounts.member_display_name(membership, user)
-    else
+    case Accounts.fetch_active_membership_for_user(account_id, user_id) do
+      {:ok, membership} -> Accounts.member_display_name(membership) || "An approver"
       _ -> "An approver"
     end
   end
@@ -2451,15 +2446,16 @@ defmodule Emisar.Approvals do
 
   defp deliver_decision_email(%Request{} = request, approved_count, event_kind) do
     with {:ok, requester} <- Users.fetch_user_by_id(request.requested_by_id),
-         {:ok, _membership} <-
-           Accounts.fetch_active_membership_for_user(request.account_id, requester.id) do
+         {:ok, membership} <-
+           Accounts.fetch_active_membership_for_user(request.account_id, requester.id),
+         true <- is_binary(membership.contact_email) do
       # Preloaded here rather than at the call site: the email builds the
       # canonical slugged approval link, and a slug-less URL 404s.
       request = Repo.preload(request, :account)
       actor_label = requester_decision_actor_label(request)
 
       case Emisar.Mailers.UserNotifier.deliver_approval_decision(
-             requester,
+             membership,
              request,
              approved_count,
              event_kind,

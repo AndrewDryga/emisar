@@ -6,6 +6,36 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Runners
 
+  test "manual and install keys show only the creator's workspace profile", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    creator =
+      Fixtures.Users.create_user(full_name: "Private Person", email: "private@example.test")
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: creator.id,
+      role: "admin",
+      display_name: "Workspace Operator",
+      contact_email: "work@example.test"
+    )
+
+    Fixtures.Runners.create_enrollment_key(account_id: account.id, created_by_id: creator.id)
+    Fixtures.Runners.create_install_key(account_id: account.id, created_by_id: creator.id)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
+
+    assert length(
+             lv
+             |> element("#enrollment-keys")
+             |> render()
+             |> String.split("Workspace Operator")
+           ) == 3
+
+    refute html =~ "Private Person"
+    refute html =~ creator.email
+  end
+
   test "hides revoked keys by default; the All option shows them", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     subject = Fixtures.Subjects.subject_for(user, account, role: :owner)

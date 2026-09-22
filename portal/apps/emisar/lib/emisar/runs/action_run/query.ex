@@ -274,7 +274,7 @@ defmodule Emisar.Runs.ActionRun.Query do
         queryable,
         :left,
         [runs: r, api_key: api_key, api_key_created_by: created_by],
-        membership in ^Accounts.Membership.Query.not_deleted(),
+        membership in ^Accounts.Membership.Query.all(),
         on:
           membership.id == api_key.created_by_membership_id and
             membership.id == r.initiating_membership_id and
@@ -318,7 +318,7 @@ defmodule Emisar.Runs.ActionRun.Query do
         queryable,
         :left,
         [runs: r, requested_by: requested_by],
-        membership in ^Accounts.Membership.Query.not_deleted(),
+        membership in ^Accounts.Membership.Query.all(),
         on:
           membership.id == r.initiating_membership_id and
             membership.user_id == requested_by.id and membership.account_id == r.account_id,
@@ -507,7 +507,7 @@ defmodule Emisar.Runs.ActionRun.Query do
     |> join(
       :inner,
       [runs: r, requested_by: u],
-      membership in ^Accounts.Membership.Query.not_deleted(),
+      membership in ^Accounts.Membership.Query.all(),
       on: membership.user_id == u.id and membership.account_id == r.account_id,
       as: :requested_by_membership
     )
@@ -516,8 +516,8 @@ defmodule Emisar.Runs.ActionRun.Query do
       [requested_by: u, requested_by_membership: membership],
       {u.id,
        coalesce(
-         fragment("NULLIF(BTRIM(?), '')", membership.directory_display_name),
-         coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)
+         fragment("NULLIF(BTRIM(?), '')", membership.display_name),
+         membership.contact_email
        )}
     )
   end

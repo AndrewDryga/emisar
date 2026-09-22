@@ -309,22 +309,26 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert siem_card =~ "Revoked"
     end
 
-    # a key whose creating user has since been deleted still
-    # lists (left-join preload → created_by is nil), and the "by <email>" line is
-    # guarded (`:if={key.created_by}`) so the row renders without crashing.
-    test "a key whose creator was deleted renders without the 'by' line", %{
-      conn: conn,
-      account: account
-    } do
+    test "a key keeps its workspace creator label without disclosing the deleted personal profile",
+         %{
+           conn: conn,
+           account: account
+         } do
       # A second admin mints the export token, then their user row is soft-deleted
       # (we stay logged in as the original owner so the page still mounts).
-      other_admin = Fixtures.Users.create_user(email: "departing-admin@example.com")
+      other_admin =
+        Fixtures.Users.create_user(
+          email: "departing-admin@example.com",
+          full_name: "Private Admin"
+        )
 
       _ =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: other_admin.id,
-          role: "admin"
+          role: "admin",
+          display_name: "Workspace Administrator",
+          contact_email: "local-admin@example.test"
         )
 
       other_subject = Fixtures.Subjects.subject_for(other_admin, account, role: :admin)
@@ -332,8 +336,8 @@ defmodule EmisarWeb.AuditExportLiveTest do
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(%{name: "orphan-export", kind: :audit_export}, other_subject)
 
-      # Soft-delete the creator — created_by (a where: deleted_at: nil belongs_to)
-      # now resolves to nil on the preload.
+      # Historical attribution belongs to the exact workspace membership,
+      # independent of the personal profile's lifecycle.
       other_admin
       |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
       |> Emisar.Repo.update!()
@@ -341,9 +345,10 @@ defmodule EmisarWeb.AuditExportLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/export")
       siem_card = lv |> element("#siem-export") |> render()
 
-      # The key still lists; the guarded "by <email>" line is simply absent.
       assert siem_card =~ "orphan-export"
+      assert siem_card =~ "Workspace Administrator"
       refute siem_card =~ "departing-admin@example.com"
+      refute siem_card =~ "Private Admin"
     end
 
     test "a viewer cannot mint an export key", %{account: account} do

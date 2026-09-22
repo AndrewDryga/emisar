@@ -609,15 +609,15 @@ defmodule EmisarWeb.ShellComponents do
           aria-label="Open profile settings"
         >
           <.avatar
-            name={Accounts.member_display_name(@current_membership, @current_user)}
+            name={Accounts.member_display_name(@current_membership)}
             size={:sm}
           />
           <div class="min-w-0 flex-1">
             <div class="truncate font-medium">
-              {Accounts.member_display_name(@current_membership, @current_user)}
+              {Accounts.member_display_name(@current_membership)}
             </div>
             <div
-              :if={email = Accounts.secondary_user_email(@current_user)}
+              :if={email = Accounts.secondary_member_email(@current_membership)}
               class="truncate text-xs text-zinc-400"
             >
               {email}

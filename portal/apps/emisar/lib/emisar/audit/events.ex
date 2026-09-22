@@ -241,14 +241,14 @@ defmodule Emisar.Audit.Events do
   """
   def membership_erased_by_support(
         %Accounts.Membership{} = membership,
-        %Users.User{} = user
+        %Users.User{}
       ) do
     Audit.changeset(membership.account_id, "membership.erased",
       actor_kind: "staff",
       actor_label: @staff_actor_label,
       target_kind: "user",
       target_id: membership.user_id,
-      target_label: user.email,
+      target_label: Accounts.member_display_name(membership),
       payload: %{role: membership.role}
     )
   end
@@ -289,7 +289,7 @@ defmodule Emisar.Audit.Events do
   # their own membership in the account they switched INTO.
   def session_account_switched(
         %Subject{} = subject,
-        %Accounts.Membership{user: %Users.User{} = user} = membership
+        %Accounts.Membership{} = membership
       ) do
     Audit.changeset(
       membership.account_id,
@@ -298,7 +298,7 @@ defmodule Emisar.Audit.Events do
         [
           target_kind: "user",
           target_id: membership.user_id,
-          target_label: user.email,
+          target_label: Accounts.member_display_name(membership),
           payload: %{role: membership.role}
         ]
     )
@@ -332,20 +332,19 @@ defmodule Emisar.Audit.Events do
       ),
       do: user_event(subject, membership, user, "user.mfa_reset_by_admin")
 
-  def user_updated_by_admin(
+  def membership_profile_updated(
         %Subject{} = subject,
-        %Accounts.Membership{} = membership,
-        %Users.User{} = user
+        %Accounts.Membership{} = membership
       ) do
     Audit.changeset(
       membership.account_id,
-      "user.updated_by_admin",
+      "membership.profile_updated",
       actor(subject) ++
         [
           target_kind: "user",
-          target_id: user.id,
-          target_label: user.email,
-          payload: %{full_name: user.full_name}
+          target_id: membership.user_id,
+          target_label: Accounts.member_display_name(membership),
+          payload: %{display_name: membership.display_name}
         ]
     )
   end
@@ -371,7 +370,7 @@ defmodule Emisar.Audit.Events do
 
   def membership_invitation_resent(
         %Subject{} = subject,
-        %Accounts.Membership{user: %Users.User{} = user} = membership,
+        %Accounts.Membership{} = membership,
         %Accounts.RunnerAccess{} = access
       ) do
     Audit.changeset(
@@ -380,8 +379,8 @@ defmodule Emisar.Audit.Events do
       actor(subject) ++
         [
           target_kind: "user",
-          target_id: user.id,
-          target_label: user.email,
+          target_id: membership.user_id,
+          target_label: membership.invitation_sent_to,
           payload: %{role: membership.role, runner_access: runner_access_payload(access)}
         ]
     )
@@ -394,7 +393,7 @@ defmodule Emisar.Audit.Events do
       actor_id: user.id,
       target_kind: "user",
       target_id: user.id,
-      target_label: user.email,
+      target_label: Accounts.member_display_name(membership),
       payload: %{role: membership.role}
     )
   end
@@ -1678,12 +1677,15 @@ defmodule Emisar.Audit.Events do
   # -- SSO -------------------------------------------------------------
 
   @doc "A user JIT-provisioned by an SSO login. Actor is the system (the IdP via JIT), not a member."
-  def user_provisioned_via_sso(%Users.User{} = user, %SSO.IdentityProvider{} = provider) do
+  def user_provisioned_via_sso(
+        %Accounts.Membership{} = member,
+        %SSO.IdentityProvider{} = provider
+      ) do
     Audit.changeset(provider.account_id, "user.provisioned_via_sso",
       actor_kind: "system",
       target_kind: "user",
-      target_id: user.id,
-      target_label: user.email || user.full_name,
+      target_id: member.user_id,
+      target_label: Accounts.member_display_name(member),
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -1700,36 +1702,22 @@ defmodule Emisar.Audit.Events do
   # generic "system" (decision 7).
 
   @doc "A user provisioned by inbound SCIM. Actor is the directory-sync connection, not a member."
-  def user_provisioned_via_scim(%Users.User{} = user, %SSO.IdentityProvider{} = provider) do
+  def user_provisioned_via_scim(
+        %Accounts.Membership{} = member,
+        %SSO.IdentityProvider{} = provider
+      ) do
     Audit.changeset(provider.account_id, "user.provisioned_via_scim",
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
       target_kind: "user",
-      target_id: user.id,
-      target_label: user.email || user.full_name,
+      target_id: member.user_id,
+      target_label: Accounts.member_display_name(member),
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
         role: to_string(provider.default_role),
         runner_access: provider |> provider_runner_access() |> runner_access_payload()
-      }
-    )
-  end
-
-  @doc "A user's display name replaced by an inbound SCIM update (PUT / PATCH `displayName`)."
-  def user_renamed_via_scim(%Users.User{} = user, %SSO.IdentityProvider{} = provider) do
-    Audit.changeset(provider.account_id, "user.renamed_via_scim",
-      actor_kind: "directory_sync",
-      actor_id: provider.id,
-      actor_label: provider.name,
-      target_kind: "user",
-      target_id: user.id,
-      target_label: user.email || user.full_name,
-      payload: %{
-        provider_id: provider.id,
-        provider_kind: to_string(provider.kind),
-        full_name: user.full_name
       }
     )
   end
@@ -1750,7 +1738,7 @@ defmodule Emisar.Audit.Events do
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
-        from: membership.directory_display_name,
+        from: membership.display_name,
         to: display_name
       }
     )
@@ -1784,7 +1772,7 @@ defmodule Emisar.Audit.Events do
       actor_label: provider.name,
       target_kind: "user",
       target_id: membership.user_id,
-      target_label: membership.directory_display_name,
+      target_label: membership.display_name,
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -1807,7 +1795,7 @@ defmodule Emisar.Audit.Events do
       actor_label: provider.name,
       target_kind: "user",
       target_id: membership.user_id,
-      target_label: membership.directory_display_name,
+      target_label: membership.display_name,
       payload: %{
         provider_id: provider.id,
         provider_kind: to_string(provider.kind),
@@ -1828,7 +1816,7 @@ defmodule Emisar.Audit.Events do
       actor_label: provider.name,
       target_kind: "user",
       target_id: membership.user_id,
-      target_label: membership.directory_display_name,
+      target_label: membership.display_name,
       payload: %{provider_id: provider.id, provider_kind: to_string(provider.kind)}
     )
   end
@@ -2083,7 +2071,7 @@ defmodule Emisar.Audit.Events do
   @doc "An admin approved a pending manual SSO link request — the captured identity is now provisioned. Actor is the admin."
   def sso_link_request_approved(
         %Subject{} = subject,
-        %Users.User{} = user,
+        %Accounts.Membership{} = member,
         %SSO.IdentityProvider{} = provider
       ) do
     Audit.changeset(
@@ -2092,8 +2080,8 @@ defmodule Emisar.Audit.Events do
       actor(subject) ++
         [
           target_kind: "user",
-          target_id: user.id,
-          target_label: user.email || user.full_name,
+          target_id: member.user_id,
+          target_label: Accounts.member_display_name(member),
           payload: %{
             provider_id: provider.id,
             provider_kind: to_string(provider.kind),
@@ -2106,7 +2094,7 @@ defmodule Emisar.Audit.Events do
   @doc "An admin linked an IdP identity to an EXISTING emisar user (no new user created). Actor is the admin."
   def sso_existing_user_linked(
         %Subject{} = subject,
-        %Users.User{} = user,
+        %Accounts.Membership{} = member,
         %SSO.IdentityProvider{} = provider
       ) do
     Audit.changeset(
@@ -2115,8 +2103,8 @@ defmodule Emisar.Audit.Events do
       actor(subject) ++
         [
           target_kind: "user",
-          target_id: user.id,
-          target_label: user.email || user.full_name,
+          target_id: member.user_id,
+          target_label: Accounts.member_display_name(member),
           payload: %{
             provider_id: provider.id,
             provider_kind: to_string(provider.kind)
@@ -2128,28 +2116,28 @@ defmodule Emisar.Audit.Events do
   @doc "A user explicitly verified and linked their own identity on this provider."
   def sso_identity_linked(
         %Subject{} = subject,
-        %Users.User{} = user,
+        %Accounts.Membership{} = member,
         %SSO.IdentityProvider{} = provider
       ),
-      do: sso_self_identity_event(subject, user, provider, "sso.identity_linked")
+      do: sso_self_identity_event(subject, member, provider, "sso.identity_linked")
 
   @doc "A user removed their own verified identity from this provider."
   def sso_identity_unlinked(
         %Subject{} = subject,
-        %Users.User{} = user,
+        %Accounts.Membership{} = member,
         %SSO.IdentityProvider{} = provider
       ),
-      do: sso_self_identity_event(subject, user, provider, "sso.identity_unlinked")
+      do: sso_self_identity_event(subject, member, provider, "sso.identity_unlinked")
 
-  defp sso_self_identity_event(subject, user, provider, event_type) do
+  defp sso_self_identity_event(subject, member, provider, event_type) do
     Audit.changeset(
       provider.account_id,
       event_type,
       actor(subject) ++
         [
           target_kind: "user",
-          target_id: user.id,
-          target_label: user.email || user.full_name,
+          target_id: member.user_id,
+          target_label: Accounts.member_display_name(member),
           payload: %{provider_id: provider.id, provider_kind: to_string(provider.kind)}
         ]
     )
@@ -2379,7 +2367,12 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(
       membership.account_id,
       event_type,
-      actor(subject) ++ [target_kind: "user", target_id: user.id, target_label: user.email]
+      actor(subject) ++
+        [
+          target_kind: "user",
+          target_id: user.id,
+          target_label: Accounts.member_display_name(membership)
+        ]
     )
   end
 

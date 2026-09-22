@@ -161,8 +161,8 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   Audit owner-label lookup: `{key_id, owner label}` for `ids`, naming the
   accountable HUMAN behind an API-key/MCP actor the way `account_id` knows
   them. Joins the key's EXACT minting membership — another membership of the
-  same person never stands in — so the label follows that account's directory
-  name, then the user's own name, then their email. INNER joins throughout: a
+  same person never stands in — using only its workspace name or contact.
+  INNER joins throughout: a
   key whose minting membership is gone, suspended, or in another account (or
   whose user was deleted) resolves no row, and the trail degrades to the key
   name.
@@ -183,11 +183,11 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
       as: :owner
     )
     |> select(
-      [api_keys: k, owner_membership: m, owner: u],
+      [api_keys: k, owner_membership: m],
       {k.id,
        coalesce(
-         fragment("NULLIF(BTRIM(?), '')", m.directory_display_name),
-         coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)
+         fragment("NULLIF(BTRIM(?), '')", m.display_name),
+         m.contact_email
        )}
     )
   end
@@ -198,20 +198,20 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   """
   def with_preloaded_replaces(queryable), do: preload(queryable, :replaces)
 
-  @doc "Left-join + preload the key's (non-deleted) creating user, idempotently."
-  def with_preloaded_created_by(queryable) do
+  @doc "Load the exact account-local creator profile, including its historical tombstone."
+  def with_preloaded_created_by_membership(queryable) do
     queryable
-    |> with_named_binding(:created_by, fn queryable, binding ->
+    |> with_named_binding(:created_by_membership, fn queryable, binding ->
       join(
         queryable,
         :left,
         [api_keys: k],
-        created_by in ^Emisar.Users.User.Query.not_deleted(),
-        on: k.created_by_id == created_by.id,
+        member in Emisar.Accounts.Membership,
+        on: k.created_by_membership_id == member.id and k.account_id == member.account_id,
         as: ^binding
       )
     end)
-    |> preload([created_by: created_by], created_by: created_by)
+    |> preload([created_by_membership: member], created_by_membership: member)
   end
 
   # -- Pagination ------------------------------------------------------
@@ -261,14 +261,38 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
     ]
 
   @doc """
-  Distinct `{user_id, email}` options for the agents "Owner" filter — the users
-  who created a still-visible key in the account. Compose with `for_subject/2`.
+  One `{user_id, local_label}` option per creator of a still-visible key. Use
+  their most recent key-owning membership's label if they left and rejoined;
+  the filter groups keys by user, while individual rows retain exact attribution.
+  Compose with `for_subject/2`.
   """
   def owner_options(queryable \\ visible_to_operators()) do
     queryable
-    |> join(:inner, [api_keys: k], u in assoc(k, :created_by), as: :owner)
-    |> distinct(true)
-    |> select([owner: u], {u.id, u.email})
+    |> join(:inner, [api_keys: k], m in Emisar.Accounts.Membership,
+      on: m.id == k.created_by_membership_id and m.account_id == k.account_id,
+      as: :owner_membership
+    )
+    |> distinct([owner_membership: m], [m.account_id, m.user_id])
+    |> order_by([owner_membership: m],
+      asc: m.account_id,
+      asc: m.user_id,
+      desc: m.inserted_at,
+      desc: m.id
+    )
+    |> select(
+      [owner_membership: m],
+      {m.user_id,
+       coalesce(
+         fragment("NULLIF(BTRIM(?), '')", m.display_name),
+         coalesce(
+           m.contact_email,
+           fragment(
+             "CASE WHEN ? IS NULL THEN 'Account member' ELSE 'Former member' END",
+             m.deleted_at
+           )
+         )
+       )}
+    )
   end
 
   @doc """

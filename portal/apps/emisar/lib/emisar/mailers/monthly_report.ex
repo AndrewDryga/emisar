@@ -13,10 +13,10 @@ defmodule Emisar.Mailers.MonthlyReport do
   same product. A count of zero is news about nothing, so it stays muted rather
   than wearing an outcome color.
   """
+  alias Emisar.Accounts
   alias Emisar.Mailers.HTML
   alias Emisar.Mailers.Style
   alias Emisar.PublicUrl
-  alias Emisar.Users
 
   @ground Style.ground()
   @surface Style.surface()
@@ -41,9 +41,9 @@ defmodule Emisar.Mailers.MonthlyReport do
   `unsubscribe_url` is minted by the caller, which needs the same URL for the
   `List-Unsubscribe` header.
   """
-  def render(%Users.User{} = recipient, account, report, unsubscribe_url) do
+  def render(%Accounts.Membership{} = recipient, account, report, unsubscribe_url) do
     content = %{
-      recipient: recipient.full_name || recipient.email,
+      recipient: Accounts.member_display_name(recipient),
       account_name: account.name,
       period: Calendar.strftime(report.period_start, "%B %Y"),
       dashboard_url: PublicUrl.url("/app/#{account.slug}"),

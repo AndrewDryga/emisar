@@ -284,7 +284,6 @@ defmodule Emisar.AccountsTest do
       )
 
       user_id = user.id
-      user_email = user.email
       co_owned_id = co_owned.id
 
       assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
@@ -297,7 +296,7 @@ defmodule Emisar.AccountsTest do
       assert event.actor_kind == "staff"
       assert event.target_kind == "user"
       assert event.target_id == user_id
-      assert event.target_label == user_email
+      assert event.target_label == user.full_name
       assert event.payload["role"] == "operator"
     end
 
@@ -2586,7 +2585,6 @@ defmodule Emisar.AccountsTest do
 
     test "only managers receive an account-local suspension author label", %{
       account: account,
-      owner: owner,
       owner_membership: owner_membership,
       subject: subject
     } do
@@ -2599,7 +2597,7 @@ defmodule Emisar.AccountsTest do
       manager_fact = Enum.find(manager_facts, &(&1.membership.id == target.id))
 
       assert manager_fact.suspended_by_label ==
-               Accounts.member_display_name(owner_membership, owner)
+               Accounts.member_display_name(owner_membership)
 
       assert is_nil(manager_fact.membership.disabled_by_id)
 
@@ -3060,19 +3058,19 @@ defmodule Emisar.AccountsTest do
       %{account: account, provider: provider}
     end
 
-    test "records the name and reports whether this is the person's only workspace", %{
+    test "records only the local name regardless of the person's other workspaces", %{
       account: account,
       provider: provider
     } do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Dir Name")
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
-      assert {:ok, updated, true} =
+      assert {:ok, updated} =
                Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name",
                  audit: audit
                )
 
-      assert updated.directory_display_name == "Dir Name"
+      assert updated.display_name == "Dir Name"
 
       other = Fixtures.Accounts.create_account()
 
@@ -3082,9 +3080,9 @@ defmodule Emisar.AccountsTest do
         role: "viewer"
       )
 
-      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Another Name")
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
-      assert {:ok, _updated, false} =
+      assert {:ok, _updated} =
                Accounts.sync_member_display_name(account.id, member.user_id, "Another Name",
                  audit: audit
                )
@@ -3095,9 +3093,9 @@ defmodule Emisar.AccountsTest do
       provider: provider
     } do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Dir Name")
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
-      assert {:ok, _updated, true} =
+      assert {:ok, _updated} =
                Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name",
                  audit: audit
                )
@@ -3107,7 +3105,7 @@ defmodule Emisar.AccountsTest do
       assert event.actor_kind == "directory_sync"
       assert event.actor_id == provider.id
       assert event.target_id == member.user_id
-      assert event.payload["from"] == nil
+      assert event.payload["from"] == member.display_name
       assert event.payload["to"] == "Dir Name"
     end
 
@@ -3116,14 +3114,14 @@ defmodule Emisar.AccountsTest do
       provider: provider
     } do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Dir Name")
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
-      {:ok, _updated, true} =
+      {:ok, _updated} =
         Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name", audit: audit)
 
       Repo.delete_all(Emisar.Audit.Event)
 
-      assert {:ok, _updated, true} =
+      assert {:ok, _updated} =
                Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name",
                  audit: audit
                )
@@ -3133,34 +3131,45 @@ defmodule Emisar.AccountsTest do
 
     test "an unknown member is not found", %{account: account, provider: provider} do
       stranger = Fixtures.Users.create_user()
-      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, "Nobody")
+      audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
       assert Accounts.sync_member_display_name(account.id, stranger.id, "Nobody", audit: audit) ==
                {:error, :not_found}
     end
   end
 
-  describe "member_display_name/2" do
-    test "the directory-synced membership name wins over the user's own" do
-      user = %User{full_name: "Global Name", email: "person@example.com"}
-      membership = %Membership{directory_display_name: "Directory Name"}
-
-      assert Accounts.member_display_name(membership, user) == "Directory Name"
+  describe "member_display_name/1" do
+    test "uses the workspace name" do
+      membership = %Membership{display_name: "Directory Name"}
+      assert Accounts.member_display_name(membership) == "Directory Name"
     end
 
-    test "a current member without a directory name uses their own full name" do
-      user = %User{full_name: "Own Name", email: "person@example.com"}
-
-      assert Accounts.member_display_name(%Membership{}, user) == "Own Name"
-      assert Accounts.member_display_name(nil, user) == "person@example.com"
+    test "an unknown or unpopulated profile has no personal fallback" do
+      assert Accounts.member_display_name(%Membership{}) == nil
+      assert Accounts.member_display_name(nil) == nil
     end
 
-    test "a blank or absent full name falls back to the email" do
-      blank = %User{full_name: "  ", email: "blank@example.com"}
-      unnamed = %User{full_name: nil, email: "unnamed@example.com"}
+    test "a blank or absent name falls back to the local contact" do
+      blank = %Membership{display_name: "  ", contact_email: "blank@example.com"}
+      unnamed = %Membership{contact_email: "unnamed@example.com"}
 
-      assert Accounts.member_display_name(nil, blank) == "blank@example.com"
-      assert Accounts.member_display_name(nil, unnamed) == "unnamed@example.com"
+      assert Accounts.member_display_name(blank) == "blank@example.com"
+      assert Accounts.member_display_name(unnamed) == "unnamed@example.com"
+    end
+  end
+
+  describe "secondary_member_email/1" do
+    test "shows the local contact only when it differs from the name" do
+      assert Accounts.secondary_member_email(%Membership{
+               display_name: "Work Name",
+               contact_email: "work@example.test"
+             }) == "work@example.test"
+
+      assert Accounts.secondary_member_email(%Membership{contact_email: "work@example.test"}) ==
+               nil
+
+      assert Accounts.secondary_member_email(%Membership{display_name: "No Email"}) == nil
+      assert Accounts.secondary_member_email(nil) == nil
     end
   end
 
@@ -4169,7 +4178,7 @@ defmodule Emisar.AccountsTest do
       assert event.actor_id == user.id
       assert event.target_kind == "user"
       assert event.target_id == user.id
-      assert event.target_label == user.email
+      assert event.target_label == Accounts.member_display_name(switched)
       assert event.payload["role"] == "operator"
       assert event.ip_address == "203.0.113.7"
       assert event.auth_method == "magic_link"
@@ -5737,10 +5746,7 @@ defmodule Emisar.AccountsTest do
       refute Membership.disabled?(reinstated)
     end
 
-    test "the directory's name goes with the directory" do
-      # Left set, this account kept calling the person whatever the IdP called
-      # them — forever, since their own profile name can never take over a
-      # directory name — so a rename after the disable was permanent.
+    test "returning to manual control preserves the workspace's existing profile" do
       account = Fixtures.Accounts.create_account()
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
@@ -5749,7 +5755,7 @@ defmodule Emisar.AccountsTest do
 
       Accounts.clear_directory_managed_for_users(account.id, provider.id, [member.user_id])
 
-      refute Repo.reload!(member).directory_display_name
+      assert Repo.reload!(member).display_name == "Directory Name"
     end
 
     test "clears the flag only for the named members, leaving other synced members" do
@@ -6423,7 +6429,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "update_user_as_admin/3" do
+  describe "update_member_profile_as_admin/3" do
     test "a directory-synced member's profile is refused — the IdP owns the name" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
@@ -6460,7 +6466,11 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
-      assert Accounts.update_user_as_admin(membership, %{"full_name" => "Renamed"}, subject) ==
+      assert Accounts.update_member_profile_as_admin(
+               membership,
+               %{"display_name" => "Renamed"},
+               subject
+             ) ==
                {:error, :directory_managed_profile}
 
       assert Repo.reload!(target).full_name == "Synced Name"
@@ -6487,10 +6497,10 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
-      assert {:ok, %User{full_name: "Renamed By Admin"}} =
-               Accounts.update_user_as_admin(
+      assert {:ok, %Membership{display_name: "Renamed By Admin"}} =
+               Accounts.update_member_profile_as_admin(
                  membership,
-                 %{"full_name" => "Renamed By Admin"},
+                 %{"display_name" => "Renamed By Admin"},
                  subject
                )
     end
@@ -6523,7 +6533,11 @@ defmodule Emisar.AccountsTest do
 
       subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
 
-      assert Accounts.update_user_as_admin(membership, %{"full_name" => "x"}, subject) ==
+      assert Accounts.update_member_profile_as_admin(
+               membership,
+               %{"display_name" => "x"},
+               subject
+             ) ==
                {:error, :unauthorized}
     end
 
@@ -6549,7 +6563,11 @@ defmodule Emisar.AccountsTest do
 
       # This path passes :unauthorized to ensure_subject_in_account (the team
       # UI already scoped the membership), so cross-account is :unauthorized.
-      assert Accounts.update_user_as_admin(membership, %{"full_name" => "x"}, subject_b) ==
+      assert Accounts.update_member_profile_as_admin(
+               membership,
+               %{"display_name" => "x"},
+               subject_b
+             ) ==
                {:error, :unauthorized}
     end
 
@@ -6579,7 +6597,7 @@ defmodule Emisar.AccountsTest do
       # that matters is the one on the LOCKED read.
       forged = %{foreign_membership | account_id: account.id}
 
-      assert Accounts.update_user_as_admin(forged, %{"full_name" => "x"}, subject) ==
+      assert Accounts.update_member_profile_as_admin(forged, %{"display_name" => "x"}, subject) ==
                {:error, :not_found}
 
       assert Repo.reload!(foreign_user).full_name == "Untouched"
@@ -7642,7 +7660,7 @@ defmodule Emisar.AccountsTest do
                Accounts.fetch_paddle_customer_sync_target(account.id)
 
       assert account_id == account.id
-      assert selected.id == owner.id
+      assert selected.user_id == owner.id
     end
 
     test "keeps the stored billing contact while they remain an active owner" do
@@ -7666,7 +7684,7 @@ defmodule Emisar.AccountsTest do
         Accounts.put_account_paddle_customer_sync(account, "ctm_stable", billing_owner.id)
 
       assert {:ok, %{owner: selected}} = Accounts.fetch_paddle_customer_sync_target(account.id)
-      assert selected.id == billing_owner.id
+      assert selected.user_id == billing_owner.id
     end
 
     test "falls back when the stored billing contact is no longer an owner" do
@@ -7693,7 +7711,7 @@ defmodule Emisar.AccountsTest do
       Fixtures.Memberships.force_role(billing_membership, "admin")
 
       assert {:ok, %{owner: selected}} = Accounts.fetch_paddle_customer_sync_target(account.id)
-      assert selected.id == fallback_owner.id
+      assert selected.user_id == fallback_owner.id
     end
 
     test "skips unconfirmed owners and refuses an account with no billable owner email" do

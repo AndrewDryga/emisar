@@ -280,7 +280,7 @@ defmodule Emisar.RunsTest do
         requested_by: %{requester | memberships: [other_membership]}
       }
 
-      assert Runs.run_who_via(foreign_run) == {requester.email, nil}
+      assert Runs.run_who_via(foreign_run) == {nil, nil}
     end
 
     test "names an MCP key owner, then degrades deleted attribution safely" do
@@ -318,7 +318,7 @@ defmodule Emisar.RunsTest do
       _membership = Fixtures.Memberships.mark_membership_as_deleted(membership)
 
       assert {:ok, [former], _metadata} = Runs.list_runs(subject, preload: [:attribution])
-      assert Runs.run_who_via(former) == {key_owner.email, "Claude Code"}
+      assert Runs.run_who_via(former) == {"Local Key Owner", "Claude Code"}
 
       _user = Fixtures.Users.mark_user_as_deleted(key_owner)
 

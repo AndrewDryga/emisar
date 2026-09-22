@@ -833,16 +833,17 @@ defmodule Emisar.InvitationTest do
       %{membership: membership, token: token}
     end
 
-    test "sets the user's full_name, confirms, clears the token", %{
+    test "sets the workspace name, confirms the address and clears the token", %{
       membership: membership,
       token: token
     } do
-      attrs = %{"full_name" => "Carol"}
+      attrs = %{"display_name" => "Carol"}
 
       assert {:ok, %{user: user, membership: accepted_membership}} =
                Accounts.accept_invitation(membership, token, attrs)
 
-      assert user.full_name == "Carol"
+      assert is_nil(user.full_name)
+      assert accepted_membership.display_name == "Carol"
       # Accepting the invite proves email ownership — the user is confirmed and
       # signs in by magic link (no password is set).
       assert user.confirmed_at
@@ -857,7 +858,7 @@ defmodule Emisar.InvitationTest do
       assert {:ok, %{user: user}} =
                Accounts.accept_invitation(membership, token, %{
                  "email" => "attacker@example.test",
-                 "full_name" => "Carol"
+                 "display_name" => "Carol"
                })
 
       assert user.email == "carol@example.test"
@@ -869,15 +870,16 @@ defmodule Emisar.InvitationTest do
       token: token
     } do
       assert {:ok, %{user: user}} =
-               Accounts.accept_invitation(membership, token, %{"full_name" => "Carol"})
+               Accounts.accept_invitation(membership, token, %{"display_name" => "Carol"})
 
       # A second link holder submits after the token is burnt: judged on
       # the locked fresh row, it must fail — and crucially must NOT have
-      # overwritten the winner's full_name.
-      assert Accounts.accept_invitation(membership, token, %{"full_name" => "Mallory"}) ==
+      # overwritten the winner's workspace name.
+      assert Accounts.accept_invitation(membership, token, %{"display_name" => "Mallory"}) ==
                {:error, :not_found}
 
-      assert {:ok, %{full_name: "Carol"}} = Emisar.Users.fetch_user_by_id(user.id)
+      assert Repo.reload!(membership).display_name == "Carol"
+      assert is_nil(Repo.reload!(user).full_name)
     end
 
     test "the first acceptor wins — a second accept on the burnt token is :not_found" do
@@ -893,13 +895,13 @@ defmodule Emisar.InvitationTest do
           subject
         )
 
-      first_attrs = %{"full_name" => "First"}
+      first_attrs = %{"display_name" => "First"}
 
       assert {:ok, _} = Accounts.accept_invitation(membership, token, first_attrs)
 
       # The locked re-judge of the (now non-pending) invitation refuses the
       # second submit before it could overwrite the winner's display name.
-      second_attrs = %{"full_name" => "Second"}
+      second_attrs = %{"display_name" => "Second"}
 
       assert Accounts.accept_invitation(membership, token, second_attrs) ==
                {:error, :not_found}
@@ -926,7 +928,7 @@ defmodule Emisar.InvitationTest do
                  subject
                )
 
-      late_attrs = %{"full_name" => "Late Member"}
+      late_attrs = %{"display_name" => "Late Member"}
 
       assert Accounts.accept_invitation(membership, token, late_attrs) ==
                {:error, :not_found}
@@ -976,15 +978,16 @@ defmodule Emisar.InvitationTest do
 
       assert {:error, %Ecto.Changeset{}} =
                Accounts.accept_invitation(pending, token, %{
-                 "full_name" => String.duplicate("x", 256)
+                 "display_name" => String.duplicate("x", 256)
                })
 
       assert is_nil(Repo.reload!(key).revoked_at)
       assert Repo.reload!(grant).status == :approved
       assert Membership.invitation_pending?(Repo.reload!(pending))
+      assert is_nil(Repo.reload!(user).confirmed_at)
 
       assert {:ok, %{membership: accepted}} =
-               Accounts.accept_invitation(pending, token, %{"full_name" => "Accepted Member"})
+               Accounts.accept_invitation(pending, token, %{"display_name" => "Accepted Member"})
 
       assert Membership.authorizable?(accepted)
       assert Repo.reload!(key).revoked_at
@@ -994,7 +997,7 @@ defmodule Emisar.InvitationTest do
   end
 
   describe "invitation address and rotation binding" do
-    test "an old-address link fails until an owner resends to the current address" do
+    test "an old-address link fails and recovery requires an explicit invitation to the intended address" do
       account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)
       original_email = "old-inbox-#{System.unique_integer([:positive])}@example.test"
@@ -1013,7 +1016,7 @@ defmodule Emisar.InvitationTest do
 
       assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
 
-      assert Accounts.accept_invitation(membership, old_token, %{"full_name" => "Wrong Proof"}) ==
+      assert Accounts.accept_invitation(membership, old_token, %{"display_name" => "Wrong Proof"}) ==
                {:error, :not_found}
 
       # Returning to the same address does not resurrect the old-inbox proof:
@@ -1029,21 +1032,32 @@ defmodule Emisar.InvitationTest do
       |> Emisar.Users.User.Changeset.email(%{email: current_email})
       |> Repo.update!()
 
-      assert {:ok, %{membership: refreshed, invitation_token: current_token}} =
+      assert {:error, :stale_invitation_contact} =
                Accounts.resend_account_invitation(membership, subject)
 
+      assert Repo.reload!(membership).contact_email == original_email
+      assert {:ok, _removed} = Accounts.delete_membership(membership, subject)
+
+      assert {:ok, %{membership: refreshed, invitation_token: current_token}} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: current_email, role: "operator"),
+                 subject
+               )
+
       assert refreshed.invitation_sent_to == current_email
+      refute refreshed.id == membership.id
       refute current_token == old_token
       assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
 
-      assert {:ok, %{user: accepted}} =
+      assert {:ok, %{user: accepted, membership: accepted_member}} =
                Accounts.accept_invitation(refreshed, current_token, %{
-                 "full_name" => "Inbox Owner"
+                 "display_name" => "Inbox Owner"
                })
 
       assert accepted.email == current_email
       assert accepted.confirmed_at
-      assert accepted.full_name == "Inbox Owner"
+      assert is_nil(accepted.full_name)
+      assert accepted_member.display_name == "Inbox Owner"
     end
 
     test "a rotated token defeats a holder who mounted the old token" do
@@ -1069,7 +1083,7 @@ defmodule Emisar.InvitationTest do
       assert accepted.invitation_accepted_at
     end
 
-    test "a historical invitation without a sent address fails closed until resend" do
+    test "a historical invitation without a sent address refuses implicit retargeting" do
       account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)
 
@@ -1089,11 +1103,10 @@ defmodule Emisar.InvitationTest do
 
       assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
 
-      assert {:ok, %{membership: refreshed, invitation_token: new_token}} =
+      assert {:error, :stale_invitation_contact} =
                Accounts.resend_account_invitation(membership, subject)
 
-      assert is_binary(refreshed.invitation_sent_to)
-      assert {:ok, _membership} = Accounts.fetch_invitation_by_token(new_token)
+      assert Repo.reload!(membership) == membership
     end
 
     test "a forged stale account id cannot bypass the real account lock" do
@@ -1119,7 +1132,7 @@ defmodule Emisar.InvitationTest do
 
       forged = %{membership | account_id: other_account.id}
 
-      assert Accounts.accept_invitation(forged, token, %{"full_name" => "Forged"}) ==
+      assert Accounts.accept_invitation(forged, token, %{"display_name" => "Forged"}) ==
                {:error, :not_found}
 
       reloaded = Repo.reload!(membership)

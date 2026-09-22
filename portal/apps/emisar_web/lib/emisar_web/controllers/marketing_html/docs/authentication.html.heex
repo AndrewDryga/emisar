@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="authentication"
-      updated="September 17, 2026"
+      updated="September 22, 2026"
       toc={[
         {"sign-in", "Choose a sign-in method"},
         {"enforcement", "Enforce account sign-in"},
@@ -48,8 +48,9 @@
               <td class="px-4 py-3">
                 emisar redirects the member to your identity provider to sign in, and matches
                 the returning identity by the provider's stable subject, never by email. The
-                session it starts opens this account only; a member of other accounts opens
-                those by signing in with their email.
+                session may also open another workspace connected to the same trusted provider
+                when that workspace independently recognizes the identity and its sign-in
+                rules allow access. Other workspaces may require a separate sign-in.
               </td>
               <td class="px-4 py-3">
                 Your identity provider owns authentication and its MFA policy.
@@ -242,9 +243,10 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Members manage their own sessions from Profile — it lists each active session with
-            device information. They can sign out one session or every session except the
-            current one after confirming. An administrator can suspend a membership, which ends its sessions and
+            After a personal email-link sign-in, Profile lists your active sessions with
+            device information. You can sign out one session or every session except the
+            current one after confirming. These global controls are unavailable to SSO
+            sessions and in SSO-only workspaces. An administrator can suspend a membership, which ends its sessions and
             revokes API keys minted from it.
           </span>
         </li>

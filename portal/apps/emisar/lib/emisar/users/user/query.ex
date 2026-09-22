@@ -49,8 +49,8 @@ defmodule Emisar.Users.User.Query do
       [users: u, memberships: m],
       {u.id,
        coalesce(
-         fragment("NULLIF(BTRIM(?), '')", m.directory_display_name),
-         coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)
+         fragment("NULLIF(BTRIM(?), '')", m.display_name),
+         m.contact_email
        )}
     )
   end

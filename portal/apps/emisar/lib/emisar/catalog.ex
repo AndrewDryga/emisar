@@ -3079,7 +3079,7 @@ defmodule Emisar.Catalog do
       whole_by_id =
         PackVersion.Query.all()
         |> PackVersion.Query.by_ids(decision_ids)
-        |> PackVersion.Query.with_preloaded_retirement_overridden_by()
+        |> PackVersion.Query.with_retirement_override_label()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
         |> Map.new(&{&1.id, &1})
@@ -3164,12 +3164,12 @@ defmodule Emisar.Catalog do
   end
 
   # Rendering concern: the Packs page passes `preload:
-  # [:retirement_overridden_by]` only where it renders the retirement-override
+  # [:retirement_override_label]` only where it renders the retirement-override
   # note; a counting caller omits it and pays for no join. Unknown atoms raise.
   defp apply_pack_version_preloads(queryable, preloads) do
     Enum.reduce(preloads, queryable, fn
-      :retirement_overridden_by, queryable ->
-        PackVersion.Query.with_preloaded_retirement_overridden_by(queryable)
+      :retirement_override_label, queryable ->
+        PackVersion.Query.with_retirement_override_label(queryable)
     end)
   end
 

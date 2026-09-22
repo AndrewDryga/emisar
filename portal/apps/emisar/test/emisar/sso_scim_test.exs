@@ -202,7 +202,8 @@ defmodule Emisar.SSOSCIMTest do
                SSO.scim_patch_user(provider, identity.id, operations)
 
       assert membership.disabled_at
-      assert Repo.reload!(user).full_name == "Final Name"
+      assert Repo.reload!(user).full_name == "Old Name"
+      assert membership.display_name == "Final Name"
       assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
     end
 
@@ -218,7 +219,11 @@ defmodule Emisar.SSOSCIMTest do
 
       assert {:ok, _result} = SSO.scim_patch_user(provider, identity.id, operations)
 
-      assert Repo.reload!(user).full_name == "Pathless Name"
+      assert Repo.reload!(user).full_name == "Old Name"
+
+      assert Fixtures.Memberships.fetch_membership(account.id, user.id).display_name ==
+               "Pathless Name"
+
       assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
     end
 
@@ -232,7 +237,10 @@ defmodule Emisar.SSOSCIMTest do
       ]
 
       assert {:ok, _result} = SSO.scim_patch_user(provider, identity.id, operations)
-      assert Repo.reload!(user).full_name == "Whole Name"
+      assert Repo.reload!(user).full_name == "Old Name"
+
+      assert Fixtures.Memberships.fetch_membership(provider.account_id, user.id).display_name ==
+               "Whole Name"
     end
 
     test "a component-only rename keeps the half the batch does not name", %{provider: provider} do
@@ -241,7 +249,10 @@ defmodule Emisar.SSOSCIMTest do
       operations = [%{"op" => "Add", "path" => "name.givenName", "value" => "Augusta"}]
 
       assert {:ok, _result} = SSO.scim_patch_user(provider, identity.id, operations)
-      assert Repo.reload!(user).full_name == "Augusta Lovelace"
+      assert Repo.reload!(user).full_name == "Ada Lovelace"
+
+      assert Fixtures.Memberships.fetch_membership(provider.account_id, user.id).display_name ==
+               "Augusta Lovelace"
     end
 
     test "a batch past the operation cap is refused before any of it is applied", %{

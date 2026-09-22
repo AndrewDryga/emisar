@@ -69,6 +69,42 @@ defmodule Emisar.AdminTest do
       assert found.id == account.id
     end
 
+    test "uses the workspace contact and never follows a private personal address", %{
+      staff_user: staff_user
+    } do
+      member = Fixtures.Memberships.create_membership(contact_email: "work-search@example.test")
+      user = Emisar.Repo.get!(Emisar.Users.User, member.user_id)
+      user |> Ecto.Changeset.change(email: "private-search@example.test") |> Emisar.Repo.update!()
+      assert {:ok, [found]} = Admin.search_accounts("work-search@example.test", staff_user)
+      assert found.id == member.account_id
+      assert {:ok, []} = Admin.search_accounts("private-search@example.test", staff_user)
+    end
+
+    test "a mutating support command rejects ambiguous workspace contacts" do
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+
+      first =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          contact_email: "shared-contact@example.test"
+        )
+
+      second =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          contact_email: "shared-contact@example.test"
+        )
+
+      assert {:error, :ambiguous_member_use_membership_id} =
+               Admin.execute("emisar.admin.member.suspend", [
+                 "account=#{account.id}",
+                 "member=shared-contact@example.test"
+               ])
+
+      assert Emisar.Repo.reload!(first).disabled_at == nil
+      assert Emisar.Repo.reload!(second).disabled_at == nil
+    end
+
     test "matches a typed LIKE wildcard literally", %{staff_user: staff_user} do
       account = Fixtures.Accounts.create_account(name: "Acme_One")
       Fixtures.Accounts.create_account(name: "AcmeXOne")

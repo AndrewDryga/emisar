@@ -4,10 +4,11 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="teams-and-access"
-      updated="September 16, 2026"
+      updated="September 22, 2026"
       toc={[
         {"roles", "Roles"},
         {"inviting", "Inviting your team"},
+        {"profiles", "Workspace and personal profiles"},
         {"runner-scopes", "Per-member scope: runners and packs"},
         {"mfa", "MFA"},
         {"sessions", "Sessions & credentials"}
@@ -93,6 +94,12 @@
         the account's sign-in requirements still apply. Only an owner can grant the owner role
         or manage another owner. Admins can invite and manage members up to admin.
       </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        An invitation stays bound to the address it was sent to. Resending replaces its old
+        link; it does not follow a later change to the person's sign-in email. If emisar says
+        the invitation's contact is stale, remove that pending invitation and send a new one
+        to the address you intend to invite.
+      </p>
 
       <.docs_screenshot
         src="/images/screenshots/team-invite.webp"
@@ -101,6 +108,20 @@
         alt="The invite form: an email field, then the role choices — owner, admin, billing manager, operator (selected), viewer — each with a one-line description of what it can do, then an Access section offering no runners (selected), all runners, or selected runners, and a Send invite button."
         preview_h="max-h-[32rem]"
       />
+
+      <.docs_h2 id="profiles">Workspace and personal profiles</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Each workspace keeps its own display name and contact address for a member. These
+        identify the person in the team, activity and audit views, and receive workspace
+        notifications. Changing a personal name or sign-in email does not change those
+        workspace details.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Edit your workspace name from Profile, or a teammate's name from Team if your role
+        allows it. Directory-managed names are read-only here; update them in the identity
+        provider. Personal name, sign-in email and global session controls require a personal
+        email-link sign-in in a workspace that allows it. An SSO session does not unlock them.
+      </p>
 
       <.docs_h2 id="runner-scopes">Per-member scope: runners and packs</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

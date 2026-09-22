@@ -344,7 +344,7 @@ defmodule Emisar.DirectoryRelationshipsTest do
       refute Enum.any?(page ++ rest, &(&1.user_id == removed.user.id))
     end
 
-    test "directory member search stops exposing global profile names after membership removal" do
+    test "directory member search retains local history without exposing personal edits after removal" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
@@ -357,11 +357,22 @@ defmodule Emisar.DirectoryRelationshipsTest do
       assert named.user_id == member.user.id
       Fixtures.Memberships.mark_membership_as_deleted(member.membership)
 
+      member.user
+      |> Ecto.Changeset.change(email: "private-after@example.test")
+      |> Repo.update!()
+
       assert {:ok, [], _} =
                SSO.list_synced_users(provider, owner, filter: [search: "Private profile name"])
 
-      assert {:ok, [], _} =
+      assert {:ok, [historical], _} =
                SSO.list_synced_users(provider, owner, filter: [search: "Workspace name"])
+
+      assert historical.user_id == member.user.id
+
+      assert {:ok, [], _} =
+               SSO.list_synced_users(provider, owner,
+                 filter: [search: "private-after@example.test"]
+               )
 
       assert {:ok, [retained], _} =
                SSO.list_synced_users(provider, owner, filter: [search: member.user.email])

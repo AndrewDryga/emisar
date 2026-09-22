@@ -39,6 +39,23 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
   end
 
   describe "execute/1" do
+    test "personal changes do not redirect workspace reports or change their greeting" do
+      %{account: account, owner: owner} =
+        active_account(owner_name: "Workspace Owner", owner_email: "work@example.test")
+
+      owner
+      |> Ecto.Changeset.change(email: "private@example.test", full_name: "Private Name")
+      |> Repo.update!()
+
+      assert MonthlyReports.execute([]) == :ok
+      assert_received {:email, email}
+      assert email.to == [{"", "work@example.test"}]
+      assert email.text_body =~ "Workspace Owner"
+      refute email.text_body =~ "Private Name"
+      refute email.text_body =~ "private@example.test"
+      assert Repo.reload!(account).last_report_sent_at
+    end
+
     test "emails the owner the prior month's summary and stamps the account" do
       %{account: account, owner: owner} = active_account(runs: 3)
 

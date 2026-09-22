@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="scim"
-      updated="September 7, 2026"
+      updated="September 22, 2026"
       toc={[
         {"enable", "Enabling directory sync"},
         {"protocol", "SCIM protocol reference"},
@@ -277,6 +277,9 @@
           <span>
             Collection filters support <code>userName eq "..."</code>
             and <code>externalId eq "..."</code>. Unsupported filters return <code>invalidFilter</code>.
+            Names, contact addresses and <code>userName</code>
+            filters use this workspace's
+            directory profile, not the person's private profile in emisar.
             Collections use one-based <code>startIndex</code>/<code>count</code>
             pagination, return at most 100 resources per page, and report the full matching count
             in <code>totalResults</code>.
@@ -293,7 +296,8 @@
             requires <code>active</code>
             in one of those boolean forms and can update the name.
             Email and <code>externalId</code>
-            stay fixed after provisioning.
+            stay fixed after provisioning. Name updates affect this workspace only; a change
+            to the person's personal sign-in email does not update the directory contact.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

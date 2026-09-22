@@ -564,7 +564,13 @@ defmodule Emisar.Admin do
         do: Query.membership_by_id(account_id, ref),
         else: Query.membership_by_email(account_id, String.trim(ref))
 
-    Repo.fetch(queryable, Accounts.Membership.Query)
+    queryable = Accounts.Membership.Query.limit_to(queryable, 2)
+
+    case Repo.all(queryable) do
+      [membership] -> {:ok, membership}
+      [] -> {:error, :not_found}
+      _multiple -> {:error, :ambiguous_member_use_membership_id}
+    end
   end
 
   # Platform support work has no user credential at this RPC boundary. The
@@ -593,17 +599,12 @@ defmodule Emisar.Admin do
     %{
       id: membership.id,
       user_id: membership.user_id,
-      # `&&` alone does not guard this: an unloaded association is a truthy
-      # %Ecto.Association.NotLoaded{}, so reading .email off it raises.
-      email: member_email(membership.user),
+      email: membership.contact_email,
       role: membership.role,
       disabled: not is_nil(membership.disabled_at),
       invitation_pending: Accounts.membership_invitation_pending?(membership)
     }
   end
-
-  defp member_email(%Users.User{email: email}), do: email
-  defp member_email(_), do: nil
 
   defp inviter, do: %{full_name: "Emisar Support", email: "support@emisar.dev"}
 

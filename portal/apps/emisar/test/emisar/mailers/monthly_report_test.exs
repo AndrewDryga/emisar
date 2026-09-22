@@ -1,8 +1,8 @@
 defmodule Emisar.Mailers.MonthlyReportTest do
   use ExUnit.Case, async: true
+  alias Emisar.Accounts
   alias Emisar.Mailers.MonthlyReport
   alias Emisar.Mailers.Style
-  alias Emisar.Users
 
   defp report(overrides \\ %{}) do
     Map.merge(
@@ -35,7 +35,11 @@ defmodule Emisar.Mailers.MonthlyReportTest do
   end
 
   defp render(overrides \\ %{}) do
-    recipient = %Users.User{full_name: "Olivia Owner", email: "olivia@example.com"}
+    recipient = %Accounts.Membership{
+      display_name: "Olivia Owner",
+      contact_email: "olivia@example.com"
+    }
+
     account = %{name: "Fleet Ops", slug: "fleet-ops"}
 
     MonthlyReport.render(
@@ -74,7 +78,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
     end
 
     test "greets the recipient by email when they have no name" do
-      recipient = %Users.User{full_name: nil, email: "nameless@example.com"}
+      recipient = %Accounts.Membership{display_name: nil, contact_email: "nameless@example.com"}
       account = %{name: "Fleet Ops", slug: "fleet-ops"}
 
       rendered = MonthlyReport.render(recipient, account, report(), "https://emisar.dev/u")
@@ -198,7 +202,11 @@ defmodule Emisar.Mailers.MonthlyReportTest do
     end
 
     test "escapes account and recipient names in the HTML body" do
-      recipient = %Users.User{full_name: ~s(Olivia "<script>" Owner), email: "olivia@example.com"}
+      recipient = %Accounts.Membership{
+        display_name: ~s(Olivia "<script>" Owner),
+        contact_email: "olivia@example.com"
+      }
+
       account = %{name: "<script>alert(1)</script>", slug: "fleet-ops"}
 
       rendered = MonthlyReport.render(recipient, account, report(), "https://emisar.dev/u")

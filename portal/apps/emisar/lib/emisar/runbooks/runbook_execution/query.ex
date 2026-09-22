@@ -94,7 +94,7 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
         queryable,
         :left,
         [runbook_executions: r, requested_by: requested_by, api_key_created_by: created_by],
-        membership in ^Accounts.Membership.Query.not_deleted(),
+        membership in ^Accounts.Membership.Query.all(),
         on:
           membership.id == r.initiating_membership_id and
             membership.account_id == r.account_id and

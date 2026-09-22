@@ -228,27 +228,25 @@ defmodule Emisar.SSO.UserIdentity.Query do
   # The SCIM `GET /Users?filter=userName eq "x"` existence probe, matched in
   # the QUERY so it finds a user anywhere in the directory — not just the page
   # the IdP happened to fetch. The coalesce chain mirrors the rendered handle in
-  # `SCIM.Resource.user_name/2` exactly — user email, then the `preferred_username`
+  # SCIM's resource projection exactly — local contact, then `preferred_username`
   # / `nickname` claims, then the identifiers. Any step the renderer can pick and
   # this cannot is a `userName` we hand back and then fail to find.
   def by_user_name(queryable, user_name) do
     queryable
-    |> with_joined_user()
+    |> with_joined_membership_profile()
     |> where(
-      [identities: i, user: u],
+      [identities: i, profile_membership: m],
       fragment(
         """
         lower(coalesce(
           nullif(?, ''),
-          nullif(?->>'email', ''),
           nullif(?->>'preferred_username', ''),
           nullif(?->>'nickname', ''),
           ?,
           ?
         )) = lower(?)
         """,
-        u.email,
-        i.claims,
+        m.contact_email,
         i.claims,
         i.claims,
         i.scim_external_id,
@@ -256,6 +254,19 @@ defmodule Emisar.SSO.UserIdentity.Query do
         ^user_name
       )
     )
+  end
+
+  def with_joined_membership_profile(queryable) do
+    with_named_binding(queryable, :profile_membership, fn queryable, binding ->
+      join(
+        queryable,
+        :left,
+        [identities: i],
+        m in subquery(Emisar.Accounts.Membership.Query.latest_profiles()),
+        on: m.account_id == i.account_id and m.user_id == i.user_id,
+        as: ^binding
+      )
+    end)
   end
 
   # The SCIM `filter=externalId eq "x"` probe — the rendered externalId is
@@ -294,24 +305,15 @@ defmodule Emisar.SSO.UserIdentity.Query do
         title: "Name or email",
         type: :string,
         fun: fn queryable, term ->
-          queryable =
-            queryable
-            |> with_joined_user()
-            |> join(:left, [identities: identity], member in Emisar.Accounts.Membership,
-              as: :search_membership,
-              on:
-                member.account_id == identity.account_id and member.user_id == identity.user_id and
-                  is_nil(member.deleted_at)
-            )
+          queryable = with_joined_membership_profile(queryable)
 
           pattern = Like.contains(term)
 
           {queryable,
            dynamic(
-             [user: user, search_membership: member],
-             ilike(member.directory_display_name, ^pattern) or
-               (not is_nil(member.id) and ilike(user.full_name, ^pattern)) or
-               ilike(user.email, ^pattern)
+             [profile_membership: member],
+             ilike(member.display_name, ^pattern) or
+               ilike(member.contact_email, ^pattern)
            )}
         end
       }

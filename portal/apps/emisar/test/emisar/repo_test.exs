@@ -49,28 +49,24 @@ defmodule Emisar.RepoTest do
       # Composing an audited fetch_and_update into an outer Multi stays legal: the
       # audit row commits or rolls back with the mutation. Its BROADCAST used to
       # fire as soon as the nested call returned, so subscribers were told about a
-      # `user.renamed_via_scim` that the outer rollback then erased — an audit
+      # rename that the outer rollback then erased — an audit
       # trail announcing something that never happened.
-      account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user(full_name: "Original Name")
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      subject = %{subject | auth_method: :magic_link}
 
       :ok = Audit.subscribe_account_audit(account.id)
 
       multi =
         Multi.new()
         |> Multi.run(:rename, fn _repo, _changes ->
-          Users.sync_user_full_name(user.id, "Directory Name",
-            audit: &Audit.Events.user_renamed_via_scim(&1, provider)
-          )
+          Users.update_user_profile(%{full_name: "New Name"}, subject)
         end)
         |> Multi.run(:fail, fn _repo, _changes -> {:error, :forced_rollback} end)
 
       assert Repo.commit_multi(multi) == {:error, :forced_rollback}
 
       # The write rolled back...
-      assert {:ok, %{full_name: "Original Name"}} = Users.fetch_user_by_id(user.id)
+      assert Repo.reload!(user).full_name == user.full_name
       # ...and nothing was announced about it.
       refute_receive {:audit_event, _event}, 200
     end

@@ -1470,7 +1470,7 @@ defmodule Emisar.Billing do
   defp sync_paddle_customer(%Accounts.Account{paddle_customer_id: nil} = account, owner) do
     with {:ok, customer_id} <- create_or_adopt_paddle_customer(account, owner),
          {:ok, linked} <-
-           Accounts.put_account_paddle_customer_sync(account, customer_id, owner.id) do
+           Accounts.put_account_paddle_customer_sync(account, customer_id, owner.user_id) do
       sync_linked_paddle_customer(linked, customer_id, owner)
     end
   end
@@ -1482,7 +1482,7 @@ defmodule Emisar.Billing do
        when is_binary(customer_id) do
     with {:ok, _customer} <- update_paddle_customer(account, owner),
          {:ok, synced} <-
-           Accounts.put_account_paddle_customer_sync(account, customer_id, owner.id) do
+           Accounts.put_account_paddle_customer_sync(account, customer_id, owner.user_id) do
       {:ok, synced.paddle_customer_id, synced}
     end
   end
@@ -1510,7 +1510,7 @@ defmodule Emisar.Billing do
   # conflicts again, forever. Adopt the customer already holding the address.
   defp adopt_conflicting_paddle_customer({:error, {:http, 409, body}} = conflict, owner) do
     case paddle_error_code(body) do
-      "customer_already_exists" -> fetch_paddle_customer_id_by_email(owner.email)
+      "customer_already_exists" -> fetch_paddle_customer_id_by_email(owner.contact_email)
       _other_conflict -> conflict
     end
   end
@@ -1535,7 +1535,7 @@ defmodule Emisar.Billing do
              Accounts.put_account_paddle_customer_sync(
                account,
                account.paddle_customer_id,
-               owner.id
+               owner.user_id
              ) do
         {:ok, synced.paddle_customer_id, synced}
       end
@@ -1551,7 +1551,7 @@ defmodule Emisar.Billing do
   end
 
   defp customer_attrs(%Accounts.Account{} = account, owner) do
-    %{email: owner.email, name: account.name, account_id: account.id}
+    %{email: owner.contact_email, name: account.name, account_id: account.id}
   end
 
   defp normalize_paddle_customer_sync_opts(opts) when is_list(opts) do

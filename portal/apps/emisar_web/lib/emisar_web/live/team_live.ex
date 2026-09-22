@@ -148,8 +148,8 @@ defmodule EmisarWeb.TeamLive do
       nil ->
         {:noreply, socket}
 
-      %Accounts.Membership{user: user} when not is_nil(user) ->
-        params = %{"full_name" => user.full_name || ""}
+      %Accounts.Membership{} = membership ->
+        params = %{"display_name" => membership.display_name || ""}
 
         # One inline editor at a time — the naked editors would otherwise
         # stack into one unreadable run under the same row.
@@ -157,7 +157,7 @@ defmodule EmisarWeb.TeamLive do
          socket
          |> close_scope_edit()
          |> assign(:editing_id, id)
-         |> assign(:edit_form, to_form(params, as: "user"))}
+         |> assign(:edit_form, to_form(params, as: "member"))}
     end
   end
 
@@ -500,15 +500,19 @@ defmodule EmisarWeb.TeamLive do
 
   # Keeps @edit_form current with what's typed, so a rejected save re-renders the
   # operator's text instead of reverting to the stored name.
-  def handle_event("validate_edit", %{"user" => params}, socket) do
-    {:noreply, assign(socket, :edit_form, to_form(params, as: "user"))}
+  def handle_event("validate_edit", %{"member" => params}, socket) do
+    {:noreply, assign(socket, :edit_form, to_form(params, as: "member"))}
   end
 
-  def handle_event("save_edit", %{"membership_id" => id, "user" => params}, socket) do
-    socket = assign(socket, :edit_form, to_form(params, as: "user"))
+  def handle_event("save_edit", %{"membership_id" => id, "member" => params}, socket) do
+    socket = assign(socket, :edit_form, to_form(params, as: "member"))
 
     with_membership(socket, id, fn membership ->
-      case Accounts.update_user_as_admin(membership, params, socket.assigns.current_subject) do
+      case Accounts.update_member_profile_as_admin(
+             membership,
+             params,
+             socket.assigns.current_subject
+           ) do
         {:ok, _user} -> {:ok, "Member updated."}
         {:error, reason} -> {:error, MemberErrors.message(reason)}
       end
@@ -835,7 +839,6 @@ defmodule EmisarWeb.TeamLive do
       <.loading_state :if={@loading?} />
 
       <div :if={not @loading? and @mfa_reset_target}>
-        <% target = @mfa_reset_target.user %>
         <.status_note
           icon="state.warning"
           tone={:amber}
@@ -843,7 +846,7 @@ defmodule EmisarWeb.TeamLive do
           primary
         >
           <span class="font-medium text-zinc-200">
-            {Accounts.user_display_name(target) || target.email || "this member"}
+            {Accounts.member_display_name(@mfa_reset_target) || "this member"}
           </span>'s authenticator and recovery codes will be removed, and all their sessions ended.
           Confirm they requested this reset before continuing.
         </.status_note>
@@ -1301,7 +1304,7 @@ defmodule EmisarWeb.TeamLive do
   defp member_action_label(%{action: "remove"}), do: "Remove member"
 
   defp member_action_confirm_token(%{action: "remove", facts: %{membership: membership}}),
-    do: (membership.user && membership.user.email) || membership.id
+    do: membership.contact_email || membership.id
 
   defp member_action_confirm_token(_pending), do: nil
 
@@ -1419,7 +1422,7 @@ defmodule EmisarWeb.TeamLive do
            socket.assigns.current_user,
            socket.assigns.current_subject
          ) do
-      {:ok, %{membership: membership, user: user, delivery: delivery}} ->
+      {:ok, %{membership: membership, delivery: delivery}} ->
         access = Accounts.runner_access_for_memberships([membership]) |> Map.fetch!(membership.id)
 
         # Success is a page STATE, not a flash-and-reload: the invite view swaps
@@ -1427,7 +1430,7 @@ defmodule EmisarWeb.TeamLive do
         # inviter isn't dumped back onto the roster wondering if it worked.
         {:noreply,
          socket
-         |> assign(:invited_email, user.email)
+         |> assign(:invited_email, membership.invitation_sent_to)
          |> assign(:invited_membership, membership)
          |> assign(:invited_access, access)
          |> assign(:invite_delivery, delivery)}
@@ -1469,10 +1472,10 @@ defmodule EmisarWeb.TeamLive do
            socket.assigns.current_user,
            socket.assigns.current_subject
          ) do
-      {:ok, %{user: user, delivery: delivery}} ->
+      {:ok, %{membership: updated, delivery: delivery}} ->
         {:noreply,
          socket
-         |> flash_resend_invitation_outcome(user.email, delivery)
+         |> flash_resend_invitation_outcome(updated.invitation_sent_to, delivery)
          |> reload()}
 
       {:error, reason} ->
@@ -1508,6 +1511,10 @@ defmodule EmisarWeb.TeamLive do
 
   defp resend_invitation_error_message(:unauthorized),
     do: "Only owners and admins can invite members."
+
+  defp resend_invitation_error_message(:stale_invitation_contact) do
+    "This invitation can no longer be resent. Remove the pending invitation, then invite the intended workspace email again."
+  end
 
   defp resend_invitation_error_message(reason), do: MemberErrors.message(reason)
 
@@ -2473,7 +2480,7 @@ defmodule EmisarWeb.TeamLive do
                     class="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4"
                   >
                     <div class="flex min-w-0 flex-1 items-start gap-4">
-                      <.avatar name={Accounts.member_display_name(membership, membership.user) || "?"} />
+                      <.avatar name={Accounts.member_display_name(membership) || "?"} />
 
                       <div class="min-w-0 flex-1">
                         <%!-- Keep the identity line about identity. Persistent
@@ -2485,7 +2492,7 @@ defmodule EmisarWeb.TeamLive do
                             id={"member-name-#{membership.id}"}
                             class="truncate font-medium text-zinc-100"
                           >
-                            {Accounts.member_display_name(membership, membership.user) || "(unknown)"}
+                            {Accounts.member_display_name(membership) || "(unknown)"}
                           </span>
                           <%!-- Email on the deliverability suppression list (a hard
                          bounce or spam complaint) — invites and notifications
@@ -2494,10 +2501,7 @@ defmodule EmisarWeb.TeamLive do
                          no un-suppress control; clearing it is a support action
                          (per the product call), hence the tooltip copy. --%>
                           <.chip
-                            :if={
-                              membership.user &&
-                                MapSet.member?(@suppressed_emails, membership.user.email)
-                            }
+                            :if={MapSet.member?(@suppressed_emails, membership.contact_email)}
                             tone={:rose}
                             title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
                           >
@@ -2585,7 +2589,7 @@ defmodule EmisarWeb.TeamLive do
                           id={"member-metadata-#{membership.id}"}
                           class="text-xs text-zinc-400"
                         >
-                          <:seg :if={email = Accounts.secondary_user_email(membership.user)}>
+                          <:seg :if={email = Accounts.secondary_member_email(membership)}>
                             {email}
                           </:seg>
                           <:seg :if={member.pending_invitation?}>
@@ -2839,7 +2843,7 @@ defmodule EmisarWeb.TeamLive do
                     >
                       <input type="hidden" name="membership_id" value={membership.id} />
                       <.input
-                        field={@edit_form[:full_name]}
+                        field={@edit_form[:display_name]}
                         type="text"
                         label="Full name"
                         autocomplete="name"
@@ -2968,7 +2972,7 @@ defmodule EmisarWeb.TeamLive do
                     <% "remove" -> %>
                       <% membership = @pending_member_action.facts.membership %> Permanently removes
                       <span class="font-medium text-rose-100">
-                        {(membership.user && membership.user.email) || "this member"}
+                        {Accounts.member_display_name(membership) || "this member"}
                       </span>
                       from the team. They lose access immediately, and their agent credentials and
                       standing approvals are revoked.
@@ -3384,7 +3388,7 @@ defmodule EmisarWeb.TeamLive do
   # The member's display name for a confirm/flash — name, else email, else nil
   # (the user is always preloaded here). Callers supply the "this member" fallback.
   defp member_name(%Accounts.Membership{} = membership),
-    do: Accounts.member_display_name(membership, membership.user)
+    do: Accounts.member_display_name(membership)
 
   # Membership activity is account-specific. Until a membership has its first
   # console touch, the user's sign-in timestamp is the conservative fallback:

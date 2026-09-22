@@ -299,8 +299,8 @@ defmodule Emisar.UsersTest do
       assert {:ok, [event], _} =
                Audit.list_events(subject, filter: [event_type: ["user.email_changed"]])
 
-      assert event.payload["from"] == user.email
-      assert event.payload["to"] == new_email
+      assert event.payload == %{}
+      assert event.target_label == "Test User"
     end
 
     test "an invalid email rolls the composed transaction back" do
@@ -688,90 +688,19 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "register_invited_user/2" do
-    test "sets the full_name and marks the invited user confirmed" do
+  describe "confirm_invited_user/1" do
+    test "confirms the invited address without changing personal profile fields" do
       {:ok, user} = Users.fetch_or_create_user_by_email("joiner@example.test")
       assert is_nil(user.confirmed_at)
 
       assert {:ok, %User{} = registered} =
-               Users.register_invited_user(user, %{full_name: "Joined Member"})
+               Users.confirm_invited_user(user)
 
-      assert registered.full_name == "Joined Member"
+      assert registered.full_name == user.full_name
+      assert registered.email == user.email
       refute is_nil(registered.confirmed_at)
       assert %DateTime{} = Repo.reload!(user).confirmed_at
-    end
-  end
-
-  describe "update_user_profile_as_admin/3" do
-    test "edits the member's full_name on the locked row" do
-      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
-      member = Fixtures.Users.create_user(full_name: "Old Name")
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
-
-      assert {:ok, %User{full_name: "New Name"}} =
-               Users.update_user_profile_as_admin(member.id, %{"full_name" => "New Name"},
-                 audit: &Audit.user_changesets(&1, "user.profile_updated_by_admin")
-               )
-
-      assert Repo.reload!(member).full_name == "New Name"
-    end
-
-    test "whitelists full_name only — a smuggled email is dropped" do
-      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
-      member = Fixtures.Users.create_user(email: "member-keep@example.test")
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
-
-      assert {:ok, %User{} = updated} =
-               Users.update_user_profile_as_admin(
-                 member.id,
-                 %{"full_name" => "Renamed", "email" => "hijacked@example.test"},
-                 audit: &Audit.user_changesets(&1, "user.profile_updated_by_admin")
-               )
-
-      assert updated.full_name == "Renamed"
-      assert updated.email == "member-keep@example.test"
-    end
-  end
-
-  describe "sync_user_full_name/3" do
-    test "replaces the user's display name under the row lock" do
-      user = Fixtures.Users.create_user(full_name: "Old Name")
-
-      assert {:ok, %User{full_name: "Synced Name"}} =
-               Users.sync_user_full_name(user.id, "Synced Name",
-                 audit: &Audit.user_changesets(&1, "user.renamed_via_scim")
-               )
-
-      assert Repo.reload!(user).full_name == "Synced Name"
-    end
-
-    test "an already-matching name is a no-op — no write, no audit row" do
-      user = Fixtures.Users.create_user(full_name: "Same Name")
-
-      assert {:ok, %User{full_name: "Same Name"}} =
-               Users.sync_user_full_name(user.id, "Same Name",
-                 audit: &Audit.user_changesets(&1, "user.renamed_via_scim")
-               )
-
-      assert Repo.all(Emisar.Audit.Event) == []
-    end
-
-    test "an unknown user is :not_found" do
-      assert Users.sync_user_full_name(Ecto.UUID.generate(), "Anyone",
-               audit: &Audit.user_changesets(&1, "user.renamed_via_scim")
-             ) == {:error, :not_found}
+      assert {:ok, ^registered} = Users.confirm_invited_user(registered)
     end
   end
 

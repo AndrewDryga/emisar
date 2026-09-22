@@ -1537,17 +1537,15 @@ defmodule Emisar.Runbooks do
   # The membership is the account-local naming authority, and
   # `RunbookExecution.Query.with_attribution/1` is its only loader: its join
   # already binds this execution's own membership, in this account, for this
-  # person. An absent membership degrades to the email, which still identifies
-  # the accountable human without exposing the cross-account `users.full_name`
-  # or a directory name another workspace owns; an unloaded one names nobody.
+  # person. An absent or unloaded membership names nobody; it cannot disclose
+  # the linked person's private profile or contact.
   defp accountable_name(
          %RunbookExecution{initiating_membership: %Accounts.Membership{} = membership},
-         %Users.User{} = user
+         %Users.User{}
        ),
-       do: Accounts.member_display_name(membership, user)
+       do: Accounts.member_display_name(membership)
 
-  defp accountable_name(%RunbookExecution{initiating_membership: nil}, %Users.User{} = user),
-    do: user.email
+  defp accountable_name(%RunbookExecution{initiating_membership: nil}, %Users.User{}), do: nil
 
   defp accountable_name(%RunbookExecution{}, %Users.User{}), do: nil
 

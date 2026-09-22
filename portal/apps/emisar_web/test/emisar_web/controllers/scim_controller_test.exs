@@ -664,7 +664,10 @@ defmodule EmisarWeb.SCIMControllerTest do
       |> scim_patch(token, user_path(token, "okta|rename-only"), patch_body)
       |> json_response(200)
 
-      assert Repo.reload!(user).full_name == "New Name"
+      assert Repo.reload!(user).full_name == "Old Name"
+
+      assert Accounts.peek_sync_membership(provider.account_id, user.id).display_name ==
+               "New Name"
     end
 
     test "a pathless Entra-style PATCH value map renames too", %{
@@ -687,7 +690,10 @@ defmodule EmisarWeb.SCIMControllerTest do
       |> scim_patch(token, user_path(token, "okta|entra-rename"), patch_body)
       |> json_response(200)
 
-      assert Repo.reload!(user).full_name == "Entra Name"
+      assert Repo.reload!(user).full_name == "Old Name"
+
+      assert Accounts.peek_sync_membership(provider.account_id, user.id).display_name ==
+               "Entra Name"
     end
 
     test "one PatchOp carrying displayName AND active applies both", %{
@@ -716,7 +722,8 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert body["active"] == false
-      assert Repo.reload!(user).full_name == "Renamed"
+      assert Repo.reload!(user).full_name == "Old Name"
+      assert Accounts.peek_sync_membership(account.id, user.id).display_name == "Renamed"
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
     end
 
@@ -757,7 +764,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       unchanged = Fixtures.Memberships.fetch_membership(account.id, user.id)
       refute unchanged.disabled_at
-      refute unchanged.directory_display_name
+      assert unchanged.display_name == "Old Name"
     end
 
     test "a fresh displayName beats a stale name.formatted the IdP echoed back", %{
@@ -1206,7 +1213,10 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert body["active"] == true
-      assert Repo.reload!(user).full_name == "New Name"
+      assert Repo.reload!(user).full_name == "Old Name"
+
+      assert Accounts.peek_sync_membership(provider.account_id, user.id).display_name ==
+               "New Name"
     end
 
     test "PUT with the Entra string `\"False\"` suspends the membership", %{
@@ -1261,7 +1271,8 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
       {:ok, reloaded} = Users.fetch_user_by_id(user.id)
-      assert reloaded.full_name == "Renamed By IdP"
+      assert reloaded.full_name == "Original Name"
+      assert Accounts.peek_sync_membership(account.id, user.id).display_name == "Renamed By IdP"
       assert reloaded.email == "ignore@acme.test"
     end
 

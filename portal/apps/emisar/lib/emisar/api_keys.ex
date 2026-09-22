@@ -83,7 +83,8 @@ defmodule Emisar.ApiKeys do
   Lists MCP / LLM-bridge keys (`kind: :mcp`) for the Agents page — hides
   auto-generated never-used ones AND audit-export tokens. Audit-export
   tokens live on the audit page; mixing them in here confused operators
-  looking for the LLM keys. `:created_by` is preloaded.
+  looking for the LLM keys. Pass `preload: [:created_by_membership]` to include
+  each key's exact workspace-local creator profile.
   """
   def list_api_keys_for_account(%Subject{} = subject, opts \\ []) do
     with :ok <-
@@ -103,7 +104,7 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  `{:ok, [{user_id, email}]}` — the distinct creators of the account's visible
+  `{:ok, [{user_id, local_label}]}` — the distinct creators of the account's visible
   agent keys (the same `visible_to_operators` + `kind: :mcp` set the agents
   list shows), for that page's "Owner" filter options. `%Subject{}` needs
   `view_api_keys`.
@@ -1024,8 +1025,11 @@ defmodule Emisar.ApiKeys do
   # associations the page actually shows. Unknown atoms raise (caller bug).
   defp apply_api_key_preloads(queryable, preloads) do
     Enum.reduce(preloads, queryable, fn
-      :created_by, queryable -> ApiKey.Query.with_preloaded_created_by(queryable)
-      :replaces, queryable -> ApiKey.Query.with_preloaded_replaces(queryable)
+      :created_by_membership, queryable ->
+        ApiKey.Query.with_preloaded_created_by_membership(queryable)
+
+      :replaces, queryable ->
+        ApiKey.Query.with_preloaded_replaces(queryable)
     end)
   end
 

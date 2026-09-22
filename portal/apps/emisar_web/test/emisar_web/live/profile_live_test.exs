@@ -2,10 +2,69 @@ defmodule EmisarWeb.ProfileLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Auth
 
+  describe "workspace profile" do
+    test "a workspace name draft survives sibling events and session pagination", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      lv |> element("#change-workspace-name") |> render_click()
+
+      lv
+      |> form("#workspace-profile-form", workspace_profile: %{display_name: "Draft Work Name"})
+      |> render_change()
+
+      lv |> element("#change-name") |> render_click()
+      assert has_element?(lv, "#workspace_profile_display_name[value='Draft Work Name']")
+      render_patch(lv, ~p"/app/#{account}/settings/profile?cursor=invalid")
+      assert has_element?(lv, "#workspace_profile_display_name[value='Draft Work Name']")
+    end
+
+    test "edits the local name without changing personal details or another workspace", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+
+      other =
+        Fixtures.Memberships.create_membership(user_id: user.id, display_name: "Other Workspace")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv |> element("#change-workspace-name") |> render_click()
+
+      lv
+      |> form("#workspace-profile-form", workspace_profile: %{display_name: "Work Name"})
+      |> render_submit()
+
+      assert has_element?(lv, "#workspace-details", "Work Name")
+      assert has_element?(lv, "#display-name", user.full_name)
+      assert Emisar.Repo.reload!(user).full_name == user.full_name
+      assert Emisar.Repo.reload!(other).display_name == "Other Workspace"
+
+      lv |> element("#change-workspace-name") |> render_click()
+
+      render_submit(lv, "save_workspace_profile", %{
+        "workspace_profile" => %{"display_name" => String.duplicate("a", 256)}
+      })
+
+      assert has_element?(lv, "#workspace-profile-form", "at most 255")
+
+      assert Fixtures.Memberships.fetch_membership(account.id, user.id).display_name ==
+               "Work Name"
+    end
+  end
+
   describe "workspace SSO personal-authority boundary" do
     test "shows a stable restriction and refuses crafted personal-control events", %{conn: conn} do
       {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      member
+      |> Ecto.Changeset.change(
+        display_name: "Workspace Identity",
+        contact_email: "work-identity@example.test"
+      )
+      |> Emisar.Repo.update!()
+
       Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
 
       identity =
@@ -37,6 +96,10 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute has_element?(lv, "[phx-click=retry_sessions]")
       refute html =~ "Private personal browser"
       refute html =~ "203.0.113.12"
+      assert has_element?(lv, "#workspace-details", "Workspace Identity")
+      assert has_element?(lv, "#workspace-details", "work-identity@example.test")
+      refute has_element?(lv, "#display-name")
+      refute has_element?(lv, "#email")
       assert has_element?(lv, "[phx-click=start_mfa]")
 
       for {event, params} <- [
@@ -1049,7 +1112,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, agents, _html} =
         lv |> element("#review-your-agents") |> render_click() |> follow_redirect(conn, href)
 
-      assert has_element?(agents, "select[name=owner] option[selected]", user.email)
+      assert has_element?(agents, "select[name=owner] option[selected]", "You")
       assert has_element?(agents, "a", "Clear filters")
       assert render(agents) =~ "No agents match these filters."
       refute render(agents) =~ "Someone else&#39;s agent"

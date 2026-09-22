@@ -136,11 +136,8 @@ defmodule Emisar.Audit do
   (sign-in, MFA, password change, profile edit); subject-less because the
   acting user is captured in the event itself. The user might not have a direct
   `account_id` in hand — most auth flows operate pre-Subject — so we look up the
-  user's primary membership and stamp the event onto that account.
-
-  Multi-account users only get the event on their primary membership
-  in v0.1; widening to fan-out across every membership is a future
-  call once we see whether it's needed.
+  user's active memberships and stamp one event per account, using each
+  workspace's own profile label. Callers supply only facts safe for that audience.
 
   Silently no-ops when the user has no active membership (brand-new
   signup mid-account-creation, fully-suspended user) — the parent
@@ -149,7 +146,7 @@ defmodule Emisar.Audit do
 
   `attrs` accepts the same shape as `log/3` and overrides the defaults
   (`actor_kind: "user", actor_id: user.id, target_kind: "user",
-   target_id: user.id, target_label: user.email`).
+   target_id: user.id`). The local target label cannot be overridden.
   """
   def log_for_user(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
     case user_changesets(user, event_type, attrs) do
@@ -179,15 +176,17 @@ defmodule Emisar.Audit do
       actor_kind: "user",
       actor_id: user.id,
       target_kind: "user",
-      target_id: user.id,
-      target_label: user.email
+      target_id: user.id
     }
 
     merged = Map.merge(defaults, Map.new(attrs))
 
     user
     |> Emisar.Accounts.list_active_memberships_for_user()
-    |> Enum.map(&changeset(&1.account_id, event_type, merged))
+    |> Enum.map(fn membership ->
+      attrs = Map.put(merged, :target_label, Emisar.Accounts.member_display_name(membership))
+      changeset(membership.account_id, event_type, attrs)
+    end)
   end
 
   @doc """

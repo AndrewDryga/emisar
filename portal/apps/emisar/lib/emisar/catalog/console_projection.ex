@@ -14,7 +14,6 @@ defmodule Emisar.Catalog.ConsoleProjection do
   """
 
   alias Emisar.Catalog.{ActionSetDiff, PackBaseline, PackVersion, RunnerAction}
-  alias Emisar.Users
 
   # Severity order. Catalog's own risk folding reads it back through
   # risk_rank/0 rather than keeping a second copy, so one table ranks risk for
@@ -243,19 +242,9 @@ defmodule Emisar.Catalog.ConsoleProjection do
     %{
       at: pack_version.retirement_overridden_at,
       actor_id: pack_version.retirement_overridden_by_id,
-      actor_label: override_actor_label(pack_version.retirement_overridden_by)
+      actor_label: pack_version.retirement_override_label
     }
   end
-
-  # Human-first: the name, then the email. A soft-deleted (or unloaded)
-  # overrider has no label at all — the web words that absence.
-  def override_actor_label(%Users.User{full_name: full_name})
-      when is_binary(full_name) and full_name != "",
-      do: full_name
-
-  def override_actor_label(%Users.User{email: email}) when is_binary(email), do: email
-
-  def override_actor_label(_absent), do: nil
 
   def retired?(%PackVersion{} = pack_version),
     do: match?({:retired, _}, pack_version_retirement(pack_version))

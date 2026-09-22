@@ -2,7 +2,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
   use Emisar, :changeset
   alias Emisar.Accounts.{Membership, RunnerAccess}
 
-  @create_fields ~w[account_id user_id role directory_managed runner_access_mode runner_access_directory_managed
+  @create_fields ~w[account_id user_id role display_name contact_email directory_managed runner_access_mode runner_access_directory_managed
                     pack_access_mode pack_scope_pack_ids
                     directory_provider_id directory_authorization_pending_version
                     invited_by_id invitation_token_digest invitation_sent_to
@@ -13,6 +13,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
     %Membership{}
     |> cast(attrs, @create_fields)
     |> validate_required([:account_id, :user_id, :role])
+    |> validate_profile()
     |> unique_constraint([:account_id, :user_id])
     |> put_access_the_role_carries()
   end
@@ -31,6 +32,18 @@ defmodule Emisar.Accounts.Membership.Changeset do
     membership
     |> cast(attrs, @update_fields)
     |> put_access_the_role_carries()
+  end
+
+  def profile(%Membership{} = membership, attrs) do
+    membership
+    |> cast(attrs, [:display_name])
+    |> validate_profile()
+  end
+
+  defp validate_profile(changeset) do
+    changeset
+    |> validate_length(:display_name, max: 255, count: :codepoints)
+    |> Emisar.EmailAddress.validate(:contact_email)
   end
 
   def update_runner_access(%Membership{} = membership, %RunnerAccess{} = access) do
@@ -118,13 +131,13 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   # The directory's name for this member. An already-matching value is a no-op so
   # a re-sync writes nothing.
-  def sync_display_name(%Membership{directory_display_name: name} = membership, name),
+  def sync_display_name(%Membership{display_name: name} = membership, name),
     do: {:noop, membership}
 
   def sync_display_name(%Membership{} = membership, display_name) do
     membership
-    |> change(directory_display_name: display_name)
-    |> validate_length(:directory_display_name, max: 255, count: :codepoints)
+    |> change(display_name: display_name)
+    |> validate_length(:display_name, max: 255, count: :codepoints)
   end
 
   # Reinstating always clears the IdP-owned mark — a member back in is not
@@ -137,8 +150,18 @@ defmodule Emisar.Accounts.Membership.Changeset do
     )
   end
 
-  def accept_invitation(%Membership{} = membership) do
-    change(membership,
+  def accept_invitation(%Membership{} = membership),
+    do: membership |> change() |> put_invitation_accepted()
+
+  def accept_invitation_with_profile(%Membership{} = membership, attrs) do
+    membership
+    |> profile(attrs)
+    |> validate_required([:display_name])
+    |> put_invitation_accepted()
+  end
+
+  defp put_invitation_accepted(changeset) do
+    change(changeset,
       invitation_token_digest: nil,
       invitation_sent_to: nil,
       invitation_email_changed_at: nil,

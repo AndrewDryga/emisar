@@ -5,7 +5,7 @@ defmodule Emisar.Fixtures.Memberships do
   """
 
   alias Emisar.Accounts.{Membership, MembershipRunnerScope, RunnerAccess}
-  alias Emisar.{Fixtures, Repo}
+  alias Emisar.{Fixtures, Repo, Users}
 
   @doc """
   Creates a membership. Caller supplies `:account_id` and `:user_id` (or
@@ -20,10 +20,14 @@ defmodule Emisar.Fixtures.Memberships do
     user_id =
       attrs[:user_id] || Fixtures.Users.create_user().id
 
+    user = Repo.get!(Users.User, user_id)
+
     params =
       %{
         account_id: account_id,
         user_id: user_id,
+        display_name: Map.get(attrs, :display_name, user.full_name),
+        contact_email: Map.get(attrs, :contact_email, user.email),
         role: attrs[:role] || "operator",
         runner_access_mode: attrs[:runner_access_mode] || "all"
       }
@@ -31,6 +35,8 @@ defmodule Emisar.Fixtures.Memberships do
         Map.take(attrs, [
           :invited_by_id,
           :invitation_token_digest,
+          :invitation_sent_to,
+          :invitation_email_changed_at,
           :directory_managed,
           :runner_access_directory_managed,
           :directory_provider_id,

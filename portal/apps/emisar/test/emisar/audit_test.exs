@@ -299,29 +299,53 @@ defmodule Emisar.AuditTest do
       assert Ecto.Changeset.get_field(changeset, :actor_id) == user.id
       assert Ecto.Changeset.get_field(changeset, :target_kind) == "user"
       assert Ecto.Changeset.get_field(changeset, :target_id) == user.id
-      assert Ecto.Changeset.get_field(changeset, :target_label) == user.email
+      assert Ecto.Changeset.get_field(changeset, :target_label) == "Test User"
     end
 
     test "fans out to every account the user is an active member of" do
       user = Fixtures.Users.create_user()
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
-      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account_a.id,
+          user_id: user.id,
+          display_name: "Work A"
+        )
+
+      _ =
+        Fixtures.Memberships.create_membership(
+          account_id: account_b.id,
+          user_id: user.id,
+          display_name: "Work B"
+        )
 
       changesets = Audit.user_changesets(user, "user.signed_in")
 
       account_ids = Enum.map(changesets, &Ecto.Changeset.get_field(&1, :account_id))
       assert Enum.sort(account_ids) == Enum.sort([account_a.id, account_b.id])
+
+      assert Map.new(
+               changesets,
+               &{Ecto.Changeset.get_field(&1, :account_id),
+                Ecto.Changeset.get_field(&1, :target_label)}
+             ) == %{account_a.id => "Work A", account_b.id => "Work B"}
     end
 
-    test "attrs override the defaults on every row" do
+    test "attrs can override actor metadata but never the local profile label" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
       _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
-      assert [changeset] = Audit.user_changesets(user, "user.signed_in", actor_kind: "system")
+      assert [changeset] =
+               Audit.user_changesets(user, "user.signed_in",
+                 actor_kind: "system",
+                 target_label: "Private label"
+               )
+
       assert Ecto.Changeset.get_field(changeset, :actor_kind) == "system"
+      assert Ecto.Changeset.get_field(changeset, :target_label) == "Test User"
     end
 
     test "returns [] (skip) when the user has no active membership" do
@@ -3008,6 +3032,13 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          display_name: "Directory Profile"
+        )
+
       provider = %SSO.IdentityProvider{
         id: Repo.generate_id(),
         account_id: account.id,
@@ -3016,9 +3047,10 @@ defmodule Emisar.AuditTest do
         default_role: :viewer
       }
 
-      {:ok, event} = Audit.record(Audit.Events.user_provisioned_via_scim(user, provider))
+      {:ok, event} = Audit.record(Audit.Events.user_provisioned_via_scim(member, provider))
 
       assert event.event_type == "user.provisioned_via_scim"
+      assert event.target_label == "Directory Profile"
       # The directory connection is the actor — provider id + name, not "system".
       assert event.actor_kind == "directory_sync"
       assert event.actor_id == provider.id

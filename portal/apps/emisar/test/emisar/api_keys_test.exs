@@ -68,14 +68,15 @@ defmodule Emisar.ApiKeysTest do
       assert visible.id == agent_key.id
     end
 
-    test ":created_by is preloaded only when asked for via :preload" do
+    test "the exact creator profile is preloaded when asked for via :preload" do
       {user, _account, subject} = owner_subject_pair()
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
 
       assert {:ok, [preloaded], _} =
-               ApiKeys.list_api_keys_for_account(subject, preload: [:created_by])
+               ApiKeys.list_api_keys_for_account(subject, preload: [:created_by_membership])
 
-      assert preloaded.created_by.id == user.id
+      assert preloaded.created_by_membership.id == subject.membership_id
+      assert preloaded.created_by_membership.user_id == user.id
     end
 
     test "a runner subject (no view_api_keys permission) is refused with :unauthorized" do
@@ -100,6 +101,82 @@ defmodule Emisar.ApiKeysTest do
   end
 
   describe "list_key_owner_options/1 + the owner filter" do
+    test "an unnamed active member is not described as a former member" do
+      member =
+        Fixtures.Memberships.create_membership(
+          role: "owner",
+          display_name: nil,
+          contact_email: nil
+        )
+
+      subject = Fixtures.Subjects.membership_subject(member)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
+      assert {:ok, [{user_id, "Account member"}]} = ApiKeys.list_key_owner_options(subject)
+      assert user_id == member.user_id
+    end
+
+    test "rejoining yields one owner choice while each key keeps its exact historical profile" do
+      {_owner, account, reader} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "operator",
+          display_name: "First Membership"
+        )
+
+      person = Repo.preload(member, :user).user
+
+      {:ok, _raw, old_key} =
+        ApiKeys.create_key(%{name: "old agent"}, Fixtures.Subjects.membership_subject(member))
+
+      assert {:ok, _} = Accounts.delete_membership(member, reader)
+
+      assert {:ok, invitation} =
+               Accounts.invite_user_to_account(
+                 Fixtures.Accounts.invitation_attrs(email: person.email, role: "operator"),
+                 reader
+               )
+
+      assert {:ok, %{membership: rejoined}} =
+               Accounts.accept_invitation(invitation.membership, invitation.invitation_token, %{
+                 display_name: "Rejoined Member"
+               })
+
+      {:ok, _raw, new_key} =
+        ApiKeys.create_key(%{name: "new agent"}, Fixtures.Subjects.membership_subject(rejoined))
+
+      assert {:ok, [{user_id, "Rejoined Member"}]} = ApiKeys.list_key_owner_options(reader)
+      assert user_id == person.id
+
+      assert {:ok, keys, _} =
+               ApiKeys.list_api_keys_for_account(reader,
+                 filter: [owner: [person.id], status: ["live", "revoked"]],
+                 preload: [:created_by_membership]
+               )
+
+      assert Map.new(keys, &{&1.id, &1.created_by_membership.display_name}) == %{
+               old_key.id => "First Membership",
+               new_key.id => "Rejoined Member"
+             }
+
+      assert Repo.reload!(old_key).revoked_at
+    end
+
+    test "a local name stays readable without a contact email" do
+      member =
+        Fixtures.Memberships.create_membership(
+          role: "owner",
+          display_name: "Directory Operator",
+          contact_email: nil
+        )
+
+      subject = Fixtures.Subjects.membership_subject(member)
+      {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
+      assert {:ok, [{user_id, "Directory Operator"}]} = ApiKeys.list_key_owner_options(subject)
+      assert user_id == member.user_id
+    end
+
     test "returns the distinct creators of the account's visible (non-audit) keys" do
       {user, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
@@ -112,7 +189,7 @@ defmodule Emisar.ApiKeysTest do
 
       assert {:ok, [{owner_id, owner_email}]} = ApiKeys.list_key_owner_options(subject)
       assert owner_id == user.id
-      assert owner_email == user.email
+      assert owner_email == "Test User"
     end
 
     test "the owner filter narrows to a creator's keys; another account sees none" do
@@ -504,7 +581,7 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKeys.owner_labels_for_ids([key.id], account.id) == %{key.id => "Ada from Ops"}
     end
 
-    test "a blank directory name falls back to the nonblank full name, then the email" do
+    test "a blank local name falls back only to the local contact" do
       account = Fixtures.Accounts.create_account()
       named_user = Fixtures.Users.create_user(full_name: "Grace Hopper")
       unnamed_user = Fixtures.Users.create_user(full_name: "   ")
@@ -525,7 +602,7 @@ defmodule Emisar.ApiKeysTest do
         Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: unnamed_user.id)
 
       assert ApiKeys.owner_labels_for_ids([named_key.id, unnamed_key.id], account.id) ==
-               %{named_key.id => "Grace Hopper", unnamed_key.id => unnamed_user.email}
+               %{named_key.id => named_user.email, unnamed_key.id => unnamed_user.email}
     end
 
     test "a soft-deleted or suspended membership resolves no owner label" do

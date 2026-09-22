@@ -13,6 +13,7 @@ defmodule Emisar.Mailers.UserNotifier do
   indented `Label:` value blocks. `Emisar.Mailers.TextLayoutTest` holds the line.
   """
   import Swoosh.Email
+  alias Emisar.Accounts
   alias Emisar.Auth.Subject
   alias Emisar.Crypto
   alias Emisar.Mail
@@ -293,12 +294,13 @@ defmodule Emisar.Mailers.UserNotifier do
   preview of the arguments — that an experienced operator can decide
   from their inbox without context-switching into the app.
 
-  The recipient is the user actor on `subject`: the arguments are projected
+  The recipient is the account-owned membership; arguments are projected
   through `Runs.project_action_args/2`, so the mail shows exactly what that
   approver may see, with every declared sensitive value redacted.
   """
   def deliver_approval_request(
-        %Subject{actor: %Users.User{} = approver} = subject,
+        %Accounts.Membership{} = approver,
+        %Subject{} = subject,
         %{} = request,
         %Runs.ActionRun{} = run,
         requester_name \\ nil
@@ -354,7 +356,7 @@ defmodule Emisar.Mailers.UserNotifier do
   ActionRun exists. The request context is the frozen, already-redacted plan.
   """
   def deliver_runbook_execution_approval_request(
-        %Subject{actor: %Users.User{} = approver},
+        %Accounts.Membership{} = approver,
         %{} = request,
         requester_name \\ nil
       ) do
@@ -395,7 +397,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
   @doc "Sends a self-contained approval lifecycle update in the recipient's request thread."
   def deliver_approval_event(
-        %Subject{actor: %Users.User{} = approver},
+        %Accounts.Membership{} = approver,
         %{} = request,
         %{} = event
       ) do
@@ -440,7 +442,7 @@ defmodule Emisar.Mailers.UserNotifier do
   them somewhere the redaction rules can never reach.
   """
   def deliver_approval_decision(
-        %Users.User{} = requester,
+        %Accounts.Membership{} = requester,
         %{} = request,
         approved_count \\ 0,
         event_kind \\ nil,
@@ -562,14 +564,13 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   def deliver_account_invitation(
-        %Users.User{} = invitee,
-        %{} = inviter,
+        %Accounts.Membership{} = membership,
+        inviter_name,
         account,
-        membership,
         token
       ) do
     url = PublicUrl.url("/accept_invitation/#{token}")
-    inviter_name = one_line(inviter.full_name || inviter.email)
+    inviter_name = one_line(inviter_name)
     account_name = one_line(account.name)
 
     # The subject and preview are the inbox-visible lines, and both names are
@@ -577,7 +578,7 @@ defmodule Emisar.Mailers.UserNotifier do
     # a throwaway workspace must not get to write our sender's subject line.
     # The names stay in the body, where they read as facts about the invitation.
     deliver_transactional(
-      invitee,
+      %{membership | contact_email: membership.invitation_sent_to},
       "You've been invited to a workspace on emisar",
       "An invitation to join a workspace on emisar. It expires in 7 days.",
       [
@@ -666,14 +667,15 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp approved_target_action(_request), do: nil
 
-  defp approval_thread_headers(:requested, request, %Users.User{} = recipient) do
+  defp approval_thread_headers(:requested, request, %Accounts.Membership{} = recipient) do
     [
       {"Message-ID", approval_root_message_id(request, recipient)},
       {"X-PM-KeepID", "true"}
     ]
   end
 
-  defp approval_thread_headers(event, request, %Users.User{} = recipient) when is_map(event) do
+  defp approval_thread_headers(event, request, %Accounts.Membership{} = recipient)
+       when is_map(event) do
     root = approval_root_message_id(request, recipient)
     event_id = Map.get(event, :id) || Map.get(event, :decision_id) || request.id
     kind = event |> Map.fetch!(:kind) |> Atom.to_string()
@@ -688,7 +690,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
   # Every part is first-party and header-safe by construction: request, event,
   # and recipient ids are UUIDs; the kind is a matched approval lifecycle atom.
-  defp approval_root_message_id(request, %Users.User{} = recipient) do
+  defp approval_root_message_id(request, %Accounts.Membership{} = recipient) do
     "<approval.request.#{request.id}.#{recipient.id}@emisar.dev>"
   end
 
@@ -846,7 +848,7 @@ defmodule Emisar.Mailers.UserNotifier do
   for accounts with real usage in the window, so there's no empty "you did
   nothing" copy to write. `Emisar.Mailers.MonthlyReport` renders both bodies.
   """
-  def deliver_monthly_account_report(%Users.User{} = recipient, account, report) do
+  def deliver_monthly_account_report(%Accounts.Membership{} = recipient, account, report) do
     unsubscribe_url =
       PublicUrl.url(
         "/unsubscribe/monthly-report/#{Crypto.monthly_report_unsubscribe_token(account.id)}"
@@ -854,7 +856,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
     rendered = MonthlyReport.render(recipient, account, report, unsubscribe_url)
 
-    deliver(recipient.email, rendered.subject, rendered.text, rendered.html, [
+    deliver(recipient.contact_email, rendered.subject, rendered.text, rendered.html, [
       {"List-Unsubscribe", "<#{unsubscribe_url}>"},
       {"List-Unsubscribe-Post", "List-Unsubscribe=One-Click"}
     ])
@@ -875,7 +877,7 @@ defmodule Emisar.Mailers.UserNotifier do
     do: deliver_transactional(recipient, subject, preview, blocks, action, [])
 
   defp deliver_transactional(
-         %Users.User{} = recipient,
+         recipient,
          subject,
          preview,
          blocks,
@@ -884,7 +886,7 @@ defmodule Emisar.Mailers.UserNotifier do
        ) do
     rendered =
       Transactional.render(%{
-        recipient: one_line(recipient.full_name || recipient.email),
+        recipient: one_line(recipient_name(recipient)),
         title: one_line(subject),
         preview: one_line(preview),
         blocks: blocks,
@@ -894,13 +896,20 @@ defmodule Emisar.Mailers.UserNotifier do
       })
 
     deliver(
-      recipient.email,
+      recipient_email(recipient),
       one_line(subject),
       rendered.text,
       rendered.html,
       Keyword.get(opts, :headers, [])
     )
   end
+
+  defp recipient_name(%Users.User{} = user), do: user.full_name || user.email
+  defp recipient_name(%Accounts.Membership{} = member), do: Accounts.member_display_name(member)
+  defp recipient_email(%Users.User{email: email}), do: email
+  defp recipient_email(%Accounts.Membership{contact_email: email}), do: email
+
+  defp deliver(nil, _subject, _text, _html, _headers), do: {:error, :no_contact_email}
 
   defp deliver(to, subject, text, html, headers) do
     if suppression = Mail.suppression_for(to) do

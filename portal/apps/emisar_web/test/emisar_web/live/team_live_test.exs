@@ -1526,7 +1526,7 @@ defmodule EmisarWeb.TeamLiveTest do
       html =
         render_submit(lv, "save_edit", %{
           "membership_id" => target_membership.id,
-          "user" => %{"full_name" => "Hijacked Name"}
+          "member" => %{"display_name" => "Hijacked Name"}
         })
 
       assert html =~ "Only owners and admins can manage members."
@@ -2325,12 +2325,12 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       render_click(lv, "start_edit", %{"membership_id" => membership.id})
 
-      render_change(lv, "validate_edit", %{"user" => %{"full_name" => "Half-typed Na"}})
+      render_change(lv, "validate_edit", %{"member" => %{"display_name" => "Half-typed Na"}})
 
       # Any team broadcast re-renders the roster from assigns; an untracked
       # edit form would snap the input back to the stored name.
       assert render(lv) =~
-               ~r/<input(?=[^>]*\bname="user\[full_name\]")(?=[^>]*\bvalue="Half-typed Na")[^>]*>/
+               ~r/<input(?=[^>]*\bname="member\[display_name\]")(?=[^>]*\bvalue="Half-typed Na")[^>]*>/
     end
 
     test "the name action toggles its editor without saving the draft", %{
@@ -2343,7 +2343,7 @@ defmodule EmisarWeb.TeamLiveTest do
       lv |> element(action, "Edit name") |> render_click()
       assert has_element?(lv, "#{action}[aria-expanded='true']", "Cancel name edit")
       assert has_element?(lv, "#edit-form-#{membership.id}")
-      render_change(lv, "validate_edit", %{"user" => %{"full_name" => "Unsaved name"}})
+      render_change(lv, "validate_edit", %{"member" => %{"display_name" => "Unsaved name"}})
 
       lv |> element(action, "Cancel name edit") |> render_click()
       refute has_element?(lv, "#edit-form-#{membership.id}")
@@ -2890,7 +2890,7 @@ defmodule EmisarWeb.TeamLiveTest do
       renamed =
         render_submit(lv, "save_edit", %{
           "membership_id" => member.id,
-          "user" => %{"full_name" => "Renamed Member"}
+          "member" => %{"display_name" => "Renamed Member"}
         })
 
       assert renamed =~ "Member updated."
@@ -2900,7 +2900,7 @@ defmodule EmisarWeb.TeamLiveTest do
       refused =
         render_submit(lv, "save_edit", %{
           "membership_id" => synced.membership.id,
-          "user" => %{"full_name" => "Typed But Refused"}
+          "member" => %{"display_name" => "Typed But Refused"}
         })
 
       assert refused =~ "managed by your identity provider"
@@ -2930,7 +2930,7 @@ defmodule EmisarWeb.TeamLiveTest do
       html =
         render_click(lv, "save_edit", %{
           "membership_id" => synced.membership.id,
-          "user" => %{"full_name" => "Hijacked"}
+          "member" => %{"display_name" => "Hijacked"}
         })
 
       assert html =~ "managed by your identity provider"
@@ -3691,7 +3691,7 @@ defmodule EmisarWeb.TeamLiveTest do
       edit_html =
         render_submit(lv, "save_edit", %{
           "membership_id" => ghost_id,
-          "user" => %{"full_name" => "Nobody"}
+          "member" => %{"display_name" => "Nobody"}
         })
 
       refute edit_html =~ "Member updated."

@@ -747,6 +747,8 @@ defmodule Emisar.Accounts do
         Membership.Changeset.create(%{
           account_id: account.id,
           user_id: user.id,
+          display_name: user.full_name,
+          contact_email: user.email,
           role: :owner,
           runner_access_mode: :all
         })
@@ -1597,36 +1599,24 @@ defmodule Emisar.Accounts do
   public `list_memberships_for_account/3`.
   """
   def list_account_memberships(account_id, opts \\ []) do
-    # `user` is this helper's contract — the notifier addresses the email
-    # from it. (No account preload: nothing downstream reads it.)
+    # Contact and greeting come from the workspace profile. The linked User
+    # remains loaded only to construct the notifier's current authority Subject.
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.with_contact_email()
     |> Membership.Query.with_preloaded_user()
     |> Repo.list(Membership.Query, opts)
   end
 
   @doc """
-  Internal — SSO directory rename: record the directory's name for this member,
-  and say whether this account is the person's only tenancy.
-
-  `users.full_name` is identity and deliberately cross-account, so one workspace's
-  directory must not rewrite how the person reads in another's. When they belong
-  here and nowhere else the directory genuinely is the authority for who they
-  are, and the caller may write the global name too — which keeps the ordinary
-  single-workspace case showing one name on every surface.
-
-  The caller supplies `:audit`: this name is what the account's roster, run
-  attribution and audit actor/target labels render for the member, so a
-  directory moving it is always recorded.
+  Internal — directory rename of an account-owned profile. The caller supplies
+  `:audit`; a directory never owns the personal User, even for a sole-tenancy
+  member. A name function runs against the locked local row for partial updates.
   """
   def sync_member_display_name(account_id, user_id, display_name, opts)
       when is_binary(account_id) and is_binary(user_id) do
     audit = Keyword.fetch!(opts, :audit)
 
-    # One transaction for the membership write AND the tenancy question. Read
-    # separately, the answer could go stale between them: another account adding
-    # a membership in that window let this directory's name through to a
-    # workspace it has no authority over.
     Multi.new()
     |> Multi.run(:membership, fn repo, _changes ->
       queryable =
@@ -1640,14 +1630,12 @@ defmodule Emisar.Accounts do
       end
     end)
     |> Multi.run(:updated, fn repo, %{membership: membership} ->
-      write_display_name(repo, membership, display_name, audit)
-    end)
-    |> Multi.run(:sole_tenancy, fn repo, _changes ->
-      {:ok, sole_tenancy?(repo, user_id, account_id)}
+      name = if is_function(display_name, 1), do: display_name.(membership), else: display_name
+      write_display_name(repo, membership, name, audit)
     end)
     |> Repo.commit_multi()
     |> case do
-      {:ok, %{updated: updated, sole_tenancy: sole_tenancy?}} -> {:ok, updated, sole_tenancy?}
+      {:ok, %{updated: updated}} -> {:ok, updated}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -1661,39 +1649,35 @@ defmodule Emisar.Accounts do
 
       changeset ->
         with {:ok, updated} <- repo.update(changeset),
-             {:ok, _event} <- repo.insert(audit.(membership)) do
+             {:ok, _event} <- repo.insert(audit.(membership, display_name)) do
           {:ok, updated}
         end
     end
   end
 
-  defp sole_tenancy?(repo, user_id, account_id) do
-    queryable =
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_user_id(user_id)
-      |> Membership.Query.excluding_account_id(account_id)
+  @doc """
+  This workspace's name for a member, falling back only to its local contact.
+  Personal User attributes never supply an account-scoped label, including for
+  a removed member whose local profile is no longer available.
+  """
+  def member_display_name(%Membership{display_name: name, contact_email: email})
+      when is_binary(name),
+      do: if(String.trim(name) == "", do: email, else: name)
 
-    not repo.exists?(queryable)
+  def member_display_name(%Membership{contact_email: email}), do: email
+  def member_display_name(_membership), do: nil
+
+  @doc "The local contact when it is distinct from the workspace display label."
+  def secondary_member_email(%Membership{contact_email: email} = membership)
+      when is_binary(email) do
+    if member_display_name(membership) == email, do: nil, else: email
   end
 
-  @doc """
-  The name this account knows a member by: the directory-synced membership
-  display name when this account's IdP set one, else the user's own nonblank
-  full name, else their email. Without a current `%Membership{}`, only the
-  email remains safe: a former member's cross-account `users.full_name` is not
-  this tenant's naming fact. Pure — attribution surfaces render its result
-  verbatim instead of re-deriving naming rules.
-  """
-  def member_display_name(%Membership{directory_display_name: name}, _user)
-      when is_binary(name) and name != "",
-      do: name
-
-  def member_display_name(%Membership{}, %Users.User{} = user), do: user_display_name(user)
-  def member_display_name(_membership, %Users.User{email: email}), do: email
+  def secondary_member_email(_membership), do: nil
 
   @doc """
   A person's own name: their nonblank full name, else their email. Cross-account
-  identity, so an account-scoped surface reaches for `member_display_name/2`
+  identity, so an account-scoped surface reaches for `member_display_name/1`
   first. Pure; `nil` for a shape carrying neither field.
   """
   def user_display_name(%{full_name: name, email: email}) when is_binary(name) do
@@ -1865,6 +1849,8 @@ defmodule Emisar.Accounts do
     attrs = %{
       account_id: account_id,
       user_id: user_id,
+      display_name: Keyword.get(opts, :display_name),
+      contact_email: Keyword.get(opts, :contact_email),
       role: role,
       directory_managed: directory_managed?,
       runner_access_mode: access.mode,
@@ -2322,6 +2308,23 @@ defmodule Emisar.Accounts do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_and_user(account_id, user_id)
     |> Repo.peek()
+  end
+
+  @doc "Internal - latest account-owned profile, including removed members; never an access grant."
+  def peek_membership_profile(account_id, user_id) do
+    Membership.Query.all()
+    |> Membership.Query.by_account_and_user(account_id, user_id)
+    |> Membership.Query.latest_profiles()
+    |> Repo.peek()
+  end
+
+  @doc "Internal - batched local profile history for an already-scoped account projection."
+  def list_membership_profiles(account_id, user_ids) do
+    Membership.Query.all()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_user_ids(user_ids)
+    |> Membership.Query.latest_profiles()
+    |> Repo.all()
   end
 
   @doc """
@@ -3421,11 +3424,8 @@ defmodule Emisar.Accounts do
         runner_access_directory_managed: false,
         directory_provider_id: nil,
         directory_authorization_pending_version: nil,
-        # The name goes with the directory that supplied it. Left set, the person
-        # kept being called whatever the IdP called them in this account forever,
-        # and their own profile name could never take over again — a rename after
-        # the disable made the split permanent.
-        directory_display_name: nil,
+        # Keep the last workspace-owned profile when returning control to its
+        # operators. A personal profile never silently takes over this account.
         # The suspension STAYS — the directory's last word was that this person is
         # out — but it stops being the directory's to lift, because there is no
         # longer a directory to lift it. Left set, `reinstate_membership` refused
@@ -3783,6 +3783,15 @@ defmodule Emisar.Accounts do
       else: {:error, :member_of_other_workspaces}
   end
 
+  defp sole_tenancy?(repo, user_id, account_id) do
+    queryable =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_user_id(user_id)
+      |> Membership.Query.excluding_account_id(account_id)
+
+    not repo.exists?(queryable)
+  end
+
   defp ensure_member_mfa_reset_target_user(%Users.User{mfa_enabled_at: nil}, nil),
     do: {:error, :mfa_not_enabled}
 
@@ -3950,16 +3959,63 @@ defmodule Emisar.Accounts do
   def refresh_directory_authorization_sessions(%Membership{} = membership),
     do: refresh_member_sessions(membership)
 
-  @doc """
-  Admin-triggered profile edit for another member. Lets owners/admins
-  set or fix a teammate's display name from the team page without
-  making the teammate sign in to do it themselves.
+  @doc "The caller's current workspace profile and whether the directory owns its name."
+  def fetch_own_member_profile(%Subject{actor: %Users.User{}} = subject) do
+    with {:ok, current} <-
+           Auth.fetch_current_subject(Authorizer.view_own_account_permission(), subject) do
+      result =
+        own_member_query(current)
+        |> Authorizer.for_subject(current)
+        |> Repo.fetch(Membership.Query)
 
-  **Deliberately not allowed: email changes.** Letting an admin rewrite
-  a teammate's sign-in email would let them request a magic link at an
-  address they control. The teammate has to change their own email via
-  Profile, which verifies TOTP for MFA users or a one-time code sent to
-  their current address before committing the change.
+      case result do
+        {:ok, member} ->
+          {:ok, %{membership: member, editable?: not member_profile_directory_managed?(member)}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  def fetch_own_member_profile(%Subject{}), do: {:error, :unauthorized}
+
+  @doc "Pure form builder for the workspace display name, not personal credentials or contact."
+  def change_member_profile(%Membership{} = membership, attrs \\ %{}),
+    do: Membership.Changeset.profile(membership, attrs)
+
+  @doc "Change only the authenticated caller's name in this workspace."
+  def update_own_member_profile(attrs, %Subject{actor: %Users.User{}} = subject) do
+    with {:ok, current} <-
+           Auth.fetch_current_subject(Authorizer.view_own_account_permission(), subject) do
+      own_member_query(current)
+      |> Authorizer.for_subject(current)
+      |> Repo.fetch_and_update(Membership.Query,
+        with: fn member ->
+          if member_profile_directory_managed?(member),
+            do: :directory_managed_profile,
+            else: Membership.Changeset.profile(member, attrs)
+        end,
+        audit: &Audit.Events.membership_profile_updated(current, &1)
+      )
+    end
+  end
+
+  def update_own_member_profile(_attrs, %Subject{}), do: {:error, :unauthorized}
+
+  defp own_member_query(%Subject{membership_id: id, actor: %Users.User{id: user_id}}) do
+    Membership.Query.authorized()
+    |> Membership.Query.by_id(id)
+    |> Membership.Query.by_user_id(user_id)
+  end
+
+  defp member_profile_directory_managed?(%Membership{} = membership),
+    do: SSO.user_profile_directory_managed?(membership.account_id, membership.user_id)
+
+  @doc """
+  Admin-triggered local profile edit for another member. Owners/admins can fix
+  a teammate's workspace display name, never their personal name or sign-in
+  email. Contact changes are not part of this operation.
 
   Same authorization shape as the rest of `ensure_can_modify_membership`:
   caller must be owner/admin, can't edit self via this path (use
@@ -3969,40 +4025,33 @@ defmodule Emisar.Accounts do
   is refused with `{:error, :directory_managed_profile}` — the IdP owns their
   profile and the next sync would overwrite the edit anyway.
 
-  Audit-logged as `user.updated_by_admin` so the change is traceable.
+  Audit-logged as `membership.profile_updated` in this account only.
   """
-  def update_user_as_admin(%Membership{} = membership, attrs, %Subject{} = subject)
+  def update_member_profile_as_admin(%Membership{} = membership, attrs, %Subject{} = subject)
       when is_map(attrs) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.manage_team_permission(), subject),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      # Users whitelists the editable fields (full_name only — email is
-      # deliberately not admin-editable, as described above) and
-      # holds the user-row lock while it writes + inserts our audit; the
-      # membership guard re-reads under its own lock in the same
-      # transaction so the hierarchy is judged on the CURRENT role.
       Multi.new()
       |> lock_target_membership(membership, subject, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:profile_ownership, fn _repo, %{target: loaded_membership} ->
         # A directory-synced member's profile is the IdP's (same scim_enabled
         # boundary as the role lock) — an edit here would just fight the sync.
-        if SSO.user_profile_directory_managed?(
-             loaded_membership.account_id,
-             loaded_membership.user_id
-           ) do
+        if member_profile_directory_managed?(loaded_membership) do
           {:error, :directory_managed_profile}
         else
           {:ok, :editable}
         end
       end)
-      |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
-        Users.update_user_profile_as_admin(loaded_membership.user_id, attrs,
-          audit: &Audit.Events.user_updated_by_admin(subject, loaded_membership, &1)
-        )
+      |> Multi.update(:membership, fn %{target: loaded_membership} ->
+        Membership.Changeset.profile(loaded_membership, attrs)
+      end)
+      |> Multi.insert(:audit, fn %{membership: updated} ->
+        Audit.Events.membership_profile_updated(subject, updated)
       end)
       |> Repo.commit_multi()
       |> case do
-        {:ok, %{user: user}} -> {:ok, user}
+        {:ok, %{membership: updated}} -> {:ok, updated}
         {:error, reason} -> {:error, reason}
       end
     end
@@ -4223,6 +4272,7 @@ defmodule Emisar.Accounts do
         Membership.Changeset.create(%{
           account_id: account_id,
           user_id: user.id,
+          contact_email: invitation.email,
           role: invitation.role,
           runner_access_mode: invitation.runner_access.mode,
           pack_access_mode: invitation.runner_access.pack_mode,
@@ -4403,15 +4453,15 @@ defmodule Emisar.Accounts do
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Membership.Query,
         with: fn loaded_membership ->
-          case ensure_invite_permitted(loaded_membership.role, subject) do
-            :ok ->
-              Membership.Changeset.resend_invitation(
-                loaded_membership,
-                token_digest,
-                loaded_membership.user.email,
-                loaded_membership.user.email_changed_at
-              )
-
+          with :ok <- ensure_invite_permitted(loaded_membership.role, subject),
+               :ok <- ensure_invitation_contact_current(loaded_membership) do
+            Membership.Changeset.resend_invitation(
+              loaded_membership,
+              token_digest,
+              loaded_membership.invitation_sent_to,
+              loaded_membership.invitation_email_changed_at
+            )
+          else
             {:error, reason} ->
               reason
           end
@@ -4433,6 +4483,14 @@ defmodule Emisar.Accounts do
           {:error, reason}
       end
     end
+  end
+
+  defp ensure_invitation_contact_current(%Membership{user: %Users.User{} = user} = member) do
+    if is_binary(member.invitation_sent_to) and
+         member.invitation_sent_to == user.email and
+         member.invitation_email_changed_at == user.email_changed_at,
+       do: :ok,
+       else: {:error, :stale_invitation_contact}
   end
 
   @doc """
@@ -4463,10 +4521,9 @@ defmodule Emisar.Accounts do
 
     delivery =
       case Emisar.Mailers.UserNotifier.deliver_account_invitation(
-             user,
-             inviter,
-             account,
              membership,
+             invitation_sender_label(inviter, account),
+             account,
              token
            ) do
         {:ok, %{suppressed: true}} -> {:ok, :suppressed}
@@ -4476,6 +4533,13 @@ defmodule Emisar.Accounts do
 
     %{membership: membership, user: user, delivery: delivery}
   end
+
+  defp invitation_sender_label(%Users.User{id: user_id}, %Account{id: account_id}) do
+    account_id |> peek_membership_profile(user_id) |> member_display_name() ||
+      "A workspace administrator"
+  end
+
+  defp invitation_sender_label(%{full_name: name}, %Account{}) when is_binary(name), do: name
 
   # Inviting needs the base invite_member permission, and you can't invite
   # someone at a role whose permissions you don't already hold — the same
@@ -4611,12 +4675,12 @@ defmodule Emisar.Accounts do
   Internal — invitation-accept flow: the accept-invite page is a public route
   and the invitee has no session yet, so no `%Subject{}` exists; possession of
   the invitation token (resolved by `fetch_invitation_by_token/1`) is the
-  authorization. Accepts a membership invitation: sets the user's full_name,
+  authorization. Accepts a membership invitation: sets the workspace display name,
   clears the invitation token, marks invitation_accepted_at, and confirms the
   user since acceptance proves they own the email. Wrapped in a transaction so
   a half-accepted state is impossible.
   """
-  def accept_invitation(%Membership{} = membership, token, %{} = user_attrs)
+  def accept_invitation(%Membership{} = membership, token, %{} = profile_attrs)
       when is_binary(token) do
     Multi.new()
     |> put_active_account_lock(membership.account_id, :active_account)
@@ -4625,8 +4689,7 @@ defmodule Emisar.Accounts do
     end)
     # Lock + re-judge the invitation before changing either row: a token burnt between the
     # page mount and this submit (a second link holder racing the first
-    # acceptor) must fail :not_found here — before register_invited_user
-    # could overwrite the winner's display name.
+    # acceptor) must fail :not_found here — before any profile or proof changes.
     |> Multi.run(:membership, fn repo, %{invited_user: invited_user} ->
       lock_pending_invitation(repo, membership, token, invited_user)
     end)
@@ -4634,10 +4697,10 @@ defmodule Emisar.Accounts do
       ApiKeys.revoke_credentials_for_membership(repo, membership.id)
     end)
     |> Multi.run(:user, fn _repo, %{membership: loaded_membership} ->
-      Users.register_invited_user(loaded_membership.user, user_attrs)
+      Users.confirm_invited_user(loaded_membership.user)
     end)
     |> Multi.update(:accepted, fn %{membership: membership} ->
-      Membership.Changeset.accept_invitation(membership)
+      Membership.Changeset.accept_invitation_with_profile(membership, profile_attrs)
     end)
     |> Multi.merge(fn %{accepted: membership} ->
       put_membership_activation_consequence(Multi.new(), membership)
@@ -4796,9 +4859,9 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal — Billing customer sync: load the account and the stable billing
-  owner. The current billing-contact user is kept while they remain an active
-  owner with a confirmed email; only then do we fall back to the earliest active
-  confirmed owner.
+  Membership. The current contact is kept while they remain an active owner
+  with a local contact and a linked user with a confirmed email; otherwise select
+  the earliest eligible owner. This check does not establish personal-login proof.
   """
   def fetch_paddle_customer_sync_target(account_id) do
     if Repo.valid_uuid?(account_id) do
@@ -4826,6 +4889,7 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_account_id(account.id)
       |> Membership.Query.by_role(:owner)
       |> Membership.Query.with_confirmed_user_email()
+      |> Membership.Query.with_contact_email()
       |> Membership.Query.with_preloaded_user()
 
     query =
@@ -4879,26 +4943,25 @@ defmodule Emisar.Accounts do
 
   defp fetch_stable_billing_owner(%Account{paddle_billing_contact_user_id: user_id} = account)
        when is_binary(user_id) do
-    case fetch_active_owner_user(account.id, user_id) do
+    case fetch_active_billing_member(account.id, user_id) do
       {:ok, owner} -> {:ok, owner}
-      {:error, :not_found} -> fetch_first_active_owner_user(account.id)
+      {:error, :not_found} -> fetch_first_active_billing_member(account.id)
     end
   end
 
   defp fetch_stable_billing_owner(%Account{} = account) do
-    fetch_first_active_owner_user(account.id)
+    fetch_first_active_billing_member(account.id)
   end
 
-  defp fetch_first_active_owner_user(account_id) do
+  defp fetch_first_active_billing_member(account_id) do
     result =
       Membership.Query.authorized()
       |> Membership.Query.by_account_id(account_id)
       |> Membership.Query.by_role(:owner)
       |> Membership.Query.with_confirmed_user_email()
-      |> Membership.Query.with_preloaded_user()
+      |> Membership.Query.with_contact_email()
       |> Membership.Query.oldest()
       |> Repo.fetch(Membership.Query)
-      |> owner_user_result()
 
     case result do
       {:ok, owner} -> {:ok, owner}
@@ -4906,19 +4969,15 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp fetch_active_owner_user(account_id, user_id) do
+  defp fetch_active_billing_member(account_id, user_id) do
     Membership.Query.authorized()
     |> Membership.Query.by_account_id(account_id)
     |> Membership.Query.by_user_id(user_id)
     |> Membership.Query.by_role(:owner)
     |> Membership.Query.with_confirmed_user_email()
-    |> Membership.Query.with_preloaded_user()
+    |> Membership.Query.with_contact_email()
     |> Repo.fetch(Membership.Query)
-    |> owner_user_result()
   end
-
-  defp owner_user_result({:ok, %Membership{user: %Users.User{} = user}}), do: {:ok, user}
-  defp owner_user_result({:error, :not_found}), do: {:error, :not_found}
 
   @doc """
   Internal — resolves a signed Paddle subscription to its account by customer

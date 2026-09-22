@@ -3,6 +3,23 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   alias Emisar.{Accounts, Repo}
   alias Emisar.Accounts.RunnerAccess
 
+  test "an unnamed member still has a readable role-change confirmation", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+
+    target =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "owner",
+        display_name: nil,
+        contact_email: nil
+      )
+
+    {:ok, _view, html} =
+      live(conn, ~p"/app/#{account}/settings/team/#{target.id}/change-role/viewer")
+
+    assert html =~ "Change this member to Viewer?"
+  end
+
   test "Owner promotion describes the wider access without a reconnection warning", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")

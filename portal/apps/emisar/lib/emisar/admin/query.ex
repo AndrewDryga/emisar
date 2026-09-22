@@ -14,13 +14,9 @@ defmodule Emisar.Admin.Query do
       on: membership.account_id == a.id,
       as: :memberships
     )
-    |> join(:left, [memberships: m], user in ^Users.User.Query.not_deleted(),
-      on: user.id == m.user_id,
-      as: :users
-    )
     |> where(
-      [accounts: a, users: u],
-      ilike(a.name, ^pattern) or ilike(a.slug, ^pattern) or ilike(u.email, ^pattern)
+      [accounts: a, memberships: m],
+      ilike(a.name, ^pattern) or ilike(a.slug, ^pattern) or ilike(m.contact_email, ^pattern)
     )
     |> distinct([accounts: a], a.id)
     |> order_by([accounts: a], asc: a.name, asc: a.id)
@@ -45,12 +41,8 @@ defmodule Emisar.Admin.Query do
   def membership_by_email(account_id, email) do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
-    |> join(:inner, [memberships: m], user in ^Users.User.Query.not_deleted(),
-      on: user.id == m.user_id,
-      as: :user
-    )
-    |> where([user: u], u.email == ^email)
-    |> preload([user: u], user: u)
+    |> where([memberships: m], m.contact_email == ^email)
+    |> Accounts.Membership.Query.with_preloaded_user()
   end
 
   # The whole roster, suspended members and unaccepted invitations included —
@@ -59,7 +51,7 @@ defmodule Emisar.Admin.Query do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
     |> Accounts.Membership.Query.with_preloaded_user()
-    |> order_by([memberships: m, user: u], asc: m.role, asc: u.email)
+    |> order_by([memberships: m], asc: m.role, asc: m.contact_email)
   end
 
   # An account holds at most one provider per kind, so this is a list, not a

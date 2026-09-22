@@ -13,6 +13,9 @@ defmodule Emisar.MailTest do
   alias Emisar.RequestContext
   alias Emisar.Runs
 
+  defp member_for(subject),
+    do: Fixtures.Memberships.fetch_membership(subject.account.id, subject.actor.id)
+
   describe "suppressed?/1" do
     test "reports a suppressed address case-insensitively (citext key)" do
       {:ok, _} = Mail.suppress("Bounced@Example.com", :hard_bounce, "HardBounce")
@@ -511,21 +514,20 @@ defmodule Emisar.MailTest do
     test "names the inviter and workspace and carries role, scope, expiry, and accept link", %{
       invitee: invitee
     } do
-      inviter = Fixtures.Users.create_user(full_name: "Dana Inviter")
       account = Fixtures.Accounts.create_account(name: "Globex")
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: invitee.id,
+          invitation_sent_to: invitee.email,
           role: "operator"
         )
 
       UserNotifier.deliver_account_invitation(
-        invitee,
-        inviter,
-        account,
         membership,
+        "Dana Inviter",
+        account,
         "tok-invite"
       )
 
@@ -544,33 +546,38 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    test "falls back to the inviter's email when they have no full name", %{invitee: invitee} do
-      inviter = Fixtures.Users.create_user(full_name: nil)
+    test "renders an explicitly supplied local contact label", %{invitee: invitee} do
       account = Fixtures.Accounts.create_account(name: "Globex")
 
       membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: invitee.id)
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: invitee.id,
+          invitation_sent_to: invitee.email
+        )
 
-      UserNotifier.deliver_account_invitation(invitee, inviter, account, membership, "tok")
+      UserNotifier.deliver_account_invitation(membership, "work@example.test", account, "tok")
 
-      assert_email_sent(&(&1.text_body =~ inviter.email))
+      assert_email_sent(&(&1.text_body =~ "work@example.test"))
     end
 
     test "skips a suppressed invitee", %{invitee: invitee} do
-      inviter = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
       membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: invitee.id)
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: invitee.id,
+          invitation_sent_to: invitee.email
+        )
 
       {:ok, _} = Mail.suppress(invitee.email, :spam_complaint, "complaint")
 
       assert {:ok, %{suppressed: true}} =
                UserNotifier.deliver_account_invitation(
-                 invitee,
-                 inviter,
-                 account,
                  membership,
+                 "Work Inviter",
+                 account,
                  "tok"
                )
     end
@@ -619,7 +626,7 @@ defmodule Emisar.MailTest do
         account: account
       }
 
-      UserNotifier.deliver_approval_request(subject, request, run)
+      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
 
       assert_email_sent(fn email ->
         assert email.subject =~ "Approval · caddy.reload_config"
@@ -646,7 +653,7 @@ defmodule Emisar.MailTest do
 
       request = %{id: "req-id-9", reason: "x", matched_rules: [], account: account}
 
-      UserNotifier.deliver_approval_request(subject, request, run)
+      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
 
       assert_email_sent(fn email ->
         assert email.text_body =~ "id #{String.slice(run.runner_id, 0, 8)}…"
@@ -670,15 +677,15 @@ defmodule Emisar.MailTest do
         context: %{"action_id" => "linux.uptime"}
       }
 
-      UserNotifier.deliver_approval_request(subject, request, run)
+      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
       assert_receive {:email, initial}
 
-      root = "<approval.request.request-123.#{subject.actor.id}@emisar.dev>"
+      root = "<approval.request.request-123.#{subject.membership_id}@emisar.dev>"
       assert initial.headers["Message-ID"] == root
       refute Map.has_key?(initial.headers, "In-Reply-To")
       assert initial.text_body =~ "0 of 2"
 
-      UserNotifier.deliver_approval_event(subject, request, %{
+      UserNotifier.deliver_approval_event(member_for(subject), request, %{
         id: "decision-456",
         kind: :vote,
         approved_count: 1,
@@ -713,7 +720,7 @@ defmodule Emisar.MailTest do
         account: hostile_account
       }
 
-      UserNotifier.deliver_approval_request(subject, request, run)
+      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
 
       assert_email_sent(fn email ->
         refute email.subject =~ "\r"
@@ -745,7 +752,7 @@ defmodule Emisar.MailTest do
       ]
 
       Enum.each(cases, fn {kind, count, expected, color} ->
-        UserNotifier.deliver_approval_event(subject, request, %{
+        UserNotifier.deliver_approval_event(member_for(subject), request, %{
           id: "event-#{kind}",
           kind: kind,
           approved_count: count,
@@ -774,7 +781,7 @@ defmodule Emisar.MailTest do
 
       request = %{id: "req-id-7", reason: "x", matched_rules: [], account: account}
 
-      UserNotifier.deliver_approval_request(subject, request, run)
+      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
 
       assert_email_sent(fn email ->
         assert email.text_body =~ "(unavailable)"
@@ -818,7 +825,7 @@ defmodule Emisar.MailTest do
         }
       }
 
-      UserNotifier.deliver_runbook_execution_approval_request(subject, request)
+      UserNotifier.deliver_runbook_execution_approval_request(member_for(subject), request)
 
       assert_email_sent(fn email ->
         assert email.subject =~ "Approval · Database maintenance"
@@ -835,7 +842,7 @@ defmodule Emisar.MailTest do
       end)
 
       draft_request = put_in(request.context["execution_kind"], "draft_test")
-      UserNotifier.deliver_runbook_execution_approval_request(subject, draft_request)
+      UserNotifier.deliver_runbook_execution_approval_request(member_for(subject), draft_request)
 
       assert_email_sent(fn email ->
         assert email.subject =~ "Approval · Draft test · Database maintenance"
@@ -855,13 +862,13 @@ defmodule Emisar.MailTest do
       request = %{id: "r", reason: "x", matched_rules: [], account: account}
 
       assert {:ok, %{suppressed: true}} =
-               UserNotifier.deliver_approval_request(subject, request, run)
+               UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
     end
   end
 
   describe "approval-decided email content" do
     setup do
-      %{requester: Fixtures.Users.create_user()}
+      %{requester: Fixtures.Memberships.create_membership()}
     end
 
     test "tells the requester an approve landed, with no argument values", %{
@@ -988,7 +995,7 @@ defmodule Emisar.MailTest do
     end
 
     test "skips a suppressed requester", %{requester: requester} do
-      {:ok, _} = Mail.suppress(requester.email, :hard_bounce, "bounce")
+      {:ok, _} = Mail.suppress(requester.contact_email, :hard_bounce, "bounce")
 
       request = %{
         id: "r",

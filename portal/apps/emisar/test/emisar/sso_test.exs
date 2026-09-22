@@ -4387,7 +4387,7 @@ defmodule Emisar.SSOTest do
   # -- scim_update_user/3 (provider-scoped) ----------------------------
 
   describe "scim_update_user/3 tenancy" do
-    test "a rename reaches the person's own name when this is their only workspace" do
+    test "a sole-tenancy rename still leaves the personal name alone" do
       %{provider: provider, account: account} = scim_provider()
       %{identity: identity} = provision(provider, "okta|solo")
 
@@ -4401,10 +4401,10 @@ defmodule Emisar.SSOTest do
                )
 
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
-      assert user.full_name == "Solo Person"
+      assert user.full_name == "Dir User"
 
       membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
-      assert membership.directory_display_name == "Solo Person"
+      assert membership.display_name == "Solo Person"
     end
 
     test "it stops at this account's membership when they belong elsewhere too" do
@@ -4436,14 +4436,14 @@ defmodule Emisar.SSOTest do
 
       # This account sees the directory's name…
       membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
-      assert membership.directory_display_name == "Renamed By Acme"
+      assert membership.display_name == "Renamed By Acme"
 
       # …and the other one still sees the person.
       assert Repo.reload!(user).full_name == their_own_name
     end
 
     test "the account's own label for a member is audited even when the person is not renamed" do
-      # `directory_display_name` outranks `users.full_name` in every label this
+      # `display_name` outranks `users.full_name` in every label this
       # account renders — the roster, run attribution, and the actor/target name
       # on EXISTING audit events. A directory that moves it relabels the audit
       # trail retroactively, so the move is itself an audit event; without one it
@@ -4568,7 +4568,7 @@ defmodule Emisar.SSOTest do
       # Nothing landed: not the lifecycle, not the name, not the identity flag.
       unchanged = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
       refute unchanged.disabled_at
-      refute unchanged.directory_display_name
+      assert unchanged.display_name == "Dir User"
       assert Repo.reload!(identity).scim_active
     end
 
@@ -4589,7 +4589,7 @@ defmodule Emisar.SSOTest do
 
       unchanged = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
       refute unchanged.disabled_at
-      refute unchanged.directory_display_name
+      assert unchanged.display_name == "Dir User"
       assert Repo.reload!(identity).scim_active
     end
 
@@ -4792,7 +4792,7 @@ defmodule Emisar.SSOTest do
   # -- scim_update_user/3 rename --------------------------------------
 
   describe "scim_update_user/3 rename" do
-    test "replaces the synced user's display name, audited to the directory" do
+    test "replaces only the workspace display name, audited to the directory" do
       %{provider: provider} = scim_provider()
       attrs = scim_attrs(%{external_id: "okta|rename", full_name: "Old Name"})
       {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
@@ -4807,16 +4807,20 @@ defmodule Emisar.SSOTest do
                )
 
       assert returned.id == identity.id
-      assert Repo.reload!(user).full_name == "New Name"
+      assert Repo.reload!(user).full_name == "Old Name"
+
+      assert Fixtures.Memberships.fetch_membership(provider.account_id, user.id).display_name ==
+               "New Name"
 
       assert event =
                Enum.find(
                  Repo.all(Emisar.Audit.Event),
-                 &(&1.event_type == "user.renamed_via_scim")
+                 &(&1.event_type == "membership.renamed_via_scim")
                )
 
       assert event.actor_kind == "directory_sync"
-      assert event.payload["full_name"] == "New Name"
+      assert event.payload["from"] == "Old Name"
+      assert event.payload["to"] == "New Name"
     end
 
     test "an unchanged name is a no-op — no audit row" do
@@ -4837,7 +4841,7 @@ defmodule Emisar.SSOTest do
 
       refute Enum.any?(
                Repo.all(Emisar.Audit.Event),
-               &(&1.event_type == "user.renamed_via_scim")
+               &(&1.event_type == "membership.renamed_via_scim")
              )
     end
 

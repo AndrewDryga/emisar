@@ -6,7 +6,7 @@ defmodule EmisarWeb.AuditExportLive do
   the trail, and it sat stranded below hundreds of rows there.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{ApiKeys, Billing}
+  alias Emisar.{Accounts, ApiKeys, Billing}
   alias EmisarWeb.{LiveTable, Permissions, URLHelpers}
   alias Phoenix.LiveView.JS
 
@@ -125,7 +125,7 @@ defmodule EmisarWeb.AuditExportLive do
 
     case ApiKeys.list_audit_export_keys_for_account(
            socket.assigns.current_subject,
-           Keyword.put(opts, :preload, [:created_by])
+           Keyword.put(opts, :preload, [:created_by_membership])
          ) do
       {:ok, keys, metadata} ->
         socket
@@ -275,7 +275,9 @@ defmodule EmisarWeb.AuditExportLive do
                         placeholder="never"
                       />
                     </:seg>
-                    <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
+                    <:seg :if={Accounts.member_display_name(key.created_by_membership)}>
+                      by {Accounts.member_display_name(key.created_by_membership)}
+                    </:seg>
                   </.meta_line>
                 </:meta>
                 <:actions>

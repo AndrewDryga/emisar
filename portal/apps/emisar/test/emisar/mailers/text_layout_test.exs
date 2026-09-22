@@ -109,14 +109,14 @@ defmodule Emisar.Mailers.TextLayoutTest do
       Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: user.id,
+        invitation_sent_to: user.email,
         role: "owner"
       )
 
     UserNotifier.deliver_account_invitation(
-      user,
-      user,
-      account,
       invitation_membership,
+      "Andrew Dryga",
+      account,
       "tok-invite"
     )
 
@@ -162,7 +162,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
       account: account
     }
 
-    UserNotifier.deliver_approval_request(subject, request, run)
+    UserNotifier.deliver_approval_request(membership, subject, request, run)
     sent_text_body()
   end
 
@@ -196,8 +196,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
     }
 
     membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    subject = Fixtures.Subjects.membership_subject(membership)
-    UserNotifier.deliver_runbook_execution_approval_request(subject, request)
+    UserNotifier.deliver_runbook_execution_approval_request(membership, request)
     sent_text_body()
   end
 
@@ -211,13 +210,13 @@ defmodule Emisar.Mailers.TextLayoutTest do
       context: %{"action_id" => "caddy.reload_config"}
     }
 
-    UserNotifier.deliver_approval_decision(user, request)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    UserNotifier.deliver_approval_decision(membership, request)
     sent_text_body()
   end
 
   defp approval_event_body(user, account) do
     membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    subject = Fixtures.Subjects.membership_subject(membership)
 
     request = %{
       id: "req-event-1",
@@ -226,7 +225,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
       context: %{"action_id" => "caddy.reload_config"}
     }
 
-    UserNotifier.deliver_approval_event(subject, request, %{
+    UserNotifier.deliver_approval_event(membership, request, %{
       id: "decision-1",
       kind: :vote,
       approved_count: 1,
@@ -264,7 +263,8 @@ defmodule Emisar.Mailers.TextLayoutTest do
       team_size: 2
     }
 
-    MonthlyReport.render(user, account, report, "http://localhost/unsubscribe/token").text
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    MonthlyReport.render(membership, account, report, "http://localhost/unsubscribe/token").text
   end
 
   defp request_context do

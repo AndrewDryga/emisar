@@ -782,10 +782,10 @@ defmodule Emisar.SSO do
       link_identity_to_actor(repo, locked_provider, user, identifier, claims)
     end)
     |> Multi.insert(:identity_audit, fn %{
-                                          actor: %{subject: current_subject, user: user},
+                                          actor: %{subject: current_subject, membership: member},
                                           provider: locked_provider
                                         } ->
-      Audit.Events.sso_identity_linked(current_subject, user, locked_provider)
+      Audit.Events.sso_identity_linked(current_subject, member, locked_provider)
     end)
     |> Multi.merge(&provider_verification_writes(&1, stashed.purpose))
     |> Repo.commit_multi()
@@ -971,10 +971,10 @@ defmodule Emisar.SSO do
         Auth.delete_identity_session_tokens(user, [identity.id], repo)
       end)
       |> Multi.insert(:audit, fn %{
-                                   actor: %{subject: current_subject, user: user},
+                                   actor: %{subject: current_subject, membership: member},
                                    provider: provider
                                  } ->
-        Audit.Events.sso_identity_unlinked(current_subject, user, provider)
+        Audit.Events.sso_identity_unlinked(current_subject, member, provider)
       end)
       |> Repo.commit_multi(after_commit: &unlink_identity_effects/1)
 
@@ -2564,10 +2564,12 @@ defmodule Emisar.SSO do
         provider.account_id,
         user.id,
         provider.default_role,
-        runner_access
+        runner_access,
+        display_name: user_attrs.full_name,
+        contact_email: user_attrs.email
       )
     end)
-    |> Multi.insert(:audit, fn %{user: user} -> audit.(user) end)
+    |> Multi.insert(:audit, fn %{membership: member} -> audit.(member) end)
   end
 
   defp create_identity(%IdentityProvider{} = provider, user, identifier, claims, created_by, via) do
@@ -2651,12 +2653,16 @@ defmodule Emisar.SSO do
         end)
 
       nil ->
+        profile = Accounts.peek_membership_profile(provider.account_id, user.id)
+
         Accounts.put_sso_membership(
           Multi.new(),
           provider.account_id,
           user.id,
           provider.default_role,
-          provider_runner_access(provider)
+          provider_runner_access(provider),
+          display_name: profile && profile.display_name,
+          contact_email: profile && profile.contact_email
         )
     end
   end
@@ -3843,8 +3849,14 @@ defmodule Emisar.SSO do
       |> Multi.merge(fn %{user: user} ->
         ensure_active_membership_multi(locked_provider, user)
       end)
-      |> Multi.insert(:audit, fn %{user: user} ->
-        Audit.Events.sso_existing_user_linked(subject, user, locked_provider)
+      |> Multi.insert(:audit, fn %{membership: result} ->
+        member =
+          case result do
+            {:reinstated, member} -> member
+            %Accounts.Membership{} = member -> member
+          end
+
+        Audit.Events.sso_existing_user_linked(subject, member, locked_provider)
       end)
       |> Multi.delete(:link_request, request)
     end)

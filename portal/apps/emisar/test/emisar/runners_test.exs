@@ -3211,6 +3211,64 @@ defmodule Emisar.RunnersTest do
       assert keys |> Enum.map(& &1.id) |> Enum.sort() == Enum.sort([wizard.id, manual.id])
     end
 
+    test "creator labels stay local through personal edits and member removal or rejoin", %{
+      account: account,
+      subject: subject
+    } do
+      creator =
+        Fixtures.Users.create_user(full_name: "Private Person", email: "private@example.test")
+
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: creator.id,
+          role: "admin",
+          display_name: "Workspace Operator",
+          contact_email: "work@example.test"
+        )
+
+      creator_subject = Fixtures.Subjects.membership_subject(member)
+      {:ok, _, manual} = Runners.create_enrollment_key(%{reusable: true}, creator_subject)
+      {:ok, _, install} = Runners.mint_install_key(creator_subject)
+
+      Fixtures.Memberships.create_membership(
+        user_id: creator.id,
+        display_name: "Other Workspace",
+        contact_email: "elsewhere@example.test"
+      )
+
+      Fixtures.Users.update_email(creator, "new-private@example.test")
+
+      assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])
+
+      assert Map.new(keys, &{&1.id, &1.created_by_label}) == %{
+               manual.id => "Workspace Operator",
+               install.id => "Workspace Operator"
+             }
+
+      Fixtures.Memberships.mark_membership_as_deleted(member)
+      assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])
+      assert Enum.map(keys, & &1.created_by_label) == ["Workspace Operator", "Workspace Operator"]
+
+      # The User-era key has no exact membership anchor yet. Use just the latest
+      # local profile, never duplicate the key or fall back to private history.
+      rejoined =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: creator.id,
+          display_name: nil,
+          contact_email: nil
+        )
+
+      assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])
+      assert Enum.map(keys, & &1.created_by_label) == [nil, nil]
+
+      Repo.delete!(rejoined)
+      Repo.delete!(Repo.reload!(member))
+      assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])
+      assert Enum.map(keys, & &1.created_by_label) == [nil, nil]
+    end
+
     test "the status filter hides or shows revoked keys", %{subject: subject} do
       {:ok, _, active} = Runners.create_enrollment_key(%{reusable: true}, subject)
       {:ok, _, revoked} = Runners.create_enrollment_key(%{reusable: true}, subject)
@@ -3238,11 +3296,15 @@ defmodule Emisar.RunnersTest do
       {_other, _u, other_subject} = account_with_owner_subject()
       {:ok, _, _theirs} = Runners.create_enrollment_key(%{reusable: true}, other_subject)
 
-      assert {:ok, [_one], _} = Runners.list_enrollment_keys(subject)
+      assert {:ok, [_one], _} =
+               Runners.list_enrollment_keys(subject, preload: [:created_by_label])
     end
 
     test "a viewer (no manage_enrollment_keys) is refused", %{account: account} do
-      assert Runners.list_enrollment_keys(viewer_subject_for(account)) == {:error, :unauthorized}
+      assert Runners.list_enrollment_keys(viewer_subject_for(account),
+               preload: [:created_by_label]
+             ) ==
+               {:error, :unauthorized}
     end
   end
 

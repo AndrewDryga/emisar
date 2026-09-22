@@ -14,7 +14,6 @@ defmodule EmisarWeb.AcceptInvitationLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.Accounts
-  alias Emisar.Users
   alias EmisarWeb.LiveForm
 
   def mount(%{"token" => token}, _session, socket) do
@@ -35,7 +34,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
          |> assign(:membership, membership)
          |> assign(:token, token)
          |> assign(:trigger_submit, false)
-         |> assign_form(Users.change_user(membership.user))
+         |> assign_form(Accounts.change_member_profile(membership))
          |> assign(:state, derive_state(socket, membership))}
     end
   end
@@ -110,7 +109,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
         phx-submit="accept"
         phx-trigger-action={@trigger_submit}
       >
-        <input type="hidden" name="user[email]" value={@membership.user.email} />
+        <input type="hidden" name="user[email]" value={@membership.invitation_sent_to} />
         <input type="hidden" name="return_to" value={~p"/app/#{@membership.account}"} />
 
         <%!-- Naked meta field (the detail-page key+value grammar) — the box
@@ -119,13 +118,13 @@ defmodule EmisarWeb.AcceptInvitationLive do
           <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
             Joining as
           </div>
-          <div class="mt-1 font-mono text-sm text-zinc-200">{@membership.user.email}</div>
+          <div class="mt-1 font-mono text-sm text-zinc-200">{@membership.invitation_sent_to}</div>
         </div>
 
         <.input
-          field={@form[:full_name]}
+          field={@form[:display_name]}
           type="text"
-          label="Your name"
+          label="Your name in this workspace"
           autocomplete="name"
           required
         />
@@ -148,7 +147,8 @@ defmodule EmisarWeb.AcceptInvitationLive do
     ~H"""
     <.auth_layout title={"Join #{@membership.account.name}"}>
       <p class="mb-6 text-sm text-zinc-400">
-        You're signed in as <span class="font-mono text-zinc-200">{@membership.user.email}</span>
+        You're signed in as
+        <span class="font-mono text-zinc-200">{@membership.invitation_sent_to}</span>
         — accept your invitation to join
         <span class="font-semibold text-zinc-200">{@membership.account.name}</span>
         as <.chip>{Emisar.Auth.role_label(@membership.role)}</.chip>.
@@ -166,7 +166,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
     <.auth_layout title="Sign in with your invited email">
       <div class="space-y-4 text-sm text-zinc-300">
         <p>
-          This invitation is for <span class="font-mono text-zinc-100">{@membership.user.email}</span>, but
+          This invitation is for <span class="font-mono text-zinc-100">{@membership.invitation_sent_to}</span>, but
           you're signed in as <span class="font-mono text-zinc-100">{@current_user.email}</span>.
         </p>
         <p class="text-zinc-400">
@@ -195,20 +195,18 @@ defmodule EmisarWeb.AcceptInvitationLive do
   # to burn a forwarded link past `mark_invitation_accepted/3`'s same-user head.
   def handle_event(
         "validate",
-        %{"user" => params} = event,
+        %{"member" => params} = event,
         %{assigns: %{state: :anonymous}} = socket
       ) do
     changeset =
-      socket.assigns.membership.user
-      |> Users.change_user(%{"full_name" => params["full_name"] || ""})
+      socket.assigns.membership
+      |> Accounts.change_member_profile(params)
       |> LiveForm.on_change(event)
 
     {:noreply, assign_form(socket, changeset)}
   end
 
-  def handle_event("accept", %{"user" => user_params}, %{assigns: %{state: :anonymous}} = socket) do
-    attrs = %{"full_name" => user_params["full_name"] || ""}
-
+  def handle_event("accept", %{"member" => attrs}, %{assigns: %{state: :anonymous}} = socket) do
     case Accounts.accept_invitation(socket.assigns.membership, socket.assigns.token, attrs) do
       {:ok, _} ->
         {:noreply, assign(socket, :trigger_submit, true)}
@@ -258,5 +256,5 @@ defmodule EmisarWeb.AcceptInvitationLive do
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
-    do: assign(socket, :form, to_form(changeset, as: "user"))
+    do: assign(socket, :form, to_form(changeset, as: "member"))
 end

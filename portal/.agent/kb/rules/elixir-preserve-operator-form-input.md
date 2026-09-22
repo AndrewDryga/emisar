@@ -64,9 +64,9 @@ end
 
 ```elixir
 # The error branch keeps the OLD form assign; the typed name snaps back.
-def handle_event("save_edit", %{"user" => params}, socket) do
-  case Accounts.update_user_as_admin(membership, params, subject) do
-    {:ok, _user} -> ...
+def handle_event("save_edit", %{"member" => params}, socket) do
+  case Accounts.update_member_profile_as_admin(membership, params, subject) do
+    {:ok, _membership} -> ...
     {:error, _} -> {:noreply, socket}   # @edit_form still holds the stored name
   end
 end

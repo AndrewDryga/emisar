@@ -41,7 +41,7 @@ defmodule Emisar.AuthEmailChangeTest do
                Accounts.accept_invitation(
                  invitation.membership,
                  invitation.invitation_token,
-                 %{full_name: "Mailbox Owner"}
+                 %{display_name: "Mailbox Owner"}
                )
 
       assert {:ok, retained_user, retained_token} =

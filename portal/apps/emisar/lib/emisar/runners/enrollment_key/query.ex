@@ -1,7 +1,6 @@
 defmodule Emisar.Runners.EnrollmentKey.Query do
   use Emisar, :query
   alias Emisar.Repo.Filter
-  alias Emisar.Users
 
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 
@@ -163,20 +162,23 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
     |> select([enrollment_keys: k], {k.id, field(k, ^field)})
   end
 
-  @doc "Left-join + preload the key's (non-deleted) creating user, idempotently."
-  def with_preloaded_created_by(queryable) do
+  @doc "The creator's account-local display label; never load a personal profile."
+  def with_created_by_label(queryable) do
     queryable
-    |> with_named_binding(:created_by, fn queryable, binding ->
+    |> with_named_binding(:created_by_member, fn queryable, binding ->
       join(
         queryable,
         :left,
         [enrollment_keys: k],
-        created_by in ^Users.User.Query.not_deleted(),
-        on: k.created_by_id == created_by.id,
+        member in subquery(Emisar.Accounts.Membership.Query.latest_profiles()),
+        on: k.created_by_id == member.user_id and k.account_id == member.account_id,
         as: ^binding
       )
     end)
-    |> preload([created_by: created_by], created_by: created_by)
+    |> select_merge([created_by_member: member], %{
+      created_by_label:
+        coalesce(fragment("NULLIF(BTRIM(?), '')", member.display_name), member.contact_email)
+    })
   end
 
   # -- Pagination ------------------------------------------------------
@@ -184,12 +186,4 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
   @impl Emisar.Repo.Query
   def cursor_fields,
     do: [{:enrollment_keys, :desc, :inserted_at}, {:enrollment_keys, :asc, :id}]
-
-  # created_by is a soft-delete schema — scope the preload to
-  # not_deleted() so the filter is explicit at the preload site.
-  @impl Emisar.Repo.Query
-  def preloads,
-    do: [
-      created_by: {Users.User.Query.not_deleted(), Users.User.Query.preloads()}
-    ]
 end

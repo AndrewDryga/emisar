@@ -178,6 +178,19 @@ defmodule Emisar.Accounts.Membership.Query do
   def latest(queryable),
     do: queryable |> order_by([memberships: m], desc: m.inserted_at) |> limit(1)
 
+  # Local profile history remains displayable after removal, without making the
+  # removed row authorizable or falling back to a linked personal User.
+  def latest_profiles(queryable \\ all()) do
+    queryable
+    |> distinct([memberships: m], [m.account_id, m.user_id])
+    |> order_by([memberships: m],
+      asc: m.account_id,
+      asc: m.user_id,
+      desc: m.inserted_at,
+      desc: m.id
+    )
+  end
+
   @doc "Earliest-joined membership only — orders and limits in one step."
   def oldest(queryable),
     do: queryable |> order_by([memberships: m], asc: m.inserted_at, asc: m.id) |> limit(1)
@@ -272,11 +285,12 @@ defmodule Emisar.Accounts.Membership.Query do
     |> where([user: u], not is_nil(u.confirmed_at) and not is_nil(u.email))
   end
 
-  @doc "Select only the (non-deleted) members' emails — the deliverability overlay."
+  def with_contact_email(queryable),
+    do: where(queryable, [memberships: m], not is_nil(m.contact_email))
+
+  @doc "Select local contact addresses for the workspace deliverability overlay."
   def select_user_emails(queryable) do
-    queryable
-    |> with_joined_user()
-    |> select([user: u], u.email)
+    select(queryable, [memberships: m], m.contact_email)
   end
 
   @doc """
@@ -297,8 +311,8 @@ defmodule Emisar.Accounts.Membership.Query do
       [memberships: m, user: u],
       {u.id,
        coalesce(
-         fragment("NULLIF(BTRIM(?), '')", m.directory_display_name),
-         coalesce(fragment("NULLIF(BTRIM(?), '')", u.full_name), u.email)
+         fragment("NULLIF(BTRIM(?), '')", m.display_name),
+         m.contact_email
        )}
     )
   end
@@ -315,15 +329,13 @@ defmodule Emisar.Accounts.Membership.Query do
         title: "Name or email",
         type: :string,
         fun: fn queryable, term ->
-          queryable = with_joined_user(queryable)
           pattern = Like.contains(term)
 
           {queryable,
            dynamic(
-             [memberships: m, user: u],
-             ilike(m.directory_display_name, ^pattern) or
-               ilike(u.full_name, ^pattern) or
-               ilike(u.email, ^pattern)
+             [memberships: m],
+             ilike(m.display_name, ^pattern) or
+               ilike(m.contact_email, ^pattern)
            )}
         end
       },

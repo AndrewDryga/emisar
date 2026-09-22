@@ -405,6 +405,13 @@ defmodule Emisar.SSOIdentityLinkTest do
   describe "begin_identity_link/6" do
     test "links only the current user and leaves the current session provenance unchanged",
          %{provider: _provider, subject: _subject, user: _user} = context do
+      Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
+      |> Ecto.Changeset.change(
+        display_name: "Workspace Linker",
+        contact_email: "local@example.test"
+      )
+      |> Repo.update!()
+
       proof = local_proof(context, :link)
 
       assert {:ok, begun} =
@@ -432,6 +439,13 @@ defmodule Emisar.SSOIdentityLinkTest do
       assert identity.provider_id == context.provider.id
       assert identity.created_by == :user
       assert identity.provisioned_via == :oidc_link
+
+      assert {:ok, [event], _} =
+               Emisar.Audit.list_events(context.subject,
+                 filter: [event_type: ["sso.identity_linked"]]
+               )
+
+      assert event.target_label == "Workspace Linker"
 
       assert {:ok, _user, %UserToken{auth_method: :magic_link, user_identity_id: nil}} =
                Auth.fetch_user_and_token_by_session_token(context.raw_session)
@@ -663,6 +677,13 @@ defmodule Emisar.SSOIdentityLinkTest do
          %{provider: _provider, subject: _subject, user: _user} = context do
       identity = link_identity(context)
 
+      Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
+      |> Ecto.Changeset.change(
+        display_name: "Workspace Unlinker",
+        contact_email: "local@example.test"
+      )
+      |> Repo.update!()
+
       provider_session =
         Fixtures.Auth.create_session_token!(context.user, :sso, nil, %{},
           user_identity_id: identity.id
@@ -680,6 +701,13 @@ defmodule Emisar.SSOIdentityLinkTest do
                )
 
       assert removed.deleted_at
+
+      assert {:ok, [event], _} =
+               Emisar.Audit.list_events(context.subject,
+                 filter: [event_type: ["sso.identity_unlinked"]]
+               )
+
+      assert event.target_label == "Workspace Unlinker"
       assert Auth.fetch_user_and_token_by_session_token(provider_session) == {:error, :not_found}
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(unrelated_session)
 

@@ -20,6 +20,7 @@ defmodule Emisar.Runners.EnrollmentKey do
     field :last_used_at, :utc_datetime_usec
     field :revoked_at, :utc_datetime_usec
     field :deleted_at, :utc_datetime_usec
+    field :created_by_label, :string, virtual: true
 
     # Permanent origin marker for console install keys. Cleanup additionally
     # requires no recorded use; enrollment never erases the key's source.

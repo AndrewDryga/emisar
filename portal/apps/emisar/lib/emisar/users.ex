@@ -181,10 +181,7 @@ defmodule Emisar.Users do
     |> Multi.update(:email_change, User.Changeset.email(user, %{email: new_email}))
     |> Audit.Multi.log_for_user(:email_change_audit, nil, "user.email_changed",
       user_fn: & &1.email_change,
-      payload_fn: fn %{email_change: updated} ->
-        %{from: user.email, to: updated.email}
-      end,
-      extra: [context: context]
+      extra: [context: personal_profile_audit_context(context)]
     )
   end
 
@@ -192,7 +189,7 @@ defmodule Emisar.Users do
 
   @doc """
   Update the caller's own profile fields. Self-service — the user is the
-  subject's own actor; admins use `Accounts.update_user_as_admin/3` for
+  subject's own actor; admins use `Accounts.update_member_profile_as_admin/3` for
   teammates.
   """
   def update_user_profile(attrs, %Subject{actor: %User{id: user_id}} = subject) do
@@ -201,17 +198,20 @@ defmodule Emisar.Users do
       |> User.Query.by_id(user_id)
       |> Repo.fetch_and_update(User.Query,
         with: &User.Changeset.profile(&1, attrs),
-        audit: fn updated ->
-          Audit.user_changesets(updated, "user.profile_updated",
-            context: subject.context,
-            payload: %{full_name: updated.full_name}
+        audit:
+          &Audit.user_changesets(&1, "user.profile_updated",
+            context: personal_profile_audit_context(subject.context)
           )
-        end
       )
     end
   end
 
   def update_user_profile(_attrs, %Subject{}), do: {:error, :unauthorized}
+
+  # Workspace copies retain the security event and correlation ID, not private
+  # profile values or the browser/IP used to edit the personal account.
+  defp personal_profile_audit_context(%RequestContext{request_id: request_id}),
+    do: %RequestContext{request_id: request_id}
 
   # -- Form builders -------------------------------------------------------
 
@@ -449,62 +449,14 @@ defmodule Emisar.Users do
   end
 
   @doc """
-  Internal — Accounts invitation accept: set the invited user's full_name
-  and mark them confirmed (accepting the invite proves they own the email;
-  they sign in via magic link). Two updates inside the caller's transaction.
+  Internal — Accounts invitation accept: confirm the locked user's existing
+  address after the caller checks the invitation's exact address and generation.
+  Workspace profile input never changes the personal name or email.
   """
-  def register_invited_user(%User{} = user, %{} = attrs) do
-    # The emailed invitation proves the address already stored on the locked
-    # user. Never let bearer-supplied attrs replace that address while using
-    # the old inbox proof to confirm the new one.
-    profile = User.Changeset.profile(user, attrs)
+  def confirm_invited_user(%User{confirmed_at: nil} = user),
+    do: user |> User.Changeset.confirm() |> Repo.update()
 
-    with {:ok, user} <- Repo.update(profile) do
-      user |> User.Changeset.confirm() |> Repo.update()
-    end
-  end
-
-  @doc """
-  Internal — Accounts team admin: locked profile edit on a member's user
-  row. The caller supplies the `:audit` changeset fun (its event carries
-  the acting subject + membership); field whitelisting is
-  `User.Changeset.profile/2` (full_name only).
-  """
-  def update_user_profile_as_admin(user_id, attrs, opts) when is_map(attrs) do
-    User.Query.not_deleted()
-    |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query,
-      with: &User.Changeset.profile(&1, attrs),
-      audit: Keyword.fetch!(opts, :audit)
-    )
-  end
-
-  @doc """
-  Internal — SSO directory sync: replace the user's display name with the
-  IdP-sent one (SCIM owns a synced user's profile). No-op `{:ok, user}` when
-  the name already matches — no write, no audit. The caller supplies `:audit`.
-  Returns `{:ok, user} | {:error, :not_found | %Ecto.Changeset{}}`.
-  """
-  def sync_user_full_name(user_id, full_name, opts) when is_binary(full_name) do
-    User.Query.not_deleted()
-    |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query,
-      with: &sync_full_name_changeset(&1, full_name),
-      audit: Keyword.fetch!(opts, :audit)
-    )
-    |> case do
-      {:error, {:noop, %User{} = user}} -> {:ok, user}
-      other -> other
-    end
-  end
-
-  # An already-matching name rides fetch_and_update's abort channel as
-  # `{:noop, user}` so the idempotent re-sync commits nothing — no UPDATE row,
-  # no audit event.
-  defp sync_full_name_changeset(%User{full_name: full_name} = user, full_name), do: {:noop, user}
-
-  defp sync_full_name_changeset(%User{} = user, full_name),
-    do: User.Changeset.profile(user, %{full_name: full_name})
+  def confirm_invited_user(%User{} = user), do: {:ok, user}
 
   @doc """
   Internal — Accounts team admin: clear the member's MFA enrollment

@@ -223,7 +223,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
 
     case Runners.list_enrollment_keys(
            socket.assigns.current_subject,
-           Keyword.put(opts, :preload, [:created_by])
+           Keyword.put(opts, :preload, [:created_by_label])
          ) do
       {:ok, enrollment_keys, meta} ->
         socket
@@ -536,7 +536,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                         placeholder="never"
                       />
                     </:seg>
-                    <:seg :if={key.created_by}>by {key.created_by.email}</:seg>
+                    <:seg :if={key.created_by_label}>by {key.created_by_label}</:seg>
                     <:seg :if={key.expires_at}>
                       {if DateTime.compare(key.expires_at, DateTime.utc_now()) == :gt,
                         do: "expires",

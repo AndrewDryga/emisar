@@ -413,6 +413,7 @@ defmodule Emisar.SSO.SCIM do
 
       nil ->
         {role, access} = repost_authorization(provider, authorization)
+        profile = Accounts.peek_membership_profile(provider.account_id, user.id)
 
         Accounts.put_sso_membership(
           Multi.new(),
@@ -420,6 +421,8 @@ defmodule Emisar.SSO.SCIM do
           user.id,
           role,
           access,
+          display_name: profile && profile.display_name,
+          contact_email: profile && profile.contact_email,
           directory_managed?: true,
           directory_provider: provider
         )
@@ -636,13 +639,15 @@ defmodule Emisar.SSO.SCIM do
         user.id,
         locked_provider.default_role,
         provider_runner_access(locked_provider),
+        display_name: attrs[:full_name],
+        contact_email: attrs[:email],
         active?: scim_active_from(attrs),
         directory_managed?: true,
         directory_provider: locked_provider
       )
     end)
-    |> Multi.insert(:audit, fn %{locked_provider: locked_provider, user: user} ->
-      Audit.Events.user_provisioned_via_scim(user, locked_provider)
+    |> Multi.insert(:audit, fn %{locked_provider: locked_provider, membership: member} ->
+      Audit.Events.user_provisioned_via_scim(member, locked_provider)
     end)
   end
 
@@ -851,39 +856,21 @@ defmodule Emisar.SSO.SCIM do
 
   defp apply_scim_rename(_provider, _identity, :keep), do: {:ok, :unchanged}
 
-  # A component names one half, so the half this operation does not mention
-  # keeps the value it already has — a `givenName`-only correction must not
-  # drop the surname. Merged here, against the user the locked identity binds,
-  # so a concurrent rename can't slip between the read and the write.
+  # Keep omitted components from this workspace's locked profile, never from
+  # the linked personal User. The member lock also serializes a local rename.
   defp apply_scim_rename(%IdentityProvider{} = provider, identity, {:merge, components}) do
-    with {:ok, user} <- Users.fetch_user_by_id(identity.user_id) do
-      apply_scim_rename(provider, identity, {:replace, merged_name(user, components)})
-    end
+    sync_scim_name(provider, identity, &merged_name(&1, components))
   end
 
   defp apply_scim_rename(%IdentityProvider{} = provider, identity, {:replace, full_name}) do
-    with {:ok, membership, sole_tenancy?} <-
-           Accounts.sync_member_display_name(provider.account_id, identity.user_id, full_name,
-             audit: &Audit.Events.membership_renamed_via_scim(&1, provider, full_name)
-           ),
-         {:ok, _user} <- rename_the_person(identity, full_name, provider, sole_tenancy?) do
-      {:ok, membership}
-    end
+    sync_scim_name(provider, identity, full_name)
   end
 
-  # The directory's name always lands on the MEMBERSHIP, which this account owns.
-  # It reaches `users.full_name` — the person's own, cross-account attribute —
-  # only when this account is their only tenancy. Writing it unconditionally let
-  # one workspace's IdP put text of its choosing in front of another workspace's
-  # operators, in their roster, audit trail and run attribution.
-  defp rename_the_person(%UserIdentity{} = identity, full_name, provider, true) do
-    Users.sync_user_full_name(identity.user_id, full_name,
-      audit: &Audit.Events.user_renamed_via_scim(&1, provider)
+  defp sync_scim_name(provider, identity, name) do
+    Accounts.sync_member_display_name(provider.account_id, identity.user_id, name,
+      audit: &Audit.Events.membership_renamed_via_scim(&1, provider, &2)
     )
   end
-
-  defp rename_the_person(%UserIdentity{} = identity, _full_name, _provider, false),
-    do: Users.fetch_user_by_id(identity.user_id)
 
   # The stored name is one string, so split it to fill whichever half the
   # operation left alone: everything before the first space is the given half,
@@ -891,8 +878,8 @@ defmodule Emisar.SSO.SCIM do
   # family half. That is a guess about human names, and a wrong one for plenty
   # of them — it only decides what to KEEP when an operation names one
   # component, never what to store when it names both.
-  defp merged_name(%Users.User{} = user, components) do
-    {current_given, current_family} = split_current_name(user)
+  defp merged_name(%Accounts.Membership{} = membership, components) do
+    {current_given, current_family} = split_current_name(membership)
 
     [
       Map.get(components, :given, current_given),
@@ -902,8 +889,8 @@ defmodule Emisar.SSO.SCIM do
     |> Enum.join(" ")
   end
 
-  defp split_current_name(user) do
-    case scim_display_name(user) do
+  defp split_current_name(membership) do
+    case scim_display_name(membership) do
       nil ->
         {nil, nil}
 
@@ -984,8 +971,8 @@ defmodule Emisar.SSO.SCIM do
   """
   def scim_fetch_user(%IdentityProvider{} = provider, id) do
     with {:ok, identity} <- fetch_scim_identity(provider, id) do
-      membership = Accounts.peek_sync_membership(provider.account_id, identity.user_id)
-      {:ok, scim_user(identity, identity.user, membership)}
+      membership = Accounts.peek_membership_profile(provider.account_id, identity.user_id)
+      {:ok, scim_user(identity, membership)}
     end
   end
 
@@ -1022,10 +1009,6 @@ defmodule Emisar.SSO.SCIM do
         []
       else
         queryable
-        # The user carries the email `userName` renders from. Without it a listed
-        # identity fell back to its opaque externalId, so the handle an IdP got
-        # back from `POST /Users` differed from the next list response.
-        |> UserIdentity.Query.with_preloaded_user()
         |> UserIdentity.Query.ordered_by_recent()
         |> UserIdentity.Query.offset_page(offset, limit)
         |> Repo.all()
@@ -1175,7 +1158,6 @@ defmodule Emisar.SSO.SCIM do
       |> UserIdentity.Query.by_account_id(provider.account_id)
       |> UserIdentity.Query.by_provider_id(provider.id)
       |> UserIdentity.Query.by_id(id)
-      |> UserIdentity.Query.with_preloaded_user()
       |> Repo.fetch(UserIdentity.Query)
     else
       {:error, :not_found}
@@ -1187,20 +1169,20 @@ defmodule Emisar.SSO.SCIM do
 
     memberships =
       provider.account_id
-      |> Accounts.list_sync_memberships(user_ids)
+      |> Accounts.list_membership_profiles(user_ids)
       |> Map.new(&{&1.user_id, &1})
 
-    Enum.map(identities, &scim_user(&1, &1.user, memberships[&1.user_id]))
+    Enum.map(identities, &scim_user(&1, memberships[&1.user_id]))
   end
 
-  defp scim_user(%UserIdentity{} = identity, user, membership) do
+  defp scim_user(%UserIdentity{} = identity, membership) do
     external_id = identity.scim_external_id || identity.provider_identifier
 
     %SCIMUser{
       id: identity.id,
       external_id: external_id,
-      user_name: scim_user_name(identity, user),
-      display_name: scim_display_name(user),
+      user_name: scim_user_name(identity, membership),
+      display_name: scim_display_name(membership),
       active: scim_effective_active?(identity, membership)
     }
   end
@@ -1220,21 +1202,20 @@ defmodule Emisar.SSO.SCIM do
   # directory told "active" by a read and "no such user" by a deprovision.
   defp scim_effective_active?(%UserIdentity{}, nil), do: false
 
-  # userName prefers the user's email (the human-readable handle IdPs expect),
+  # userName prefers the workspace contact (the human-readable handle IdPs expect),
   # then a `preferred_username`/`nickname` claim if the IdP asserted one, and
   # only then falls back to the opaque externalId/sub (decision: SCIM email is
   # optional and the IdP may suppress it — but a readable handle is nicer).
-  defp scim_user_name(%UserIdentity{} = identity, user) do
-    scim_email(identity, user) || scim_username_claim(identity) || identity.scim_external_id ||
+  defp scim_user_name(%UserIdentity{} = identity, membership) do
+    scim_email(membership) || scim_username_claim(identity) || identity.scim_external_id ||
       identity.provider_identifier
   end
 
-  defp scim_email(_identity, %{email: email}) when is_binary(email) and email != "", do: email
+  defp scim_email(%Accounts.Membership{contact_email: email})
+       when is_binary(email) and email != "",
+       do: email
 
-  defp scim_email(%UserIdentity{claims: %{"email" => email}}, _user) when is_binary(email),
-    do: email
-
-  defp scim_email(_identity, _user), do: nil
+  defp scim_email(_membership), do: nil
 
   # The common OIDC handle claims, in preference order — a friendlier userName
   # than the raw subject when no email was asserted.
@@ -1249,9 +1230,11 @@ defmodule Emisar.SSO.SCIM do
 
   defp scim_username_claim(_identity), do: nil
 
-  defp scim_display_name(%{full_name: name}) when is_binary(name) and name != "", do: name
+  defp scim_display_name(%Accounts.Membership{display_name: name})
+       when is_binary(name) and name != "",
+       do: name
 
-  defp scim_display_name(_user), do: nil
+  defp scim_display_name(_membership), do: nil
 
   # -- Directory sync (SCIM) — groups → roles (internal, provider-scoped) --
 

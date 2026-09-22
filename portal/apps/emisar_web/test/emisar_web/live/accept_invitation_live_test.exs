@@ -23,6 +23,28 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
   end
 
   describe "token gate" do
+    test "an invitation neither exposes nor changes an existing personal name", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      person = Fixtures.Users.create_user(full_name: "Private Personal Name")
+      elsewhere = Fixtures.Memberships.create_membership(user_id: person.id)
+
+      {:ok, invitation} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: person.email, role: "viewer"),
+          owner_subject(owner, account)
+        )
+
+      {:ok, lv, html} = live(build_conn(), ~p"/accept_invitation/#{invitation.invitation_token}")
+      refute html =~ "Private Personal Name"
+      assert has_element?(lv, "#accept_form", "Your name in this workspace")
+
+      lv |> form("#accept_form", member: %{display_name: "Work Name"}) |> render_submit()
+
+      assert Emisar.Repo.reload!(invitation.membership).display_name == "Work Name"
+      assert Emisar.Repo.reload!(person).full_name == "Private Personal Name"
+      assert Emisar.Repo.reload!(elsewhere) == elsewhere
+    end
+
     test "a bogus token renders the Invitation-unavailable page with cause-neutral copy", %{
       conn: _conn
     } do
@@ -81,7 +103,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       # Passwordless: the join form sets a name, not a password.
       refute html =~ ~s|name="user[password]"|
 
-      params = %{"user" => %{"full_name" => "New Person"}}
+      params = %{"member" => %{"display_name" => "New Person"}}
 
       {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token, preload: [:user])
 
@@ -95,7 +117,8 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
 
       user = Emisar.Repo.reload!(pending_membership.user)
-      assert user.full_name == "New Person"
+      assert is_nil(user.full_name)
+      assert Emisar.Repo.reload!(pending_membership).display_name == "New Person"
       assert user.confirmed_at
     end
 
@@ -126,11 +149,11 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       {:ok, membership} = Accounts.fetch_invitation_by_token(token)
 
       {:ok, _} =
-        Accounts.accept_invitation(membership, token, %{"full_name" => "First Acceptor"})
+        Accounts.accept_invitation(membership, token, %{"display_name" => "First Acceptor"})
 
       html =
         lv
-        |> form("#accept_form", %{"user" => %{"full_name" => "Second Acceptor"}})
+        |> form("#accept_form", %{"member" => %{"display_name" => "Second Acceptor"}})
         |> render_submit()
 
       # Terminal state with a recovery action — not a transient flash over a
@@ -162,7 +185,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       old_html =
         old_live
-        |> form("#accept_form", %{"user" => %{"full_name" => "Old Link"}})
+        |> form("#accept_form", %{"member" => %{"display_name" => "Old Link"}})
         |> render_submit()
 
       assert old_html =~ "Invitation unavailable"
@@ -171,11 +194,12 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       {:ok, new_live, _html} = live(build_conn(), ~p"/accept_invitation/#{new_token}")
 
       new_live
-      |> form("#accept_form", %{"user" => %{"full_name" => "New Link"}})
+      |> form("#accept_form", %{"member" => %{"display_name" => "New Link"}})
       |> render_submit()
 
       accepted = membership |> Emisar.Repo.reload!() |> Emisar.Repo.preload(:user)
-      assert accepted.user.full_name == "New Link"
+      assert accepted.display_name == "New Link"
+      assert is_nil(accepted.user.full_name)
     end
 
     test "an old-address link neither resolves nor reveals the current address", %{conn: conn} do
@@ -210,8 +234,8 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       conn: conn
     } do
       # the anonymous form shows the invited email as a
-      # read-only hidden field, but the `accept` handler builds its attrs from ONLY
-      # full_name (never `user[email]`), so a client that rewrites the hidden value
+      # read-only hidden field, but acceptance casts ONLY the workspace name
+      # (never an email), so a client that rewrites the hidden value
       # can't redirect the invitation onto a different address: the
       # registered/confirmed user still carries the membership's invited email.
       {_conn, owner, account} = register_and_log_in(conn)
@@ -226,9 +250,10 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       # `user[email]` is an attacker-chosen address — bypassing the form's own
       # hidden-field guard to prove the SERVER (not just the client) ignores it.
       params = %{
-        "user" => %{
+        "user" => %{"email" => "attacker@evil.test"},
+        "member" => %{
           "email" => "attacker@evil.test",
-          "full_name" => "New Person"
+          "display_name" => "New Person"
         }
       }
 
@@ -346,8 +371,8 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       # The wrong-account screen renders no accept control, but the HANDLER is
       # the gate: the anonymous branch would otherwise provision the invitee
-      # and write the bystander's `full_name` onto their cross-account identity.
-      render_click(lv, "accept", %{"user" => %{"full_name" => "Bystander"}})
+      # and write the bystander's name onto the invited membership.
+      render_click(lv, "accept", %{"member" => %{"display_name" => "Bystander"}})
 
       assert {:ok, _still_pending} = Accounts.fetch_invitation_by_token(token)
       assert Emisar.Repo.reload!(pending_membership.user).full_name == nil

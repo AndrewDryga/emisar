@@ -172,10 +172,11 @@ defmodule EmisarWeb.MemberRoleLive do
   end
 
   defp change_title(target, "directory"),
-    do: "Return #{Accounts.member_display_name(target, target.user)} to directory sync?"
+    do: "Return #{Accounts.member_display_name(target) || "this member"} to directory sync?"
 
-  defp change_title(target, role),
-    do: "Change #{Accounts.member_display_name(target, target.user)} to #{Auth.role_label(role)}?"
+  defp change_title(target, role) do
+    "Change #{Accounts.member_display_name(target) || "this member"} to #{Auth.role_label(role)}?"
+  end
 
   def render(assigns) do
     ~H"""

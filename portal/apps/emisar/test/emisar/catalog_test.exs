@@ -5418,8 +5418,15 @@ defmodule Emisar.CatalogTest do
       assert Catalog.list_pack_versions(no_view) == {:error, :unauthorized}
     end
 
-    test "preload: [:retirement_overridden_by] loads the overriding admin, and it's absent by default",
+    test "preload: [:retirement_override_label] loads the local label, absent by default",
          %{subject: subject, runner: runner} do
+      subject.actor
+      |> Ecto.Changeset.change(
+        full_name: "Private Changed Name",
+        email: "private-catalog@example.test"
+      )
+      |> Repo.update!()
+
       {:ok, _} =
         Catalog.observe_state(
           runner,
@@ -5431,13 +5438,14 @@ defmodule Emisar.CatalogTest do
       {:ok, _} = Catalog.override_pack_retirement(trusted.id, subject)
 
       {:ok, [preloaded], _} =
-        Catalog.list_pack_versions(subject, preload: [:retirement_overridden_by])
+        Catalog.list_pack_versions(subject, preload: [:retirement_override_label])
 
-      assert %Emisar.Users.User{id: user_id} = preloaded.retirement_overridden_by
-      assert user_id == preloaded.retirement_overridden_by_id
+      member = Fixtures.Memberships.fetch_membership(subject.account.id, subject.actor.id)
+      assert preloaded.retirement_override_label == Emisar.Accounts.member_display_name(member)
+      refute preloaded.retirement_override_label == "Private Changed Name"
 
       {:ok, [bare], _} = Catalog.list_pack_versions(subject)
-      assert %Ecto.Association.NotLoaded{} = bare.retirement_overridden_by
+      assert bare.retirement_override_label == nil
     end
   end
 
