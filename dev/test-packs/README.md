@@ -146,11 +146,10 @@ the packs whose actions the harness genuinely cannot run, and why:
 | `iperf3` | needs two hosts and a saturable link between them |
 | `bonding`, `nic`, `multipath`, `iscsi` | need real NICs, multipath devices, or an iSCSI target |
 | `aws-cost`, `tailscale`, `git-local`, `github-cli` | drive a remote credentialed service with no disposable substitute |
-| `java-jvm` | heavy JVM SUT; verified in CI rather than on a workstation |
 | `cloud-init` | reads a boot that already happened; a container has none |
 
 Anything else without a plan is a gap, not an exemption. The ordinary
-containerizable ones left today are `zot`, `vector`, `podman`, `php-fpm`,
+containerizable ones left today are `java-jvm`, `vector`, `podman`, `php-fpm`,
 `python-app`, `nodejs-pm2`, `elixir-beam`, `dnf-rpm`, `rke2`, `nfs`,
 `time-sync`, `wireguard`, and `zfs` — rank them by mutator risk, not by
 action count.
@@ -233,7 +232,7 @@ uploading the reports. A hard process kill can still interrupt that work.
 ./run test packs
 
 # A declared alternate version resolves its committed digest.
-PACKTEST_VERSION=17.6 ./run test packs postgres
+PACKTEST_VERSION=17.11 ./run test packs postgres
 
 # An ad hoc version must provide an exact digest.
 PACKTEST_VERSION=17.6 \

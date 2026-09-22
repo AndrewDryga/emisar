@@ -5,11 +5,11 @@ description: Author, validate, test, distribute, and certify a custom Emisar act
 
 # Author and ship a custom Emisar pack
 
-Execute this workflow on the customer's environment. Do not require an Emisar
-source checkout, fork, build toolchain, repository instructions, or internal
-contributor skill. A pack is a directory of YAML the customer owns; author it
-in their repo, prove it with the installed CLIs, and certify it through the
-signed-in Emisar portal.
+Author and test in the customer's environment using the installed CLIs and
+public documentation. A pack is a directory of YAML the customer owns; keep it
+in their repo and certify it through the signed-in Emisar portal. Only the
+optional private-registry publisher in step 5 needs a signed Emisar source
+checkout and Go toolchain; no internal contributor instructions are needed.
 
 A pack is the contract between the operator and the LLM: it declares exactly
 what may run on hosts, with what arguments, at what risk. Treat every action
@@ -103,11 +103,12 @@ Decide these per action, and write them down — they become the YAML:
   an LLM keyword-matches; open read descriptions with the verb of the job
   (List, Show, Get, Tail, Check), and make `description` a real doc string.
   List every file, network, and process side effect under `side_effects`.
-- **Risk is honest.** `low` is reserved for pure reads and cheap bounded
-  probes — it runs without approval. Anything that mutates state, opens a
-  listener, binds a port, or can saturate a link is at least `medium`;
-  destructive operations are `high`; unrestricted escapes are `critical`.
-  Mislabeling a mutating action `low` bypasses the operator's approval gate.
+- **Risk is honest.** `low` covers structured status, metadata, and cheap
+  bounded probes. Raw log or application output, bounded recoverable changes,
+  opening a listener, and link-saturating probes are at least `medium`.
+  Destructive operations and secret-bearing configuration dumps are `high`;
+  unrestricted escapes are `critical`. Policy decides the outcome: the shipped
+  default allows low and medium, requires approval for high, and denies critical.
 - **The LLM never controls the command.** `execution.command.binary` plus an
   `argv` list is the shape; `{{ args.x }}` substitutes into fixed slots. The
   binary is a bare PATH-resolved name (`systemctl`, `psql`). When an action
@@ -161,7 +162,7 @@ requires:
   binaries: [journalctl]
 setup:
   host_access:
-    - actions: [my.journal_tail]
+    - actions: [my-pack.journal_tail]
       requirement: Read the system journal.
       recipes:
         - name: systemd Linux — default emisar service user
@@ -180,12 +181,13 @@ fields; the complete schema is in the YAML reference and the validator:
 
 ```yaml
 schema_version: 1
-id: my.journal_tail
+id: my-pack.journal_tail
 title: Read recent system journal entries
 kind: exec
-risk: low
+risk: medium
 description: >
-  Show the most recent system journal entries.
+  Show the most recent system journal entries. Raw application messages can
+  contain personal or sensitive data that pattern redaction cannot fully detect.
 side_effects:
   - Reads the system journal.
   - Touches nothing.
@@ -223,11 +225,12 @@ On the authoring runner:
    dir and reloads the running daemon itself (no restart, no dropped runs).
 3. `emisar action list` and `emisar action describe <id>` — confirm every
    action loaded with the intended risk, args, and bounds.
-4. Prove one `risk: low` read locally: `emisar action run <id> --arg k=v
+4. If the pack includes a `risk: low` read, prove it locally:
+   `emisar action run <id> --arg k=v
    --reason "pack authoring check"`. Local runs bypass the cloud, so this is
-   strictly a development-runner debugging step — leave mutating actions for
-   the cloud path in step 6.
-5. Prove the bounds hold: rerun with an out-of-range value — a path outside
+   strictly a development-runner debugging step. Use the governed cloud path
+   in step 6 for every other action, including the medium-risk journal example.
+5. Through the same permitted path, prove the bounds hold with an out-of-range value — a path outside
    `allowed_prefixes`, an oversized string, a number past `max` — and require
    a validation rejection, not an execution. An action whose denial you have
    not seen is unproven.
@@ -259,13 +262,14 @@ still decides trust per account (step 6).
    ```sh
    git clone --depth 1 --branch runner-v<version> \
      https://github.com/andrewdryga/emisar.git emisar-src
-   cd emisar-src/runner && go build -o ~/.local/bin/packctl ./cmd/packctl
+   go -C emisar-src/runner build -o ~/.local/bin/packctl ./cmd/packctl
    ```
 
-   Release tags are signed annotated tags, so `git verify-tag runner-v<version>`
+   Release tags are signed annotated tags, so `git -C emisar-src verify-tag runner-v<version>`
    confirms the checkout before you build if you hold the signing key. Requires
    a Go toolchain; check `packctl --version`.
-2. Build the tree. `--base-url` is wherever you will host it:
+2. From your pack repository, build the tree. `--packs` names the directory
+   containing your pack directories; `--base-url` is wherever you will host it:
 
    ```sh
    packctl catalog build --packs ./packs --out ./dist \
@@ -281,18 +285,29 @@ still decides trust per account (step 6).
    ```
 
    S3, MinIO, or nginx: sync the files yourself — immutable objects first,
-   then the two mutable pointers (`v1/suggest.json`, then `v1/catalog.json`)
-   so a reader never sees a catalog referencing bytes that are not there yet.
-4. Install fleet-wide, still hash-pinned:
+   then the four mutable indexes (`v1/suggest.json`, `packs/suggest.json`,
+   `packs.json`, and finally `v1/catalog.json`) so an index never references
+   missing bytes. The final catalog marks publication complete.
+4. Install fleet-wide using the immutable `tarball_url` and `content_hash` from
+   the catalog entry:
 
    ```sh
-   sudo emisar pack install my-pack \
-     --registry https://packs.acme.internal --hash sha256:<reviewed>
+   sudo emisar pack install <tarball_url> --hash <content_hash>
    ```
 
-   Or set `EMISAR_PACKS_REGISTRY=https://packs.acme.internal` once per host
-   and use plain pack names; `my-pack=0.2.0` pins a version. `emisar pack
-   update --dry-run` then reports fleet drift against your registry.
+   `emisar pack suggest --catalog https://packs.acme.internal/v1/catalog.json`
+   also prints pinned install commands for matching hosts. Once installed,
+   review and apply the registry's current version with:
+
+   ```sh
+   emisar pack diff my-pack --registry https://packs.acme.internal
+   sudo emisar pack update my-pack --registry https://packs.acme.internal
+   ```
+
+   Both commands verify the catalog's content hash and use its immutable download
+   URL. Static storage does not implement the Portal's name/version download
+   routes: initial installs by plain name, `my-pack=0.2.0`, and `pack diff --to`
+   need that facade. Use an immutable URL and hash to install a specific version.
 
 **Every rebuild after the first publish carries history forward.** Fetch the
 currently-published catalog and pass it as `--previous` — this is what makes a
@@ -348,11 +363,13 @@ admin reviews it, or trusted after the portal's configured catalog carries and
 the portal observes that exact tuple. That is the drift guard working, not a
 fault. On a security or critical fix — an under-bounded arg, a secret-emitting
 read, a path escape, or a mislabeled risk — a version bump alone leaves
-vulnerable copies runnable: also set `retired_below: <fixed version>` in
-`pack.yaml` so runners still advertising older versions fail closed at
-dispatch. Registry publishes enforce that floor
-monotonically (with `--previous`). Routine changes never retire — operators
-update at their own pace.
+vulnerable copies runnable. For a custom pack absent from the Portal's configured
+catalog, have an account admin revoke trust in the old hashes and approve the
+reviewed replacements. A `retired_below` field in that private manifest alone
+does not block old versions. If the Portal reads your catalog, publish
+`retired_below: <fixed version>` there; `--previous` preserves its floor across
+rebuilds. Verify the old tuple is blocked before calling the rollout complete.
+Routine changes do not need retirement or trust revocation.
 
 ## Report
 

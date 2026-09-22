@@ -66,8 +66,10 @@ schema_version: 1
 id: web.service_status
 title: Show service status
 kind: exec
-risk: low
-description: Show the current systemd status for one approved web service.
+risk: medium
+description: >
+  Show the current systemd status for one web service. Recent journal entries
+  can contain personal or sensitive application data.
 side_effects:
   - Reads service state and recent status output.
 

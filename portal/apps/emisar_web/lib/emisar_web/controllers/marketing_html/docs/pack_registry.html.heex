@@ -11,7 +11,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="pack-registry"
-      updated="August 18, 2026"
+      updated="September 22, 2026"
       toc={[
         {"get-packctl", "1. Get packctl"},
         {"build", "2. Build the registry tree"},
@@ -195,10 +195,13 @@ packctl catalog build --packs ./packs --out ./dist \
         </li>
         <li class="list-disc">
           <strong class="text-zinc-200">Install by URL, not by name.</strong>
-          Name-based commands — <code>pack install redis</code>, <code>pack update</code>,
-          <code>pack diff</code>
-          — read the public registry's layout, which this tree does not have. Install from
-          the immutable tarball URLs in step 4.
+          Install from the immutable tarball URLs in step 4. Once installed,
+          <code>pack diff redis --registry https://packs.acme.internal</code>
+          previews the current version and
+          <code>pack update redis --registry https://packs.acme.internal</code>
+          applies it; both verify the catalog's content hash. Initial installs by plain
+          name and <code>pack diff --to</code>
+          still need the public registry's download routes.
         </li>
         <li class="list-disc">
           <strong class="text-zinc-200">To retire a version, revoke its trust.</strong>

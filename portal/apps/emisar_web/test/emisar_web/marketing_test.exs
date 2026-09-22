@@ -1672,13 +1672,14 @@ defmodule EmisarWeb.MarketingTest do
 
       assert html =~ "emisar pack validate"
       assert html =~ "emisar pack install"
-      assert html =~ "Requires:  linux · my-cli ✓"
+      assert html =~ "Requires:  linux · journalctl ✓"
 
       assert html =~
-               "Hash:      sha256:e8edc3660cb2cf7a8f3fe0d9cea167d07565b8287f57bd089b4dd737eb0e3844"
+               "Hash:      sha256:daafe7a34b537dd4728c7a9bfa645c998265df5a93a2b1e11e114cb05bd744ba"
 
-      assert html =~ "ok my.do_other_thing  5ms"
-      assert html =~ "Reloaded the runner — it re-reads packs and re-advertises"
+      assert html =~ "declares no verify action"
+      assert html =~ "Actions:   1  (1 medium)"
+      assert html =~ "Signaled the runner to reload packs and re-advertise"
       assert html =~ ">…</span>"
       refute html =~ "ok my.do_thing"
       # The binary-only path: authors validate with no service and no account.
@@ -1690,6 +1691,38 @@ defmodule EmisarWeb.MarketingTest do
 
       # install SIGHUP-reloads a running daemon, so the guide drops the redundant manual reload.
       refute html =~ "systemctl reload"
+    end
+
+    test "raw-log authoring examples preserve the medium risk floor and safe probe guidance", %{
+      conn: conn
+    } do
+      publishing = conn |> get(~p"/docs/publishing-packs") |> html_response(200)
+
+      examples =
+        publishing
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("pre")
+        |> Enum.map(&LazyHTML.text/1)
+
+      [manifest, action] = Enum.filter(examples, &String.starts_with?(&1, "schema_version: 1"))
+      assert manifest =~ "id: my-pack\n"
+      assert manifest =~ "actions: [my-pack.journal_tail]"
+      refute manifest =~ "\n  verify:"
+      assert action =~ "id: my-pack.journal_tail\n"
+      assert action =~ "risk: medium\n"
+
+      reference = conn |> recycle() |> get(~p"/docs/action-packs") |> html_response(200)
+
+      [grep] =
+        reference
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("pre")
+        |> Enum.map(&LazyHTML.text/1)
+        |> Enum.filter(&String.contains?(&1, "id: linux.grep_log"))
+
+      assert grep =~ "risk: medium\n"
+      assert grep =~ ~s(argv: ["-E", "-n", "-e", "{{ args.pattern }}", "--", "{{ args.file }}"])
+      assert grep =~ "pattern: ' 5[0-9][0-9] '"
     end
 
     test "the pack-registry guide renders the packctl flow and the BYO install flags",
@@ -1706,6 +1739,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(--exclude "packs.json")
       assert html =~ "--hash sha256:"
       assert html =~ "aws s3 sync"
+      assert html =~ "pack diff redis --registry https://packs.acme.internal"
+      assert html =~ "pack update redis --registry https://packs.acme.internal"
 
       # The static tree moves bytes. Account trust remains a separate decision.
       assert html =~ "Actions use account trust, not the download host"

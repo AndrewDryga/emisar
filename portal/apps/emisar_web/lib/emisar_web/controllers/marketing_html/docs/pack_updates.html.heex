@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="pack-updates"
-      updated="September 5, 2026"
+      updated="September 22, 2026"
       toc={[
         {"record", "1. See where you are"},
         {"review", "2. Read what changed"},
@@ -163,7 +163,7 @@
 <span class="text-zinc-500">  redis                  v0.2.3 → v0.2.4 updated</span>
 
 <span class="text-zinc-500">1 updated, 0 up to date, 0 not in registry, 0 failed.</span>
-<span class="text-zinc-500">Reloaded the runner — it re-reads packs and re-advertises to the control plane.</span>
+<span class="text-zinc-500">Signaled the runner to reload packs and re-advertise to the control plane.</span>
 
 <span class="text-zinc-500"># or pin an exact published version and its hash</span>
 <span class="text-zinc-500">$</span> sudo emisar pack install redis=0.2.4 --hash sha256:… --force</.docs_code>
@@ -276,7 +276,7 @@
 <span class="text-zinc-500">installed redis → /etc/emisar/packs/redis</span>
 <span class="text-zinc-500">…</span>
 
-<span class="text-zinc-500">Reloaded the runner — it re-reads packs and re-advertises to the control plane.</span></.docs_code>
+<span class="text-zinc-500">Signaled the runner to reload packs and re-advertise to the control plane.</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The
         <.docs_inline_code>--hash</.docs_inline_code>

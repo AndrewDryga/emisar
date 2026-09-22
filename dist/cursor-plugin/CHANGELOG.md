@@ -4,6 +4,16 @@ All notable changes to the emisar Cursor plugin are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-09-22
+
+### Fixed
+
+- `author-pack` rates raw journal output as medium, separates risk from policy,
+  and uses the pack ID as the example action namespace.
+- Static registry instructions use immutable URL/hash installs and name the
+  actual generated indexes. Private-pack security updates require revoking old
+  trust unless retirement is enforced by the Portal's configured catalog.
+
 ## [0.2.0] — 2026-09-10
 
 ### Changed

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="action-packs"
-      updated="September 5, 2026"
+      updated="September 22, 2026"
       toc={[
         {"layout", "Layout"},
         {"pack-yaml", "pack.yaml"},
@@ -75,7 +75,7 @@ actions:
         lists what the pack's host needs — OS and binaries. They are advertised as host
         readiness, and a missing binary fails at run time, not at load. The <code>setup</code>
         block powers <code>emisar pack info</code>, <code>pack verify</code>, and the
-        install probe: a summary, the env names the tool reads, and one low-risk
+        install probe: a summary, the env names the tool reads, and an optional low-risk
         <code>verify</code>
         action.
       </p>
@@ -87,7 +87,7 @@ actions:
       </p>
       <.docs_code phx-no-format label="yaml">setup:
   host_access:
-    - actions: [my.journal_tail]
+    - actions: [my-pack.journal_tail]
       requirement: Read the system journal.
       recipes:
         - name: systemd Linux — default emisar service user
@@ -103,11 +103,12 @@ actions:
 id: linux.grep_log
 title: Grep a log file
 kind: exec
-risk: low
+risk: medium
 
 description: >
-  Greps an extended regex against a log file under /var/log.
-  Read-only. Returns matching lines with line numbers.
+  Search a log file under /var/log with an extended regular expression.
+  Return matching lines with line numbers. Raw application messages can contain
+  personal or sensitive data that pattern redaction cannot fully detect.
 side_effects:
   - Reads a log file under /var/log.
 
@@ -126,7 +127,7 @@ args:
 execution:
   command:
     binary: grep        # bare name — resolved via PATH on the host
-    argv: ["-E", "-n", "&#123;&#123; args.pattern &#125;&#125;", "&#123;&#123; args.file &#125;&#125;"]
+    argv: ["-E", "-n", "-e", "&#123;&#123; args.pattern &#125;&#125;", "--", "&#123;&#123; args.file &#125;&#125;"]
   timeout: 30s
   user: syslog        # optional — run as this lower-privilege local user
 
@@ -141,10 +142,10 @@ examples:
     args:
       file: /var/log/syslog
       pattern: "sshd.*Failed password"
-  - title: Tail nginx access for 5xx
+  - title: Search nginx access logs for 5xx
     args:
       file: /var/log/nginx/access.log
-      pattern: ' 5\d\d '</.docs_code>
+      pattern: ' 5[0-9][0-9] '</.docs_code>
 
       <.docs_h2 id="field-reference">Field reference</.docs_h2>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">

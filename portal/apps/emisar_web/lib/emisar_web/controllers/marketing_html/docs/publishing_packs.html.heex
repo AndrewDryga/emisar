@@ -9,7 +9,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="publishing-packs"
-      updated="September 3, 2026"
+      updated="September 22, 2026"
       toc={[
         {"layout", "1. Lay out the pack directory"},
         {"manifest", "2. Write pack.yaml"},
@@ -35,8 +35,8 @@
       </.docs_header>
 
       <.docs_code phx-no-format label="your host" copy_text="emisar pack validate ./my-pack"><span class="text-zinc-500">$</span> emisar pack validate ./my-pack
-<span class="text-zinc-500">pack my-pack OK: 2 actions</span>
-<span class="text-zinc-500">hash: sha256:e8edc3660cb2cf7a8f3fe0d9cea167d07565b8287f57bd089b4dd737eb0e3844</span>
+<span class="text-zinc-500">pack my-pack OK: 1 actions</span>
+<span class="text-zinc-500">hash: sha256:daafe7a34b537dd4728c7a9bfa645c998265df5a93a2b1e11e114cb05bd744ba</span>
 
 <span class="text-zinc-500">$</span> sudo emisar pack install ./my-pack
 <span class="text-zinc-500">installed my-pack → /etc/emisar/packs/my-pack</span>
@@ -44,17 +44,17 @@
 <span class="text-zinc-500">my-pack — My ops pack  (v0.1.0)</span>
 <span class="text-zinc-500">  Short one-line summary shown on the runner + console.</span>
 
-<span class="text-zinc-500">  Actions:   2  (2 low)</span>
-<span class="text-zinc-500">  Requires:  linux · my-cli ✓</span>
-<span class="text-zinc-500">  Hash:      sha256:e8edc3660cb2cf7a8f3fe0d9cea167d07565b8287f57bd089b4dd737eb0e3844</span>
+<span class="text-zinc-500">  Actions:   1  (1 medium)</span>
+<span class="text-zinc-500">  Requires:  linux · journalctl ✓</span>
+<span class="text-zinc-500">  Hash:      sha256:daafe7a34b537dd4728c7a9bfa645c998265df5a93a2b1e11e114cb05bd744ba</span>
 <span class="text-zinc-500">  Docs:      https://github.acme.internal/sre/my-pack</span>
 
 <span class="text-zinc-500">…</span>
 
 <span class="text-zinc-500">  Verify</span>
-<span class="text-zinc-500">    ok my.do_other_thing  5ms</span>
+<span class="text-zinc-500">    skipped   declares no verify action</span>
 
-<span class="text-zinc-500">Reloaded the runner — it re-reads packs and re-advertises to the control plane.</span></.docs_code>
+<span class="text-zinc-500">Signaled the runner to reload packs and re-advertise to the control plane.</span></.docs_code>
 
       <.agent_skill_cta
         class="mt-8"
@@ -76,10 +76,7 @@
       <.docs_code phx-no-format>my-pack/
   pack.yaml                    # pack manifest (see step 2)
   actions/
-    do_thing.yaml              # one declared action per file
-    do_other_thing.yaml
-  scripts/                     # only when you have script actions
-    do_thing.sh</.docs_code>
+    journal_tail.yaml          # one declared action per file</.docs_code>
 
       <.docs_h2 id="manifest">2. Write pack.yaml</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -103,7 +100,7 @@ setup:                    # optional — powers pack info, verify, and the insta
   summary: >
     Reads the local system journal.
   host_access:
-    - actions: [my.journal_tail]
+    - actions: [my-pack.journal_tail]
       requirement: Read the system journal.
       recipes:
         - name: systemd Linux — default emisar service user
@@ -113,7 +110,6 @@ setup:                    # optional — powers pack info, verify, and the insta
           verify:
             - sudo -u emisar journalctl -n 1 --no-pager
           impact: The emisar service identity can read the complete system journal.
-  verify: my.journal_tail  # a no-argument, low-risk connectivity check
 
 actions:
   - actions/journal_tail.yaml</.docs_code>
@@ -122,7 +118,10 @@ actions:
         block is what <code>emisar pack info</code>
         prints and what <code>pack verify</code>
         and the install probe run. Declare the env your tool reads, map each protected host
-        resource to the exact actions that need it, and name one low-risk read as <code>verify</code>. Host-access recipes are instructions for the operator; Emisar
+        resource to the exact actions that need it. If the pack has a low-risk read with
+        usable defaults, you can name it as <code>verify</code>. This journal reader is
+        medium risk, so the example leaves that optional probe unset.
+        Host-access recipes are instructions for the operator; Emisar
         displays and copies their commands but never runs them.
       </p>
 
@@ -139,13 +138,14 @@ actions:
         for all action fields.
       </p>
       <.docs_code phx-no-format label="yaml">schema_version: 1
-id: my.journal_tail
+id: my-pack.journal_tail
 title: Read recent system journal entries
 kind: exec
-risk: low
+risk: medium
 
 description: >
-  Show the most recent system journal entries.
+  Show the most recent system journal entries. Raw application messages can
+  contain personal or sensitive data that pattern redaction cannot fully detect.
 
 side_effects:
   - Reads the system journal.
@@ -180,9 +180,11 @@ examples:
       <.docs_h2 id="install">4. Validate, install, and trust it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Validate the pack locally — it runs the same checks as the runner — then install
-        it. The install writes to the configured pack directory, reloads the runner
-        without a restart or dropped runs, and ends by probing your <code>setup.verify</code>
-        action, as the output at the top of this page shows:
+        it. The install writes to the configured pack directory and signals a running
+        daemon to reload without restarting or dropping runs. If you declared a
+        <code>setup.verify</code>
+        action, it probes that action; otherwise it reports
+        the probe as skipped, as this example shows:
       </p>
       <.docs_code phx-no-format label="shell"># on the runner host
 emisar pack validate ./my-pack
@@ -223,7 +225,7 @@ sudo emisar pack install ./my-pack</.docs_code>
       <.docs_h2 id="rollout">5. Roll it out and maintain it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         To put the pack on another runner, install it pinned to the hash you trusted — every
-        host then runs the exact same files, and the install reloads the runner for you. Config
+        host then runs the exact same files, and the install signals a running daemon to reload. Config
         management — Ansible, Chef, a base image — can drop the directory itself instead,
         then reload the runner.
       </p>
@@ -297,8 +299,10 @@ sudo emisar pack install ./my-pack</.docs_code>
         </li>
         <li class="list-disc">
           <strong class="text-zinc-200">Correct <code>risk</code> level.</strong>
-          Assign <.docs_risk tier="high" /> or <.docs_risk tier="critical" />
-          to destructive actions. Assign <.docs_risk tier="low" /> to reads.
+          Judge the action's real effect and output. Structured status and metadata
+          can be <.docs_risk tier="low" />; raw logs and application text are at least
+          <.docs_risk tier="medium" />. Destructive changes and arbitrary secret-bearing
+          dumps need <.docs_risk tier="high" /> or <.docs_risk tier="critical" />.
         </li>
         <li class="list-disc">
           <strong class="text-zinc-200">Resolvable binaries.</strong>
