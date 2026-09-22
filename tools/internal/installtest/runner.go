@@ -1135,7 +1135,10 @@ exec /bin/rm "$@"
 	const managerCommon = `
 pidfile="${FAKE_STATE}/pid"
 alive() { [ -f "${pidfile}" ] && kill -0 "$(cat "${pidfile}")" 2>/dev/null; }
-start_fake() { "${SERVICE_BIN}" "${pidfile}" >>"${FAKE_STATE}/service.log" 2>&1 </dev/null & }
+start_fake() {
+  "${SERVICE_BIN}" "${pidfile}" >>"${FAKE_STATE}/service.log" 2>&1 </dev/null &
+  printf '%s\n' "$!" >"${FAKE_STATE}/launcher-pid"
+}
 stop_fake() {
   [ -f "${pidfile}" ] || return 0
   kill "$(cat "${pidfile}")" 2>/dev/null || :
@@ -1247,8 +1250,28 @@ case "${START}" in
       launchd) launchctl bootstrap system /Library/LaunchDaemons/com.emisar.runner.plist ;;
     esac
     ;;
-  direct) "${SERVICE_BIN}" "${FAKE_STATE}/pid" >>"${FAKE_STATE}/service.log" 2>&1 </dev/null & ;;
+  direct)
+    "${SERVICE_BIN}" "${FAKE_STATE}/pid" >>"${FAKE_STATE}/service.log" 2>&1 </dev/null &
+    printf '%s\n' "$!" >"${FAKE_STATE}/launcher-pid"
+    ;;
 esac
+# Rollback must observe a running service. Starting its process does not mean
+# it has installed its signal handler and published its readiness yet.
+if [ -n "${START}" ]; then
+  ready=0
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    if [ -s "${FAKE_STATE}/pid" ] && kill -0 "$(cat "${FAKE_STATE}/pid")" 2>/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 0.05
+  done
+  if [ "${ready}" != 1 ]; then
+    kill "$(cat "${FAKE_STATE}/launcher-pid")" 2>/dev/null || :
+    cat "${FAKE_STATE}/service.log" >&2
+    die "fake service did not become ready before rollback"
+  fi
+fi
 exit 37
 `
 
