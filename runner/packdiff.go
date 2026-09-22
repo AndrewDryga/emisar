@@ -112,23 +112,26 @@ allowlist, symlinks enabled, or a newly required setup variable.
 
 			// The version-pinned URL carries no index entry to check against, so
 			// only the bare-name path can verify the candidate. Fetch accordingly.
-			source := id
+			var src string
+			var cleanup func()
 			var indexHash string
 			if to != "" {
-				source = id + "=" + to
+				src, cleanup, err = resolvePackSource(cmd.Context(), id+"="+to, registry)
 			} else {
-				index, err := fetchPackIndex(cmd.Context(), registry)
-				if err != nil {
-					return err
+				index, indexErr := fetchPackIndex(cmd.Context(), registry)
+				if indexErr != nil {
+					return indexErr
 				}
 				rp, ok := index[id]
 				if !ok {
 					return fmt.Errorf("pack %q is not in the registry at %s — nothing to compare against", id, registry)
 				}
 				indexHash = rp.Hash
+				// Index URLs are remote inputs, never local paths. Fetch directly
+				// rather than passing them through the local-install resolver.
+				src, cleanup, err = packs.Fetch(cmd.Context(), rp.tarballURL(registry), nil)
 			}
 
-			src, cleanup, err := resolvePackSource(cmd.Context(), source, registry)
 			if err != nil {
 				return err
 			}

@@ -21,13 +21,21 @@ import (
 	"github.com/andrewdryga/emisar/runner/pkg/packspec"
 )
 
-// registryPack is one entry of the registry's /packs.json index — the
-// fields `pack update` needs to tell whether an installed pack is stale
-// (hash) and to report the move (version).
+// registryPack accepts both the hosted /packs.json index and the static
+// publisher's full-catalog alias. fetchPackIndex normalizes their hash fields.
 type registryPack struct {
-	ID      string `json:"id"`
-	Version string `json:"version"`
-	Hash    string `json:"hash"`
+	ID          string `json:"id"`
+	Version     string `json:"version"`
+	Hash        string `json:"hash"`
+	ContentHash string `json:"content_hash"`
+	TarballURL  string `json:"tarball_url"`
+}
+
+func (p registryPack) tarballURL(registry string) string {
+	if p.TarballURL != "" {
+		return p.TarballURL
+	}
+	return strings.TrimRight(registry, "/") + "/packs/" + p.ID + "/pack.tar.gz"
 }
 
 type installedPack struct {
@@ -330,8 +338,7 @@ func installedPackRoots(dir string) ([]string, error) {
 // hash matches the index, then replaces it through the rollback-safe shared
 // pack installer. A failed stage or activation leaves the old tree available.
 func updateOnePack(ctx context.Context, id, target, registry string, rp registryPack) error {
-	url := strings.TrimRight(registry, "/") + "/packs/" + id + "/pack.tar.gz"
-	src, cleanup, err := packs.Fetch(ctx, url, nil)
+	src, cleanup, err := packs.Fetch(ctx, rp.tarballURL(registry), nil)
 	if err != nil {
 		return err
 	}
@@ -387,6 +394,22 @@ func fetchPackIndex(ctx context.Context, registry string) (map[string]registryPa
 
 	out := make(map[string]registryPack, len(doc.Packs))
 	for _, p := range doc.Packs {
+		if p.Hash != "" && p.ContentHash != "" && !hashEqual(p.Hash, p.ContentHash) {
+			return nil, fmt.Errorf("pack index entry %q: conflicting content hashes", p.ID)
+		}
+		if p.Hash == "" {
+			p.Hash = p.ContentHash
+		}
+		if normalizeHash(p.Hash) == "" {
+			return nil, fmt.Errorf("pack index entry %q: missing content hash", p.ID)
+		}
+		if p.TarballURL != "" {
+			// A CDN may differ from the index host. The hash pins the bytes;
+			// existing fetch transport and archive limits still apply.
+			if err := config.CheckEndpointScheme(p.TarballURL, false); err != nil {
+				return nil, fmt.Errorf("pack index entry %q: tarball URL: %w", p.ID, err)
+			}
+		}
 		out[p.ID] = p
 	}
 	return out, nil

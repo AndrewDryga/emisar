@@ -104,9 +104,9 @@ func Write(reg *packs.Registry, cat *Catalog, outDir string) (*Manifest, error) 
 
 	// Facade aliases. The runner's name-based commands read `/packs.json` and
 	// `/packs/suggest.json`, which on emisar.dev are portal routes — so a
-	// customer pointing --registry at a bucket this tool built got a 404 from
-	// `pack list`, `pack suggest` and `pack update`, and only the direct-URL
-	// install form worked. Both halves freeze at 1.0, so publishing the same
+	// customer pointing --registry at a bucket this tool built needs the aliases
+	// for `pack suggest`, `pack update` and `pack diff`. Both halves freeze at
+	// 1.0, so publishing the same
 	// bytes under the facade names now is what keeps a private registry usable
 	// with the ordinary commands.
 	//

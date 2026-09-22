@@ -988,11 +988,13 @@ still serving version 1 through the deprecation window.
   the content-addressed CDN object. A private registry is a bucket with no
   portal in front of it, so `packctl catalog build` also writes `packs.json`
   and `packs/suggest.json` as byte-identical aliases of their `v1/` originals —
-  without them a customer pointing `--registry` at their own bucket got a 404
-  from `pack list`, `pack suggest` and `pack update`. The tarball facade is NOT
+  so `pack suggest`, `pack update` and current-version `pack diff` work against
+  static storage. Update and diff accept the catalog's `content_hash` and
+  `tarball_url` as well as the hosted index's `hash` and tarball facade. The tarball facade is NOT
   aliased: a bucket cannot express a redirect without duplicating every
   archive, so `pack install <url> --hash` is the supported shape for a private
-  registry. Both halves freeze at 1.0, which is why the aliases exist now.
+  registry; `pack diff --to` still requires the versioned facade. Both halves
+  freeze at 1.0, which is why the aliases exist now.
 
 **How it is versioned today.** The CDN's `/v1/` prefix, content addressing,
 append-only pack history, and written stability promise are the versioned
