@@ -36,7 +36,7 @@ defmodule Emisar.Seeds.PlanAccounts do
   defp seed_plan_account(name, slug, plan) do
     owner = Helpers.ensure_persona("owner@#{slug}.test", "#{name} Owner")
     acct = Helpers.ensure_account(name, slug, owner)
-    {:ok, membership} = Accounts.fetch_membership_for_session(owner, acct.id)
+    {:ok, membership} = Accounts.fetch_membership_for_session(owner, acct.id, nil)
     subject = Subject.for_user(owner, acct, membership)
     acct = Helpers.ensure_account_name(acct, name, subject)
 
@@ -132,7 +132,7 @@ defmodule Emisar.Seeds.PlanAccounts do
     both_connected_account = Helpers.ensure_account("Both Connected Co", "both-connected", user)
 
     {:ok, bc_membership} =
-      Accounts.fetch_membership_for_session(user, both_connected_account.id)
+      Accounts.fetch_membership_for_session(user, both_connected_account.id, nil)
 
     bc_subject = Subject.for_user(user, both_connected_account, bc_membership)
 

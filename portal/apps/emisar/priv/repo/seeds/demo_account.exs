@@ -28,7 +28,7 @@ defmodule Emisar.Seeds.DemoAccount do
   def run do
     user = Helpers.ensure_persona(@email, @full_name)
     account = Helpers.ensure_account(@account_name, "demo", user)
-    {:ok, owner_membership} = Accounts.fetch_membership_for_session(user, account.id)
+    {:ok, owner_membership} = Accounts.fetch_membership_for_session(user, account.id, nil)
     owner_subject = Subject.for_user(user, account, owner_membership)
     account = Helpers.ensure_account_name(account, @account_name, owner_subject)
     owner_subject = Subject.for_user(user, account, owner_membership)
