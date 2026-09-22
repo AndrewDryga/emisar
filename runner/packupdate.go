@@ -104,6 +104,17 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var updated, current, skipped, failed int
+			// A successful replacement needs a reload even if another pack or
+			// the final report later fails. Output mode must not change behavior.
+			defer func() {
+				if !dryRun && updated > 0 {
+					out := os.Stdout
+					if flagJSONOut {
+						out = os.Stderr
+					}
+					announceReload(out, nil, "Reload the runner to load the new versions: sudo systemctl reload emisar")
+				}
+			}()
 			// Non-nil so an empty sweep serializes as [] rather than null, which
 			// a `jq '.packs[]'` consumer would fail on.
 			results := []packUpdateResult{}
@@ -263,9 +274,6 @@ re-reads the catalog; without one: sudo systemctl reload emisar
 			if !flagJSONOut {
 				fmt.Printf("%d updated, %d up to date, %d not in registry, 0 failed.\n",
 					updated, current, skipped)
-				if updated > 0 {
-					announceReload(os.Stdout, nil, "Reload the runner to load the new versions: sudo systemctl reload emisar")
-				}
 			}
 			return nil
 		},
