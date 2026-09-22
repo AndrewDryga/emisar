@@ -572,6 +572,7 @@ defmodule Emisar.AuthTest do
       user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       identity =
         Fixtures.SSO.create_user_identity(
@@ -605,6 +606,7 @@ defmodule Emisar.AuthTest do
       user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       identity =
         Fixtures.SSO.create_user_identity(

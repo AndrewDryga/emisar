@@ -1001,6 +1001,80 @@ defmodule EmisarWeb.SSOControllerTest do
       assert auth.user_identity_id
     end
 
+    test "a removed identity cannot sign into a replacement seat and explains recovery", %{
+      conn: conn
+    } do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      provider = provider_fixture(account)
+
+      %{user: user, membership: member, identity: identity} =
+        Fixtures.SSO.create_directory_member(provider)
+
+      assert {:ok, _removed} = Emisar.Accounts.delete_membership(member, subject)
+
+      replacement =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      conn =
+        conn
+        |> stash_callback(provider)
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => identity.provider_identifier,
+            "email" => user.email,
+            "email_verified" => "true"
+          }
+        })
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "restore or link your access"
+      refute get_session(conn, :user_token)
+      refute get_session(conn, @stash_key)
+      assert Repo.reload!(identity).membership_id == member.id
+      refute Repo.reload!(replacement).disabled_at
+    end
+
+    test "a no-email recovery callback reaches the waiting page without signing in", %{conn: conn} do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      provider = provider_fixture(account)
+      claims = %{"sub" => "ambiguous-without-email"}
+
+      assert {:ok, %{user: user, identity: identity}} =
+               Emisar.SSO.complete_auth(provider, %{"_claims" => claims}, %{})
+
+      original = Emisar.Accounts.peek_sync_membership_by_id(account.id, identity.membership_id)
+      assert {:ok, _removed} = Emisar.Accounts.delete_membership(original, subject)
+
+      replacement =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      # This is the conservative forward migration result for ambiguous history.
+      Fixtures.SSO.clear_identity_membership(identity)
+      Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+
+      conn =
+        conn
+        |> stash_callback(provider)
+        |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
+
+      assert redirected_to(conn) == ~p"/sign_in/sso/pending"
+      refute get_session(conn, :user_token)
+      refute get_session(conn, @stash_key)
+
+      assert {:ok, request} =
+               Emisar.SSO.fetch_pending_link_request(get_session(conn, :sso_pending_request))
+
+      assert request.recovery_identity_id == identity.id
+      assert request.matched_membership_id == replacement.id
+      assert is_nil(Repo.reload!(identity).membership_id)
+      assert Repo.aggregate(Auth.UserToken, :count) == 0
+
+      page = conn |> recycle() |> get(~p"/sign_in/sso/pending") |> html_response(200)
+      assert page =~ "must restore its"
+      assert page =~ "Keep this page open to continue after approval."
+      refute page =~ "signed you in as"
+    end
+
     test "account disable between begin and callback prevents JIT side effects", %{conn: conn} do
       {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       provider = provider_fixture(account)

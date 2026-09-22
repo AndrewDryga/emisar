@@ -68,6 +68,9 @@ defmodule EmisarWeb.UserAuth do
       {:error, :provider_disabled} = error ->
         error
 
+      {:error, :membership_unavailable} = error ->
+        error
+
       {:error, reason} ->
         raise "could not complete SSO sign-in: #{inspect(reason)}"
     end

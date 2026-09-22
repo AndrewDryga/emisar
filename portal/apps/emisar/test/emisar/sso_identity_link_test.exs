@@ -361,6 +361,11 @@ defmodule Emisar.SSOIdentityLinkTest do
 
       other_user = Fixtures.Users.create_user()
 
+      Fixtures.Memberships.create_membership(
+        account_id: context.account.id,
+        user_id: other_user.id
+      )
+
       Fixtures.SSO.create_user_identity(%{
         account_id: context.account.id,
         provider_id: context.provider.id,
@@ -373,6 +378,11 @@ defmodule Emisar.SSOIdentityLinkTest do
 
       {_, foreign_account, _} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       foreign_provider = Fixtures.SSO.create_identity_provider(account_id: foreign_account.id)
+
+      Fixtures.Memberships.create_membership(
+        account_id: foreign_account.id,
+        user_id: context.user.id
+      )
 
       Fixtures.SSO.create_user_identity(%{
         account_id: foreign_account.id,
@@ -477,6 +487,7 @@ defmodule Emisar.SSOIdentityLinkTest do
     test "fails closed when the provider subject belongs to another user",
          %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
       other = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: context.account.id, user_id: other.id)
 
       _identity =
         Fixtures.SSO.create_user_identity(%{

@@ -852,7 +852,8 @@ defmodule EmisarWeb.SSODirectoryComponents do
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="truncate text-sm text-zinc-200">
-                {Accounts.member_display_name(member.membership)}
+                {Accounts.member_display_name(member.profile) || member.identity.scim_external_id ||
+                  member.identity.provider_identifier}
               </span>
               <.chip :if={member.membership && member.membership.user_id == @current_user_id}>
                 You
@@ -874,7 +875,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
             </div>
             <%!-- Keep the email and last-seen time readable at narrow widths. --%>
             <div class="mt-0.5 text-xs text-zinc-400">
-              <span :if={email = Accounts.secondary_member_email(member.membership)}>{email}</span>
+              <span :if={email = Accounts.secondary_member_email(member.profile)}>{email}</span>
               <span :if={member.identity.last_seen_at}>
                 · last seen
                 <.local_time

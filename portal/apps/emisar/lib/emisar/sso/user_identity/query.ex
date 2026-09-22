@@ -44,6 +44,25 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_user_id(queryable, user_id),
     do: where(queryable, [identities: i], i.user_id == ^user_id)
 
+  def by_membership_id(queryable, membership_id),
+    do: where(queryable, [identities: i], i.membership_id == ^membership_id)
+
+  def with_live_membership(queryable) do
+    queryable
+    |> with_joined_membership_profile()
+    |> where([profile_membership: m], not is_nil(m.id) and is_nil(m.deleted_at))
+  end
+
+  def with_authorized_membership(queryable) do
+    queryable
+    |> with_live_membership()
+    |> where(
+      [profile_membership: m],
+      is_nil(m.disabled_at) and
+        not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest))
+    )
+  end
+
   def by_directory_group(queryable, group_id, account_id, provider_id) do
     identity_ids =
       Emisar.SSO.DirectoryGroupMember.Query.not_deleted()
@@ -204,8 +223,8 @@ defmodule Emisar.SSO.UserIdentity.Query do
     |> where([provider: provider], provider.enabled == true)
   end
 
-  def select_user_ids(queryable \\ all()),
-    do: select(queryable, [identities: i], i.user_id)
+  def select_membership_ids(queryable \\ all()),
+    do: select(queryable, [identities: i], i.membership_id)
 
   # {provider_id, count} rows — the per-connection synced-user tallies for the
   # overview. Group by provider so one query covers every connection.
@@ -262,11 +281,17 @@ defmodule Emisar.SSO.UserIdentity.Query do
         queryable,
         :left,
         [identities: i],
-        m in subquery(Emisar.Accounts.Membership.Query.latest_profiles()),
-        on: m.account_id == i.account_id and m.user_id == i.user_id,
+        m in Emisar.Accounts.Membership,
+        on: m.account_id == i.account_id and m.id == i.membership_id and m.user_id == i.user_id,
         as: ^binding
       )
     end)
+  end
+
+  def with_preloaded_membership(queryable) do
+    queryable
+    |> with_joined_membership_profile()
+    |> preload([profile_membership: member], membership: member)
   end
 
   # The SCIM `filter=externalId eq "x"` probe — the rendered externalId is

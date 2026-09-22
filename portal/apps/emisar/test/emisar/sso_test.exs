@@ -150,6 +150,8 @@ defmodule Emisar.SSOTest do
   # A user's SSO identity in `account`, under a provider with a given issuer,
   # enabled flag, and MFA policy — the fixture for the federation-scope tests.
   defp federated_identity(account, user, opts) do
+    Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
     provider =
       provider_fixture(account, %{
         issuer: Keyword.fetch!(opts, :issuer),
@@ -603,12 +605,12 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "user_profile_directory_managed?/2" do
+  describe "member_profile_directory_managed?/2" do
     test "true for a member synced under a SCIM-enabled provider" do
       %{provider: provider, account: account} = scim_provider()
       %{identity: identity} = provision(provider, "okta|managed")
 
-      assert SSO.user_profile_directory_managed?(account.id, identity.user_id)
+      assert SSO.member_profile_directory_managed?(account.id, identity.membership_id)
     end
 
     test "false once directory sync is disabled — the lock lifts with SCIM" do
@@ -617,14 +619,14 @@ defmodule Emisar.SSOTest do
 
       {:ok, _provider} = SSO.disable_scim(provider, subject)
 
-      refute SSO.user_profile_directory_managed?(account.id, identity.user_id)
+      refute SSO.member_profile_directory_managed?(account.id, identity.membership_id)
     end
 
     test "false for a member with no directory identity" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
-      refute SSO.user_profile_directory_managed?(account.id, user.id)
+      refute SSO.member_profile_directory_managed?(account.id, user.id)
     end
   end
 
@@ -3779,14 +3781,19 @@ defmodule Emisar.SSOTest do
       # scim_external_id. The directory reuses it here and stamps its own
       # correlation value for later POST reconciliation and externalId filters.
       user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       {:ok, oidc_identity} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
-          provider_identifier: "shared-id",
-          created_by: :provider,
-          provisioned_via: :oidc_jit
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, user.id),
+          %{
+            provider_identifier: "shared-id",
+            created_by: :provider,
+            provisioned_via: :oidc_jit
+          }
+        )
         |> Repo.insert()
 
       assert is_nil(oidc_identity.scim_external_id)
@@ -3815,15 +3822,22 @@ defmodule Emisar.SSOTest do
       # membership an operator already removed locally. Answering :not_found made
       # Okta/Entra retry the deactivate forever or re-create the person.
       user = Fixtures.Users.create_user()
+      member = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       {:ok, _oidc_identity} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
-          provider_identifier: "departed-sub",
-          created_by: :provider,
-          provisioned_via: :oidc_jit
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, user.id),
+          %{
+            provider_identifier: "departed-sub",
+            created_by: :provider,
+            provisioned_via: :oidc_jit
+          }
+        )
         |> Repo.insert()
+
+      Fixtures.Memberships.mark_membership_as_deleted(member)
 
       assert {:ok, %{membership: nil}} =
                SSO.scim_provision_user(
@@ -3831,7 +3845,8 @@ defmodule Emisar.SSOTest do
                  scim_attrs(%{external_id: "departed-sub", active: false})
                )
 
-      refute Fixtures.Memberships.fetch_membership(account.id, user.id)
+      refute Accounts.peek_sync_membership(account.id, user.id)
+      assert Repo.reload!(member).deleted_at
     end
 
     test "a sign-in cannot land on a directory-created identity for someone else", %{
@@ -4124,11 +4139,15 @@ defmodule Emisar.SSOTest do
 
       {:ok, identity} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
-          provider_identifier: "oidc-sub-S",
-          created_by: :provider,
-          provisioned_via: :oidc_jit
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, user.id),
+          %{
+            provider_identifier: "oidc-sub-S",
+            created_by: :provider,
+            provisioned_via: :oidc_jit
+          }
+        )
         |> Repo.insert()
 
       # The directory pushes a DIFFERENT identifier for the same person; the email
@@ -4158,6 +4177,7 @@ defmodule Emisar.SSOTest do
                SSO.approve_link_request(
                  request,
                  %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 provider.default_role,
                  subject
                )
 
@@ -4177,14 +4197,19 @@ defmodule Emisar.SSOTest do
       # it to null, so the first externalId to claim the identity keeps it; a
       # different one later is a different resource, not a re-stamp of this one.
       user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       {:ok, oidc_identity} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
-          provider_identifier: "sub-and-external-agree",
-          created_by: :provider,
-          provisioned_via: :oidc_jit
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, user.id),
+          %{
+            provider_identifier: "sub-and-external-agree",
+            created_by: :provider,
+            provisioned_via: :oidc_jit
+          }
+        )
         |> Repo.insert()
 
       %{identity: adopted} = provision(provider, "sub-and-external-agree")
@@ -4490,15 +4515,20 @@ defmodule Emisar.SSOTest do
       # his payload asserted.
       %{provider: provider, account: account} = scim_provider()
       alice = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: alice.id)
 
       {:ok, alices} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, alice.id, %{
-          provider_identifier: "collides",
-          scim_external_id: "alice-directory-id",
-          created_by: :provider,
-          provisioned_via: :scim
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, alice.id),
+          %{
+            provider_identifier: "collides",
+            scim_external_id: "alice-directory-id",
+            created_by: :provider,
+            provisioned_via: :scim
+          }
+        )
         |> Repo.insert()
 
       # Refused, not absorbed. The identifier column is unique per connection and
@@ -4518,14 +4548,19 @@ defmodule Emisar.SSOTest do
       # The fallback that makes OIDC-first convergence work must survive the fix.
       %{provider: provider, account: account} = scim_provider()
       user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       {:ok, oidc_first} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
-          provider_identifier: "unclaimed",
-          created_by: :provider,
-          provisioned_via: :oidc_jit
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, user.id),
+          %{
+            provider_identifier: "unclaimed",
+            created_by: :provider,
+            provisioned_via: :oidc_jit
+          }
+        )
         |> Repo.insert()
 
       assert is_nil(oidc_first.scim_external_id)
@@ -5007,14 +5042,24 @@ defmodule Emisar.SSOTest do
       request = capture_request(provider, claims)
 
       assert {:ok, %{identity: rebound}} =
-               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+               SSO.approve_link_request(
+                 request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
 
       refute rebound.provider_identifier_retired_at
       assert {:ok, _result} = SSO.scim_delete_user(provider, rebound.id)
 
       retired_request = capture_request(provider, claims)
 
-      assert SSO.approve_link_request(retired_request, RunnerAccess.none(), subject) ==
+      assert SSO.approve_link_request(
+               retired_request,
+               RunnerAccess.none(),
+               provider.default_role,
+               subject
+             ) ==
                {:error, :scim_resource_retired}
 
       assert Repo.reload!(rebound).scim_deleted_at
@@ -5037,7 +5082,12 @@ defmodule Emisar.SSOTest do
         })
 
       assert {:ok, %{identity: other_identity}} =
-               SSO.approve_link_request(other_request, RunnerAccess.none(), subject)
+               SSO.approve_link_request(
+                 other_request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
 
       assert {:ok, %{identity: revived}} = SSO.scim_provision_user(provider, attrs)
       assert revived.id == identity.id
@@ -7543,19 +7593,21 @@ defmodule Emisar.SSOTest do
 
       assert SSO.link_request_invitation_pending?(%LinkRequest{
                account_id: account.id,
-               matched_user_id: pending.user_id
+               matched_user_id: pending.user_id,
+               matched_membership_id: pending.id
              })
 
       refute SSO.link_request_invitation_pending?(%LinkRequest{
                account_id: account.id,
-               matched_user_id: direct.user_id
+               matched_user_id: direct.user_id,
+               matched_membership_id: direct.id
              })
 
       refute SSO.link_request_invitation_pending?(%LinkRequest{account_id: account.id})
     end
   end
 
-  # -- approve_link_request/3 ------------------------------------------
+  # -- approve_link_request/4 ------------------------------------------
 
   describe "granting a role through SSO can't exceed the granter's own" do
     setup do
@@ -7648,7 +7700,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "approve_link_request/3" do
+  describe "approve_link_request/4" do
     setup do
       {_owner, account, subject} = enterprise_owner()
       provider = provider_fixture(account, provisioner: :manual, default_role: :operator)
@@ -7675,7 +7727,12 @@ defmodule Emisar.SSOTest do
       # The operator revokes a compromised connection between capture and review.
       Fixtures.SSO.disable_provider(provider)
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+      assert SSO.approve_link_request(
+               request,
+               RunnerAccess.none(),
+               provider.default_role,
+               subject
+             ) ==
                {:error, :provider_disabled}
 
       refute Repo.one(UserIdentity)
@@ -7694,7 +7751,12 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, _provider, _token} = SSO.enable_scim(provider, subject)
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+      assert SSO.approve_link_request(
+               request,
+               RunnerAccess.none(),
+               provider.default_role,
+               subject
+             ) ==
                {:error, :scim_identity_unmatched}
 
       assert {:ok, still_pending} = SSO.fetch_pending_link_request(request.id)
@@ -7738,6 +7800,7 @@ defmodule Emisar.SSOTest do
       assert SSO.approve_link_request(
                request,
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               provider.default_role,
                admin
              ) == {:error, :link_target_outranks_approver}
     end
@@ -7778,7 +7841,7 @@ defmodule Emisar.SSOTest do
 
       assert request.matched_user_id == owner_user.id
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+      assert SSO.approve_link_request(request, RunnerAccess.none(), provider.default_role, admin) ==
                {:error, :link_target_outranks_approver}
 
       refute Repo.one(UserIdentity)
@@ -7815,7 +7878,7 @@ defmodule Emisar.SSOTest do
 
       assert request.matched_user_id == owner_user.id
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+      assert SSO.approve_link_request(request, RunnerAccess.none(), provider.default_role, admin) ==
                {:error, :invitation_pending}
 
       refute Repo.one(UserIdentity)
@@ -7826,7 +7889,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, _accepted} =
                Accounts.mark_invitation_accepted(invitation, invitation_token, owner_user)
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+      assert SSO.approve_link_request(request, RunnerAccess.none(), provider.default_role, admin) ==
                {:error, :link_target_outranks_approver}
     end
 
@@ -7849,7 +7912,12 @@ defmodule Emisar.SSOTest do
 
       Fixtures.Memberships.mark_membership_as_deleted(membership)
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+      assert SSO.approve_link_request(
+               request,
+               RunnerAccess.none(),
+               provider.default_role,
+               subject
+             ) ==
                {:error, :matched_user_unavailable}
 
       refute Repo.one(UserIdentity)
@@ -7893,6 +7961,7 @@ defmodule Emisar.SSOTest do
       assert SSO.approve_link_request(
                late,
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               provider.default_role,
                subject
              ) == {:error, :identity_namespace_changed}
 
@@ -7933,6 +8002,7 @@ defmodule Emisar.SSOTest do
       assert SSO.approve_link_request(
                request,
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               provider.default_role,
                subject
              ) == {:error, :not_found}
 
@@ -7963,6 +8033,7 @@ defmodule Emisar.SSOTest do
                SSO.approve_link_request(
                  request,
                  %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 provider.default_role,
                  subject
                )
 
@@ -8041,6 +8112,7 @@ defmodule Emisar.SSOTest do
       assert SSO.approve_link_request(
                request,
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               provider.default_role,
                admin
              ) == {:error, :unauthorized}
 
@@ -8084,6 +8156,7 @@ defmodule Emisar.SSOTest do
       assert SSO.approve_link_request(
                request,
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               provider.default_role,
                approver
              ) == {:error, :link_target_outranks_approver}
     end
@@ -8128,6 +8201,7 @@ defmodule Emisar.SSOTest do
       assert SSO.approve_link_request(
                request,
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               provider.default_role,
                admin
              ) == {:error, :unauthorized}
 
@@ -8179,6 +8253,7 @@ defmodule Emisar.SSOTest do
       assert SSO.approve_link_request(
                request,
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               provider.default_role,
                admin
              ) == {:error, :link_target_outranks_approver}
 
@@ -8220,6 +8295,7 @@ defmodule Emisar.SSOTest do
       assert SSO.approve_link_request(
                request,
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+               provider.default_role,
                subject
              ) == {:error, :link_target_in_other_accounts}
     end
@@ -8242,12 +8318,16 @@ defmodule Emisar.SSOTest do
 
       {:ok, directory_identity} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, member.id, %{
-          provider_identifier: "directory-123",
-          scim_external_id: "directory-123",
-          created_by: :provider,
-          provisioned_via: :scim
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, member.id),
+          %{
+            provider_identifier: "directory-123",
+            scim_external_id: "directory-123",
+            created_by: :provider,
+            provisioned_via: :scim
+          }
+        )
         |> Repo.insert()
 
       request =
@@ -8261,6 +8341,7 @@ defmodule Emisar.SSOTest do
                SSO.approve_link_request(
                  request,
                  %RunnerAccess{mode: :none, groups: [], runner_ids: []},
+                 provider.default_role,
                  subject
                )
 
@@ -8301,7 +8382,12 @@ defmodule Emisar.SSOTest do
         })
 
       assert {:ok, %{identity: rebound}} =
-               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+               SSO.approve_link_request(
+                 request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
 
       assert rebound.id == directory_identity.id
       assert rebound.created_by == :admin
@@ -8422,7 +8508,12 @@ defmodule Emisar.SSOTest do
         })
 
       assert {:ok, %{identity: rebound}} =
-               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+               SSO.approve_link_request(
+                 request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
 
       {_other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
@@ -8485,7 +8576,12 @@ defmodule Emisar.SSOTest do
         })
 
       assert {:ok, %{identity: rebound}} =
-               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+               SSO.approve_link_request(
+                 request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
 
       assert rebound.id == directory_identity.id
       refute rebound.provider_identifier_retired_at
@@ -8534,7 +8630,12 @@ defmodule Emisar.SSOTest do
         })
 
       assert {:ok, %{identity: rebound}} =
-               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+               SSO.approve_link_request(
+                 request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
 
       assert rebound.id == directory_identity.id
       refute rebound.provider_identifier_retired_at
@@ -8557,22 +8658,32 @@ defmodule Emisar.SSOTest do
       provider: provider
     } do
       member = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
 
       {:ok, _first} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, member.id, %{
-          provider_identifier: "first",
-          created_by: :provider,
-          provisioned_via: :oidc_jit
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, member.id),
+          %{
+            provider_identifier: "first",
+            created_by: :provider,
+            provisioned_via: :oidc_jit
+          }
+        )
         |> Repo.insert()
 
       second =
-        SSO.UserIdentity.Changeset.create(account.id, provider.id, member.id, %{
-          provider_identifier: "second",
-          created_by: :provider,
-          provisioned_via: :oidc_jit
-        })
+        SSO.UserIdentity.Changeset.create(
+          account.id,
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, member.id),
+          %{
+            provider_identifier: "second",
+            created_by: :provider,
+            provisioned_via: :oidc_jit
+          }
+        )
 
       assert {:error, changeset} = Repo.insert(second)
       assert "already has an identity for this connection" in errors_on(changeset).user_id
@@ -8594,7 +8705,7 @@ defmodule Emisar.SSOTest do
       {:ok, access} = RunnerAccess.restricted(["production"], [])
 
       assert {:ok, %{user: user, identity: identity}} =
-               SSO.approve_link_request(request, access, subject)
+               SSO.approve_link_request(request, access, provider.default_role, subject)
 
       assert user.email == "approve@acme.test"
       assert identity.provider_identifier == "okta|approve"
@@ -8625,7 +8736,13 @@ defmodule Emisar.SSOTest do
 
       :ok = SSO.subscribe_link_request(request.id)
 
-      assert {:ok, _} = SSO.approve_link_request(request, RunnerAccess.none(), subject)
+      assert {:ok, _} =
+               SSO.approve_link_request(
+                 request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
 
       assert_receive {:sso_link_request, :approved, %{id: id, provider_id: provider_id}}
       assert id == request.id
@@ -8661,7 +8778,12 @@ defmodule Emisar.SSOTest do
       assert request.matched_user_id == member.id
 
       assert {:ok, %{user: user, identity: identity}} =
-               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+               SSO.approve_link_request(
+                 request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
 
       # Bound to the EXISTING user. OIDC owns only the login identifier; the
       # directory column stays available for a later SCIM assertion.
@@ -8703,7 +8825,12 @@ defmodule Emisar.SSOTest do
 
       audit_count = Repo.aggregate(Audit.Event, :count)
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+      assert SSO.approve_link_request(
+               request,
+               RunnerAccess.none(),
+               provider.default_role,
+               subject
+             ) ==
                {:error, :unverified_email}
 
       assert Repo.reload(request)
@@ -8725,7 +8852,12 @@ defmodule Emisar.SSOTest do
           "email_verified" => true
         })
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+      assert SSO.approve_link_request(
+               request,
+               RunnerAccess.none(),
+               provider.default_role,
+               subject
+             ) ==
                {:error, :email_taken}
 
       # The request survives so an admin can resolve it another way.
@@ -8735,7 +8867,12 @@ defmodule Emisar.SSOTest do
     test "denies a viewer and leaves the request pending", %{account: account, provider: provider} do
       request = capture_request(provider, %{"sub" => "okta|v", "email" => "v@acme.test"})
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), viewer_in(account)) ==
+      assert SSO.approve_link_request(
+               request,
+               RunnerAccess.none(),
+               provider.default_role,
+               viewer_in(account)
+             ) ==
                {:error, :unauthorized}
 
       assert [_still_pending] = link_requests(provider.id)
@@ -8748,7 +8885,12 @@ defmodule Emisar.SSOTest do
       # request is even fetched — so a free-plan owner is denied outright.
       {_u, _free_account, free_subject} = Fixtures.Subjects.owner_subject(%{})
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), free_subject) ==
+      assert SSO.approve_link_request(
+               request,
+               RunnerAccess.none(),
+               provider.default_role,
+               free_subject
+             ) ==
                {:error, :sso_not_available}
 
       assert [_still_pending] = link_requests(provider.id)
@@ -8758,7 +8900,8 @@ defmodule Emisar.SSOTest do
       {_ub, _account_b, sb} = enterprise_owner()
       request = capture_request(provider, %{"sub" => "okta|x", "email" => "x@acme.test"})
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), sb) == {:error, :not_found}
+      assert SSO.approve_link_request(request, RunnerAccess.none(), provider.default_role, sb) ==
+               {:error, :not_found}
 
       assert [_still_pending] = link_requests(provider.id)
     end
@@ -8788,7 +8931,12 @@ defmodule Emisar.SSOTest do
 
       # Admin approves → the identity is linked to the existing member.
       assert {:ok, %{user: user}} =
-               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+               SSO.approve_link_request(
+                 request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
 
       assert user.id == member.id
 
@@ -8842,11 +8990,15 @@ defmodule Emisar.SSOTest do
 
       {:ok, admin_approved} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
-          provider_identifier: "approved-by-an-admin",
-          created_by: :admin,
-          provisioned_via: :manual
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, user.id),
+          %{
+            provider_identifier: "approved-by-an-admin",
+            created_by: :admin,
+            provisioned_via: :manual
+          }
+        )
         |> Repo.insert()
 
       approved_session =
@@ -8876,6 +9028,7 @@ defmodule Emisar.SSOTest do
       account = Fixtures.Accounts.create_account()
       provider = provider_fixture(account)
       user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       rebound =
         Fixtures.SSO.create_user_identity(%{
@@ -8908,6 +9061,7 @@ defmodule Emisar.SSOTest do
       account = Fixtures.Accounts.create_account()
       provider = provider_fixture(account)
       user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       manual =
         Fixtures.SSO.create_user_identity(%{
@@ -8935,6 +9089,7 @@ defmodule Emisar.SSOTest do
       account = Fixtures.Accounts.create_account()
       provider = provider_fixture(account)
       user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       admin_approved =
         Fixtures.SSO.create_user_identity(%{
@@ -9025,6 +9180,7 @@ defmodule Emisar.SSOTest do
           account_id: old_account.id,
           provider_id: provider.id,
           user_id: user.id,
+          membership: old_membership,
           provider_identifier: "removed-seat-subject",
           scim_external_id: "removed-seat-directory-id",
           created_by: :admin,
@@ -9052,11 +9208,15 @@ defmodule Emisar.SSOTest do
 
       {:ok, from_the_directory} =
         account.id
-        |> SSO.UserIdentity.Changeset.create(provider.id, user.id, %{
-          provider_identifier: "asserted-by-the-idp",
-          created_by: :provider,
-          provisioned_via: :oidc_jit
-        })
+        |> SSO.UserIdentity.Changeset.create(
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, user.id),
+          %{
+            provider_identifier: "asserted-by-the-idp",
+            created_by: :provider,
+            provisioned_via: :oidc_jit
+          }
+        )
         |> Repo.insert()
 
       elsewhere = Fixtures.Accounts.create_account()
@@ -9251,6 +9411,7 @@ defmodule Emisar.SSOTest do
       {_owner, account, _subject} = enterprise_owner()
       provider = provider_fixture(account)
       user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       identity =
         Fixtures.SSO.create_user_identity(%{

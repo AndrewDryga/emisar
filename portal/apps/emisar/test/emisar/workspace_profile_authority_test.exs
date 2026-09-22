@@ -148,20 +148,23 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     end
   end
 
-  describe "list_membership_profiles/2" do
-    test "deduplicates requested identities without crossing accounts" do
+  describe "list_membership_profiles_by_id/2" do
+    test "deduplicates exact histories and excludes unresolved or foreign bindings" do
       member = Fixtures.Memberships.create_membership()
+      Fixtures.Memberships.mark_membership_as_deleted(member)
       outsider = Fixtures.Memberships.create_membership()
 
       assert [found] =
-               Accounts.list_membership_profiles(member.account_id, [
-                 member.user_id,
-                 member.user_id,
-                 outsider.user_id
+               Accounts.list_membership_profiles_by_id(member.account_id, [
+                 member.id,
+                 member.id,
+                 outsider.id,
+                 nil
                ])
 
       assert found.id == member.id
-      assert Accounts.list_membership_profiles(member.account_id, []) == []
+      assert found.deleted_at
+      assert Accounts.list_membership_profiles_by_id(member.account_id, []) == []
     end
   end
 

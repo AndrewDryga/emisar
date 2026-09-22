@@ -71,6 +71,7 @@ defmodule Emisar.SSO.Provisioning do
         source
       ) do
     matched_email = link_match_email(provider, email, claims, source)
+    member = matched_member(provider, matched_email)
 
     attrs = %{
       provider_identifier: identifier,
@@ -79,9 +80,34 @@ defmodule Emisar.SSO.Provisioning do
       email: email,
       full_name: full_name,
       claims: claims,
-      matched_user_id: matched_member_id(provider, matched_email)
+      matched_user_id: member && member.user_id,
+      matched_membership_id: member && member.id,
+      recovery_identity_id: nil
     }
 
+    insert_link_request(multi, key, provider, attrs)
+  end
+
+  # The verified returning identity, not an email claim, names this pending
+  # recovery target. Approval rechecks the captured identity and Member before
+  # explicitly restoring this OIDC-only binding; capture grants nothing.
+  def put_identity_recovery_request(multi, key, provider, identity, member, claims) do
+    attrs = %{
+      provider_identifier: identity.provider_identifier,
+      source: :oidc,
+      namespace_fingerprint: namespace_fingerprint(provider),
+      email: member.contact_email,
+      full_name: member.display_name,
+      claims: claims,
+      matched_user_id: member.user_id,
+      matched_membership_id: member.id,
+      recovery_identity_id: identity.id
+    }
+
+    insert_link_request(multi, key, provider, attrs)
+  end
+
+  defp insert_link_request(multi, key, provider, attrs) do
     changeset = LinkRequest.Changeset.create(provider.account_id, provider.id, attrs)
 
     # `source` is replaced with the rest. A re-capture of the same identifier from
@@ -96,11 +122,14 @@ defmodule Emisar.SSO.Provisioning do
            :full_name,
            :claims,
            :matched_user_id,
+           :matched_membership_id,
+           :recovery_identity_id,
            :source,
            :namespace_fingerprint,
            :updated_at
          ]},
-      conflict_target: [:provider_id, :provider_identifier]
+      conflict_target: [:provider_id, :provider_identifier],
+      returning: true
     )
   end
 
@@ -141,7 +170,7 @@ defmodule Emisar.SSO.Provisioning do
         claims,
         :scim
       ) do
-    if matched_member_id(provider, email) do
+    if matched_member(provider, email) do
       case capture_link_request(provider, identifier, email, full_name, claims, :scim) do
         {:ok, request} -> {:captured, request}
         {:error, _} -> :no_match
@@ -154,16 +183,17 @@ defmodule Emisar.SSO.Provisioning do
   # The existing account MEMBER an inbound email matches, if any. Restricted to
   # members (never pulls an outsider into the account); a lookup for the admin,
   # not a merge.
-  def matched_member_id(%IdentityProvider{} = provider, email) when is_binary(email) do
+  def matched_member(%IdentityProvider{} = provider, email) when is_binary(email) do
     with {:ok, user} <- Users.fetch_user_by_email(email),
-         %Accounts.Membership{} <- Accounts.peek_sync_membership(provider.account_id, user.id) do
-      user.id
+         %Accounts.Membership{} = member <-
+           Accounts.peek_sync_membership(provider.account_id, user.id) do
+      member
     else
       _ -> nil
     end
   end
 
-  def matched_member_id(_provider, _email), do: nil
+  def matched_member(_provider, _email), do: nil
 
   def put_active_account_lock(multi, account_id) do
     Multi.run(multi, :active_account, fn repo, _changes ->
@@ -216,24 +246,28 @@ defmodule Emisar.SSO.Provisioning do
     role_mappings = provider_role_mappings(provider)
     runner_access_mappings = provider_runner_access_mappings(provider)
     group_ids_by_identity = group_ids_by_identity(identities)
-    user_ids = Enum.map(identities, & &1.user_id)
+    membership_ids = Enum.map(identities, & &1.membership_id)
 
-    membership_by_user =
+    memberships =
       provider.account_id
-      |> Accounts.list_sync_memberships(user_ids)
-      |> Map.new(&{&1.user_id, &1})
+      |> Accounts.list_sync_memberships_by_id(membership_ids)
+      |> Map.new(&{&1.id, &1})
 
-    Enum.each(membership_by_user, fn {_user_id, membership} ->
+    Enum.each(memberships, fn {_id, membership} ->
       if is_integer(membership.directory_authorization_pending_version) do
         Accounts.refresh_directory_authorization_sessions(membership)
       end
     end)
 
-    Enum.each(identities, fn identity ->
+    # Removed seats retain directory history, but no current authorization to
+    # recompute. They must neither adopt a replacement nor log a failed write.
+    identities
+    |> Enum.filter(&Map.has_key?(memberships, &1.membership_id))
+    |> Enum.each(fn identity ->
       group_ids = Map.get(group_ids_by_identity, identity.id, [])
       role = highest_role_for_groups(group_ids, role_mappings) || provider.default_role
       access = effective_runner_access(provider, group_ids, runner_access_mappings)
-      membership = Map.get(membership_by_user, identity.user_id)
+      membership = Map.get(memberships, identity.membership_id)
 
       case apply_recomputed_authorization(provider, role, access, membership) do
         {:ok, _membership} ->

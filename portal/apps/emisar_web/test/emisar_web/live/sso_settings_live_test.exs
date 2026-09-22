@@ -2105,6 +2105,34 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       }
     end
 
+    test "a removed identity keeps its history and never targets a replacement seat", %{
+      conn: conn,
+      user: user,
+      account: account,
+      provider: provider,
+      membership: member
+    } do
+      subject = Fixtures.Subjects.subject_for(user, account)
+      assert {:ok, _removed} = Accounts.delete_membership(member, subject)
+
+      replacement =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.user_id,
+          display_name: "Replacement Person"
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      assert has_element?(lv, "#synced-members-#{provider.id}", "Dana Sync")
+      assert has_element?(lv, "#synced-members-#{provider.id}", "Removed")
+      refute has_element?(lv, "#synced-members-#{provider.id}", "Replacement Person")
+
+      refute has_element?(
+               lv,
+               "#synced-members-#{provider.id} [phx-value-membership_id='#{replacement.id}']"
+             )
+    end
+
     test "your own row keeps its role and explains the disabled controls", %{
       conn: conn,
       user: user,

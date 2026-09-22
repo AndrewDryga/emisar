@@ -87,6 +87,11 @@ defmodule Emisar.Fixtures.SSO do
   def create_user_identity(attrs) do
     attrs = Map.new(attrs)
 
+    member =
+      attrs[:membership] ||
+        Emisar.Accounts.peek_sync_membership(attrs.account_id, attrs.user_id) ||
+        raise "create the membership before its SSO identity, or pass its exact :membership"
+
     identity_attrs =
       Map.merge(
         %{
@@ -94,15 +99,25 @@ defmodule Emisar.Fixtures.SSO do
           created_by: :provider,
           provisioned_via: :oidc_jit
         },
-        Map.drop(attrs, [:account_id, :provider_id, :user_id])
+        Map.drop(attrs, [:account_id, :provider_id, :user_id, :membership])
       )
 
     {:ok, identity} =
       attrs.account_id
-      |> UserIdentity.Changeset.create(attrs.provider_id, attrs.user_id, identity_attrs)
+      |> UserIdentity.Changeset.create(attrs.provider_id, member, identity_attrs)
       |> Repo.insert()
 
     identity
+  end
+
+  @doc "Models an identity left unbound by an ambiguous historical membership migration."
+  def clear_identity_membership(%UserIdentity{} = identity) do
+    identity |> Ecto.Changeset.change(membership_id: nil) |> Repo.update!()
+  end
+
+  @doc "Binds an identity directly for tests exercising a later stale request."
+  def bind_identity_membership(%UserIdentity{} = identity, member) do
+    identity |> UserIdentity.Changeset.bind_membership(member) |> Repo.update!()
   end
 
   @doc "A directory-linked roster member, with optional existing user and membership."
@@ -125,6 +140,7 @@ defmodule Emisar.Fixtures.SSO do
         account_id: provider.account_id,
         provider_id: provider.id,
         user_id: user.id,
+        membership: membership,
         provisioned_via: :scim,
         scim_external_id: "scim-#{Emisar.Fixtures.Random.unique_int()}",
         scim_active: Map.get(attrs, :scim_active, true)
@@ -183,6 +199,16 @@ defmodule Emisar.Fixtures.SSO do
         },
         Map.drop(attrs, [:account_id, :provider])
       )
+
+    request_attrs =
+      case request_attrs[:matched_user_id] do
+        nil ->
+          request_attrs
+
+        user_id ->
+          member = Emisar.Fixtures.Memberships.fetch_membership(provider.account_id, user_id)
+          Map.put_new(request_attrs, :matched_membership_id, member && member.id)
+      end
 
     {:ok, request} =
       Repo.insert(

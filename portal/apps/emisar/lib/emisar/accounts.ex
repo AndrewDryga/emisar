@@ -1613,15 +1613,16 @@ defmodule Emisar.Accounts do
   `:audit`; a directory never owns the personal User, even for a sole-tenancy
   member. A name function runs against the locked local row for partial updates.
   """
-  def sync_member_display_name(account_id, user_id, display_name, opts)
-      when is_binary(account_id) and is_binary(user_id) do
+  def sync_member_display_name(account_id, membership_id, display_name, opts)
+      when is_binary(account_id) and is_binary(membership_id) do
     audit = Keyword.fetch!(opts, :audit)
 
     Multi.new()
     |> Multi.run(:membership, fn repo, _changes ->
       queryable =
         Membership.Query.not_deleted()
-        |> Membership.Query.by_account_and_user(account_id, user_id)
+        |> Membership.Query.by_account_id(account_id)
+        |> Membership.Query.by_id(membership_id)
         |> Membership.Query.lock_for_update()
 
       case repo.peek(queryable) do
@@ -1639,6 +1640,9 @@ defmodule Emisar.Accounts do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  def sync_member_display_name(_account_id, _membership_id, _display_name, _opts),
+    do: {:error, :not_found}
 
   # The audit row carries the pre-update membership, so the event reads
   # from→to. An unchanged name writes nothing and is not an event.
@@ -2310,6 +2314,34 @@ defmodule Emisar.Accounts do
     |> Repo.peek()
   end
 
+  @doc "Internal - an identity's exact seat, including suspension but never a replacement."
+  def peek_sync_membership_by_id(account_id, membership_id) when is_binary(membership_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_id(membership_id)
+    |> Repo.peek()
+  end
+
+  def peek_sync_membership_by_id(_account_id, _membership_id), do: nil
+
+  @doc "Internal - exact account-owned profile history; never an access grant."
+  def peek_membership_profile_by_id(account_id, membership_id) when is_binary(membership_id) do
+    Membership.Query.all()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_id(membership_id)
+    |> Repo.peek()
+  end
+
+  def peek_membership_profile_by_id(_account_id, _membership_id), do: nil
+
+  @doc "Internal - batched exact profiles for an already-scoped directory projection."
+  def list_membership_profiles_by_id(account_id, membership_ids) do
+    Membership.Query.all()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_ids(Enum.reject(membership_ids, &is_nil/1))
+    |> Repo.all()
+  end
+
   @doc "Internal - latest account-owned profile, including removed members; never an access grant."
   def peek_membership_profile(account_id, user_id) do
     Membership.Query.all()
@@ -2318,24 +2350,15 @@ defmodule Emisar.Accounts do
     |> Repo.peek()
   end
 
-  @doc "Internal - batched local profile history for an already-scoped account projection."
-  def list_membership_profiles(account_id, user_ids) do
-    Membership.Query.all()
-    |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.by_user_ids(user_ids)
-    |> Membership.Query.latest_profiles()
-    |> Repo.all()
-  end
-
   @doc """
   Internal — the sync memberships for a SET of users in an account, in one query
   (the SSO group reconcile's batched membership lookup; no `%Subject{}` — the
   caller is the provider-scoped SCIM path).
   """
-  def list_sync_memberships(account_id, user_ids) do
+  def list_sync_memberships_by_id(account_id, membership_ids) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.by_user_ids(user_ids)
+    |> Membership.Query.by_ids(Enum.reject(membership_ids, &is_nil/1))
     |> Repo.all()
   end
 
@@ -3404,15 +3427,15 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal — SCIM disable: return role control to operators by clearing the
-  `directory_managed` flag on the memberships of `user_ids` (a provider's synced
+  `directory_managed` flag on the exact `membership_ids` (a provider's synced
   members) in `account_id`. No `%Subject{}` — the SSO caller is already authorized
   by the provider's account scope. Returns `{count, nil}`.
   """
-  def clear_directory_managed_for_users(account_id, provider_id, user_ids)
-      when is_binary(account_id) and is_binary(provider_id) and is_list(user_ids) do
+  def clear_directory_managed_for_memberships(account_id, provider_id, membership_ids)
+      when is_binary(account_id) and is_binary(provider_id) and is_list(membership_ids) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.by_user_ids(user_ids)
+    |> Membership.Query.by_ids(Enum.reject(membership_ids, &is_nil/1))
     # Only rows THIS connection owns. An account can run several, and clearing
     # every row for a user let tearing down connection B erase the suspension
     # connection A had placed — after which a local admin could reinstate access
@@ -3926,13 +3949,13 @@ defmodule Emisar.Accounts do
         repo,
         account_id,
         provider_id,
-        user_ids,
+        membership_ids,
         version
       )
-      when is_list(user_ids) and is_integer(version) do
+      when is_list(membership_ids) and is_integer(version) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.by_user_ids(user_ids)
+    |> Membership.Query.by_ids(Enum.reject(membership_ids, &is_nil/1))
     |> Membership.Query.by_directory_provider_or_unmanaged(provider_id)
     |> repo.update_all(
       set: [
@@ -4010,7 +4033,7 @@ defmodule Emisar.Accounts do
   end
 
   defp member_profile_directory_managed?(%Membership{} = membership),
-    do: SSO.user_profile_directory_managed?(membership.account_id, membership.user_id)
+    do: SSO.member_profile_directory_managed?(membership.account_id, membership.id)
 
   @doc """
   Admin-triggered local profile edit for another member. Owners/admins can fix

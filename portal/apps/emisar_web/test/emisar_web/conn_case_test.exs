@@ -31,7 +31,7 @@ defmodule EmisarWeb.ConnCaseTest do
         end)
 
       assert_receive {:first_backend, first_backend}, 5_000
-      assert_receive {:first_slug, first_slug}, 5_000
+      assert_receive {:first_slug, first_slug}, 5_000, owner_diagnostics(first, first_backend)
 
       second =
         isolated_owner(fn ->
@@ -54,6 +54,7 @@ defmodule EmisarWeb.ConnCaseTest do
 
       first =
         isolated_owner(fn ->
+          send(parent, {:first_backend, backend_pid()})
           {_conn, _user, account} = register_and_log_in(Phoenix.ConnTest.build_conn())
           send(parent, {:first_account, account})
 
@@ -62,7 +63,11 @@ defmodule EmisarWeb.ConnCaseTest do
           end
         end)
 
-      assert_receive {:first_account, %Account{} = first_account}, 5_000
+      assert_receive {:first_backend, first_backend}, 5_000
+
+      assert_receive {:first_account, %Account{} = first_account},
+                     5_000,
+                     owner_diagnostics(first, first_backend)
 
       second =
         isolated_owner(fn ->
@@ -78,6 +83,18 @@ defmodule EmisarWeb.ConnCaseTest do
       assert second_account.name == "Test Co"
       assert first_account.slug != second_account.slug
     end
+  end
+
+  defp owner_diagnostics(task, backend) do
+    process = Process.info(task.pid, [:current_stacktrace, :status, :reductions])
+
+    query = """
+    SELECT state, wait_event_type, wait_event, pg_blocking_pids(pid), xact_start, query_start, query
+    FROM pg_stat_activity WHERE pid = $1
+    """
+
+    %{rows: rows} = Repo.query!(query, [backend])
+    "Isolated owner did not finish registration: #{inspect(%{process: process, database: rows})}"
   end
 
   # Runs `fun` as its own sandbox owner on a separate connection. Dropping

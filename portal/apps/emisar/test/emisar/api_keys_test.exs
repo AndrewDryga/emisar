@@ -2397,7 +2397,7 @@ defmodule Emisar.ApiKeysTest do
                  Repo,
                  account.id,
                  provider.id,
-                 [operator_subject.actor.id],
+                 [operator_subject.membership_id],
                  3
                )
 
@@ -2407,7 +2407,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "directory authorization pending keeps a human owner's key usable" do
-      {owner, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {:ok, raw, key} = ApiKeys.create_key(%{name: "owner"}, subject)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
@@ -2416,7 +2416,7 @@ defmodule Emisar.ApiKeysTest do
                  Repo,
                  account.id,
                  provider.id,
-                 [owner.id],
+                 [subject.membership_id],
                  3
                )
 
@@ -3264,7 +3264,7 @@ defmodule Emisar.ApiKeysTest do
                  Repo,
                  account.id,
                  provider.id,
-                 [user.id],
+                 [membership.id],
                  3
                )
 
@@ -3297,7 +3297,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "pending directory authorization does not demote a human owner at claim" do
-      {user, account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3310,7 +3310,7 @@ defmodule Emisar.ApiKeysTest do
                  Repo,
                  account.id,
                  provider.id,
-                 [user.id],
+                 [subject.membership_id],
                  3
                )
 

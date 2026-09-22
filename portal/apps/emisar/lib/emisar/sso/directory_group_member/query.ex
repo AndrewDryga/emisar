@@ -55,7 +55,7 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
     |> join(:inner, [directory_identity: identity], member in Emisar.Accounts.Membership,
       as: :directory_member,
       on:
-        member.user_id == identity.user_id and member.account_id == identity.account_id and
+        member.id == identity.membership_id and member.account_id == identity.account_id and
           is_nil(member.deleted_at)
     )
     |> join(:inner, [directory_identity: identity], user in Emisar.Users.User,

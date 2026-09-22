@@ -2015,6 +2015,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Rotate a client secret"
       assert html =~ "Disable or delete a connection"
       assert html =~ "Troubleshooting"
+      assert html =~ "Restore sign-in"
+      assert html =~ "The provider need not send an email for this recovery."
     end
 
     test "the SCIM page publishes the wire and directory authorization contracts", %{conn: conn} do
@@ -2050,7 +2052,7 @@ defmodule EmisarWeb.MarketingTest do
       review_dates = [
         {"/docs/authentication", "September 22, 2026"},
         {"/docs/teams-and-access", "September 22, 2026"},
-        {"/docs/sso", "September 7, 2026"},
+        {"/docs/sso", "September 22, 2026"},
         {"/docs/scim", "September 22, 2026"}
       ]
 

@@ -420,6 +420,9 @@ defmodule EmisarWeb.SSOController do
 
         {:error, :provider_disabled} ->
           sso_error(conn, callback_error_message(:provider_disabled))
+
+        {:error, :membership_unavailable} ->
+          sso_error(conn, callback_error_message(:membership_unavailable))
       end
     else
       nil ->
@@ -584,6 +587,10 @@ defmodule EmisarWeb.SSOController do
 
   defp callback_error_message(:email_domain_not_allowed) do
     "Your email domain isn't permitted for this single sign-on connection. Contact your team admin."
+  end
+
+  defp callback_error_message(:membership_unavailable) do
+    "This single sign-on identity no longer has workspace access. Ask your team admin to restore or link your access."
   end
 
   defp callback_error_message(_other),

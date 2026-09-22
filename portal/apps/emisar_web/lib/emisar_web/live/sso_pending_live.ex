@@ -61,7 +61,16 @@ defmodule EmisarWeb.SSOPendingLive do
         </div>
 
         <p :if={not @invitation_pending?} class="text-sm leading-relaxed text-zinc-400">
-          Your identity provider signed you in as <span class="break-all font-medium text-zinc-200">{@request.email}</span>.
+          <%= if @request.recovery_identity_id do %>
+            Your identity provider verified your sign-in. An administrator must restore its
+            link to your workspace membership.
+          <% else %>
+            <%= if @request.email do %>
+              Your identity provider signed you in as <span class="break-all font-medium text-zinc-200">{@request.email}</span>.
+            <% else %>
+              Your identity provider verified your sign-in.
+            <% end %>
+          <% end %>
           Keep this page open to continue after approval.
         </p>
 

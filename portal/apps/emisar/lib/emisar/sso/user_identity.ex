@@ -1,6 +1,6 @@
 defmodule Emisar.SSO.UserIdentity do
   @moduledoc """
-  Binds an external identity to a user: `provider_identifier` is the OIDC
+  Binds an external identity to an exact workspace membership: `provider_identifier` is the OIDC
   `sub`, and `(provider, provider_identifier)` is the only stable key — an
   OIDC login is never matched by email. A user may hold many identities.
   `claims` keeps identity + forensic claims (sub/email/name/hd/amr/acr/
@@ -42,6 +42,7 @@ defmodule Emisar.SSO.UserIdentity do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :provider, Emisar.SSO.IdentityProvider, where: [deleted_at: nil]
     belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :membership, Emisar.Accounts.Membership
 
     timestamps()
   end

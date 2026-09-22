@@ -517,6 +517,7 @@ defmodule Emisar.SSOGroupsTest do
 
       other_account = Fixtures.Accounts.create_account()
       other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
+      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
 
       other_identity =
         Fixtures.SSO.create_user_identity(

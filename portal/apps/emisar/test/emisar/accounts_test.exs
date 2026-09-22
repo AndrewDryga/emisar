@@ -576,6 +576,8 @@ defmodule Emisar.AccountsTest do
       other_account = Fixtures.Accounts.create_account()
       other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
 
+      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
+
       foreign_identity =
         Fixtures.SSO.create_user_identity(
           account_id: other_account.id,
@@ -622,6 +624,8 @@ defmodule Emisar.AccountsTest do
 
       sibling_provider =
         Fixtures.SSO.create_identity_provider(account_id: sibling.id, issuer: issuer)
+
+      Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: user.id)
 
       sibling_identity =
         Fixtures.SSO.create_user_identity(
@@ -3066,9 +3070,7 @@ defmodule Emisar.AccountsTest do
       audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
       assert {:ok, updated} =
-               Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name",
-                 audit: audit
-               )
+               Accounts.sync_member_display_name(account.id, member.id, "Dir Name", audit: audit)
 
       assert updated.display_name == "Dir Name"
 
@@ -3083,7 +3085,7 @@ defmodule Emisar.AccountsTest do
       audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
       assert {:ok, _updated} =
-               Accounts.sync_member_display_name(account.id, member.user_id, "Another Name",
+               Accounts.sync_member_display_name(account.id, member.id, "Another Name",
                  audit: audit
                )
     end
@@ -3096,9 +3098,7 @@ defmodule Emisar.AccountsTest do
       audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
       assert {:ok, _updated} =
-               Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name",
-                 audit: audit
-               )
+               Accounts.sync_member_display_name(account.id, member.id, "Dir Name", audit: audit)
 
       assert event = Repo.one(Emisar.Audit.Event)
       assert event.event_type == "membership.renamed_via_scim"
@@ -3117,14 +3117,12 @@ defmodule Emisar.AccountsTest do
       audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
       {:ok, _updated} =
-        Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name", audit: audit)
+        Accounts.sync_member_display_name(account.id, member.id, "Dir Name", audit: audit)
 
       Repo.delete_all(Emisar.Audit.Event)
 
       assert {:ok, _updated} =
-               Accounts.sync_member_display_name(account.id, member.user_id, "Dir Name",
-                 audit: audit
-               )
+               Accounts.sync_member_display_name(account.id, member.id, "Dir Name", audit: audit)
 
       refute Repo.one(Emisar.Audit.Event)
     end
@@ -3544,8 +3542,52 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "list_sync_memberships/2" do
-    test "returns the memberships for the requested set of users in one query" do
+  describe "peek_sync_membership_by_id/2" do
+    test "includes a suspension but never a removed, replacement or foreign seat" do
+      member = Fixtures.Memberships.create_membership()
+      suspended = Fixtures.Memberships.suspend_membership(member)
+
+      assert Accounts.peek_sync_membership_by_id(member.account_id, member.id).disabled_at ==
+               suspended.disabled_at
+
+      refute Accounts.peek_sync_membership_by_id(Ecto.UUID.generate(), member.id)
+      refute Accounts.peek_sync_membership_by_id(member.account_id, nil)
+      Fixtures.Memberships.mark_membership_as_deleted(member)
+
+      replacement =
+        Fixtures.Memberships.create_membership(
+          account_id: member.account_id,
+          user_id: member.user_id
+        )
+
+      refute Accounts.peek_sync_membership_by_id(member.account_id, member.id)
+
+      assert Accounts.peek_sync_membership_by_id(member.account_id, replacement.id).id ==
+               replacement.id
+    end
+  end
+
+  describe "peek_membership_profile_by_id/2" do
+    test "keeps the exact historical profile within its account" do
+      member = Fixtures.Memberships.create_membership(display_name: "Historical profile")
+      Fixtures.Memberships.mark_membership_as_deleted(member)
+
+      Fixtures.Memberships.create_membership(
+        account_id: member.account_id,
+        user_id: member.user_id,
+        display_name: "Replacement"
+      )
+
+      assert Accounts.peek_membership_profile_by_id(member.account_id, member.id).display_name ==
+               "Historical profile"
+
+      refute Accounts.peek_membership_profile_by_id(Ecto.UUID.generate(), member.id)
+      refute Accounts.peek_membership_profile_by_id(member.account_id, nil)
+    end
+  end
+
+  describe "list_sync_memberships_by_id/2" do
+    test "returns the exact requested memberships in one query" do
       account = Fixtures.Accounts.create_account()
       user_one = Fixtures.Users.create_user()
       user_two = Fixtures.Users.create_user()
@@ -3560,7 +3602,8 @@ defmodule Emisar.AccountsTest do
       _membership_three =
         Fixtures.Memberships.create_membership(account_id: account.id, user_id: user_three.id)
 
-      memberships = Accounts.list_sync_memberships(account.id, [user_one.id, user_two.id])
+      memberships =
+        Accounts.list_sync_memberships_by_id(account.id, [membership_one.id, membership_two.id])
 
       ids = memberships |> Enum.map(& &1.id) |> Enum.sort()
       assert ids == Enum.sort([membership_one.id, membership_two.id])
@@ -3571,13 +3614,14 @@ defmodule Emisar.AccountsTest do
       account_b = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
-      _membership_a =
+      membership_a =
         Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
 
-      _membership_b =
+      membership_b =
         Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
 
-      memberships = Accounts.list_sync_memberships(account_a.id, [user.id])
+      memberships =
+        Accounts.list_sync_memberships_by_id(account_a.id, [membership_a.id, membership_b.id])
 
       assert memberships |> Enum.map(& &1.account_id) |> Enum.uniq() == [account_a.id]
     end
@@ -3585,7 +3629,7 @@ defmodule Emisar.AccountsTest do
     test "returns an empty list when no user matches" do
       account = Fixtures.Accounts.create_account()
 
-      assert Accounts.list_sync_memberships(account.id, [Ecto.UUID.generate()]) == []
+      assert Accounts.list_sync_memberships_by_id(account.id, [Ecto.UUID.generate()]) == []
     end
   end
 
@@ -3607,18 +3651,18 @@ defmodule Emisar.AccountsTest do
 
       user = Fixtures.Users.create_user()
 
+      Fixtures.Memberships.create_membership(
+        account_id: provider_account.id,
+        user_id: user.id,
+        role: "operator"
+      )
+
       identity =
         Fixtures.SSO.create_user_identity(%{
           account_id: provider_account.id,
           provider_id: provider.id,
           user_id: user.id
         })
-
-      Fixtures.Memberships.create_membership(
-        account_id: provider_account.id,
-        user_id: user.id,
-        role: "operator"
-      )
 
       {:ok, other_account} = Accounts.create_account_with_owner_from_name("Their own", user)
 
@@ -5712,7 +5756,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "clear_directory_managed_for_users/3" do
+  describe "clear_directory_managed_for_memberships/3" do
     test "an operator can reinstate a member the removed directory had deactivated" do
       # Suspended by a directory that no longer exists: `reinstate_membership`
       # refuses a `directory_suspended` row on the reasoning that only the IdP may
@@ -5734,7 +5778,7 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.reinstate_membership(suspended, subject) == {:error, :deactivated_in_idp}
 
-      Accounts.clear_directory_managed_for_users(account.id, provider.id, [member.user_id])
+      Accounts.clear_directory_managed_for_memberships(account.id, provider.id, [member.id])
 
       # The suspension stands — the directory's last word was that they are out —
       # but it is now an operator's to lift.
@@ -5753,7 +5797,7 @@ defmodule Emisar.AccountsTest do
       Fixtures.Memberships.mark_directory_managed(member)
       Fixtures.Memberships.sync_display_name(member, "Directory Name")
 
-      Accounts.clear_directory_managed_for_users(account.id, provider.id, [member.user_id])
+      Accounts.clear_directory_managed_for_memberships(account.id, provider.id, [member.id])
 
       assert Repo.reload!(member).display_name == "Directory Name"
     end
@@ -5766,7 +5810,7 @@ defmodule Emisar.AccountsTest do
       kept = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       Fixtures.Memberships.mark_directory_managed(kept)
 
-      Accounts.clear_directory_managed_for_users(account.id, provider.id, [freed.user_id])
+      Accounts.clear_directory_managed_for_memberships(account.id, provider.id, [freed.id])
 
       refute Repo.reload!(freed).directory_managed
       assert Repo.reload!(kept).directory_managed
@@ -5792,7 +5836,7 @@ defmodule Emisar.AccountsTest do
 
       {:ok, _suspended, true} = commit_sync_lifecycle(membership, provider_a, :suspend)
 
-      Accounts.clear_directory_managed_for_users(account.id, provider_b.id, [user.id])
+      Accounts.clear_directory_managed_for_memberships(account.id, provider_b.id, [membership.id])
 
       still_held = Repo.reload!(membership)
       assert still_held.directory_suspended
@@ -8348,17 +8392,17 @@ defmodule Emisar.AccountsTest do
         issuer: issuer
       })
 
-    Fixtures.SSO.create_user_identity(%{
-      account_id: account.id,
-      provider_id: provider.id,
-      user_id: user.id
-    })
-
     Fixtures.Memberships.create_membership(
       account_id: account.id,
       user_id: user.id,
       role: "operator"
     )
+
+    Fixtures.SSO.create_user_identity(%{
+      account_id: account.id,
+      provider_id: provider.id,
+      user_id: user.id
+    })
 
     account
   end

@@ -44,11 +44,16 @@ defmodule EmisarWeb.RequireSSOTest do
   defp identity_for(account, provider, user) do
     {:ok, identity} =
       Repo.insert(
-        UserIdentity.Changeset.create(account.id, provider.id, user.id, %{
-          provider_identifier: "okta|#{System.unique_integer([:positive])}",
-          created_by: :provider,
-          provisioned_via: :oidc_jit
-        })
+        UserIdentity.Changeset.create(
+          account.id,
+          provider.id,
+          Fixtures.Memberships.fetch_membership(account.id, user.id),
+          %{
+            provider_identifier: "okta|#{System.unique_integer([:positive])}",
+            created_by: :provider,
+            provisioned_via: :oidc_jit
+          }
+        )
       )
 
     identity
@@ -103,6 +108,7 @@ defmodule EmisarWeb.RequireSSOTest do
       # step-up a same-account SSO gap gets.
       {_c2, _u2, other} = register_and_log_in(build_conn())
       other_provider = enabled_provider(other)
+      Fixtures.Memberships.create_membership(account_id: other.id, user_id: user.id)
       foreign_identity = identity_for(other, other_provider, user)
 
       assert_error_sent 404, fn ->

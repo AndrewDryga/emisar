@@ -322,18 +322,35 @@ defmodule Emisar.SSO.SCIM do
       Multi.new()
       |> put_active_account_lock(provider.account_id)
       |> put_current_scim_provider(provider, expected_version)
-      |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider} ->
-        lock_repost_identity(locked_provider, identity.id, state, repo)
+      # A re-POST may INSERT a new seat, whose User FK takes a key-share lock.
+      # Foreign invitation acceptance holds that User before retiring bindings;
+      # use the same User -> identity order, not identity -> FK wait.
+      |> Multi.run(:user, fn repo, _changes ->
+        Users.fetch_and_lock_user_by_id(identity.user_id, repo)
+      end)
+      |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider, user: user} ->
+        with {:ok, locked} <- lock_repost_identity(locked_provider, identity.id, state, repo),
+             true <- locked.user_id == user.id do
+          {:ok, locked}
+        else
+          false -> {:error, :not_found}
+          {:error, reason} -> {:error, reason}
+        end
       end)
       |> Multi.run(:adopted_identity, fn repo, %{scim_identity: locked_identity} ->
         prepare_repost_identity(repo, locked_identity, external_id, state)
       end)
-      |> Multi.run(:user, fn _repo, %{adopted_identity: locked_identity} ->
-        Users.fetch_user_by_id(locked_identity.user_id)
-      end)
       |> Multi.merge(&reconcile_provisioned_membership_multi(&1, active, authorization))
-      |> Multi.run(:updated_identity, fn repo, %{adopted_identity: locked_identity} ->
-        put_repost_identity_state(repo, locked_identity, active, state)
+      |> Multi.run(:updated_identity, fn repo, %{adopted_identity: locked_identity} = changes ->
+        with {:ok, identity} <- put_repost_identity_state(repo, locked_identity, active, state) do
+          case {active, changes.membership_transition.membership} do
+            {true, %Accounts.Membership{} = member} ->
+              identity |> UserIdentity.Changeset.bind_membership(member) |> repo.update()
+
+            _ ->
+              {:ok, identity}
+          end
+        end
       end)
       |> maybe_put_repost_authorization(authorization)
       |> Multi.run(:result, fn _repo, changes ->
@@ -439,7 +456,7 @@ defmodule Emisar.SSO.SCIM do
          false,
          _authorization
        ) do
-    case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
+    case Accounts.peek_sync_membership_by_id(provider.account_id, identity.membership_id) do
       %Accounts.Membership{} = membership ->
         Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :suspend)
 
@@ -629,9 +646,6 @@ defmodule Emisar.SSO.SCIM do
     |> put_active_account_lock(provider.account_id)
     |> put_current_scim_provider(provider)
     |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
-    |> Multi.run(:identity, fn _repo, %{locked_provider: locked_provider, user: user} ->
-      create_scim_identity(locked_provider, user, external_id, attrs)
-    end)
     |> Multi.merge(fn %{locked_provider: locked_provider, user: user} ->
       Accounts.put_sso_membership(
         Multi.new(),
@@ -646,6 +660,9 @@ defmodule Emisar.SSO.SCIM do
         directory_provider: locked_provider
       )
     end)
+    |> Multi.run(:identity, fn _repo, %{locked_provider: locked_provider, membership: member} ->
+      create_scim_identity(locked_provider, member, external_id, attrs)
+    end)
     |> Multi.insert(:audit, fn %{locked_provider: locked_provider, membership: member} ->
       Audit.Events.user_provisioned_via_scim(member, locked_provider)
     end)
@@ -654,7 +671,7 @@ defmodule Emisar.SSO.SCIM do
   # The externalId is stored as BOTH the binding `provider_identifier` and
   # `scim_external_id` (decision 4) so an OIDC login by `sub` and SCIM by
   # `externalId` converge on the one `(provider, identifier)` identity.
-  defp create_scim_identity(%IdentityProvider{} = provider, user, external_id, attrs) do
+  defp create_scim_identity(%IdentityProvider{} = provider, member, external_id, attrs) do
     identity_attrs = %{
       provider_identifier: external_id,
       scim_external_id: external_id,
@@ -664,7 +681,7 @@ defmodule Emisar.SSO.SCIM do
     }
 
     provider.account_id
-    |> UserIdentity.Changeset.create(provider.id, user.id, identity_attrs)
+    |> UserIdentity.Changeset.create(provider.id, member, identity_attrs)
     |> Repo.insert()
   end
 
@@ -867,7 +884,7 @@ defmodule Emisar.SSO.SCIM do
   end
 
   defp sync_scim_name(provider, identity, name) do
-    Accounts.sync_member_display_name(provider.account_id, identity.user_id, name,
+    Accounts.sync_member_display_name(provider.account_id, identity.membership_id, name,
       audit: &Audit.Events.membership_renamed_via_scim(&1, provider, &2)
     )
   end
@@ -914,7 +931,7 @@ defmodule Emisar.SSO.SCIM do
   # exist while a read still described them — so it either retried the deactivate
   # forever or concluded they were gone and re-created them, undoing the removal.
   defp scim_lifecycle_multi(%IdentityProvider{} = provider, identity, false) do
-    case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
+    case Accounts.peek_sync_membership_by_id(provider.account_id, identity.membership_id) do
       %Accounts.Membership{} = membership ->
         Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :suspend)
 
@@ -926,7 +943,7 @@ defmodule Emisar.SSO.SCIM do
   end
 
   defp scim_lifecycle_multi(%IdentityProvider{} = provider, identity, true) do
-    case Accounts.peek_sync_membership(provider.account_id, identity.user_id) do
+    case Accounts.peek_sync_membership_by_id(provider.account_id, identity.membership_id) do
       %Accounts.Membership{} = membership ->
         Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :reinstate)
 
@@ -971,7 +988,9 @@ defmodule Emisar.SSO.SCIM do
   """
   def scim_fetch_user(%IdentityProvider{} = provider, id) do
     with {:ok, identity} <- fetch_scim_identity(provider, id) do
-      membership = Accounts.peek_membership_profile(provider.account_id, identity.user_id)
+      membership =
+        Accounts.peek_membership_profile_by_id(provider.account_id, identity.membership_id)
+
       {:ok, scim_user(identity, membership)}
     end
   end
@@ -1165,14 +1184,14 @@ defmodule Emisar.SSO.SCIM do
   end
 
   defp scim_users(%IdentityProvider{} = provider, identities) do
-    user_ids = Enum.map(identities, & &1.user_id)
+    membership_ids = Enum.map(identities, & &1.membership_id)
 
     memberships =
       provider.account_id
-      |> Accounts.list_membership_profiles(user_ids)
-      |> Map.new(&{&1.user_id, &1})
+      |> Accounts.list_membership_profiles_by_id(membership_ids)
+      |> Map.new(&{&1.id, &1})
 
-    Enum.map(identities, &scim_user(&1, memberships[&1.user_id]))
+    Enum.map(identities, &scim_user(&1, memberships[&1.membership_id]))
   end
 
   defp scim_user(%UserIdentity{} = identity, membership) do
@@ -1614,7 +1633,7 @@ defmodule Emisar.SSO.SCIM do
           repo,
           provider.account_id,
           provider.id,
-          Enum.map(identities, & &1.user_id),
+          Enum.map(identities, & &1.membership_id),
           updated_provider.authorization_version
         )
 

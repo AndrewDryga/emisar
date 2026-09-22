@@ -239,21 +239,19 @@ defmodule EmisarWeb.SSOSettingsLive do
     with {:ok, identities, metadata} <- SSO.list_synced_users(provider, subject, opts),
          user_ids = Enum.map(identities, & &1.user_id),
          {:ok, memberships} <-
-           Accounts.list_memberships_for_users(
-             socket.assigns.current_account,
-             user_ids,
-             subject
-           ) do
-      membership_by_user = Map.new(memberships, &{&1.user_id, &1})
+           Accounts.list_memberships_for_users(socket.assigns.current_account, user_ids, subject) do
+      membership_by_id = Map.new(memberships, &{&1.id, &1})
 
       members =
         Enum.map(
           identities,
           fn identity ->
-            membership = Map.get(membership_by_user, identity.user_id)
+            profile = identity.membership
+            membership = Map.get(membership_by_id, identity.membership_id)
 
             %{
               identity: identity,
+              profile: profile,
               membership: membership,
               manageable?: membership && Accounts.subject_can_manage_member?(membership, subject)
             }

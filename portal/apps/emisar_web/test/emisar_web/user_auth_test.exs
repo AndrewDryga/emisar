@@ -168,6 +168,28 @@ defmodule EmisarWeb.UserAuthTest do
     end
   end
 
+  describe "log_in_sso_user_for_account/4" do
+    test "membership loss after callback returns a controlled denial instead of raising", %{
+      conn: conn
+    } do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      %{user: user, membership: member, identity: identity} =
+        Fixtures.SSO.create_directory_member(provider)
+
+      assert {:ok, _removed} = Emisar.Accounts.delete_membership(member, subject)
+
+      assert {:error, :membership_unavailable} =
+               UserAuth.log_in_sso_user_for_account(conn, user, account.id,
+                 user_identity_id: identity.id,
+                 provider_identifier: identity.provider_identifier
+               )
+
+      assert Emisar.Repo.aggregate(Emisar.Auth.UserToken, :count) == 0
+    end
+  end
+
   describe "log_in_magic_link_user/4" do
     test "persists the session token + its live-socket topic, writes no other cookie", %{
       conn: conn

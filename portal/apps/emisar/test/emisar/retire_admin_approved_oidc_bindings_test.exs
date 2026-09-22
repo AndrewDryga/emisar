@@ -8,10 +8,9 @@ defmodule Emisar.RetireAdminApprovedOidcBindingsTest do
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
     safe = legacy_rebound_identity(provider, account, "safe")
-    Fixtures.Memberships.create_membership(account_id: account.id, user_id: safe.user_id)
 
     unsafe = legacy_rebound_identity(provider, account, "unsafe")
-    activate_in_both_accounts(unsafe.user_id, account.id, elsewhere.id)
+    Fixtures.Memberships.create_membership(account_id: elsewhere.id, user_id: unsafe.user_id)
 
     spaced =
       directory_identity(provider, account, "spaced", %{
@@ -20,7 +19,7 @@ defmodule Emisar.RetireAdminApprovedOidcBindingsTest do
         claims: %{"sub" => " approved with spaces "}
       })
 
-    activate_in_both_accounts(spaced.user_id, account.id, elsewhere.id)
+    Fixtures.Memberships.create_membership(account_id: elsewhere.id, user_id: spaced.user_id)
 
     ordinary =
       directory_identity(provider, account, "ordinary", %{
@@ -29,7 +28,7 @@ defmodule Emisar.RetireAdminApprovedOidcBindingsTest do
         claims: %{"sub" => "ordinary"}
       })
 
-    activate_in_both_accounts(ordinary.user_id, account.id, elsewhere.id)
+    Fixtures.Memberships.create_membership(account_id: elsewhere.id, user_id: ordinary.user_id)
 
     oidc_first_with_scim_link =
       directory_identity(provider, account, "oidc-linked", %{
@@ -40,7 +39,10 @@ defmodule Emisar.RetireAdminApprovedOidcBindingsTest do
         provisioned_via: :oidc_jit
       })
 
-    activate_in_both_accounts(oidc_first_with_scim_link.user_id, account.id, elsewhere.id)
+    Fixtures.Memberships.create_membership(
+      account_id: elsewhere.id,
+      user_id: oidc_first_with_scim_link.user_id
+    )
 
     removed =
       directory_identity(provider, account, "manual", %{
@@ -49,10 +51,9 @@ defmodule Emisar.RetireAdminApprovedOidcBindingsTest do
         provisioned_via: :manual
       })
 
-    activate_in_both_accounts(removed.user_id, account.id, elsewhere.id)
+    Fixtures.Memberships.create_membership(account_id: elsewhere.id, user_id: removed.user_id)
 
     dormant = legacy_rebound_identity(provider, account, "dormant")
-    Fixtures.Memberships.create_membership(account_id: account.id, user_id: dormant.user_id)
 
     dormant_foreign =
       Fixtures.Memberships.create_membership(
@@ -124,6 +125,7 @@ defmodule Emisar.RetireAdminApprovedOidcBindingsTest do
 
   defp directory_identity(provider, account, suffix, attrs) do
     user = Fixtures.Users.create_user(email: "migration-#{suffix}@example.test")
+    Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
     Fixtures.SSO.create_user_identity(
       Map.merge(
@@ -137,11 +139,6 @@ defmodule Emisar.RetireAdminApprovedOidcBindingsTest do
         attrs
       )
     )
-  end
-
-  defp activate_in_both_accounts(user_id, account_id, elsewhere_id) do
-    Fixtures.Memberships.create_membership(account_id: account_id, user_id: user_id)
-    Fixtures.Memberships.create_membership(account_id: elsewhere_id, user_id: user_id)
   end
 
   defp identity_session(identity) do

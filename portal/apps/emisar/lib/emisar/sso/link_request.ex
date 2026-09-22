@@ -25,6 +25,8 @@ defmodule Emisar.SSO.LinkRequest do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :provider, Emisar.SSO.IdentityProvider, where: [deleted_at: nil]
     belongs_to :matched_user, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :matched_membership, Emisar.Accounts.Membership
+    belongs_to :recovery_identity, Emisar.SSO.UserIdentity
 
     timestamps()
   end

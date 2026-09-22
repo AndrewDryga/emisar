@@ -423,6 +423,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # draft is server-owned. Provisioning drops the request from the list — the
       # only one, so the whole queue clears (name lingers in the flash).
 
+      render_click(lv, "review_request", %{"id" => request.id})
       render_click(lv, "approve_request", %{"id" => request.id})
 
       refute render(lv) =~ "Pending access requests"
@@ -541,6 +542,8 @@ defmodule EmisarWeb.TeamLiveTest do
                "Their current role, runner access, and pack access stay unchanged."
              )
 
+      render_click(lv, "review_request", %{"id" => request.id})
+
       render_click(lv, "approve_request", %{
         "id" => request.id,
         "runner_access_mode" => "restricted",
@@ -553,6 +556,140 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert Emisar.Accounts.runner_access_for_membership(account.id, unchanged.id) ==
                original_access
+    end
+
+    test "recovery names the local member and restores only the existing sign-in", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      user = Fixtures.Users.create_user(email: "private-personal@example.test")
+
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          display_name: "Local Directory Member",
+          contact_email: nil
+        )
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        )
+
+      Fixtures.SSO.clear_identity_membership(identity)
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          provider_identifier: identity.provider_identifier,
+          email: nil,
+          full_name: member.display_name,
+          claims: %{},
+          matched_user_id: user.id,
+          matched_membership_id: member.id,
+          recovery_identity_id: identity.id
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      row = "#pending-access-request-#{request.id}"
+      dialog = "#approve-request-dialog-#{request.id}"
+      assert has_element?(lv, row, "Restore sign-in")
+      assert has_element?(lv, dialog, "Restore sign-in for Local Directory Member?")
+      assert has_element?(lv, dialog, "Current role unchanged")
+      assert has_element?(lv, dialog, "Not provided")
+      refute has_element?(lv, dialog, user.email)
+
+      render_click(lv, "review_request", %{"id" => request.id})
+      html = render_click(lv, "approve_request", %{"id" => request.id})
+      assert html =~ "Sign-in restored for Local Directory Member."
+      assert Emisar.Repo.reload!(identity).membership_id == member.id
+      assert Emisar.Repo.reload!(member).role == member.role
+      refute Emisar.Repo.reload(request)
+    end
+
+    test "an open approval keeps its reviewed identity and refuses a recaptured request", %{
+      conn: conn
+    } do
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          full_name: "Reviewed Person",
+          email: "reviewed@corp.test",
+          claims: %{"email" => "reviewed@corp.test", "email_verified" => true}
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      render_click(lv, "review_request", %{"id" => request.id})
+
+      assert {:ok, refreshed} =
+               Emisar.SSO.Provisioning.capture_link_request(
+                 provider,
+                 request.provider_identifier,
+                 "refreshed@corp.test",
+                 "Refreshed Person",
+                 %{"email" => "refreshed@corp.test", "email_verified" => true},
+                 :oidc
+               )
+
+      assert refreshed.id == request.id
+      send(lv.pid, {:sso_link_requests_changed, account.id})
+      render(lv)
+      assert has_element?(lv, "#pending-access-request-#{request.id}", "Refreshed Person")
+      assert has_element?(lv, "#approve-request-dialog-#{request.id}", "Reviewed Person")
+
+      html = render_click(lv, "approve_request", %{"id" => request.id})
+      assert html =~ "This sign-in request changed. Review its updated details before approving."
+      assert Emisar.Repo.reload!(request).email == "refreshed@corp.test"
+      assert Emisar.Users.fetch_user_by_email("refreshed@corp.test") == {:error, :not_found}
+
+      render_click(lv, "review_request", %{"id" => request.id})
+      assert has_element?(lv, "#approve-request-dialog-#{request.id}", "Refreshed Person")
+      render_click(lv, "approve_request", %{"id" => request.id})
+      refute Emisar.Repo.reload(request)
+      assert {:ok, _user} = Emisar.Users.fetch_user_by_email("refreshed@corp.test")
+    end
+
+    test "a new member approval refuses a role changed since the dialog was opened", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      subject = Fixtures.Subjects.subject_for(owner, account)
+
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, default_role: :viewer)
+
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: provider,
+          email: "reviewed-role@corp.test",
+          claims: %{"email" => "reviewed-role@corp.test", "email_verified" => true}
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      render_click(lv, "review_request", %{"id" => request.id})
+      dialog = "#approve-request-dialog-#{request.id}"
+      assert has_element?(lv, "#{dialog} dd", "Viewer")
+
+      assert {:ok, _provider} =
+               Emisar.SSO.update_provider(provider, %{default_role: :admin}, subject)
+
+      send(lv.pid, {:sso_link_requests_changed, account.id})
+      render(lv)
+      assert has_element?(lv, "#{dialog} dd", "Viewer")
+
+      html = render_click(lv, "approve_request", %{"id" => request.id})
+      assert html =~ "This sign-in request changed. Review its updated details before approving."
+      assert Emisar.Repo.reload(request)
+      assert Emisar.Users.fetch_user_by_email("reviewed-role@corp.test") == {:error, :not_found}
+
+      render_click(lv, "review_request", %{"id" => request.id})
+      assert has_element?(lv, "#{dialog} dd", "Admin")
+      render_click(lv, "approve_request", %{"id" => request.id})
+      assert {:ok, user} = Emisar.Users.fetch_user_by_email("reviewed-role@corp.test")
+      assert Fixtures.Memberships.fetch_membership(account.id, user.id).role == :admin
     end
 
     test "approval tells the operator when the matched member must accept an invitation first", %{
@@ -578,6 +715,7 @@ defmodule EmisarWeb.TeamLiveTest do
         )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      render_click(lv, "review_request", %{"id" => request.id})
       html = render_click(lv, "approve_request", %{"id" => request.id})
 
       assert html =~
@@ -612,6 +750,8 @@ defmodule EmisarWeb.TeamLiveTest do
         "runner_access_mode" => "restricted",
         "scope" => ["group:database"]
       })
+
+      render_click(lv, "review_request", %{"id" => request.id})
 
       approved =
         render_click(lv, "approve_request", %{
@@ -672,6 +812,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert has_element?(lv, "#{form} input[value='pack:postgres']:checked")
 
+      render_click(lv, "review_request", %{"id" => request.id})
       render_click(lv, "approve_request", %{"id" => request.id})
 
       {:ok, user} = Emisar.Users.fetch_user_by_email("packed@corp.test")

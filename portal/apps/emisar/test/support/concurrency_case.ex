@@ -17,6 +17,15 @@ defmodule Emisar.ConcurrencyCase do
   # and outside the sandbox, so they get none of its per-test transaction.
   use ExUnit.CaseTemplate
 
+  setup do
+    # Awaited task failures must unwind through the fixture's `after` cleanup,
+    # not kill the test through the asynchronous link signal first. This affects
+    # every link: consequential writers still MUST be awaited and checked;
+    # stop_tasks/1 is cleanup, never evidence that their operation succeeded.
+    Process.flag(:trap_exit, true)
+    :ok
+  end
+
   using do
     quote do
       import Emisar.ConcurrencyCase

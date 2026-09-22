@@ -717,7 +717,7 @@ defmodule Emisar.RunnerAccessTest do
                Repo,
                account.id,
                provider.id,
-               [managed.user_id, local.user_id],
+               [managed.id, local.id],
                7
              ) === {:ok, 7}
 
@@ -746,7 +746,7 @@ defmodule Emisar.RunnerAccessTest do
                Repo,
                account.id,
                other_provider.id,
-               [member.user_id],
+               [member.id],
                4
              ) === {:ok, 4}
 

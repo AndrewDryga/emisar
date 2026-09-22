@@ -8,23 +8,33 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   # rather than letting an oversized externalId surface as a Postgres error.
   @identifier_max_length 255
 
-  def create(account_id, provider_id, user_id, attrs) do
+  def create(account_id, provider_id, %Emisar.Accounts.Membership{} = member, attrs) do
     %UserIdentity{}
     |> cast(attrs, @fields)
     |> put_change(:account_id, account_id)
     |> put_change(:provider_id, provider_id)
-    |> put_change(:user_id, user_id)
+    |> put_change(:user_id, member.user_id)
+    |> put_change(:membership_id, member.id)
     |> put_change(:last_seen_at, DateTime.utc_now())
     |> validate_required([
       :account_id,
       :provider_id,
       :user_id,
+      :membership_id,
       :provider_identifier,
       :created_by,
       :provisioned_via
     ])
     |> validate_length(:provider_identifier, max: @identifier_max_length, count: :codepoints)
     |> validate_length(:scim_external_id, max: @identifier_max_length, count: :codepoints)
+    |> put_live_constraints()
+  end
+
+  @doc "Bind an explicitly approved link or directory re-provision to its exact seat."
+  def bind_membership(changeset_or_identity, %Emisar.Accounts.Membership{} = member) do
+    changeset_or_identity
+    |> change(membership_id: member.id, user_id: member.user_id)
+    |> validate_required([:membership_id])
     |> put_live_constraints()
   end
 
@@ -130,6 +140,7 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
 
   defp put_live_constraints(changeset) do
     changeset
+    |> foreign_key_constraint(:membership_id, name: :sso_user_identities_membership_account_fkey)
     |> unique_constraint([:account_id, :provider_id, :provider_identifier],
       name: :sso_user_identities_active_provider_identifier_index
     )

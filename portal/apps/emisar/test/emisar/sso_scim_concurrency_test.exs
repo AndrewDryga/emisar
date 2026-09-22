@@ -10,6 +10,77 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
 
   @moduletag timeout: 60_000
 
+  test "foreign invitation acceptance and directory re-POST keep User-before-identity lock order" do
+    unboxed_scim(fn context ->
+      attrs = scim_attrs(context, "repost-activation")
+
+      {:ok, %{user: user, identity: identity, membership: member}} =
+        SSO.scim_provision_user(context.provider, attrs)
+
+      identity = identity |> Ecto.Changeset.change(created_by: :admin) |> Repo.update!()
+      Fixtures.Memberships.mark_membership_as_deleted(member)
+      {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+
+      try do
+        {:ok, %{membership: invitation, invitation_token: token}} =
+          Accounts.invite_user_to_account(
+            Fixtures.Accounts.invitation_attrs(email: user.email),
+            other_subject
+          )
+
+        parent = self()
+        blocker = membership_blocker(invitation, parent)
+
+        try do
+          assert_receive {:membership_locked, blocker_backend}, 5_000
+
+          acceptance =
+            unboxed_task(fn ->
+              send(parent, {:acceptance_backend, backend_pid()})
+              Accounts.mark_invitation_accepted(invitation, token, user)
+            end)
+
+          try do
+            assert_receive {:acceptance_backend, acceptance_backend}, 5_000
+            await_blocked_by(acceptance_backend, blocker_backend)
+
+            repost =
+              unboxed_task(fn ->
+                send(parent, {:repost_backend, backend_pid()})
+                SSO.scim_provision_user(context.provider, attrs)
+              end)
+
+            try do
+              assert_receive {:repost_backend, repost_backend}, 5_000
+              await_blocked_by(repost_backend, acceptance_backend)
+              send(blocker.pid, :release)
+              assert {:ok, %Membership{}} = Task.await(blocker, 30_000)
+              assert {:ok, %Membership{}} = Task.await(acceptance, 30_000)
+
+              assert {:ok, %{identity: rebound, membership: replacement}} =
+                       Task.await(repost, 30_000)
+
+              assert rebound.id == identity.id
+              assert rebound.membership_id == replacement.id
+              assert replacement.id != member.id
+              assert Repo.reload!(identity).provider_identifier_retired_at
+            after
+              stop_tasks([repost])
+            end
+          after
+            stop_tasks([acceptance])
+          end
+        after
+          send(blocker.pid, :release)
+          stop_tasks([blocker])
+        end
+      after
+        Repo.delete_all(from(account in Account, where: account.id == ^other_account.id))
+        Repo.delete_all(from(user in User, where: user.id == ^other_owner.id))
+      end
+    end)
+  end
+
   for revocation <- [:disable, :delete], mutation <- [:create, :repost, :rename, :deactivate] do
     test "#{revocation} wins before a stale SCIM #{mutation} and leaves no mutation state" do
       revocation = unquote(revocation)
@@ -435,7 +506,13 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
           approval =
             unboxed_task(fn ->
               send(parent, {:approval_backend, backend_pid()})
-              SSO.approve_link_request(request, RunnerAccess.none(), approver)
+
+              SSO.approve_link_request(
+                request,
+                RunnerAccess.none(),
+                context.provider.default_role,
+                approver
+              )
             end)
 
           try do

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="sso"
-      updated="September 7, 2026"
+      updated="September 22, 2026"
       toc={[
         {"sso-login", "Setting up SSO login"},
         {"signing-in", "How members sign in"},
@@ -509,12 +509,28 @@
               </td>
               <td class="px-4 py-3">
                 Inspect the ID token. It must contain the configured stable identifier. If the
-                connection restricts an email domain or the identity needs linking, include an
+                connection restricts an email domain or needs email-based linking, include an
                 explicitly verified email; Google Workspace may instead use a matching
                 <code>hd</code>
                 for its tenant boundary. UserInfo-only email or profile claims are not read. If an
                 existing emisar user has the verified email, an administrator must link the
                 provider identity deliberately. emisar never merges by email.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                A previously working sign-in waits for administrator approval
+              </td>
+              <td class="px-4 py-3">
+                If Team → Pending access requests shows <strong class="text-zinc-200">Restore sign-in</strong>,
+                an owner or admin must review and restore the existing identity's link to the
+                listed member. This can happen when earlier membership history does not identify
+                one member unambiguously. Their role, runner access, and pack access stay unchanged.
+                The provider need not send an email for this recovery. Keep the waiting page open,
+                or sign in again after approval. If no owner or admin can sign in, contact <a
+                  href={EmisarWeb.MailTo.support()}
+                  class="text-brand-400 hover:text-brand-300"
+                >support</a>.
               </td>
             </tr>
             <tr>
