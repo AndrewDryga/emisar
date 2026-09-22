@@ -622,7 +622,8 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
           user
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject =
+        Fixtures.Subjects.subject_for(user, account, role: :owner, auth_method: :magic_link)
 
       try do
         fun.(user, account, subject)

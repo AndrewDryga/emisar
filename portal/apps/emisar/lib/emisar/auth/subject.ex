@@ -137,6 +137,16 @@ defmodule Emisar.Auth.Subject do
   # -- Helpers used by every context's `ensure_X_in_subject_account` -
 
   @doc """
+  Personal self-service requires first-party sign-in provenance. A workspace
+  role, IdP MFA assertion or independently verified local factor does not turn
+  an SSO session into a personal session. Missing provenance fails closed.
+  """
+  def ensure_personal_user(%__MODULE__{actor: %Users.User{}, auth_method: :magic_link}),
+    do: :ok
+
+  def ensure_personal_user(%__MODULE__{}), do: {:error, :unauthorized}
+
+  @doc """
   String label for the subject's actor kind. Used by `Audit.log/3`
   callers to stamp the `actor_kind` field consistently.
   """

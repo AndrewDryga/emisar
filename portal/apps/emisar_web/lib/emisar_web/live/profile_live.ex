@@ -15,6 +15,7 @@ defmodule EmisarWeb.ProfileLive do
   # Named once so linking and removing a sign-in method report an unstartable
   # step-up identically — the operator hit the same wall either way.
   @oidc_step_up_start_error "Couldn't start confirmation. Try again."
+  @personal_sign_in_required "These controls require a personal email-link sign-in in a workspace that allows it. They are unavailable in SSO-only workspaces."
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
@@ -22,6 +23,10 @@ defmodule EmisarWeb.ProfileLive do
     {:ok,
      socket
      |> assign(:page_title, "Profile")
+     |> assign(
+       :personal_sign_in?,
+       Auth.Subject.ensure_personal_user(socket.assigns.current_subject) == :ok
+     )
      |> assign(:profile_editing?, false)
      |> assign(:mfa_recovery_codes, nil)
      |> assign(:codes_saved?, false)
@@ -96,12 +101,23 @@ defmodule EmisarWeb.ProfileLive do
         presented = Enum.map(sessions, &present_session/1)
 
         socket
+        |> assign(:personal_sign_in?, true)
         |> assign(:session_count, metadata.count || 0)
         |> assign(:session_page_count, length(presented))
         |> assign(:metadata, metadata)
         |> assign(:filter_params, params)
         |> assign(:sessions_error?, false)
         |> stream(:sessions, presented, reset: true)
+
+      {:error, :unauthorized} ->
+        socket
+        |> assign(:personal_sign_in?, false)
+        |> assign(:session_count, 0)
+        |> assign(:session_page_count, 0)
+        |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
+        |> assign(:filter_params, %{})
+        |> assign(:sessions_error?, false)
+        |> stream(:sessions, [], reset: true)
 
       # A bad cursor from a hand-edited URL — retry once, clean, on page 1.
       {:error, _} when map_size(params) > 0 ->
@@ -141,6 +157,20 @@ defmodule EmisarWeb.ProfileLive do
   defp session_sign_in_method(:sso), do: "Single sign-on"
   defp session_sign_in_method(nil), do: nil
 
+  def handle_event(event, _params, %{assigns: %{personal_sign_in?: false}} = socket)
+      when event in [
+             "edit_profile",
+             "save_profile",
+             "edit_email",
+             "save_email",
+             "resend_email_code",
+             "confirm_email_change",
+             "revoke_session",
+             "revoke_other_sessions"
+           ] do
+    {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+  end
+
   def handle_event("edit_profile", _params, socket) do
     {:noreply,
      socket
@@ -176,6 +206,9 @@ defmodule EmisarWeb.ProfileLive do
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
 
       {:error, _reason} ->
         changeset = Users.change_user(socket.assigns.current_user, params)
@@ -287,6 +320,9 @@ defmodule EmisarWeb.ProfileLive do
 
         {:error, :rate_limited} ->
           {:noreply, assign(socket, :email_step_error, MfaErrors.message(:email_rate_limited))}
+
+        {:error, :unauthorized} ->
+          {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
 
         # :not_found (row gone mid-session) or any other unexpected Multi failure.
         {:error, _reason} ->
@@ -405,6 +441,9 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply,
          socket |> put_flash(:info, "This session has already ended.") |> reload_sessions()}
 
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't sign out this session. Try again.")}
     end
@@ -413,18 +452,20 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("revoke_other_sessions", _params, socket) do
     keep_digest = socket.assigns.current_auth.token
 
-    revoked_count =
-      Auth.revoke_and_disconnect_other_sessions!(keep_digest, socket.assigns.current_subject)
+    case Auth.revoke_and_disconnect_other_sessions(keep_digest, socket.assigns.current_subject) do
+      {:ok, count} ->
+        msg =
+          if count == 0, do: "No other sessions to sign out.", else: "Other sessions signed out."
 
-    msg =
-      case revoked_count do
-        0 -> "No other sessions to sign out."
-        _revoked -> "Other sessions signed out."
-      end
+        # The surviving current session is on page 1, not the old paging cursor.
+        {:noreply, socket |> put_flash(:info, msg) |> load_sessions(%{})}
 
-    # Only the current session survives, and it's always on page 1 — land there
-    # rather than reloading a now-empty cursor the operator was paging through.
-    {:noreply, socket |> put_flash(:info, msg) |> load_sessions(%{})}
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Couldn't sign out other sessions. Try again.")}
+    end
   end
 
   def handle_event("start_mfa", _params, socket) do
@@ -818,6 +859,9 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:email_step_error, nil)
          |> put_flash(:info, "We sent a code to #{email}. Your email has not changed yet.")}
 
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+
       {:error, :delivery_suppressed} ->
         {:noreply,
          socket
@@ -884,6 +928,9 @@ defmodule EmisarWeb.ProfileLive do
       |> assign(:email_step_error, nil)
 
     case Auth.begin_email_change(new_email, socket.assigns.current_subject) do
+      {:error, :unauthorized} ->
+        put_flash(socket, :error, @personal_sign_in_required)
+
       {:ok, :totp} ->
         assign(socket, :email_step, :totp)
 
@@ -1042,6 +1089,15 @@ defmodule EmisarWeb.ProfileLive do
           <:header>
             <.section_header title="Personal details" />
           </:header>
+          <p
+            :if={not @personal_sign_in?}
+            id="personal-sign-in-required"
+            class="mb-4 text-sm text-zinc-400"
+          >
+            Workspace SSO does not grant access to change your personal details.
+            Use a personal email-link sign-in in a workspace that allows it.
+            These controls are unavailable in SSO-only workspaces.
+          </p>
           <dl class="divide-y divide-zinc-800/70">
             <div id="display-name" class="pb-4">
               <dt class="mb-1 text-sm text-zinc-400">Display name</dt>
@@ -1053,7 +1109,13 @@ defmodule EmisarWeb.ProfileLive do
                   <p class="min-w-0 break-words text-base text-zinc-100">
                     {@current_user.full_name || "No display name"}
                   </p>
-                  <.button id="change-name" variant={:secondary} size={:sm} phx-click="edit_profile">
+                  <.button
+                    :if={@personal_sign_in?}
+                    id="change-name"
+                    variant={:secondary}
+                    size={:sm}
+                    phx-click="edit_profile"
+                  >
                     Change name
                   </.button>
                 </div>
@@ -1117,6 +1179,7 @@ defmodule EmisarWeb.ProfileLive do
                         </p>
                       </div>
                       <.button
+                        :if={@personal_sign_in?}
                         id="change-email"
                         variant={:secondary}
                         size={:sm}
@@ -1550,7 +1613,7 @@ defmodule EmisarWeb.ProfileLive do
               </:subtitle>
               <:actions>
                 <.confirm_button
-                  :if={@session_count > 1}
+                  :if={@personal_sign_in? and @session_count > 1}
                   id="signout-others"
                   title="Sign out of every other browser and device?"
                   confirm_label="Sign out everywhere else"
@@ -1566,7 +1629,7 @@ defmodule EmisarWeb.ProfileLive do
             </.section_header>
           </:header>
           <:note>
-            <p>
+            <p :if={@personal_sign_in?}>
               Don't recognize a session? Sign it out. That browser or device will need to sign in again.
               Signing out everywhere else keeps this session open.
             </p>
@@ -1586,11 +1649,24 @@ defmodule EmisarWeb.ProfileLive do
                pager off the list only when the pager renders (its :if drops the
                node on a single page, leaving one child and no phantom gap). --%>
           <div class="space-y-4">
-            <p :if={not @sessions_loaded?} role="status" class="text-sm text-zinc-400">
+            <p
+              :if={not @personal_sign_in?}
+              id="sessions-personal-sign-in-required"
+              class="text-sm text-zinc-400"
+            >
+              Your workspace SSO session cannot view or end other devices' sessions.
+              To manage them, use a personal email-link sign-in in a workspace that allows it.
+              These controls are unavailable in SSO-only workspaces.
+            </p>
+            <p
+              :if={@personal_sign_in? and not @sessions_loaded?}
+              role="status"
+              class="text-sm text-zinc-400"
+            >
               Loading sessions…
             </p>
             <.empty_state
-              :if={@sessions_error?}
+              :if={@personal_sign_in? and @sessions_error?}
               tone={:danger}
               icon="state.warning"
               title="Couldn't load your sessions"
@@ -1609,7 +1685,7 @@ defmodule EmisarWeb.ProfileLive do
             </.empty_state>
 
             <ul
-              :if={@sessions_loaded? and not @sessions_error?}
+              :if={@personal_sign_in? and @sessions_loaded? and not @sessions_error?}
               id="active-sessions"
               phx-update="stream"
               class="divide-y divide-zinc-800/70 text-sm"

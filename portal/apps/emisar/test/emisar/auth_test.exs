@@ -547,7 +547,10 @@ defmodule Emisar.AuthTest do
       assert Auth.delete_all_session_tokens(user) === {:ok, 2}
 
       subject =
-        Fixtures.Subjects.subject_for(user, Fixtures.Accounts.create_account(), role: :owner)
+        Fixtures.Subjects.subject_for(user, Fixtures.Accounts.create_account(),
+          role: :owner,
+          auth_method: :magic_link
+        )
 
       assert {:ok, [], _} = Auth.list_sessions_for_user(nil, subject)
     end
@@ -665,36 +668,6 @@ defmodule Emisar.AuthTest do
 
       assert Code.ensure_loaded?(RaisingSessionDisconnector)
       assert Auth.disconnect_live_socket_topics(["users_sessions:test"]) == :ok
-    end
-  end
-
-  describe "revoke_and_disconnect_other_sessions!/2" do
-    setup do
-      {user, _account, subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, subject: subject}
-    end
-
-    test "keeps only the current session and returns the revoked count", %{
-      user: user,
-      subject: subject
-    } do
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      _other1 = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      _other2 = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-
-      assert Auth.revoke_and_disconnect_other_sessions!(Crypto.hash(keep), subject) == 2
-
-      {:ok, remaining, _} = Auth.list_sessions_for_user(nil, subject)
-      assert length(remaining) == 1
-      # The kept cookie still resolves.
-      assert {:ok, %User{}, _auth} = Auth.fetch_user_and_token_by_session_token(keep)
-    end
-
-    test "with only the current session, revokes nothing", %{user: user, subject: subject} do
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-
-      assert Auth.revoke_and_disconnect_other_sessions!(Crypto.hash(keep), subject) == 0
-      assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(keep)
     end
   end
 
@@ -1553,7 +1526,7 @@ defmodule Emisar.AuthTest do
   describe "issue_email_change_code/2" do
     setup do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, subject: subject}
+      %{user: user, subject: %{subject | auth_method: :magic_link}}
     end
 
     test "emails a 6-digit code to the CURRENT address, bound to the new email", %{
@@ -1646,12 +1619,12 @@ defmodule Emisar.AuthTest do
   describe "begin_email_change/2" do
     setup do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, subject: subject}
+      %{user: user, subject: %{subject | auth_method: :magic_link}}
     end
 
     test "a user without a current email or MFA cannot request an inbox code" do
       user = Fixtures.Users.create_sso_user()
-      subject = Fixtures.Subjects.build_subject(user: user)
+      subject = Fixtures.Subjects.build_subject(user: user, auth_method: :magic_link)
 
       assert Auth.begin_email_change("new@example.com", subject) == {:error, :email_unavailable}
       refute Repo.exists?(UserToken)
@@ -1660,7 +1633,7 @@ defmodule Emisar.AuthTest do
 
     test "a user without a current email can prove an existing authenticator" do
       user = Fixtures.Users.create_sso_user()
-      subject = Fixtures.Subjects.build_subject(user: user)
+      subject = Fixtures.Subjects.build_subject(user: user, auth_method: :magic_link)
 
       Fixtures.Users.set_mfa_state(user,
         mfa_secret: Auth.generate_mfa_secret(),
@@ -1707,7 +1680,7 @@ defmodule Emisar.AuthTest do
   describe "confirm_email_change/4" do
     setup do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, subject: subject}
+      %{user: user, subject: %{subject | auth_method: :magic_link}}
     end
 
     test "a non-MFA user confirms with the emailed code and the bound email is applied", %{
@@ -2187,7 +2160,7 @@ defmodule Emisar.AuthTest do
 
       %{
         user: user,
-        subject: subject,
+        subject: %{subject | auth_method: :magic_link},
         secret: Auth.generate_mfa_secret(),
         session_token: session_token
       }
@@ -2264,7 +2237,12 @@ defmodule Emisar.AuthTest do
       session_token: session_token
     } do
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
-      assert {:ok, _updated} = Users.update_user_profile(%{full_name: "Changed"}, subject)
+
+      assert {:ok, _updated} =
+               Users.update_user_profile(%{full_name: "Changed"}, %{
+                 subject
+                 | auth_method: :magic_link
+               })
 
       assert Auth.enable_mfa(
                secret,
@@ -3052,7 +3030,7 @@ defmodule Emisar.AuthTest do
       assert {:ok, changed} =
                Users.update_user_profile(
                  %{full_name: "Changed after verification"},
-                 reset.subject
+                 %{reset.subject | auth_method: :magic_link}
                )
 
       assert Auth.verify_local_member_mfa_reset_source(

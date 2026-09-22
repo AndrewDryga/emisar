@@ -215,7 +215,8 @@ defmodule Emisar.UsersTest do
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject =
+        Fixtures.Subjects.subject_for(user, account, role: :owner, auth_method: :magic_link)
 
       assert {:ok, %User{full_name: "Renamed Person"}} =
                Users.update_user_profile(%{"full_name" => "Renamed Person"}, subject)
@@ -233,7 +234,8 @@ defmodule Emisar.UsersTest do
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject =
+        Fixtures.Subjects.subject_for(user, account, role: :owner, auth_method: :magic_link)
 
       assert {:ok, %User{} = updated} =
                Users.update_user_profile(
@@ -264,7 +266,8 @@ defmodule Emisar.UsersTest do
 
       # Build the subject from the ORIGINAL snapshot, then mutate the row out of
       # band (as a concurrent session would) so the snapshot is stale.
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject =
+        Fixtures.Subjects.subject_for(user, account, role: :owner, auth_method: :magic_link)
 
       {:ok, _} =
         user |> Ecto.Changeset.change(email: "after@example.test") |> Repo.update()

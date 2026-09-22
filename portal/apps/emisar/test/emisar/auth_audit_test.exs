@@ -410,15 +410,16 @@ defmodule Emisar.AuthAuditTest do
       # Mint two sessions for the user.
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      %{user: user, account: account, keep: keep, subject: subject}
+      %{user: user, account: account, keep: keep, subject: %{subject | auth_method: :magic_link}}
     end
 
-    test "revoke_other_sessions! audits user.other_sessions_revoked with the count", %{
-      user: user,
-      account: account,
-      keep: keep
-    } do
-      assert n = Auth.revoke_other_sessions!(user, Crypto.hash(keep))
+    test "revoke_and_disconnect_other_sessions audits user.other_sessions_revoked with the count",
+         %{
+           subject: subject,
+           account: account,
+           keep: keep
+         } do
+      assert {:ok, n} = Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject)
       assert n >= 1
 
       assert [event] = events_of(account, "user.other_sessions_revoked")
@@ -441,7 +442,7 @@ defmodule Emisar.AuthAuditTest do
   describe "Accounts profile / email" do
     setup do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, account: account, subject: subject}
+      %{user: user, account: account, subject: %{subject | auth_method: :magic_link}}
     end
 
     test "update_user_profile audits user.profile_updated", %{

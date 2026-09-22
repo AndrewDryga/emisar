@@ -9,7 +9,7 @@ defmodule EmisarWeb.PerSessionRevocationDisconnectTest do
 
   setup do
     {user, account, subject} = Fixtures.Subjects.owner_subject()
-    %{user: user, account: account, subject: subject}
+    %{user: user, account: account, subject: %{subject | auth_method: :magic_link}}
   end
 
   test "a committed revocation disconnects only the selected live session", %{
@@ -45,7 +45,9 @@ defmodule EmisarWeb.PerSessionRevocationDisconnectTest do
   } do
     {other_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
     other_token = Fixtures.Auth.create_session_token!(other_user, :magic_link, nil)
-    assert {:ok, [other_session], _metadata} = Auth.list_sessions_for_user(nil, other_subject)
+
+    assert {:ok, [other_session], _metadata} =
+             Auth.list_sessions_for_user(nil, %{other_subject | auth_method: :magic_link})
 
     other_topic = Auth.live_socket_topic_for_session(other_token)
     EmisarWeb.Endpoint.subscribe(other_topic)
@@ -65,6 +67,7 @@ defmodule EmisarWeb.PerSessionRevocationDisconnectTest do
 
     subject =
       Fixtures.Subjects.subject_for(user, account,
+        auth_method: :magic_link,
         context: %RequestContext{request_id: %{invalid: true}}
       )
 

@@ -17,7 +17,7 @@ defmodule Emisar.AuthSessionsTest do
 
   describe "list_sessions_for_user/3" do
     setup do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {user, account, subject} = personal_owner_subject()
       %{user: user, account: account, subject: subject}
     end
 
@@ -161,7 +161,7 @@ defmodule Emisar.AuthSessionsTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       other_account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
-      other_subject = Fixtures.Subjects.subject_for(user, other_account)
+      other_subject = Fixtures.Subjects.subject_for(user, other_account, auth_method: :magic_link)
 
       assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
 
@@ -182,7 +182,7 @@ defmodule Emisar.AuthSessionsTest do
 
   describe "revoke_session/2" do
     test ":ok and the row goes away" do
-      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {user, _account, subject} = personal_owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
 
@@ -191,7 +191,7 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "disconnects the exact token topic only after commit" do
-      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {user, _account, subject} = personal_owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
 
@@ -209,8 +209,8 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "refuses to revoke another user's session via id" do
-      {_mine, _account_a, my_subject} = Fixtures.Subjects.owner_subject()
-      {theirs, _account_b, their_subject} = Fixtures.Subjects.owner_subject()
+      {_mine, _account_a, my_subject} = personal_owner_subject()
+      {theirs, _account_b, their_subject} = personal_owner_subject()
       Fixtures.Auth.create_session_token!(theirs, :magic_link, nil)
       assert {:ok, [their_session], _} = Auth.list_sessions_for_user(nil, their_subject)
 
@@ -219,12 +219,12 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "rejects a malformed id without hitting the DB" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_user, _account, subject} = personal_owner_subject()
       assert Auth.revoke_session("not-a-uuid", subject) == {:error, :not_found}
     end
 
     test "refuses a non-user subject without touching the session" do
-      {user, account, user_subject} = Fixtures.Subjects.owner_subject()
+      {user, account, user_subject} = personal_owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), user_subject)
       {_raw_key, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
@@ -235,10 +235,16 @@ defmodule Emisar.AuthSessionsTest do
     end
   end
 
-  describe "revoke_other_sessions!/3" do
+  describe "revoke_and_disconnect_other_sessions/2" do
     setup do
-      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {user, _account, subject} = personal_owner_subject()
       %{user: user, subject: subject}
+    end
+
+    test "with only the current session, revokes nothing", %{user: user, subject: subject} do
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) == {:ok, 0}
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(keep)
     end
 
     test "keeps the caller's current session", %{user: user, subject: subject} do
@@ -246,9 +252,61 @@ defmodule Emisar.AuthSessionsTest do
       Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert Auth.revoke_other_sessions!(user, Crypto.hash(keep)) == 2
+      assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) == {:ok, 2}
       assert {:ok, [survivor], _} = Auth.list_sessions_for_user(Crypto.hash(keep), subject)
       assert survivor.current?
     end
+
+    test "revokes owned SSO sessions too, leaves another user alone, and disconnects after commit",
+         %{
+           user: user,
+           subject: subject
+         } do
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      other = Fixtures.Auth.create_session_token!(user, :sso, nil)
+
+      foreign =
+        Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, nil)
+
+      Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingSessionDisconnector}
+      )
+
+      assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) == {:ok, 1}
+      topic = Auth.live_socket_topic_for_session(other)
+      assert_receive {:session_disconnect, [^topic], false}
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(keep)
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(foreign)
+    end
+
+    test "audit rejection preserves sessions and emits no disconnect", %{
+      user: user,
+      subject: subject
+    } do
+      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      other = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingSessionDisconnector}
+      )
+
+      subject = %{subject | context: %RequestContext{request_id: %{invalid: true}}}
+
+      assert {:error, %Ecto.Changeset{}} =
+               Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject)
+
+      refute_received {:session_disconnect, _, _}
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(keep)
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(other)
+    end
+  end
+
+  defp personal_owner_subject do
+    {user, account, subject} = Fixtures.Subjects.owner_subject()
+    {user, account, %{subject | auth_method: :magic_link}}
   end
 end

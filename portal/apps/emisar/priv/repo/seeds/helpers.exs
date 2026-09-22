@@ -64,7 +64,7 @@ defmodule Emisar.Seeds.Helpers do
   def ensure_profile(%User{full_name: full_name} = user, full_name), do: user
 
   def ensure_profile(%User{} = user, full_name) do
-    {:ok, updated} = Users.update_user_profile(%{full_name: full_name}, %Subject{actor: user})
+    {:ok, updated} = user |> User.Changeset.profile(%{full_name: full_name}) |> Repo.update()
     updated
   end
 

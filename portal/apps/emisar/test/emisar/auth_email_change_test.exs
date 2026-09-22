@@ -111,6 +111,7 @@ defmodule Emisar.AuthEmailChangeTest do
       assert {:error, :invalid} = complete(proof, code, Crypto.hash(second_raw), subject)
 
       {other, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      other_subject = %{other_subject | auth_method: :magic_link}
       other_raw = Fixtures.Auth.create_session_token!(other, :magic_link, nil)
 
       assert {:error, :invalid} =

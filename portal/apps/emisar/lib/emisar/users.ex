@@ -7,8 +7,8 @@ defmodule Emisar.Users do
   Identity is deliberately **cross-account** — a user belongs to tenants
   only through `Emisar.Accounts.Membership`, so nothing here is scoped by
   account. Public mutations are either *self-service* (the user is the
-  `%Subject{}`'s own actor — that match is the authorization, per
-  AGENTS.md §1.2) or *pre-Subject boundary* calls (registration,
+  `%Subject{}`'s own actor with personal sign-in provenance) or
+  *pre-Subject boundary* calls (registration,
   sign-in) where the web layer hasn't resolved a tenant yet. Tenant
   membership, invitations, and team administration live in
   `Emisar.Accounts`.
@@ -196,18 +196,22 @@ defmodule Emisar.Users do
   teammates.
   """
   def update_user_profile(attrs, %Subject{actor: %User{id: user_id}} = subject) do
-    User.Query.not_deleted()
-    |> User.Query.by_id(user_id)
-    |> Repo.fetch_and_update(User.Query,
-      with: &User.Changeset.profile(&1, attrs),
-      audit: fn updated ->
-        Audit.user_changesets(updated, "user.profile_updated",
-          context: subject.context,
-          payload: %{full_name: updated.full_name}
-        )
-      end
-    )
+    with :ok <- Subject.ensure_personal_user(subject) do
+      User.Query.not_deleted()
+      |> User.Query.by_id(user_id)
+      |> Repo.fetch_and_update(User.Query,
+        with: &User.Changeset.profile(&1, attrs),
+        audit: fn updated ->
+          Audit.user_changesets(updated, "user.profile_updated",
+            context: subject.context,
+            payload: %{full_name: updated.full_name}
+          )
+        end
+      )
+    end
   end
+
+  def update_user_profile(_attrs, %Subject{}), do: {:error, :unauthorized}
 
   # -- Form builders -------------------------------------------------------
 

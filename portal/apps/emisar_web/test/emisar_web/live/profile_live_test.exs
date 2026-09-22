@@ -2,6 +2,70 @@ defmodule EmisarWeb.ProfileLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Auth
 
+  describe "workspace SSO personal-authority boundary" do
+    test "shows a stable restriction and refuses crafted personal-control events", %{conn: conn} do
+      {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
+      sso_raw =
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
+
+      personal_raw =
+        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+          user_agent: "Private personal browser",
+          ip_address: "203.0.113.12"
+        })
+
+      {:ok, _, personal_session} = Auth.fetch_user_and_token_by_session_token(personal_raw)
+      conn = conn |> init_test_session(%{}) |> put_session(:user_token, sso_raw)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile?cursor=invalid")
+      assert html =~ "personal email-link sign-in"
+      assert has_element?(lv, "#sessions-personal-sign-in-required")
+      refute has_element?(lv, "#change-name")
+      refute has_element?(lv, "#change-email")
+      refute has_element?(lv, "#active-sessions")
+      refute has_element?(lv, "#signout-others")
+      refute has_element?(lv, "[phx-click=retry_sessions]")
+      refute html =~ "Private personal browser"
+      refute html =~ "203.0.113.12"
+      assert has_element?(lv, "[phx-click=start_mfa]")
+
+      for {event, params} <- [
+            {"edit_profile", %{}},
+            {"save_profile", %{"profile" => %{"full_name" => "Changed by workspace"}}},
+            {"edit_email", %{}},
+            {"save_email", %{"email" => %{"email" => "other@example.test"}}},
+            {"resend_email_code", %{}},
+            {"confirm_email_change", %{"email_step" => %{"code" => "123456"}}},
+            {"revoke_session", %{"id" => personal_session.id}},
+            {"revoke_other_sessions", %{}}
+          ] do
+        assert render_click(lv, event, params) =~
+                 "These controls require a personal email-link sign-in in a workspace that allows it."
+      end
+
+      render_click(lv, "retry_sessions", %{})
+      assert has_element?(lv, "#sessions-personal-sign-in-required")
+      refute has_element?(lv, "[phx-click=retry_sessions]")
+      refute has_element?(lv, "#profile_form")
+      refute has_element?(lv, "#email_form")
+      assert Emisar.Repo.reload!(user).full_name == user.full_name
+      assert Emisar.Repo.reload!(user).email == user.email
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(personal_raw)
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(sso_raw)
+      refute_received {:email, _}
+    end
+  end
+
   describe "email form validation" do
     test "a profile without an email address does not claim confirmation is pending", %{
       conn: conn
@@ -370,7 +434,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       account: account
     } do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      subject = owner_subject(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
 
       for index <- 1..5 do
         assert Auth.issue_email_change_code("spent-#{index}@example.com", subject) == {:ok, :sent}
@@ -902,7 +966,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       html = render(lv)
       assert html =~ "This session"
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 2
 
@@ -940,7 +1004,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute has_element?(lv, "#active-sessions", "Last active")
       assert has_element?(lv, "#active-sessions li", "This session")
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 2
     end
@@ -1052,7 +1116,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert rendered_session_rows(lv) == 1
       assert html =~ "Prev"
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       oldest_session = List.last(sessions)
 
@@ -1103,7 +1167,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         user_agent: user_agent
       })
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       first_session = Enum.find(sessions, &(&1.ip_address == "203.0.113.10"))
       second_session = Enum.find(sessions, &(&1.ip_address == "203.0.113.11"))
@@ -1138,7 +1202,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
 
       {:ok, sessions, _meta} =
         Auth.list_sessions_for_user(Emisar.Crypto.hash(session_token(conn)), subject,
@@ -1169,7 +1233,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
 
       {:ok, sessions, _meta} =
         Auth.list_sessions_for_user(Emisar.Crypto.hash(session_token(conn)), subject,
@@ -1199,7 +1263,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # 100 more sessions (register_and_log_in already created one) → 101 total.
       for _ <- 1..100, do: Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 100
 
@@ -1235,7 +1299,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute dead =~ "This session"
     end
 
-    test "failed reads stay distinct from empty lists and offer local retry", %{
+    test "denied sessions clear stale rows while sign-in-method failures offer local retry", %{
       conn: conn,
       account: account
     } do
@@ -1255,8 +1319,9 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       render_click(lv, "retry_oidc_identities", %{})
       render_click(lv, "retry_sessions", %{})
-      assert has_element?(lv, "#sessions", "Couldn't load your sessions")
-      assert has_element?(lv, "button[phx-click=retry_sessions]", "Retry")
+      assert has_element?(lv, "#sessions-personal-sign-in-required")
+      refute has_element?(lv, "#sessions", "Couldn't load your sessions")
+      refute has_element?(lv, "button[phx-click=retry_sessions]")
       refute has_element?(lv, "#active-sessions")
       assert has_element?(lv, "#single-sign-on", "Couldn't load sign-in methods")
       assert has_element?(lv, "button[phx-click=retry_oidc_identities]", "Retry")
@@ -1283,7 +1348,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       account: account
     } do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
       current_digest = Emisar.Crypto.hash(session_token(conn))
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(current_digest, subject)
       other = Enum.find(sessions, &(not &1.current?))

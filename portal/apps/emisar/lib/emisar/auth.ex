@@ -371,22 +371,45 @@ defmodule Emisar.Auth do
   "Sign out everywhere except this device" — kills every session except
   the one whose stored token digest is `keep_digest` (the caller's current
   session) AND broadcasts a disconnect to each of those sessions' LiveView
-  sockets. Returns the count of sessions terminated.
+  sockets. Returns `{:ok, count}` or `{:error, reason}` without reporting an
+  audit rollback as a successful sign-out.
 
   Self-service only: the user signing out is the subject's own actor, so
   it's read from the `%Subject{}` rather than passed separately — there's
   no way to revoke anyone else's sessions through this path.
   """
-  def revoke_and_disconnect_other_sessions!(
+  def revoke_and_disconnect_other_sessions(
         keep_digest,
         %Subject{actor: %Users.User{} = user} = subject
       )
       when is_binary(keep_digest) do
-    topics = live_socket_topics_for_user(user, except: keep_digest)
-    count = revoke_other_sessions!(user, keep_digest, subject.context)
-    if count > 0, do: disconnect_live_sessions(topics)
-    count
+    with :ok <- Subject.ensure_personal_user(subject) do
+      sessions_query =
+        UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("session")
+        |> UserToken.Query.except_token_digest(keep_digest)
+        |> UserToken.Query.select_token_digests()
+
+      Multi.new()
+      |> Multi.delete_all(:sessions, sessions_query)
+      |> Audit.Multi.log_for_user(:audit, user, "user.other_sessions_revoked",
+        extra: [context: subject.context],
+        user_fn: fn %{sessions: {count, _}} -> if count > 0, do: user end,
+        payload_fn: fn %{sessions: {count, _}} -> %{count: count} end
+      )
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{sessions: {count, digests}}} ->
+          disconnect_live_sessions(Enum.map(digests, &live_socket_topic/1))
+          {:ok, count}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
   end
+
+  def revoke_and_disconnect_other_sessions(_, %Subject{}), do: {:error, :unauthorized}
 
   @doc """
   Internal — fan-out helper for Auth's own session-revocation paths (no
@@ -475,24 +498,30 @@ defmodule Emisar.Auth do
   Rows project into `%SessionFacts{}` — no token, no digest, no raw metadata —
   so the device list cannot leak credential material. Returns `{:ok,
   [%SessionFacts{}], %Paginator.Metadata{}}`, or `{:error, :unauthorized}` for
-  a non-user subject.
+  a caller without personal sign-in provenance.
   """
   def list_sessions_for_user(presented_digest, subject, opts \\ [])
 
-  def list_sessions_for_user(presented_digest, %Subject{actor: %Users.User{} = user}, opts) do
-    presented_digest = presented_session_digest(presented_digest)
+  def list_sessions_for_user(
+        presented_digest,
+        %Subject{actor: %Users.User{} = user} = subject,
+        opts
+      ) do
+    with :ok <- Subject.ensure_personal_user(subject) do
+      presented_digest = presented_session_digest(presented_digest)
 
-    sessions_query =
-      UserToken.Query.by_user_id(user.id)
-      |> UserToken.Query.by_context("session")
-      |> UserToken.Query.not_expired("session")
+      sessions_query =
+        UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("session")
+        |> UserToken.Query.not_expired("session")
 
-    case Repo.list(sessions_query, UserToken.Query, opts) do
-      {:ok, tokens, metadata} ->
-        {:ok, Enum.map(tokens, &session_facts(&1, presented_digest)), metadata}
+      case Repo.list(sessions_query, UserToken.Query, opts) do
+        {:ok, tokens, metadata} ->
+          {:ok, Enum.map(tokens, &session_facts(&1, presented_digest)), metadata}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -539,33 +568,35 @@ defmodule Emisar.Auth do
   `:unauthorized`, while an audit rejection returns its changeset.
   """
   def revoke_session(token_id, %Subject{actor: %Users.User{} = user} = subject) do
-    if Repo.valid_uuid?(token_id) do
-      session_query =
-        UserToken.Query.by_id(token_id)
-        |> UserToken.Query.by_user_id(user.id)
-        |> UserToken.Query.by_context("session")
-        |> UserToken.Query.select_token_digests()
+    with :ok <- Subject.ensure_personal_user(subject) do
+      if Repo.valid_uuid?(token_id) do
+        session_query =
+          UserToken.Query.by_id(token_id)
+          |> UserToken.Query.by_user_id(user.id)
+          |> UserToken.Query.by_context("session")
+          |> UserToken.Query.select_token_digests()
 
-      Multi.new()
-      |> Multi.delete_all(:sessions, session_query)
-      |> Multi.run(:revoked_session_topic, fn
-        _repo, %{sessions: {1, [digest]}} ->
-          {:ok, live_socket_topic(digest)}
+        Multi.new()
+        |> Multi.delete_all(:sessions, session_query)
+        |> Multi.run(:revoked_session_topic, fn
+          _repo, %{sessions: {1, [digest]}} ->
+            {:ok, live_socket_topic(digest)}
 
-        _repo, _changes ->
-          {:error, :not_found}
-      end)
-      |> Audit.Multi.log_for_user(:audit, user, "user.session_revoked",
-        extra: [context: subject.context],
-        payload_fn: fn _ -> %{session_id: token_id} end
-      )
-      |> Repo.commit_multi(after_commit: &disconnect_revoked_session/1)
-      |> case do
-        {:ok, _} -> :ok
-        {:error, reason} -> {:error, reason}
+          _repo, _changes ->
+            {:error, :not_found}
+        end)
+        |> Audit.Multi.log_for_user(:audit, user, "user.session_revoked",
+          extra: [context: subject.context],
+          payload_fn: fn _ -> %{session_id: token_id} end
+        )
+        |> Repo.commit_multi(after_commit: &disconnect_revoked_session/1)
+        |> case do
+          {:ok, _} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+      else
+        {:error, :not_found}
       end
-    else
-      {:error, :not_found}
     end
   end
 
@@ -573,41 +604,6 @@ defmodule Emisar.Auth do
 
   defp disconnect_revoked_session(%{revoked_session_topic: topic}),
     do: disconnect_live_sessions([topic])
-
-  @doc """
-  Internal — the token-deletion half of
-  `revoke_and_disconnect_other_sessions!/2` (the Subject-fronted public
-  surface): revoke every session except the one whose stored token digest
-  is `keep_digest`.
-  """
-  def revoke_other_sessions!(%Users.User{} = user, keep_digest, context \\ %RequestContext{})
-      when is_binary(keep_digest) do
-    sessions_query =
-      UserToken.Query.by_user_id(user.id)
-      |> UserToken.Query.by_context("session")
-      |> UserToken.Query.except_token_digest(keep_digest)
-
-    revoke_sessions_atomically!(user, sessions_query, context)
-  end
-
-  # Wraps the delete + (conditional) audit in one transaction so a row
-  # delete-without-audit can't happen on a downstream failure. The
-  # audit's `user_fn` resolves the user only when rows were actually
-  # revoked — a no-op revoke stays out of the log.
-  defp revoke_sessions_atomically!(%Users.User{} = user, sessions_query, context) do
-    {:ok, %{count: count}} =
-      Multi.new()
-      |> Multi.delete_all(:sessions, sessions_query)
-      |> Multi.run(:count, fn _repo, %{sessions: {count, _}} -> {:ok, count} end)
-      |> Audit.Multi.log_for_user(:audit, user, "user.other_sessions_revoked",
-        extra: [context: context],
-        user_fn: fn %{count: count} -> if count > 0, do: user end,
-        payload_fn: fn %{count: count} -> %{count: count} end
-      )
-      |> Repo.commit_multi()
-
-    count
-  end
 
   # -- Magic link -------------------------------------------------------
 
@@ -1271,11 +1267,14 @@ defmodule Emisar.Auth do
   """
   def issue_email_change_code(new_email, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) do
-    with {:ok, user} <- Users.fetch_user_by_id(id),
+    with :ok <- Subject.ensure_personal_user(subject),
+         {:ok, user} <- Users.fetch_user_by_id(id),
          {:ok, new_email} <- validate_new_email(user, new_email) do
       do_issue_email_change_code(new_email, user, subject)
     end
   end
+
+  def issue_email_change_code(_, %Subject{}), do: {:error, :unauthorized}
 
   defp do_issue_email_change_code(
          new_email,
@@ -1349,7 +1348,8 @@ defmodule Emisar.Auth do
   """
   def begin_email_change(new_email, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(new_email) do
-    with {:ok, user} <- Users.fetch_user_by_id(id),
+    with :ok <- Subject.ensure_personal_user(subject),
+         {:ok, user} <- Users.fetch_user_by_id(id),
          {:ok, new_email} <- validate_new_email(user, new_email) do
       case email_change_factor(user) do
         :totp ->
@@ -1367,6 +1367,8 @@ defmodule Emisar.Auth do
       end
     end
   end
+
+  def begin_email_change(_, %Subject{}), do: {:error, :unauthorized}
 
   @doc """
   Confirm the current factor for a self-service email change: re-derive it from the
@@ -1386,7 +1388,8 @@ defmodule Emisar.Auth do
         %Subject{actor: %Users.User{id: id}} = subject
       )
       when is_binary(new_email) and is_binary(code) and is_binary(presented_digest) do
-    with {:ok, user} <- Users.fetch_user_by_id(id) do
+    with :ok <- Subject.ensure_personal_user(subject),
+         {:ok, user} <- Users.fetch_user_by_id(id) do
       case email_change_factor(user) do
         :totp ->
           with :ok <- throttle_mfa_challenge(user, subject.context) do
@@ -1408,7 +1411,9 @@ defmodule Emisar.Auth do
     end
   end
 
-  def confirm_email_change(_, _, _, %Subject{}), do: {:error, :invalid}
+  def confirm_email_change(_, _, _, %Subject{} = subject) do
+    with :ok <- Subject.ensure_personal_user(subject), do: {:error, :invalid}
+  end
 
   defp email_change_factor(%Users.User{mfa_enabled_at: %DateTime{}}), do: :totp
   defp email_change_factor(%Users.User{}), do: :code
@@ -1521,7 +1526,8 @@ defmodule Emisar.Auth do
         %Subject{actor: %Users.User{id: user_id}} = subject
       )
       when is_binary(nonce) and is_binary(code) and is_binary(presented_digest) do
-    with {:ok, token_id} <- Ecto.UUID.cast(token_id),
+    with :ok <- Subject.ensure_personal_user(subject),
+         {:ok, token_id} <- Ecto.UUID.cast(token_id),
          {:ok, user} <- Users.fetch_user_by_id(user_id),
          :ok <-
            throttle_security_attempt(
@@ -1538,7 +1544,9 @@ defmodule Emisar.Auth do
     end
   end
 
-  def complete_email_change(_, _, _, _, %Subject{}), do: {:error, :invalid}
+  def complete_email_change(_, _, _, _, %Subject{} = subject) do
+    with :ok <- Subject.ensure_personal_user(subject), do: {:error, :invalid}
+  end
 
   defp finish_email_change(token_id, nonce, code, presented_digest, user, subject) do
     Multi.new()
@@ -1621,39 +1629,47 @@ defmodule Emisar.Auth do
   end
 
   @doc "Cancel this browser's exact pending new-address proof without changing its current email."
-  def cancel_email_change(token_id, presented_digest, %Subject{actor: %Users.User{id: id}})
+  def cancel_email_change(
+        token_id,
+        presented_digest,
+        %Subject{actor: %Users.User{id: id}} = subject
+      )
       when is_binary(presented_digest) do
-    case Ecto.UUID.cast(token_id) do
-      {:ok, token_id} ->
-        Multi.new()
-        |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(id, repo) end)
-        |> Multi.run(:session, fn repo, _changes ->
-          fetch_and_lock_personal_session(presented_digest, id, repo)
-        end)
-        |> Multi.run(:cancelled, fn repo, %{user: user, session: session} ->
-          token =
-            UserToken.Query.by_id(token_id)
-            |> UserToken.Query.by_user_id(id)
-            |> UserToken.Query.by_context("email_change_new")
-            |> UserToken.Query.lock_for_update()
-            |> repo.one()
+    with :ok <- Subject.ensure_personal_user(subject) do
+      case Ecto.UUID.cast(token_id) do
+        {:ok, token_id} ->
+          Multi.new()
+          |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(id, repo) end)
+          |> Multi.run(:session, fn repo, _changes ->
+            fetch_and_lock_personal_session(presented_digest, id, repo)
+          end)
+          |> Multi.run(:cancelled, fn repo, %{user: user, session: session} ->
+            token =
+              UserToken.Query.by_id(token_id)
+              |> UserToken.Query.by_user_id(id)
+              |> UserToken.Query.by_context("email_change_new")
+              |> UserToken.Query.lock_for_update()
+              |> repo.one()
 
-          if token && current_new_email_proof?(token, user, session),
-            do: repo.delete(token),
-            else: {:ok, nil}
-        end)
-        |> Repo.commit_multi()
-        |> case do
-          {:ok, _changes} -> :ok
-          {:error, reason} -> {:error, reason}
-        end
+            if token && current_new_email_proof?(token, user, session),
+              do: repo.delete(token),
+              else: {:ok, nil}
+          end)
+          |> Repo.commit_multi()
+          |> case do
+            {:ok, _changes} -> :ok
+            {:error, reason} -> {:error, reason}
+          end
 
-      :error ->
-        {:error, :invalid}
+        :error ->
+          {:error, :invalid}
+      end
     end
   end
 
-  def cancel_email_change(_, _, %Subject{}), do: {:error, :invalid}
+  def cancel_email_change(_, _, %Subject{} = subject) do
+    with :ok <- Subject.ensure_personal_user(subject), do: {:error, :invalid}
+  end
 
   defp verify_email_change_factor(_repo, %Users.User{} = user, requested_email, {:mfa, otp}) do
     case Users.verify_and_consume_mfa(user.id, otp, []) do
