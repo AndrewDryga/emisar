@@ -343,6 +343,25 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     end)
   end
 
+  test "only dispatch tools admit accepted errors and require their recovery identity" do
+    operation_id = "op_624NN9NMDZ1T76NARWCKM5A0D6"
+
+    for contract <- SchemaRegistry.contracts(),
+        reason <- [:unauthorized, :operation_incomplete, :response_too_large] do
+      {:ok, schema} = JSONSchex.compile(contract["outputSchema"], format_assertion: true)
+      result = EmisarWeb.MCP.Service.accepted_operation_error(reason, operation_id)
+      result = result |> Jason.encode!() |> Jason.decode!()
+
+      if contract["name"] in ["run_action", "execute_runbook"] do
+        assert JSONSchex.validate(schema, result) == :ok
+        missing_id = put_in(result, ["error", "details"], %{})
+        assert {:error, _} = JSONSchex.validate(schema, missing_id)
+      else
+        assert {:error, _} = JSONSchex.validate(schema, result)
+      end
+    end
+  end
+
   test "invalid_args requires exact bounded validation details" do
     schema =
       SchemaRegistry.contracts()

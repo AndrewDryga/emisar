@@ -36,6 +36,95 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
      raw: raw}
   end
 
+  for mode <- [:snapshot, :page, :tail] do
+    test "#{mode} discards output when review authorization expires during projection", %{
+      account: account,
+      key: key
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      run = create_mcp_history_run!(account, runner, key, 1, requires_approval: true)
+      append_progress!(run, 1, "stdout", "must-not-escape-revoked-projection")
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+      handler = {__MODULE__, make_ref()}
+
+      :telemetry.attach(
+        handler,
+        [:emisar, :repo, :query],
+        &__MODULE__.revoke_after_output_read/4,
+        %{owner: self(), handler: handler, key: key}
+      )
+
+      try do
+        result =
+          case unquote(mode) do
+            :snapshot -> EmisarWeb.MCP.Service.fixed_run_summary(run, subject)
+            :page -> EmisarWeb.MCP.Service.fixed_run_summaries([run], subject)
+            :tail -> EmisarWeb.MCP.Service.fixed_run_tail(run, subject, {0, 0, 0}, "test-scope")
+          end
+
+        assert result == {:error, :unauthorized}
+        assert_received {^handler, :revoked_after_output_read}
+      after
+        :telemetry.detach(handler)
+      end
+    end
+  end
+
+  test "runbook dispatch keeps its accepted receipt when settlement loses authority", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "revoked-execution")
+    _runbook = publish_runbook!(subject, "revoked-execution", %{"runner_id" => [runner.id]})
+    handler = {__MODULE__, make_ref()}
+    operation_id = "op_624NN9NMDZ1T76NARWCKM5A0D6"
+
+    :telemetry.attach(
+      handler,
+      [:emisar, :repo, :query],
+      &__MODULE__.revoke_after_operation_commit/4,
+      %{owner: self(), handler: handler, key: key}
+    )
+
+    try do
+      {result, log} =
+        ExUnit.CaptureLog.with_log([level: :info], fn ->
+          call(
+            conn,
+            "execute_runbook",
+            %{"runbook_ref" => "revoked-execution@1", "reason" => "Observe accepted work"},
+            operation_id
+          )
+        end)
+
+      assert_received {^handler, :revoked_after_operation_commit}
+      assert result["ok"] == false
+      assert result["dispatch_started"] == true
+      assert result["error"]["code"] == "not_allowed"
+      assert result["error"]["details"] == %{"operation_id" => operation_id}
+      assert result["error"]["next"]["tool"] == "get_operation"
+      refute Map.has_key?(result, "execution")
+      refute log =~ "mcp.dispatch_rejected"
+      assert Repo.aggregate(Operation, :count) == 1
+      assert Repo.aggregate(RunbookExecution, :count) == 1
+    after
+      :telemetry.detach(handler)
+    end
+  end
+
+  test "a stale pending runbook projection cannot hide an authorization denial", %{
+    account: account,
+    key: key
+  } do
+    subject = Emisar.Auth.Subject.for_api_key(key, account)
+    result = projected_result(status: :pending_approval)
+    Fixtures.ApiKeys.mark_revoked(key)
+
+    assert RunbookTools.project_execution(result, subject) == {:error, :unauthorized}
+  end
+
   test "published limit types reject string forms", %{conn: conn} do
     for {tool, limit} <- [{"recent_runs", "50"}, {"list_runbooks", "10"}] do
       invalid = call(conn, tool, %{"limit" => limit})
@@ -2027,7 +2116,9 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     {drained, _frames} = drain_tail!(conn, run, cursor, "", 0)
     assert drained == "a" <> chunk <> "other stream"
 
-    narrow = EmisarWeb.MCP.Service.fixed_run_summary(finished, subject, stream_cap: 7)
+    assert {:ok, narrow} =
+             EmisarWeb.MCP.Service.fixed_run_summary(finished, subject, stream_cap: 7)
+
     assert narrow.stdout == "🙂x"
     assert narrow.stderr == " stream"
     assert narrow.truncated_stdout
@@ -4191,6 +4282,30 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
   defp drain_execution_outputs!(_conn, _continuation, _outputs, _frames),
     do: flunk("runbook outputs did not drain within 100 frames")
+
+  def revoke_after_output_read(_event, _measurements, metadata, context) do
+    if self() == context.owner and String.contains?(metadata.query, ~s(FROM "action_run_events")) do
+      :telemetry.detach(context.handler)
+      Fixtures.ApiKeys.mark_revoked(context.key)
+      send(context.owner, {context.handler, :revoked_after_output_read})
+    end
+  end
+
+  def revoke_after_operation_commit(
+        _event,
+        _measurements,
+        %{query: "commit", result: {:ok, _}},
+        context
+      ) do
+    if self() == context.owner and not Repo.in_transaction?() and not Repo.checked_out?() and
+         Repo.exists?(Operation) do
+      :telemetry.detach(context.handler)
+      Fixtures.ApiKeys.mark_revoked(context.key)
+      send(context.owner, {context.handler, :revoked_after_operation_commit})
+    end
+  end
+
+  def revoke_after_operation_commit(_event, _measurements, _metadata, _context), do: :ok
 
   defp create_mcp_history_run!(account, runner, key, index, overrides \\ %{}) do
     attrs =

@@ -1040,7 +1040,9 @@ defmodule Emisar.Runbooks do
   exact replay re-reads the committed execution without touching current
   runbook or catalog state. Returns
   `{:ok, :created | :replay, execution}`, `{:error, :operation_conflict}`,
-  `{:error, :operation_incomplete}`, or the first rejection.
+  `{:error, {:accepted, reason}}` when committed work cannot be observed,
+  or the first preflight rejection. An accepted error retains the operation
+  identity; it does not authorize another execution.
   """
   def create_or_replay_mcp_execution(
         %{operation_id: operation_id} = facts,
@@ -1226,10 +1228,10 @@ defmodule Emisar.Runbooks do
         {:ok, if(reservation.fresh?, do: :created, else: :replay), execution}
 
       {:error, :not_found} ->
-        {:error, :operation_incomplete}
+        {:error, {:accepted, :operation_incomplete}}
 
-      other ->
-        other
+      {:error, reason} ->
+        {:error, {:accepted, reason}}
     end
   end
 

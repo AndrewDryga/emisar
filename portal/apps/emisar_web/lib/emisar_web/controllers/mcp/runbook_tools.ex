@@ -227,23 +227,25 @@ defmodule EmisarWeb.MCP.RunbookTools do
     # whichever identity the call actually carried.
     runbook_ref = args["runbook_ref"] || args["slug"]
 
-    with {:ok, _outcome, execution} <-
-           Runbooks.create_or_replay_mcp_execution(facts, conn.assigns.current_subject),
-         {:ok, payload} <- execution_payload(conn, execution.id) do
-      {:ok, %{ok: true, operation_id: operation_id, execution: payload}}
-    else
+    case Runbooks.create_or_replay_mcp_execution(facts, conn.assigns.current_subject) do
+      {:ok, _outcome, execution} ->
+        case execution_payload(conn, execution.id) do
+          {:ok, payload} ->
+            {:ok, %{ok: true, operation_id: operation_id, execution: payload}}
+
+          {:error, reason} ->
+            {:error, Service.accepted_operation_error(reason, operation_id)}
+        end
+
       {:error, :operation_conflict} ->
         {:error,
          error("operation_conflict", "This operation_id already belongs to another mutation.")}
 
       {:error, :operation_incomplete} ->
-        {:error,
-         error(
-           "operation_incomplete",
-           "The operation committed without its execution resource.",
-           true,
-           %{operation_id: operation_id}
-         )}
+        {:error, Service.accepted_operation_error(:operation_incomplete, operation_id)}
+
+      {:error, {:accepted, reason}} ->
+        {:error, Service.accepted_operation_error(reason, operation_id)}
 
       {:error, :unauthorized} ->
         not_allowed(conn, runbook_ref)
@@ -356,17 +358,6 @@ defmodule EmisarWeb.MCP.RunbookTools do
     )
   end
 
-  # The execution committed; only its projection overran the frame. Report it as
-  # started so the caller retrieves the result with wait_for_run rather than
-  # re-executing it under a fresh operation id.
-  defp execution_failure(:response_too_large, _allow_draft) do
-    error(
-      "response_too_large",
-      "The runbook executed, but its result is too large to return here. Retrieve it with wait_for_run using the run's operation id.",
-      true
-    )
-  end
-
   defp execution_failure(:runner_requires_attestation, _allow_draft) do
     error(
       "signed_runbook_unsupported",
@@ -431,30 +422,32 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp project_execution(execution, runbook, projection, subject, opts) do
-    approval = execution_approval(execution, subject)
-    output_scope = Keyword.get(opts, :output_scope)
+    with {:ok, approval} <- execution_approval(execution, subject) do
+      output_scope = Keyword.get(opts, :output_scope)
 
-    [:full, :summary, :minimal]
-    |> Enum.reduce_while({:error, :response_too_large}, fn mode, _result ->
-      payload =
-        execution_projection(execution, runbook, projection, approval, mode, output_scope)
+      [:full, :summary, :minimal]
+      |> Enum.reduce_while({:error, :response_too_large}, fn mode, _result ->
+        payload =
+          execution_projection(execution, runbook, projection, approval, mode, output_scope)
 
-      if ResponseBudget.fits_payload?(%{ok: true, execution: payload}) do
-        {:halt, {:ok, payload}}
-      else
-        {:cont, {:error, :response_too_large}}
-      end
-    end)
+        if ResponseBudget.fits_payload?(%{ok: true, execution: payload}) do
+          {:halt, {:ok, payload}}
+        else
+          {:cont, {:error, :response_too_large}}
+        end
+      end)
+    end
   end
 
   defp execution_approval(%{status: :pending_approval} = execution, subject) do
     case Approvals.fetch_request_for_visible_runbook_execution(execution, subject) do
-      {:ok, request} -> Service.approval_summary(request, subject)
-      _ -> nil
+      {:ok, request} -> {:ok, Service.approval_summary(request, subject)}
+      {:error, :not_found} -> {:ok, nil}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp execution_approval(_execution, _subject), do: nil
+  defp execution_approval(_execution, _subject), do: {:ok, nil}
 
   defp execution_projection(execution, runbook, projection, approval, mode, output_scope) do
     %{

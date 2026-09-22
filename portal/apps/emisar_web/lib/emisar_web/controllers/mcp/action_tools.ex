@@ -50,13 +50,10 @@ defmodule EmisarWeb.MCP.ActionTools do
          )}
 
       {:error, :operation_incomplete} ->
-        {:error,
-         error(
-           "operation_incomplete",
-           "The operation record is incomplete. Reconcile it before retrying.",
-           true,
-           %{operation_id: operation_id}
-         )}
+        {:error, Service.accepted_operation_error(:operation_incomplete, operation_id)}
+
+      {:error, {:accepted, reason}} ->
+        {:error, Service.accepted_operation_error(reason, operation_id)}
 
       {:error, :attestation_stale} ->
         {:error,

@@ -663,6 +663,34 @@
         "dispatch_started": {"const": false}
       }
     },
+    "accepted_error_result": {
+      "type": "object",
+      "required": ["ok", "error", "dispatch_started"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": {"const": false},
+        "dispatch_started": {"const": true},
+        "error": {
+          "allOf": [
+            {"$ref": "#/$defs/error"},
+            {
+              "required": ["details", "next"],
+              "properties": {
+                "code": {"enum": ["not_allowed", "operation_incomplete", "response_too_large"]},
+                "retryable": {"const": false},
+                "details": {
+                  "type": "object",
+                  "required": ["operation_id"],
+                  "additionalProperties": false,
+                  "properties": {"operation_id": {"$ref": "#/$defs/operation_id"}}
+                },
+                "next": {"$ref": "#/$defs/next_get_operation"}
+              }
+            }
+          ]
+        }
+      }
+    },
     "issue": {
       "type": "object",
       "required": ["code", "message"],
@@ -1470,6 +1498,7 @@
         "type": "object",
         "oneOf": [
           {"$ref": "#/$defs/error_result"},
+          {"$ref": "#/$defs/accepted_error_result"},
           {
             "type": "object",
             "required": ["ok", "operation_id", "action_id", "pack_ref", "runs"],
@@ -1821,6 +1850,7 @@
         "type": "object",
         "oneOf": [
           {"$ref": "#/$defs/error_result"},
+          {"$ref": "#/$defs/accepted_error_result"},
           {
             "type": "object",
             "required": ["ok", "operation_id", "execution"],

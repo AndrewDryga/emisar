@@ -387,10 +387,20 @@ Tool failures before an operation exists use `isError: true` and:
 }
 ```
 
-Once an operation exists, the tool result is `isError: false` and `ok: true`.
-Per-runner denials and execution failures are run outcomes, not top-level tool
-errors. A client must never retry the whole fan-out merely because one run was
-denied or failed.
+Accepted mutations normally return `isError: false` and `ok: true`. Per-runner
+denials and execution failures are run outcomes, not top-level tool errors.
+A client must never retry the whole fan-out merely because one run was denied
+or failed.
+
+If the operation committed but its result cannot be observed, `run_action` and
+`execute_runbook` return `isError: true`, `ok: false`, `dispatch_started: true`,
+and `error.details.operation_id`. This covers authority expiring or being revoked
+during a wait or projection (`not_allowed`), unavailable committed resources
+(`operation_incomplete`), and an oversized result (`response_too_large`). No
+now-inaccessible run data or output is returned. The error is not automatically
+retryable; its `error.next` is `get_operation` for that exact operation ID.
+Recovery requires authorized credentials in the same lineage, or help from a
+workspace operator. Never submit the work again with a new operation ID.
 
 ## `list_packs`
 
@@ -937,7 +947,7 @@ Before the operation transaction, the portal validates the whole fan-out:
    the cryptographic authority. A pending approval is capped at the earliest of
    its normal expiry, the freshness deadline, and the certificate deadline.
 
-Any failure creates no operation or run and returns `dispatch_started: false`.
+Any preflight failure creates no operation or run and returns `dispatch_started: false`.
 This intentionally refuses a flapping target set instead of silently shrinking
 it; the model may remove an unavailable ref only when that still matches the
 user's requested scope.

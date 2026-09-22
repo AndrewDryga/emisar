@@ -1383,6 +1383,57 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     end
   end
 
+  test "revocation after action dispatch preserves the accepted receipt without returning output",
+       %{
+         conn: conn,
+         account: account,
+         subject: subject,
+         key: key
+       } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "revoked-wait")
+    pack_ref = "database@1.0.0/#{@hash}"
+
+    observe!(runner, %{"database" => %{"version" => "1.0.0", "hash" => @hash}}, [
+      action("database.pause_job", "database", args: job_args())
+    ])
+
+    trust_all!(subject)
+    :ok = Runners.subscribe_runner_transport(runner)
+    runner_ref = "revoked-wait~" <> binary_part(Crypto.hash_hex(runner.external_id), 0, 32)
+    operation_id = "op_524NN9NMDZ1T76NARWCKM5A0D6"
+    body = run_action_body(pack_ref, runner_ref, ~s({"job_id":7}), "Wait for result", "60s")
+
+    request =
+      Task.async(fn ->
+        ExUnit.CaptureLog.with_log([level: :info], fn -> raw_action(conn, body, operation_id) end)
+      end)
+
+    assert_receive {:cloud_to_runner, _generation, payload}, 2_000
+    assert payload["operation_id"] == operation_id
+    assert {:ok, _revoked} = ApiKeys.revoke_api_key(key, subject)
+    send(request.pid, :recheck)
+    {result, log} = Task.await(request, 5_000)
+
+    assert result["ok"] == false
+    assert result["dispatch_started"] == true
+    assert result["error"]["code"] == "not_allowed"
+    assert result["error"]["retryable"] == false
+    assert result["error"]["details"] == %{"operation_id" => operation_id}
+
+    assert result["error"]["next"] == %{
+             "tool" => "get_operation",
+             "arguments" => %{"operation_id" => operation_id}
+           }
+
+    refute Map.has_key?(result, "runs")
+    assert {:ok, [run], _meta} = Runs.list_runs(subject)
+    assert run.operation_id == operation_id
+
+    refute log =~ "mcp.dispatch_rejected"
+
+    refute_receive {:cloud_to_runner, _generation, _payload}, 100
+  end
+
   test "run_action fails closed on signed-fact mismatch, unsigned enforcing targets, and operation reuse",
        %{
          conn: conn,

@@ -202,9 +202,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     scope = Service.cursor_scope(conn)
 
     with {:ok, position} <- resolve_output_cursor(target, scope, run_id),
-         {:ok, initial} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
+         {:ok, initial} <- Runs.fetch_mcp_run_by_id(run_id, subject),
+         {:ok, rendered} <- render_action_run(initial, subject, position, scope) do
       render = &render_action_run(&1, subject, position, scope)
-      rendered = render.(initial)
 
       cond do
         timeout_ms == 0 or Runs.terminal_status?(initial.status) ->
@@ -271,10 +271,10 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          {:ok, current} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
       cond do
         Runs.terminal_status?(current.status) or run_token(current) != initial_token ->
-          {:ok, %{run: render.(current)}}
+          with {:ok, rendered} <- render.(current), do: {:ok, %{run: rendered}}
 
         System.monotonic_time(:millisecond) >= deadline ->
-          {:ok, %{run: render.(current)}}
+          with {:ok, rendered} <- render.(current), do: {:ok, %{run: rendered}}
 
         true ->
           case wait_for_change(deadline, cancellation_topic, wake_seq) do
@@ -395,7 +395,8 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     subject = conn.assigns.current_subject
 
     with {:ok, runs, metadata} <-
-           Runs.list_recent_mcp_runs(Map.from_struct(input), subject, page_opts) do
+           Runs.list_recent_mcp_runs(Map.from_struct(input), subject, page_opts),
+         {:ok, summaries} <- Service.fixed_run_summaries(runs, subject, tail_scope: scope) do
       next_cursor =
         if metadata.next_page_cursor do
           CatalogCursor.encode(
@@ -408,7 +409,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
       payload = %{
         ok: true,
-        runs: Service.fixed_run_summaries(runs, subject, tail_scope: scope),
+        runs: summaries,
         next_cursor: next_cursor
       }
 

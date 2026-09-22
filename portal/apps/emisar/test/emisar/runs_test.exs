@@ -2852,6 +2852,29 @@ defmodule Emisar.RunsTest do
   end
 
   describe "dispatch_mcp_action/2" do
+    test "revocation after commitment cannot turn accepted work into a preflight refusal" do
+      %{subject: subject, key: key, runners: [runner]} = mcp_fanout_fixture(["low"])
+      facts = mcp_action_facts("op_624NN9NMDZ1T76NARWCKM5A0D6", [runner])
+      handler = {__MODULE__, make_ref()}
+
+      :telemetry.attach(handler, [:emisar, :repo, :query], &__MODULE__.revoke_after_commit/4, %{
+        owner: self(),
+        handler: handler,
+        key: key
+      })
+
+      try do
+        assert Runs.dispatch_mcp_action(facts, subject) == {:error, {:accepted, :unauthorized}}
+        assert_received {^handler, :revoked_after_commit, {false, false}}
+      after
+        :telemetry.detach(handler)
+      end
+
+      assert Repo.aggregate(ActionRun, :count) == 1
+      assert Repo.aggregate(MCPOperations.Operation, :count) == 1
+      assert dispatch_rejections() == []
+    end
+
     test "rejects a subject without dispatch permission" do
       %{account: account, runners: [runner]} = mcp_fanout_fixture(["low"])
       facts = mcp_action_facts("op_334NN9NMDZ1T76NARWCKM5A0D6", [runner])
@@ -3032,7 +3055,8 @@ defmodule Emisar.RunsTest do
       assert {:ok, :created, [first, _second]} = Runs.dispatch_mcp_action(facts, subject)
       Repo.delete!(first)
 
-      assert Runs.dispatch_mcp_action(facts, subject) == {:error, :operation_incomplete}
+      assert Runs.dispatch_mcp_action(facts, subject) ==
+               {:error, {:accepted, :operation_incomplete}}
     end
 
     test "concurrent identical first attempts converge on one complete delivered target set" do
@@ -3568,6 +3592,20 @@ defmodule Emisar.RunsTest do
                {:error, :runner_not_found}
     end
   end
+
+  def revoke_after_commit(_event, _measurements, %{query: "commit", result: {:ok, _}}, context) do
+    if self() == context.owner do
+      :telemetry.detach(context.handler)
+      phase = {Repo.in_transaction?(), Repo.checked_out?()}
+
+      if phase == {false, false} do
+        Fixtures.ApiKeys.mark_revoked(context.key)
+        send(context.owner, {context.handler, :revoked_after_commit, phase})
+      end
+    end
+  end
+
+  def revoke_after_commit(_event, _measurements, _metadata, _context), do: :ok
 
   defp mcp_fanout_fixture(risks, rules \\ nil) do
     account = Fixtures.Accounts.create_account()

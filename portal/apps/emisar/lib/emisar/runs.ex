@@ -1070,8 +1070,9 @@ defmodule Emisar.Runs do
   delivered, or notified until the whole transaction commits.
 
   Returns `{:ok, :created | :replay, runs}`, `{:error, :operation_conflict}`,
-  `{:error, :operation_incomplete}` when the persisted target set does not
-  match the request, or the first rejection.
+  `{:error, {:accepted, reason}}` when committed work cannot be observed
+  (including an incomplete target set or expired authority), or the first
+  preflight rejection. An accepted error must never be described as no dispatch.
   """
   def dispatch_mcp_action(facts, %Subject{actor: %ApiKeys.ApiKey{}} = subject)
       when is_map(facts) do
@@ -1343,6 +1344,8 @@ defmodule Emisar.Runs do
     with {:ok, runs} <- list_runs_by_mcp_operation(operation.id, subject),
          :ok <- ensure_complete_mcp_target_set(runs, facts.runner_refs) do
       {:ok, if(fresh?, do: :created, else: :replay), runs}
+    else
+      {:error, reason} -> {:error, {:accepted, reason}}
     end
   end
 
