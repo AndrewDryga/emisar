@@ -266,6 +266,7 @@ func (c *Client) startRun(parent context.Context, m RunActionMsg) error {
 
 	go func() {
 		defer c.handlerWG.Done()
+		defer cancel()
 		c.handleRun(runCtx, s, m)
 	}()
 	return nil
