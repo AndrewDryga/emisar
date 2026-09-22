@@ -165,17 +165,26 @@ defmodule Emisar.RunsTest do
              }
     end
 
-    test "reports output completeness only once the run has settled" do
-      completeness = fn status, complete? ->
-        %ActionRun{status: status, output_complete: complete?}
+    test "reports output completeness only once a dispatched run has settled" do
+      sent_at = ~U[2026-07-13 14:42:10.000000Z]
+
+      completeness = fn status, complete?, sent_at ->
+        %ActionRun{status: status, output_complete: complete?, sent_at: sent_at}
         |> Runs.run_outcome_facts()
         |> Map.fetch!(:output_complete)
       end
 
-      assert completeness.(:success, true) == true
-      assert completeness.(:failed, false) == false
-      assert completeness.(:running, true) == nil
-      assert completeness.(:sent, false) == nil
+      assert completeness.(:success, true, sent_at) == true
+      assert completeness.(:failed, false, sent_at) == false
+      assert completeness.(:running, true, sent_at) == nil
+      assert completeness.(:sent, false, sent_at) == nil
+
+      # A run no runner ever held produced no output, so the column's default
+      # `false` is not a detected gap: denied by policy, refused at dispatch, or
+      # cancelled while it waited.
+      for status <- [:denied, :refused, :cancelled, :error, :timed_out] do
+        assert completeness.(status, false, nil) == nil, "#{status} without dispatch"
+      end
     end
 
     test "flags only a run waiting on an approval decision" do

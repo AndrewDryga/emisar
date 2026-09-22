@@ -123,8 +123,13 @@ defmodule Emisar.Fixtures.Runs do
     |> Repo.update!()
   end
 
-  @doc "Finalizes a run through the same connection-owned path as a runner result."
+  @doc """
+  Finalizes a run through the same connection-owned path as a runner result. A
+  runner can only report work it received, so a run still queued is handed
+  over (`:sent`) first — output accounting reads `sent_at`.
+  """
   def finish(%ActionRun{} = run, payload) when is_map(payload) do
+    run = if is_nil(run.sent_at), do: put_status(run, :sent), else: run
     runner = Repo.get!(Runner, run.runner_id)
     payload = Map.put(payload, "request_id", run.request_id)
 

@@ -46,6 +46,8 @@ defmodule EmisarWeb.MCPCancelRunTest do
     assert result["run"]["review"]["status"] == "cancelled"
     refute Map.has_key?(result["run"], "approval")
     refute Map.has_key?(result["run"], "next")
+    # Nothing ever ran, so nothing is missing: no output-gap flag.
+    refute Map.has_key?(result["run"], "output_complete")
     assert Repo.reload!(request).status == :cancelled
     assert Repo.reload!(run).reason_text == "The rollback already restored the service."
 

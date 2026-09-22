@@ -75,10 +75,12 @@ defmodule Emisar.Runs do
   operator or a model.
 
   Returns `status`, whether it is `terminal?`,
-  `output_complete` once the run is terminal (`nil` while it can still stream),
-  whether it waits on a human as `approval_pending?`, the durable
-  `dispatch_deadline_at` a `:sent` run is judged against, and the
-  `local_audit_failed?` warning. Pure.
+  `output_complete` once a run a runner received is terminal (`nil` while it
+  can still stream, and `nil` for a run that never reached a runner: a denied,
+  refused-at-dispatch, or cancelled-while-queued run has no output, so the
+  column's default is not a detected gap), whether it waits on a human as
+  `approval_pending?`, the durable `dispatch_deadline_at` a `:sent` run is
+  judged against, and the `local_audit_failed?` warning. Pure.
   """
   def run_outcome_facts(%ActionRun{} = run) do
     terminal? = terminal_status?(run.status)
@@ -86,7 +88,7 @@ defmodule Emisar.Runs do
     %{
       status: run.status,
       terminal?: terminal?,
-      output_complete: if(terminal?, do: run.output_complete),
+      output_complete: if(terminal? and dispatched?(run), do: run.output_complete),
       approval_pending?: run.status == :pending_approval,
       dispatch_deadline_at: dispatch_deadline_at(run),
       local_audit_failed?: run.local_audit_failed
@@ -97,6 +99,11 @@ defmodule Emisar.Runs do
     do: DateTime.add(queued_at, @sent_dispatch_deadline_secs, :second)
 
   defp dispatch_deadline_at(%ActionRun{}), do: nil
+
+  # `sent_at` is stamped when the run is published to its runner and cleared
+  # when a cap refusal requeues it, so it says whether a runner ever held it.
+  defp dispatched?(%ActionRun{sent_at: %DateTime{}}), do: true
+  defp dispatched?(%ActionRun{}), do: false
 
   @doc """
   Human-first run attribution as `{who, via}`, for a run read with

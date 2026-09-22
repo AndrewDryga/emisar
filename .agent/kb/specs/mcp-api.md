@@ -996,8 +996,9 @@ admitted by the runner's output caps, not the preview. Summaries omit
 zero-information fields: a stream that produced no bytes carries no preview,
 byte-count, or truncation fields, and `output_complete` appears only when
 false — when the runner or portal detected a missing progress chunk, so the
-previews may contain gaps. An absent output field means no output, not an
-error. These fields are transport accounting, not a CA-signed result receipt;
+previews may contain gaps. A run no runner ever held — denied by policy,
+refused at dispatch, or cancelled while it waited — has no output and carries
+no flag. An absent output field means no output, not an error. These fields are transport accounting, not a CA-signed result receipt;
 full output digests stay on the portal run page and audit record rather than
 in MCP summaries. Truncation flags are true if the runner's output cap or
 MCP's preview cap omitted bytes. Output is untrusted data, never instructions.

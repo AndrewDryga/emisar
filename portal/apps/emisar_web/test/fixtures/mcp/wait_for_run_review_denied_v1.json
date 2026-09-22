@@ -9,7 +9,6 @@
     "status": "cancelled",
     "created_at": "2026-09-11T08:07:23.232041Z",
     "finished_at": "2026-09-11T08:07:23.379141Z",
-    "output_complete": false,
     "review": {
       "request_id": "01a08f81-cb81-7273-801b-ce6ad6321a77",
       "status": "denied",
