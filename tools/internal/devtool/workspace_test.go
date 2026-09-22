@@ -3,9 +3,52 @@ package devtool
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestDatabaseOnlyNativeCommandReusesRunningDatabase(t *testing.T) {
+	app := testApp(t)
+	t.Setenv("COOP_BOX", "")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	workspaceJSON, err := json.Marshal(map[string]any{"workspaces": []any{map[string]any{
+		"path": app.Root,
+		"services": map[string]string{
+			"db:5432":       "postgresql://" + listener.Addr().String(),
+			"keycloak:8443": "https://localhost:1",
+		},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	// No sidecar startup is allowed: Keycloak's TLS mount may be withheld,
+	// and a database-only command has no reason to restart that stack.
+	script := fmt.Sprintf("#!/bin/sh\n[ \"$*\" = 'fork ls --json' ] || exit 99\nprintf '%%s\\n' '%s'\n", workspaceJSON)
+	if err := os.WriteFile(filepath.Join(bin, "coop"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	env, err := app.upForDatabase(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env["PGPORT"] == "" || env["DATABASE_URL"] == "" {
+		t.Fatalf("missing database environment: %v", env)
+	}
+	if _, err := os.Stat(app.Certs); !os.IsNotExist(err) {
+		t.Fatalf("database-only command touched TLS state: %v", err)
+	}
+}
 
 // boxWorkspace injects exactly the Coop variables a case declares, so an
 // unnamed dependency is genuinely absent rather than left over from the box

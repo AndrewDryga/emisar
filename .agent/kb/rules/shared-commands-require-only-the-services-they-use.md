@@ -13,6 +13,11 @@ In `tools/internal/devtool`, a command names its dependencies at the call site â
 waits follow the same set, so the DB-only routes wait for Postgres and nothing
 else.
 
+On a native host, reuse a reachable database at the URL Coop reports before
+starting the stack. A healthy database-only test must not regenerate TLS files
+or fail because restarting the unrelated Keycloak service requires mount approval.
+Initial service startup still uses Coop; never invent a fallback URL or topology.
+
 Absence is reported, never filled in:
 
 1. Refuse by name. Say which service is missing, which `COOP_SERVICE_*` or

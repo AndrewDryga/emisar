@@ -15,8 +15,8 @@ A change is done only when this is green from the repository root:
 It checks formatting, module checksums, `go vet`,
 `staticcheck`, tidy-as-a-no-op, attestation parity against the bridge's copy,
 race tests, a cross-build of every published platform, and the public
-`install.sh` shell and behavior harness. The harness runs all eighteen
-checks as root or through passwordless sudo; otherwise it runs fifteen portable
+`install.sh` shell and behavior harness. The harness runs all checks
+as root or through passwordless sudo; otherwise it runs the portable
 checks and names the three privileged checks left to CI. Use
 `./run test runner [go-test-args...]` for focused feedback; direct Go commands
 are diagnostic, not final verification. Run `./run gate mcp` for that
@@ -82,4 +82,4 @@ Non-negotiable — runner's equivalent of portal's Iron Laws:
 - **Concurrency: signal, don't block.** A coalescing wake-up is a buffered `chan struct{}` with a non-blocking `select { case ch <- struct{}{}: default: }`; a `sync.Mutex` guards per-request state; cancellation is a per-request `context.CancelFunc`. The connect daemon's loops (`senderLoop`, `heartbeatLoop`, `readvertiseLoop`) run independent of the socket lifecycle so in-flight actions survive a reconnect.
 - **JSON is stdlib `encoding/json`** with `json:"snake_case,omitempty"` tags; protocol frames carry a `type` string field.
 - **Small, single-purpose packages**, each named as one lowercase word. Pure types live in `pkg/`; anything with logic + dependencies lives in `internal/`. Match the surrounding file's style exactly.
-- Toolchain is **Go 1.26.6** (`go.work`); deps are deliberately few (`coder/websocket`, `spf13/cobra` and its `spf13/pflag` — direct only so the CLI-surface golden test can walk flag types — `yaml.v3`, and `santhosh-tekuri/jsonschema/v6` for typed `output.schema` result validation in `internal/outputschema`; ULIDs are generated in-tree by `internal/audit` precisely to keep `oklog/ulid` out of the client's supply chain). A new dependency on the host runner is new attack surface — justify it in one sentence, and prefer the stdlib.
+- Use the Go version pinned in `go.work`; deps are deliberately few (`coder/websocket`, `spf13/cobra` and its `spf13/pflag` — direct only so the CLI-surface golden test can walk flag types — `yaml.v3`, and `santhosh-tekuri/jsonschema/v6` for typed `output.schema` result validation in `internal/outputschema`; ULIDs are generated in-tree by `internal/audit` precisely to keep `oklog/ulid` out of the client's supply chain). A new dependency on the host runner is new attack surface — justify it in one sentence, and prefer the stdlib.

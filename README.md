@@ -169,8 +169,15 @@ Then, inside the shell:
 ```
 
 For native development, install the exact versions in `.tool-versions` with
-asdf, plus Git, Coop, Docker, the PostgreSQL client, ShellCheck,
-Chrome/Chromium, and ImageMagick.
+asdf, plus Git, Coop, Docker, the PostgreSQL client, ShellCheck, jq, GNU Bash
+(with `read -N`), GNU coreutils, Chrome/Chromium, and ImageMagick. On macOS,
+Apple's bundled Bash and BSD utilities cannot run all pack regression checks:
+
+```sh
+brew install bash coreutils jq
+export PATH="$(brew --prefix coreutils)/libexec/gnubin:$(brew --prefix bash)/bin:$PATH"
+```
+
 `./run setup` validates all prerequisites before starting services; `./run
 doctor` reports every detected version and an actionable mismatch. On macOS,
 run `./run certs trust` once for this workspace after setup.

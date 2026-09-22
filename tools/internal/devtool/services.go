@@ -105,21 +105,26 @@ func waitUntil(ctx context.Context, attempts int, delay time.Duration, check fun
 }
 
 func (a *App) waitForDatabase(ctx context.Context, workspace Workspace) error {
-	database, err := url.Parse(workspace.DatabaseURL)
-	if err != nil {
-		return err
-	}
-	err = waitUntil(ctx, 60, time.Second, func() error {
-		connection, dialErr := net.DialTimeout("tcp", database.Host, time.Second)
-		if dialErr != nil {
-			return dialErr
-		}
-		return connection.Close()
+	err := waitUntil(ctx, 60, time.Second, func() error {
+		return probeDatabase(ctx, workspace)
 	})
 	if err != nil {
 		return fmt.Errorf("waiting for Postgres at %s: %w", workspace.DatabaseURL, err)
 	}
 	return nil
+}
+
+func probeDatabase(ctx context.Context, workspace Workspace) error {
+	database, err := url.Parse(workspace.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	dialer := net.Dialer{Timeout: time.Second}
+	connection, err := dialer.DialContext(ctx, "tcp", database.Host)
+	if err != nil {
+		return err
+	}
+	return connection.Close()
 }
 
 func (a *App) waitForKeycloak(ctx context.Context, workspace Workspace) error {
@@ -164,6 +169,18 @@ func (a *App) waitForDependencies(ctx context.Context, workspace Workspace) erro
 // contacted, and to wait for nothing at all — an absent database surfaced as a
 // Postgrex failure partway through `ecto.create`.
 func (a *App) upForDatabase(ctx context.Context) (map[string]string, error) {
+	// On the host, `coop up` also starts Keycloak and can fail on its withheld
+	// TLS key. Reuse an already-running, Coop-discovered database without
+	// touching certificates or restarting unrelated services. Initial startup
+	// still belongs to the canonical workspace topology below.
+	if !a.inBox() {
+		workspace, err := a.loadWorkspace(ctx, needDatabase)
+		if err == nil && probeDatabase(ctx, workspace) == nil {
+			return a.workspaceEnv(Workspace{
+				DatabaseURL: workspace.DatabaseURL, DBPort: workspace.DBPort,
+			}), nil
+		}
+	}
 	workspace, env, err := a.up(ctx, needDatabase)
 	if err != nil {
 		return nil, err

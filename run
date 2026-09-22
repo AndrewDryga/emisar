@@ -24,7 +24,11 @@ Native: install the exact tool pins from .tool-versions, then let doctor verify 
   ./run setup
   ./run doctor
 
-Native development also needs Git, Coop, Docker, the PostgreSQL client, ShellCheck, Chrome/Chromium, and ImageMagick.
+Native development also needs Git, Coop, Docker, the PostgreSQL client, ShellCheck, jq, GNU Bash (with read -N), GNU coreutils, Chrome/Chromium, and ImageMagick.
+On macOS, install the shell tools and put GNU coreutils ahead of Apple's tools:
+  brew install bash coreutils jq
+  export PATH="\$(brew --prefix coreutils)/libexec/gnubin:\$(brew --prefix bash)/bin:\$PATH"
+
 Pinned versions:
 $(awk 'NF && $1 !~ /^#/ {printf "  %-12s %s\n", $1, $2}' "$root/.tool-versions")
 EOF
