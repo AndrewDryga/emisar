@@ -20,8 +20,8 @@ import (
 // JSONLSink writes one JSON-encoded event per line. It supports size-
 // based rotation: when the current file exceeds MaxSizeBytes, it is
 // renamed to .1, the previous .1 to .2, and so on up to MaxBackups
-// (oldest dropped). Rotation is checked on every Write; the check is a
-// single Stat() call so the cost is minimal.
+// (oldest dropped). A per-operation file lock serializes independent sinks,
+// including a running daemon and local CLI commands using the same journal.
 type JSONLSink struct {
 	path         string
 	maxSizeBytes int64
@@ -31,6 +31,7 @@ type JSONLSink struct {
 	f        auditFile
 	failed   error
 	lastHash string // sha256(prev line without trailing newline), hex
+	size     int64  // size at last successful append/refresh, under the file lock
 }
 
 type auditFile interface {
@@ -64,6 +65,15 @@ func OpenJSONL(path string, opts JSONLOptions) (*JSONLSink, error) {
 			return nil, fmt.Errorf("audit: create dir: %w", err)
 		}
 	}
+	lock, err := lockJournal(path)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Close()
+	owner, err := journalOwner(path)
+	if err != nil {
+		return nil, err
+	}
 	// Heal a torn final write before appending, and take the chain head from
 	// the same bytes. A crash between writing an event's bytes and its trailing
 	// newline leaves a partial line; O_APPEND would then glue the next event
@@ -73,9 +83,14 @@ func OpenJSONL(path string, opts JSONLOptions) (*JSONLSink, error) {
 	if err != nil {
 		return nil, fmt.Errorf("audit: heal torn tail: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := openJournalFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, owner)
 	if err != nil {
 		return nil, fmt.Errorf("audit: open jsonl: %w", err)
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
 	}
 	return &JSONLSink{
 		path:         path,
@@ -83,6 +98,7 @@ func OpenJSONL(path string, opts JSONLOptions) (*JSONLSink, error) {
 		maxBackups:   opts.MaxBackups,
 		f:            f,
 		lastHash:     lastHash,
+		size:         info.Size(),
 	}, nil
 }
 
@@ -101,8 +117,9 @@ const tailWindow = MaxLineBytes + 2
 //
 // A missing or empty journal seeds an empty chain: the first event then carries
 // prev_hash="", which is what VerifyChain expects at the head of a file.
+// Callers hold the journal lock so a peer's in-progress append is never healed.
 func healAndSeed(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := openJournalFile(path, os.O_RDWR, nil)
 	if os.IsNotExist(err) {
 		return "", nil
 	}
@@ -127,9 +144,7 @@ func healAndSeed(path string) (string, error) {
 		_ = f.Close()
 		return "", err
 	}
-	if err := f.Close(); err != nil {
-		return "", err
-	}
+	defer f.Close()
 	partial := window < size
 
 	if tail[len(tail)-1] != '\n' {
@@ -143,7 +158,10 @@ func healAndSeed(path string) (string, error) {
 		}
 		// cut < 0 on a complete file means the file is one torn line: +1
 		// truncates to 0, dropping it.
-		if err := os.Truncate(path, size-window+int64(cut+1)); err != nil {
+		if err := f.Truncate(size - window + int64(cut+1)); err != nil {
+			return "", err
+		}
+		if err := f.Sync(); err != nil {
 			return "", err
 		}
 		tail = tail[:cut+1]
@@ -191,6 +209,18 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	if s.failed != nil {
 		return fmt.Errorf("audit: jsonl sink previously failed: %w", s.failed)
 	}
+	if s.f == nil {
+		return fmt.Errorf("audit: jsonl sink has no active file")
+	}
+	lock, err := lockJournal(s.path)
+	if err != nil {
+		// No bytes changed: an unavailable/contended lock is retryable.
+		return err
+	}
+	defer lock.Close()
+	if err := s.refreshLocked(); err != nil {
+		return s.latchLocked(err)
+	}
 
 	ev.PrevHash = s.lastHash
 	b, err := json.Marshal(ev)
@@ -222,12 +252,6 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	copy(line, b)
 	line[len(b)] = '\n'
 
-	// Close leaves no active file, and closing the journal is how the engine
-	// proves its fail-closed path — no durable start event, no execution — so
-	// this returns the error that path reads instead of dereferencing nil.
-	if s.f == nil {
-		return fmt.Errorf("audit: jsonl sink has no active file")
-	}
 	if written, err := s.f.Write(line); err != nil {
 		return s.latchLocked(err)
 	} else if written != len(line) {
@@ -248,6 +272,48 @@ func (s *JSONLSink) Write(_ context.Context, ev Event) error {
 	// Chain advances only after the bytes are durably on disk.
 	h := sha256.Sum256(b)
 	s.lastHash = hex.EncodeToString(h[:])
+	s.size += int64(len(line))
+	return nil
+}
+
+// Follow a peer's rotation and chain head while holding both locks. Re-read
+// only after a peer changes the inode/size; an uncontended append never needs
+// to read the tail again. This is coordination, not tamper verification.
+func (s *JSONLSink) refreshLocked() error {
+	held, err := s.f.Stat()
+	if err != nil {
+		return err
+	}
+	active, err := os.Lstat(s.path)
+	if err != nil {
+		return err
+	}
+	if !active.Mode().IsRegular() {
+		return fmt.Errorf("audit: journal is not a regular file")
+	}
+	sameFile := os.SameFile(held, active)
+	if sameFile && active.Size() == s.size {
+		return nil
+	}
+	if !sameFile {
+		if err := s.f.Close(); err != nil {
+			s.f = nil
+			return err
+		}
+		s.f, err = openJournalFile(s.path, os.O_APPEND|os.O_WRONLY, nil)
+		if err != nil {
+			return err
+		}
+	}
+	s.lastHash, err = healAndSeed(s.path)
+	if err != nil {
+		return err
+	}
+	info, err := s.f.Stat()
+	if err != nil {
+		return err
+	}
+	s.size = info.Size()
 	return nil
 }
 
@@ -257,7 +323,7 @@ func (s *JSONLSink) latchLocked(err error) error {
 }
 
 // maybeRotateLocked rotates the file when the next write would cross
-// the size threshold. Caller must hold s.mu.
+// the size threshold. Caller must hold s.mu and the journal file lock.
 func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 	if s.maxSizeBytes <= 0 || s.f == nil {
 		return nil
@@ -297,7 +363,7 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 	}
 	// Reopen owner-only: the log can contain redacted-but-still-sensitive
 	// metadata and rotation must not weaken its permissions.
-	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := openJournalFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, info)
 	if err != nil {
 		openErr := fmt.Errorf("audit: open fresh jsonl after rotation: %w", err)
 		if s.maxBackups < 1 {
@@ -310,6 +376,7 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 	}
 	s.f = f
 	s.lastHash = ""
+	s.size = 0
 	if err := fsutil.SyncDirectory(filepath.Dir(s.path)); err != nil {
 		return fmt.Errorf("audit: sync rotation directory: %w", err)
 	}
@@ -322,7 +389,7 @@ func (s *JSONLSink) maybeRotateLocked(incoming int64) error {
 }
 
 func (s *JSONLSink) reopenAfterRotationFailure(rotationErr error) error {
-	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := openJournalFile(s.path, os.O_APPEND|os.O_WRONLY, nil)
 	if err != nil {
 		return errors.Join(rotationErr, fmt.Errorf("audit: reopen unchanged jsonl: %w", err))
 	}
