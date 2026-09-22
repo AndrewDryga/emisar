@@ -2,12 +2,75 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Auth, Fixtures, Repo, RequestContext}
+  alias Emisar.{Accounts, Auth, Crypto, Fixtures, Repo, RequestContext}
   alias Emisar.Accounts.Account
   alias Emisar.Auth.UserToken
   alias Emisar.Users.User
 
   @moduletag timeout: 60_000
+
+  test "concurrent new-address completions consume the proof and audit exactly once" do
+    unboxed_owner(fn user, account, subject ->
+      new_email = "complete-once-#{Ecto.UUID.generate()}@example.test"
+      proof = pending_email_change(new_email, subject)
+      parent = self()
+
+      blocker =
+        unboxed_task(fn ->
+          Repo.transaction(fn ->
+            from(user in User, where: user.id == ^user.id, lock: "FOR UPDATE") |> Repo.one!()
+            send(parent, {:completion_user_locked, backend_pid()})
+
+            receive do
+              :release -> :ok
+            end
+          end)
+        end)
+
+      try do
+        assert_receive {:completion_user_locked, blocker_backend}, 5_000
+
+        first =
+          unboxed_task(fn ->
+            send(parent, {:first_completion, backend_pid()})
+            complete_email_change(proof, subject)
+          end)
+
+        try do
+          assert_receive {:first_completion, first_backend}, 5_000
+          await_blocked_by(first_backend, blocker_backend)
+
+          second =
+            unboxed_task(fn ->
+              send(parent, {:second_completion, backend_pid()})
+              complete_email_change(proof, subject)
+            end)
+
+          try do
+            assert_receive {:second_completion, second_backend}, 5_000
+            await_blocked_by(second_backend, first_backend)
+            send(blocker.pid, :release)
+            assert {:ok, :ok} = Task.await(blocker, 30_000)
+            assert {:ok, %User{email: ^new_email}} = Task.await(first, 30_000)
+            assert {:error, :invalid} = Task.await(second, 30_000)
+
+            assert 1 ==
+                     Emisar.Audit.Event.Query.all()
+                     |> Emisar.Audit.Event.Query.by_account_id(account.id)
+                     |> Emisar.Audit.Event.Query.by_event_type("user.email_changed")
+                     |> Repo.aggregate(:count)
+          after
+            stop_tasks([second])
+          end
+        after
+          stop_tasks([first])
+        end
+      after
+        send(blocker.pid, :release)
+        stop_tasks([blocker])
+      end
+    end)
+  end
 
   test "a committed email change defeats stale issuance and leaves only new-address credentials" do
     unboxed_owner(fn user, account, subject ->
@@ -25,9 +88,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
 
       old_confirmation = Fixtures.Auth.create_confirmation_token!(user)
 
-      assert Auth.issue_email_change_code(new_email, subject) == {:ok, :sent}
-      assert_received {:email, step_up_email}
-      step_up_code = Fixtures.Auth.code_from_email(step_up_email)
+      proof = pending_email_change(new_email, subject)
 
       parent = self()
 
@@ -54,7 +115,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
         changer =
           unboxed_task(fn ->
             send(parent, {:changer_backend, backend_pid()})
-            result = Auth.confirm_email_change(new_email, step_up_code, subject)
+            result = complete_email_change(proof, subject)
             {result, drain_emails()}
           end)
 
@@ -87,7 +148,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
               send(token_blocker.pid, :release)
               assert {:ok, :ok} = Task.await(token_blocker, 30_000)
 
-              assert {{:ok, %User{email: ^new_email}}, [email_change_confirmation]} =
+              assert {{:ok, %User{email: ^new_email, confirmed_at: %DateTime{}}}, []} =
                        Task.await(changer, 30_000)
 
               assert {{:error, :not_found}, []} = Task.await(stale_magic_issuer, 30_000)
@@ -103,14 +164,19 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
               assert Auth.confirm_user_by_token(old_confirmation) ==
                        {:error, :invalid_or_expired}
 
-              confirmation_emails = [email_change_confirmation, stale_issuer_confirmation]
-
-              assert Enum.all?(confirmation_emails, &(&1.to == [{"", new_email}]))
+              assert stale_issuer_confirmation.to == [{"", new_email}]
 
               refute_received {:email, %{to: [{"", ^old_email}]}}
 
               assert [%UserToken{context: "confirm", sent_to: ^new_email}] =
-                       UserToken.Query.by_user_id(user.id) |> Repo.all()
+                       UserToken.Query.by_user_id(user.id)
+                       |> UserToken.Query.by_context("confirm")
+                       |> Repo.all()
+
+              assert Enum.sort(
+                       Enum.map(UserToken.Query.by_user_id(user.id) |> Repo.all(), & &1.context)
+                     ) ==
+                       ["confirm", "session"]
 
               assert 1 ==
                        Emisar.Audit.Event.Query.all()
@@ -137,7 +203,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
     unboxed_owner(fn user, _account, subject ->
       new_email = "change-first-#{Ecto.UUID.generate()}@example.test"
       factor_id = verify_magic_factor(user)
-      step_up_code = issue_email_change_code(new_email, subject)
+      proof = pending_email_change(new_email, subject)
       parent = self()
 
       factor_blocker =
@@ -163,7 +229,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
         changer =
           unboxed_task(fn ->
             send(parent, {:change_first_backend, backend_pid()})
-            {Auth.confirm_email_change(new_email, step_up_code, subject), drain_emails()}
+            {complete_email_change(proof, subject), drain_emails()}
           end)
 
         try do
@@ -189,21 +255,17 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
             send(factor_blocker.pid, :release)
             assert {:ok, :ok} = Task.await(factor_blocker, 30_000)
 
-            assert {{:ok, %User{email: ^new_email}}, [confirmation]} =
+            assert {{:ok, %User{email: ^new_email, confirmed_at: %DateTime{}}}, []} =
                      Task.await(changer, 30_000)
-
-            assert confirmation.to == [{"", new_email}]
 
             assert Task.await(minter, 30_000) ==
                      {:error, :invalid_or_expired}
 
             refute Repo.get(UserToken, factor_id)
 
-            refute UserToken.Query.by_user_id(user.id)
-                   |> UserToken.Query.by_context("session")
-                   |> Repo.exists?()
-
-            assert [%UserToken{context: "confirm", sent_to: ^new_email}] =
+            # Only the already-authorizing session survives; the waiting mint
+            # never acquires an additional session from the old-address factor.
+            assert [%UserToken{context: "session"}] =
                      UserToken.Query.by_user_id(user.id) |> Repo.all()
           after
             stop_tasks([minter])
@@ -222,7 +284,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
     unboxed_owner(fn user, _account, subject ->
       new_email = "mint-first-#{Ecto.UUID.generate()}@example.test"
       factor_id = verify_magic_factor(user)
-      step_up_code = issue_email_change_code(new_email, subject)
+      proof = pending_email_change(new_email, subject)
       parent = self()
 
       factor_blocker =
@@ -264,7 +326,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
           changer =
             unboxed_task(fn ->
               send(parent, {:mint_first_changer_backend, backend_pid()})
-              {Auth.confirm_email_change(new_email, step_up_code, subject), drain_emails()}
+              {complete_email_change(proof, subject), drain_emails()}
             end)
 
           try do
@@ -279,17 +341,15 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
 
             assert user_id == user.id
 
-            assert {{:ok, %User{email: ^new_email}}, [confirmation]} =
+            assert {{:ok, %User{email: ^new_email, confirmed_at: %DateTime{}}}, []} =
                      Task.await(changer, 30_000)
-
-            assert confirmation.to == [{"", new_email}]
 
             assert {:ok, %User{id: ^user_id}, %UserToken{context: "session"}} =
                      Auth.fetch_user_and_token_by_session_token(raw_session)
 
             refute Repo.get(UserToken, factor_id)
 
-            assert 1 ==
+            assert 2 ==
                      UserToken.Query.by_user_id(user.id)
                      |> UserToken.Query.by_context("session")
                      |> Repo.aggregate(:count, :id)
@@ -521,11 +581,27 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
     token_id
   end
 
-  defp issue_email_change_code(new_email, subject) do
+  defp pending_email_change(new_email, subject) do
     assert Auth.issue_email_change_code(new_email, subject) == {:ok, :sent}
     assert_receive {:email, email}, 5_000
-    Fixtures.Auth.code_from_email(email)
+
+    digest =
+      subject.actor |> Fixtures.Auth.create_session_token!(:magic_link, nil) |> Crypto.hash()
+
+    assert {:ok, proof} =
+             Auth.confirm_email_change(
+               new_email,
+               Fixtures.Auth.code_from_email(email),
+               digest,
+               subject
+             )
+
+    assert_receive {:email, new_mail}, 5_000
+    {proof, Fixtures.Auth.code_from_email(new_mail), digest}
   end
+
+  defp complete_email_change({proof, code, digest}, subject),
+    do: Auth.complete_email_change(proof.token_id, proof.nonce, code, digest, subject)
 
   defp drain_emails(emails \\ []) do
     receive do

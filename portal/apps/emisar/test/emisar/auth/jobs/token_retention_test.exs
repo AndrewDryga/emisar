@@ -49,7 +49,7 @@ defmodule Emisar.Auth.Jobs.TokenRetentionTest do
 
   test "sweeps every context once it is past its window", %{user: user} do
     contexts =
-      ~w(session confirm magic_link magic_link_verified email_change
+      ~w(session confirm magic_link magic_link_verified email_change email_change_new
          mfa_enrollment_pending mfa_enrollment oidc_identity_step_up)
 
     for context <- contexts do

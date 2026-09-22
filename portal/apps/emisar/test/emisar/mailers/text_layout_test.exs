@@ -69,9 +69,9 @@ defmodule Emisar.Mailers.TextLayoutTest do
     UserNotifier.deliver_account_confirmation(user, "tok-confirm", account, request_context())
     confirmation = sent_text_body()
 
-    UserNotifier.deliver_email_change_confirmation(
+    UserNotifier.deliver_new_email_code(
       user,
-      "tok-new-email",
+      "ABC234",
       account,
       request_context()
     )

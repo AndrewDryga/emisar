@@ -16,7 +16,7 @@ defmodule Emisar.Auth.UserToken.Query do
   # Every context `validity_in_days/1` answers for. The retention sweep walks
   # this list, so a new context must be added here as well as below — a context
   # missing from it is treated as unrecognized and swept.
-  @contexts ~w(session confirm magic_link magic_link_verified email_change
+  @contexts ~w(session confirm magic_link magic_link_verified email_change email_change_new
                mfa_enrollment_pending mfa_enrollment oidc_identity_step_up)
 
   def all,
@@ -101,7 +101,8 @@ defmodule Emisar.Auth.UserToken.Query do
   defp validity_in_days("magic_link_verified"),
     do: (@magic_link_validity_in_minutes + @magic_link_verified_validity_in_minutes) / (24 * 60)
 
-  defp validity_in_days("email_change"), do: @email_change_validity_in_minutes / (24 * 60)
+  defp validity_in_days(context) when context in ~w(email_change email_change_new),
+    do: @email_change_validity_in_minutes / (24 * 60)
 
   # A pending row is the same enrollment code before its email was accepted for
   # delivery, so it can never outlive the window it is promoted into.

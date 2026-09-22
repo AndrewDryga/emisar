@@ -9,9 +9,9 @@ defmodule Emisar.Fixtures.Auth do
   alias Emisar.Repo
   alias Emisar.Users.User
 
-  @doc "Extracts the six-digit code from a transactional email's dedicated code line."
+  @doc "Extracts the six-character code from a transactional email's dedicated code line."
   def code_from_email(%{text_body: text_body}) when is_binary(text_body) do
-    [_, code] = Regex.run(~r/^    (\d{6})$/m, text_body)
+    [_, code] = Regex.run(~r/^    ([0-9A-Z]{6})$/m, text_body)
     code
   end
 

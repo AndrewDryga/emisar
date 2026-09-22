@@ -3,7 +3,7 @@ name: portal-token-map
 description: every bearer credential the portal mints, its table, prefix, owning context, and mint/verify/revoke entry points — there is deliberately no single tokens table
 subsystem: portal
 sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar/lib/emisar/runners.ex, portal/apps/emisar/lib/emisar/auth.ex, portal/apps/emisar/lib/emisar/accounts.ex, portal/apps/emisar/lib/emisar/sso.ex, portal/apps/emisar/lib/emisar/crypto.ex]
-updated: 2026-08-26
+updated: 2026-09-22
 ---
 
 The token map — the one place to understand every bearer credential emisar
@@ -25,7 +25,8 @@ them inline.
 | OAuth access / refresh token & auth code | `oauth_tokens`, `oauth_authorization_codes` | `emo-` / `emor-` / `emoc-` | `Emisar.OAuth` | `issue_code/3` → `exchange_code/1`, `refresh/1` | `resolve_access_token/2` | expiry sweeps (`delete_expired_authorization_codes/1`, `delete_unused_clients/1`) |
 | Runner enrollment key | `runner_enrollment_keys` | `emkey-enroll-` | `Emisar.Runners` | `create_enrollment_key/2` | `register_via_enrollment_key/3` claims a use inside its transaction (`peek_enrollment_key_by_secret/1` is a read-only inspector, not the gate) | `revoke_enrollment_key/2` |
 | Runner session token | `runner_tokens` | `rnrtok-` | `Emisar.Runners` | `mint_runner_token/3` | `verify_runner_token/1` | disable or delete the runner; a 90-day `expires_at` refused at verify, rotated by `refresh_runner_token/1` |
-| User session, magic-link, email-confirm | `user_tokens` | binary (unprefixed) | `Emisar.Auth` | `complete_magic_link_sign_in/4`, `complete_sso_account_sign_in/4`, `request_magic_link/3`, `deliver_confirmation_instructions/1` | `fetch_user_and_token_by_session_token/1`, `verify_magic_link/4` | `complete_session_sign_out/2`, `delete_session_token/1`, `revoke_session/2`, `delete_all_session_tokens/1` |
+| User session, magic-link, email-confirm | `auth_user_tokens` | binary (unprefixed) | `Emisar.Auth` | `complete_magic_link_sign_in/4`, `complete_sso_account_sign_in/4`, `request_magic_link/3`, `deliver_confirmation_instructions/1` | `fetch_user_and_token_by_session_token/1`, `verify_magic_link/4` | `complete_session_sign_out/2`, `delete_session_token/1`, `revoke_session/2`, `delete_all_session_tokens/1` |
+| New sign-in address proof (`email_change_new`) | `auth_user_tokens` | split browser nonce and emailed code | `Emisar.Auth` | `confirm_email_change/4` after current-inbox or TOTP proof | `complete_email_change/5` in the same live personal session | successful completion, `cancel_email_change/3`, replacement, or 15-minute expiry |
 | Account invitation | `account_memberships.invitation_token_digest` | binary (unprefixed) | `Emisar.Accounts` | `invite_user_to_account/2`, `resend_account_invitation/2` | `fetch_invitation_by_token/2`; final acceptance rechecks the exact digest and invited address | acceptance, resend, membership removal, or seven-day expiry |
 
 ## Credentials that are NOT token tables
@@ -39,7 +40,15 @@ Account invitation digests live on their pending membership row because the
 membership owns the acceptance, rotation, address binding, and expiry as one
 lifecycle.
 
+A sign-in email change leaves the current address unchanged until the requesting
+browser proves the new mailbox. Its pending proof binds the exact personal
+session, current address generation and MFA enrollment. Refreshing the page loses
+the browser nonce and requires restarting; the old address remains usable.
+
 ## Changelog
+
+- 2026-09-22: documented session-bound new-address proof and corrected the Auth
+  token table name against its current schema.
 
 - 2026-08-26: moved verbatim from the compiled documentation-only module
   `Emisar.Tokens` (deleted — a zero-behavior BEAM module is not the home for

@@ -464,7 +464,20 @@ defmodule Emisar.AuthAuditTest do
       assert Auth.issue_email_change_code(new, subject) == {:ok, :sent}
       assert_received {:email, email}
       code = Fixtures.Auth.code_from_email(email)
-      assert {:ok, _updated} = Auth.confirm_email_change(new, code, subject)
+      raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      digest = Emisar.Crypto.hash(raw)
+      assert {:ok, proof} = Auth.confirm_email_change(new, code, digest, subject)
+      assert_received {:email, new_mail}
+      assert events_of(account, "user.email_changed") == []
+
+      assert {:ok, _updated} =
+               Auth.complete_email_change(
+                 proof.token_id,
+                 proof.nonce,
+                 Fixtures.Auth.code_from_email(new_mail),
+                 digest,
+                 subject
+               )
 
       assert [event] = events_of(account, "user.email_changed")
       assert event.payload["from"] == user.email

@@ -419,19 +419,20 @@ defmodule Emisar.MailTest do
       }
     end
 
-    test "email-change confirmation explains that the address has already changed", %{
+    test "new-address proof requires a code in the initiating browser, not an automatic link", %{
       user: user,
       account: account,
       context: context
     } do
-      UserNotifier.deliver_email_change_confirmation(user, "confirmation-token", account, context)
+      UserNotifier.deliver_new_email_code(user, "ABC234", account, context)
 
       assert_email_sent(fn email ->
-        assert email.text_body =~ "Your sign-in email is now #{user.email}."
-        assert email.text_body =~ "works once and expires in 7 days"
-        assert email.text_body =~ "contact support@emisar.dev"
-        refute email.text_body =~ "Keep using your current email"
-        refute email.text_body =~ "Your sign-in email will stay the same"
+        assert email.text_body =~ "#{user.email}"
+        assert email.text_body =~ "Your sign-in email has not changed yet."
+        assert email.text_body =~ "works once and expires in 15 minutes"
+        assert email.text_body =~ "browser where you requested"
+        assert email.text_body =~ "ABC234"
+        refute email.text_body =~ "/confirm/"
         true
       end)
     end

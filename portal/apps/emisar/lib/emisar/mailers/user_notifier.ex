@@ -62,33 +62,34 @@ defmodule Emisar.Mailers.UserNotifier do
     )
   end
 
-  def deliver_email_change_confirmation(
+  def deliver_new_email_code(
         %Users.User{} = user,
-        token,
+        code,
         account \\ nil,
         context \\ %RequestContext{}
       ) do
-    url = PublicUrl.url("/confirm/#{token}")
     email = one_line(user.email)
 
     deliver_transactional(
       user,
       "Confirm your new sign-in email",
-      "Confirm #{email} before the link expires in 7 days.",
+      "Use this code within 15 minutes to confirm your new sign-in email.",
       [
         account_instruction(
-          "Confirm #{email} as your new emisar sign-in email.",
-          "Confirm #{email} as your new emisar sign-in email for ",
+          "Finish changing your emisar sign-in email.",
+          "Finish changing your emisar sign-in email for ",
           account,
           "."
         ),
+        {:emphasis, "New sign-in email: ", email, "."},
+        {:code, code},
         {:paragraph,
-         "Your sign-in email is now #{email}. Use the link to confirm this address. It works once and expires in 7 days."},
-        {:paragraph, "If you didn't request this change, contact support@emisar.dev."},
+         "Enter this 6-character code in the browser where you requested the change. It works once and expires in 15 minutes. Your sign-in email has not changed yet."},
+        {:paragraph,
+         "If you didn't request this change, ignore this email. Do not share the code."},
         {:section, "Request details"},
         {:pre, request_details(context)}
-      ],
-      {"Confirm new email", url}
+      ]
     )
   end
 

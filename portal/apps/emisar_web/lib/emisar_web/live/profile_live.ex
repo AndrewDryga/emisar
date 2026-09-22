@@ -205,6 +205,8 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("edit_email", _params, socket) do
+    cancel_pending_email_proof(socket)
+
     {:noreply,
      socket
      |> reset_email_step()
@@ -221,9 +223,9 @@ defmodule EmisarWeb.ProfileLive do
   # Email is identity-defining — it controls every future magic link — so a
   # self-service change is credential-grade: the submit only STARTS a step-up
   # (an MFA-on user re-enters a TOTP code; everyone else confirms a one-time
-  # code emailed to their CURRENT address) and the change commits only after
-  # `confirm_email_change` verifies it. A stolen session alone — no second
-  # factor, no inbox — can't pass it.
+  # code emailed to their CURRENT address). Only then can the same browser prove
+  # the NEW mailbox. Neither the old factor nor the new-mailbox code alone can
+  # publish an unproved address or upgrade another person's retained session.
   def handle_event("save_email", %{"email" => params}, socket) do
     user = socket.assigns.current_user
     new_email = String.trim(params["email"] || "")
@@ -238,6 +240,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply, assign(socket, :email_step_error, "That's already your email.")}
 
       true ->
+        socket = assign(socket, :email_form, to_form(changeset, as: "email"))
         {:noreply, start_email_step_up(socket, user, new_email)}
     end
   end
@@ -248,7 +251,7 @@ defmodule EmisarWeb.ProfileLive do
     # Sequencing guard is the web's own state; the step-up factor decision, the
     # verify, and the commit are all `Auth.confirm_email_change`'s call — the
     # domain re-derives the factor from the fresh row and gates the write.
-    if step in [:totp, :code] do
+    if step in [:totp, :code, :new_address] do
       handle_email_change_confirmation(socket, new_email, String.trim(code || ""), subject, step)
     else
       # Out-of-sequence (fired over the socket while :idle, before any save_email
@@ -295,6 +298,8 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("cancel_email_change", _params, socket) do
+    cancel_pending_email_proof(socket)
+
     {:noreply,
      socket
      |> assign_email_form(socket.assigns.current_user)
@@ -764,27 +769,64 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   # Email-change state: :idle (current address), :edit (new address), :totp (an MFA-on user
-  # re-enters an authenticator code), or :code (a one-time code emailed to the
-  # current address). `pending_new_email` is the change awaiting confirmation.
+  # re-enters an authenticator code), :code (the current inbox), then :new_address
+  # (the new inbox). The split nonce stays in this LiveView, never in the email.
   defp reset_email_step(socket) do
     socket
     |> assign(:email_step, :idle)
     |> assign(:pending_new_email, nil)
+    |> assign(:new_email_proof, nil)
     |> assign(:email_step_error, nil)
     |> assign(:email_step_form, to_form(%{"code" => ""}, as: "email_step"))
   end
 
   defp handle_email_change_confirmation(socket, new_email, code, subject, step) do
-    socket = push_event(socket, "code:reset", %{id: "email-step-code"})
+    socket = push_event(socket, "code:reset", %{id: email_code_input_id(step)})
 
-    case Auth.confirm_email_change(new_email, code, subject) do
-      {:ok, updated} ->
+    result =
+      case step do
+        :new_address ->
+          proof = socket.assigns.new_email_proof
+
+          Auth.complete_email_change(
+            proof.token_id,
+            proof.nonce,
+            String.upcase(code),
+            socket.assigns.current_auth.token,
+            subject
+          )
+
+        _ ->
+          Auth.confirm_email_change(new_email, code, socket.assigns.current_auth.token, subject)
+      end
+
+    case result do
+      {:ok, %Users.User{} = updated} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Email changed. Check #{updated.email} for a confirmation link.")
+         |> put_flash(:info, "Email changed to #{updated.email}.")
          |> assign(:current_user, updated)
          |> assign_email_form(updated)
          |> reset_email_step()}
+
+      {:ok, %{token_id: _, nonce: _, email: email} = proof} ->
+        {:noreply,
+         socket
+         |> assign(:email_step, :new_address)
+         |> assign(:new_email_proof, proof)
+         |> assign(:pending_new_email, email)
+         |> assign(:email_step_error, nil)
+         |> put_flash(:info, "We sent a code to #{email}. Your email has not changed yet.")}
+
+      {:error, :delivery_suppressed} ->
+        {:noreply,
+         socket
+         |> reset_email_step()
+         |> assign(:email_step, :edit)
+         |> assign(
+           :email_step_error,
+           "We can't deliver to that new address. Check it or contact support@emisar.dev. Your email has not changed."
+         )}
 
       # Capped before the code was even checked — the step-up stays open so the
       # operator can retry once the window rolls over.
@@ -830,12 +872,15 @@ defmodule EmisarWeb.ProfileLive do
   # re-reads it) — not `@mfa_facts`, which is a stale mount snapshot that could
   # downgrade the challenge — and issues the emailed code on the `:code` path.
   defp start_email_step_up(socket, user, new_email) do
+    cancel_pending_email_proof(socket)
+
     # A fresh challenge invalidates any rejection from a prior one — a stale
     # inline error under a brand-new code input would accuse the operator of a
     # mistake they haven't made yet.
     socket =
       socket
       |> assign(:pending_new_email, new_email)
+      |> assign(:new_email_proof, nil)
       |> assign(:email_step_error, nil)
 
     case Auth.begin_email_change(new_email, socket.assigns.current_subject) do
@@ -876,7 +921,26 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
+  defp cancel_pending_email_proof(socket) do
+    if proof = socket.assigns.new_email_proof do
+      Auth.cancel_email_change(
+        proof.token_id,
+        socket.assigns.current_auth.token,
+        socket.assigns.current_subject
+      )
+    end
+  end
+
+  # CodeInput owns an ignored DOM subtree and captures its numeric mode at
+  # mount. A different id remounts it when the new-address code admits letters.
+  defp email_code_input_id(:new_address), do: "new-email-code"
+  defp email_code_input_id(_step), do: "email-step-code"
+
   defp step_up_error(:totp), do: MfaErrors.message(:invalid_otp)
+
+  defp step_up_error(:new_address) do
+    "That code is incorrect or expired. Try again, or cancel and start the email change again for a fresh code."
+  end
 
   defp step_up_error(_), do: MfaErrors.message(:email_code_invalid)
 
@@ -1105,21 +1169,26 @@ defmodule EmisarWeb.ProfileLive do
                     >
                       <p class="text-sm text-zinc-300">
                         To change your email to <span class="break-all font-medium text-zinc-100">{@pending_new_email}</span>,
-                        <%= if step == :code do %>
-                          enter the 6-digit code sent to <span class="break-all">{@current_user.email}</span>.
-                        <% else %>
-                          enter the 6-digit code from your authenticator app.
+                        <%= case step do %>
+                          <% :code -> %>
+                            enter the 6-digit code sent to <span class="break-all">{@current_user.email}</span>.
+                          <% :totp -> %>
+                            enter the 6-digit code from your authenticator app.
+                          <% :new_address -> %>
+                            enter the 6-character code sent to that new address. Your current email stays unchanged until you finish.
                         <% end %>
                       </p>
                       <.code_input
-                        id="email-step-code"
+                        id={email_code_input_id(step)}
                         name="email_step[code]"
-                        numeric
+                        numeric={step != :new_address}
                         label={if step == :totp, do: "Authenticator code", else: "Confirmation code"}
                         error={@email_step_error}
                       />
                       <:actions>
-                        <.button phx-disable-with="Changing...">Change email</.button>
+                        <.button phx-disable-with="Checking...">
+                          {if step == :new_address, do: "Change email", else: "Continue"}
+                        </.button>
                         <.button
                           :if={step == :code}
                           variant={:secondary}

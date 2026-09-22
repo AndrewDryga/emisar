@@ -98,6 +98,26 @@ defmodule Emisar.Auth.UserToken.Changeset do
     )
   end
 
+  @doc "Split-code proof of a new address, bound to the current-factor proof and live session."
+  def new_email(%Users.User{} = user, %UserToken{} = session, digest, new_email, attempts) do
+    change(%UserToken{},
+      token: digest,
+      context: "email_change_new",
+      sent_to: new_email,
+      user_id: user.id,
+      remaining_attempts: attempts,
+      metadata: %{
+        "session_id" => session.id,
+        "email" => user.email,
+        "email_changed_at" => datetime_or_nil(user.email_changed_at),
+        "mfa_enabled_at" => datetime_or_nil(user.mfa_enabled_at)
+      }
+    )
+  end
+
+  defp datetime_or_nil(nil), do: nil
+  defp datetime_or_nil(%DateTime{} = value), do: DateTime.to_iso8601(value)
+
   @doc "Current-inbox proof for one explicit OIDC identity action."
   def oidc_identity_step_up(%Users.User{} = user, digest, provider_id, purpose, attempts)
       when is_binary(digest) and is_binary(provider_id) and

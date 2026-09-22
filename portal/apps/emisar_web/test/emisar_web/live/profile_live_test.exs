@@ -192,6 +192,9 @@ defmodule EmisarWeb.ProfileLiveTest do
         "email_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
       })
 
+      assert Emisar.Repo.reload!(user).email == user.email
+      finish_new_email(lv)
+
       assert has_element?(lv, "#email_form", "Couldn't change to that email")
       assert has_element?(lv, "#email_form input[value='#{other.email}']")
       refute has_element?(lv, "#email_step_form")
@@ -220,7 +223,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         |> render_submit()
 
       assert html =~ "emailed a confirmation code"
-      assert has_element?(lv, "#email_step_form button", "Change email")
+      assert has_element?(lv, "#email_step_form button", "Continue")
       assert html =~ "enter the 6-digit code sent to"
       assert html =~ user.email
       assert Emisar.Repo.reload!(user).email == user.email
@@ -319,6 +322,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       code = Fixtures.Auth.code_from_email(resent_email)
 
       render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => code}})
+      assert Emisar.Repo.reload!(user).email == user.email
+      finish_new_email(lv)
       assert Emisar.Repo.reload!(user).email == "fresh@example.com"
     end
 
@@ -354,6 +359,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       # The refused sixth issuance did not replace the fifth token, and the
       # pending step remains open instead of stranding the operator.
       render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => latest_code}})
+      assert Emisar.Repo.reload!(user).email == user.email
+      finish_new_email(lv)
       assert Emisar.Repo.reload!(user).email == "fresh@example.com"
     end
 
@@ -446,7 +453,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute html =~ "We sent a new code"
     end
 
-    test "an MFA-on user confirms with a TOTP code, then the email changes", %{
+    test "an MFA-on user proves TOTP and then the new mailbox before the email changes", %{
       conn: conn,
       user: user,
       account: account
@@ -475,12 +482,75 @@ defmodule EmisarWeb.ProfileLiveTest do
           "email_step" => %{"code" => NimbleTOTP.verification_code(secret)}
         })
 
-      assert html =~ "Email changed. Check mfa-fresh@example.com for a confirmation link."
-      assert has_element?(lv, "#email", "Awaiting confirmation")
+      assert html =~ "Your email has not changed yet."
+      assert Emisar.Repo.reload!(user).email == user.email
+      html = finish_new_email(lv)
+      assert html =~ "Email changed to mfa-fresh@example.com."
+      refute has_element?(lv, "#email", "Awaiting confirmation")
       refute has_element?(lv, "#email_form")
       updated = Emisar.Repo.reload!(user)
       assert updated.email == "mfa-fresh@example.com"
-      assert is_nil(updated.confirmed_at)
+      assert updated.confirmed_at
+    end
+
+    test "a wrong new-address code has usable restart guidance and cancellation discards it", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> edit_email()
+      |> form("#email_form", %{"email" => %{"email" => "new@example.test"}})
+      |> render_submit()
+
+      assert_received {:email, old_mail}
+
+      render_hook(lv, "confirm_email_change", %{
+        "email_step" => %{"code" => Fixtures.Auth.code_from_email(old_mail)}
+      })
+
+      assert_received {:email, new_mail}
+      code = Fixtures.Auth.code_from_email(new_mail)
+      wrong = if code == "AAAAAA", do: "BBBBBB", else: "AAAAAA"
+
+      html = render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => wrong}})
+      assert html =~ "cancel and start the email change again"
+      assert_push_event(lv, "code:reset", %{id: "new-email-code"})
+      refute has_element?(lv, "#email_step_form button", "Resend code")
+      pending = Emisar.Repo.get_by!(Auth.UserToken, user_id: user.id, context: "email_change_new")
+      render_hook(lv, "cancel_email_change", %{})
+      refute Emisar.Repo.get(Auth.UserToken, pending.id)
+      assert Emisar.Repo.reload!(user).email == user.email
+      refute has_element?(lv, "#email_step_form")
+    end
+
+    test "suppressed new-address delivery reports no change and returns to the draft", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      {:ok, _} = Emisar.Mail.suppress("bounced@example.test", :hard_bounce, "test bounce")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      lv
+      |> edit_email()
+      |> form("#email_form", %{"email" => %{"email" => "bounced@example.test"}})
+      |> render_submit()
+
+      assert_received {:email, old_mail}
+
+      html =
+        render_hook(lv, "confirm_email_change", %{
+          "email_step" => %{"code" => Fixtures.Auth.code_from_email(old_mail)}
+        })
+
+      assert html =~ "Your email has not changed."
+      assert has_element?(lv, "#email_form input[value='bounced@example.test']")
+      refute has_element?(lv, "#email_step_form")
+      assert Emisar.Repo.reload!(user).email == user.email
+      refute_received {:email, _}
     end
 
     test "an exhausted MFA window refuses the confirmation inline, email unchanged", %{
@@ -1874,6 +1944,18 @@ defmodule EmisarWeb.ProfileLiveTest do
     # The setup panel renders the Base32 secret for manual entry.
     [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
     Base.decode32!(encoded, padding: false)
+  end
+
+  defp finish_new_email(lv) do
+    assert_received {:email, mail}
+    assert has_element?(lv, "#email_step_form", "6-character code")
+    assert has_element?(lv, "#new-email-code[data-numeric=false] input[inputmode=text]")
+    refute has_element?(lv, "#email-step-code")
+    refute has_element?(lv, "#email_step_form button", "Resend code")
+
+    render_hook(lv, "confirm_email_change", %{
+      "email_step" => %{"code" => Fixtures.Auth.code_from_email(mail)}
+    })
   end
 
   defp edit_email(lv) do

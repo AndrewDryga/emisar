@@ -15,10 +15,10 @@ defmodule Emisar.Users.User.Changeset do
   end
 
   @doc """
-  Internal — a self-service sign-in-email change. The new address arrives
-  UNCONFIRMED: the step-up authorizing the change proves control of the CURRENT
-  inbox (the emailed code) or of the authenticator (TOTP), never of the address
-  being moved to.
+  Internal — advances the address generation and clears the previous address's
+  confirmation. Auth proves both factors before composing this change with
+  confirmation of the NEW address in the same transaction; this changeset alone
+  never transfers the old address's confirmation to a different mailbox.
   """
   def email(user, attrs) do
     user

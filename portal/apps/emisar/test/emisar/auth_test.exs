@@ -1570,7 +1570,7 @@ defmodule Emisar.AuthTest do
       code = Fixtures.Auth.code_from_email(email)
 
       assert {:ok, %User{email: "new@example.com"}} =
-               Auth.confirm_email_change("new@example.com", code, subject)
+               change_email_with_proofs("new@example.com", code, subject)
     end
 
     test "emails the fresh DB address when the subject actor snapshot is stale", %{
@@ -1599,11 +1599,11 @@ defmodule Emisar.AuthTest do
       second_code = Fixtures.Auth.code_from_email(second_email)
 
       # The first code is gone; only the latest issuance completes the change.
-      assert Auth.confirm_email_change("first@example.com", first_code, subject) ==
+      assert change_email_with_proofs("first@example.com", first_code, subject) ==
                {:error, :invalid}
 
       assert {:ok, %User{email: "second@example.com"}} =
-               Auth.confirm_email_change("second@example.com", second_code, subject)
+               change_email_with_proofs("second@example.com", second_code, subject)
     end
 
     test "direct starts and begin share one issuance budget without replacing on rejection", %{
@@ -1629,7 +1629,7 @@ defmodule Emisar.AuthTest do
 
       # A refused resend never deletes the live token it failed to replace.
       assert {:ok, %User{email: "latest@example.com"}} =
-               Auth.confirm_email_change("latest@example.com", latest_code, subject)
+               change_email_with_proofs("latest@example.com", latest_code, subject)
     end
 
     test "a suppressed current address is reported, not passed off as sent", %{
@@ -1685,7 +1685,7 @@ defmodule Emisar.AuthTest do
       code = Fixtures.Auth.code_from_email(email)
 
       assert {:ok, %User{email: "new@example.com"}} =
-               Auth.confirm_email_change("new@example.com", code, subject)
+               change_email_with_proofs("new@example.com", code, subject)
     end
 
     test "an MFA user gets the TOTP factor — read from the fresh row, not the stale subject", %{
@@ -1704,7 +1704,7 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "confirm_email_change/3" do
+  describe "confirm_email_change/4" do
     setup do
       {user, _account, subject} = Fixtures.Subjects.owner_subject()
       %{user: user, subject: subject}
@@ -1718,7 +1718,7 @@ defmodule Emisar.AuthTest do
       code = Fixtures.Auth.code_from_email(email)
 
       assert {:ok, %User{email: "new@example.com"}} =
-               Auth.confirm_email_change("new@example.com", code, subject)
+               change_email_with_proofs("new@example.com", code, subject)
     end
 
     test "the code path applies the TOKEN-bound email, not the argument passed to confirm", %{
@@ -1731,7 +1731,7 @@ defmodule Emisar.AuthTest do
       # The emailed code is bound to "bound@example.com"; even though a different
       # target is passed here, the binding wins — a confirm can't swap the target.
       assert {:ok, %User{email: "bound@example.com"}} =
-               Auth.confirm_email_change("other@example.com", code, subject)
+               change_email_with_proofs("other@example.com", code, subject)
     end
 
     test "a wrong code spends an attempt and the right code still completes", %{
@@ -1743,7 +1743,7 @@ defmodule Emisar.AuthTest do
 
       wrong_code = if code == "000000", do: "000001", else: "000000"
 
-      assert Auth.confirm_email_change("new@example.com", wrong_code, subject) ==
+      assert change_email_with_proofs("new@example.com", wrong_code, subject) ==
                {:error, :invalid}
 
       # The miss is audited (a hijacked session grinding the code leaves a trail).
@@ -1751,9 +1751,9 @@ defmodule Emisar.AuthTest do
                events_of_type("user.email_change_code_failed")
 
       assert {:ok, %User{email: "new@example.com"}} =
-               Auth.confirm_email_change("new@example.com", code, subject)
+               change_email_with_proofs("new@example.com", code, subject)
 
-      assert Auth.confirm_email_change("new@example.com", code, subject) ==
+      assert change_email_with_proofs("new@example.com", code, subject) ==
                {:error, :invalid}
     end
 
@@ -1766,7 +1766,7 @@ defmodule Emisar.AuthTest do
       wrong_first = if first_code == "000000", do: "000001", else: "000000"
 
       for _ <- 1..3 do
-        assert Auth.confirm_email_change("first@example.com", wrong_first, subject) ==
+        assert change_email_with_proofs("first@example.com", wrong_first, subject) ==
                  {:error, :invalid}
       end
 
@@ -1776,11 +1776,11 @@ defmodule Emisar.AuthTest do
       wrong_latest = if latest_code == "000000", do: "000001", else: "000000"
 
       for _ <- 1..2 do
-        assert Auth.confirm_email_change("latest@example.com", wrong_latest, subject) ==
+        assert change_email_with_proofs("latest@example.com", wrong_latest, subject) ==
                  {:error, :invalid}
       end
 
-      assert Auth.confirm_email_change("latest@example.com", latest_code, subject) ==
+      assert change_email_with_proofs("latest@example.com", latest_code, subject) ==
                {:error, :rate_limited}
 
       window =
@@ -1799,7 +1799,7 @@ defmodule Emisar.AuthTest do
       |> Repo.update!()
 
       assert {:ok, %User{email: "latest@example.com"}} =
-               Auth.confirm_email_change("latest@example.com", latest_code, subject)
+               change_email_with_proofs("latest@example.com", latest_code, subject)
     end
 
     test "an expired or missing inbox code cannot change the email", %{
@@ -1811,16 +1811,16 @@ defmodule Emisar.AuthTest do
       code = Fixtures.Auth.code_from_email(email)
       age_tokens(user.id, 16)
 
-      assert Auth.confirm_email_change("new@example.com", code, subject) ==
+      assert change_email_with_proofs("new@example.com", code, subject) ==
                {:error, :invalid}
 
-      assert Auth.confirm_email_change("new@example.com", "123456", subject) ==
+      assert change_email_with_proofs("new@example.com", "123456", subject) ==
                {:error, :invalid}
 
       assert Repo.reload!(user).email == user.email
     end
 
-    test "the new address lands UNCONFIRMED and gets its own verification email", %{
+    test "the current factor leaves the address unchanged until the new mailbox is proved", %{
       user: user,
       subject: subject
     } do
@@ -1830,18 +1830,24 @@ defmodule Emisar.AuthTest do
       assert_received {:email, step_up}
       code = Fixtures.Auth.code_from_email(step_up)
 
-      assert {:ok, %User{email: "moved@example.com"} = updated} =
-               Auth.confirm_email_change("moved@example.com", code, subject)
+      raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      digest = Crypto.hash(raw)
+      assert {:ok, proof} = Auth.confirm_email_change("moved@example.com", code, digest, subject)
+      assert Repo.reload!(user).email == user.email
+      assert Repo.reload!(user).confirmed_at == user.confirmed_at
 
-      # The step-up proved control of the OLD inbox, so the new address is not
-      # verified: a typo'd or attacker-supplied address must not inherit the
-      # confirmation, which would suppress the verify banner and make it eligible
-      # as the account's billing contact.
-      refute updated.confirmed_at
-      refute Repo.reload!(user).confirmed_at
+      assert_received {:email, new_mail}
+      assert new_mail.to == [{"", "moved@example.com"}]
+      refute new_mail.text_body =~ "/confirm/"
 
-      assert_received {:email, confirmation}
-      assert confirmation.to == [{"", "moved@example.com"}]
+      assert {:ok, %User{email: "moved@example.com", confirmed_at: %DateTime{}}} =
+               Auth.complete_email_change(
+                 proof.token_id,
+                 proof.nonce,
+                 Fixtures.Auth.code_from_email(new_mail),
+                 digest,
+                 subject
+               )
     end
 
     test "the address update replaces every old address credential atomically", %{
@@ -1865,7 +1871,7 @@ defmodule Emisar.AuthTest do
       code = Fixtures.Auth.code_from_email(step_up)
 
       assert {:ok, %User{email: "new@example.com"}} =
-               Auth.confirm_email_change("new@example.com", code, subject)
+               change_email_with_proofs("new@example.com", code, subject)
 
       assert Auth.verify_magic_link(magic_id, magic_secret, magic_nonce) ==
                {:error, :invalid_or_expired}
@@ -1882,14 +1888,14 @@ defmodule Emisar.AuthTest do
       refute Repo.one(UserToken.Query.by_context("mfa_enrollment"))
       refute Repo.one(UserToken.Query.by_context("mfa_enrollment_pending"))
 
-      assert [%UserToken{context: "confirm", sent_to: "new@example.com"}] =
-               UserToken.Query.by_user_id(user.id) |> Repo.all()
+      assert [%UserToken{context: "session"}] = UserToken.Query.by_user_id(user.id) |> Repo.all()
     end
 
-    test "a rejected address update rolls back the factor and every credential change", %{
-      user: user,
-      subject: subject
-    } do
+    test "a rejected final update preserves old credentials but does not undo the earlier TOTP proof",
+         %{
+           user: user,
+           subject: subject
+         } do
       existing = Fixtures.Users.create_user()
       secret = Auth.generate_mfa_secret()
       {enrolled, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
@@ -1899,11 +1905,11 @@ defmodule Emisar.AuthTest do
       otp = NimbleTOTP.verification_code(secret)
 
       assert {:error, %Ecto.Changeset{}} =
-               Auth.confirm_email_change(existing.email, otp, subject)
+               change_email_with_proofs(existing.email, otp, subject)
 
       reloaded = Repo.reload!(user)
       assert reloaded.email == user.email
-      assert reloaded.mfa_last_used_at == nil
+      assert reloaded.mfa_last_used_at
       refute_received {:email, _}
 
       assert {:ok, _user} = Auth.verify_magic_link(magic_id, magic_secret, magic_nonce)
@@ -1920,7 +1926,7 @@ defmodule Emisar.AuthTest do
       {:ok, :code} = Auth.begin_email_change("new@example.com", subject)
       assert_received {:email, _email}
 
-      assert Auth.confirm_email_change("new@example.com", "000000", subject) == {:error, :invalid}
+      assert change_email_with_proofs("new@example.com", "000000", subject) == {:error, :invalid}
       assert Repo.reload!(user).email == user.email
     end
 
@@ -1935,7 +1941,7 @@ defmodule Emisar.AuthTest do
       otp = NimbleTOTP.verification_code(secret)
 
       assert {:ok, %User{email: "new@example.com"}} =
-               Auth.confirm_email_change("new@example.com", otp, subject)
+               change_email_with_proofs("new@example.com", otp, subject)
     end
 
     test "an MFA user with a wrong TOTP is rejected and the email is unchanged", %{
@@ -1947,7 +1953,7 @@ defmodule Emisar.AuthTest do
 
       {:ok, :totp} = Auth.begin_email_change("new@example.com", subject)
 
-      assert Auth.confirm_email_change("new@example.com", "000000", subject) == {:error, :invalid}
+      assert change_email_with_proofs("new@example.com", "000000", subject) == {:error, :invalid}
       assert Repo.reload!(user).email == user.email
     end
 
@@ -1963,7 +1969,7 @@ defmodule Emisar.AuthTest do
       # The disable misses spent the window, so the genuine TOTP is refused
       # before verification: the email stands and the code was never consumed.
       otp = NimbleTOTP.verification_code(secret)
-      assert Auth.confirm_email_change("new@example.com", otp, subject) == {:error, :rate_limited}
+      assert change_email_with_proofs("new@example.com", otp, subject) == {:error, :rate_limited}
 
       reloaded = Repo.reload!(user)
       assert reloaded.email == user.email
@@ -2322,7 +2328,7 @@ defmodule Emisar.AuthTest do
       assert_received {:email, _email_change_code}
 
       for _ <- 1..2 do
-        assert Auth.confirm_email_change("new@example.com", "000000", subject) ==
+        assert change_email_with_proofs("new@example.com", "000000", subject) ==
                  {:error, :invalid}
       end
 
@@ -3360,6 +3366,26 @@ defmodule Emisar.AuthTest do
 
       assert Auth.mfa_proof_user_id(incomplete_enrollment) == nil
       assert Auth.mfa_proof_user_id(incomplete_update) == nil
+    end
+  end
+
+  # The older factor/invalidation regressions exercise the complete two-proof
+  # workflow; stage-specific denial and session-binding tests live in
+  # AuthEmailChangeTest. Always use the same real personal session for both stages.
+  defp change_email_with_proofs(email, code, subject) do
+    digest =
+      subject.actor |> Fixtures.Auth.create_session_token!(:magic_link, nil) |> Crypto.hash()
+
+    with {:ok, proof} <- Auth.confirm_email_change(email, code, digest, subject) do
+      assert_received {:email, new_mail}
+
+      Auth.complete_email_change(
+        proof.token_id,
+        proof.nonce,
+        Fixtures.Auth.code_from_email(new_mail),
+        digest,
+        subject
+      )
     end
   end
 
