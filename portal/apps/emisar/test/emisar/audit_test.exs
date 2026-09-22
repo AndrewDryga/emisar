@@ -1938,6 +1938,52 @@ defmodule Emisar.AuditTest do
       opts = [filter: [to: ~U[2000-01-01 00:00:00Z]]]
       assert Audit.stream_csv_export(subject, opts) == {:error, :nothing_to_export}
     end
+
+    test "a CSV containing only SIEM receipts still records its own export", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, receipt} =
+        Audit.log(account.id, "audit.exported",
+          actor_kind: "system",
+          payload: %{"transport" => "siem", "count" => 1}
+        )
+
+      assert {:ok, csv} =
+               Audit.stream_csv_export(subject, filter: [event_type: ["audit.exported"]])
+
+      contents = csv |> Enum.to_list() |> IO.iodata_to_binary()
+      assert contents =~ receipt.id
+      markers = Repo.all(Audit.Event) |> Enum.filter(&(&1.event_type == "audit.exported"))
+      assert length(markers) == 2
+      assert [csv_receipt] = Enum.filter(markers, &(&1.payload["transport"] == "csv"))
+      assert csv_receipt.payload["count"] == 1
+    end
+  end
+
+  describe "record_siem_export/3" do
+    test "only exact SIEM export receipts suppress another receipt" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+
+      for {event_type, payload} <- [
+            {"audit.exported", %{"transport" => "csv"}},
+            {"audit.exported", %{}},
+            {"audit.exported", %{"transport" => "unknown"}},
+            {"policy.updated", %{"transport" => "siem"}}
+          ] do
+        {:ok, event} = Audit.log(account.id, event_type, actor_kind: "system", payload: payload)
+        assert {:ok, receipt} = Audit.record_siem_export([event], [limit: 100], subject)
+        assert receipt.event_type == "audit.exported"
+
+        assert receipt.payload == %{
+                 count: 1,
+                 limit: 100,
+                 event_types: [],
+                 from: "beginning",
+                 transport: "siem"
+               }
+      end
+    end
   end
 
   describe "record_export/3" do

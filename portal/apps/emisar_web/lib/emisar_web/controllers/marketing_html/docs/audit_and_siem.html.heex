@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="audit-and-siem"
-      updated="September 8, 2026"
+      updated="September 22, 2026"
       toc={[
         {"recorded", "What gets recorded"},
         {"reading", "Reading it in the console"},
@@ -254,11 +254,13 @@ done</.docs_code>
       </p>
       <.docs_callout kind={:warn} title="Your collector shows up in its own feed.">
         <p>
-          Every non-empty export is itself recorded as
+          Exports are recorded as
           <.docs_inline_code>audit.exported</.docs_inline_code>
           after the page is read, so an unfiltered collector sees its own earlier exports on a
-          later poll. That is deliberate — exports are part of the trail — and it has two
-          consequences.
+          later poll. A page containing only SIEM export receipts does not create another
+          receipt, so collectors can catch up on an idle account. Those receipts are still
+          delivered; mixed pages record the full row count, and CSV downloads keep their
+          own receipts.
         </p>
         <p class="mt-3">
           Never treat
@@ -268,11 +270,10 @@ done</.docs_code>
           unexpected address or time is the real signal.
         </p>
         <p class="mt-3">
-          Never poll until a page comes back empty, because each read can create the event the
-          next read finds. Follow
+          Follow
           <.docs_inline_code>Link</.docs_inline_code>
-          while pages are full, then wait out your interval — an empty page is a valid
-          caught-up answer, and the endpoint does not promise one after every drain.
+          while pages are full, then wait out your interval. An empty page is a valid
+          caught-up answer: keep your last cursor and poll again later.
         </p>
       </.docs_callout>
 

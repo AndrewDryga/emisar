@@ -695,6 +695,71 @@ defmodule EmisarWeb.AuditExportControllerTest do
   end
 
   describe "self-logs exports (watch the watchers)" do
+    test "an unfiltered one-row sweep delivers receipts and reaches an empty page", %{
+      subject: subject,
+      raw_key: raw
+    } do
+      assert {:ok, initial} = Audit.list_for_export(subject)
+
+      result =
+        Enum.reduce_while(1..(2 * length(initial) + 1), {nil, []}, fn _, {cursor, delivered} ->
+          params = if cursor, do: %{limit: 1, cursor: cursor}, else: %{limit: 1}
+          conn = build_conn() |> bearer(raw) |> get(~p"/api/audit", params)
+
+          case conn |> ndjson() |> parse_ndjson() do
+            [] ->
+              assert get_resp_header(conn, "x-next-cursor") == []
+              assert get_resp_header(conn, "link") == []
+              {:halt, {:caught_up, delivered}}
+
+            [event] ->
+              assert [next] = get_resp_header(conn, "x-next-cursor")
+              assert [_link] = get_resp_header(conn, "link")
+              {:cont, {next, delivered ++ [event["id"]]}}
+          end
+        end)
+
+      assert {:caught_up, delivered} = result
+      expected = Enum.map(initial ++ export_markers(subject), & &1.id)
+      assert MapSet.new(delivered) == MapSet.new(expected)
+      assert length(delivered) == length(expected)
+    end
+
+    test "two collectors drain each other's receipts without creating more", %{
+      account: account,
+      subject: subject,
+      raw_key: raw_a
+    } do
+      {raw_b, _key_b} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_id: subject.actor.id,
+          kind: :audit_export
+        )
+
+      first_a = build_conn() |> bearer(raw_a) |> get(~p"/api/audit")
+      first_b = build_conn() |> bearer(raw_b) |> get(~p"/api/audit")
+      assert length(export_markers(subject)) == 2
+
+      for {raw, first} <- [{raw_a, first_a}, {raw_b, first_b}] do
+        assert [cursor] = get_resp_header(first, "x-next-cursor")
+        tail = build_conn() |> bearer(raw) |> get(~p"/api/audit", cursor: cursor)
+        events = tail |> ndjson() |> parse_ndjson()
+        assert events != []
+        assert Enum.all?(events, &(&1["event_type"] == "audit.exported"))
+        assert [next] = get_resp_header(tail, "x-next-cursor")
+        assert get_resp_header(tail, "link") == []
+        caught_up = build_conn() |> bearer(raw) |> get(~p"/api/audit", cursor: next)
+        assert ndjson(caught_up) == ""
+      end
+
+      markers = export_markers(subject)
+      assert length(markers) == 2
+      counts = Enum.map(markers, & &1.payload["count"]) |> Enum.sort()
+      first_count = first_a |> ndjson() |> parse_ndjson() |> length()
+      assert counts == [first_count, first_count + 1]
+    end
+
     test "a non-empty page writes one audit.exported row attributed to the api_key", %{
       conn: conn,
       account: account,

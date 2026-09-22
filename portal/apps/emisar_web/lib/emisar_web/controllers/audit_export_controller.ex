@@ -58,9 +58,8 @@ defmodule EmisarWeb.AuditExportController do
   def index(conn, params) do
     with {:ok, opts} <- parse_params(params),
          {:ok, events} <- Audit.list_for_export(conn.assigns.current_subject, opts) do
-      # Self-log the export ("watch the watchers"); the domain no-ops on an empty
-      # (caught-up) page so a polling SIEM doesn't spam the log with its own event.
-      Audit.record_export(conn.assigns.current_subject, opts, length(events))
+      # Deliver receipts too, but let the domain suppress receipt-only feedback.
+      Audit.record_siem_export(events, opts, conn.assigns.current_subject)
 
       body = Enum.map_join(events, "\n", &serialize/1)
 
@@ -186,8 +185,8 @@ defmodule EmisarWeb.AuditExportController do
 
   # `x-next-cursor` is the caller's resume point for its NEXT poll — the last row we
   # just delivered — present whenever we delivered any, full page or not. A SIEM stores
-  # it and resumes strictly after it, so a below-limit page can't be re-read (nor our own
-  # `audit.exported` rows re-counted) on the next poll. `Link: rel="next"` is the separate
+  # it and resumes strictly after it, so a below-limit page can't be re-read
+  # on the next poll. `Link: rel="next"` is the separate
   # "there is more right now" signal, so it rides only a full page. An empty page advances
   # nothing — the caller keeps its current cursor.
   defp maybe_put_next_cursor(conn, [], _limit), do: conn

@@ -2935,9 +2935,10 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "audit.exported"
       assert html =~ "as operator activity"
 
-      # Each read can create the event the next read finds, so "drain until
-      # empty" is a loop that feeds itself.
-      assert html =~ "Never poll until a page comes back empty"
+      assert html =~ "A page containing only SIEM export receipts does not create another receipt"
+      assert html =~ "Those receipts are still delivered"
+      assert html =~ "mixed pages record the full row count"
+      refute html =~ "Never poll until a page comes back empty"
     end
 
     test "audit & SIEM owns alerting, retention, and journal correlation", %{conn: conn} do

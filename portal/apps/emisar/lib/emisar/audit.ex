@@ -705,13 +705,30 @@ defmodule Emisar.Audit do
     do: CSVExport.stream(subject, opts)
 
   @doc """
-  Internal — the SIEM export controller calls this after a successful page, and
-  the CSV stream once it has run, to self-log the export ("watch the
-  watchers"). Emits `audit.exported` ONLY when
-  the page returned rows (`count > 0`): a caught-up forward-cursor poll (0 rows)
-  writes nothing, so a SIEM polling every ~30s doesn't spam the log with its own
-  most-frequent event. Account-scoped + attributed via the subject (the api_key
-  for a SIEM export). Called post-authorization (`list_for_export` already gated).
+  Internal — records a successful SIEM page after `list_for_export/2` authorized
+  its rows. Receipt-only pages remain deliverable but do not generate another
+  receipt, so one or several collectors can catch up on an idle account.
+  Mixed pages record the full delivered count; CSV receipts still count.
+  """
+  def record_siem_export(events, opts, %Subject{} = subject) when is_list(events) do
+    if Enum.all?(events, &siem_export_receipt?/1),
+      do: {:ok, :not_recorded},
+      else: record_export(subject, opts, length(events))
+  end
+
+  defp siem_export_receipt?(%Event{
+         event_type: "audit.exported",
+         payload: %{"transport" => "siem"}
+       }),
+       do: true
+
+  defp siem_export_receipt?(_event), do: false
+
+  @doc """
+  Internal — writes an export receipt for a positive delivered count. SIEM
+  callers use `record_siem_export/3` to suppress receipt-only feedback; CSV
+  streams call this once consumed, including exports containing only receipts.
+  Account-scoped and attributed via the already-authorized subject.
   """
   def record_export(%Subject{} = subject, opts, count) when is_integer(count) and count > 0 do
     record(Events.audit_exported(subject, opts, count))
