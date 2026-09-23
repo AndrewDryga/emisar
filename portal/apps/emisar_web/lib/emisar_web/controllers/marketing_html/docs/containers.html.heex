@@ -9,7 +9,9 @@
   EMISAR_RUNNER_ID env overrides relabel without a config mount. Kubernetes
   (DaemonSet) and Nomad (system job) build on this page. Facts
   verified against runner/release/Dockerfile, install.sh, and
-  runner/internal/config.
+  runner/internal/config. The mounted config.yaml sample is loaded next
+  to the image's baked file by TestLoad_ContainerDocsSampleKeepsImageDefaults
+  (runner/internal/config/loader_test.go).
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
   <.marketing_nav current_user={@current_user} current={:docs} />
@@ -17,7 +19,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="containers"
-      updated="September 3, 2026"
+      updated="September 23, 2026"
       toc={[
         {"what-it-sees", "What a containerized runner sees"},
         {"official-image", "The official image"},
@@ -190,13 +192,24 @@
 <span class="text-sky-300">runner</span>:
   <span class="text-sky-300">id</span>: <span class="text-brand-300">"payments-sidecar"</span>
   <span class="text-sky-300">group</span>: <span class="text-brand-300">"sidecars"</span>
+<span class="text-sky-300">cloud</span>:
+  <span class="text-sky-300">url</span>: <span class="text-brand-300">"https://emisar.dev"</span>
+  <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
+  <span class="text-sky-300">token_path</span>: <span class="text-brand-300">"/var/lib/emisar/token.json"</span>
 <span class="text-sky-300">paths</span>:
   <span class="text-sky-300">data_dir</span>: <span class="text-brand-300">"/var/lib/emisar"</span>
+  <span class="text-sky-300">packs</span>:
+    - <span class="text-brand-300">"/opt/emisar/packs"</span>
+<span class="text-sky-300">admission</span>:
+  <span class="text-sky-300">max_risk</span>: <span class="text-brand-300">"low"</span>
 <span class="text-sky-300">events</span>:
-  <span class="text-sky-300">jsonl_path</span>: <span class="text-brand-300">"/var/log/emisar/events.jsonl"</span>
-<span class="text-sky-300">cloud</span>:
-  <span class="text-sky-300">enrollment_key_env</span>: <span class="text-brand-300">"EMISAR_ENROLLMENT_KEY"</span>
-  <span class="text-sky-300">token_path</span>: <span class="text-brand-300">"/var/lib/emisar/token.json"</span></.docs_code>
+  <span class="text-sky-300">jsonl_path</span>: <span class="text-brand-300">"/var/log/emisar/events.jsonl"</span></.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Your file replaces the image's whole config. This one keeps the image's control plane,
+        pack directory, and low-risk ceiling, and changes only the runner's name and group. Raise
+        <code class="font-mono">admission.max_risk</code>
+        only for a fleet that should run fix actions.
+      </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The key you started with is single-use — right for one container, wrong for a template
         that scales. For DaemonSets and system jobs,

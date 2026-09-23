@@ -145,10 +145,14 @@ func (selection *Selection) include(file string) {
 		selection.Portal = true
 		selection.PortalRelease = true
 	}
+	// The containers docs publish a config.yaml that operators mount over the
+	// image's baked file; the runner's loader test is what proves it still boots
+	// with the image's URL, packs and risk ceiling, so a docs-only edit runs it.
+	containersDocs := file == "portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs/containers.html.heex"
 	sharedInstallerHarness := toolutil.HasAnyPrefix(file, "tools/cmd/installtest/", "tools/internal/installtest/harness")
 	runnerInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/runner")
 	mcpInstallerHarness := sharedInstallerHarness || strings.HasPrefix(file, "tools/internal/installtest/mcp")
-	if strings.HasPrefix(file, "runner/") || jsonCorpus || runnerInstallerHarness || goCheckoutContract || slices.Contains([]string{"install.sh", "README.md", "go.work", "go.work.sum"}, file) {
+	if strings.HasPrefix(file, "runner/") || jsonCorpus || containersDocs || runnerInstallerHarness || goCheckoutContract || slices.Contains([]string{"install.sh", "README.md", "go.work", "go.work.sum"}, file) {
 		selection.Runner = true
 	}
 	if strings.HasPrefix(file, "mcp/") || jsonCorpus || mcpInstallerHarness || goCheckoutContract || slices.Contains([]string{"install-mcp.sh", "install-mcp.ps1", "go.work", "go.work.sum"}, file) {

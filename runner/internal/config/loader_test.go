@@ -1,8 +1,11 @@
 package config
 
 import (
+	"html"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +68,54 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	}
 	if cfg.Events.MaxBackups != 5 {
 		t.Errorf("max_backups default: %d", cfg.Events.MaxBackups)
+	}
+}
+
+// The containers docs tell a sidecar operator to mount their own config.yaml
+// over the image's whole baked file. Loading both through the real parser
+// proves the published sample keeps the image's control plane, packs and
+// low-risk ceiling, and changes only the runner's name and group.
+func TestLoad_ContainerDocsSampleKeepsImageDefaults(t *testing.T) {
+	for _, name := range []string{"EMISAR_URL", "EMISAR_GROUP", "EMISAR_RUNNER_ID"} {
+		t.Setenv(name, "")
+	}
+	const repoRoot = "../../.."
+	page, err := os.ReadFile(filepath.Join(repoRoot, "portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs/containers.html.heex"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	baked, err := os.ReadFile(filepath.Join(repoRoot, "runner/release/container/config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, rest, found := strings.Cut(string(page), `label="config.yaml">`)
+	sample, _, closed := strings.Cut(rest, "</.docs_code>")
+	if !found || !closed {
+		t.Fatal("containers docs: the config.yaml sample is missing")
+	}
+	sample = html.UnescapeString(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(sample, ""))
+
+	dir := t.TempDir()
+	load := func(name, body string) *Config {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		writeYAML(t, path, body)
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("load %s: %v", name, err)
+		}
+		return cfg
+	}
+	image := load("image.yaml", string(baked))
+	docs := load("docs.yaml", sample)
+
+	docs.Source, docs.Runner = image.Source, image.Runner
+	// yaml.v3 decodes `rules: []` as an empty slice and an omitted list as nil.
+	if len(docs.Redaction.Rules) == 0 && len(image.Redaction.Rules) == 0 {
+		docs.Redaction = image.Redaction
+	}
+	if !reflect.DeepEqual(docs, image) {
+		t.Errorf("docs sample drifts from the image config:\n docs:  %+v\n image: %+v", *docs, *image)
 	}
 }
 

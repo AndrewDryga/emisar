@@ -461,6 +461,21 @@ func TestSelect(t *testing.T) {
 		resetHard(t, root, base)
 	})
 
+	// The containers docs sample is loaded by a runner test, so a docs-only
+	// edit to that page has to run the runner suite as well as the Portal's.
+	t.Run("the containers docs page selects the runner and the Portal", func(t *testing.T) {
+		writeFixture(t, root, "portal/apps/emisar_web/lib/emisar_web/controllers/marketing_html/docs/containers.html.heex", "<p></p>\n")
+		commitAll(t, root, "containers docs")
+		selection, err := Select(context.Background(), root, "pull_request", base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !selection.Runner || !selection.Portal {
+			t.Fatalf("containers docs selection = %+v", selection)
+		}
+		resetHard(t, root, base)
+	})
+
 	t.Run("installer harness selects affected Go clients", func(t *testing.T) {
 		for _, test := range []struct {
 			name       string
