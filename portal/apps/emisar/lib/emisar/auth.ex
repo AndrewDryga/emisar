@@ -321,8 +321,8 @@ defmodule Emisar.Auth do
 
   @doc """
   Internal — FORCED invalidation of the session row behind a cookie (the
-  suspended-account bounce, the require_sso step-up); possession of the cookie
-  value IS the authorization, so no Subject. Deliberately writes no
+  platform-admin factor bounce); possession of the cookie value IS the
+  authorization, so no Subject. Deliberately writes no
   `user.signed_out` audit: that event means the operator CHOSE to sign out and
   belongs to `complete_session_sign_out/2`.
   """

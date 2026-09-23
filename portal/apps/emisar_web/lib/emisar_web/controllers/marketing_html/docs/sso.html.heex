@@ -258,8 +258,9 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Once required, a browser needs eligible SSO proof for this workspace. Without it,
-        the member must complete SSO step-up before continuing. This preserves independently
-        proved access to other workspaces and any personal proof until their original expiry.
+        the member must complete SSO step-up before continuing. Personal proof keeps its
+        original expiry. The fresh SSO proof also covers the member's other workspaces that
+        use the same issuer. Access to the rest keeps its original expiry.
         This option
         cannot be enabled with no active SSO connection, and emisar refuses to disable or
         delete the last active connection while the requirement remains on. Turn off Require

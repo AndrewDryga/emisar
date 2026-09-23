@@ -631,6 +631,8 @@ defmodule Emisar.SSO do
       with :ok <-
              ensure_session_step_up_identity(stashed, changes.sso_identity, changes.sso_provider),
            true <- changes.sso_membership.id == subject.membership_id,
+           true <-
+             names_identity_owner?(changes.sso_provider, changes.sso_identity, subject, claims),
            :ok <- ensure_email_domain_allowed(changes.sso_provider, claims),
            {:ok, current, session} <-
              session_step_up_actor(stashed.actor_session_token_digest, subject),
@@ -641,6 +643,13 @@ defmodule Emisar.SSO do
         {:error, reason} -> {:error, reason}
       end
     end)
+  end
+
+  # Sign-in accepts a SCIM-synthesized identifier only when the token names the
+  # same person (existing_auth_writes/4); step-up applies the same rule.
+  defp names_identity_owner?(provider, identity, %Subject{actor: user}, claims) do
+    not synthesized_oidc_identifier?(identity) or
+      claims_name_the_same_person?(provider, identity, user, claims)
   end
 
   @identity_link_reauthentication_max_age_seconds 120

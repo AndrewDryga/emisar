@@ -253,6 +253,36 @@ defmodule Emisar.SSOSessionStepUpTest do
       refute_received {:disconnect, _}
     end
 
+    test "a SCIM-synthesized identifier needs a token naming the same person, as at sign-in",
+         %{user: _, account: _} = context do
+      identity =
+        context.identity
+        |> Ecto.Changeset.change(
+          provisioned_via: :scim,
+          scim_external_id: context.identity.provider_identifier
+        )
+        |> Repo.update!()
+
+      context = %{context | identity: identity}
+      browser = browser(context.user, context.account)
+      stash = begin_step_up(context, browser)
+      originals = routes(browser.session)
+
+      assert complete(context, browser, stash) == {:error, :session_step_up_invalid}
+      assert routes(browser.session) == originals
+
+      same_person = %{
+        "claims" => %{
+          "sub" => identity.provider_identifier,
+          "email" => context.user.email,
+          "email_verified" => true
+        }
+      }
+
+      assert {:ok, _result} =
+               SSO.complete_session_step_up(same_person, stash, browser.digest, browser.subject)
+    end
+
     test "target grant revocation during the trip defeats otherwise valid SSO",
          %{user: _, account: _, member: _} = context do
       browser = browser(context.user, context.account)

@@ -634,8 +634,8 @@ defmodule EmisarWeb.UserAuth do
   # SSO enforcement for the MFA-enrollment interstitial. Composed after
   # :ensure_authenticated, so the session account and subject carrying its auth
   # provenance are set. On a step-up it bounces to the /sso_required shim, which
-  # logs the session out and lands on the account's branded sign-in (a LiveView
-  # on_mount can't clear the plug session itself).
+  # offers the Member's linked providers and starts the SSO step-up over plain
+  # HTTP (a LiveView on_mount can't rotate the plug session itself).
   def on_mount(:ensure_sso_compliant, _params, _session, socket) do
     account = socket.assigns[:current_account]
 
