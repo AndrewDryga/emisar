@@ -154,10 +154,12 @@
         },
         "success": {
           "type": "array",
+          "description": "Conditions on this step's own outputs. The step succeeds only when every condition passes, and an empty list always passes; otherwise the step fails unless wait retries it.",
           "maxItems": 16,
           "items": {"$ref": "#/$defs/success"}
         },
         "wait": {
+          "description": "Re-runs the whole step every interval_seconds until its success conditions pass, within max_attempts and timeout_seconds. It is not a delay: with no success conditions the step succeeds on its first attempt. Use null for one attempt.",
           "oneOf": [
             {"type": "null"},
             {"$ref": "#/$defs/wait"}

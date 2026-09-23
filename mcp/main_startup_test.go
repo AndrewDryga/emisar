@@ -182,6 +182,7 @@ func TestHelpTextHasConsistentSectionsAndClientSetup(t *testing.T) {
 		"emisar-mcp get_action [JSON | -]",
 		"emisar-mcp run_action [JSON | -]",
 		"emisar-mcp get_operation [JSON | -]",
+		"emisar-mcp cancel_run [JSON | -]",
 		"emisar-mcp recent_runs [JSON | -]",
 		"emisar-mcp wait_for_run [JSON | -]",
 		"emisar-mcp list_runbooks [JSON | -]",

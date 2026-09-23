@@ -262,7 +262,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "query": {"type": "string", "minLength": 1, "maxLength": 256},
+        "query": {"type": "string", "minLength": 1, "maxLength": 256, "description": "Case-insensitive text matched against runner name, hostname, group, and label keys and values."},
         "runner_refs": {"$ref": "#/$defs/runner_refs"},
         "statuses": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": {"type": "string", "enum": ["connected", "disconnected", "pending", "disabled"]}},
         "pack_id": {"$ref": "#/$defs/pack_id"},
@@ -285,7 +285,7 @@
       "properties": {
         "action_id": {"$ref": "#/$defs/action_id"},
         "pack_ref": {"$ref": "#/$defs/pack_ref"},
-        "target": {"type": "string", "minLength": 1, "maxLength": 256},
+        "target": {"type": "string", "minLength": 1, "maxLength": 256, "description": "Case-insensitive text matched against runner name, hostname, group, and label keys and values; narrows compatible_runners to matches. Mutually exclusive with runner_refs."},
         "runner_refs": {"$ref": "#/$defs/runner_refs"}
       },
       "allOf": [
@@ -412,7 +412,7 @@
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/run_status"}
         },
-        "scope": {"type": "string", "enum": ["own", "account"], "default": "own"},
+        "scope": {"type": "string", "enum": ["own", "account"], "default": "own", "description": "`own` returns runs this credential and its rotated keys started; `account` returns every MCP-started run in the workspace, including other members' and agents' runs and runs on runners outside your current scope."},
         "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 15},
         "cursor": {"$ref": "#/$defs/cursor"}
       },
@@ -1382,7 +1382,7 @@
     },
     "find_actions": {
       "title": "Find actions",
-      "description": "Search runnable actions across every in-scope runner by operational task. Pass the task as `query`; one search covers the whole fleet, so do not repeat it per runner. Returns only actions you can run right now, ranked, without argument schemas — call get_action once for the chosen action_id and pack_ref and it returns every compatible runner. The exact filters only narrow a known target; `query` is the normal path.",
+      "description": "Search runnable actions across every in-scope runner by operational task. Pass the task as `query`; one search covers the whole fleet, so do not repeat it per runner. Returns only actions you can run right now, ranked, without argument schemas — call get_action once for the chosen action_id and pack_ref; it lists up to 15 compatible runners and, when more exist, returns a list_runners continuation for the rest. The exact filters only narrow a known target; `query` is the normal path.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -1392,7 +1392,7 @@
           "action_id": {"$ref": "#/$defs/action_id"},
           "pack_id": {"$ref": "#/$defs/pack_id"},
           "pack_ref": {"$ref": "#/$defs/pack_ref"},
-          "target": {"type": "string", "minLength": 1, "maxLength": 256, "description": "Human target query (host, cluster, service) restricting results to actions executable on at least one match. Mutually exclusive with runner_refs."},
+          "target": {"type": "string", "minLength": 1, "maxLength": 256, "description": "Case-insensitive text matched against runner name, hostname, group, and label keys and values; keeps actions executable on at least one matching runner. A target that matches no runner returns no candidates, which does not mean the action is missing. Mutually exclusive with runner_refs."},
           "runner_refs": {"$ref": "#/$defs/runner_refs"},
           "limit": {"type": "integer", "minimum": 1, "maximum": 15, "default": 15, "description": "Maximum candidates to return, 1 through 15 (default 15). Omit unless you deliberately want fewer."},
           "cursor": {"$ref": "#/$defs/cursor"}
@@ -1441,7 +1441,7 @@
     },
     "get_action": {
       "title": "Get action",
-      "description": "Get a trusted action's argument schema, optional stdout JSON output_schema, risk and side effects in an immutable pack_ref. compatible_runners may be empty; explicit runner_refs must all be eligible. Call before run_action or authoring a runbook step.",
+      "description": "Get a trusted action's argument schema, optional stdout JSON output_schema, risk and side effects in an immutable pack_ref. compatible_runners may be empty and, without runner_refs, holds at most 15; more_compatible_runners then comes with a list_runners continuation for the rest. Explicit runner_refs must all be eligible. Call before run_action or authoring a runbook step.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -1686,7 +1686,7 @@
     },
     "recent_runs": {
       "title": "Recent runs",
-      "description": "Inspect and paginate scoped run history by operation, runbook execution, step, runner, action, pack, or exact statuses. Status preserves the distinction between a failed execution, control-plane error, timeout, trust refusal, policy denial, and operator cancellation. Use get_operation, not history absence, to reconcile an ambiguous mutation.",
+      "description": "Inspect and paginate scoped run history by operation, runbook execution, step, runner, action, pack, or exact statuses. Only runs started through this MCP API appear; actions and runbooks a person started from the console never do, so an empty page does not mean nothing ran. Status preserves the distinction between a failed execution, control-plane error, timeout, trust refusal, policy denial, and operator cancellation. Use get_operation, not history absence, to reconcile an ambiguous mutation.",
       "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
       "inputSchema": {
         "type": "object",
@@ -1916,6 +1916,7 @@
         "properties": {
           "title": {"type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S"},
           "slug": {
+            "description": "The runbook's permanent identifier. Null or blank derives it from the title. A slug already taken in this workspace returns invalid_draft; edit that runbook with update_runbook_draft instead.",
             "oneOf": [
               {"type": "null"},
               {

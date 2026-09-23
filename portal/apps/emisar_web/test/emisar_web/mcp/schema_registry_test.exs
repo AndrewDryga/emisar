@@ -121,9 +121,10 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     # contracts, never in tools/list. Every session pays for this in tokens, so
     # Budget 2 KiB above the prior ceiling for output-source guidance and the
     # extractor constraint, bundled once per draft tool, plus 1.5 KiB for the
-    # cancel_run descriptor. Keep the full wire frame bound below as a separate
-    # limit.
-    assert byte_size(Jason.encode!(tools)) <= 37_888
+    # cancel_run descriptor, plus 2 KiB for contract detail the descriptions
+    # lacked (runner caps, run-history limits, target matching, runbook slug and
+    # wait semantics). Keep the full wire frame bound below as a separate limit.
+    assert byte_size(Jason.encode!(tools)) <= 39_936
 
     frame = %{
       jsonrpc: "2.0",
@@ -146,7 +147,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     find_actions = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "find_actions"))
 
     assert find_actions["description"] ==
-             "Search runnable actions across every in-scope runner by operational task. Pass the task as `query`; one search covers the whole fleet, so do not repeat it per runner. Returns only actions you can run right now, ranked, without argument schemas — call get_action once for the chosen action_id and pack_ref and it returns every compatible runner. The exact filters only narrow a known target; `query` is the normal path."
+             "Search runnable actions across every in-scope runner by operational task. Pass the task as `query`; one search covers the whole fleet, so do not repeat it per runner. Returns only actions you can run right now, ranked, without argument schemas — call get_action once for the chosen action_id and pack_ref; it lists up to 15 compatible runners and, when more exist, returns a list_runners continuation for the rest. The exact filters only narrow a known target; `query` is the normal path."
 
     assert find_actions["inputSchema"]["properties"]["limit"]["description"] ==
              "Maximum candidates to return, 1 through 15 (default 15). Omit unless you deliberately want fewer."
@@ -201,7 +202,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     get_action = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "get_action"))
 
     assert get_action["description"] ==
-             "Get a trusted action's argument schema, optional stdout JSON output_schema, risk and side effects in an immutable pack_ref. compatible_runners may be empty; explicit runner_refs must all be eligible. Call before run_action or authoring a runbook step."
+             "Get a trusted action's argument schema, optional stdout JSON output_schema, risk and side effects in an immutable pack_ref. compatible_runners may be empty and, without runner_refs, holds at most 15; more_compatible_runners then comes with a list_runners continuation for the rest. Explicit runner_refs must all be eligible. Call before run_action or authoring a runbook step."
 
     create_draft = Enum.find(SchemaRegistry.tools(), &(&1["name"] == "create_runbook_draft"))
 

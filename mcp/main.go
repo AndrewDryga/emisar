@@ -187,6 +187,9 @@ COMMANDS
     emisar-mcp get_operation [JSON | -]
       Recover a request by operation ID before retrying a mutation.
 
+    emisar-mcp cancel_run [JSON | -]
+      Cancel your own run before it reaches a runner, even mid-approval.
+
     emisar-mcp recent_runs [JSON | -]
       List recent action runs and their status.
 
