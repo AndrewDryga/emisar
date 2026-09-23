@@ -424,7 +424,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
     }
 
     assert Compiler.bundle!(
-             %{"$ref" => "#/$defs/duration", "default" => "60s"},
+             %{"$ref" => "#/$defs/duration", "default" => "45s"},
              registry
            ) == %{
              "$ref" => "#/$defs/duration",
@@ -432,7 +432,7 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
              "$defs" => %{
                "duration" => %{"type" => "string", "pattern" => "^[0-9]+s$"}
              },
-             "default" => "60s"
+             "default" => "45s"
            }
   end
 

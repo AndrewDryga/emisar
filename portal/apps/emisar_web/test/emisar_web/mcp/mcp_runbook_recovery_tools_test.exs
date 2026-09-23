@@ -2283,7 +2283,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     assert snapshot["next"]["tool"] == "wait_for_run"
     assert snapshot["next"]["arguments"]["run_id"] == run.id
-    assert snapshot["next"]["arguments"]["timeout"] == "60s"
+    assert snapshot["next"]["arguments"]["timeout"] == "45s"
     assert is_binary(snapshot["next"]["arguments"]["cursor"])
   end
 
@@ -2314,7 +2314,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
              %{"stream" => "stdout", "text" => "line-4\n"}
            ]
 
-    assert first["next"]["arguments"]["timeout"] == "60s"
+    assert first["next"]["arguments"]["timeout"] == "45s"
     refute Map.has_key?(first, "stdout")
 
     # Following the returned cursor after more output returns only the new chunk.
@@ -2355,7 +2355,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       })["run"]
 
     assert again["output"] == []
-    assert again["next"]["arguments"]["timeout"] == "60s"
+    assert again["next"]["arguments"]["timeout"] == "45s"
   end
 
   test "wait_for_run rejects an invalid or foreign output cursor", %{
@@ -4044,7 +4044,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     wait_next = %{
       "tool" => "wait_for_run",
-      "arguments" => %{"runbook_execution_id" => execution_id, "timeout" => "60s"}
+      "arguments" => %{"runbook_execution_id" => execution_id, "timeout" => "45s"}
     }
 
     assert execution["execution"]["next"] == wait_next

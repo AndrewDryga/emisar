@@ -322,7 +322,7 @@
       "properties": {
         "run_id": {"$ref": "#/$defs/run_id"},
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
-        "timeout": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."},
+        "timeout": {"$ref": "#/$defs/wait_short", "default": "45s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."},
         "cursor": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "Opaque output cursor. Do not construct or edit this; pass only the value from a prior response's `next` or `outputs_next`. With run_id it streams raw run output; with runbook_execution_id it pages extracted outputs omitted from a terminal execution result."}
       },
       "oneOf": [
@@ -352,7 +352,7 @@
               "properties": {
                 "run_id": {"$ref": "#/$defs/run_id"},
                 "cursor": {"type": "string", "minLength": 1, "maxLength": 4096},
-                "timeout": {"enum": ["0", "60s"]}
+                "timeout": {"enum": ["0", "45s"]}
               }
             }
           }
@@ -1507,7 +1507,7 @@
           "reason": {"$ref": "#/$defs/reason"},
           "evidence": {"$ref": "#/$defs/evidence"},
           "expected": {"$ref": "#/$defs/expected"},
-          "wait": {"$ref": "#/$defs/wait_short", "default": "60s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."}
+          "wait": {"$ref": "#/$defs/wait_short", "default": "45s", "description": "Maximum time to block before returning the current state, as a duration string: \"0\", \"30s\", or \"1500ms\"."}
         }
       },
       "outputSchema": {

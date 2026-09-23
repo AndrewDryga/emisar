@@ -781,7 +781,7 @@ never relies on pagination or truncation.
 | `reason` | Required nonblank UTF-8 justification, at least 12 and at most 2000 characters. |
 | `evidence` | Optional nonblank justification, at most 4000 characters: what was already observed — prior findings or the run ids inspected — that motivates this action. |
 | `expected` | Optional nonblank justification, at most 2000 characters: the outcome that would confirm the action worked. |
-| `wait` | `0`, or an integer duration in `ms`/`s`; default and maximum 60 seconds. |
+| `wait` | `0`, or an integer duration in `ms`/`s`; default 45 seconds, maximum 60 seconds. |
 
 Bare durations, minutes, negative values, and values above 60 seconds are
 rejected rather than clamped. A whitespace-only `reason`, `evidence`, or
@@ -1043,7 +1043,7 @@ coordinated schema, instruction, documentation, and client-corpus updates.
         "tool": "wait_for_run",
         "arguments": {
           "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
-          "timeout": "60s"
+          "timeout": "45s"
         }
       }
     }
@@ -1366,7 +1366,7 @@ Input:
 ```
 
 Exactly one of `run_id` or `runbook_execution_id` is required. `timeout` accepts
-`0`, or an integer duration with `ms` or `s`; default and maximum are 60 seconds.
+`0`, or an integer duration with `ms` or `s`; the default is 45 seconds and the maximum 60.
 Values above the maximum are rejected. With `run_id`, the optional `cursor`
 switches the call into raw output-tail mode (below). With
 `runbook_execution_id`, a cursor from a terminal execution's `outputs_next`
@@ -1401,7 +1401,7 @@ Example after a wait times out while approval is still pending:
       "tool": "wait_for_run",
       "arguments": {
         "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
-        "timeout": "60s"
+        "timeout": "45s"
       }
     }
   }
@@ -1473,7 +1473,7 @@ response is being assembled, the summary also marks the output incomplete).
       "arguments": {
         "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
         "cursor": "<opaque>",
-        "timeout": "60s"
+        "timeout": "45s"
       }
     }
   }
@@ -1484,7 +1484,7 @@ The cursor lives only inside `next.arguments.cursor`; the caller follows `next`
 verbatim and never assembles a cursor. It is opaque and bound to one run and one
 credential lineage, so a forged, expired, or cross-bound value returns
 `invalid_cursor` rather than silently re-reading or skipping output. `next` is
-present while the run is live (`timeout: "60s"`, and the wait wakes as soon as a
+present while the run is live (`timeout: "45s"`, and the wait wakes as soon as a
 new chunk arrives) or while a large backlog is still draining (`timeout: "0"`,
 so the caller pulls the next frame immediately); it is absent once the run is
 terminal and its output is fully drained. Each continuation is sized against
@@ -2020,7 +2020,7 @@ Accepted response:
       "tool": "wait_for_run",
       "arguments": {
         "runbook_execution_id": "60aeb528-cde1-5be6-8d2b-5b903f036d1c",
-        "timeout": "60s"
+        "timeout": "45s"
       }
     }
   }

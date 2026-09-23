@@ -1875,7 +1875,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ ~s(href="/docs/runbooks#extracted-outputs")
       assert html =~ "runbook output sources and extractors"
 
-      assert html =~ "60 seconds"
+      assert html =~ "45 seconds by default, up to 60"
       assert html =~ "eight requests"
       assert html =~ "90-second"
       assert html =~ "notifications/cancelled"

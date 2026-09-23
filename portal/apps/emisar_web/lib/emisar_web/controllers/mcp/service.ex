@@ -475,7 +475,7 @@ defmodule EmisarWeb.MCP.Service do
       # caller to long-poll for output the server already holds would block it
       # for the full window with nothing left to wake it.
       more? -> wait_next(run.id, cursor, "0")
-      not Runs.terminal_status?(run.status) -> wait_next(run.id, cursor, "60s")
+      not Runs.terminal_status?(run.status) -> wait_next(run.id, cursor, "45s")
       true -> nil
     end
   end
@@ -613,10 +613,10 @@ defmodule EmisarWeb.MCP.Service do
   # A live cursor asserts no owed-event minimum (remaining 0): retention only
   # prunes runs finished days ago, far beyond a live cursor's lifetime.
   defp live_snapshot_next(run_id, nil),
-    do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "60s"}}
+    do: %{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "45s"}}
 
   defp live_snapshot_next(run_id, scope),
-    do: wait_next(run_id, OutputCursor.encode(scope, run_id, 0, 0, 0), "60s")
+    do: wait_next(run_id, OutputCursor.encode(scope, run_id, 0, 0, 0), "45s")
 
   # -- Wait parsing ---------------------------------------------------
 

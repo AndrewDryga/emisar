@@ -470,7 +470,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
   defp wait_next(_execution_id, false), do: nil
 
   defp wait_next(execution_id, true),
-    do: %{tool: "wait_for_run", arguments: %{runbook_execution_id: execution_id, timeout: "60s"}}
+    do: %{tool: "wait_for_run", arguments: %{runbook_execution_id: execution_id, timeout: "45s"}}
 
   defp outputs_next(_execution_id, _projection, :full, _scope), do: nil
   defp outputs_next(_execution_id, _projection, _mode, nil), do: nil

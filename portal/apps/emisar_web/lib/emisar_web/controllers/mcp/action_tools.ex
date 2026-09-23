@@ -173,7 +173,7 @@ defmodule EmisarWeb.MCP.ActionTools do
       # the signed facts + operation fingerprint below).
       evidence: args["evidence"],
       expected: args["expected"],
-      wait: args["wait"] || "60s"
+      wait: args["wait"] || "45s"
     }
   end
 

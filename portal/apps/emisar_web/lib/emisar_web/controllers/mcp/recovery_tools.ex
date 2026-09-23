@@ -164,7 +164,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   # The published inputSchema's oneOf guarantees exactly one id, and its
   # wait_short pattern mirrors parse_wait's grammar exactly.
   defp wait_target(args) do
-    {:ok, timeout_ms} = Service.parse_wait(args["timeout"] || "60s")
+    {:ok, timeout_ms} = Service.parse_wait(args["timeout"] || "45s")
 
     case args do
       %{"run_id" => run_id} ->

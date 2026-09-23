@@ -437,7 +437,7 @@
                 {"reason", "Required", "Operator-facing audit reason for this execution."},
                 {"evidence", "Optional", "What you already observed that makes the action necessary — prior findings or run ids."},
                 {"expected", "Optional", "The outcome you expect if it works. It is stored with the run and shown to approvers."},
-                {"wait", "Optional", "Duration string: \"0\", \"1s\"–\"60s\", or \"1ms\"–\"60000ms\". The default and maximum are 60s."}
+                {"wait", "Optional", "Duration string: \"0\", \"1s\"–\"60s\", or \"1ms\"–\"60000ms\". The default is 45s and the maximum 60s."}
               ] do %>
                 <tr>
                   <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{field}</td>
@@ -483,8 +483,10 @@
         <h2 id="waits">Waits and cancellation</h2>
         <p>
           <code>run_action</code>
-          waits up to 60 seconds. <code>wait_for_run</code>
-          waits up to 60 seconds and returns the current state when its deadline expires. One
+          waits 45 seconds by default, up to 60. <code>wait_for_run</code>
+          waits the same and returns the current state when its deadline expires. The 45-second
+          default keeps each call inside the 60-second tool limit some clients, such as Slack,
+          enforce. One
           credential lineage can hold eight waits per portal node; the stdio bridge keeps up
           to eight requests in flight on a 90-second HTTP deadline, and other calls stay
           responsive during a wait. Legacy clients can also use <code>ping</code>.

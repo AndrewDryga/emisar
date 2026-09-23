@@ -45,7 +45,7 @@
       "arguments": {
         "run_id": "019f61cf-59b4-71d9-a78c-4ece74d1e164",
         "cursor": "<opaque>",
-        "timeout": "60s"
+        "timeout": "45s"
       }
     },
     "run_url": "https://emisar.dev/app/example/runs/019f61cf-59b4-71d9-a78c-4ece74d1e164"
