@@ -2,6 +2,15 @@
 
 `packs/` is the catalog of **infrastructure actions** the runner executes and the portal exposes to operators and LLMs (via MCP). Each `packs/<name>/` is a `pack.yaml` manifest plus `actions/*.yaml`. **This is attack surface**: every action declares exactly what may run on a host, so the runner and policy can enforce a hard boundary. Read the root `../AGENTS.md` first. The authoritative schema is the Go types in `runner/pkg/actionspec` + `runner/pkg/packspec`; this file is the conventions.
 
+## Building a pack
+
+Build a new pack, or expand one, in this order ([rule](../.agent/kb/rules/packs-start-from-research-and-a-verified-sut.md)):
+
+1. Learn what the product is for and what its operators do with it day to day.
+2. Research its API, CLI, and the operational tools and use cases people rely on.
+3. Where it runs in a container, write the test SUT first and run the basic CLI and API calls against it by hand, so every action starts from a command that already worked.
+4. Build it deep and detailed: cover at least the basic and mid-level operational needs, and ship only packs a customer would genuinely use. Anything hard to add, such as a multi-node cluster or a licensed edition, waits for a customer request; record what was left out.
+
 ## The gate (verify before claiming done)
 
 Both are required before committing a pack change:
