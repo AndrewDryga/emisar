@@ -197,6 +197,23 @@ defmodule Emisar.Approvals.Request.Query do
   def pending(queryable \\ all()),
     do: where(queryable, [requests: r], r.status == :pending)
 
+  @doc """
+  Inner-join the request's active account, idempotently. A request whose
+  account is deleted or disabled is dropped (inner join to `active/0`).
+  """
+  def with_joined_account(queryable) do
+    with_named_binding(queryable, :account, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [requests: r],
+        account in ^Emisar.Accounts.Account.Query.active(),
+        on: r.account_id == account.id,
+        as: ^binding
+      )
+    end)
+  end
+
   # Apply before pagination and badge counts. Target access is a separate
   # predicate: expiry, separation of duties and an existing vote do not hide
   # the request from the workspace's shared review/history surface.

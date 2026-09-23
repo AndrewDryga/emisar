@@ -3314,12 +3314,15 @@ defmodule Emisar.Approvals do
   transitions a bounded batch of pending requests whose
   `expires_at` has passed into `"expired"`, cancels the held action or execution,
   and writes an audit row per expiry. Returns the count expired. A backlog past
-  the batch drains over consecutive ticks.
+  the batch drains over consecutive ticks. Requests in a disabled or closed
+  account are skipped rather than filling the batch; a re-enabled account's
+  backlog expires on the next tick.
   Idempotent — runs every 5 minutes.
   """
   def expire_overdue_requests(now \\ DateTime.utc_now()) do
     expiring =
       Request.Query.pending()
+      |> Request.Query.with_joined_account()
       |> Request.Query.expired_at_at_or_before(now)
       |> Request.Query.ordered_by_expires_at()
       |> Request.Query.limit_to(@sweep_batch)

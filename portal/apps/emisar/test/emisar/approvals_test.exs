@@ -6730,6 +6730,49 @@ defmodule Emisar.ApprovalsTest do
       # The recorded decision row persists — expiry doesn't touch it.
       assert approved_count(request.id) == 1
     end
+
+    test "skips inactive accounts so their overdue backlog cannot fill the batch" do
+      now = DateTime.utc_now()
+
+      for inactivate <- [
+            &Fixtures.Accounts.disable_account/1,
+            &Fixtures.Accounts.mark_account_as_deleted/1
+          ] do
+        {user, account, _subject} = Fixtures.Subjects.owner_subject()
+
+        template =
+          account
+          |> Fixtures.Approvals.create_execution_request(user)
+          |> Fixtures.Approvals.set_request_expiry(DateTime.add(now, -7200, :second))
+
+        execution_fields =
+          Runbooks.RunbookExecution
+          |> Repo.get!(template.runbook_execution_id)
+          |> Map.take(Runbooks.RunbookExecution.__schema__(:fields))
+
+        request_fields = Map.take(template, Request.__schema__(:fields))
+        executions = for _clone <- 1..999, do: %{execution_fields | id: Repo.generate_id()}
+
+        requests =
+          Enum.map(
+            executions,
+            &%{request_fields | id: Repo.generate_id(), runbook_execution_id: &1.id}
+          )
+
+        assert {999, _} = Repo.insert_all(Runbooks.RunbookExecution, executions)
+        assert {999, _} = Repo.insert_all(Request, requests)
+        inactivate.(account)
+      end
+
+      {_account, run} = run_fixture()
+      {:ok, request} = Approvals.create_request(run, "x")
+      Fixtures.Approvals.set_request_expiry(request, DateTime.add(now, -3600, :second))
+
+      assert Approvals.expire_overdue_requests(now) == 1
+      assert %Request{status: :expired} = Repo.reload!(request)
+      assert %ActionRun{status: :cancelled} = Repo.reload!(run)
+      assert Repo.aggregate(Request.Query.pending(), :count) == 2_000
+    end
   end
 
   # Operator-sourced base run attrs (no api_key) for the composed-Multi probes.

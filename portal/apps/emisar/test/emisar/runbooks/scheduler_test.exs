@@ -684,6 +684,48 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert target_retry.attempt_number == 2
   end
 
+  test "the recovery sweep skips inactive accounts so their executions cannot fill its batch", %{
+    account: account,
+    subject: subject
+  } do
+    inactive_ids =
+      Enum.flat_map(
+        [&Fixtures.Accounts.disable_account/1, &Fixtures.Accounts.mark_account_as_deleted/1],
+        fn inactivate ->
+          inactive_account = Fixtures.Accounts.create_account()
+          membership = Fixtures.Memberships.create_membership(account_id: inactive_account.id)
+
+          runbook = Fixtures.Runbooks.create_runbook(account_id: inactive_account.id)
+
+          executions =
+            for _position <- 1..25 do
+              Fixtures.Runbooks.create_execution(
+                runbook: runbook,
+                initiating_membership_id: membership.id
+              )
+            end
+
+          inactivate.(inactive_account)
+          Enum.map(executions, & &1.id)
+        end
+      )
+
+    healthy =
+      Fixtures.Runbooks.create_execution(
+        account_id: account.id,
+        initiating_membership_id: subject.membership_id,
+        requested_by_id: subject.actor.id
+      )
+
+    assert AdvanceExecutions.execute([]) == :ok
+    assert execution(healthy.id).status == :succeeded
+
+    assert inactive_ids
+           |> Enum.map(&execution/1)
+           |> Enum.map(&{&1.status, &1.last_advanced_at})
+           |> Enum.uniq() == [{:active, nil}]
+  end
+
   test "the recovery sweep reconciles a terminal callback lost after commit", %{
     account: account,
     subject: subject,

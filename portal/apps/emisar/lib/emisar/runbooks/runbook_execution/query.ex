@@ -23,6 +23,23 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
   def active(queryable \\ all()),
     do: where(queryable, [runbook_executions: r], r.status == :active)
 
+  @doc """
+  Inner-join the execution's active account, idempotently. An execution whose
+  account is deleted or disabled is dropped (inner join to `active/0`).
+  """
+  def with_joined_account(queryable) do
+    with_named_binding(queryable, :account, fn queryable, binding ->
+      join(
+        queryable,
+        :inner,
+        [runbook_executions: r],
+        account in ^Accounts.Account.Query.active(),
+        on: r.account_id == account.id,
+        as: ^binding
+      )
+    end)
+  end
+
   def terminal_with_raw_inputs(queryable \\ all()) do
     where(
       queryable,

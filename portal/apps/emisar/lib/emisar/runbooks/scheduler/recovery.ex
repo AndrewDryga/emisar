@@ -20,6 +20,7 @@ defmodule Emisar.Runbooks.Scheduler.Recovery do
 
     execution_ids =
       RunbookExecution.Query.active()
+      |> RunbookExecution.Query.with_joined_account()
       |> RunbookExecution.Query.ordered_by_least_recently_advanced()
       |> RunbookExecution.Query.limit_to(@batch_size)
       |> Repo.all()

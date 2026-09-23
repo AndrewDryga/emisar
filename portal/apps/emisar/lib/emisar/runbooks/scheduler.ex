@@ -156,7 +156,7 @@ defmodule Emisar.Runbooks.Scheduler do
     end
   end
 
-  @doc "Bounded authoritative recovery sweep for active executions and due waits."
+  @doc "Bounded authoritative recovery sweep for active executions and due waits in active accounts."
   def recover_due, do: Recovery.recover_due()
 
   @doc "Fleet-wide bounded scheduler gauges; never grouped by account."
