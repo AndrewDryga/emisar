@@ -160,9 +160,41 @@ defmodule Emisar.AccountsAuditReceiptsTest do
     end
   end
 
+  describe "member receipts" do
+    test "a removal names the acting and removed Members, both still labeled after removal" do
+      account = Fixtures.Accounts.create_account()
+
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          display_name: "Olive Owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(owner)
+
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: "Riley Removed"
+        )
+
+      assert {:ok, _removed} = Accounts.delete_membership(member, subject)
+
+      assert [event] = events("membership.removed")
+      assert {event.actor_kind, event.actor_id} == {"membership", owner.id}
+      assert {event.target_kind, event.target_id} == {"membership", member.id}
+
+      assert Audit.resolve_references([event], subject)["membership"] == %{
+               owner.id => "Olive Owner",
+               member.id => "Riley Removed"
+             }
+    end
+  end
+
   describe "invitation resend receipts" do
     test "resending records its own event with the invitation's role and selected access" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Runners.create_runner(account_id: account.id, group: "production")
 
       attrs =
@@ -172,17 +204,21 @@ defmodule Emisar.AccountsAuditReceiptsTest do
           scope: ["group:production"]
         )
 
-      assert {:ok, %{membership: membership, user: invitee, invitation_token: original_token}} =
+      assert {:ok, %{membership: membership, invitation_token: original_token}} =
                Accounts.invite_user_to_account(attrs, subject)
 
       assert {:ok, %{membership: renewed, invitation_token: renewed_token}} =
                Accounts.resend_account_invitation(membership, subject)
 
-      assert [_invited] = events("user.invited")
+      assert [invited] = events("user.invited")
       assert [resent] = events("membership.invitation_resent")
-      assert resent.account_id == account.id
-      assert resent.actor_id == owner.id
-      assert resent.target_id == invitee.id
+
+      for event <- [invited, resent] do
+        assert event.account_id == account.id
+        assert {event.actor_kind, event.actor_id} == {"membership", subject.membership_id}
+        assert {event.target_kind, event.target_id} == {"membership", membership.id}
+      end
+
       assert renewed.id == membership.id
       refute renewed_token == original_token
 

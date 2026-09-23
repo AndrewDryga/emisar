@@ -663,14 +663,14 @@ defmodule Emisar.Seeds.ActionRuns do
   # shows variety.
   defp seed_sign_in_events(%{account: account, jordan: jordan, priya: priya}) do
     Audit.log(account.id, "user.signed_in",
-      actor_kind: "user",
-      actor_id: jordan.id,
+      actor_kind: "membership",
+      actor_id: Emisar.Accounts.peek_sync_membership(account.id, jordan.id).id,
       payload: %{ip: "203.0.113.42"}
     )
 
     Audit.log(account.id, "user.signed_in",
-      actor_kind: "user",
-      actor_id: priya.id,
+      actor_kind: "membership",
+      actor_id: Emisar.Accounts.peek_sync_membership(account.id, priya.id).id,
       payload: %{ip: "198.51.100.17"}
     )
   end

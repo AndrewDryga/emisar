@@ -583,7 +583,10 @@ defmodule Emisar.Audit.Event.Query do
   def cursor_fields,
     do: [{:events, :desc, :occurred_at}, {:events, :asc, :id}]
 
+  # `membership` names the exact workspace Member; `user` remains for rows that
+  # historically named the personal login.
   @actor_kind_values [
+    {"membership", "Member"},
     {"user", "User"},
     {"staff", "Emisar staff"},
     {"api_key", "API key"},
@@ -594,6 +597,7 @@ defmodule Emisar.Audit.Event.Query do
   ]
 
   @target_kind_values [
+    {"membership", "Member"},
     {"user", "User"},
     {"account", "Account"},
     {"runner", "Runner"},

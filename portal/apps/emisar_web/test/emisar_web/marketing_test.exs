@@ -2171,6 +2171,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "limit="
       assert html =~ "Authorization: Bearer"
       assert html =~ "X-Next-Cursor"
+      assert text =~ ~s("actor_kind":"membership")
       assert text =~ ~s("dispatch_reason":"Reload after validating the new configuration")
       assert text =~ ~s("policy_decision":"require_approval")
       assert text =~ ~s("policy_id":"019f8a5f-7000-7000-8000-000000000007")

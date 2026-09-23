@@ -584,8 +584,8 @@ defmodule Emisar.Runbooks.SchedulerTest do
              |> Repo.all()
              |> Enum.filter(&(&1.event_type == "dispatch_blocked_pack_untrusted"))
 
-    assert blocked.actor_kind == "user"
-    assert blocked.actor_id == subject.actor.id
+    assert blocked.actor_kind == "membership"
+    assert blocked.actor_id == subject.membership_id
     assert blocked.target_id == version.id
     assert blocked.payload["runbook_execution_id"] == result.execution_id
     assert blocked.payload["runbook_id"] == runbook.id

@@ -34,8 +34,9 @@ defmodule Emisar.Audit.MultiTest do
                |> Audit.Multi.log_for_user(:audit, user, "user.test_event")
                |> Repo.commit_multi()
 
+      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
       assert event.event_type == "user.test_event"
-      assert event.actor_id == user.id
+      assert {event.actor_kind, event.actor_id} == {"membership", member.id}
       assert event.account_id == account.id
     end
 

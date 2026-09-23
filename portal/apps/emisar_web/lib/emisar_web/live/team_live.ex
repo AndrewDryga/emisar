@@ -3205,7 +3205,7 @@ defmodule EmisarWeb.TeamLive do
         <.button
           :if={@can_view_member_activity?}
           navigate={
-            ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
+            ~p"/app/#{@current_account}/audit?#{[actor_kind: "membership", actor_id: @membership.id]}"
           }
           variant={:secondary}
           size={:sm}
@@ -3224,7 +3224,7 @@ defmodule EmisarWeb.TeamLive do
       <% @can_manage_team? and not @can_manage? and @can_view_member_activity? -> %>
         <.button
           navigate={
-            ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
+            ~p"/app/#{@current_account}/audit?#{[actor_kind: "membership", actor_id: @membership.id]}"
           }
           variant={:secondary}
           size={:sm}
@@ -3241,12 +3241,9 @@ defmodule EmisarWeb.TeamLive do
             Actions
             <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
           </:trigger>
-          <.menu_item
-            :if={@membership.user_id}
-            navigate={
-              ~p"/app/#{@current_account}/audit?#{[actor_kind: "user", actor_id: @membership.user_id]}"
-            }
-          >
+          <.menu_item navigate={
+            ~p"/app/#{@current_account}/audit?#{[actor_kind: "membership", actor_id: @membership.id]}"
+          }>
             View activity
           </.menu_item>
           <%!-- A synced member's name is the IdP's (the domain refuses the save

@@ -1425,8 +1425,8 @@ defmodule Emisar.RunnerAccessTest do
               do: {event.target_id, event.payload["after"]["groups"]}
         )
 
-      assert granted_groups[member.user_id] == ["db"]
-      assert granted_groups[other_member.user_id] == ["edge"]
+      assert granted_groups[member.id] == ["db"]
+      assert granted_groups[other_member.id] == ["edge"]
     end
 
     test "the actor picker may name an account runner outside current scope", %{

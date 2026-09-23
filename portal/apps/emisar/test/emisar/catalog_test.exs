@@ -1720,7 +1720,6 @@ defmodule Emisar.CatalogTest do
     # `pack_trust_adopted` audit event attributing the decision to the operator,
     # subject-keyed to the pack_version, with the previous→new hash in the payload.
     test "writes a pack_trust_adopted audit event (actor + subject + hashes)", %{
-      user: user,
       subject: subject,
       runner: runner
     } do
@@ -1740,8 +1739,8 @@ defmodule Emisar.CatalogTest do
       assert audit.target_kind == "pack_version"
       assert audit.target_id == pack_version.id
       assert audit.target_label == "p@1.0"
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == subject.membership_id
       # The pre-trust row had no trusted hash; the pending bytes are what got adopted.
       assert audit.payload["previous_hash"] == nil
       assert audit.payload["new_hash"] == Fixtures.Catalog.pack_hash("sha256:ADOPT")
@@ -2013,7 +2012,6 @@ defmodule Emisar.CatalogTest do
     # `pack_trust_rejected` audit event, same operator attribution + pack_version
     # subject, carrying the rejected hash.
     test "writes a pack_trust_rejected audit event (actor + subject + hash)", %{
-      user: user,
       subject: subject,
       runner: runner
     } do
@@ -2033,8 +2031,8 @@ defmodule Emisar.CatalogTest do
       assert audit.target_kind == "pack_version"
       assert audit.target_id == pack_version.id
       assert audit.target_label == "p@1.0"
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == subject.membership_id
       # Never-trusted custom pack — no trusted hash, the advertised bytes were rejected.
       assert audit.payload["trusted_hash"] == nil
       assert audit.payload["rejected_hash"] == Fixtures.Catalog.pack_hash("sha256:NOPE")
@@ -2139,7 +2137,6 @@ defmodule Emisar.CatalogTest do
     end
 
     test "stamps retirement_overridden_at + who and audits the override", %{
-      user: user,
       subject: subject,
       pack_version: pack_version
     } do
@@ -2155,8 +2152,8 @@ defmodule Emisar.CatalogTest do
       assert audit, "expected a pack_retirement_overridden audit row"
       assert audit.target_kind == "pack_version"
       assert audit.target_id == pack_version.id
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == subject.membership_id
       assert audit.payload["pack_id"] == "custom"
       assert audit.payload["version"] == "1.0"
     end
@@ -2252,7 +2249,6 @@ defmodule Emisar.CatalogTest do
     end
 
     test "moves a trusted row to :rejected, keeping the hash and clearing any override", %{
-      user: user,
       subject: subject,
       pack_version: pack_version
     } do
@@ -2273,8 +2269,8 @@ defmodule Emisar.CatalogTest do
       assert audit.target_kind == "pack_version"
       assert audit.target_id == pack_version.id
       assert audit.target_label == "custom@1.0"
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == subject.membership_id
       assert audit.payload["revoked_hash"] == Fixtures.Catalog.pack_hash("sha256:OK")
     end
 
@@ -2419,7 +2415,6 @@ defmodule Emisar.CatalogTest do
     end
 
     test "deletes the pin row and its advertised action rows, and audits", %{
-      user: user,
       subject: subject,
       pack_version: pack_version
     } do
@@ -2435,8 +2430,8 @@ defmodule Emisar.CatalogTest do
       assert audit, "expected a pack_version_deleted audit row"
       assert audit.target_kind == "pack_version"
       assert audit.target_label == "custom@1.0"
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == subject.membership_id
       assert audit.payload["removed_action_rows"] == 1
     end
 
@@ -2550,7 +2545,6 @@ defmodule Emisar.CatalogTest do
     end
 
     test "deletes every version and action row of the pack, audits ONE event", %{
-      user: user,
       subject: subject
     } do
       assert {:ok, versions} = Catalog.delete_pack("custom", subject)
@@ -2569,8 +2563,8 @@ defmodule Emisar.CatalogTest do
       assert audit.target_kind == "pack"
       assert audit.target_id == nil
       assert audit.target_label == "custom"
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == subject.membership_id
       assert Enum.sort(audit.payload["versions"]) == ["1.0", "1.1"]
       assert audit.payload["removed_action_rows"] == 1
     end
@@ -2698,7 +2692,6 @@ defmodule Emisar.CatalogTest do
     end
 
     test "an owner turns cleanup on with the raw form period", %{
-      user: user,
       account: account,
       subject: subject
     } do
@@ -2713,8 +2706,8 @@ defmodule Emisar.CatalogTest do
       assert [audit] = Enum.filter(events, &(&1.event_type == "account.updated"))
       assert audit.target_kind == "account"
       assert audit.target_id == account.id
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == subject.membership_id
     end
 
     test "a blank period turns cleanup off", %{account: account, subject: subject} do
@@ -2889,7 +2882,7 @@ defmodule Emisar.CatalogTest do
     end
 
     test "removes versions unseen past the window (and their action rows), audits the operator",
-         %{user: user, account: account, subject: subject, stale: stale} do
+         %{account: account, subject: subject, stale: stale} do
       assert Catalog.sweep_unseen_pack_versions(subject) === {:ok, 1}
 
       {:ok, remaining, _} = Catalog.list_pack_versions(subject)
@@ -2904,8 +2897,8 @@ defmodule Emisar.CatalogTest do
 
       assert audit, "expected a pack_retention_swept audit row"
       assert audit.account_id == account.id
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == subject.membership_id
       assert audit.payload["count"] == 1
       assert audit.payload["unseen_days"] == 30
       assert audit.payload["versions"] == ["stale@1.0"]

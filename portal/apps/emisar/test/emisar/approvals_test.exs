@@ -5873,8 +5873,8 @@ defmodule Emisar.ApprovalsTest do
       assert audit, "expected an approval.grant_revoked audit row"
       assert audit.target_kind == "approval_grant"
       assert audit.target_id == grant.id
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == membership.id
       assert audit.payload["action_id"] == "x"
       assert audit.payload["api_key_id"] == key.id
     end

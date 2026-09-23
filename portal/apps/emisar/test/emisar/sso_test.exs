@@ -4528,7 +4528,7 @@ defmodule Emisar.SSOTest do
       assert event.account_id == account.id
       assert event.actor_kind == "directory_sync"
       assert event.actor_id == provider.id
-      assert event.target_id == identity.user_id
+      assert {event.target_kind, event.target_id} == {"membership", identity.membership_id}
       assert event.payload["to"] == "Someone Else"
     end
   end

@@ -45,11 +45,12 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "complete_session_sign_out audits", %{user: user, account: account} do
+      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert Auth.complete_session_sign_out(token) == :ok
       assert [event] = events_of(account, "user.signed_out")
-      assert event.actor_id == user.id
+      assert event.actor_id == member.id
     end
   end
 
@@ -73,11 +74,11 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "issuing the enrollment challenge audits the request without the code or address", %{
-      user: user,
-      account: account
+      account: account,
+      subject: subject
     } do
       assert [event] = events_of(account, "user.mfa_enrollment_requested")
-      assert event.actor_id == user.id
+      assert event.actor_id == subject.membership_id
       assert event.payload == %{}
     end
 
@@ -90,11 +91,11 @@ defmodule Emisar.AuthAuditTest do
     } do
       otp = NimbleTOTP.verification_code(secret)
 
-      assert {:ok, updated, _codes} =
+      assert {:ok, _updated, _codes} =
                Auth.enable_mfa(secret, otp, proof, Crypto.hash(session_token), subject)
 
       assert [event] = events_of(account, "user.mfa_enabled")
-      assert event.actor_id == updated.id
+      assert event.actor_id == subject.membership_id
     end
 
     test "disable_mfa audits", %{
@@ -104,7 +105,7 @@ defmodule Emisar.AuthAuditTest do
       proof: proof,
       session_token: session_token
     } do
-      {:ok, enabled, _} =
+      {:ok, _enabled, _} =
         Auth.enable_mfa(
           secret,
           NimbleTOTP.verification_code(secret),
@@ -116,7 +117,7 @@ defmodule Emisar.AuthAuditTest do
       :ok = Audit.subscribe_account_audit(account.id)
       assert {:ok, _} = Auth.disable_mfa(NimbleTOTP.verification_code(secret), subject)
       assert [event] = events_of(account, "user.mfa_disabled")
-      assert event.actor_id == enabled.id
+      assert event.actor_id == subject.membership_id
       assert_receive {:audit_event, ^event}
       assert [_verified] = events_of(account, "user.mfa_verified")
     end
@@ -166,7 +167,7 @@ defmodule Emisar.AuthAuditTest do
                )
 
       assert [event] = events_of(account, "user.mfa_verified")
-      assert event.actor_id == enabled.id
+      assert event.actor_id == subject.membership_id
       assert event.payload["factor"] == "totp"
     end
 
@@ -287,8 +288,8 @@ defmodule Emisar.AuthAuditTest do
       assert events_of(account, "user.mfa_recovery_code_used") == []
 
       assert [event] = events_of(account, "user.mfa_rate_limited")
-      assert event.actor_id == enabled.id
-      assert event.target_id == enabled.id
+      assert event.actor_id == subject.membership_id
+      assert event.target_id == subject.membership_id
       assert event.request_id == "req-mfa-rate-limit"
       assert event.payload["scope"] == "mfa_challenge"
       assert event.payload["attempt_limit"] == 5
@@ -317,7 +318,7 @@ defmodule Emisar.AuthAuditTest do
       proof: proof,
       session_token: session_token
     } do
-      {:ok, enabled, _} =
+      {:ok, _enabled, _} =
         Auth.enable_mfa(
           secret,
           NimbleTOTP.verification_code(secret),
@@ -332,7 +333,7 @@ defmodule Emisar.AuthAuditTest do
         Auth.regenerate_mfa_recovery_codes(NimbleTOTP.verification_code(secret), subject)
 
       assert [event] = events_of(account, "user.mfa_recovery_codes_regenerated")
-      assert event.actor_id == enabled.id
+      assert event.actor_id == subject.membership_id
       assert event.payload == %{}
       assert_receive {:audit_event, ^event}
     end
@@ -380,9 +381,10 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "request_magic_link audits", %{user: user, account: account} do
+      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
       request_magic_link(user)
       assert [event] = events_of(account, "user.magic_link_issued")
-      assert event.actor_id == user.id
+      assert event.actor_id == member.id
     end
 
     test "verify_magic_link writes NO user.signed_in — session establishment owns it", %{
@@ -411,7 +413,7 @@ defmodule Emisar.AuthAuditTest do
                {:error, :invalid_or_expired}
 
       assert [event] = events_of(account, "user.sign_in_failed")
-      assert event.actor_id == user.id
+      assert event.actor_id == Fixtures.Memberships.fetch_membership(account.id, user.id).id
       assert event.ip_address == "198.51.100.9"
       assert event.payload["reason"] == "invalid_or_expired"
     end
@@ -432,7 +434,7 @@ defmodule Emisar.AuthAuditTest do
       # Unconfirmed user — bypass Fixtures.Subjects.owner_subject which auto-confirms.
       unconfirmed = Fixtures.Users.create_user(confirmed?: false)
 
-      _ =
+      membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: unconfirmed.id,
@@ -443,7 +445,48 @@ defmodule Emisar.AuthAuditTest do
       assert {:ok, _} = Auth.confirm_user_by_token(raw)
 
       assert [event] = events_of(account, "user.email_confirmed")
-      assert event.actor_id == unconfirmed.id
+      assert event.actor_id == membership.id
+    end
+  end
+
+  describe "SSO sign-in" do
+    test "records only the granted workspace's Member and leaves siblings and the User untouched" do
+      {user, account, _subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(%{account_id: account.id})
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id
+        })
+
+      sibling = Fixtures.Accounts.create_account()
+
+      sibling_member =
+        Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: user.id)
+
+      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      personal = Repo.reload!(user)
+      context = %RequestContext{ip_address: "203.0.113.20", request_id: "req-sso-sign-in"}
+
+      assert {:ok, _token, false} =
+               Auth.complete_sso_account_sign_in(user, account.id, context,
+                 user_identity_id: identity.id,
+                 provider_identifier: identity.provider_identifier
+               )
+
+      assert [event] = events_of(account, "user.signed_in")
+      assert {event.actor_kind, event.actor_id} == {"membership", member.id}
+      assert {event.target_kind, event.target_id} == {"membership", member.id}
+      assert event.target_label == Accounts.member_display_name(member)
+      assert event.payload == %{"method" => "sso"}
+      assert event.request_id == "req-sso-sign-in"
+      assert events_of(sibling, "user.signed_in") == []
+      assert Repo.reload!(user) == personal
+      assert %DateTime{} = Repo.reload!(member).last_active_at
+      refute Repo.reload!(sibling_member).last_active_at
     end
   end
 
@@ -554,17 +597,15 @@ defmodule Emisar.AuthAuditTest do
     end
 
     test "update_membership_role audits with from/to", %{
-      owner: owner,
       owner_subject: owner_subject,
       account: account,
-      member: member,
       membership: membership
     } do
       {:ok, _} = Accounts.update_membership_role(membership, "admin", owner_subject)
 
       assert [event] = events_of(account, "membership.role_changed")
-      assert event.actor_id == owner.id
-      assert event.target_id == member.id
+      assert {event.actor_kind, event.actor_id} == {"membership", owner_subject.membership_id}
+      assert {event.target_kind, event.target_id} == {"membership", membership.id}
       assert event.payload["from"] == "operator"
       assert event.payload["to"] == "admin"
     end
@@ -572,13 +613,12 @@ defmodule Emisar.AuthAuditTest do
     test "delete_membership audits with the deleted role", %{
       owner_subject: owner_subject,
       account: account,
-      member: member,
       membership: membership
     } do
       {:ok, _} = Accounts.delete_membership(membership, owner_subject)
 
       assert [event] = events_of(account, "membership.removed")
-      assert event.target_id == member.id
+      assert event.target_id == membership.id
       assert event.payload["role"] == "operator"
     end
 
@@ -718,8 +758,9 @@ defmodule Emisar.AuthAuditTest do
 
       signup = Audit.Event.Query.all() |> Audit.Event.Query.by_event_type("user.signed_up")
       assert %Audit.Event{} = event = Repo.one(signup)
-      assert event.actor_id == registered.id
-      assert event.target_id == registered.id
+      owner = Fixtures.Memberships.fetch_membership(event.account_id, registered.id)
+      assert {event.actor_kind, event.actor_id} == {"membership", owner.id}
+      assert {event.target_kind, event.target_id} == {"membership", owner.id}
 
       assert Auth.complete_magic_link_sign_in(user.id, token_id, nil, context) ==
                {:error, :invalid_or_expired}
@@ -741,7 +782,7 @@ defmodule Emisar.AuthAuditTest do
       assert created.payload["plan"] == "free"
       assert created.payload["slug"] == slug
 
-      assert created.actor_id == user.id
+      assert created.actor_id == Fixtures.Memberships.fetch_membership(account.id, user.id).id
       assert events_of(account, "user.signed_up") == []
     end
 
@@ -893,14 +934,14 @@ defmodule Emisar.AuthAuditTest do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
 
-      _ =
+      member_a =
         Fixtures.Memberships.create_membership(
           account_id: account_a.id,
           user_id: user.id,
           role: "owner"
         )
 
-      _ =
+      member_b =
         Fixtures.Memberships.create_membership(
           account_id: account_b.id,
           user_id: user.id,
@@ -914,10 +955,12 @@ defmodule Emisar.AuthAuditTest do
       # One row in each account…
       assert [row_a] = events_of(account_a, "user.mfa_disabled")
       assert [row_b] = events_of(account_b, "user.mfa_disabled")
-      # …and each account sees ONLY its own copy (cross-account isolation).
+      # …and each account sees ONLY its own copy (cross-account isolation), each
+      # naming that account's own Member.
       assert row_a.account_id == account_a.id
       assert row_b.account_id == account_b.id
-      assert row_a.actor_id == user.id
+      assert {row_a.actor_id, row_a.target_id} == {member_a.id, member_a.id}
+      assert {row_b.actor_id, row_b.target_id} == {member_b.id, member_b.id}
     end
 
     test "a single-account user still gets exactly one row (no duplicates)" do

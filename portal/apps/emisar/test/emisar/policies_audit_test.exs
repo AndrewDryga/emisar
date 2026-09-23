@@ -19,7 +19,6 @@ defmodule Emisar.PoliciesAuditTest do
     end
 
     test "captures before/after snapshots", %{
-      user: user,
       subject: subject,
       policy: policy
     } do
@@ -42,7 +41,7 @@ defmodule Emisar.PoliciesAuditTest do
       {:ok, [event], _} =
         Audit.list_events(subject, filter: [event_type: ["policy.updated"]])
 
-      assert event.actor_id == user.id
+      assert event.actor_id == subject.membership_id
       assert is_map(event.payload)
       assert event.payload["before"]["schema_version"] == 2
       assert event.payload["after"]["defaults"]["medium"] == "require_approval"

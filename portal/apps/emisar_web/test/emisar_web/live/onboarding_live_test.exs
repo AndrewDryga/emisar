@@ -171,7 +171,7 @@ defmodule EmisarWeb.OnboardingLiveTest do
         |> Repo.all()
         |> Enum.filter(&(&1.event_type == "session.account_switched"))
 
-      assert event.actor_id == user.id
+      assert {event.actor_kind, event.actor_id} == {"membership", new.id}
     end
   end
 

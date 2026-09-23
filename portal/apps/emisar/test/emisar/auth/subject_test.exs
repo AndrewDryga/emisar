@@ -259,7 +259,7 @@ defmodule Emisar.Auth.SubjectTest do
       runner_subject = %Subject{actor: %Runner{id: "r1"}}
       actorless = %Subject{}
 
-      assert Subject.actor_kind(user_subject) == "user"
+      assert Subject.actor_kind(user_subject) == "membership"
       assert Subject.actor_kind(key_subject) == "api_key"
       assert Subject.actor_kind(runner_subject) == "runner"
       assert Subject.actor_kind(actorless) == "system"

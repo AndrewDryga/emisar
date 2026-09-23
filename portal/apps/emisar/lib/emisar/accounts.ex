@@ -451,9 +451,8 @@ defmodule Emisar.Accounts do
       |> Multi.run(:user, fn repo, _changes ->
         Users.delete_by_id(user_id, repo: repo)
       end)
-      |> Multi.run(:audit, fn repo, changes ->
-        %{memberships: memberships, accounts: erased_accounts, user: user} = changes
-        record_membership_erasures(repo, memberships, erased_accounts, user)
+      |> Multi.run(:audit, fn repo, %{memberships: memberships, accounts: erased_accounts} ->
+        record_membership_erasures(repo, memberships, erased_accounts)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -566,8 +565,8 @@ defmodule Emisar.Accounts do
 
     multi
     |> put_account_with_owner(account_attrs, :registration_user)
-    |> Multi.insert(:user_signed_up, fn %{account: account, registration_user: user} ->
-      Audit.Events.user_signed_up(user, account)
+    |> Multi.insert(:user_signed_up, fn %{membership: owner} ->
+      Audit.Events.user_signed_up(owner)
     end)
     |> Multi.put(:registration, true)
   end
@@ -744,9 +743,8 @@ defmodule Emisar.Accounts do
     |> Multi.run(:policy, fn _repo, %{account: account, membership: membership} ->
       Emisar.Policies.seed_policy(account.id, membership.id)
     end)
-    |> Multi.insert(:account_created, fn %{account: account} = changes ->
-      user = Map.fetch!(changes, user_key)
-      Audit.Events.account_created(account, user)
+    |> Multi.insert(:account_created, fn %{account: account, membership: owner} ->
+      Audit.Events.account_created(account, owner)
     end)
   end
 
@@ -1174,6 +1172,21 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — an SSO sign-in is activity in each workspace it granted. Advances
+  exactly those Members' activity timestamp inside the caller's sign-in
+  transaction, which already holds their locks; the personal login and other
+  workspaces are untouched. Returns `{:ok, count}`.
+  """
+  def record_sso_sign_in_activity(repo, membership_ids) when is_list(membership_ids) do
+    {count, _} =
+      Membership.Query.all()
+      |> Membership.Query.by_ids(membership_ids)
+      |> repo.update_all(set: [last_active_at: DateTime.utc_now()])
+
+    {:ok, count}
+  end
+
+  @doc """
   Filter definitions for the Team roster. The membership query owns the SQL;
   the context exposes its UI-safe vocabulary so the web never reaches into a
   query module.
@@ -1446,13 +1459,13 @@ defmodule Emisar.Accounts do
   # so a membership whose account survived is a roster someone else still reads.
   # A deliberate per-row insert (N = the user's membership count), in the
   # erasure's own transaction so the rows commit with it or not at all.
-  defp record_membership_erasures(repo, memberships, erased_accounts, user) do
+  defp record_membership_erasures(repo, memberships, erased_accounts) do
     erased_account_ids = MapSet.new(erased_accounts, & &1.id)
 
     memberships
     |> Enum.reject(&MapSet.member?(erased_account_ids, &1.account_id))
     |> Enum.reduce_while({:ok, []}, fn membership, {:ok, events} ->
-      case repo.insert(Audit.Events.membership_erased_by_support(membership, user)) do
+      case repo.insert(Audit.Events.membership_erased_by_support(membership)) do
         {:ok, event} -> {:cont, {:ok, [event | events]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -3872,7 +3885,7 @@ defmodule Emisar.Accounts do
     multi
     |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
       Users.reset_user_mfa(loaded_membership.user_id,
-        audit: &Audit.Events.user_mfa_reset_by_admin(subject, loaded_membership, &1)
+        audit: fn _user -> Audit.Events.user_mfa_reset_by_admin(subject, loaded_membership) end
       )
     end)
     |> Multi.run(:socket_topics, fn _repo, %{user: user} ->
@@ -4053,14 +4066,11 @@ defmodule Emisar.Accounts do
       Multi.new()
       |> put_membership_account_lock(membership.account_id)
       |> lock_target_membership(membership, subject, &ensure_can_modify_membership(&1, subject))
-      |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
-        Users.fetch_user_by_id(loaded_membership.user_id)
-      end)
       |> Multi.run(:sessions, fn repo, %{target: loaded_membership} ->
         Auth.delete_membership_session_grants(loaded_membership, repo)
       end)
-      |> Multi.insert(:audit, fn %{target: loaded_membership, user: user} ->
-        Audit.Events.user_sessions_revoked(subject, loaded_membership, user)
+      |> Multi.insert(:audit, fn %{target: loaded_membership} ->
+        Audit.Events.user_sessions_revoked(subject, loaded_membership)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{sessions: %{socket_topics: socket_topics}} ->
@@ -4259,8 +4269,8 @@ defmodule Emisar.Accounts do
       |> Multi.run(:runner_access, fn repo, %{membership: membership, invitation: invitation} ->
         replace_runner_access_rows(repo, membership.id, invitation.runner_access)
       end)
-      |> Multi.insert(:audit, fn %{user: user, invitation: invitation} ->
-        Audit.Events.user_invited(subject, user, invitation.role, invitation.runner_access)
+      |> Multi.insert(:audit, fn %{membership: membership, invitation: invitation} ->
+        Audit.Events.user_invited(subject, membership, invitation.role, invitation.runner_access)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -4674,8 +4684,8 @@ defmodule Emisar.Accounts do
     |> Multi.merge(fn %{accepted: membership} ->
       put_membership_activation_consequence(Multi.new(), membership)
     end)
-    |> Multi.insert(:audit, fn %{user: user, accepted: updated} ->
-      Audit.Events.user_invitation_accepted(user, updated)
+    |> Multi.insert(:audit, fn %{accepted: updated} ->
+      Audit.Events.user_invitation_accepted(updated)
     end)
     |> Repo.commit_multi(after_commit: &invitation_accepted_effects/1)
     |> case do

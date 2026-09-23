@@ -125,6 +125,24 @@ defmodule Emisar.AuditIdentityHistoryTest do
     end
   end
 
+  test "an erased Member remains choosable by the label its receipt recorded", %{
+    account: account,
+    subject: subject
+  } do
+    member =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        display_name: "Erased member"
+      )
+
+    {:ok, _receipt} = Audit.record(Audit.Events.membership_erased_by_support(member))
+    Fixtures.Memberships.hard_delete_membership(member)
+    member_id = member.id
+
+    assert {:ok, [{^member_id, "Erased member"}], _} =
+             Audit.list_target_options("membership", subject)
+  end
+
   test "unnamed histories remain selected-only and cannot supply another side's fallback", %{
     account: account,
     subject: subject

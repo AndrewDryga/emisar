@@ -171,7 +171,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               original = Enum.find(context.routes, &(&1.account_id == context.account.id))
               assert original in routes
               assert step_up_audit_count(context.account) == 1
-              assert step_up_audit_count(context.sibling) == 1
+              assert step_up_audit_count(context.sibling) == 0
               assert target_session_count(context.user) == context.session_count
               old_topic = Auth.live_socket_topic_for_session(context.raw)
               new_topic = Auth.live_socket_topic_for_session(result.token)

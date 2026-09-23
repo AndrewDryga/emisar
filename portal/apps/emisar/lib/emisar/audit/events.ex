@@ -28,9 +28,9 @@ defmodule Emisar.Audit.Events do
 
   # -- Account ---------------------------------------------------------
 
-  def account_created(%Accounts.Account{} = account, %Users.User{} = owner) do
+  def account_created(%Accounts.Account{} = account, %Accounts.Membership{} = owner) do
     Audit.changeset(account.id, "account.created",
-      actor_kind: "user",
+      actor_kind: "membership",
       actor_id: owner.id,
       target_kind: "account",
       target_id: account.id,
@@ -42,13 +42,13 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  def user_signed_up(%Users.User{} = user, %Accounts.Account{} = account) do
-    Audit.changeset(account.id, "user.signed_up",
-      actor_kind: "user",
-      actor_id: user.id,
-      target_kind: "user",
-      target_id: user.id,
-      target_label: user.email
+  def user_signed_up(%Accounts.Membership{} = owner) do
+    Audit.changeset(owner.account_id, "user.signed_up",
+      actor_kind: "membership",
+      actor_id: owner.id,
+      target_kind: "membership",
+      target_id: owner.id,
+      target_label: Accounts.member_display_name(owner)
     )
   end
 
@@ -210,8 +210,8 @@ defmodule Emisar.Audit.Events do
       "membership.role_changed",
       actor(subject) ++
         [
-          target_kind: "user",
-          target_id: membership.user_id,
+          target_kind: "membership",
+          target_id: membership.id,
           payload: %{from: membership.role, to: new_role}
         ]
     )
@@ -228,7 +228,7 @@ defmodule Emisar.Audit.Events do
       membership.account_id,
       "membership.removed",
       actor(subject) ++
-        [target_kind: "user", target_id: membership.user_id, payload: %{role: membership.role}]
+        [target_kind: "membership", target_id: membership.id, payload: %{role: membership.role}]
     )
   end
 
@@ -239,15 +239,12 @@ defmodule Emisar.Audit.Events do
   review. Subject-less on purpose: the staff erasure path has no `%Subject{}`,
   and a forged one is not a thing this codebase has (see the staff read event).
   """
-  def membership_erased_by_support(
-        %Accounts.Membership{} = membership,
-        %Users.User{}
-      ) do
+  def membership_erased_by_support(%Accounts.Membership{} = membership) do
     Audit.changeset(membership.account_id, "membership.erased",
       actor_kind: "staff",
       actor_label: @staff_actor_label,
-      target_kind: "user",
-      target_id: membership.user_id,
+      target_kind: "membership",
+      target_id: membership.id,
       target_label: Accounts.member_display_name(membership),
       payload: %{role: membership.role}
     )
@@ -264,8 +261,8 @@ defmodule Emisar.Audit.Events do
       "membership.runner_access_changed",
       actor(subject) ++
         [
-          target_kind: "user",
-          target_id: membership.user_id,
+          target_kind: "membership",
+          target_id: membership.id,
           payload: %{
             before: runner_access_payload(before_access),
             after: runner_access_payload(after_access)
@@ -285,8 +282,9 @@ defmodule Emisar.Audit.Events do
   end
 
   # Self-service, but still subject-carried: the operator's session provenance
-  # and request context belong on the row like every other event. The target is
-  # their own membership in the account they switched INTO.
+  # and request context belong on the row like every other event. The row lives
+  # in the account they switched INTO, so its Member there is both actor and
+  # target — never the Member of the workspace they left.
   def session_account_switched(
         %Subject{} = subject,
         %Accounts.Membership{} = membership
@@ -294,43 +292,35 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(
       membership.account_id,
       "session.account_switched",
-      actor(subject) ++
+      Keyword.merge(actor(subject), actor_kind: "membership", actor_id: membership.id) ++
         [
-          target_kind: "user",
-          target_id: membership.user_id,
+          target_kind: "membership",
+          target_id: membership.id,
           target_label: Accounts.member_display_name(membership),
           payload: %{role: membership.role}
         ]
     )
   end
 
-  # Self-service accept (no Subject): the membership's own user is both
-  # the actor and the subject.
+  # Self-service accept (no Subject): the accepting Member is both the actor
+  # and the target.
   def membership_invitation_accepted(%Accounts.Membership{} = membership) do
     Audit.changeset(membership.account_id, "membership.invitation_accepted",
-      actor_kind: "user",
-      actor_id: membership.user_id,
-      target_kind: "user",
-      target_id: membership.user_id,
+      actor_kind: "membership",
+      actor_id: membership.id,
+      target_kind: "membership",
+      target_id: membership.id,
       payload: %{role: membership.role}
     )
   end
 
   # -- User ------------------------------------------------------------
 
-  def user_sessions_revoked(
-        %Subject{} = subject,
-        %Accounts.Membership{} = membership,
-        %Users.User{} = user
-      ),
-      do: user_event(subject, membership, user, "user.sessions_revoked")
+  def user_sessions_revoked(%Subject{} = subject, %Accounts.Membership{} = membership),
+    do: labeled_member_event(subject, membership, "user.sessions_revoked")
 
-  def user_mfa_reset_by_admin(
-        %Subject{} = subject,
-        %Accounts.Membership{} = membership,
-        %Users.User{} = user
-      ),
-      do: user_event(subject, membership, user, "user.mfa_reset_by_admin")
+  def user_mfa_reset_by_admin(%Subject{} = subject, %Accounts.Membership{} = membership),
+    do: labeled_member_event(subject, membership, "user.mfa_reset_by_admin")
 
   def membership_profile_updated(
         %Subject{} = subject,
@@ -341,8 +331,8 @@ defmodule Emisar.Audit.Events do
       "membership.profile_updated",
       actor(subject) ++
         [
-          target_kind: "user",
-          target_id: membership.user_id,
+          target_kind: "membership",
+          target_id: membership.id,
           target_label: Accounts.member_display_name(membership),
           payload: %{display_name: membership.display_name}
         ]
@@ -351,18 +341,18 @@ defmodule Emisar.Audit.Events do
 
   def user_invited(
         %Subject{} = subject,
-        %Users.User{} = invited,
+        %Accounts.Membership{} = invited,
         role,
         %Accounts.RunnerAccess{} = access
       ) do
     Audit.changeset(
-      subject.account.id,
+      invited.account_id,
       "user.invited",
       actor(subject) ++
         [
-          target_kind: "user",
+          target_kind: "membership",
           target_id: invited.id,
-          target_label: invited.email,
+          target_label: invited.invitation_sent_to,
           payload: %{role: role, runner_access: runner_access_payload(access)}
         ]
     )
@@ -378,21 +368,21 @@ defmodule Emisar.Audit.Events do
       "membership.invitation_resent",
       actor(subject) ++
         [
-          target_kind: "user",
-          target_id: membership.user_id,
+          target_kind: "membership",
+          target_id: membership.id,
           target_label: membership.invitation_sent_to,
           payload: %{role: membership.role, runner_access: runner_access_payload(access)}
         ]
     )
   end
 
-  # Self-service accept (no Subject): the user accepting is the actor.
-  def user_invitation_accepted(%Users.User{} = user, %Accounts.Membership{} = membership) do
+  # Self-service accept (no Subject): the accepting Member is the actor.
+  def user_invitation_accepted(%Accounts.Membership{} = membership) do
     Audit.changeset(membership.account_id, "user.invitation_accepted",
-      actor_kind: "user",
-      actor_id: user.id,
-      target_kind: "user",
-      target_id: user.id,
+      actor_kind: "membership",
+      actor_id: membership.id,
+      target_kind: "membership",
+      target_id: membership.id,
       target_label: Accounts.member_display_name(membership),
       payload: %{role: membership.role}
     )
@@ -598,8 +588,8 @@ defmodule Emisar.Audit.Events do
   # this row is the durable record of which credential the approval minted.
   def api_key_created_via_device_grant(%ApiKeys.DeviceGrant{} = grant, %ApiKeys.ApiKey{} = key) do
     Audit.changeset(key.account_id, "api_key.created",
-      actor_kind: "user",
-      actor_id: grant.approved_by_id,
+      actor_kind: "membership",
+      actor_id: grant.approved_by_membership_id,
       target_kind: "api_key",
       target_id: key.id,
       target_label: key.name,
@@ -1562,17 +1552,24 @@ defmodule Emisar.Audit.Events do
   defp dispatch_actor(%{audit_execution: %Runbooks.RunbookExecution{} = execution}),
     do: dispatch_actor(execution)
 
+  # An API key also records its creator's Member, but the key stays the actor;
+  # a person's work is attributed to the exact Member that initiated it.
   defp dispatch_actor(attrs) do
-    actor_kind =
+    {actor_kind, actor_id} =
       cond do
-        is_binary(Map.get(attrs, :requested_by_id)) -> "user"
-        is_binary(Map.get(attrs, :api_key_id)) -> "api_key"
-        true -> "system"
+        is_binary(Map.get(attrs, :api_key_id)) ->
+          {"api_key", Map.get(attrs, :api_key_id)}
+
+        is_binary(Map.get(attrs, :initiating_membership_id)) ->
+          {"membership", Map.get(attrs, :initiating_membership_id)}
+
+        true ->
+          {"system", nil}
       end
 
     [
       actor_kind: actor_kind,
-      actor_id: Map.get(attrs, :requested_by_id) || Map.get(attrs, :api_key_id),
+      actor_id: actor_id,
       ip_address: Map.get(attrs, :ip_address),
       user_agent: Map.get(attrs, :user_agent),
       request_id: Map.get(attrs, :request_id)
@@ -1681,6 +1678,23 @@ defmodule Emisar.Audit.Events do
 
   # -- SSO -------------------------------------------------------------
 
+  @doc """
+  An SSO proof signed this Member in to its workspace. One row per workspace the
+  proof granted, each naming that workspace's Member; the personal login and
+  workspaces the proof did not reach record nothing.
+  """
+  def member_signed_in_via_sso(%Accounts.Membership{} = member, %RequestContext{} = context) do
+    Audit.changeset(member.account_id, "user.signed_in",
+      actor_kind: "membership",
+      actor_id: member.id,
+      target_kind: "membership",
+      target_id: member.id,
+      target_label: Accounts.member_display_name(member),
+      context: context,
+      payload: %{method: "sso"}
+    )
+  end
+
   @doc "A user JIT-provisioned by an SSO login. Actor is the system (the IdP via JIT), not a member."
   def user_provisioned_via_sso(
         %Accounts.Membership{} = member,
@@ -1688,8 +1702,8 @@ defmodule Emisar.Audit.Events do
       ) do
     Audit.changeset(provider.account_id, "user.provisioned_via_sso",
       actor_kind: "system",
-      target_kind: "user",
-      target_id: member.user_id,
+      target_kind: "membership",
+      target_id: member.id,
       target_label: Accounts.member_display_name(member),
       payload: %{
         provider_id: provider.id,
@@ -1715,8 +1729,8 @@ defmodule Emisar.Audit.Events do
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
-      target_kind: "user",
-      target_id: member.user_id,
+      target_kind: "membership",
+      target_id: member.id,
       target_label: Accounts.member_display_name(member),
       payload: %{
         provider_id: provider.id,
@@ -1737,8 +1751,8 @@ defmodule Emisar.Audit.Events do
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
-      target_kind: "user",
-      target_id: membership.user_id,
+      target_kind: "membership",
+      target_id: membership.id,
       target_label: display_name,
       payload: %{
         provider_id: provider.id,
@@ -1775,8 +1789,8 @@ defmodule Emisar.Audit.Events do
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
-      target_kind: "user",
-      target_id: membership.user_id,
+      target_kind: "membership",
+      target_id: membership.id,
       target_label: membership.display_name,
       payload: %{
         provider_id: provider.id,
@@ -1798,8 +1812,8 @@ defmodule Emisar.Audit.Events do
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
-      target_kind: "user",
-      target_id: membership.user_id,
+      target_kind: "membership",
+      target_id: membership.id,
       target_label: membership.display_name,
       payload: %{
         provider_id: provider.id,
@@ -1819,8 +1833,8 @@ defmodule Emisar.Audit.Events do
       actor_kind: "directory_sync",
       actor_id: provider.id,
       actor_label: provider.name,
-      target_kind: "user",
-      target_id: membership.user_id,
+      target_kind: "membership",
+      target_id: membership.id,
       target_label: membership.display_name,
       payload: %{provider_id: provider.id, provider_kind: to_string(provider.kind)}
     )
@@ -2084,8 +2098,8 @@ defmodule Emisar.Audit.Events do
       "sso.link_request_approved",
       actor(subject) ++
         [
-          target_kind: "user",
-          target_id: member.user_id,
+          target_kind: "membership",
+          target_id: member.id,
           target_label: Accounts.member_display_name(member),
           payload: %{
             provider_id: provider.id,
@@ -2107,8 +2121,8 @@ defmodule Emisar.Audit.Events do
       "sso.existing_user_linked",
       actor(subject) ++
         [
-          target_kind: "user",
-          target_id: member.user_id,
+          target_kind: "membership",
+          target_id: member.id,
           target_label: Accounts.member_display_name(member),
           payload: %{
             provider_id: provider.id,
@@ -2140,8 +2154,8 @@ defmodule Emisar.Audit.Events do
       event_type,
       actor(subject) ++
         [
-          target_kind: "user",
-          target_id: member.user_id,
+          target_kind: "membership",
+          target_id: member.id,
           target_label: Accounts.member_display_name(member),
           payload: %{provider_id: provider.id, provider_kind: to_string(provider.kind)}
         ]
@@ -2345,7 +2359,7 @@ defmodule Emisar.Audit.Events do
     Audit.changeset(
       membership.account_id,
       event_type,
-      actor(subject) ++ [target_kind: "user", target_id: membership.user_id]
+      actor(subject) ++ [target_kind: "membership", target_id: membership.id]
     )
   end
 
@@ -2363,10 +2377,9 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  defp user_event(
+  defp labeled_member_event(
          %Subject{} = subject,
          %Accounts.Membership{} = membership,
-         %Users.User{} = user,
          event_type
        ) do
     Audit.changeset(
@@ -2374,8 +2387,8 @@ defmodule Emisar.Audit.Events do
       event_type,
       actor(subject) ++
         [
-          target_kind: "user",
-          target_id: user.id,
+          target_kind: "membership",
+          target_id: membership.id,
           target_label: Accounts.member_display_name(membership)
         ]
     )
@@ -2389,12 +2402,20 @@ defmodule Emisar.Audit.Events do
   defp actor(%Subject{} = subject),
     do: [
       actor_kind: Subject.actor_kind(subject),
-      actor_id: Subject.actor_id(subject),
+      actor_id: audit_actor_id(subject),
       auth_method: format_auth_method(subject.auth_method),
       mfa: subject.mfa,
       user_identity_id: subject.user_identity_id,
       context: subject.context
     ]
+
+  # A person is recorded as the exact Member they acted as, never the personal
+  # login behind it. An API key also carries its creator's Member for runner
+  # scope, but the key itself stays the actor.
+  defp audit_actor_id(%Subject{actor: %Users.User{}} = subject),
+    do: Subject.human_membership_id(subject)
+
+  defp audit_actor_id(%Subject{} = subject), do: Subject.actor_id(subject)
 
   defp format_auth_method(nil), do: nil
   defp format_auth_method(method) when is_atom(method), do: Atom.to_string(method)

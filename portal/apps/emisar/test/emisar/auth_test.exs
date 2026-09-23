@@ -455,7 +455,7 @@ defmodule Emisar.AuthTest do
 
   describe "complete_session_sign_out/2" do
     test "drops the presented session and audits it once, to the token's owner" do
-      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       context = RequestContext.new(%{ip_address: "203.0.113.7", user_agent: "Firefox"})
 
@@ -463,8 +463,8 @@ defmodule Emisar.AuthTest do
 
       assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
       assert [event] = events_of_type("user.signed_out")
-      assert event.actor_id == user.id
-      assert event.target_id == user.id
+      assert event.actor_id == subject.membership_id
+      assert event.target_id == subject.membership_id
       assert event.ip_address == "203.0.113.7"
       assert event.user_agent == "Firefox"
     end

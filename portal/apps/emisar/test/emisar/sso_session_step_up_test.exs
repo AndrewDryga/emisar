@@ -176,7 +176,14 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert current.mfa
       topic = Auth.live_socket_topic_for_session(browser.raw)
       assert_received {:disconnect, [^topic]}
-      assert_receive {:audit_event, %Audit.Event{event_type: "user.signed_in"}}
+      assert_receive {:audit_event, %Audit.Event{event_type: "user.signed_in"} = signed_in}
+      assert {signed_in.actor_kind, signed_in.actor_id} == {"membership", context.member.id}
+
+      refute Repo.exists?(
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_account_id(sibling.id)
+               |> Audit.Event.Query.by_event_type("user.signed_in")
+             )
 
       assert complete(context, browser, stash) == {:error, :unauthorized}
       refute_received {:disconnect, _}

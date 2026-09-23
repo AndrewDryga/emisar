@@ -36,7 +36,7 @@ defmodule Emisar.Audit.RejectionTest do
 
     assert [recorded] = rejected_events()
     assert recorded.account_id == account.id
-    assert recorded.actor_id == subject.actor.id
+    assert recorded.actor_id == subject.membership_id
     assert recorded.occurred_at == Ecto.Changeset.get_field(event, :occurred_at)
     assert recorded.retain_until == Ecto.Changeset.get_field(event, :retain_until)
 

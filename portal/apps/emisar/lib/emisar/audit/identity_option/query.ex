@@ -4,7 +4,8 @@ defmodule Emisar.Audit.IdentityOption.Query do
   alias Emisar.Audit.Event
   alias Emisar.Repo.Like
 
-  # Historical labels deliberately include soft-deleted entities. Current user
+  # Historical labels deliberately include soft-deleted entities. Member labels
+  # are this account's local profile, removed Members included; legacy user
   # names still belong to this account's surviving membership, not another tenant.
   def all(kind, side, account_id, readable_events) when side in [:actor, :target] do
     current = current_labels(kind, account_id)
@@ -191,6 +192,21 @@ defmodule Emisar.Audit.IdentityOption.Query do
       on: true,
       select: %{account_id: i.account_id, id: i.id, label: h.label}
     )
+  end
+
+  defp current_labels("membership", account_id) do
+    Emisar.Accounts.Membership.Query.all()
+    |> Emisar.Accounts.Membership.Query.by_account_id(account_id)
+    |> select([memberships: m], %{
+      id: m.id,
+      label:
+        fragment(
+          "COALESCE(NULLIF(BTRIM(?), ''), ?::text)",
+          m.display_name,
+          m.contact_email
+        )
+    })
+    |> wrap_labels()
   end
 
   defp current_labels("user", account_id) do

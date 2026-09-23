@@ -171,10 +171,12 @@ defmodule Emisar.Auth.Subject do
     do: Emisar.Auth.ensure_personal_session(subject)
 
   @doc """
-  String label for the subject's actor kind. Used by `Audit.log/3`
-  callers to stamp the `actor_kind` field consistently.
+  String label for the subject's audit actor kind. A person acts in a workspace
+  as its exact Member (`"membership"`, see `human_membership_id/1`), never as
+  the personal login behind it; an API key stays `"api_key"` even though it
+  records its creator's Member.
   """
-  def actor_kind(%__MODULE__{actor: %Users.User{}}), do: "user"
+  def actor_kind(%__MODULE__{actor: %Users.User{}}), do: "membership"
   def actor_kind(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{}}), do: "api_key"
   def actor_kind(%__MODULE__{actor: %Emisar.Runners.Runner{}}), do: "runner"
   # Defensive fallback: an actor-less subject (anonymous bootstrap) is a system

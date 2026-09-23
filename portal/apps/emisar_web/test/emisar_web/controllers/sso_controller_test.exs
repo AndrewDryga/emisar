@@ -1133,12 +1133,13 @@ defmodule EmisarWeb.SSOControllerTest do
 
       token = get_session(conn, :user_token)
       {:ok, user, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       [event] =
         Emisar.Audit.Event.Query.all()
         |> Emisar.Audit.Event.Query.by_account_id(account.id)
         |> Emisar.Audit.Event.Query.by_event_type("user.signed_in")
-        |> Emisar.Audit.Event.Query.by_target_id(user.id)
+        |> Emisar.Audit.Event.Query.by_target_id(member.id)
         |> Repo.all()
 
       assert event.payload["method"] == "sso"

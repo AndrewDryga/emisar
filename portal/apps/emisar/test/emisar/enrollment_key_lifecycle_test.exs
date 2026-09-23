@@ -209,7 +209,7 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
       assert {:ok, raw, key} = Runners.create_enrollment_key(attrs, subject)
       event = Enum.find(Repo.all(Audit.Event), &(&1.target_id == key.id))
       assert event.account_id == subject.account.id
-      assert event.actor_id == subject.actor.id
+      assert event.actor_id == membership.id
       assert event.payload["reusable"] == key.reusable
       assert Map.fetch!(event.payload, "max_uses") == key.max_uses
       expected_expiry = if key.expires_at, do: DateTime.to_iso8601(key.expires_at)

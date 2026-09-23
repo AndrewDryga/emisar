@@ -241,11 +241,12 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     member = Fixtures.Memberships.fetch_membership(account.id, person.id)
     member |> Ecto.Changeset.change(display_name: "Work A") |> Repo.update!()
 
-    Fixtures.Memberships.create_membership(
-      account_id: other_account.id,
-      user_id: person.id,
-      display_name: "Work B"
-    )
+    other_member =
+      Fixtures.Memberships.create_membership(
+        account_id: other_account.id,
+        user_id: person.id,
+        display_name: "Work B"
+      )
 
     context = %Emisar.RequestContext{
       ip_address: "203.0.113.17",
@@ -267,9 +268,13 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
 
     opts = [filter: [event_type: ["user.profile_updated", "user.email_changed"]]]
 
-    for {reader, label} <- [{subject, "Work A"}, {other_reader, "Work B"}] do
+    for {reader, label, member_id} <- [
+          {subject, "Work A", member.id},
+          {other_reader, "Work B", other_member.id}
+        ] do
       assert {:ok, events, _} = Emisar.Audit.list_events(reader, opts)
       assert length(events) == 2
+      assert Enum.all?(events, &(&1.actor_id == member_id and &1.target_id == member_id))
       assert Enum.all?(events, &(&1.target_label == label and &1.payload == %{}))
       assert Enum.all?(events, &is_nil(&1.actor_label))
       assert Enum.all?(events, &(&1.ip_address == nil and &1.user_agent == nil))

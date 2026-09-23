@@ -105,6 +105,38 @@ defmodule Emisar.AuditIdentityOptionsTest do
       assert {:ok, [{^id, "Old name"}], _} = Audit.list_actor_options("user", subject)
     end
 
+    test "Member choices use the local profile, keep a removed Member, never another account's",
+         %{account: account, subject: subject} do
+      present =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: "Present member"
+        )
+
+      removed =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: "Removed member"
+        )
+
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
+      foreign = Fixtures.Memberships.create_membership(display_name: "Foreign member")
+
+      for member <- [present, removed, foreign] do
+        event(account, member.id, nil, actor_kind: "membership", target_kind: "membership")
+      end
+
+      expected = [{present.id, "Present member"}, {removed.id, "Removed member"}]
+      foreign_id = foreign.id
+
+      for read <- [&Audit.list_actor_options/3, &Audit.list_target_options/3] do
+        assert {:ok, ^expected, _} = read.("membership", subject, [])
+
+        assert {:ok, [{^foreign_id, ^foreign_id}], _} =
+                 read.("membership", subject, search: "Foreign", ensure: foreign_id)
+      end
+    end
+
     test "latest nonblank readable snapshot wins before search, not an older matching name", %{
       account: account,
       subject: subject

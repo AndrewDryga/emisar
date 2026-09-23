@@ -887,7 +887,7 @@ defmodule Emisar.OAuthTest do
       {:ok, [event], _meta} =
         Emisar.Audit.list_events(subject, filter: [event_type: ["oauth.consent_granted"]])
 
-      assert event.actor_id == Emisar.Auth.Subject.actor_id(subject)
+      assert event.actor_id == subject.membership_id
       assert event.target_kind == "api_key"
       assert event.payload["client_id"] == client.id
     end

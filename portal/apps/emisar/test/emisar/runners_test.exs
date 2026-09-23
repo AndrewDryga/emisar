@@ -1563,7 +1563,6 @@ defmodule Emisar.RunnersTest do
 
     test "an owner turns cleanup on with the raw form window", %{
       account: account,
-      user: user,
       subject: subject
     } do
       attrs = %{"hours" => "720"}
@@ -1577,8 +1576,8 @@ defmodule Emisar.RunnersTest do
       assert [audit] = Enum.filter(events, &(&1.event_type == "account.updated"))
       assert audit.target_kind == "account"
       assert audit.target_id == account.id
-      assert audit.actor_kind == "user"
-      assert audit.actor_id == user.id
+      assert audit.actor_kind == "membership"
+      assert audit.actor_id == subject.membership_id
     end
 
     test "a blank window turns cleanup off", %{account: account, subject: subject} do
@@ -1725,7 +1724,7 @@ defmodule Emisar.RunnersTest do
       assert is_nil(Runners.peek_runner_by_id(runner.id))
 
       assert [marker] = retention_markers(account.id)
-      assert marker.actor_kind == "user"
+      assert marker.actor_kind == "membership"
       assert marker.payload["count"] == 1
       assert marker.payload["inactive_hours"] == 1
     end

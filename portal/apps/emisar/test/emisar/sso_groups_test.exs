@@ -74,19 +74,19 @@ defmodule Emisar.SSOGroupsTest do
     Accounts.runner_access_for_membership(account_id, membership.id)
   end
 
-  defp synced_access_audit_count(account_id, user_id) do
+  defp synced_access_audit_count(account_id, membership_id) do
     Emisar.Audit.Event.Query.all()
     |> Emisar.Audit.Event.Query.by_account_id(account_id)
     |> Emisar.Audit.Event.Query.by_event_type("membership.runner_access_synced_via_scim")
-    |> where([event], event.target_id == ^user_id)
+    |> where([event], event.target_id == ^membership_id)
     |> Repo.aggregate(:count)
   end
 
-  defp latest_synced_access_audit(account_id, user_id) do
+  defp latest_synced_access_audit(account_id, membership_id) do
     Emisar.Audit.Event.Query.all()
     |> Emisar.Audit.Event.Query.by_account_id(account_id)
     |> Emisar.Audit.Event.Query.by_event_type("membership.runner_access_synced_via_scim")
-    |> where([event], event.target_id == ^user_id)
+    |> where([event], event.target_id == ^membership_id)
     |> order_by([event], desc: event.inserted_at, desc: event.id)
     |> limit(1)
     |> Repo.one!()
@@ -852,7 +852,7 @@ defmodule Emisar.SSOGroupsTest do
                }
 
       stale_provider = Repo.reload!(provider)
-      audit_count_before = synced_access_audit_count(account.id, membership.user_id)
+      audit_count_before = synced_access_audit_count(account.id, membership.id)
 
       deleted_runner = Fixtures.Runners.mark_deleted(runner)
 
@@ -897,17 +897,17 @@ defmodule Emisar.SSOGroupsTest do
                  runner_ids: [runner.id]
                }
 
-      assert synced_access_audit_count(account.id, membership.user_id) ==
+      assert synced_access_audit_count(account.id, membership.id) ==
                audit_count_before + 1
 
-      event = latest_synced_access_audit(account.id, membership.user_id)
+      event = latest_synced_access_audit(account.id, membership.id)
       assert event.payload["before"]["mode"] == "none"
       assert event.payload["after"]["groups"] == ["baseline"]
       assert event.payload["after"]["runner_ids"] == [runner.id]
 
       assert SSO.reconcile_pending_authorizations() == :ok
 
-      assert synced_access_audit_count(account.id, membership.user_id) ==
+      assert synced_access_audit_count(account.id, membership.id) ==
                audit_count_before + 1
     end
 

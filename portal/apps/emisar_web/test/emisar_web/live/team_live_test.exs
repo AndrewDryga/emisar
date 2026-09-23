@@ -134,7 +134,13 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       row = "#member-row-#{owner_membership.id}"
-      assert has_element?(lv, "#{row} a[href*='actor_id=#{owner.id}']", "View activity")
+
+      assert has_element?(
+               lv,
+               "#{row} a[href*='actor_kind=membership'][href*='actor_id=#{owner_membership.id}']",
+               "View activity"
+             )
+
       refute has_element?(lv, "#{row} summary", "Actions")
       refute has_element?(lv, "#change-role-#{teammate.id}-owner")
 
@@ -1297,7 +1303,7 @@ defmodule EmisarWeb.TeamLiveTest do
       } do
         member = Fixtures.Users.create_user()
 
-        _ =
+        member_membership =
           Fixtures.Memberships.create_membership(
             account_id: account.id,
             user_id: member.id,
@@ -1327,11 +1333,15 @@ defmodule EmisarWeb.TeamLiveTest do
         # which this role doesn't get at all.)
         refute has_element?(
                  lv,
-                 "a[href*='actor_id=#{teammate.id}']",
+                 "a[href*='actor_id=#{teammate_membership.id}']",
                  "View activity"
                )
 
-        assert has_element?(lv, "a[href*='actor_id=#{member.id}']", "View activity")
+        assert has_element?(
+                 lv,
+                 "a[href*='actor_id=#{member_membership.id}']",
+                 "View activity"
+               )
       end
     end
 
@@ -1345,11 +1355,12 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       member = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "billing_manager"
-      )
+      member_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: member.id,
+          role: "billing_manager"
+        )
 
       {:ok, lv, html} =
         build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
@@ -1365,8 +1376,8 @@ defmodule EmisarWeb.TeamLiveTest do
       assert has_element?(lv, "#team-read-only", "Read-only")
       refute html =~ "Your role:"
 
-      refute has_element?(lv, "a[href*='actor_id=#{teammate.id}']", "View activity")
-      refute has_element?(lv, "a[href*='actor_id=#{member.id}']", "View activity")
+      refute has_element?(lv, "a[href*='actor_id=#{teammate_membership.id}']", "View activity")
+      refute has_element?(lv, "a[href*='actor_id=#{member_membership.id}']", "View activity")
     end
 
     test "a teammate's activity facts are hidden; your own row keeps them", %{
@@ -2423,16 +2434,16 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "an active member's row opens the labeled Actions menu with label-only rows", %{
       lv: lv,
-      member: member
+      membership: membership
     } do
       assert has_element?(lv, "summary", "Actions")
-      assert has_element?(lv, "details a[href*='actor_id=#{member.id}']", "View activity")
-      refute has_element?(lv, "details a[href*='actor_id=#{member.id}'] svg.emisar-icon")
+      assert has_element?(lv, "details a[href*='actor_id=#{membership.id}']", "View activity")
+      refute has_element?(lv, "details a[href*='actor_id=#{membership.id}'] svg.emisar-icon")
     end
 
     test "an admin manager gets the same labeled Actions menu", %{
       account: account,
-      member: member
+      membership: membership
     } do
       admin = Fixtures.Users.create_user()
 
@@ -2446,7 +2457,7 @@ defmodule EmisarWeb.TeamLiveTest do
         build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "summary", "Actions")
-      assert has_element?(lv, "details a[href*='actor_id=#{member.id}']", "View activity")
+      assert has_element?(lv, "details a[href*='actor_id=#{membership.id}']", "View activity")
     end
 
     test "inviting a suppressed address warns on the success step, not a silent success", %{

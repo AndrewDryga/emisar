@@ -2538,8 +2538,8 @@ defmodule Emisar.RunsTest do
       assert blocked.target_kind == "runner"
       assert blocked.target_id == runner.id
       assert blocked.payload["requested_action_id"] == "linux.uptime"
-      assert blocked.actor_kind == "user"
-      assert blocked.actor_id == subject.actor.id
+      assert blocked.actor_kind == "membership"
+      assert blocked.actor_id == subject.membership_id
       assert blocked.ip_address == "203.0.113.7"
       assert blocked.user_agent == "Audit regression client"
       assert blocked.request_id == "request-audit-rejection"
@@ -4632,7 +4632,7 @@ defmodule Emisar.RunsTest do
       assert Runs.redeliver_to_runner(run) == {:error, :pack_untrusted}
       assert Runs.peek_run_by_id(run.id).status == :refused
       assert [blocked] = dispatch_rejections("dispatch_blocked_pack_untrusted")
-      assert blocked.actor_id == subject.actor.id
+      assert blocked.actor_id == subject.membership_id
       assert blocked.payload["run_id"] == run.id
       assert blocked.request_id == run.request_id
 

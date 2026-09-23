@@ -278,11 +278,11 @@ defmodule Emisar.AuditTest do
   end
 
   describe "user_changesets/3" do
-    test "one changeset per active membership, each stamped with the user defaults" do
+    test "one changeset per active membership, each naming that account's Member" do
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
 
-      _ =
+      membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: user.id,
@@ -294,11 +294,11 @@ defmodule Emisar.AuditTest do
       assert %Ecto.Changeset{valid?: true} = changeset
       # Scoped onto the user's account…
       assert Ecto.Changeset.get_field(changeset, :account_id) == account.id
-      # …with the user-scoped defaults derived from the user row.
-      assert Ecto.Changeset.get_field(changeset, :actor_kind) == "user"
-      assert Ecto.Changeset.get_field(changeset, :actor_id) == user.id
-      assert Ecto.Changeset.get_field(changeset, :target_kind) == "user"
-      assert Ecto.Changeset.get_field(changeset, :target_id) == user.id
+      # …naming that account's Member, never the personal login.
+      assert Ecto.Changeset.get_field(changeset, :actor_kind) == "membership"
+      assert Ecto.Changeset.get_field(changeset, :actor_id) == membership.id
+      assert Ecto.Changeset.get_field(changeset, :target_kind) == "membership"
+      assert Ecto.Changeset.get_field(changeset, :target_id) == membership.id
       assert Ecto.Changeset.get_field(changeset, :target_label) == "Test User"
     end
 
@@ -307,14 +307,14 @@ defmodule Emisar.AuditTest do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
 
-      _ =
+      member_a =
         Fixtures.Memberships.create_membership(
           account_id: account_a.id,
           user_id: user.id,
           display_name: "Work A"
         )
 
-      _ =
+      member_b =
         Fixtures.Memberships.create_membership(
           account_id: account_b.id,
           user_id: user.id,
@@ -329,8 +329,12 @@ defmodule Emisar.AuditTest do
       assert Map.new(
                changesets,
                &{Ecto.Changeset.get_field(&1, :account_id),
-                Ecto.Changeset.get_field(&1, :target_label)}
-             ) == %{account_a.id => "Work A", account_b.id => "Work B"}
+                {Ecto.Changeset.get_field(&1, :actor_id),
+                 Ecto.Changeset.get_field(&1, :target_label)}}
+             ) == %{
+               account_a.id => {member_a.id, "Work A"},
+               account_b.id => {member_b.id, "Work B"}
+             }
     end
 
     test "attrs can override actor metadata but never the local profile label" do
@@ -415,6 +419,47 @@ defmodule Emisar.AuditTest do
       refute Map.has_key?(payload, :signing_ca_id)
       refute Map.has_key?(payload, :signing_key_id)
       refute Map.has_key?(payload, :operation_id)
+    end
+
+    test "names the initiating Member for a person's run and the key for an agent's run" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member.user_id)
+
+      attrs = %{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        args: %{}
+      }
+
+      {:ok, person_run} =
+        attrs
+        |> Map.merge(%{
+          source: "operator",
+          requested_by_id: member.user_id,
+          initiating_membership_id: member.id
+        })
+        |> Runs.create_run()
+
+      {:ok, agent_run} =
+        attrs |> Map.merge(%{source: "mcp", api_key_id: key.id}) |> Runs.create_run()
+
+      actor = fn run ->
+        changeset = Audit.run_event_changeset(run)
+
+        {Ecto.Changeset.get_field(changeset, :actor_kind),
+         Ecto.Changeset.get_field(changeset, :actor_id)}
+      end
+
+      assert actor.(person_run) == {"membership", member.id}
+      # The agent's run carries its key creator's Member for runner scope, but
+      # the key itself is the actor.
+      assert agent_run.initiating_membership_id == member.id
+      assert actor.(agent_run) == {"api_key", key.id}
     end
 
     test "carries positive signing evidence for a bridge-attested run" do
@@ -617,9 +662,10 @@ defmodule Emisar.AuditTest do
 
       {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
 
-      # Actor identity comes off the subject…
-      assert event.actor_kind == "user"
-      assert event.actor_id == user.id
+      # Actor identity comes off the subject — the exact Member, not the
+      # personal login behind it…
+      assert event.actor_kind == "membership"
+      assert event.actor_id == subject.membership_id
       # …and so does the request metadata — the lever that lets every
       # builder inherit IP, user agent, and request id without threading a conn.
       assert event.ip_address == "203.0.113.7"
@@ -636,10 +682,28 @@ defmodule Emisar.AuditTest do
 
       {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
 
-      assert event.actor_id == user.id
+      assert event.actor_id == subject.membership_id
       assert event.ip_address == nil
       assert event.user_agent == nil
       assert event.request_id == nil
+    end
+
+    test "an API key stays the actor although it carries its creator's Member", %{
+      user: user,
+      account: account
+    } do
+      creator = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      subject = Emisar.Auth.Subject.for_api_key(key, account)
+      updated = %{account | name: "Renamed"}
+
+      {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
+
+      assert subject.membership_id == creator.id
+      assert {event.actor_kind, event.actor_id} == {"api_key", key.id}
     end
 
     test "a builder stamps the subject's auth provenance onto the event", %{
@@ -2078,7 +2142,7 @@ defmodule Emisar.AuditTest do
       assert {:ok, event} = Audit.record_export(subject, [limit: 100, event_types: []], 7)
       assert event.event_type == "audit.exported"
       assert event.account_id == account.id
-      assert event.actor_id == subject.actor.id
+      assert event.actor_id == subject.membership_id
 
       # Re-read: JSONB round-trips the payload's keys to strings.
       {:ok, events, _} = Audit.list_events(subject, page: [limit: 50])
@@ -2218,6 +2282,50 @@ defmodule Emisar.AuditTest do
         assert {:ok, options, _} = Audit.list_target_options(event.target_kind, subject)
         assert {event.target_id, refs[event.target_kind][event.target_id]} in options
       end
+    end
+
+    test "resolves exact Member labels, a removed Member's included, never another account's", %{
+      account: account,
+      subject: subject
+    } do
+      present =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: "Present member"
+        )
+
+      removed =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: "Removed member"
+        )
+
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
+      foreign = Fixtures.Memberships.create_membership(display_name: "Foreign member")
+
+      {:ok, event} =
+        Audit.log(account.id, "membership.removed",
+          actor_kind: "membership",
+          actor_id: present.id,
+          target_kind: "membership",
+          target_id: removed.id
+        )
+
+      # A mis-stamped row in this account naming another account's Member.
+      {:ok, misstamped} =
+        Audit.log(account.id, "membership.removed",
+          actor_kind: "membership",
+          actor_id: foreign.id
+        )
+
+      refs = Audit.resolve_references([event, misstamped], subject)
+
+      assert refs["membership"] == %{
+               present.id => "Present member",
+               removed.id => "Removed member"
+             }
+
+      refute refs["historical"][{"membership", :actor}][foreign.id]
     end
 
     test "resolves the human behind an api_key actor (its owner)", %{
@@ -2749,8 +2857,8 @@ defmodule Emisar.AuditTest do
 
       {:ok, _} =
         Audit.log(account.id, "user.invited",
-          actor_kind: "user",
-          target_kind: "user"
+          actor_kind: "membership",
+          target_kind: "membership"
         )
 
       {:ok, _} =
@@ -2764,8 +2872,8 @@ defmodule Emisar.AuditTest do
       actor = Enum.find(filters, &(&1.name == :actor_kind))
       target = Enum.find(filters, &(&1.name == :target_kind))
 
-      assert Enum.map(actor.values, &elem(&1, 0)) == ~w[user system]
-      assert Enum.map(target.values, &elem(&1, 0)) == ~w[user account]
+      assert Enum.map(actor.values, &elem(&1, 0)) == ~w[membership system]
+      assert Enum.map(target.values, &elem(&1, 0)) == ~w[membership account]
 
       assert {:ok, crafted} =
                Audit.available_event_filters(nil, %{"actor_kind" => "runner"}, subject)
@@ -2912,18 +3020,18 @@ defmodule Emisar.AuditTest do
   end
 
   describe "the event taxonomy (known types, kinds, noisy set, builders)" do
-    # the Actor-type dropdown exposes exactly the seven actor
-    # kinds and the Target filter the nine target kinds the catalog enumerates;
+    # the Actor-type dropdown exposes exactly the actor kinds and the Target
+    # filter exactly the target kinds the catalog enumerates;
     # both lists are read straight from the LiveTable %Filter{} values so a
     # silently-added/dropped kind is caught. `staff` is an Emisar-side human
     # acting on the account from the staff console — deliberately visible to the
     # customer, so it must be filterable in the customer's own trail.
     test "the actor-kind and subject-kind filter enumerations match the catalog" do
       assert filter_values(:actor_kind) ==
-               ~w[user staff api_key runner runbook scheduler system]
+               ~w[membership user staff api_key runner runbook scheduler system]
 
       assert filter_values(:target_kind) ==
-               ~w[user account runner api_key enrollment_key approval_request
+               ~w[membership user account runner api_key enrollment_key approval_request
                   approval_grant runbook policy pack_version identity_provider]
     end
 
@@ -3154,7 +3262,7 @@ defmodule Emisar.AuditTest do
 
       for changeset <- changesets do
         assert {:ok, event} = Audit.record(changeset)
-        assert event.target_id == membership.user_id
+        assert {event.target_kind, event.target_id} == {"membership", membership.id}
         assert event.target_label == "Directory member"
       end
 

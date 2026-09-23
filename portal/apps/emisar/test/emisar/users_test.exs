@@ -196,7 +196,7 @@ defmodule Emisar.UsersTest do
       assert {:ok, [event], _} =
                Audit.list_events(subject, filter: [event_type: ["user.mfa_enabled"]])
 
-      assert event.actor_id == user.id
+      assert event.actor_id == subject.membership_id
     end
   end
 

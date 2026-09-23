@@ -1271,7 +1271,7 @@ defmodule Emisar.ApiKeysTest do
       assert original_event.payload["replaces_id"] == nil
       refute Map.has_key?(original_event.payload, "replaces_prefix")
       assert replacement_event.account_id == original.account_id
-      assert replacement_event.actor_id == subject.actor.id
+      assert replacement_event.actor_id == subject.membership_id
       assert replacement_event.payload["replaces_id"] == original.id
       assert replacement_event.payload["replaces_prefix"] == original.key_prefix
       refute Jason.encode!(replacement_event.payload) =~ new_raw
@@ -3188,7 +3188,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "each minted key gets an api_key.created audit row naming the approver" do
-      {user, _account, subject} = owner_subject_pair()
+      {_user, _account, subject} = owner_subject_pair()
       context = %RequestContext{ip_address: "203.0.113.9"}
 
       {:ok, device_code, _user_code, grant} =
@@ -3205,8 +3205,8 @@ defmodule Emisar.ApiKeysTest do
 
       for event <- events do
         key = Map.fetch!(keys_by_id, event.target_id)
-        assert event.actor_kind == "user"
-        assert event.actor_id == user.id
+        assert event.actor_kind == "membership"
+        assert event.actor_id == subject.membership_id
         assert event.target_label == key.name
         assert event.payload["prefix"] == key.key_prefix
         assert event.payload["kind"] == "mcp"

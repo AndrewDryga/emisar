@@ -121,7 +121,9 @@ defmodule Emisar.Auth do
   and fixed to `:sso` provenance so no other flow can borrow it. Holds the
   active account and current identity-provider row locks while recording the
   sign-in and inserting the user-global session credential, so account/provider
-  policy cannot change between the trust decision and the write. `opts` must
+  policy cannot change between the trust decision and the write. The sign-in is
+  recorded once per granted workspace, as that workspace's Member; the personal
+  User row and every other workspace are left untouched. `opts` must
   carry the callback's same-user, same-account `:user_identity_id` and exact
   `:provider_identifier`; the locked provider is the sole authority for the
   token's IdP MFA stamp. Returns `{:ok, token, mfa?}`
@@ -138,16 +140,16 @@ defmodule Emisar.Auth do
 
     Multi.new()
     |> SSO.put_sign_in_authority(user, account_id, opts)
-    |> Multi.merge(fn %{sso_user: locked_user} ->
-      Users.put_sign_in(Multi.new(), locked_user, "sso", context)
-    end)
-    |> Multi.insert(:token, fn %{sign_in: signed_in_user, sso_provider: provider} ->
+    |> Multi.insert(:token, fn %{sso_user: locked_user, sso_provider: provider} ->
       mfa_verified_at = if provider.satisfies_mfa, do: DateTime.utc_now()
 
-      UserToken.Changeset.session(signed_in_user, digest, metadata, :sso, mfa_verified_at, opts)
+      UserToken.Changeset.session(locked_user, digest, metadata, :sso, mfa_verified_at, opts)
     end)
     |> Multi.run(:member_grants, fn repo, %{token: session, sso_destinations: destinations} ->
       SessionGrants.insert_sso(repo, session, destinations)
+    end)
+    |> Multi.run(:sign_in_audit, fn repo, %{sso_destinations: destinations} ->
+      record_sso_sign_in(repo, destinations, context)
     end)
     |> Repo.commit_multi()
     |> case do
@@ -166,12 +168,9 @@ defmodule Emisar.Auth do
     |> Multi.run(:donor, fn repo, _changes ->
       fetch_and_lock_subject_session(presented_digest, subject, repo)
     end)
-    |> Multi.merge(fn %{sso_user: locked_user} ->
-      Users.put_sign_in(Multi.new(), locked_user, "sso", subject.context)
-    end)
     |> Multi.insert(:token, fn changes ->
       UserToken.Changeset.sso_step_up(
-        changes.sign_in,
+        changes.sso_user,
         digest,
         metadata,
         changes.sso_provider,
@@ -179,13 +178,16 @@ defmodule Emisar.Auth do
         changes.donor
       )
     end)
-    |> Multi.run(:member_grants, fn repo, changes ->
+    |> Multi.run(:refreshed_destinations, fn repo, changes ->
       SessionGrants.transfer_for_sso_step_up(
         repo,
         changes.donor,
         changes.token,
         changes.sso_destinations
       )
+    end)
+    |> Multi.run(:sign_in_audit, fn repo, %{refreshed_destinations: destinations} ->
+      record_sso_sign_in(repo, destinations, subject.context)
     end)
     |> Multi.delete(:consumed_donor, fn %{donor: donor} -> donor end)
     |> Repo.commit_multi(
@@ -194,12 +196,26 @@ defmodule Emisar.Auth do
       end
     )
     |> case do
-      {:ok, %{sign_in: user, account: account}} ->
+      {:ok, %{sso_user: user, account: account}} ->
         {:ok, %{user: user, account: account, token: raw}}
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # Each workspace this SSO proof granted records the sign-in, and the activity,
+  # as its own Member; workspaces the proof did not reach record nothing.
+  defp record_sso_sign_in(repo, destinations, context) do
+    members = destinations |> Enum.map(& &1.membership) |> Enum.uniq_by(& &1.id)
+    {:ok, _count} = Accounts.record_sso_sign_in_activity(repo, Enum.map(members, & &1.id))
+
+    Enum.reduce_while(members, {:ok, []}, fn member, {:ok, events} ->
+      case repo.insert(Audit.Events.member_signed_in_via_sso(member, context)) do
+        {:ok, event} -> {:cont, {:ok, [event | events]}}
+        {:error, _changeset} = error -> {:halt, error}
+      end
+    end)
   end
 
   @doc "Internal — donor account fence discovery; these persisted parents do not grant authority."

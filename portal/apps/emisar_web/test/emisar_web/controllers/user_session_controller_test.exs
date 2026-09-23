@@ -954,6 +954,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     test "audits user.signed_out attributed to the signed-out user", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
+      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       conn = delete(conn, ~p"/sign_out")
       assert redirected_to(conn) == "/"
@@ -962,7 +963,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
         Event.Query.all()
         |> Event.Query.by_account_id(account.id)
         |> Event.Query.by_event_type("user.signed_out")
-        |> Event.Query.by_target_id(user.id)
+        |> Event.Query.by_target_id(member.id)
         |> Repo.all()
 
       assert length(events) == 1

@@ -4,7 +4,7 @@ defmodule Emisar.RunnerCredentialRotationTest do
 
   describe "request_credential_rotation/2" do
     test "an offline runner keeps an audited, idempotent request until a new credential connects" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {raw, token} = Fixtures.Runners.create_token(runner)
       runner = Fixtures.Runners.set_connection_credential(runner, token)
@@ -28,7 +28,7 @@ defmodule Emisar.RunnerCredentialRotationTest do
         )
 
       assert [event] = events
-      assert event.actor_id == user.id
+      assert event.actor_id == subject.membership_id
 
       assert {:ok, successor_raw, _refresh_after} = Runners.refresh_runner_token(raw)
       assert_receive {:runner_credentials_changed, _}

@@ -136,8 +136,9 @@ defmodule Emisar.Audit do
   (sign-in, MFA, password change, profile edit); subject-less because the
   acting user is captured in the event itself. The user might not have a direct
   `account_id` in hand — most auth flows operate pre-Subject — so we look up the
-  user's active memberships and stamp one event per account, using each
-  workspace's own profile label. Callers supply only facts safe for that audience.
+  user's active memberships and stamp one event per account, each naming that
+  workspace's Member and its own profile label. Callers supply only facts safe
+  for that audience.
 
   Silently no-ops when the user has no active membership (brand-new
   signup mid-account-creation, fully-suspended user) — the parent
@@ -145,8 +146,9 @@ defmodule Emisar.Audit do
   read it.
 
   `attrs` accepts the same shape as `log/3` and overrides the defaults
-  (`actor_kind: "user", actor_id: user.id, target_kind: "user",
-   target_id: user.id`). The local target label cannot be overridden.
+  (`actor_kind: "membership", actor_id: membership.id, target_kind:
+  "membership", target_id: membership.id` for each copy's Member). The local
+  target label cannot be overridden.
   """
   def log_for_user(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
     case user_changesets(user, event_type, attrs) do
@@ -172,20 +174,22 @@ defmodule Emisar.Audit do
   mutation. Returns `[]` (treated as "skip") when the user has no active membership.
   """
   def user_changesets(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
-    defaults = %{
-      actor_kind: "user",
-      actor_id: user.id,
-      target_kind: "user",
-      target_id: user.id
-    }
-
-    merged = Map.merge(defaults, Map.new(attrs))
+    attrs = Map.new(attrs)
 
     user
     |> Emisar.Accounts.list_active_memberships_for_user()
     |> Enum.map(fn membership ->
-      attrs = Map.put(merged, :target_label, Emisar.Accounts.member_display_name(membership))
-      changeset(membership.account_id, event_type, attrs)
+      member_attrs =
+        %{
+          actor_kind: "membership",
+          actor_id: membership.id,
+          target_kind: "membership",
+          target_id: membership.id
+        }
+        |> Map.merge(attrs)
+        |> Map.put(:target_label, Emisar.Accounts.member_display_name(membership))
+
+      changeset(membership.account_id, event_type, member_attrs)
     end)
   end
 
@@ -199,9 +203,8 @@ defmodule Emisar.Audit do
       run.account_id,
       "action_run.#{run.status}",
       run_target(run) ++
+        run_actor(run) ++
         [
-          actor_kind: actor_kind(run),
-          actor_id: run.requested_by_id || run.api_key_id,
           # Authoritative for the run's own events, including the terminal ones
           # logged from the runner-socket process (no request metadata there).
           # request_id is the action-dispatch id (req_…) — the meaningful
@@ -324,10 +327,16 @@ defmodule Emisar.Audit do
 
   defp signing_cert_fingerprint(%Runs.ActionRun{}), do: nil
 
-  defp actor_kind(%Runs.ActionRun{requested_by_id: id}) when not is_nil(id), do: "user"
-  defp actor_kind(%Runs.ActionRun{api_key_id: id}) when not is_nil(id), do: "api_key"
-  defp actor_kind(%Runs.ActionRun{source: :runbook}), do: "runbook"
-  defp actor_kind(_), do: "system"
+  # An API key also records its creator's Member, but the key stays the actor;
+  # a person's run is attributed to the exact Member that initiated it.
+  defp run_actor(%Runs.ActionRun{api_key_id: id}) when is_binary(id),
+    do: [actor_kind: "api_key", actor_id: id]
+
+  defp run_actor(%Runs.ActionRun{initiating_membership_id: id}) when is_binary(id),
+    do: [actor_kind: "membership", actor_id: id]
+
+  defp run_actor(%Runs.ActionRun{source: :runbook}), do: [actor_kind: "runbook"]
+  defp run_actor(%Runs.ActionRun{}), do: [actor_kind: "system"]
 
   # -- PubSub ----------------------------------------------------------
 
@@ -897,8 +906,11 @@ defmodule Emisar.Audit do
   # actor/subject refs) and the option pickers.
   defp resolve_labels(ids_by_kind, account_id) do
     %{
-      # Users belong to accounts via memberships, not a column, so they
-      # scope through the membership join rather than `by_account_id`.
+      # Exact account-owned Members, including removed ones; another account's
+      # Member id resolves nothing.
+      "membership" => fetch_member_labels(ids_by_kind, account_id),
+      # Historical rows name the personal User. Users belong to accounts via
+      # memberships, not a column, so they scope through the membership join.
       "user" =>
         fetch_labels(
           Emisar.Users.User.Query,
@@ -1025,6 +1037,13 @@ defmodule Emisar.Audit do
           {id, :runner, scope_value} -> {id, "Runner policy · #{scope_value}"}
           {id, :group, scope_value} -> {id, "Group policy · #{scope_value}"}
         end)
+    end
+  end
+
+  defp fetch_member_labels(ids_by_kind, account_id) do
+    case Map.get(ids_by_kind, "membership", []) do
+      [] -> %{}
+      ids -> Emisar.Accounts.member_labels_for_ids(ids, account_id)
     end
   end
 

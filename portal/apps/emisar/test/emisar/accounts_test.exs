@@ -277,11 +277,12 @@ defmodule Emisar.AccountsTest do
         role: "owner"
       )
 
-      Fixtures.Memberships.create_membership(
-        account_id: co_owned.id,
-        user_id: user.id,
-        role: "operator"
-      )
+      lost_seat =
+        Fixtures.Memberships.create_membership(
+          account_id: co_owned.id,
+          user_id: user.id,
+          role: "operator"
+        )
 
       Fixtures.Memberships.create_membership(
         account_id: co_owned.id,
@@ -300,8 +301,8 @@ defmodule Emisar.AccountsTest do
       assert event.event_type == "membership.erased"
       assert event.account_id == co_owned_id
       assert event.actor_kind == "staff"
-      assert event.target_kind == "user"
-      assert event.target_id == user_id
+      assert event.target_kind == "membership"
+      assert event.target_id == lost_seat.id
       assert event.target_label == user.full_name
       assert event.payload["role"] == "operator"
     end
@@ -1411,8 +1412,8 @@ defmodule Emisar.AccountsTest do
         |> Repo.one()
 
       assert signup.account_id == account.id
-      assert signup.actor_id == user.id
-      assert signup.target_id == user.id
+      assert {signup.actor_kind, signup.actor_id} == {"membership", membership.id}
+      assert {signup.target_kind, signup.target_id} == {"membership", membership.id}
     end
 
     test "records an ordinary sign-in without creating workspace rows" do
@@ -2372,6 +2373,20 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "record_sso_sign_in_activity/2" do
+    test "stamps exactly the granted Members, never the same person's other seats" do
+      account = Fixtures.Accounts.create_account()
+      granted = Fixtures.Memberships.create_membership(account_id: account.id)
+      teammate = Fixtures.Memberships.create_membership(account_id: account.id)
+      elsewhere = Fixtures.Memberships.create_membership(user_id: granted.user_id)
+
+      assert Accounts.record_sso_sign_in_activity(Repo, [granted.id]) == {:ok, 1}
+      assert %DateTime{} = Repo.reload!(granted).last_active_at
+      assert is_nil(Repo.reload!(teammate).last_active_at)
+      assert is_nil(Repo.reload!(elsewhere).last_active_at)
+    end
+  end
+
   describe "team_member_filters/0" do
     test "carries the Team roster's filters in panel order" do
       assert Enum.map(Accounts.team_member_filters(), & &1.name) == [
@@ -3301,7 +3316,7 @@ defmodule Emisar.AccountsTest do
       assert event.event_type == "membership.renamed_via_scim"
       assert event.actor_kind == "directory_sync"
       assert event.actor_id == provider.id
-      assert event.target_id == member.user_id
+      assert event.target_id == member.id
       assert event.payload["from"] == member.display_name
       assert event.payload["to"] == "Dir Name"
     end
@@ -4453,10 +4468,10 @@ defmodule Emisar.AccountsTest do
         |> Repo.one()
 
       assert event.event_type == "session.account_switched"
-      assert event.actor_kind == "user"
-      assert event.actor_id == user.id
-      assert event.target_kind == "user"
-      assert event.target_id == user.id
+      assert event.actor_kind == "membership"
+      assert event.actor_id == target_membership_id
+      assert event.target_kind == "membership"
+      assert event.target_id == target_membership_id
       assert event.target_label == Accounts.member_display_name(switched)
       assert event.payload["role"] == "operator"
       assert event.ip_address == "203.0.113.7"
@@ -7690,7 +7705,7 @@ defmodule Emisar.AccountsTest do
         |> AuditEvent.Query.by_event_type("membership.invitation_resent")
         |> Repo.one()
 
-      assert resent.target_id == membership.user_id
+      assert resent.target_id == membership.id
       assert resent.payload["role"] == "operator"
 
       refute Repo.reload!(membership).invitation_token_digest ==

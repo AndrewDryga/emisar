@@ -25,7 +25,7 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
         Enum.filter(Repo.all(Audit.Event), &(&1.event_type == "api_key.rotation_requested"))
 
       assert [event] = events
-      assert event.actor_id == user.id
+      assert event.actor_id == subject.membership_id
 
       {new_raw, prefix, hash} = Crypto.mint("emk-", 12)
       key_subject = Subject.for_api_key(key, account)

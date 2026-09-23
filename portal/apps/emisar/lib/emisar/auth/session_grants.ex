@@ -103,6 +103,8 @@ defmodule Emisar.Auth.SessionGrants do
     |> Repo.all()
   end
 
+  # Moves every donor grant to the replacement and returns only the destinations
+  # this SSO proof refreshed; the other moved grants keep their original proof.
   def transfer_for_sso_step_up(repo, donor, replacement, destinations) do
     eligible_members = MapSet.new(membership_ids(donor.user_id, donor))
     proved_at = replacement.inserted_at
@@ -112,7 +114,7 @@ defmodule Emisar.Auth.SessionGrants do
     |> MemberGrant.Query.ordered_by_id()
     |> MemberGrant.Query.lock_for_update()
     |> repo.all()
-    |> Enum.reduce_while({:ok, []}, fn grant, {:ok, moved} ->
+    |> Enum.reduce_while({:ok, []}, fn grant, {:ok, refreshed} ->
       fresh_routes =
         Enum.filter(destinations, fn destination ->
           MapSet.member?(eligible_members, grant.membership_id) and
@@ -125,7 +127,7 @@ defmodule Emisar.Auth.SessionGrants do
       with {:ok, transferred} <-
              repo.update(MemberGrant.Changeset.transfer_session(grant, replacement)),
            :ok <- insert_sso_routes(repo, transferred, fresh_routes, proved_at, expires_at) do
-        {:cont, {:ok, [transferred | moved]}}
+        {:cont, {:ok, fresh_routes ++ refreshed}}
       else
         {:error, reason} -> {:halt, {:error, reason}}
       end
