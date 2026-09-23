@@ -379,6 +379,16 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "spec.nodeName"
   end
 
+  test "nomad docs page keeps raw_exec runner state on the client, not in a volume",
+       %{conn: conn} do
+    html = conn |> get(~p"/docs/nomad") |> html_response(200)
+
+    # raw_exec cannot mount volumes: a volume_mount fails the allocation.
+    assert html =~ "data_dir: /var/lib/emisar"
+    refute html =~ "volume_mount"
+    refute html =~ "emisar-state"
+  end
+
   test "SSO docs page covers login setup and the subject-not-email binding", %{conn: conn} do
     html = conn |> get(~p"/docs/sso") |> html_response(200)
 

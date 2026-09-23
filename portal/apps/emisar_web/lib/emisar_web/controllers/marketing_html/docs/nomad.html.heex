@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="nomad"
-      updated="September 4, 2026"
+      updated="September 23, 2026"
       toc={[
         {"before-you-deploy", "Prepare the deployment"},
         {"system-job", "The system job"},
@@ -17,8 +17,8 @@
       <.docs_header current="nomad">
         <:dek>
           A Nomad <code class="font-mono">system</code>
-          job places one runner on every client node. This example uses the release archive and a
-          persistent host volume.
+          job places one runner on every client node. This example uses the release archive and
+          keeps runner state on each client.
         </:dek>
       </.docs_header>
 
@@ -36,8 +36,10 @@
           Variables.
         </:item>
         <:item>
-          amd64 Linux client nodes. The example pins the linux-amd64 archive; for arm64 clients
-          change the architecture in the artifact source and the binary path.
+          amd64 Linux client nodes. The example pins the linux-amd64 archive. For arm64 clients,
+          replace every <code class="text-zinc-300">linux-amd64</code>
+          in the job with <code class="text-zinc-300">linux-arm64</code>
+          and use that archive's <code class="text-zinc-300">sha256</code>.
         </:item>
         <:item>
           Outbound HTTPS from every client node to
@@ -67,11 +69,6 @@
           Enable <code>raw_exec</code> on every client that should run a runner.
         </li>
         <li>
-          Register a host volume named <code>emisar-state</code>
-          at <code>/var/lib/emisar</code>
-          on each client.
-        </li>
-        <li>
           Create a <.link
             navigate={~p"/docs/runner-fleet" <> "#enrollment-keys"}
             class="text-brand-400 hover:text-brand-300"
@@ -94,8 +91,11 @@
       <.docs_h2 id="system-job">The system job</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The artifact stanza checks the archive digest before extraction. One template writes the
-        runner config, the other reads the enrollment key from Nomad Variables, and the host
-        volume keeps the runner token and durable dispatch state.
+        runner config, and the other reads the enrollment key from Nomad Variables.
+        <code class="font-mono">raw_exec</code>
+        cannot mount volumes, so the runner keeps its token and durable dispatch state in
+        <code class="font-mono">/var/lib/emisar</code>
+        on the client itself.
       </p>
       <.docs_code phx-no-format label="emisar-runner.nomad.hcl"><span class="text-sky-300">variable</span> <span class="text-brand-300">"runner_version"</span> &#123;
   type = string
@@ -109,11 +109,6 @@
   type = <span class="text-brand-300">"system"</span>
 
   <span class="text-sky-300">group</span> <span class="text-brand-300">"runner"</span> &#123;
-    <span class="text-sky-300">volume</span> <span class="text-brand-300">"state"</span> &#123;
-      type   = <span class="text-brand-300">"host"</span>
-      source = <span class="text-brand-300">"emisar-state"</span>   <span class="text-zinc-400"># a host volume registered on each Nomad client</span>
-    &#125;
-
     <span class="text-sky-300">task</span> <span class="text-brand-300">"runner"</span> &#123;
       driver = <span class="text-brand-300">"raw_exec"</span>
 
@@ -126,8 +121,8 @@
 
       <span class="text-sky-300">template</span> &#123;
         destination = <span class="text-brand-300">"local/config.yaml"</span>
-        perms        = <span class="text-brand-300">"0600"</span>
-        data = <span class="text-brand-300">&lt;&lt;-EOH
+        perms       = <span class="text-brand-300">"0600"</span>
+        data        = <span class="text-brand-300">&lt;&lt;-EOH
 schema_version: 1
 runner:
   group: nomad
@@ -146,7 +141,7 @@ EOH</span>
       <span class="text-sky-300">template</span> &#123;
         destination = <span class="text-brand-300">"secrets/emisar.env"</span>
         env         = <span class="text-amber-300">true</span>
-        data = <span class="text-brand-300">&lt;&lt;-EOH
+        data        = <span class="text-brand-300">&lt;&lt;-EOH
 EMISAR_ENROLLMENT_KEY=&#123;&#123; with nomadVar "nomad/jobs/emisar-runner" &#125;&#125;&#123;&#123; .enrollment_key | toJSON &#125;&#125;&#123;&#123; end &#125;&#125;
 EOH</span>
       &#125;
@@ -156,11 +151,6 @@ EOH</span>
         args    = [<span class="text-brand-300">"connect"</span>, <span class="text-brand-300">"--config"</span>, <span class="text-brand-300">"local/config.yaml"</span>]
       &#125;
 
-      <span class="text-sky-300">volume_mount</span> &#123;
-        volume      = <span class="text-brand-300">"state"</span>
-        destination = <span class="text-brand-300">"/var/lib/emisar"</span>
-      &#125;
-
       <span class="text-sky-300">resources</span> &#123;
         cpu    = <span class="text-amber-300">100</span>
         memory = <span class="text-amber-300">128</span>
@@ -168,6 +158,16 @@ EOH</span>
     &#125;
   &#125;
 &#125;</.docs_code>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        On first start the runner creates <code class="font-mono">/var/lib/emisar</code>
+        on the client, owned by the Nomad client's user with mode <code class="font-mono">0750</code>. Its token, dispatch state, and
+        local journal stay there across allocation restarts and job updates. Stopping the job
+        leaves the directory. To retire a node's runner, delete it from <a
+          href={~p"/app/runners"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Runners</a>, then remove <code class="font-mono">/var/lib/emisar</code>
+        on that client.
+      </p>
 
       <.docs_h2 id="deploy">Deploy and verify</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
