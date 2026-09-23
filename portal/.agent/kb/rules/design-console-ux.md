@@ -64,8 +64,7 @@ with meaning assigned at the call site:
   fill or status treatment merely because an option is selected.
 - Enums are **atoms**, never strings (`variant={:primary}`, not `"primary"`); every enum
   attr carries `values:` so a stray atom is a compile error (no catch-all clauses).
-- No dead aliases: one class ramp per meaning. (`button "success"` ≡ `"primary"` and
-  `notice :info` ≡ `:success` are the known corpses — collapse on contact.)
+- No dead aliases: one class ramp per meaning.
 - `offline_notice`'s `:info/:caution/:critical` and `empty_state`'s `:zinc/:danger` map
   onto the four atoms when touched.
 
@@ -276,7 +275,7 @@ the commit button, where the operator can reach the action before reading what i
   whose credential is this — leads the meta line). Sweep: any chip/meta segment whose
   value is invariant across the account's rows.
 
-## 7. Graduated house rules (formerly memory-only — now doctrine)
+## 7. House rules
 
 1. **No green confirmation box.** An attention block earns its space only when actionable
    (warning/error/next-step). Healthy state renders as *absence* — collapse
@@ -1009,8 +1008,9 @@ the commit button, where the operator can reach the action before reading what i
   migrating all call sites.
 - **The design gate:** a console-touching task is done only after a desktop + mobile
   screenshot of the changed surface is reviewed against this doctrine and the design
-  system (rebuild the :4010 stack first — a release image needs `docker compose build
-  portal`, not restart).
+  system. Capture it with `./run shot` from the live-reload server. The packaged :4010
+  stack runs a release image, so a host review there needs `docker compose build
+  portal`, not a restart; a Coop box has no Docker and does not rebuild it.
 - When a rule here is corrected or extended by the user, update THIS file in the same
-  change (taste pipeline) — this doctrine is append-don't-rewrite, like the AGENTS.md
-  house opinions.
+  change (taste pipeline): revise the rule the correction touches in place, so the
+  doctrine states one current rule rather than an old reading plus its patch.

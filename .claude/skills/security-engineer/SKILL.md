@@ -32,15 +32,15 @@ the product failing. Lead with the abuse case.
 ## Threat sources (treat all as hostile)
 
 Runner-supplied output/state, LLM/MCP request bodies, runbook + pack text, OAuth
-callbacks, Paddle webhooks. None are trusted. Validate, scope, and escape at the
-boundary.
+and SSO (OIDC) callbacks, SCIM requests from identity providers, Paddle webhooks.
+None are trusted. Validate, scope, and escape at the boundary.
 
 ## Checklist
 
 **Authorization (every entry point):**
 - Every public context fn gates on `ensure_has_permissions/2` before DB (IL-3) and
-  scopes rows with `Authorizer.for_subject` (IL-4). No `:system` subject reachable
-  from a web/MCP path.
+  scopes rows with `Authorizer.for_subject` (IL-4). No internal no-Subject helper
+  (§1.4) is reachable from a web/MCP path.
 - **Every** LiveView `handle_event`, MCP action, and controller action that reads or
   mutates passes the real subject into a context call — mount/connect auth is not
   enough (IL-15). Look for events that act on an ID from the payload without
@@ -54,12 +54,11 @@ boundary.
   on external bytes.
 - IDs from requests are validated (`Repo.valid_uuid?`) and re-scoped, never trusted
   as "the user owns this".
-- A retried MCP mutation recovers through its OPERATION, not an idempotency key:
+- A retried MCP mutation recovers through its operation, not an idempotency key:
   `MCPOperations.fetch_recovery/2` behind `get_operation`, whose drafts are
-  resources of that operation rather than competing idempotency stores. The
-  idempotency column and its module were removed (migration
-  `20260811000000`); a reviewer looking for that guard will not find it, and
-  should check the operation contract instead.
+  resources of that operation rather than competing idempotency stores. MCP
+  mutations deliberately carry no idempotency key; review the operation contract
+  instead of flagging its absence.
 
 **Secrets & tokens:**
 - Auth keys / API keys / runner tokens are hashed at rest, compared in constant time,
@@ -74,5 +73,5 @@ boundary.
 ## Output
 
 Findings as `severity · file:line · abuse case → fix`, BLOCKERs first. For a build
-task, state the threat model in 3 lines before coding, then implement the gate.
+task, state the threat model briefly before coding, then implement the gate.
 Don't hand-wave "should be safe" — show the check.

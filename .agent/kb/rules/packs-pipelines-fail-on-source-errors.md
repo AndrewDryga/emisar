@@ -181,7 +181,7 @@ is not executable input. The pipeline lint flags a source led by a path reader
 (`pipelineRemoteSources`) with no preceding guard. Exemptions are listed by
 action ID in `pipelineSourceExemptActions` with a stated reason.
 
-Two things the checker learned the hard way, both worth keeping:
+Four things the checker learned the hard way, all worth keeping:
 
 - **Its scan is quote-aware.** The alternation in `grep -E '(a|b)' "$1" | tail`
   is regex syntax, not the shell pipe; reading it as the pipe truncated the
@@ -195,11 +195,12 @@ Two things the checker learned the hard way, both worth keeping:
   turn failure of both producers into an empty all-clear.
 - **A guard covers only the path its pipeline reads.** `[ -d /var/spool/postfix ]`
   is no guard for `cat /var/spool/postfix/$q | wc`, and `[ -d "$SP" ]` proves
-  nothing about `du "$SP"/*`: a guarded parent or sibling used to satisfy the
-  check, which is how `postfix.queue_counts` and `py.site_packages_du` shipped
-  their false all-clears. The lint now matches each guard to an operand the
-  source is handed (a bare `$var` resolves through the program's assignments),
-  and `|| exit` / `|| {` alone no longer count as a guard of anything.
+  nothing about `du "$SP"/*`: a guard on a parent or sibling does not cover
+  the path the source reads, which is how `postfix.queue_counts` and
+  `py.site_packages_du` shipped their false all-clears. The lint matches each
+  guard to an operand the source is handed (a bare `$var` resolves through the
+  program's assignments), and `|| exit` / `|| {` alone do not count as a guard
+  of anything.
 
 **Sweep.** The manifest-driven lint is authoritative. As a quick review aid for
 the repository's conventional layout, run `rg -l '\| *tail |\| *head '

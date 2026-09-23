@@ -53,7 +53,7 @@ you have something new to add. Every restatement is a sentence that failed the
 
 - A list of steps, then an "Imperative containment, declarative cure" paragraph
   that restates the same steps, then a use-case link that restates them a third
-  time. (Quickstart §6 — the correction that created this rule.)
+  time.
 - "Reads run under policy, risky calls stop for a human, the model never gets a
   shell — every call is audited" in a step body when the closing "What you just
   built" callout already says it.

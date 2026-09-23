@@ -2,7 +2,7 @@
 
 **Rule.** Every PRIMARY / top-nav marketing page opens with the SAME hero, and its
 type comes entirely from the `:display` scale in
-`EmisarWeb.CoreComponents.marketing_heading/1` — never a per-page size or leading
+`EmisarWeb.MarketingComponents.marketing_heading/1` — never a per-page size or leading
 override. The primary-hero contract:
 
 | Element | Class |
@@ -63,7 +63,7 @@ new page is consistent by construction.
 ```
 
 To change the display hero SIZE or LEADING, edit the one `marketing_heading_scale(:display)`
-clause in `core_components.ex` — not a page.
+clause in `marketing_components.ex` — not a page.
 
 **How it's enforced.** Review + the two tests that pin the scale string:
 `test/emisar_web/components/marketing_heading_test.exs` (the `:display`/`:hero`/`:section`

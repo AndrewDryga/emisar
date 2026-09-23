@@ -24,6 +24,9 @@ requirement that conflicts with the user's explicit instruction. If an instructi
 actually prevents completion, link its file, quote the relevant rule, and explain
 what remains. Deployment, publication, external messages, and destructive actions
 require authority for that action; permission to edit code alone does not grant it.
+Before a command that changes system state (a restart, delete, data repair, or
+config edit), check that the evidence supports that specific action; a signal that
+matches a known failure may have a different cause.
 
 ## Read before editing
 

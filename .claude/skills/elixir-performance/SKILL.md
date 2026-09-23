@@ -8,9 +8,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Performance pass
 
-Measure, then fix the cause. Don't micro-optimize what isn't hot. The big wins in a
-Phoenix/Ecto app are almost always **N+1 queries, unbounded result sets, and missing
-indexes** — in that order.
+Measure, then fix the cause. Don't micro-optimize what isn't hot.
 
 ## The usual suspects (emisar-specific)
 
@@ -18,8 +16,9 @@ indexes** — in that order.
    `SELECT` repeated in the log.
    - Fix: declare the association in the Query module's `preloads/0` and pass
      `:preload` to `Repo.fetch/list` (IL-10) — never `Repo.preload` inside an
-     `Enum.map`. Detect: `rg -n 'Repo\.preload|\.\w+\b' ...` for context calls or
-     preloads inside `Enum.`/comprehensions.
+     `Enum.map`. Detect: read `Enum.*` callbacks and comprehensions for context
+     calls or `Repo.preload`; `rg -n 'Repo\.preload' apps/emisar/lib` lists the
+     preload sites.
 2. **Unbounded lists.** Loading every row, or assigning a big list to the socket.
    - Lists that can grow (runs, audit events, runners): page with `Repo.list/3`
      (keyset via `cursor_fields`), and render with **`stream/3`** in LiveView, never

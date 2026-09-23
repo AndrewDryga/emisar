@@ -52,7 +52,7 @@ Spawn them concurrently (one message, many `Agent` calls). Give each the ref + t
 > to your hat) and the touched files **in full** — plus their callers/tests for context, not just the
 > diff hunks. Review **only** through the <hat> lens. Report findings as a list, each:
 > `SEVERITY · file:line · issue · why it matters · concrete fix`. SEVERITY ∈ BLOCKER / MAJOR / MINOR / NIT.
-> Be specific to THIS change; skip what's clean; don't invent findings to look thorough. ≤300 words.
+> Be specific to this change; skip what's clean; don't invent findings to look thorough. Keep the list scannable: one entry per finding, no preamble or recap.
 > **Do NOT edit code — review only.**
 
 Tell the security + domain hats to lead with the abuse case / the exact law each finding breaks.
@@ -69,7 +69,7 @@ Turn the ranked, deduped findings into an ordered, actionable plan — blockers 
 ```
 ## Review board: <title>   —   verdict: <…>   (<N blockers, M major, K minor>)
 
-Headline: <2–3 sentences — ship-ability + the one thing that matters most>
+Headline: <ship-ability + the one thing that matters most>
 
 ### Findings (ranked, deduped)
 - BLOCKER [security · staff] lib/…:42 — <issue> → fix: <…>
@@ -90,4 +90,4 @@ Keep it honest and short. If it's clean: **"SHIP — nothing blocking"** + the f
 ## Relationship to the focused reviews
 `/review-board` convenes them all; the single-lens tools are its building blocks and stay for fast, focused runs: `/elixir-iron-review` (laws), `/security-engineer`, `/debug-investigate` (failures), `/design-ux`, etc.
 
-**Proportional in-loop self-review** of one item is the same skill, sized down: the standing hats only (plus the hats the diff plainly earns), `≤250 words` per hat, and the verdict without the queued fix plan. There is no separate lighter skill.
+**Proportional in-loop self-review** of one item is the same skill, sized down: the standing hats only (plus the hats the diff plainly earns), hat reports sized to the one item, and the verdict without the queued fix plan. There is no separate lighter skill.

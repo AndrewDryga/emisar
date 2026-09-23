@@ -41,7 +41,8 @@ The canonical positioning order and claim boundaries live in
   prebuilt action pack catalog. Host-aware suggestions help operators find the
   relevant packs instead of making them model every command before the first
   run. When size matters, cite the current pack and action counts from
-  `packs/AGENTS.md` instead of using a magnitude adjective.
+  `packs/README.md` (kept exact by `./run check packs`) instead of using a
+  magnitude adjective.
 - **Install the infrastructure MCP integration once, then add actions.** The MCP
   tool surface stays fixed while packs add capabilities. A team can wrap its
   own operational procedures as actions instead of rolling out another MCP

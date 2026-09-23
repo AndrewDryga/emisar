@@ -35,8 +35,8 @@ entrypoint, or host-command fixture under test; a SUT's own shell language
 (mongosh's JavaScript, psql's SQL) is that fixture, not tooling. Adding another
 tooling language requires proving Go cannot own the job and documenting the
 runtime boundary. **No JavaScript runs outside the Portal's browser bundle**:
-the Entra capture rigs were Playwright scripts until Go/chromedp took over
-their blades (`entra-capture -flow …`, including the iframe-isolated ones),
+the Entra capture rigs run on Go/chromedp (`entra-capture -flow …`, including
+the iframe-isolated blades),
 and the icon normalizers are `./run icons`. A Node dependency, a `package.json`,
 or a script resolved from a global npm root is out of bounds anywhere.
 Disposable screenshots and visual-audit output live under the owning task's

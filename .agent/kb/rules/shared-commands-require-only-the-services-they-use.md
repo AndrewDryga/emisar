@@ -48,10 +48,6 @@ deriving a service URL from another variable so the gap stops showing.
 the strict full-workspace refusal, malformed and out-of-range URLs, and the
 environment that omits absent services.
 
-**2026-09-15 sweep.** Removed host-publication and Keycloak prerequisites from
-ordinary in-box serve, seed and browser paths. Kept full setup/doctor and SSO
-capture checks strict; no database or identity-provider address is inferred.
-
 Related references: [keep Docker out of Coop boxes](shared-coop-box-gates-stay-docker-free.md),
 [human development tooling is not agent state](shared-human-dev-tooling-is-not-agent-state.md),
 and [solve the owned problem, not the general one](shared-solve-the-owned-problem.md).

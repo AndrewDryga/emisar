@@ -13,19 +13,13 @@ line that's wrong and say why. Never edit a test to make a real failure pass.
 
 ## Method
 
-1. **Reproduce.** Get the exact failing command and run it: `mix test path:line`,
-   the LiveView action, the MCP call, the failing context function in `iex -S mix`.
-   No repro → you're guessing.
-2. **Read the WHOLE error.** The full stacktrace, the changeset errors, the SQL.
-   The first frame in *our* code (not a dep) is usually the spot. Don't skim to the
-   summary line.
-3. **Locate + read the code.** Open the failing function and the data it touched.
-   Confirm the contract of anything you're unsure of (`/tooling-verify-api`) — half of
-   "bugs" are an assumed return shape or arg that was never real.
-4. **One hypothesis, then confirm it** against the code/data before fixing. If the
-   evidence doesn't match, the hypothesis is wrong — don't fix anyway.
-5. **Minimal fix** at the cause. Then add a **regression test** that fails before /
-   passes after (and the denial / cross-account variant if it's a context bug, §7).
+Reproduce the failure before theorizing: the exact failing command
+(`./run test portal <path>:<line>`), the LiveView action, the MCP call, or the
+failing context function in `iex -S mix`. Read the full error (stacktrace,
+changeset errors, SQL) and the code and data it touched; confirm any contract
+you're unsure of with `/tooling-verify-api`. Fix only once the evidence confirms
+the cause, fix it at the cause, and add a **regression test** that fails before
+and passes after (plus the denial / cross-account variant for a context bug, §7).
 
 ## emisar error catalogue (where to look first)
 
@@ -42,11 +36,11 @@ line that's wrong and say why. Never edit a test to make a real failure pass.
 - **LiveView** — value missing/doubled on load → `mount` runs twice (IL-18); a
   silent form failure → check the `{:error, changeset}` branch is handled, not the UI.
 - **MCP** — a doubled action → the operation-id recovery path
-  (`get_operation` / `MCPOperations.fetch_recovery`), not an idempotency key:
-  that column and module were dropped in migration `20260811000000`.
-  An auth error → the subject built at the MCP boundary.
-- **Runner socket** — state not updating → the `Runners.apply_state/mark_*` path
-  (§1.4); a crash shouldn't take down other runners (IL-17).
+  (`get_operation` / `MCPOperations.fetch_recovery`); MCP mutations have no
+  idempotency key. An auth error → the subject built at the MCP boundary.
+- **Runner socket** — state not updating → the runner-socket state helpers
+  (`Runners.apply_state`, `connect_runner`, `disconnect_runner`,
+  `record_heartbeat`; §1.4); a crash shouldn't take down other runners (IL-17).
 - **Flaky test** — a cross-process race: `$callers` not inherited, or async side
   effects not made sync in test (the `notify_approvers_async?` flag pattern). Never
   `Process.sleep` it away — `assert_receive` with a timeout.

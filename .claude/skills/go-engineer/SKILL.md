@@ -48,6 +48,6 @@ Show the output — never "should work". Don't pipe `go test`/`gofmt` through
 
 ## 5. Close the loop
 One focused commit (ending with its `Coop-Task: <id>` trailer) → append the
-*what + why* to the task's `log.md` → `coop tasks done <id>`. Blocked?
-`coop tasks block <id>` and fill its `decision.md`. The commit-gate will
-gofmt-check your staged `.go`.
+*what + why* to the task's `log.md` and overwrite its `state.md` with the outcome
+and validation → `coop tasks done <id>`. Blocked? `coop tasks block <id>` and
+fill its `decision.md`. The commit-gate will gofmt-check your staged `.go`.

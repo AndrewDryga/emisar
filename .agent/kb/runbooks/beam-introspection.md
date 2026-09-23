@@ -10,9 +10,9 @@ Use this when a production portal node is slow, leaking memory, or wedged, and
 the metrics say *something* is wrong without saying what. Everything here is
 read-only and safe on a live node; none of it stops traffic.
 
-The release ships two libraries for exactly this — `recon` and `observer_cli` —
-and until now nothing wrote down that they were there. A tool nobody has
-recorded is a tool nobody reaches for at 3am, which is the only time it matters.
+The release ships two libraries for exactly this: `recon` and `observer_cli`.
+A tool nobody has recorded is a tool nobody reaches for at 3am, which is the
+only time it matters.
 
 ## Getting a shell on the node
 

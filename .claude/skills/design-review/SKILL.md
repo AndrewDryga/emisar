@@ -79,7 +79,7 @@ say so and review the code with lower confidence.
 
 ```
 Verdict: SHIP | SHIP-AFTER-FIXES | RETHINK
-Summary: <2-3 sentences>
+Summary: <why this verdict, in plain terms>
 
 Findings:
 - SEVERITY file:line or viewport - issue - why it matters - concrete fix

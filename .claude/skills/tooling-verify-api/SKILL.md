@@ -1,7 +1,7 @@
 ---
 name: tooling-verify-api
-description: Confirm a function, argument, option, type, callback, or CLI flag actually exists with the signature you think — before you call it. Use whenever you're about to use an API you're not certain of (a Repo/Ecto/Phoenix/Oban/Swoosh function, a mix task, a dependency's option, a runner/CLI flag), or any time you'd otherwise be guessing. Stops hallucinated functions before they're written.
-effort: low
+description: Confirm a function, argument, option, type, callback, or CLI flag actually exists with the signature you think — before you call it. Use whenever you're about to use an API you're not certain of (a Repo/Ecto/Phoenix/Swoosh function, a mix task, a dependency's option, a runner/CLI flag), or any time you'd otherwise be guessing. Stops hallucinated functions before they're written.
+effort: max
 argument-hint: "<the function/option/flag you're unsure about>"
 allowed-tools: Read, Grep, Glob, Bash, WebFetch
 ---

@@ -5,7 +5,7 @@ from it: the regenerated bundled catalog artifact, the refreshed cross-language
 hash golden when `redis/` or `cassandra/` bytes moved, and a `version` bump
 whenever the pack's contract changed. Versions are dot-numeric only.
 
-**Why.** Since `4fe4349d` the portal never scans `packs/`. It seeds a fresh VM
+**Why.** The portal never scans `packs/`. It seeds a fresh VM
 from `portal/apps/emisar/priv/packs/catalog.json`, and `Emisar.Catalog.PackBaseline`
 reads auto-trust from the installed snapshot that the configured published
 catalog refreshes — so a stale artifact makes a fresh VM auto-pin the old set

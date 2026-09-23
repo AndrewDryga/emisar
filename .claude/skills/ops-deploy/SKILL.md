@@ -23,7 +23,8 @@ those files instead of relying on memory.
 - **Commit and CI** - the intended commit is current and the complete required CI
   workflow is green.
 - **Migrations** - migrations already applied in production are untouched; new migrations are
-  forward-only and compatible with old and new images during the rolling overlap.
+  forward-only. Before 1.0 a release deploys once, with no old/new-image
+  compatibility phases (`.agent/kb/rules/shared-solve-the-owned-problem.md`, item 2).
 - **Secrets** - every required runtime value has a Secret Manager source or an
   explicit non-secret cloud-init value. No secret is committed or printed.
 - **Image** - CI built and smoke-tested the image; CD publishes that exact image

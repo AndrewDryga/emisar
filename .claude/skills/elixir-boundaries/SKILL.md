@@ -25,13 +25,14 @@ is the only public surface.** This skill checks that the rule holds.
 ```sh
 cd portal
 rg -n '\bRepo\.' apps/emisar_web/lib            # should be ~none — go through a context
-rg -n 'Emisar\.\w+\.(Query|Changeset)\b' apps/emisar_web/lib   # web reaching into internals
+rg -n '\b[A-Z]\w*\.(Query|Changeset)\.\w+' apps/emisar_web/lib   # web reaching into internals (ignore Plug.Conn.Query, Ecto.Changeset)
 ```
 
 **2. One context reaching into another's internals:**
 ```sh
-# in lib/emisar/<ctx>.ex, references to ANOTHER context's Query/Changeset/Schema
-rg -n 'Emisar\.\w+\.(Query|Changeset)\b' apps/emisar/lib/emisar/*.ex
+# in lib/emisar/<ctx>.ex, references to ANOTHER context's <Schema>.Query/Changeset
+# (full or alias-relative names); keep the hits whose context is not the file's own
+rg -n '\b[A-Z]\w*\.[A-Z]\w*\.(Query|Changeset)\b' apps/emisar/lib/emisar/*.ex
 ```
 A context should call `OtherContext.fetch_thing(id, subject)`, not
 `OtherContext.Thing.Query.by_id/1`.

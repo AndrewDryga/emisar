@@ -52,7 +52,8 @@ So a bumped version must clear a release-age window before it can merge.
 - **Adding/bumping a dep:** prefer a version already past its window, or expect
   the gate to hold the PR until it ages. For an urgent security fix that can't
   wait, add an audited entry to `.dep-age-allow` (ecosystem · package · version ·
-  reason — reason is mandatory) and remove it once the version has aged out.
+  expires · reason — both expires and reason are mandatory; the file header has
+  the format) and remove it once the version has aged out.
 
 ## Advisories
 
@@ -66,7 +67,7 @@ Do not add a parallel scanner without a concrete coverage gap.
 ## Vet-before-add (the real lever)
 
 Before adding a dependency: is it needed, or do stdlib / an existing dep / a few
-lines cover it (prime directive — no bloat)? If you add it, **wrap its API behind a
+lines cover it (the root manual allows no speculative dependencies)? If you add it, **wrap its API behind a
 project-owned module (IL-19)** so it's swappable and the blast radius is contained.
 
 ## Output

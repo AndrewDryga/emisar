@@ -74,7 +74,8 @@ Normal image rollouts may create one replacement VM per zone while retaining
 every old serving VM. Each replacement's `/healthz` remains false until the
 release has reached PostgreSQL once; only then can the MIG remove an old VM. The
 load balancer independently requires `/readyz` continuously. Old and new application
-versions overlap, so schema changes use expand/contract sequencing. Rollback is
+versions overlap briefly; before 1.0 a schema change ships in one release, with
+no expand/contract phases. Rollback is
 another reviewed plan that sets `container_image` to a previously published
 IAM-capable digest. Images from before the IAM database runtime are not rollback
 candidates. The Cloud SQL Auth Proxy is a separately pinned infrastructure

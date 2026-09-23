@@ -40,7 +40,7 @@ that the fix addressed *that*); it is unrecoverable once the fix deploys, so it
 is captured first. The after pair is the verification artifact: the user
 reviews pixels, not prose.
 
-✅ before-crop showing the clipped label → fix → rebuild → after-crop showing it
+✅ before-crop showing the clipped label → fix → reload → after-crop showing it
 whole + after-full clean → both paths handed over in the final message.
 
 ❌ "fixed the padding, should look right now" with no screenshots; an

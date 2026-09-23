@@ -15,7 +15,7 @@ apply it when building or reviewing any rendered HEEx/Tailwind surface.
 
 > Adapted from Jakub Krehel's `make-interfaces-feel-better` skill
 > (github.com/jakubkrehel/make-interfaces-feel-better) for emisar's stack:
-> **server-rendered HEEx + Tailwind v3.4, no React / framer-motion.** Every
+> **server-rendered HEEx + Tailwind v4, no React / framer-motion.** Every
 > framer-motion instruction below is translated to Tailwind utilities, CSS, or
 > `Phoenix.LiveView.JS`.
 

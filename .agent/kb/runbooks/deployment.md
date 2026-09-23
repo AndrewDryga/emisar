@@ -187,18 +187,19 @@ instance boots.
 
 ## Schema changes and rollback
 
-Applied migrations are immutable. Rolling deployments overlap old and new
-application versions, so schema work uses expand/contract sequencing: add a
-compatible shape, deploy code that tolerates both versions and backfill, then
-remove the old shape in a later release after the earlier version no longer runs.
+Applied migrations are immutable. Rolling deployments briefly overlap old and
+new application versions. Before 1.0 that window gets no expand/contract
+releases, dual-version code, or backfill compensators: a schema change ships in
+one release, as [solve the owned problem](../rules/shared-solve-the-owned-problem.md)
+and `portal/.agent/kb/rules/elixir-migrations-frozen.md` require.
 
 Rollback is another reviewed saved plan setting `container_image` to a
 previously published `ghcr.io/andrewdryga/emisar@sha256:...` digest. An
-application rollback does not reverse database changes; expand/contract
-compatibility keeps the prior image runnable. Data recovery restores Cloud SQL
-to a new instance or point in time and promotes it only after isolated
-verification; the promotion steps are in `infra/README.md` → "Promoting a
-restored clone".
+application rollback does not reverse database changes, so a prior image is a
+rollback candidate only if it runs against the current schema. Data recovery
+restores Cloud SQL to a new instance or point in time and promotes it only after
+isolated verification; the promotion steps are in `infra/README.md` →
+"Promoting a restored clone".
 
 Images published before IAM database runtime was added are not rollback
 candidates: production has no database password or DATABASE_URL secret. The

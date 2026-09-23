@@ -3,7 +3,7 @@
 **Rule.** Every behavior case runs in its own disposable Compose project, as a
 non-root runner identity, on a network the bridge addresses fresh. A fixture may
 therefore assume nothing that outlives its own case and nothing it did not set
-up itself. Three shapes to recognize:
+up itself. Five shapes to recognize:
 
 1. **Never assert a value the environment assigns.** A container's IP, a
    generated hostname, a port the daemon picked. If a case genuinely needs to

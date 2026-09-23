@@ -73,8 +73,9 @@ deploy step.
    `allow_changing_zone` requires `force_update_on_repair`, and is unsupported on
    an `EVEN` / `ANY_SINGLE_ZONE` shape or a stateful group; adding stateful
    configuration or narrowing the shape silently costs that escape. Old and
-   new app versions overlap during a rollout, so schema changes must be compatible
-   with both until a later release contracts the old shape. Readiness-contract
+   new app versions overlap briefly during a rollout; before 1.0 a schema change
+   still ships in one release, with no expand/contract phases
+   ([rule](../.agent/kb/rules/shared-solve-the-owned-problem.md)). Readiness-contract
    replacements use generation-named health checks and backend services with
    `create_before_destroy`, so the URL map switches between complete serving paths
    only after `backendServices.getHealth` reports every expected VM healthy.

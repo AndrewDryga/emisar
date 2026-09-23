@@ -15,8 +15,7 @@ SSH", shell-over-MCP, and a new one-off MCP server for every system.
 
 Read `router.ex` for the pages that exist — the `MarketingController` routes are
 the inventory, with templates under `marketing_html/` and the sitemap beside
-them. This file used to list them by hand and the list rotted: it named two
-pages that had never existed and missed eleven that did.
+them. Don't copy that list into this file; a hand-kept list drifts from the router.
 
 ## Positioning hierarchy
 
@@ -64,10 +63,10 @@ server-rendered** — that's what crawlers and LLM bots get. Keep it that way:
 - **Structured data** where it fits: `SoftwareApplication`/`Product` on home/pricing,
   `FAQPage` on pages with Q&A, `BreadcrumbList` on docs.
 - **Internal links** with descriptive anchors between related pages (use-case →
-  security → pricing → connect_llm → docs). No orphan pages.
-- **Sitemap** (`sitemap_controller`) includes every new public page; ping/update when
-  pages are added. `robots.txt` allows the marketing + docs paths and the bots you
-  want (and keeps the app console out).
+  security → pricing → the `/docs/connect-*` guides → docs). No orphan pages.
+- **Sitemap** (`sitemap_controller`) includes every new public page; crawlers find
+  it through the `Sitemap:` line in `robots.txt`, which also allows the marketing +
+  docs paths and the bots you want (and keeps the app console out).
 - Headings, alt text on images, descriptive link text — accessibility and SEO are the
   same checklist here.
 

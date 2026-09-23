@@ -38,7 +38,8 @@ controller file, read it and check:
   every `Repo.fetch`/`list`/`fetch_and_update` in a context.
 - **IL-5** — public reads/writes return tagged tuples; no bare struct/`nil`.
 - **IL-9** — authorizers expose `build(Schema, :verb)` accessors, clause all
-  roles, and the new authorizer is in `auth/permissions.ex`'s `@authorizers`.
+  roles, and the new authorizer's context is listed in `auth/permissions.ex`'s
+  `@authorizer_contexts`.
 - **IL-10** — Subject-gated context reads route preloads through Query `preloads/0`.
   An internal, no-Subject, already-authorized path holding a struct may use
   `Repo.preload/2` for its parent association (post-commit email helpers or the

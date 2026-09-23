@@ -55,16 +55,17 @@ surfaces depend on an internal file.
 ## Maintain descriptive cards directly
 
 A self-improving KB: no inbox, no human gate. When a task teaches you something
-non-obvious about a subsystem — a map, a trap, a gotcha the code doesn't carry — CREATE
-or UPDATE its card here, in the same commit as the work. Keep it TIDY as it grows: once
-a flat list gets long, group cards into per-subsystem subfolders (`portal/`, `runner/`,
-`mcp/`, `packs/`, `infra/`) and keep this index current.
+non-obvious about a subsystem — a map, a trap, a gotcha the code doesn't carry — create
+or update its card here, in the same commit as the work, and keep this index current.
+Cards stay directly under `kb/`, because `./run check agent-setup` matches each card to
+its index line by name.
 
 The discipline that replaces the human gate is the metadata: every card states when it
 was last `updated`, which `subsystem` it maps, and the `sources` (the code) it describes —
-so staleness shows at a glance. When you pass through a subsystem, check its cards against
-their `sources`; if one has drifted, re-verify and bump it (with a changelog line) or
-DELETE it — a card that contradicts the code is worse than no card.
+so staleness shows at a glance. When your change makes a card drift from its `sources`,
+re-verify and bump it (with a changelog line) or DELETE it in the same commit — a card
+that contradicts the code is worse than no card. Report a drifted card your task did not
+touch as a follow-up.
 
 ## Card format
 

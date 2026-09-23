@@ -19,8 +19,7 @@ supervises them:
 defmodule Emisar.Runs.Jobs.DispatchTimeout do
   use Emisar.Jobs.Job,
     otp_app: :emisar,
-    every: :timer.minutes(1),
-    executor: Emisar.Jobs.Executors.GloballyUnique
+    every: :timer.minutes(1)
 
   @impl Emisar.Jobs.Executors.GloballyUnique
   def execute(config) do

@@ -53,8 +53,8 @@ means a new page can't silently reintroduce the drift.
 </ul>
 ```
 
-**Sweep** (docs prose pages — `docs_*.html.heex` + `connect_llm.html.heex`,
-excluding the `docs.html.heex` index and the `docs_mcp_reference` article):
+**Sweep** (docs prose pages — `marketing_html/docs/*.html.heex`, excluding the
+`docs/mcp_reference.html.heex` article):
 
 - `grep -nE 'text-sm[^"]*text-zinc-(400|300)'` (minus `font-mono`) — body copy
   stuck at 14px.

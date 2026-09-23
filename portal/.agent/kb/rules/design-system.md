@@ -1,15 +1,15 @@
 # emisar Design System — "The Gate"
 
 > The single source of truth for the emisar visual language: the taste, tokens,
-> brand, components, patterns, and the **plan to bring the operator console into
-> line with the redesigned marketing site**. Read this before any visual change
+> brand, components, and patterns shared by the marketing site and the operator
+> console. Read this before any visual change
 > to `emisar_web` (marketing **or** console). Grounded in
 > `assets/css/app.css` (the `@theme` block and the layer rules) and
 > `lib/emisar_web/components/core_components.ex` — when those change, change this.
 
 ---
 
-## 0. State — where the redesign is (2026-06-22)
+## 0. State
 
 - **Marketing site: redesigned + shipped.** The 28 marketing pages
   (`controllers/marketing_html/`) run the "Gate" direction: emerald `brand`
@@ -19,17 +19,14 @@
 - **Logo: replaced + rolled out.** New chevron-gate icon + custom wordmark; full
   favicon/app-icon/OG set. Assets in `priv/static/images/brand/` + the favicon
   family at the static root. `<.brand>` and `<.gate_mark>` rebuilt.
-- **Operator console: NOT yet aligned.** The console
-  (`live/**`, most of `core_components.ex`) still carries **legacy indigo
-  accents** and **Tailwind `emerald-*`** for success — two greens that don't
-  match the logo, plus a stray accent hue. The global a11y tokens (focus ring +
-  selection) were already migrated to `brand`. **Closing this gap is the job
-  this doc exists to enable.**
+- **Operator console: aligned.** The console runs on `brand-*`; no raw
+  `indigo-*`/`emerald-*` classes remain (§3.1), and the global a11y tokens
+  (focus ring + selection) use `brand`.
 
 **The goal:** the console should feel like the same product as the marketing
 site — same emerald, same type, same semantics, same crafted component detail —
-**without** importing marketing's expressive materiality. See §8 (the two
-registers) and §9 (the migration plan).
+**without** importing marketing's expressive materiality. See §6 (the two
+registers) and §7 (console guardrails).
 
 ---
 
@@ -206,7 +203,7 @@ use `brand-*` for accent, primary action, links, and success/allowed/healthy.
 
   | Scale | Classes | Use |
   |---|---|---|
-  | `:display` | `text-6xl md:text-7xl tracking-[-0.035em]` | page H1 hero |
+  | `:display` | `text-4xl/[1.1] tracking-[-0.035em] sm:text-6xl/[1.1] md:text-7xl/[1.1]` | page H1 hero |
   | `:hero` | `text-4xl md:text-5xl tracking-[-0.03em]` | secondary hero |
   | `:section` | `text-4xl sm:text-5xl tracking-[-0.03em]` | centered section header |
 
@@ -394,10 +391,10 @@ genuinely missing (then it's shared, not one-off).
   extend the nav rather than reaching for them.
 
 ### Shared chrome & data (used by the console — `core_components.ex` unless noted)
-- `button` (tones: primary/caution/danger + link tones), `icon_button`,
-  `dropdown` + `menu_item`.
+- `button` (variants `:primary`/`:secondary`/`:ghost`; tones
+  `:neutral`/`:brand`/`:amber`/`:rose`), `icon_button`, `dropdown` + `menu_item`.
 - `chip`, `risk_pill` (`domain_components.ex`), `status_badge` — semantic status
-  (see §3.1; success variants currently `emerald-*` → migrate to `brand-*`).
+  (see §3.1).
 - `input`, `error`, `callout`/`status_note`, `flash`/`flash_group` — forms +
   feedback (rose error tier).
 - `meta_strip` + `meta_field` — the bordered key-value strip under a detail-page
@@ -510,7 +507,7 @@ genuinely missing (then it's shared, not one-off).
 |---|---|---|
 | Job | sell / explain → convert | operate under stress → clarity |
 | Tone | expressive, signature, crafted drama | calm, flat, fast, dense, legible |
-| Accent | `brand` emerald | `brand` emerald (after migration) |
+| Accent | `brand` emerald | `brand` emerald |
 | Type | full `.font-display` scale | quiet semibold/bold `tracking-tight`; display cut sparingly |
 | Materiality | grain / glow / glass / blueprint backdrops | **none** — hairline borders + faint fills |
 | Motion | rise + reveal + gate device + scan | micro only (calm hover, state transitions); no reveals/glow/loops |
@@ -528,45 +525,17 @@ like it was made by the same team — not like a landing page.
 
 ---
 
-## 7. The console migration plan (the actionable part)
+## 7. Console guardrails
 
-**Objective:** the operator console reads as the same brand as the marketing
-site — emerald, type, semantics, crafted detail — while staying a calm tool.
+The console runs on the shared `brand` tokens (§3.1). Keep new console work in
+the calm register:
 
-### 7.1 Token migration (mechanical, do first — low risk, high coherence)
-1. **Accent / primary / links: `indigo-*` → `brand-*`.** Grep
-   `core_components.ex`, `live/**`, layouts for `indigo` (e.g. `auth_layout`
-   `from-indigo-950`, any `text-indigo`/`bg-indigo`/`ring-indigo`/focus). Replace
-   with the `brand` equivalent. There is **no** indigo in the target system.
-2. **Green semantic: `emerald-*` → `brand-*`.** Unify the success/pass/connected/
-   approved/published green onto `brand` (`status_badge`, `button` primary
-   `bg-emerald-500 → bg-brand-500`, `callout` `tone={:brand}`, `menu_item`
-   `tone={:brand}`, the `auth_layout` check bullets). `brand-400 ≈
-   emerald-400`, so it's visually safe and kills the two-greens smell.
-3. **Keep** `amber` (pending/caution), `rose` (danger/error), `zinc` (neutral)
-   — they're already the target. Keep the global focus ring + selection.
-4. **Verify:** after the sweep, `grep -rE 'indigo-|emerald-' lib/emisar_web`
-   should return only deliberate exceptions (the marketing demo terminal's
-   `emerald-400` accents are fine; document any kept emerald with a why).
-
-### 7.2 Component craft pass (the "feels like the same team" work)
-Apply §3 (tokens, radius, hit areas, motion) and the `design-interface-polish`
-detail principles on the console shells, with calm row hover and handled
-empty/loading/error/offline states. Reuse the shared `status_badge`/`chip`/
-`button`/`count_badge`/`live_table` everywhere — replace a hand-rolled chip or
-count with the shared primitive. There is no shared `stat` and no `card`: a
-hand-rolled island gets DELETED, not swapped (`Emisar.Checks.NoIslandContainers`).
-
-### 7.3 Priority order (highest-traffic operator surfaces first)
-1. App shell / nav (`<.brand>` already new) + dashboard (CON-001).
-2. Runs list + run detail (the live-output surface) (CON-005/006).
-3. Runners list + detail + install wizard (CON-002/003/004).
-4. Approvals + policy editor + packs (GOV-*) — the gate UIs; lean on the semantic
-   palette hard here (allow/approve/deny is the whole screen).
-5. Settings (team/SSO/SCIM/billing/profile) (TEAM/BILL).
-6. Auth flows (`auth_layout` — kill the indigo gradient) (AUTH-*).
-
-### 7.4 Do NOT
+- Apply §3 (tokens, radius, hit areas, motion) and the `design-interface-polish`
+  detail principles, with calm row hover and handled empty/loading/error/offline
+  states. Reuse the shared `status_badge`/`chip`/`button`/`count_badge`/`live_table`
+  everywhere — replace a hand-rolled chip or count with the shared primitive.
+  There is no shared `stat` and no `card`: a hand-rolled island gets DELETED, not
+  swapped (`Emisar.Checks.NoIslandContainers`).
 - Don't import `.grain`/`.glow-emerald`/`.surface-glass`/`.hero-*`/the gate
   device into console workflows. Calm is the console brand.
 - Don't add scroll reveals or the rise stagger to the app.

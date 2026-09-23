@@ -31,7 +31,8 @@ honest.
   inputs, tables, modals, flash, etc. Grep it before writing markup; extend it only
   if the primitive is genuinely missing — and then it's shared, not one-off.
 - **`EmisarWeb.LiveTable`** for any list/table: it's stateless and URL-driven. Feed
-  it `LiveTable.params_to_opts(params, Query.filters())` → `Repo.list/3`. Don't
+  it `LiveTable.params_to_opts(params, Runs.run_filters())` (the owning context's
+  `<schema>_filters/0`) and pass the opts to that context's `list_*` function. Don't
   hand-roll pagination, sorting, or filtering.
 - Match the existing screens' Tailwind utility patterns. Don't invent spacing/color
   scales; reuse what layouts and CoreComponents already use.
