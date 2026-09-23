@@ -1,10 +1,12 @@
 defmodule Emisar.UsersTest do
   use Emisar.DataCase, async: true
+  alias Ecto.Multi
   alias Emisar.Audit
   alias Emisar.Crypto
   alias Emisar.Fixtures
   alias Emisar.Mail
   alias Emisar.Marketing
+  alias Emisar.RequestContext
   alias Emisar.Users
   alias Emisar.Users.User
 
@@ -414,63 +416,70 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "update_user_mfa/5" do
-    test "enabling sets the secret, enrolled-at, recovery digests, and clears the replay stamp" do
-      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-      digests = [Crypto.hash("code-a"), Crypto.hash("code-b")]
+  describe "put_mfa_disable/4" do
+    test "valid recovery proof clears every factor field and audits the committed transition" do
+      {user, account, _subject} = enrolled_owner()
+      digest = Crypto.hash("current-proof")
+      user = Fixtures.Users.set_mfa_state(user, mfa_recovery_codes: [digest])
+      :ok = Audit.subscribe_account_audit(account.id)
 
-      assert {:ok, %User{} = updated} =
-               Users.update_user_mfa(user.id, "JBSWY3DPEHPK3PXP", DateTime.utc_now(), digests,
-                 audit: &Audit.user_changesets(&1, "user.mfa_enabled")
-               )
-
-      assert updated.mfa_secret == "JBSWY3DPEHPK3PXP"
-      assert %DateTime{} = updated.mfa_enabled_at
-      assert updated.mfa_recovery_codes == digests
-      assert is_nil(updated.mfa_last_used_at)
-    end
-
-    test "disabling clears every MFA field (secret + enrolled-at + recovery codes)" do
-      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-
-      {:ok, _} =
-        Users.update_user_mfa(user.id, "JBSWY3DPEHPK3PXP", DateTime.utc_now(), [Crypto.hash("x")],
-          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
-        )
-
-      assert {:ok, %User{} = disabled} =
-               Users.update_user_mfa(user.id, nil, nil, [],
-                 audit: &Audit.user_changesets(&1, "user.mfa_disabled")
-               )
+      assert {:ok, %{disabled_user: disabled}} =
+               user.id |> locked_mfa_disable({:recovery_code, digest}) |> Repo.commit_multi()
 
       assert is_nil(disabled.mfa_secret)
       assert is_nil(disabled.mfa_enabled_at)
+      assert is_nil(disabled.mfa_last_used_at)
       assert disabled.mfa_recovery_codes == []
-      assert is_nil(Repo.reload!(user).mfa_enabled_at)
+      assert Repo.reload!(user) == disabled
+      assert_receive {:audit_event, %Audit.Event{event_type: "user.mfa_disabled"}}
+      assert_receive {:audit_event, %Audit.Event{event_type: "user.mfa_recovery_code_used"}}
+    end
+
+    test "invalid proof preserves the factor without an audit event" do
+      {user, account, _subject} = enrolled_owner()
+      :ok = Audit.subscribe_account_audit(account.id)
+
+      assert {:error, :invalid} =
+               user.id
+               |> locked_mfa_disable({:recovery_code, Crypto.hash("wrong")})
+               |> Repo.commit_multi()
+
+      assert Repo.reload!(user) == user
+      refute_receive {:audit_event, _}
+    end
+
+    test "a later transaction failure restores factor and audit rows without broadcasting" do
+      {user, account, _subject} = enrolled_owner()
+      digest = Crypto.hash("current-proof")
+      user = Fixtures.Users.set_mfa_state(user, mfa_recovery_codes: [digest])
+      :ok = Audit.subscribe_account_audit(account.id)
+      before = Repo.aggregate(Audit.Event, :count)
+
+      assert {:error, :forced_rollback} =
+               user.id
+               |> locked_mfa_disable({:recovery_code, digest})
+               |> Multi.error(:later, :forced_rollback)
+               |> Repo.commit_multi()
+
+      assert Repo.reload!(user) == user
+      assert Repo.aggregate(Audit.Event, :count) == before
+      refute_receive {:audit_event, _}
     end
   end
 
-  describe "regenerate_user_mfa_recovery_codes/4" do
+  describe "put_mfa_recovery_code_regeneration/6" do
     test "proves a recovery digest and replaces the set in the same locked update" do
       {user, _account, _subject} = enrolled_owner()
       proof_digest = Crypto.hash("current-proof")
       new_digests = [Crypto.hash("fresh-1"), Crypto.hash("fresh-2"), Crypto.hash("fresh-3")]
 
-      {:ok, user} =
-        Users.update_user_mfa(
-          user.id,
-          user.mfa_secret,
-          user.mfa_enabled_at,
-          [proof_digest],
-          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
-        )
+      user = Fixtures.Users.set_mfa_state(user, mfa_recovery_codes: [proof_digest])
 
       assert {:ok, %User{} = updated} =
-               Users.regenerate_user_mfa_recovery_codes(
+               regenerate_locked_mfa_codes(
                  user.id,
                  {:recovery_code, proof_digest},
                  new_digests,
-                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
                  clock: fn -> flunk("a recovery-code proof must not sample the TOTP clock") end
                )
 
@@ -489,17 +498,14 @@ defmodule Emisar.UsersTest do
 
       assert NimbleTOTP.verification_code(secret, time: before_boundary) != code
 
-      {:ok, user} =
-        Users.update_user_mfa(user.id, secret, before_boundary, [],
-          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
-        )
+      user =
+        Fixtures.Users.set_mfa_state(user, mfa_secret: secret, mfa_enabled_at: before_boundary)
 
       assert {:ok, %User{} = updated} =
-               Users.regenerate_user_mfa_recovery_codes(
+               regenerate_locked_mfa_codes(
                  user.id,
                  {:totp, code},
                  new_digests,
-                 audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
                  clock: fn -> boundary end
                )
 
@@ -509,11 +515,10 @@ defmodule Emisar.UsersTest do
       assert Users.verify_and_consume_mfa(user.id, code, clock: fn -> boundary end) ==
                {:error, :replay}
 
-      assert Users.regenerate_user_mfa_recovery_codes(
+      assert regenerate_locked_mfa_codes(
                user.id,
                {:totp, code},
                rejected_digests,
-               audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
                clock: fn -> boundary end
              ) == {:error, :replay}
 
@@ -523,11 +528,10 @@ defmodule Emisar.UsersTest do
       assert Users.verify_and_consume_mfa(user.id, code, clock: fn -> next_boundary end) ==
                {:error, :invalid}
 
-      assert Users.regenerate_user_mfa_recovery_codes(
+      assert regenerate_locked_mfa_codes(
                user.id,
                {:totp, code},
                rejected_digests,
-               audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
                clock: fn -> next_boundary end
              ) == {:error, :invalid}
 
@@ -538,11 +542,10 @@ defmodule Emisar.UsersTest do
     test "refuses with :mfa_not_enabled when MFA is off — judged on the locked row" do
       user = Fixtures.Users.create_user()
 
-      assert Users.regenerate_user_mfa_recovery_codes(
+      assert regenerate_locked_mfa_codes(
                user.id,
                {:totp, "000000"},
                [Crypto.hash("nope")],
-               audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated"),
                clock: fn -> flunk("an unenrolled user must not sample the TOTP clock") end
              ) == {:error, :mfa_not_enabled}
 
@@ -556,14 +559,7 @@ defmodule Emisar.UsersTest do
       digest_a = Crypto.hash("recover-a")
       digest_b = Crypto.hash("recover-b")
 
-      {:ok, _} =
-        Users.update_user_mfa(
-          user.id,
-          user.mfa_secret,
-          user.mfa_enabled_at,
-          [digest_a, digest_b],
-          audit: &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated")
-        )
+      Fixtures.Users.set_mfa_state(user, mfa_recovery_codes: [digest_a, digest_b])
 
       %{user: user, account: account, subject: subject, digest_a: digest_a, digest_b: digest_b}
     end
@@ -603,10 +599,8 @@ defmodule Emisar.UsersTest do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()
       secret = Crypto.totp_secret()
 
-      {:ok, _} =
-        Users.update_user_mfa(user.id, secret, DateTime.utc_now(), [],
-          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
-        )
+      user =
+        Fixtures.Users.set_mfa_state(user, mfa_secret: secret, mfa_enabled_at: DateTime.utc_now())
 
       %{user: user, secret: secret}
     end
@@ -642,10 +636,11 @@ defmodule Emisar.UsersTest do
     } do
       otp = NimbleTOTP.verification_code(secret)
 
-      {:ok, _} =
-        Users.update_user_mfa(user.id, nil, nil, [],
-          audit: &Audit.user_changesets(&1, "user.mfa_disabled")
-        )
+      Fixtures.Users.set_mfa_state(user,
+        mfa_secret: nil,
+        mfa_enabled_at: nil,
+        mfa_recovery_codes: []
+      )
 
       assert Users.verify_and_consume_mfa(user.id, otp,
                clock: fn -> flunk("disabled MFA must be rejected before sampling time") end
@@ -773,15 +768,44 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  # An owner user with MFA enrolled (secret + enrolled-at), so the locked-row
-  # MFA-enabled guard in regenerate_user_mfa_recovery_codes / consume passes. Returns
+  defp locked_mfa_disable(user_id, factor) do
+    Multi.new()
+    |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(user_id, repo) end)
+    |> Multi.merge(fn %{user: user} ->
+      Users.put_mfa_disable(Multi.new(), user, factor, %RequestContext{})
+    end)
+  end
+
+  defp regenerate_locked_mfa_codes(user_id, factor, digests, opts) do
+    Multi.new()
+    |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(user_id, repo) end)
+    |> Multi.merge(fn %{user: user} ->
+      Users.put_mfa_recovery_code_regeneration(
+        Multi.new(),
+        user,
+        factor,
+        digests,
+        %RequestContext{},
+        opts
+      )
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{regenerated_user: user}} -> {:ok, user}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # An owner with MFA enrolled, so the locked-row regeneration / consume guard passes.
+  # Returns
   # the {user, account, subject} tuple owner_subject/0 yields.
   defp enrolled_owner do
     {user, account, subject} = Fixtures.Subjects.owner_subject()
 
-    {:ok, enrolled} =
-      Users.update_user_mfa(user.id, "JBSWY3DPEHPK3PXP", DateTime.utc_now(), [],
-        audit: &Audit.user_changesets(&1, "user.mfa_enabled")
+    enrolled =
+      Fixtures.Users.set_mfa_state(user,
+        mfa_secret: "JBSWY3DPEHPK3PXP",
+        mfa_enabled_at: DateTime.utc_now()
       )
 
     {enrolled, account, subject}

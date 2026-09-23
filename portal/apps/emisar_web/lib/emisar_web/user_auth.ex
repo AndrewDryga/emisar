@@ -17,7 +17,7 @@ defmodule EmisarWeb.UserAuth do
   # Session provenance for an unauthenticated request — no method, no factor, no
   # SSO identity. `fetch_user_and_token_by_session_token/1` returns the
   # `%UserToken{}` on a hit; this is the miss/anonymous default the Subject build
-  # reads from, and `Auth.session_mfa_verified?/2` fails it closed.
+  # reads from; absent personal, local-factor and destination proof fails closed.
   @no_auth %{
     auth_method: nil,
     mfa_verified_at: nil,
@@ -26,6 +26,28 @@ defmodule EmisarWeb.UserAuth do
   }
 
   # -- Public surface -------------------------------------------------
+
+  @doc "Recover lost workspace proof without redirecting a still-live bearer through the sign-in guard."
+  def reauthenticate(%Phoenix.LiveView.Socket{} = socket) do
+    path =
+      case Auth.fetch_current_session(socket.assigns.current_subject) do
+        {:ok, _session} -> ~p"/session/recover"
+        {:error, _reason} -> ~p"/app/#{socket.assigns.current_account}/sign_in"
+      end
+
+    socket
+    |> Phoenix.LiveView.put_flash(:error, EmisarWeb.MfaErrors.message(:session_not_found))
+    |> Phoenix.LiveView.redirect(to: path)
+  end
+
+  @doc "Install an already committed bound SSO rotation; no second mint or stale return destination."
+  def install_sso_step_up(conn, token, %Accounts.Account{} = account) do
+    conn
+    |> renew_session()
+    |> put_token_in_session(token)
+    |> put_session(:current_account_id, account.id)
+    |> redirect(to: ~p"/app/#{account}")
+  end
 
   @doc """
   Installs the magic-link session `Emisar.Auth` already minted — factor one
@@ -145,7 +167,7 @@ defmodule EmisarWeb.UserAuth do
   domain gets — `current_user` is this request's snapshot, not the credential
   being revoked.
   """
-  def log_out_user(conn) do
+  def log_out_user(conn, to \\ ~p"/") do
     :ok = complete_sign_out(get_session(conn, :user_token), conn)
 
     if live_socket_id = get_session(conn, :live_socket_id) do
@@ -155,7 +177,7 @@ defmodule EmisarWeb.UserAuth do
     conn
     |> Analytics.track_sign_out()
     |> renew_session()
-    |> redirect(to: ~p"/")
+    |> redirect(to: to)
   end
 
   # A rolled-back sign-out must not reach the browser as a completed one, so the
@@ -296,9 +318,9 @@ defmodule EmisarWeb.UserAuth do
         raise EmisarWeb.NotFoundError
 
       {:error, :not_found} ->
-        if Accounts.all_memberships_suspended?(user) do
+        if Accounts.has_membership_history?(user) do
           conn
-          |> log_out_user_with_flash("Your access has been suspended. Contact your team admin.")
+          |> redirect(to: ~p"/session/recover")
           |> halt()
         else
           message =
@@ -320,7 +342,13 @@ defmodule EmisarWeb.UserAuth do
         |> assign(:current_membership, membership)
         |> assign(
           :current_subject,
-          Subject.for_user(user, membership.account, membership, context, auth_opts(conn.assigns))
+          Subject.for_user(
+            user,
+            membership.account,
+            membership,
+            context,
+            auth_opts(conn.assigns, membership)
+          )
         )
     end
   end
@@ -361,29 +389,20 @@ defmodule EmisarWeb.UserAuth do
       context = RequestContext.from_conn(conn)
 
       {:ok,
-       Subject.for_user(user, membership.account, membership, context, auth_opts(conn.assigns))}
+       Subject.for_user(
+         user,
+         membership.account,
+         membership,
+         context,
+         auth_opts(conn.assigns, membership)
+       )}
     end
   end
 
-  # Session provenance for the Subject, pulled off the `:current_auth` assign the
-  # boundary stashed (a `%UserToken{}` or `@no_auth`). So every audit row the
-  # subject produces records how the operator signed in.
-  #
-  # `:mfa` is the boundary's interpreted answer, not the raw session stamp: local
-  # proof must still match the current enrollment, while an SSO authentication
-  # stamp remains generic provenance. Account compliance consumes the exact
-  # local epoch below or rechecks the current account's provider setting.
-  defp auth_opts(assigns) do
-    auth = Map.get(assigns, :current_auth, @no_auth)
-
-    [
-      auth_method: auth.auth_method,
-      mfa: Auth.session_mfa_verified?(assigns.current_user, auth),
-      mfa_enrollment_verified_at:
-        Auth.session_mfa_enrollment_verified_at(assigns.current_user, auth),
-      user_identity_id: auth.user_identity_id
-    ]
-  end
+  # Destination proof comes from this bearer's frozen grant, never its origin
+  # or today's membership list. The context rechecks the same anchors on use.
+  defp auth_opts(assigns, membership),
+    do: Auth.session_subject_options(membership, Map.get(assigns, :current_auth, @no_auth))
 
   # If the session asked for an account the user can no longer reach
   # (suspended, deleted) `fetch_membership_for_session/2` falls back to
@@ -404,11 +423,25 @@ defmodule EmisarWeb.UserAuth do
   def switch_account(conn, %Accounts.Membership{} = membership),
     do: put_session(conn, :current_account_id, membership.account_id)
 
+  @doc "Pins an audited account switch and carries a valid plan choice to that workspace's Billing page."
+  def redirect_after_account_switch(conn, %Accounts.Membership{} = membership, token) do
+    conn = conn |> delete_session(:billing_intent) |> switch_account(membership)
+
+    case BillingIntent.verify(token) do
+      {:ok, _intent} ->
+        redirect(conn,
+          to: ~p"/app/#{membership.account}/settings/billing?billing_intent=#{token}"
+        )
+
+      {:error, :invalid} ->
+        redirect(conn, to: ~p"/app/#{membership.account}")
+    end
+  end
+
   @doc """
   FORCED invalidation (delete the token, disconnect live sockets, renew the
   session) with an error flash and a redirect to `to`. Drives the
-  suspended-account bounce (default `/sign_in`) and the require_sso step-up,
-  which lands the user on that account's branded sign-in. The operator didn't
+  platform-admin factor bounce (default `/sign_in`). The operator didn't
   choose to leave, so this rides `Auth.delete_session_token/1` and writes no
   `user.signed_out` audit — `log_out_user/1` owns the voluntary sign-out. The
   flash is set AFTER renew_session, so it survives to the next request.
@@ -428,6 +461,20 @@ defmodule EmisarWeb.UserAuth do
   end
 
   defp signed_in_path(_conn), do: ~p"/app"
+
+  # Slugged routes resolve their own exact grant in the following hook. The
+  # unscoped MFA page must stop here if its static render lost the last grant
+  # before connection; policy hooks cannot operate on a nil account/Subject.
+  defp mount_authenticated_account(socket, _session, %{"account_id_or_slug" => _account_ref}),
+    do: {:cont, socket}
+
+  defp mount_authenticated_account(socket, session, _params) do
+    socket = mount_current_account(socket, session)
+
+    if socket.assigns.current_account,
+      do: {:cont, socket},
+      else: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/session/recover")}
+  end
 
   # -- LiveView on_mount hooks ----------------------------------------
 
@@ -494,7 +541,7 @@ defmodule EmisarWeb.UserAuth do
     socket = mount_current_user(session, socket)
 
     if socket.assigns.current_user do
-      {:cont, mount_current_account_for_route(socket, session, params)}
+      mount_authenticated_account(socket, session, params)
     else
       socket =
         socket
@@ -552,7 +599,7 @@ defmodule EmisarWeb.UserAuth do
           membership.account,
           membership,
           RequestContext.from_socket(socket),
-          auth_opts(socket.assigns)
+          auth_opts(socket.assigns, membership)
         )
 
       switchable_accounts = load_switchable_accounts(subject)
@@ -1063,16 +1110,6 @@ defmodule EmisarWeb.UserAuth do
   # Slugged routes resolve their URL account in `:ensure_account_slug`; doing a
   # session-account lookup here first only loaded an account the URL immediately
   # replaced. The slug hook still subscribes and re-fetches on connect.
-  defp mount_current_account_for_route(
-         socket,
-         _session,
-         %{"account_id_or_slug" => _account_ref}
-       ),
-       do: socket
-
-  defp mount_current_account_for_route(socket, session, _params),
-    do: mount_current_account(socket, session)
-
   defp mount_current_account(socket, session) do
     # Resolve everything in one shot so assign_new closures don't race
     # against the outer pipe's socket reference (assign_new captures
@@ -1100,7 +1137,7 @@ defmodule EmisarWeb.UserAuth do
                   membership.account,
                   membership,
                   RequestContext.from_socket(socket),
-                  auth_opts(socket.assigns)
+                  auth_opts(socket.assigns, membership)
                 )
 
               {membership.account, membership, subject, load_switchable_accounts(subject)}

@@ -338,8 +338,16 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   } do
     {conn, user, account} = register_and_log_in(conn)
 
+    member = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
     subject =
-      Fixtures.Subjects.subject_for(user, account, role: :owner, auth_method: :sso, mfa: true)
+      Fixtures.Subjects.build_subject(
+        actor: user,
+        account: account,
+        membership_id: member.id,
+        auth_method: :sso,
+        mfa: true
+      )
 
     updated = %{account | name: "Renamed"}
     {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))

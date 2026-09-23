@@ -2,7 +2,7 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Auth, Crypto, Fixtures, Repo, RequestContext}
+  alias Emisar.{Accounts, Auth, Fixtures, Repo, RequestContext}
   alias Emisar.Accounts.Account
   alias Emisar.Auth.UserToken
   alias Emisar.Users.User
@@ -585,8 +585,8 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
     assert Auth.issue_email_change_code(new_email, subject) == {:ok, :sent}
     assert_receive {:email, email}, 5_000
 
-    digest =
-      subject.actor |> Fixtures.Auth.create_session_token!(:magic_link, nil) |> Crypto.hash()
+    {:ok, session} = Auth.fetch_current_session(subject)
+    digest = session.token
 
     assert {:ok, proof} =
              Auth.confirm_email_change(

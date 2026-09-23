@@ -1029,7 +1029,9 @@ defmodule EmisarWeb.SSODirectoryComponents do
                 on_confirm={JS.push("suspend_member", value: %{membership_id: member.membership.id})}
               >
                 <:body>
-                  {RoleCopy.suspend_body()}
+                  {RoleCopy.suspend_body(
+                    Accounts.member_display_name(member.membership) || member.membership.id
+                  )}
                 </:body>
                 Suspend access
               </.confirm_button>

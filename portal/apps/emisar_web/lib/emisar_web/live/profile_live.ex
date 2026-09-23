@@ -2,7 +2,7 @@ defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Auth, SSO, Users}
   alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MfaEnrollment}
-  alias EmisarWeb.{MfaErrors, OIDCStepUp, UserAgent}
+  alias EmisarWeb.{MfaErrors, OIDCStepUp, UserAgent, UserAuth}
   alias Phoenix.LiveView.JS
 
   # Both step-ups on this page — the email-change authenticator branch and
@@ -15,7 +15,7 @@ defmodule EmisarWeb.ProfileLive do
   # Named once so linking and removing a sign-in method report an unstartable
   # step-up identically — the operator hit the same wall either way.
   @oidc_step_up_start_error "Couldn't start confirmation. Try again."
-  @personal_sign_in_required "These controls require a personal email-link sign-in in a workspace that allows it. They are unavailable in SSO-only workspaces."
+  @personal_sign_in_required "These controls require unexpired personal email-link proof in this browser. Workspace SSO alone does not provide it."
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
@@ -23,10 +23,7 @@ defmodule EmisarWeb.ProfileLive do
     {:ok,
      socket
      |> assign(:page_title, "Profile")
-     |> assign(
-       :personal_sign_in?,
-       Auth.Subject.ensure_personal_user(socket.assigns.current_subject) == :ok
-     )
+     |> assign(:personal_sign_in?, false)
      |> assign(:profile_editing?, false)
      |> assign(:workspace_profile_editing?, false)
      |> assign(:workspace_profile_editable?, false)
@@ -51,7 +48,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:oidc_identities_loaded?, false)
      |> OIDCStepUp.reset()
      |> ConfirmDialog.init()
-     |> assign_mfa_facts(user)
+     |> assign(:mfa_facts, nil)
      |> assign_profile_form(user)
      |> assign_email_form(user)
      |> MfaEnrollment.reset()
@@ -69,7 +66,11 @@ defmodule EmisarWeb.ProfileLive do
   # empty result. Session pagination preserves its URL state.
   defp maybe_load_sessions(socket, params) do
     if connected?(socket) do
-      socket |> load_sessions(params) |> load_oidc_identities() |> load_workspace_profile()
+      socket
+      |> load_sessions(params)
+      |> load_oidc_identities()
+      |> load_workspace_profile()
+      |> assign_mfa_facts(socket.assigns.current_user)
     else
       assign(socket, :filter_params, params)
     end
@@ -176,6 +177,13 @@ defmodule EmisarWeb.ProfileLive do
   # doesn't bounce them back to page 1 (their cursor rides on filter_params).
   defp reload_sessions(socket), do: load_sessions(socket, socket.assigns.filter_params)
 
+  defp personal_authority_error(socket) do
+    case Auth.fetch_current_session(socket.assigns.current_subject) do
+      {:ok, _session} -> put_flash(socket, :error, @personal_sign_in_required)
+      {:error, :unauthorized} -> UserAuth.reauthenticate(socket)
+    end
+  end
+
   defp present_session(%Auth.SessionFacts{} = session) do
     %{
       id: session.id,
@@ -203,7 +211,7 @@ defmodule EmisarWeb.ProfileLive do
              "revoke_session",
              "revoke_other_sessions"
            ] do
-    {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+    {:noreply, personal_authority_error(socket)}
   end
 
   def handle_event("edit_profile", _params, socket) do
@@ -243,7 +251,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+        {:noreply, personal_authority_error(socket)}
 
       {:error, _reason} ->
         changeset = Users.change_user(socket.assigns.current_user, params)
@@ -412,7 +420,7 @@ defmodule EmisarWeb.ProfileLive do
           {:noreply, assign(socket, :email_step_error, MfaErrors.message(:email_rate_limited))}
 
         {:error, :unauthorized} ->
-          {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+          {:noreply, personal_authority_error(socket)}
 
         # :not_found (row gone mid-session) or any other unexpected Multi failure.
         {:error, _reason} ->
@@ -532,7 +540,7 @@ defmodule EmisarWeb.ProfileLive do
          socket |> put_flash(:info, "This session has already ended.") |> reload_sessions()}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+        {:noreply, personal_authority_error(socket)}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't sign out this session. Try again.")}
@@ -551,7 +559,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply, socket |> put_flash(:info, msg) |> load_sessions(%{})}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+        {:noreply, personal_authority_error(socket)}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't sign out other sessions. Try again.")}
@@ -579,6 +587,9 @@ defmodule EmisarWeb.ProfileLive do
 
       {:error, :mfa_already_enabled} ->
         {:noreply, refresh_after_mfa_enabled(socket)}
+
+      {:error, :unauthorized} ->
+        {:noreply, UserAuth.reauthenticate(socket)}
 
       {:error, _reason} ->
         {:noreply, assign(socket, :mfa_start_error, @mfa_enrollment_email_delivery_error)}
@@ -619,6 +630,9 @@ defmodule EmisarWeb.ProfileLive do
         {:error, :mfa_already_enabled} ->
           {:noreply, refresh_after_mfa_enabled(socket)}
 
+        {:error, :unauthorized} ->
+          {:noreply, UserAuth.reauthenticate(socket)}
+
         {:error, _reason} ->
           {:noreply,
            assign(socket, :mfa_enrollment_email_error, "Could not verify that code. Try again.")}
@@ -649,6 +663,9 @@ defmodule EmisarWeb.ProfileLive do
         {:error, :mfa_already_enabled} ->
           {:noreply, refresh_after_mfa_enabled(socket)}
 
+        {:error, :unauthorized} ->
+          {:noreply, UserAuth.reauthenticate(socket)}
+
         {:error, _reason} ->
           {:noreply,
            assign(socket, :mfa_enrollment_email_error, @mfa_enrollment_email_delivery_error)}
@@ -669,30 +686,29 @@ defmodule EmisarWeb.ProfileLive do
     if is_nil(secret) do
       {:noreply, put_flash(socket, :error, "Start MFA setup again.")}
     else
-      case Auth.enable_mfa(
-             secret,
-             otp,
-             socket.assigns.mfa_enrollment_proof,
-             socket.assigns.current_auth.token,
-             socket.assigns.current_subject
-           ) do
-        {:ok, updated, recovery_codes} ->
-          {:noreply,
-           socket
-           |> put_flash(
-             :info,
-             "MFA enabled. Copy your recovery codes below — they'll only be shown once."
-           )
-           |> assign(:current_user, updated)
-           |> MfaEnrollment.assign_current_proof(updated)
-           |> assign_mfa_facts(updated)
-           |> assign(:mfa_recovery_codes, recovery_codes)
-           |> assign(:codes_saved?, false)
-           |> MfaEnrollment.reset()
-           |> assign(:mfa_enrollment_step, :recovery)
-           |> assign_mfa_enrollment_email_form()
-           |> assign_mfa_form()}
-
+      with {:ok, updated, recovery_codes} <-
+             Auth.enable_mfa(
+               secret,
+               otp,
+               socket.assigns.mfa_enrollment_proof,
+               socket.assigns.current_auth.token,
+               socket.assigns.current_subject
+             ),
+           {:ok, socket} <- MfaEnrollment.assign_current_proof(socket, updated) do
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "MFA enabled. Copy your recovery codes below — they'll only be shown once."
+         )
+         |> assign_mfa_facts(updated)
+         |> assign(:mfa_recovery_codes, recovery_codes)
+         |> assign(:codes_saved?, false)
+         |> MfaEnrollment.reset()
+         |> assign(:mfa_enrollment_step, :recovery)
+         |> assign_mfa_enrollment_email_form()
+         |> assign_mfa_form()}
+      else
         {:error, :invalid_otp} ->
           {:noreply,
            socket
@@ -707,13 +723,10 @@ defmodule EmisarWeb.ProfileLive do
            |> assign_mfa_enrollment_email_form()
            |> assign_mfa_form()}
 
-        {:error, :session_not_found} ->
-          {:noreply,
-           socket
-           |> put_flash(:error, MfaErrors.message(:session_not_found))
-           |> push_navigate(to: ~p"/sign_in/magic")}
+        {:error, reason} when reason in [:unauthorized, :session_not_found] ->
+          {:noreply, UserAuth.reauthenticate(socket)}
 
-        {:error, :mfa_already_enabled} ->
+        {:error, reason} when reason in [:mfa_already_enabled, :mfa_proof_stale] ->
           {:noreply, refresh_after_mfa_enabled(socket)}
 
         {:error, _changeset} ->
@@ -791,6 +804,9 @@ defmodule EmisarWeb.ProfileLive do
 
   defp submit_disable_mfa(socket, code) do
     case Auth.disable_mfa(code, socket.assigns.current_subject) do
+      {:error, reason} when reason in [:unauthorized, :session_not_found] ->
+        {:noreply, UserAuth.reauthenticate(socket)}
+
       {:ok, updated} ->
         {:noreply,
          socket
@@ -833,6 +849,9 @@ defmodule EmisarWeb.ProfileLive do
 
   defp submit_recovery_code_regeneration(socket, code) do
     case Auth.regenerate_mfa_recovery_codes(code, socket.assigns.current_subject) do
+      {:error, reason} when reason in [:unauthorized, :session_not_found] ->
+        {:noreply, UserAuth.reauthenticate(socket)}
+
       {:ok, updated, codes} ->
         {:noreply,
          socket
@@ -881,12 +900,13 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
-  # The subject carries a mount-time actor snapshot, so every credential write
-  # re-derives the facts from the fresh user row the domain handed back — the
-  # page itself never inspects an MFA field.
+  # Facts come from the live browser and current User, never a held actor
+  # snapshot. Expiry during a mounted page is a sign-in step, not a crash.
   defp assign_mfa_facts(socket, user) do
-    {:ok, facts} = Auth.mfa_facts(%{socket.assigns.current_subject | actor: user})
-    assign(socket, :mfa_facts, facts)
+    case Auth.mfa_facts(%{socket.assigns.current_subject | actor: user}) do
+      {:ok, facts} -> assign(socket, :mfa_facts, facts)
+      {:error, :unauthorized} -> UserAuth.reauthenticate(socket)
+    end
   end
 
   defp assign_profile_form(socket, user) do
@@ -950,7 +970,7 @@ defmodule EmisarWeb.ProfileLive do
          |> put_flash(:info, "We sent a code to #{email}. Your email has not changed yet.")}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, @personal_sign_in_required)}
+        {:noreply, personal_authority_error(socket)}
 
       {:error, :delivery_suppressed} ->
         {:noreply,
@@ -1019,7 +1039,7 @@ defmodule EmisarWeb.ProfileLive do
 
     case Auth.begin_email_change(new_email, socket.assigns.current_subject) do
       {:error, :unauthorized} ->
-        put_flash(socket, :error, @personal_sign_in_required)
+        personal_authority_error(socket)
 
       {:ok, :totp} ->
         assign(socket, :email_step, :totp)
@@ -1242,14 +1262,20 @@ defmodule EmisarWeb.ProfileLive do
           <:header>
             <.section_header title="Personal details" />
           </:header>
+          <p :if={not @sessions_loaded?} role="status" class="text-sm text-zinc-400">
+            Loading personal details…
+          </p>
           <p
-            :if={not @personal_sign_in?}
+            :if={@sessions_loaded? and not @personal_sign_in?}
             id="personal-sign-in-required"
             class="mb-4 text-sm text-zinc-400"
           >
-            Workspace SSO does not grant access to change your personal details.
-            Use a personal email-link sign-in in a workspace that allows it.
-            These controls are unavailable in SSO-only workspaces.
+            Changing your personal details requires unexpired personal email-link proof in
+            this browser. Workspace SSO alone does not provide it.
+            <.link href={~p"/session/recover"} class="text-brand-400 hover:text-brand-300">
+              Sign out and sign in by email
+            </.link>
+            to use these controls.
           </p>
           <dl :if={@personal_sign_in?} class="divide-y divide-zinc-800/70">
             <div id="display-name" class="pb-4">
@@ -1566,11 +1592,15 @@ defmodule EmisarWeb.ProfileLive do
               <:subtitle>Use an authenticator app for an extra check when you sign in.</:subtitle>
             </.section_header>
           </:header>
-          <:note :if={not @mfa_facts.enabled? and @mfa_enrollment_step == :idle}>
+          <:note :if={
+            not is_nil(@mfa_facts) and not @mfa_facts.enabled? and @mfa_enrollment_step == :idle
+          }>
             We recommend enabling MFA to help protect your profile.
           </:note>
 
           <%= cond do %>
+            <% is_nil(@mfa_facts) -> %>
+              <p role="status" class="text-sm text-zinc-400">Loading MFA settings…</p>
             <% @mfa_recovery_codes -> %>
               <.mfa_setup_progress :if={@mfa_enrollment_step == :recovery} step={3} />
               <.secret_reveal
@@ -1801,16 +1831,19 @@ defmodule EmisarWeb.ProfileLive do
                node on a single page, leaving one child and no phantom gap). --%>
           <div class="space-y-4">
             <p
-              :if={not @personal_sign_in?}
+              :if={@sessions_loaded? and not @personal_sign_in?}
               id="sessions-personal-sign-in-required"
               class="text-sm text-zinc-400"
             >
-              Your workspace SSO session cannot view or end other devices' sessions.
-              To manage them, use a personal email-link sign-in in a workspace that allows it.
-              These controls are unavailable in SSO-only workspaces.
+              Viewing or ending other devices' sessions requires unexpired personal email-link
+              proof in this browser. Workspace SSO alone does not provide it.
+              <.link href={~p"/session/recover"} class="text-brand-400 hover:text-brand-300">
+                Sign out and sign in by email
+              </.link>
+              to use these controls.
             </p>
             <p
-              :if={@personal_sign_in? and not @sessions_loaded?}
+              :if={not @sessions_loaded?}
               role="status"
               class="text-sm text-zinc-400"
             >

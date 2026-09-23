@@ -27,9 +27,25 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
   end
 
   describe "POST /app/accounts/switch" do
-    test "switches the active account when the user belongs to it", %{conn: conn} do
-      {conn, user, _first} = register_and_log_in(conn)
+    test "a later membership cannot expand an existing browser's authority", %{conn: conn} do
+      {conn, user, first} = register_and_log_in(conn)
       second = second_account_for(user)
+      conn = put_session(conn, :current_account_id, first.id)
+      denied = post(conn, ~p"/app/accounts/switch", account_id: second.id)
+
+      assert redirected_to(denied) == ~p"/app"
+      assert get_session(denied, :current_account_id) == first.id
+
+      refute Event.Query.all()
+             |> Event.Query.by_account_id(second.id)
+             |> Event.Query.by_event_type("session.account_switched")
+             |> Repo.exists?()
+    end
+
+    test "switches the active account when the user belongs to it", %{conn: conn} do
+      {conn, user, first} = register_and_log_in(conn)
+      second = second_account_for(user)
+      conn = conn |> log_in_user(user) |> put_session(:current_account_id, first.id)
 
       conn = post(conn, ~p"/app/accounts/switch", account_id: second.id)
 
@@ -81,9 +97,9 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
 
       assert_error_sent 404, fn -> get(sso_conn, ~p"/app/#{second}/runners") end
 
-      # The provider's own workspace opens, and the switcher says where the rest are.
+      # Only this browser's proved workspace appears in the switcher.
       html = sso_conn |> get(~p"/app/#{first}") |> html_response(200)
-      assert html =~ "Sign in with your email to open"
+      assert html =~ "Switch workspace"
       refute html =~ second.name
     end
 
@@ -174,8 +190,9 @@ defmodule EmisarWeb.AccountSwitchControllerTest do
     end
 
     test "the switch persists across subsequent requests via the session", %{conn: conn} do
-      {conn, user, _first} = register_and_log_in(conn)
+      {conn, user, first} = register_and_log_in(conn)
       second = second_account_for(user)
+      conn = conn |> log_in_user(user) |> put_session(:current_account_id, first.id)
 
       conn = post(conn, ~p"/app/accounts/switch", account_id: second.id)
       assert get_session(conn, :current_account_id) == second.id

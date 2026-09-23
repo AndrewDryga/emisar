@@ -33,6 +33,8 @@ defmodule Emisar.Auth.Subject do
       re-read reject a disable/re-enroll race.
     * `user_identity_id` — the `%SSO.UserIdentity{}` behind an `:sso`
       session; nil otherwise.
+    * `session_token_id` / `member_grant_id` — exact live bearer and frozen
+      workspace authority. User Subjects without these cannot act in a workspace.
   """
   alias Emisar.{Accounts, RequestContext, Users}
 
@@ -54,7 +56,9 @@ defmodule Emisar.Auth.Subject do
           auth_method: auth_method() | nil,
           mfa: boolean() | nil,
           mfa_enrollment_verified_at: DateTime.t() | nil,
-          user_identity_id: binary() | nil
+          user_identity_id: binary() | nil,
+          session_token_id: binary() | nil,
+          member_grant_id: binary() | nil
         }
 
   defstruct account: nil,
@@ -66,7 +70,9 @@ defmodule Emisar.Auth.Subject do
             auth_method: nil,
             mfa: nil,
             mfa_enrollment_verified_at: nil,
-            user_identity_id: nil
+            user_identity_id: nil,
+            session_token_id: nil,
+            member_grant_id: nil
 
   @doc """
   Build a subject from a `%Users.User{}` + their `%Accounts.Membership{}`.
@@ -95,8 +101,28 @@ defmodule Emisar.Auth.Subject do
       auth_method: Keyword.get(opts, :auth_method),
       mfa: Keyword.get(opts, :mfa),
       mfa_enrollment_verified_at: Keyword.get(opts, :mfa_enrollment_verified_at),
-      user_identity_id: Keyword.get(opts, :user_identity_id)
+      user_identity_id: Keyword.get(opts, :user_identity_id),
+      session_token_id: Keyword.get(opts, :session_token_id),
+      member_grant_id: Keyword.get(opts, :member_grant_id)
     }
+  end
+
+  @doc "Rebuild locked actor/Member facts without dropping bearer identity or widening permissions."
+  def rebuild(%__MODULE__{} = subject, user, account, membership) do
+    opts =
+      subject
+      |> Map.take([
+        :auth_method,
+        :mfa,
+        :mfa_enrollment_verified_at,
+        :user_identity_id,
+        :session_token_id,
+        :member_grant_id
+      ])
+      |> Map.to_list()
+
+    fresh = for_user(user, account, membership, subject.context, opts)
+    %{fresh | permissions: MapSet.intersection(subject.permissions, fresh.permissions)}
   end
 
   @doc "Build a subject for an API key call (MCP / programmatic)."
@@ -137,14 +163,12 @@ defmodule Emisar.Auth.Subject do
   # -- Helpers used by every context's `ensure_X_in_subject_account` -
 
   @doc """
-  Personal self-service requires first-party sign-in provenance. A workspace
-  role, IdP MFA assertion or independently verified local factor does not turn
-  an SSO session into a personal session. Missing provenance fails closed.
+  Personal self-service requires the live bearer's independent first-party
+  proof. Selecting a workspace's SSO route does not erase personal proof;
+  workspace roles, IdP assertions and local factors do not manufacture it.
   """
-  def ensure_personal_user(%__MODULE__{actor: %Users.User{}, auth_method: :magic_link}),
-    do: :ok
-
-  def ensure_personal_user(%__MODULE__{}), do: {:error, :unauthorized}
+  def ensure_personal_user(%__MODULE__{} = subject),
+    do: Emisar.Auth.ensure_personal_session(subject)
 
   @doc """
   String label for the subject's actor kind. Used by `Audit.log/3`

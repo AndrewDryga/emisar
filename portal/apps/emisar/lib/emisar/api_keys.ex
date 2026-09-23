@@ -778,13 +778,7 @@ defmodule Emisar.ApiKeys do
              Accounts.fetch_and_lock_membership(account.id, membership_id, repo: repo),
            true <- membership.user_id == user_id,
            {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo) do
-        {:ok,
-         Subject.for_user(user, account, membership, subject.context,
-           auth_method: subject.auth_method,
-           mfa: subject.mfa,
-           mfa_enrollment_verified_at: subject.mfa_enrollment_verified_at,
-           user_identity_id: subject.user_identity_id
-         )}
+        {:ok, Subject.rebuild(subject, user, account, membership)}
       else
         false -> {:error, :not_found}
         {:error, reason} -> {:error, reason}
@@ -947,15 +941,18 @@ defmodule Emisar.ApiKeys do
   # manage itself; the machine rotation path is `install_auto_rotation_successor/3`.
   # Callers re-run it on the LOCKED row inside their transaction, so the caller's
   # struct decides nothing.
-  defp ensure_can_manage_key(
+  defp ensure_can_manage_key(%ApiKey{} = key, %Subject{} = subject),
+    do: Auth.Authorizer.ensure_has_permissions(subject, manage_key_permissions(key, subject))
+
+  defp manage_key_permissions(
          %ApiKey{created_by_membership_id: membership_id} = key,
-         %Subject{membership_id: membership_id, actor: %Users.User{}} = subject
+         %Subject{membership_id: membership_id, actor: %Users.User{}}
        )
        when is_binary(membership_id),
-       do: Auth.Authorizer.ensure_has_permissions(subject, permissions_for_kind(key.kind))
+       do: permissions_for_kind(key.kind)
 
-  defp ensure_can_manage_key(%ApiKey{}, %Subject{} = subject),
-    do: Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_api_keys_permission())
+  defp manage_key_permissions(%ApiKey{}, %Subject{}),
+    do: Authorizer.manage_api_keys_permission()
 
   # An MCP key grants nothing its minter doesn't already hold: it authenticates
   # as `:api_client` and resolves the minter's own membership scope at call
@@ -1266,15 +1263,22 @@ defmodule Emisar.ApiKeys do
 
   # Self-service uses the same permission that minting one's own key does; any
   # other member's keys need account-wide manage.
-  defp ensure_can_revoke_member_keys(
+  defp ensure_can_revoke_member_keys(membership_id, %Subject{} = subject) do
+    Auth.Authorizer.ensure_has_permissions(
+      subject,
+      revoke_member_keys_permissions(membership_id, subject)
+    )
+  end
+
+  defp revoke_member_keys_permissions(
          membership_id,
-         %Subject{membership_id: membership_id, actor: %Users.User{}} = subject
+         %Subject{membership_id: membership_id, actor: %Users.User{}}
        )
        when is_binary(membership_id),
-       do: Auth.Authorizer.ensure_has_permissions(subject, permissions_for_kind(:mcp))
+       do: permissions_for_kind(:mcp)
 
-  defp ensure_can_revoke_member_keys(_membership_id, %Subject{} = subject),
-    do: Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_api_keys_permission())
+  defp revoke_member_keys_permissions(_membership_id, %Subject{}),
+    do: Authorizer.manage_api_keys_permission()
 
   defp revoke_key_chain(repo, source_queryable, subject, by_user_id) do
     with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
@@ -2127,16 +2131,25 @@ defmodule Emisar.ApiKeys do
   def subject_can_manage_api_keys?(%Subject{} = subject),
     do: Auth.Authorizer.has_permission?(subject, Authorizer.manage_api_keys_permission())
 
-  @doc "True when the subject may bulk-revoke this member's agent keys (manage, or their own)."
+  @doc "Display eligibility to bulk-revoke this member's keys; the mutation rechecks live authority."
   def subject_can_revoke_member_keys?(membership_id, %Subject{} = subject)
-      when is_binary(membership_id),
-      do: ensure_can_revoke_member_keys(membership_id, subject) == :ok
+      when is_binary(membership_id) do
+    membership_id
+    |> revoke_member_keys_permissions(subject)
+    |> List.wrap()
+    |> Enum.all?(&Auth.Authorizer.has_permission?(subject, &1))
+  end
 
   @doc """
   Whether `subject` may rotate or revoke THIS key — `manage_api_keys`, or the
   key is one they minted and they still hold what minting it required. The row
   grammar reads off this, so a key you own offers the same verbs an admin gets.
+  This is a query-free display predicate; each mutation rechecks live authority.
   """
-  def subject_can_manage_api_key?(%ApiKey{} = key, %Subject{} = subject),
-    do: ensure_can_manage_key(key, subject) == :ok
+  def subject_can_manage_api_key?(%ApiKey{} = key, %Subject{} = subject) do
+    key
+    |> manage_key_permissions(subject)
+    |> List.wrap()
+    |> Enum.all?(&Auth.Authorizer.has_permission?(subject, &1))
+  end
 end

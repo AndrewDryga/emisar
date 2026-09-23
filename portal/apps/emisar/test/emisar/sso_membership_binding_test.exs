@@ -50,7 +50,7 @@ defmodule Emisar.SSOMembershipBindingTest do
   end
 
   defp ambiguous_oidc_member do
-    {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    {owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
     claims = %{"sub" => "oidc-without-email"}
 
@@ -62,6 +62,20 @@ defmodule Emisar.SSOMembershipBindingTest do
     replacement = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
     # The forward migration deliberately leaves this multi-history case unbound.
     identity = Fixtures.SSO.clear_identity_membership(identity)
+
+    owner_identity =
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: owner.id
+      )
+
+    subject =
+      Fixtures.Subjects.subject_for(owner, account,
+        auth_method: :sso,
+        user_identity_id: owner_identity.id
+      )
+
     Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
 
     %{
@@ -82,7 +96,10 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert request.matched_membership_id == context.member.id
     assert request.recovery_identity_id == context.identity.id
     assert is_nil(Repo.reload!(context.identity).membership_id)
-    assert Repo.aggregate(Auth.UserToken, :count) == 0
+
+    assert context.member.user_id
+           |> Auth.UserToken.Query.by_user_id()
+           |> Repo.aggregate(:count) == 0
 
     assert {:pending, repeated} =
              SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})

@@ -59,6 +59,8 @@ defmodule Emisar.AuthAuditTest do
       secret = Auth.generate_mfa_secret()
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
       session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(session_token)
+      subject = Fixtures.Subjects.subject_for(user, account, session: session)
 
       %{
         user: user,
@@ -111,9 +113,12 @@ defmodule Emisar.AuthAuditTest do
           subject
         )
 
+      :ok = Audit.subscribe_account_audit(account.id)
       assert {:ok, _} = Auth.disable_mfa(NimbleTOTP.verification_code(secret), subject)
       assert [event] = events_of(account, "user.mfa_disabled")
       assert event.actor_id == enabled.id
+      assert_receive {:audit_event, ^event}
+      assert_receive {:audit_event, %Audit.Event{event_type: "user.mfa_verified"}}
     end
 
     test "verify_mfa_challenge with bad code audits user.mfa_failed", %{
@@ -321,12 +326,50 @@ defmodule Emisar.AuthAuditTest do
           subject
         )
 
+      :ok = Audit.subscribe_account_audit(account.id)
+
       {:ok, _, _codes} =
         Auth.regenerate_mfa_recovery_codes(NimbleTOTP.verification_code(secret), subject)
 
       assert [event] = events_of(account, "user.mfa_recovery_codes_regenerated")
       assert event.actor_id == enabled.id
       assert event.payload == %{}
+      assert_receive {:audit_event, ^event}
+    end
+
+    for operation <- [:disable_mfa, :regenerate_mfa_recovery_codes] do
+      @operation operation
+      test "#{operation} audit failure preserves the factor and emits no success broadcast", %{
+        account: account,
+        secret: secret,
+        subject: subject,
+        proof: proof,
+        session_token: session_token
+      } do
+        assert {:ok, enabled, [code | _]} =
+                 Auth.enable_mfa(
+                   secret,
+                   NimbleTOTP.verification_code(secret),
+                   proof,
+                   Crypto.hash(session_token),
+                   subject
+                 )
+
+        before = Repo.reload!(enabled)
+        audit_count = Repo.aggregate(Audit.Event, :count)
+        :ok = Audit.subscribe_account_audit(account.id)
+        Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+        invalid = %{subject | context: %RequestContext{request_id: %{invalid: true}}}
+
+        assert {:error, _reason} = apply(Auth, @operation, [code, invalid])
+        assert Repo.reload!(enabled) == before
+        assert Repo.aggregate(Audit.Event, :count) == audit_count
+
+        assert Repo.get_by!(SecurityAttemptWindow, user_id: enabled.id, scope: :mfa_challenge).attempt_count ==
+                 1
+
+        refute_received {:audit_event, _}
+      end
     end
   end
 
@@ -406,11 +449,12 @@ defmodule Emisar.AuthAuditTest do
 
   describe "session self-revocation" do
     setup do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
-      # Mint two sessions for the user.
+      {user, account, _subject} = Fixtures.Subjects.owner_subject()
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      %{user: user, account: account, keep: keep, subject: %{subject | auth_method: :magic_link}}
+      {:ok, _, session} = Auth.fetch_user_and_token_by_session_token(keep)
+      subject = Fixtures.Subjects.subject_for(user, account, session: session)
+      %{user: user, account: account, keep: keep, subject: subject}
     end
 
     test "revoke_and_disconnect_other_sessions audits user.other_sessions_revoked with the count",
@@ -420,7 +464,7 @@ defmodule Emisar.AuthAuditTest do
            keep: keep
          } do
       assert {:ok, n} = Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject)
-      assert n >= 1
+      assert n == 2
 
       assert [event] = events_of(account, "user.other_sessions_revoked")
       assert event.payload["count"] == n
@@ -458,16 +502,17 @@ defmodule Emisar.AuthAuditTest do
 
     test "a completed email change audits the security event without personal addresses", %{
       user: user,
-      account: account,
-      subject: subject
+      account: account
     } do
       new = "renamed-#{System.unique_integer()}@example.test"
+      raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      subject = Fixtures.Subjects.subject_for(user, account, session: session)
+      digest = Crypto.hash(raw)
 
       assert Auth.issue_email_change_code(new, subject) == {:ok, :sent}
       assert_received {:email, email}
       code = Fixtures.Auth.code_from_email(email)
-      raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      digest = Emisar.Crypto.hash(raw)
       assert {:ok, proof} = Auth.confirm_email_change(new, code, digest, subject)
       assert_received {:email, new_mail}
       assert events_of(account, "user.email_changed") == []
@@ -860,17 +905,9 @@ defmodule Emisar.AuthAuditTest do
           role: "admin"
         )
 
-      # The fetch_and_update :audit path (the hardest — its callback returns the
-      # per-membership list, inserted atomically in the mutation's transaction).
-      {:ok, _} =
-        Users.update_user_mfa(user.id, "JBSWY3DPEHPK3PXP", DateTime.utc_now(), [Crypto.hash("x")],
-          audit: &Audit.user_changesets(&1, "user.mfa_enabled")
-        )
-
-      {:ok, _} =
-        Users.update_user_mfa(user.id, nil, nil, [],
-          audit: &Audit.user_changesets(&1, "user.mfa_disabled")
-        )
+      subject = Fixtures.Subjects.subject_for(user, account_a)
+      {_user, [code | _]} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+      assert {:ok, _user} = Auth.disable_mfa(code, subject)
 
       # One row in each account…
       assert [row_a] = events_of(account_a, "user.mfa_disabled")

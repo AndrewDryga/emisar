@@ -1671,6 +1671,8 @@ defmodule Emisar.RunnersTest do
     } do
       # `account` is the caller's socket snapshot; the seam re-reads the row
       # under lock, so a setting changed since then survives the write.
+      user = Fixtures.Users.set_mfa_state(subject.actor, mfa_enabled_at: DateTime.utc_now())
+      subject = Fixtures.Subjects.subject_for(user, account, mfa: true)
       Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
 
       assert {:ok, updated} =
@@ -4041,13 +4043,11 @@ defmodule Emisar.RunnersTest do
       assert {:ok, %Token{}, %Runner{id: other_id}} = Runners.verify_runner_token(other_raw)
       assert other_id == other_runner.id
 
-      assert {:ok, _account} =
-               Emisar.Accounts.set_account_disabled_for_support(
-                 account.id,
-                 false,
-                 "Hold resolved",
-                 subject
-               )
+      assert {:ok, %{disabled: false}} =
+               Emisar.Admin.execute("emisar.admin.account.enable", [
+                 "account=#{account.slug}",
+                 "reason=Hold resolved"
+               ])
 
       assert {:ok, %Token{}, %Runner{id: runner_id}} = Runners.verify_runner_token(raw)
       assert runner_id == runner.id

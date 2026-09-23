@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="sso"
-      updated="September 22, 2026"
+      updated="September 23, 2026"
       toc={[
         {"sso-login", "Setting up SSO login"},
         {"signing-in", "How members sign in"},
@@ -153,7 +153,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Default access</strong>
-        controls which hosts a new member can see and use.
+        controls which hosts a new member can act on.
         <span class="text-zinc-300">No runners</span>
         is the safe default — the member reads the console and reaches nothing until you
         grant access. <span class="text-zinc-300">All runners</span>
@@ -249,7 +249,7 @@
         <strong class="text-zinc-200">Check issuer</strong>
         checks discovery and reachability only — not user assignment, callback acceptance, or
         claims — so it can pass on a connection nobody can actually sign in through. Keep an
-        owner session open while you test. Then open
+        owner browser with valid SSO proof for this workspace open while you test. Then open
         <a
           href={~p"/app/team"}
           class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
@@ -257,8 +257,10 @@
         and turn on <strong class="text-zinc-200">Require single sign-on</strong>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Once required, magic-link sign-in stops working, and existing sessions are redirected
-        to one of this account's enabled providers on their next navigation. This option
+        Once required, a browser needs eligible SSO proof for this workspace. Without it,
+        the member must complete SSO step-up before continuing. This preserves independently
+        proved access to other workspaces and any personal proof until their original expiry.
+        This option
         cannot be enabled with no active SSO connection, and emisar refuses to disable or
         delete the last active connection while the requirement remains on. Turn off Require
         SSO before retiring that last connection.
@@ -297,8 +299,10 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Disabling a connection stops new sign-ins but keeps the configuration, so you can
         enable it again later. Deleting retires it and dismisses any manual-approval requests
-        still waiting on it. Either way, the sessions that connection signed in are revoked,
-        and users and audit history are kept.
+        still waiting on it. Either way, its existing sign-in proof for this workspace is
+        removed. Other sign-in proof and access to other workspaces remain available, and
+        users and audit history are kept. Re-enabling the connection does not restore retired
+        proof; members must sign in again if no other valid proof remains.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An account can have several provider types, but only one enabled connection of each type.
@@ -538,8 +542,9 @@
                 Members loop back to SSO after Require SSO
               </td>
               <td class="px-4 py-3">
-                Use the owner session you kept open to turn off Require SSO, then complete a real
-                provider sign-in before enabling it again. If no owner session remains, contact <a
+                Use an owner browser with valid SSO proof for this workspace to turn off Require SSO,
+                then test provider sign-in before enabling it again. An email-only session cannot
+                change this setting while SSO is required. If no such owner browser remains, contact <a
                   href={EmisarWeb.MailTo.support()}
                   class="text-brand-400 hover:text-brand-300"
                 >support</a>.

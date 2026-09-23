@@ -6,21 +6,24 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app")
     end
 
-    test "logs out and redirects a fully-suspended user", %{conn: conn} do
+    test "offers recovery without destroying a fully-suspended user's browser", %{conn: conn} do
       {conn, user, _account} = register_and_log_in(conn)
 
       # Suspend the user's only membership: the session can no longer resolve
-      # an account, and all-suspended means access is revoked (not onboarding),
-      # so the auth pipeline signs them out with a flash.
+      # an account. Recovery must not pretend this is first-run onboarding or
+      # destroy the independent personal session.
       {1, _} =
         Emisar.Accounts.Membership.Query.all()
         |> Emisar.Accounts.Membership.Query.by_user_id(user.id)
         |> Emisar.Repo.update_all(set: [disabled_at: DateTime.utc_now()])
 
-      assert {:error, {:redirect, %{to: "/sign_in", flash: %{"error" => message}}}} =
+      assert {:error, {:redirect, %{to: "/session/recover"}}} =
                live(conn, ~p"/app")
 
-      assert message =~ "suspended"
+      assert html_response(get(conn, ~p"/session/recover"), 200) =~ "Choose how to continue"
+
+      assert {:ok, _user, _session} =
+               Emisar.Auth.fetch_user_and_token_by_session_token(get_session(conn, :user_token))
     end
 
     test "redirects a logged-in user with no account to onboarding", %{conn: conn} do
@@ -232,7 +235,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     test "a viewer sees truthful setup state but no setup actions", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
@@ -713,9 +716,9 @@ defmodule EmisarWeb.DashboardLiveTest do
         payload: %{joins: %{Ecto.UUID.generate() => %{metas: [%{}]}}, leaves: %{}}
       }
 
-      # Current identity + shared runner inventory; action scope needs no
-      # database work when there are no advertised action candidates.
-      assert refresh_query_count(lv, event) == 2
+      # Current identity + shared runner inventory + Catalog's current grant
+      # gate. Empty action candidates skip catalog rows, never authorization.
+      assert refresh_query_count(lv, event) == 3
     end
 
     test "past the first run a topology event reads no row per runner or advertised action", %{
@@ -775,7 +778,7 @@ defmodule EmisarWeb.DashboardLiveTest do
         collection_mode: "automatic"
       )
 
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")

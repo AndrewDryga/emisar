@@ -392,7 +392,8 @@ defmodule EmisarWeb.MarketingController do
        "Yes. OIDC single sign-on (Okta, Entra ID, JumpCloud, Google Workspace, Keycloak, " <>
          "or any compliant provider) is on #{sso_plans}. Automatic offboarding needs SCIM " <>
          "2.0 directory sync, which is #{scim_plans}: deactivate someone in your IdP and " <>
-         "emisar ends their sessions and revokes their keys without anyone touching the " <>
+         "emisar ends their browser access to that workspace and revokes keys issued from " <>
+         "that membership without anyone touching the " <>
          "console. With OIDC alone they can't sign in again, but a live session or an " <>
          "existing API key keeps working until you suspend them here."},
       startup_discounts

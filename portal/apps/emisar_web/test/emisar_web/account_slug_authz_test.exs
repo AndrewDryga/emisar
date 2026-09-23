@@ -161,7 +161,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
 
       # Pin the session to A, then request B's slugged page.
-      conn = put_session(conn, :current_account_id, account_a.id)
+      conn = conn |> log_in_user(user) |> put_session(:current_account_id, account_a.id)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account_b}/runners")
 
@@ -223,12 +223,10 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "don't belong to any workspace"
     end
 
-    test "a user whose every membership is suspended is force-logged-out", %{conn: conn} do
-      # when the ref is nil AND every membership is
-      # suspended, the plug logs the session out with a flash rather than send the
-      # user to onboarding (their access was revoked, not never-granted). (The
-      # on_mount counterpart is covered in dashboard_live_test.)
+    test "a user whose every membership is suspended reaches recovery without losing their bearer",
+         %{conn: conn} do
       {conn, user, _account} = register_and_log_in(conn)
+      token = get_session(conn, :user_token)
 
       {1, _} =
         Emisar.Accounts.Membership.Query.all()
@@ -237,9 +235,13 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
 
       conn = get(conn, ~p"/app")
 
-      assert redirected_to(conn) == ~p"/sign_in"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "suspended"
-      refute get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/session/recover"
+      assert get_session(conn, :user_token) == token
+      assert {:ok, _user, session} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      assert Emisar.Auth.session_membership_ids(user.id, session) == []
+
+      assert conn |> recycle() |> get(~p"/session/recover") |> html_response(200) =~
+               "Sign out and sign in again"
     end
 
     test "a session pinned to a now-suspended account is silently refreshed to the live primary",
@@ -257,7 +259,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       Fixtures.Memberships.create_membership(account_id: live_account.id, user_id: user.id)
 
       # Pin the session to the first account, then suspend that membership.
-      conn = put_session(conn, :current_account_id, suspended_account.id)
+      conn = conn |> log_in_user(user) |> put_session(:current_account_id, suspended_account.id)
 
       {1, _} =
         Emisar.Accounts.Membership.Query.all()

@@ -18,6 +18,9 @@ defmodule Emisar.Auth.UserToken.Changeset do
     mfa_enrollment_verified_at =
       if auth_method == :magic_link and not is_nil(mfa_verified_at), do: user.mfa_enabled_at
 
+    proved_at = DateTime.utc_now()
+    expires_at = UserToken.Query.session_expires_at(proved_at)
+
     change(%UserToken{},
       token: digest,
       context: "session",
@@ -26,6 +29,9 @@ defmodule Emisar.Auth.UserToken.Changeset do
       auth_method: auth_method,
       mfa_verified_at: mfa_verified_at,
       mfa_enrollment_verified_at: mfa_enrollment_verified_at,
+      local_mfa_expires_at: if(mfa_enrollment_verified_at, do: expires_at),
+      personal_proved_at: if(auth_method == :magic_link, do: proved_at),
+      personal_expires_at: if(auth_method == :magic_link, do: expires_at),
       user_identity_id: Keyword.get(opts, :user_identity_id)
     )
   end
@@ -34,8 +40,23 @@ defmodule Emisar.Auth.UserToken.Changeset do
   def local_mfa_verified(
         %UserToken{context: "session"} = token,
         %DateTime{} = enrollment_verified_at
-      ),
-      do: change(token, mfa_enrollment_verified_at: enrollment_verified_at)
+      ) do
+    change(token,
+      mfa_enrollment_verified_at: enrollment_verified_at,
+      local_mfa_expires_at: UserToken.Query.session_expires_at(DateTime.utc_now())
+    )
+  end
+
+  @doc "Rotate after SSO proof without renewing the donor's personal or local-factor evidence."
+  def sso_step_up(user, digest, metadata, provider, identity, %UserToken{} = donor) do
+    mfa_verified_at = if provider.satisfies_mfa, do: DateTime.utc_now()
+
+    session(user, digest, metadata, :sso, mfa_verified_at, user_identity_id: identity.id)
+    |> put_change(:personal_proved_at, donor.personal_proved_at)
+    |> put_change(:personal_expires_at, donor.personal_expires_at)
+    |> put_change(:mfa_enrollment_verified_at, donor.mfa_enrollment_verified_at)
+    |> put_change(:local_mfa_expires_at, donor.local_mfa_expires_at)
+  end
 
   @doc "Single-use emailed token row (password reset / confirm)."
   def hashed(%Users.User{} = user, digest, context, sent_to)

@@ -120,7 +120,7 @@ defmodule EmisarWeb.TeamLiveTest do
       conn: conn
     } do
       {_conn, owner, account} = register_and_log_in(conn)
-      {:ok, owner_membership} = Emisar.Accounts.fetch_membership_for_session(owner, nil, nil)
+      owner_membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
       admin = Fixtures.Users.create_user()
 
       Fixtures.Memberships.create_membership(
@@ -168,7 +168,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "member controls stack with the identity until desktop width", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(
@@ -1074,7 +1074,7 @@ defmodule EmisarWeb.TeamLiveTest do
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
 
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -1301,7 +1301,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "a viewer hitting the invite route directly is refused (IL-15)", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerInvite"}})
-      {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+      m = Fixtures.Memberships.fetch_membership(account.id, user.id)
       Fixtures.Memberships.force_role(m, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
@@ -1364,7 +1364,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "shows the read-only banner and no invite action", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})
 
-      {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+      m = Fixtures.Memberships.fetch_membership(account.id, user.id)
       Fixtures.Memberships.force_role(m, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -1380,7 +1380,7 @@ defmodule EmisarWeb.TeamLiveTest do
       _provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Private IdP")
 
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -1400,7 +1400,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "an unconfigured account reads as Not configured, still locked", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
 
-      {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -2774,7 +2774,14 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       subscribe_team(account)
 
-      assert render_click(lv, "suspend", %{"membership_id" => membership.id}) =~
+      render_click(lv, "open_member_action", %{
+        "action" => "suspend",
+        "membership_id" => membership.id
+      })
+
+      assert has_element?(lv, "#member-action", Emisar.Accounts.member_display_name(membership))
+
+      assert confirm_dialog(lv, "member-action", "Suspend access") =~
                "Access suspended."
 
       assert Emisar.Repo.reload!(membership).disabled_at
@@ -2939,15 +2946,23 @@ defmodule EmisarWeb.TeamLiveTest do
       refute Emisar.Repo.reload!(membership).deleted_at
     end
 
-    test "end_sessions kills the member's signed-in devices", %{
+    test "end_sessions confirms its member and reports its workspace-local scope", %{
       lv: lv,
       member: member,
       membership: membership
     } do
       _member_conn = build_conn() |> log_in_user(member)
 
-      assert render_click(lv, "end_sessions", %{"membership_id" => membership.id}) =~
-               "All sessions ended for that user."
+      render_click(lv, "open_member_action", %{
+        "action" => "end_sessions",
+        "membership_id" => membership.id
+      })
+
+      assert has_element?(lv, "#member-action", Emisar.Accounts.member_display_name(membership))
+      assert has_element?(lv, "#member-action", "Access to other workspaces is unchanged.")
+
+      assert confirm_dialog(lv, "member-action", "End sessions") =~
+               "This member&#39;s sessions in this workspace ended."
     end
   end
 

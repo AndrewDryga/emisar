@@ -16,7 +16,8 @@ defmodule Emisar.MfaEnforcementTest do
 
       refute account.settings.require_mfa
       owner_subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-      {_user, _codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject)
+      {user, _codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject)
+      owner_subject = Fixtures.Subjects.subject_for(user, account, mfa: true)
 
       {:ok, account} =
         Accounts.update_account(account, %{settings: %{require_mfa: true}}, owner_subject)

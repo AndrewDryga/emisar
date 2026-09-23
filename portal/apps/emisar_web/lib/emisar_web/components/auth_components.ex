@@ -223,8 +223,9 @@ defmodule EmisarWeb.AuthComponents do
   defp oidc_step_explanation(:link, provider_name),
     do: "Confirm it's you, then sign in with #{provider_name}."
 
-  defp oidc_step_explanation(:unlink, provider_name),
-    do: "You won't be able to sign in with #{provider_name}. Sessions using this method will end."
+  defp oidc_step_explanation(:unlink, provider_name) do
+    "You won't be able to sign in with #{provider_name}. Existing sessions lose the workspace access proved through this method; other sign-in proof remains."
+  end
 
   defp oidc_step_explanation(:verify, provider_name),
     do: "Confirm it's you, then sign in with #{provider_name} to verify this connection."

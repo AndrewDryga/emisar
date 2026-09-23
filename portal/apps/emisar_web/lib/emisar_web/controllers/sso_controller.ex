@@ -5,9 +5,8 @@ defmodule EmisarWeb.SSOController do
   session). The callback response clears that stash; the IP/provider budgets
   bound replay of a copied pre-response cookie. `callback/2` validates the response,
   then either completes an anonymous sign-in through `Emisar.SSO` or completes an
-  authenticated, purpose-bound member MFA-reset reauthentication.
-  The reset branch preserves the actor's existing session and never provisions
-  or signs in an identity.
+  authenticated, purpose-bound identity link, member MFA reset or workspace SSO
+  step-up. These branches never borrow anonymous provisioning authority.
 
   The `redirect_uri` is the fixed registered callback (never attacker-supplied),
   and the post-login redirect is `UserAuth`'s internal `user_return_to`/
@@ -28,21 +27,36 @@ defmodule EmisarWeb.SSOController do
   # bypass one another's allowance.
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "sso_oidc_ip", limit: 20, window_ms: 60_000, by: :ip]
-       when action in [:begin, :callback, :begin_member_mfa_reset, :begin_identity_link]
+       when action in [
+              :begin,
+              :callback,
+              :begin_member_mfa_reset,
+              :begin_identity_link,
+              :begin_session_step_up
+            ]
 
   # The login transaction secrets the callback needs, kept server-side in the
   # session (signed, bound to this browser) for the duration of the round-trip.
   @stash_key :sso_login
   @member_mfa_reset_stash_key :member_mfa_reset_sso
   @identity_link_stash_key :sso_identity_link
+  @session_step_up_stash_key :sso_session_step_up
+
+  defp clear_ceremonies(conn) do
+    conn
+    |> delete_session(@stash_key)
+    |> delete_session(@member_mfa_reset_stash_key)
+    |> delete_session(@identity_link_stash_key)
+    |> delete_session(@session_step_up_stash_key)
+  end
 
   def begin(conn, %{"provider_id" => provider_id}) do
+    conn = clear_ceremonies(conn)
     redirect_uri = url(~p"/sign_in/sso/callback")
 
     with {:ok, provider} <- SSO.fetch_provider_for_sign_in(provider_id),
          {:ok, begun} <- SSO.begin_auth(provider, redirect_uri: redirect_uri) do
       conn
-      |> delete_session(@member_mfa_reset_stash_key)
       |> put_session(@stash_key, %{
         provider_id: provider.id,
         state: begun.state,
@@ -74,6 +88,38 @@ defmodule EmisarWeb.SSOController do
     end
   end
 
+  def begin_session_step_up(conn, params) do
+    conn = clear_ceremonies(conn)
+    redirect_uri = url(~p"/sign_in/sso/callback")
+
+    with %Auth.UserToken{token: digest} <- conn.assigns[:current_auth],
+         {:ok, begun} <-
+           SSO.begin_session_step_up(
+             params["provider_id"],
+             redirect_uri,
+             digest,
+             conn.assigns.current_subject
+           ),
+         :ok <- validate_authorize_url(begun.authorize_url) do
+      stash =
+        begun
+        |> Map.delete(:authorize_url)
+        |> Map.put(:redirect_uri, redirect_uri)
+
+      conn
+      |> put_session(@session_step_up_stash_key, stash)
+      |> put_resp_header("cache-control", "no-store")
+      |> redirect(external: begun.authorize_url)
+    else
+      reason ->
+        log_failure("sso_session_step_up_begin_failed", reason)
+
+        conn
+        |> put_flash(:error, "Couldn't start single sign-on. Try again or sign in again below.")
+        |> redirect(to: ~p"/app/#{conn.assigns.current_account}/sso_required")
+    end
+  end
+
   def begin_member_mfa_reset(
         conn,
         %{
@@ -81,6 +127,7 @@ defmodule EmisarWeb.SSOController do
           "membership_id" => membership_id
         }
       ) do
+    conn = clear_ceremonies(conn)
     redirect_uri = url(~p"/sign_in/sso/callback")
 
     with %Users.User{} <- conn.assigns[:current_user],
@@ -120,7 +167,6 @@ defmodule EmisarWeb.SSOController do
         |> Map.put(:target_updated_at, target_user.updated_at)
 
       conn
-      |> delete_session(@stash_key)
       |> put_session(@member_mfa_reset_stash_key, stash)
       |> redirect(external: begun.authorize_url)
     else
@@ -138,6 +184,8 @@ defmodule EmisarWeb.SSOController do
         conn,
         %{"account_id_or_slug" => account_ref, "handoff" => handoff}
       ) do
+    conn = clear_ceremonies(conn)
+
     with %Users.User{} = user <- conn.assigns[:current_user],
          %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
          {:ok, subject} <- UserAuth.subject_for_account(conn, account_ref),
@@ -192,8 +240,6 @@ defmodule EmisarWeb.SSOController do
         |> Map.put(:return_path, return_path)
 
       conn
-      |> delete_session(@stash_key)
-      |> delete_session(@member_mfa_reset_stash_key)
       |> put_session(@identity_link_stash_key, stash)
       |> put_resp_header("cache-control", "no-store")
       |> assign(:page_title, "Opening provider sign-in")
@@ -218,7 +264,9 @@ defmodule EmisarWeb.SSOController do
                      member_mfa_reset_sso_begin_failed
                      member_mfa_reset_sso_callback_failed
                      sso_identity_link_begin_failed
-                     sso_identity_link_callback_failed]
+                     sso_identity_link_callback_failed
+                     sso_session_step_up_begin_failed
+                     sso_session_step_up_callback_failed]
 
   # oidcc/httpc errors may carry token records, full claims, raw response bodies,
   # unknown key ids, and the TLS option list (including the CA store). Only the
@@ -339,6 +387,39 @@ defmodule EmisarWeb.SSOController do
   defp validate_authorize_url(_url), do: {:error, :provider_config_invalid}
 
   def callback(conn, params) do
+    # Any present step-up stash owns this callback, even when it is invalid.
+    # It must never fall through into anonymous sign-in or JIT provisioning.
+    case get_session(conn, @session_step_up_stash_key) do
+      nil -> complete_non_step_up_callback(conn, params)
+      stash -> complete_session_step_up(conn, params, stash)
+    end
+  end
+
+  defp complete_session_step_up(conn, params, stash) do
+    with %Users.User{} <- conn.assigns[:current_user],
+         %Auth.UserToken{token: digest} <- conn.assigns[:current_auth],
+         %{account_id: account_id} when is_binary(account_id) <- stash,
+         {:ok, subject} <- UserAuth.subject_for_account(conn, account_id),
+         {:ok, %{token: token, account: account}} <-
+           SSO.complete_session_step_up(params, stash, digest, subject) do
+      conn
+      |> RecentAccounts.put(%{slug: account.slug, name: account.name})
+      |> UserAuth.install_sso_step_up(token, account)
+    else
+      reason ->
+        log_failure("sso_session_step_up_callback_failed", reason)
+
+        # Another callback may already have installed the replacement, even if
+        # this request saw the donor alive. Never send the old session cookie
+        # back on failure. The retained stash is bounded and donor-bound; a new
+        # begin, successful rotation or explicit sign-out clears it.
+        conn
+        |> configure_session(ignore: true)
+        |> redirect(to: ~p"/session/recover?reason=sso_incomplete")
+    end
+  end
+
+  defp complete_non_step_up_callback(conn, params) do
     case get_session(conn, @identity_link_stash_key) do
       %{} = stash ->
         complete_identity_link(conn, params, stash)

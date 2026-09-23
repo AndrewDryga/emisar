@@ -50,6 +50,7 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     )
 
     token = BillingIntent.sign("team", :year)
+    conn = conn |> log_in_user(user) |> put_session(:current_account_id, account_a.id)
     captured = get(conn, ~p"/start/team/#{token}")
     chooser = get(recycle(captured), ~p"/app/billing/start")
     html = html_response(chooser, 200)
@@ -81,7 +82,7 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     )
 
     token = BillingIntent.sign("team", :month)
-    conn = Plug.Conn.put_session(conn, :current_account_id, account_a.id)
+    conn = conn |> log_in_user(user) |> put_session(:current_account_id, account_a.id)
     captured = get(conn, ~p"/start/team/#{token}")
 
     chooser = get(recycle(captured), ~p"/app/billing/start")
@@ -138,8 +139,8 @@ defmodule EmisarWeb.BillingIntentControllerTest do
   test "a viewer with a workspace sees a permission-empty chooser, not no workspaces", %{
     conn: conn
   } do
-    {conn, user, _account} = register_and_log_in(conn)
-    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+    {conn, user, account} = register_and_log_in(conn)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
     Fixtures.Memberships.force_role(membership, "viewer")
     token = BillingIntent.sign("team", :month)
     captured = get(conn, ~p"/start/team/#{token}")

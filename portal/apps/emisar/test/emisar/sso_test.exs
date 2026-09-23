@@ -147,25 +147,6 @@ defmodule Emisar.SSOTest do
     Fixtures.SSO.create_identity_provider(attrs)
   end
 
-  # A user's SSO identity in `account`, under a provider with a given issuer,
-  # enabled flag, and MFA policy — the fixture for the federation-scope tests.
-  defp federated_identity(account, user, opts) do
-    Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-    provider =
-      provider_fixture(account, %{
-        issuer: Keyword.fetch!(opts, :issuer),
-        enabled: Keyword.get(opts, :enabled, true),
-        satisfies_mfa: Keyword.get(opts, :satisfies_mfa, false)
-      })
-
-    Fixtures.SSO.create_user_identity(%{
-      account_id: account.id,
-      provider_id: provider.id,
-      user_id: user.id
-    })
-  end
-
   defp callback(claims), do: %{"_claims" => claims}
 
   defp callback_after_verified(provider, claims, while_verified) do
@@ -204,6 +185,32 @@ defmodule Emisar.SSOTest do
   defp capture_request(provider, claims) do
     {:pending, %LinkRequest{} = request} = SSO.complete_auth(provider, callback(claims), %{})
     request
+  end
+
+  defp sso_session(user, identity) do
+    {:ok, raw, _mfa} =
+      Auth.complete_sso_account_sign_in(
+        user,
+        identity.account_id,
+        %RequestContext{},
+        user_identity_id: identity.id,
+        provider_identifier: identity.provider_identifier
+      )
+
+    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    {raw, session}
+  end
+
+  defp provider_subject(user, account, provider) do
+    identity =
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: user.id
+      )
+
+    {_raw, session} = sso_session(user, identity)
+    Fixtures.Subjects.subject_for(user, account, session: session)
   end
 
   defp viewer_in(account) do
@@ -2174,11 +2181,12 @@ defmodule Emisar.SSOTest do
     end
 
     test "disabling one of two enabled providers is allowed (not the last)" do
-      {_user, account, subject} = enterprise_owner()
+      {user, account, _subject} = enterprise_owner()
       Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
 
-      _keep = provider_fixture(account, %{name: "Keep", kind: :okta, enabled: true})
+      keep = provider_fixture(account, %{name: "Keep", kind: :okta, enabled: true})
       extra = provider_fixture(account, %{name: "Extra", kind: :keycloak, enabled: true})
+      subject = provider_subject(user, account, keep)
 
       # Even under require_sso, disabling a provider while another enabled one
       # remains is fine — the last-provider guard only fires on the final one.
@@ -2187,9 +2195,10 @@ defmodule Emisar.SSOTest do
     end
 
     test "cannot disable the last enabled connection when require_sso is on" do
-      {_user, account, subject} = enterprise_owner()
+      {user, account, _subject} = enterprise_owner()
       Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
       provider = provider_fixture(account)
+      subject = provider_subject(user, account, provider)
 
       assert SSO.update_provider(provider, %{enabled: false}, subject) ==
                {:error, :require_sso_last_provider}
@@ -2307,6 +2316,7 @@ defmodule Emisar.SSOTest do
 
     test "cannot delete the last enabled connection", %{account: account, subject: subject} do
       provider = provider_fixture(account)
+      subject = provider_subject(subject.actor, account, provider)
 
       assert SSO.delete_provider(provider, subject) == {:error, :require_sso_last_provider}
       refute Repo.reload!(provider).deleted_at
@@ -2320,6 +2330,7 @@ defmodule Emisar.SSOTest do
       # provider per (account, kind)).
       keep = provider_fixture(account, %{name: "Keep", kind: :okta})
       extra = provider_fixture(account, %{name: "Extra", kind: :keycloak})
+      subject = provider_subject(subject.actor, account, keep)
 
       assert {:ok, _} = SSO.delete_provider(extra, subject)
       assert Repo.reload!(keep).enabled
@@ -3019,7 +3030,9 @@ defmodule Emisar.SSOTest do
       # user's own credential) and creates their workspace.
       assert {:ok, %{id: same_id}} = Users.fetch_user_by_email(victim_email)
       assert same_id == user.id
-      {:ok, own_account} = Accounts.create_account_with_owner_from_name("Victim Corp", user)
+
+      {:ok, own_account} =
+        Accounts.create_account_with_owner(%{name: "Victim Corp", slug: "victim-corp"}, user)
 
       magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       {:ok, _user, magic_session} = Auth.fetch_user_and_token_by_session_token(magic_token)
@@ -3525,7 +3538,10 @@ defmodule Emisar.SSOTest do
       scim_provider()
     end
 
-    test "disabling revokes sessions in its transaction", %{provider: provider, subject: subject} do
+    test "disabling retires destination proof in its transaction", %{
+      provider: provider,
+      subject: subject
+    } do
       %{identity: identity} = provision(provider, "okta|live")
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
 
@@ -3541,12 +3557,17 @@ defmodule Emisar.SSOTest do
       refute_received {^marker, false}
       assert_received {:scim_delete_disconnect, [^expected_topic], false}
 
-      assert Repo.all(
-               Emisar.Auth.UserToken.Query.by_user_id(Emisar.Auth.UserToken.Query.all(), user.id)
-             ) == []
+      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all() == []
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, provider.account_id, session) ==
+               {:error, :not_found}
     end
 
-    test "deleting revokes sessions in its transaction", %{provider: provider, subject: subject} do
+    test "deleting retires destination proof in its transaction", %{
+      provider: provider,
+      subject: subject
+    } do
       %{identity: identity} = provision(provider, "okta|gone")
       {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
 
@@ -3562,9 +3583,11 @@ defmodule Emisar.SSOTest do
       refute_received {^marker, false}
       assert_received {:scim_delete_disconnect, [^expected_topic], false}
 
-      assert Repo.all(
-               Emisar.Auth.UserToken.Query.by_user_id(Emisar.Auth.UserToken.Query.all(), user.id)
-             ) == []
+      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all() == []
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, provider.account_id, session) ==
+               {:error, :not_found}
     end
 
     test "an MFA-trust downgrade revokes only that provider's sessions", %{
@@ -3609,7 +3632,11 @@ defmodule Emisar.SSOTest do
       refute_received {^marker, false}
       assert_received {:scim_delete_disconnect, [^expected_topic], false}
       refute downgraded.satisfies_mfa
-      assert Auth.fetch_user_and_token_by_session_token(provider_token) == {:error, :not_found}
+      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(provider_token)
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, session) ==
+               {:error, :not_found}
+
       assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(other_token)
       assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(magic_token)
     end
@@ -4303,6 +4330,24 @@ defmodule Emisar.SSOTest do
              |> Repo.aggregate(:count) == 1
     end
 
+    test "unchanged active re-POST preserves the existing browser's original proof", %{
+      provider: provider,
+      account: account
+    } do
+      attrs = scim_attrs(%{external_id: "stable-proof", email: "stable-proof@acme.test"})
+      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      {raw, session} = sso_session(user, identity)
+      held = Fixtures.Subjects.subject_for(user, account, session: session)
+      before = Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all()
+      assert [_route] = before
+
+      assert {:ok, %{identity: unchanged}} = SSO.scim_provision_user(provider, attrs)
+      assert unchanged.id == identity.id
+      assert Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all() == before
+      assert {:ok, _current} = Auth.fetch_current_subject([], held)
+      assert {:ok, _user, ^session} = Auth.fetch_user_and_token_by_session_token(raw)
+    end
+
     test "a re-POST of a deprovisioned (suspended) user reactivates them (#4)", %{
       provider: provider,
       account: account
@@ -4651,7 +4696,7 @@ defmodule Emisar.SSOTest do
     test "ends only this account's sessions — the person stays signed in elsewhere" do
       # A session token is per-user, not per-account, so revoking them all let one
       # tenant's directory sign someone out of a workspace it has no authority
-      # over. Only the credential this account minted is destroyed.
+      # over. Only this account's grants are removed; bearers survive.
       %{provider: provider} = scim_provider()
       attrs = scim_attrs(%{external_id: "okta|multi", email: "multi@acme.test"})
       {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
@@ -4676,12 +4721,27 @@ defmodule Emisar.SSOTest do
                  %SCIMUserUpdate{active: false}
                )
 
-      # The connection's own session is gone…
-      assert Auth.fetch_user_and_token_by_session_token(sso_session) == {:error, :not_found}
+      assert {:ok, _user, sso_token} = Auth.fetch_user_and_token_by_session_token(sso_session)
 
-      # …and the one that reaches the other workspace is untouched.
-      assert {:ok, _user, _token} =
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, provider.account_id, sso_token) ==
+               {:error, :not_found}
+
+      assert {:ok, _user, personal_token} =
                Auth.fetch_user_and_token_by_session_token(magic_link_session)
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(
+               user,
+               provider.account_id,
+               personal_token
+             ) ==
+               {:error, :not_found}
+
+      assert {:ok, _member} =
+               Accounts.fetch_membership_by_account_id_or_slug(
+                 user,
+                 other_account.id,
+                 personal_token
+               )
     end
 
     test "suspends the membership (disabled_at) + flips scim_active, never deleting the user" do
@@ -5130,19 +5190,19 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(other_identity).scim_deleted_at
     end
 
-    test "an already-suspended delete still revokes only the exact identity session" do
+    test "an already-suspended delete cannot restore retired browser proof" do
       %{provider: provider} = scim_provider()
       %{identity: identity} = provision(provider, "okta|session-retire")
       {:ok, user} = Users.fetch_user_by_id(identity.user_id)
-
-      assert {:ok, _result} =
-               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
 
       sso_session =
         Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
       unrelated_session = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       expected_topic = Auth.live_socket_topic_for_session(sso_session)
+
+      assert {:ok, _result} =
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
 
       Emisar.Config.put_override(
         :emisar,
@@ -5155,8 +5215,11 @@ defmodule Emisar.SSOTest do
       assert {:ok, %{identity: retired}} = SSO.scim_delete_user(provider, identity.id)
       assert retired.scim_deleted_at
 
-      assert_receive {:scim_delete_disconnect, [^expected_topic], false}
-      assert Auth.fetch_user_and_token_by_session_token(sso_session) == {:error, :not_found}
+      refute_receive {:scim_delete_disconnect, [^expected_topic], _in_transaction?}
+      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(sso_session)
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, provider.account_id, session) ==
+               {:error, :not_found}
 
       assert {:ok, ^user, _token} =
                Auth.fetch_user_and_token_by_session_token(unrelated_session)
@@ -7700,6 +7763,131 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "update_identity_binding/2" do
+    setup do
+      {_owner, account, subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :manual, default_role: :operator)
+      %{account: account, subject: subject, provider: provider}
+    end
+
+    test "rebinding A to B and back never revives the old browser's A proof", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      user = Fixtures.Users.create_user(email: "binding-roundtrip@acme.test")
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id,
+          provider_identifier: "identity-a"
+        )
+
+      {raw, old_session} = sso_session(user, identity)
+      personal = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      for identifier <- ["identity-b", "identity-a"] do
+        request =
+          capture_request(provider, %{
+            "sub" => identifier,
+            "email" => user.email,
+            "email_verified" => true
+          })
+
+        assert {:ok, %{identity: rebound}} =
+                 SSO.approve_link_request(
+                   request,
+                   RunnerAccess.none(),
+                   provider.default_role,
+                   subject
+                 )
+
+        assert rebound.id == identity.id
+        assert rebound.provider_identifier == identifier
+        assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(raw)
+
+        assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, old_session) ==
+                 {:error, :not_found}
+      end
+
+      {_fresh_raw, fresh_session} = sso_session(user, Repo.reload!(identity))
+
+      assert {:ok, _member} =
+               Accounts.fetch_membership_by_account_id_or_slug(user, account.id, fresh_session)
+
+      assert {:ok, _user, personal_session} = Auth.fetch_user_and_token_by_session_token(personal)
+
+      assert {:ok, _member} =
+               Accounts.fetch_membership_by_account_id_or_slug(user, account.id, personal_session)
+    end
+
+    test "failed rebind restores original routes and emits no session disconnect", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      user = Fixtures.Users.create_user(email: "binding-rollback@acme.test")
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          user_id: user.id,
+          provider_identifier: "rollback-a"
+        )
+
+      {raw, session} = sso_session(user, identity)
+      held = Fixtures.Subjects.subject_for(user, account, session: session)
+      before = Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all()
+      assert [_route] = before
+
+      request =
+        capture_request(provider, %{
+          "sub" => "claimed-b",
+          "email" => user.email,
+          "email_verified" => true
+        })
+
+      other = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: other.id)
+
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: other.id,
+        provider_identifier: "claimed-b"
+      )
+
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingSessionDisconnector}
+      )
+
+      Emisar.Config.put_override(:emisar, :scim_delete_disconnect_test_pid, self())
+
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               SSO.approve_link_request(
+                 request,
+                 RunnerAccess.none(),
+                 provider.default_role,
+                 subject
+               )
+
+      assert "has already been taken" in errors_on(changeset).account_id
+      assert Repo.reload!(identity).provider_identifier == "rollback-a"
+      assert Repo.reload!(request).id == request.id
+      assert Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all() == before
+      assert {:ok, _current} = Auth.fetch_current_subject([], held)
+      assert {:ok, _user, ^session} = Auth.fetch_user_and_token_by_session_token(raw)
+      refute_receive {:scim_delete_disconnect, _topics, _in_transaction?}
+    end
+  end
+
   describe "approve_link_request/4" do
     setup do
       {_owner, account, subject} = enterprise_owner()
@@ -8427,7 +8615,9 @@ defmodule Emisar.SSOTest do
       assert retired.scim_external_id == "directory-external-123"
       assert retired.scim_active
 
-      assert Auth.fetch_user_and_token_by_session_token(rebound_session) ==
+      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(rebound_session)
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(member, provider.account_id, session) ==
                {:error, :not_found}
 
       assert {:ok, fetched_member, _session} =
@@ -8982,8 +9172,8 @@ defmodule Emisar.SSOTest do
   # -- subscribe_link_request/1 ---------------------------------------
 
   describe "retire_admin_approved_identities/3" do
-    test "retires only the bindings an admin approved, and revokes their sessions" do
-      account = Fixtures.Accounts.create_account()
+    test "retires only the bindings an admin approved, and their destination proof" do
+      account = Fixtures.Accounts.create_account(plan: "team")
       provider = provider_fixture(account)
       user = Fixtures.Users.create_user()
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
@@ -9018,7 +9208,10 @@ defmodule Emisar.SSOTest do
 
       assert topic == Auth.live_socket_topic_for_session(approved_session)
       assert Repo.reload!(admin_approved).deleted_at
-      assert Auth.fetch_user_and_token_by_session_token(approved_session) == {:error, :not_found}
+      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(approved_session)
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, session) ==
+               {:error, :not_found}
 
       assert {:ok, ^user, _session} =
                Auth.fetch_user_and_token_by_session_token(unrelated_session)
@@ -9356,139 +9549,35 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- federated_provider_satisfies_mfa?/2 (pre-Subject) ---------------
-
-  describe "federated_provider_satisfies_mfa?/2" do
-    test "true for the identity's own account when its provider has satisfies_mfa set" do
-      {_user, account, _subject} = enterprise_owner()
-      provider = provider_fixture(account, %{satisfies_mfa: true})
-      claims = %{"sub" => "okta|mfa-yes", "email" => "y@acme.test", "email_verified" => true}
-      {:ok, %{identity: identity}} = SSO.complete_auth(provider, callback(claims), %{})
-
-      assert SSO.federated_provider_satisfies_mfa?(identity.id, account.id)
-    end
-
-    test "false for the identity's own account when its provider has satisfies_mfa cleared" do
-      {_user, account, _subject} = enterprise_owner()
-      provider = provider_fixture(account, %{satisfies_mfa: false})
-      claims = %{"sub" => "okta|mfa-no", "email" => "n@acme.test", "email_verified" => true}
-      {:ok, %{identity: identity}} = SSO.complete_auth(provider, callback(claims), %{})
-
-      refute SSO.federated_provider_satisfies_mfa?(identity.id, account.id)
-    end
-
-    test "a federated sibling applies its OWN provider's MFA policy" do
-      issuer = "https://acme-mfa.okta.test"
-      {_o1, account_a, _s1} = enterprise_owner()
-      {_o2, sibling_trusting, _s2} = enterprise_owner()
-      {_o3, sibling_strict, _s3} = enterprise_owner()
-      {_o4, stranger, _s4} = enterprise_owner()
-      user = Fixtures.Users.create_user()
-
-      identity = federated_identity(account_a, user, issuer: issuer, satisfies_mfa: true)
-      # Same IdP; this workspace trusts its second factor.
-      federated_identity(sibling_trusting, user, issuer: issuer, satisfies_mfa: true)
-      # Same IdP; this workspace still wants emisar TOTP.
-      federated_identity(sibling_strict, user, issuer: issuer, satisfies_mfa: false)
-
-      assert SSO.federated_provider_satisfies_mfa?(identity.id, sibling_trusting.id)
-      refute SSO.federated_provider_satisfies_mfa?(identity.id, sibling_strict.id)
-      # An account that does not federate at all gets no exemption.
-      refute SSO.federated_provider_satisfies_mfa?(identity.id, stranger.id)
-    end
-
-    test "false for a nil / unknown identity (fail closed)" do
-      {_user, account, _subject} = enterprise_owner()
-      refute SSO.federated_provider_satisfies_mfa?(nil, account.id)
-      refute SSO.federated_provider_satisfies_mfa?(Ecto.UUID.generate(), account.id)
-    end
-  end
-
-  # -- identity_belongs_to_account?/2 (pre-Subject) --------------------
-
-  describe "fetch_federated_account_ids/1" do
-    test "returns the identity's own account, and not-found for a retired or unknown one" do
+  describe "issuer_satisfies_mfa_for_account?/2" do
+    test "requires an enabled matching provider in the exact destination account" do
       {_owner, account, _subject} = enterprise_owner()
-      provider = provider_fixture(account)
-      user = Fixtures.Users.create_user()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+      provider = provider_fixture(account, satisfies_mfa: true)
+      foreign = Fixtures.Accounts.create_account()
 
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id
-        })
-
-      assert SSO.fetch_federated_account_ids(identity.id) == {:ok, [account.id]}
-      assert SSO.fetch_federated_account_ids(Ecto.UUID.generate()) == {:error, :not_found}
-      assert SSO.fetch_federated_account_ids(nil) == {:error, :not_found}
-
-      identity |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
-      assert SSO.fetch_federated_account_ids(identity.id) == {:error, :not_found}
+      assert SSO.issuer_satisfies_mfa_for_account?(provider.issuer, account.id)
+      refute SSO.issuer_satisfies_mfa_for_account?(provider.issuer, foreign.id)
+      refute SSO.issuer_satisfies_mfa_for_account?("https://other.test", account.id)
+      Fixtures.SSO.disable_provider(provider)
+      refute SSO.issuer_satisfies_mfa_for_account?(provider.issuer, account.id)
     end
 
-    test "federates to every account whose enabled provider shares the same issuer" do
-      issuer = "https://acme.okta.test"
-      {_o1, account_a, _s1} = enterprise_owner()
-      {_o2, account_b, _s2} = enterprise_owner()
-      {_o3, account_c, _s3} = enterprise_owner()
-      {_o4, account_d, _s4} = enterprise_owner()
-      user = Fixtures.Users.create_user()
-
-      identity_a = federated_identity(account_a, user, issuer: issuer)
-      # Same org, second workspace on the same IdP — reachable.
-      _identity_b = federated_identity(account_b, user, issuer: issuer)
-      # Same person, but this workspace federates with a DIFFERENT IdP.
-      _identity_c = federated_identity(account_c, user, issuer: "https://other.okta.test")
-      # Same issuer, but this workspace turned that SSO off — not reachable.
-      _identity_d = federated_identity(account_d, user, issuer: issuer, enabled: false)
-
-      assert {:ok, ids} = SSO.fetch_federated_account_ids(identity_a.id)
-      assert Enum.sort(ids) == Enum.sort([account_a.id, account_b.id])
-      refute account_c.id in ids
-      refute account_d.id in ids
-    end
-
-    test "keeps the identity's own account even after its provider is disabled" do
+    test "every enabled same-issuer destination provider must agree" do
       {_owner, account, _subject} = enterprise_owner()
-      user = Fixtures.Users.create_user()
+      provider = provider_fixture(account, satisfies_mfa: true)
 
-      identity =
-        federated_identity(account, user, issuer: "https://solo.okta.test", enabled: false)
+      weaker =
+        provider_fixture(account,
+          kind: :openid_connect,
+          issuer: provider.issuer,
+          satisfies_mfa: false
+        )
 
-      assert SSO.fetch_federated_account_ids(identity.id) == {:ok, [account.id]}
-    end
-  end
-
-  describe "identity_federates_with_account?/2" do
-    setup do
-      {_user, account, _subject} = enterprise_owner()
-      provider = provider_fixture(account)
-      claims = %{"sub" => "okta|belong", "email" => "b@acme.test", "email_verified" => true}
-      {:ok, %{identity: identity}} = SSO.complete_auth(provider, callback(claims), %{})
-      %{account: account, provider: provider, identity: identity}
-    end
-
-    test "true for the identity's own account", %{account: account, identity: identity} do
-      assert SSO.identity_federates_with_account?(identity.id, account.id)
-    end
-
-    test "true for a sibling on the same IdP, false for an unrelated account", %{
-      provider: provider,
-      identity: identity
-    } do
-      {_ub, sibling, _sb} = enterprise_owner()
-      {_uc, stranger, _sc} = enterprise_owner()
-      federated_identity(sibling, %{id: identity.user_id}, issuer: provider.issuer)
-
-      assert SSO.identity_federates_with_account?(identity.id, sibling.id)
-      refute SSO.identity_federates_with_account?(identity.id, stranger.id)
-    end
-
-    test "false for a nil / unknown identity (fail closed)", %{account: account} do
-      refute SSO.identity_federates_with_account?(nil, account.id)
-      refute SSO.identity_federates_with_account?(Ecto.UUID.generate(), account.id)
+      refute SSO.issuer_satisfies_mfa_for_account?(provider.issuer, account.id)
+      Fixtures.SSO.disable_provider(weaker)
+      assert SSO.issuer_satisfies_mfa_for_account?(provider.issuer, account.id)
+      Fixtures.SSO.mark_provider_deleted(provider)
+      refute SSO.issuer_satisfies_mfa_for_account?(provider.issuer, account.id)
     end
   end
 
@@ -9559,7 +9648,7 @@ defmodule Emisar.SSOTest do
         handler,
         [:emisar, :repo, :query],
         fn _event, _measurements, metadata, {owner, reference} ->
-          if self() == owner and metadata.source == "auth_user_tokens" and
+          if self() == owner and metadata.source == "auth_member_grant_routes" and
                String.starts_with?(metadata.query, "DELETE") do
             send(owner, {reference, Repo.in_transaction?()})
           end

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="authentication"
-      updated="September 22, 2026"
+      updated="September 23, 2026"
       toc={[
         {"sign-in", "Choose a sign-in method"},
         {"enforcement", "Enforce account sign-in"},
@@ -50,7 +50,8 @@
                 the returning identity by the provider's stable subject, never by email. The
                 session may also open another workspace connected to the same trusted provider
                 when that workspace independently recognizes the identity and its sign-in
-                rules allow access. Other workspaces may require a separate sign-in.
+                rules allow access. Eligible workspaces are recorded at sign-in. The switcher
+                does not add access merely because a membership or identity link was added later.
               </td>
               <td class="px-4 py-3">
                 Your identity provider owns authentication and its MFA policy.
@@ -94,8 +95,9 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Require SSO</strong>
-            accepts only an SSO identity issued for this account; a member who signed in with a
-            magic link is sent to your provider on their next page load.
+            requires eligible SSO proof for this workspace. A browser without that proof must
+            complete SSO step-up before continuing. Existing personal proof and access to other
+            workspaces keep their original expiry; completing SSO does not renew them.
           </span>
         </li>
       </ul>
@@ -114,9 +116,8 @@
       <.docs_callout kind={:warn} title="Complete a real SSO sign-in before requiring it">
         <p>
           Save the connection, then choose Verify sign-in to complete a real provider sign-in.
-          Keep an owner session open while you check it, and only then turn on Require SSO from <a href={
-            ~p"/app/team"
-          }>Team → Security</a>.
+          Keep an owner browser with valid SSO proof for this workspace open while you check it,
+          and only then turn on Require SSO from <a href={~p"/app/team"}>Team → Security</a>.
         </p>
       </.docs_callout>
 
@@ -243,17 +244,21 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            After a personal email-link sign-in, Profile lists your active sessions with
-            device information. You can sign out one session or every session except the
-            current one after confirming. These global controls are unavailable to SSO
-            sessions and in SSO-only workspaces. An administrator can suspend a membership, which ends its sessions and
-            revokes API keys minted from it.
+            Profile lists your active sessions with device information while this browser has
+            unexpired personal email-link proof. You can sign out one session or every session
+            except the current one after confirming. SSO step-up preserves existing personal
+            proof until its original expiry; SSO alone does not supply it. An administrator can
+            suspend a membership, which ends its existing browser access to this workspace and
+            revokes API keys issued from it. Independently proved access to other workspaces
+            remains available.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Disabling or deleting an SSO connection ends the sessions it authenticated — the
+            Disabling or deleting an SSO connection stops new sign-ins through it and removes
+            its existing sign-in proof for this workspace. Other sign-in proof and access to
+            other workspaces remain available. The
             connection lifecycle is in <.link
               navigate={~p"/docs/sso" <> "#disable-provider"}
               class="text-brand-400 hover:text-brand-300"
@@ -271,8 +276,8 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Offboarding a person ends what their membership issued: sessions, and every API key
-        they minted — audit-export tokens included. Enrollment keys, SCIM bearers, signing
+        Offboarding ends the membership's existing browser access to this workspace and
+        revokes every API key issued from it — audit-export tokens included. Enrollment keys, SCIM bearers, signing
         keys, and keys held by other members keep working — rotate or revoke those through <.link
           navigate={~p"/docs/credentials"}
           class="text-brand-400 hover:text-brand-300"

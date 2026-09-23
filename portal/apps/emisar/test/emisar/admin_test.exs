@@ -372,6 +372,14 @@ defmodule Emisar.AdminTest do
       assert is_nil(event.actor_label)
       assert event.payload == %{"reason" => "support=verified"}
 
+      assert {:ok, %{disabled: true}} =
+               Admin.execute(
+                 "emisar.admin.account.disable",
+                 ["account=#{account.slug}", "reason=repeated hold"]
+               )
+
+      assert Enum.count(Repo.all(Audit.Event), &(&1.event_type == "account.disabled")) == 1
+
       assert {:ok, %{disabled: false}} =
                Admin.execute(
                  "emisar.admin.account.enable",
@@ -417,7 +425,10 @@ defmodule Emisar.AdminTest do
       assert {:ok, _} = Admin.execute("emisar.admin.member.reinstate", args)
       assert {:ok, _} = Admin.execute("emisar.admin.sessions.revoke", args)
 
-      assert Emisar.Auth.fetch_user_and_token_by_session_token(session_token) ==
+      assert {:ok, _user, session} =
+               Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
+
+      assert Emisar.Accounts.fetch_membership_by_account_id_or_slug(member, account.id, session) ==
                {:error, :not_found}
 
       assert {:ok, _} =

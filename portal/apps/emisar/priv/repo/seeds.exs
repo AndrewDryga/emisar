@@ -1,5 +1,8 @@
 # Seeds for local dev. Run with `mix ecto.seed` (or `./run seed` against the
 # docker stack). Idempotent — safe to re-run.
+# Reseeding restores the demo/acme/globex/blank/both-connected screenshot accounts
+# to email sign-in without required MFA/SSO, and clears their personas' MFA.
+# Staff MFA and sign-in policy, and unrelated accounts, are preserved.
 #
 # Goal: produce a believable live-account state so the dashboard,
 # runs list, approvals, runners, audit, and grants pages all show
@@ -26,26 +29,28 @@ for file <- ~w(
   Code.require_file("seeds/#{file}.exs", __DIR__)
 end
 
-alias Emisar.Seeds.{ActionRuns, Agents, DemoAccount, Fleet, PlanAccounts}
+alias Emisar.Seeds.{ActionRuns, Agents, DemoAccount, Fleet, Helpers, PlanAccounts}
 alias Emisar.Seeds.{RunbookExecutions, Runbooks, SSO, StaffAccount}
 
 # Approval emails go through Swoosh; in dev that's fine, but the seed
 # shouldn't depend on the mailer being reachable.
 Application.put_env(:emisar, :notify_approvers_async?, false)
 
-ctx = DemoAccount.run()
-ctx = Runbooks.run(ctx)
-ctx = Fleet.run(ctx)
-ctx = RunbookExecutions.run(ctx)
-ctx = Agents.run(ctx)
+Helpers.with_temporary_sessions(fn ->
+  ctx = DemoAccount.run()
+  ctx = Runbooks.run(ctx)
+  ctx = Fleet.run(ctx)
+  ctx = RunbookExecutions.run(ctx)
+  ctx = Agents.run(ctx)
 
-# The run history seeds only into an account with no runs, so it has to look
-# before the runbook attempts and the typed run below add theirs.
-ActionRuns.run(ctx)
-RunbookExecutions.seed_output_previews(ctx)
-Fleet.seed_enrollment_key(ctx)
-ActionRuns.seed_typed_json_run(ctx)
+  # The run history seeds only into an account with no runs, so it has to look
+  # before the runbook attempts and the typed run below add theirs.
+  ActionRuns.run(ctx)
+  RunbookExecutions.seed_output_previews(ctx)
+  Fleet.seed_enrollment_key(ctx)
+  ActionRuns.seed_typed_json_run(ctx)
 
-SSO.run(ctx)
-PlanAccounts.run(ctx)
-StaffAccount.run()
+  SSO.run(ctx)
+  PlanAccounts.run(ctx)
+  StaffAccount.run()
+end)

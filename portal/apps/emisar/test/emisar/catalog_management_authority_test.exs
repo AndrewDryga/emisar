@@ -244,7 +244,13 @@ defmodule Emisar.CatalogManagementAuthorityTest do
       assert projection.version_count == 500
       assert Enum.all?(projection.version_facts, fn {_id, fact} -> not fact.can_manage? end)
       assert Enum.count(queries, &String.contains?(&1, "retention_pack_evidence")) == 1
-      assert Enum.count(queries, &String.contains?(&1, "LEFT OUTER JOIN")) == 1
+
+      assert Enum.count(queries, fn query ->
+               String.contains?(query, "catalog_runner_actions") and
+                 String.contains?(query, "LEFT OUTER JOIN")
+             end) == 1
+
+      assert Enum.count(queries, &String.contains?(&1, "auth_member_grant_routes")) == 1
       assert Enum.count(queries, &String.contains?(&1, "catalog_runner_actions")) == 1
       assert length(queries) == 6
     end

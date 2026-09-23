@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="teams-and-access"
-      updated="September 22, 2026"
+      updated="September 23, 2026"
       toc={[
         {"roles", "Roles"},
         {"inviting", "Inviting your team"},
@@ -90,8 +90,10 @@
           href={~p"/app/team/invite"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team → Invite</a>, enter an email, choose a role, runner access, and pack access, and
-        send the invitation. Accepting it activates the pending membership and its grants;
-        the account's sign-in requirements still apply. Only an owner can grant the owner role
+        send the invitation. Accepting it activates the pending membership; the account's
+        sign-in requirements still apply. It does not add access to an existing browser session.
+        If you're already signed in, accept the invitation, then sign out and sign in again
+        to open the new workspace. Only an owner can grant the owner role
         or manage another owner. Admins can invite and manage members up to admin.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
@@ -119,8 +121,9 @@
       <p class="mt-4 text-base leading-7 text-zinc-400">
         Edit your workspace name from Profile, or a teammate's name from Team if your role
         allows it. Directory-managed names are read-only here; update them in the identity
-        provider. Personal name, sign-in email and global session controls require a personal
-        email-link sign-in in a workspace that allows it. An SSO session does not unlock them.
+        provider. Personal name, sign-in email and global session controls require unexpired
+        personal email-link proof in this browser. SSO step-up preserves existing personal
+        proof until its original expiry; SSO alone does not supply it.
       </p>
 
       <.docs_h2 id="runner-scopes">Per-member scope: runners and packs</.docs_h2>
@@ -198,13 +201,15 @@
         A member's authenticator belongs to the person, not to one account. An owner or admin
         can reset it from the Team page only while this account is the only one the member
         belongs to; a member of other accounts resets it themselves with a recovery code, or
-        asks Emisar support. Either reset ends every session the member has.
+        asks Emisar support. An administrator or Emisar support reset ends every session
+        the member has.
       </p>
 
       <.docs_h2 id="sessions">Sessions &amp; credentials</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Suspend access blocks access to this account, ends the member's sessions, and revokes
-        their agent credentials and standing approvals. Restore access restores membership
+        Suspend access blocks access to this workspace, ends the member's existing browser
+        access to it, and revokes the membership's agent credentials and standing approvals.
+        Restore access restores membership
         access, but does not restore those credentials or approvals. A manual suspension stays
         in place across directory sync; a directory-deactivated member must first be reactivated
         in the identity provider. Sign-in mechanics and session

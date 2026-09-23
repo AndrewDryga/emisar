@@ -119,11 +119,27 @@ defmodule Emisar.Fixtures.Users do
   def enroll_mfa(secret, %Subject{} = subject, opts \\ []) when is_binary(secret) do
     {session_token, disposable_session?} =
       case Keyword.fetch(opts, :session_token) do
-        {:ok, token} -> {token, false}
-        :error -> {Fixtures.Auth.create_session_token!(subject.actor, :magic_link, nil), true}
+        {:ok, token} ->
+          {token, false}
+
+        :error ->
+          token =
+            Fixtures.Auth.create_session_token!(subject.actor, subject.auth_method, nil, %{},
+              user_identity_id: subject.user_identity_id
+            )
+
+          {token, true}
       end
 
     try do
+      {:ok, user, session} = Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
+
+      subject =
+        Fixtures.Subjects.subject_for(user, subject.account,
+          session: session,
+          context: subject.context
+        )
+
       proof = mfa_enrollment_proof(subject)
       session_digest = Emisar.Crypto.hash(session_token)
 

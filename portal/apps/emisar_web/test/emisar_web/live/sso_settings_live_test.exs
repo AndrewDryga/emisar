@@ -14,8 +14,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   alias Emisar.SSO
   alias Emisar.SSO.IdentityProvider
 
-  defp make_viewer(user) do
-    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+  defp make_viewer(user, account) do
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
     Fixtures.Memberships.force_role(membership, "viewer")
   end
 
@@ -873,7 +873,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       # The viewer never sees the form (locked upsell), but the create handler is
       # gated server-side — a forged event is a no-op.
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       _ =
@@ -897,7 +897,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user
     } do
       provider = insert_provider(account, %{name: "Untouchable"})
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
 
       _ =
@@ -1432,7 +1432,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user
     } do
       provider = insert_provider(account, %{name: "Acme Okta"})
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
@@ -1446,7 +1446,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user
     } do
       provider = insert_provider(account, %{name: "Acme Okta"})
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       html =
@@ -1541,7 +1541,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       user: user
     } do
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       # The viewer never sees the form; a pushed test event is gated server-side —
@@ -1992,7 +1992,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user,
       provider: provider
     } do
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # The viewer sees the upsell, not the panel; the gated event is a no-op
@@ -2014,7 +2014,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, enabled, _raw} = SSO.enable_scim(provider, owner)
       prefix = enabled.scim_token_prefix
 
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       _ = render_click(lv, "rotate_scim", %{"id" => provider.id})
@@ -2197,6 +2197,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "Dana Sync"
       refute Emisar.Accounts.Membership.disabled?(membership)
 
+      assert has_element?(lv, "#suspend-scim-#{membership.id}", "Dana Sync loses access")
+
       assert has_element?(
                lv,
                "#suspend-scim-#{membership.id}-confirm[phx-disable-with='Suspending…']"
@@ -2358,7 +2360,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       membership: membership,
       user: user
     } do
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       _ = render_click(lv, "suspend_member", %{"membership_id" => membership.id})
@@ -3666,7 +3668,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           owner
         )
 
-      make_viewer(user)
+      make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       render_click(lv, "edit_group_access", %{"group_id" => group.id})
@@ -3845,7 +3847,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       owner: owner
     } do
       group = sync_group(provider, "viewer-forged", "Viewer forged group")
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
       render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "admin"})
       refute has_element?(lv, "#create-mapping-#{provider.id}")
@@ -3859,11 +3861,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           "mapping" => %{"external_group_id" => "grp", "role" => "admin"}
         })
 
-      # No mapping was created (read it back through the pre-demotion owner subject).
-      assert {:ok, group_rows, _meta} =
-               SSO.list_group_access(provider, owner, page: [limit: 100])
+      # The old owner snapshot also loses authority; inspect persisted fixture
+      # state without treating that stale Subject as an administrator.
+      assert SSO.list_group_access(provider, owner) == {:error, :unauthorized}
 
-      assert [] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      refute SSO.GroupRoleMapping.Query.not_deleted()
+             |> SSO.GroupRoleMapping.Query.by_provider_id(provider.id)
+             |> Repo.exists?()
     end
 
     test "a non-admin viewer cannot update or delete a role mapping (forged events)", %{
@@ -3885,7 +3889,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           owner
         )
 
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       _ =
@@ -3893,13 +3897,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
       _ = render_click(lv, "delete_mapping", %{"id" => mapping.id})
 
-      # Unchanged and present — read back through the pre-demotion owner subject.
-      assert {:ok, group_rows, _meta} =
-               SSO.list_group_access(provider, owner, page: [limit: 100])
-
-      assert [unchanged] = Enum.flat_map(group_rows, &List.wrap(&1.mapping))
+      assert SSO.list_group_access(provider, owner) == {:error, :unauthorized}
+      unchanged = Repo.reload!(mapping)
       assert unchanged.id == mapping.id
       assert unchanged.role == :operator
+      assert unchanged.deleted_at == nil
     end
   end
 
@@ -3945,7 +3947,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   describe "as a non-admin member" do
     test "an enterprise viewer is denied the Add page and sees the role gate", %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      _ = make_viewer(user)
+      _ = make_viewer(user, account)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 

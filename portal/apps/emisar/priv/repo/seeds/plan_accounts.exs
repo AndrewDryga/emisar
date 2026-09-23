@@ -1,15 +1,13 @@
 defmodule Emisar.Seeds.PlanAccounts do
   @moduledoc """
   Extra accounts: the plan tiers plus an empty one, so the billing / upsell /
-  runner-limit states AND the SSO-is-Enterprise gate are all visible by
+  runner-limit states, Team SSO, and Enterprise directory sync are all visible by
   switching accounts in one seeded dev DB (the main "demo" account is
   enterprise, so SSO/SCIM is testable there), and a "both connected, no
   actions" account for the onboarding checklist.
   """
 
-  alias Emisar.Accounts
   alias Emisar.ApiKeys
-  alias Emisar.Auth.Subject
   alias Emisar.Repo
   alias Emisar.Runners
   alias Emisar.Runs
@@ -35,9 +33,11 @@ defmodule Emisar.Seeds.PlanAccounts do
 
   defp seed_plan_account(name, slug, plan) do
     owner = Helpers.ensure_persona("owner@#{slug}.test", "#{name} Owner")
-    acct = Helpers.ensure_account(name, slug, owner)
-    {:ok, membership} = Accounts.fetch_membership_for_session(owner, acct.id, nil)
-    subject = Subject.for_user(owner, acct, membership)
+
+    acct =
+      name |> Helpers.ensure_account(slug, owner) |> Helpers.reset_screenshot_sign_in_policy()
+
+    subject = Helpers.subject_for(acct, owner)
     acct = Helpers.ensure_account_name(acct, name, subject)
 
     Helpers.seed_subscription(acct, plan)
@@ -54,7 +54,7 @@ defmodule Emisar.Seeds.PlanAccounts do
       |> Ecto.Changeset.change(paddle_customer_id: paddle_customer_id)
       |> Repo.update!()
 
-    subject = Subject.for_user(owner, acct, membership)
+    subject = %{subject | account: acct}
 
     {acct, owner, subject}
   end
@@ -129,12 +129,12 @@ defmodule Emisar.Seeds.PlanAccounts do
   # switching accounts as demo. Existence-checked, so it repairs the account demo
   # already made by hand rather than duplicating its runner.
   defp seed_both_connected_account(%{user: user}) do
-    both_connected_account = Helpers.ensure_account("Both Connected Co", "both-connected", user)
+    both_connected_account =
+      "Both Connected Co"
+      |> Helpers.ensure_account("both-connected", user)
+      |> Helpers.reset_screenshot_sign_in_policy()
 
-    {:ok, bc_membership} =
-      Accounts.fetch_membership_for_session(user, both_connected_account.id, nil)
-
-    bc_subject = Subject.for_user(user, both_connected_account, bc_membership)
+    bc_subject = Helpers.subject_for(both_connected_account, user)
 
     bc_runner =
       case Runners.list_all_runners_for_account(bc_subject) do

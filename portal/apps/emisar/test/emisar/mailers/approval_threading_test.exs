@@ -21,9 +21,10 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
 
     second = %{first | id: "019ec7d0-1001-7000-8000-000000000002"}
 
-    UserNotifier.deliver_approval_request(membership, subject, first, run)
+    args = Emisar.Runs.project_authorized_account_args(run, subject.account.id)
+    UserNotifier.deliver_approval_request(membership, args, first, run)
     assert_receive {:email, first_email}
-    UserNotifier.deliver_approval_request(membership, subject, second, run)
+    UserNotifier.deliver_approval_request(membership, args, second, run)
     assert_receive {:email, second_email}
 
     refute first_email.subject == second_email.subject

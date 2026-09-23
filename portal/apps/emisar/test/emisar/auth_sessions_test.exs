@@ -6,7 +6,7 @@ defmodule Emisar.AuthSessionsTest do
   Profile page calls.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Auth, Config, Crypto, Fixtures, RequestContext}
+  alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, RequestContext}
 
   defmodule RecordingSessionDisconnector do
     def disconnect_live_sessions(topics) do
@@ -15,14 +15,32 @@ defmodule Emisar.AuthSessionsTest do
     end
   end
 
+  describe "personal_session?/1" do
+    test "only a live boundary token's independent, unexpired email proof allows the form" do
+      {user, _account, subject, personal} = personal_owner_subject()
+      assert {:ok, session} = Auth.fetch_current_session(subject)
+      assert Auth.personal_session?(session)
+
+      sso = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
+      assert {:ok, _, sso_session} = Auth.fetch_user_and_token_by_session_token(sso)
+      refute Auth.personal_session?(sso_session)
+
+      Fixtures.Auth.expire_session_independent_proofs!(personal)
+      assert {:ok, expired_proof} = Auth.fetch_current_session(subject)
+      refute Auth.personal_session?(expired_proof)
+      refute Auth.personal_session?(nil)
+    end
+  end
+
   describe "list_sessions_for_user/3" do
-    setup do
-      {user, account, subject} = personal_owner_subject()
-      %{user: user, account: account, subject: subject}
+    setup context do
+      {user, account, subject, token} =
+        personal_owner_subject(Map.get(context, :session_metadata, %{}))
+
+      %{user: user, account: account, subject: subject, token: token}
     end
 
     test "returns the caller's rows newest-first", %{user: user, subject: subject} do
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
@@ -33,10 +51,10 @@ defmodule Emisar.AuthSessionsTest do
 
     test "expired rows are absent from the page, total, and next cursor", %{
       user: user,
-      subject: subject
+      subject: subject,
+      token: live
     } do
       expired = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      live = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       :ok =
         Fixtures.Auth.backdate_session_token!(
@@ -53,9 +71,8 @@ defmodule Emisar.AuthSessionsTest do
       assert Auth.fetch_user_and_token_by_session_token(expired) == {:error, :not_found}
     end
 
-    test "only returns the subject's own tokens", %{user: mine, subject: my_subject} do
+    test "only returns the subject's own tokens", %{subject: my_subject} do
       theirs = Fixtures.Users.create_user()
-      Fixtures.Auth.create_session_token!(mine, :magic_link, nil)
       Fixtures.Auth.create_session_token!(theirs, :magic_link, nil)
 
       assert {:ok, [_], _meta} = Auth.list_sessions_for_user(nil, my_subject)
@@ -63,24 +80,21 @@ defmodule Emisar.AuthSessionsTest do
 
     test "only includes session-context tokens (not the pending magic-link)", %{
       user: user,
-      subject: subject
+      subject: subject,
+      token: token
     } do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       assert {:ok, _} = Auth.request_magic_link(user, %RequestContext{})
 
       assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
       assert session.current?
     end
 
+    @tag session_metadata: %{ip_address: "198.51.100.7"}
     test "marks the presented session current and leaves the others alone", %{
       user: user,
-      subject: subject
+      subject: subject,
+      token: current
     } do
-      current =
-        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          ip_address: "198.51.100.7"
-        })
-
       Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
         ip_address: "203.0.113.9"
       })
@@ -90,16 +104,12 @@ defmodule Emisar.AuthSessionsTest do
       assert [%{ip_address: "203.0.113.9"}] = Enum.reject(sessions, & &1.current?)
     end
 
-    test "a nil presented token marks every row not-current", %{user: user, subject: subject} do
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-
+    test "a nil presented token marks every row not-current", %{subject: subject} do
       assert {:ok, [session], _meta} = Auth.list_sessions_for_user(nil, subject)
       refute session.current?
     end
 
-    test "another user's raw token never marks a row current", %{user: user, subject: subject} do
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-
+    test "another user's raw token never marks a row current", %{subject: subject} do
       theirs =
         Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, nil)
 
@@ -107,16 +117,14 @@ defmodule Emisar.AuthSessionsTest do
       refute session.current?
     end
 
+    @tag session_metadata: %{
+           ip_address: "198.51.100.7",
+           user_agent: "Mozilla/5.0 Firefox/126.0"
+         }
     test "projects display facts only — never the token, digest, or metadata map", %{
-      user: user,
-      subject: subject
+      subject: subject,
+      token: token
     } do
-      token =
-        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          ip_address: "198.51.100.7",
-          user_agent: "Mozilla/5.0 Firefox/126.0"
-        })
-
       assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
 
       assert %Auth.SessionFacts{
@@ -137,18 +145,21 @@ defmodule Emisar.AuthSessionsTest do
       subject: subject
     } do
       token = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
-      assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
+
+      assert {:ok, [session, personal], _} =
+               Auth.list_sessions_for_user(Crypto.hash(token), subject)
+
+      assert personal.id == subject.session_token_id
+      assert session.current?
       assert session.auth_method == :sso
       refute Map.has_key?(session, :user_identity_id)
       refute Map.has_key?(session, :mfa_verified_at)
     end
 
     test "a session with no device metadata projects nil display fields", %{
-      user: user,
-      subject: subject
+      subject: subject,
+      token: token
     } do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-
       assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
       assert session.ip_address == nil
       assert session.user_agent == nil
@@ -156,20 +167,23 @@ defmodule Emisar.AuthSessionsTest do
 
     test "the same facts come back from a subject scoped to another workspace", %{
       user: user,
-      subject: subject
+      subject: subject,
+      token: token
     } do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       other_account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
       other_subject = Fixtures.Subjects.subject_for(user, other_account, auth_method: :magic_link)
 
-      assert {:ok, [session], _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
+      assert {:ok, sessions, _meta} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
 
-      assert {:ok, [same_session], _meta} =
+      assert {:ok, same_sessions, _meta} =
                Auth.list_sessions_for_user(Crypto.hash(token), other_subject)
 
-      # Sessions belong to the identity, not to a tenant — same row, same facts.
-      assert same_session == session
+      # Personal session management sees both browsers, regardless of workspace.
+      assert same_sessions == sessions
+
+      assert Enum.sort(Enum.map(sessions, & &1.id)) ==
+               Enum.sort([subject.session_token_id, other_subject.session_token_id])
     end
 
     test "refuses a non-user subject", %{account: account} do
@@ -182,18 +196,26 @@ defmodule Emisar.AuthSessionsTest do
 
   describe "revoke_session/2" do
     test ":ok and the row goes away" do
-      {user, _account, subject} = personal_owner_subject()
+      {user, _account, subject, _current} = personal_owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
+
+      assert {:ok, [session, caller], _} =
+               Auth.list_sessions_for_user(Crypto.hash(token), subject)
+
+      assert caller.id == subject.session_token_id
 
       assert Auth.revoke_session(session.id, subject) == :ok
-      assert {:ok, [], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
+      assert {:ok, [^caller], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
     end
 
     test "disconnects the exact token topic only after commit" do
-      {user, _account, subject} = personal_owner_subject()
+      {user, _account, subject, _current} = personal_owner_subject()
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), subject)
+
+      assert {:ok, [session, caller], _} =
+               Auth.list_sessions_for_user(Crypto.hash(token), subject)
+
+      assert caller.id == subject.session_token_id
 
       Config.put_override(
         :emisar,
@@ -209,9 +231,8 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "refuses to revoke another user's session via id" do
-      {_mine, _account_a, my_subject} = personal_owner_subject()
-      {theirs, _account_b, their_subject} = personal_owner_subject()
-      Fixtures.Auth.create_session_token!(theirs, :magic_link, nil)
+      {_mine, _account_a, my_subject, _mine_token} = personal_owner_subject()
+      {_theirs, _account_b, their_subject, _their_token} = personal_owner_subject()
       assert {:ok, [their_session], _} = Auth.list_sessions_for_user(nil, their_subject)
 
       assert Auth.revoke_session(their_session.id, my_subject) == {:error, :not_found}
@@ -219,13 +240,12 @@ defmodule Emisar.AuthSessionsTest do
     end
 
     test "rejects a malformed id without hitting the DB" do
-      {_user, _account, subject} = personal_owner_subject()
+      {_user, _account, subject, _token} = personal_owner_subject()
       assert Auth.revoke_session("not-a-uuid", subject) == {:error, :not_found}
     end
 
     test "refuses a non-user subject without touching the session" do
-      {user, account, user_subject} = personal_owner_subject()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      {user, account, user_subject, token} = personal_owner_subject()
       assert {:ok, [session], _} = Auth.list_sessions_for_user(Crypto.hash(token), user_subject)
       {_raw_key, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       api_subject = Auth.Subject.for_api_key(api_key, account)
@@ -237,18 +257,16 @@ defmodule Emisar.AuthSessionsTest do
 
   describe "revoke_and_disconnect_other_sessions/2" do
     setup do
-      {user, _account, subject} = personal_owner_subject()
-      %{user: user, subject: subject}
+      {user, _account, subject, token} = personal_owner_subject()
+      %{user: user, subject: subject, token: token}
     end
 
-    test "with only the current session, revokes nothing", %{user: user, subject: subject} do
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    test "with only the current session, revokes nothing", %{subject: subject, token: keep} do
       assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) == {:ok, 0}
       assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(keep)
     end
 
-    test "keeps the caller's current session", %{user: user, subject: subject} do
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    test "keeps the caller's current session", %{user: user, subject: subject, token: keep} do
       Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
@@ -257,12 +275,60 @@ defmodule Emisar.AuthSessionsTest do
       assert survivor.current?
     end
 
+    test "cannot nominate another browser or a foreign token as the current session", %{
+      user: user,
+      subject: subject,
+      token: keep
+    } do
+      other = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+      foreign =
+        Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, nil)
+
+      for digest <- [Crypto.hash(other), Crypto.hash(foreign), Crypto.hash("missing")] do
+        assert Auth.revoke_and_disconnect_other_sessions(digest, subject) ==
+                 {:error, :unauthorized}
+      end
+
+      for token <- [keep, other, foreign] do
+        assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(token)
+      end
+    end
+
+    test "a revoked caller cannot end the remaining browser", %{
+      user: user,
+      subject: subject,
+      token: keep
+    } do
+      other = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      Fixtures.Auth.delete_session_token!(keep)
+
+      assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) ==
+               {:error, :unauthorized}
+
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(other)
+    end
+
+    test "expired personal proof cannot end another browser", %{
+      user: user,
+      subject: subject,
+      token: keep
+    } do
+      other = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      Fixtures.Auth.expire_session_independent_proofs!(keep)
+
+      assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) ==
+               {:error, :unauthorized}
+
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(other)
+    end
+
     test "revokes owned SSO sessions too, leaves another user alone, and disconnects after commit",
          %{
            user: user,
-           subject: subject
+           subject: subject,
+           token: keep
          } do
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       other = Fixtures.Auth.create_session_token!(user, :sso, nil)
 
       foreign =
@@ -283,9 +349,9 @@ defmodule Emisar.AuthSessionsTest do
 
     test "audit rejection preserves sessions and emits no disconnect", %{
       user: user,
-      subject: subject
+      subject: subject,
+      token: keep
     } do
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       other = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       Config.put_override(
@@ -305,8 +371,12 @@ defmodule Emisar.AuthSessionsTest do
     end
   end
 
-  defp personal_owner_subject do
-    {user, account, subject} = Fixtures.Subjects.owner_subject()
-    {user, account, %{subject | auth_method: :magic_link}}
+  defp personal_owner_subject(metadata \\ %{}) do
+    user = Fixtures.Users.create_user()
+    {:ok, account} = Accounts.create_account_with_owner(Fixtures.Accounts.account_attrs(), user)
+    raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil, metadata)
+    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    subject = Fixtures.Subjects.subject_for(user, account, session: session)
+    {user, account, subject, raw}
   end
 end

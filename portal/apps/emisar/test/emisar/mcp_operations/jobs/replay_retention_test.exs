@@ -19,7 +19,7 @@ defmodule Emisar.MCPOperations.Jobs.ReplayRetentionTest do
         role: "owner"
       )
 
-    owner_subject = Auth.Subject.for_user(user, account, membership)
+    owner_subject = Fixtures.Subjects.membership_subject(membership)
     {:ok, _raw, key} = ApiKeys.create_key(%{name: "MCP"}, owner_subject)
     key_subject = Auth.Subject.for_api_key(key, account)
 

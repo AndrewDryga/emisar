@@ -5,7 +5,7 @@ kind: script
 risk: high
 description: Reversibly disable all browser, API, OAuth, SCIM, dispatch, and runner access for an account.
 side_effects:
-  - Revokes current member sessions and disconnects live browser and runner connections.
+  - Blocks browser access to this account and disconnects affected browser and runner connections.
   - Retains machine credentials so enable can restore service.
 args:
   - name: account

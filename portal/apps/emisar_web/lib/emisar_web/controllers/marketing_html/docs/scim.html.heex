@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="scim"
-      updated="September 22, 2026"
+      updated="September 23, 2026"
       toc={[
         {"enable", "Enabling directory sync"},
         {"protocol", "SCIM protocol reference"},
@@ -18,8 +18,8 @@
       <.docs_header current="scim">
         <:dek>
           Directory sync uses SCIM 2.0 to let your identity provider manage members in emisar:
-          it provisions people, and when they leave it suspends the member, ends their
-          sessions, and revokes their API keys.
+          it provisions people, and when they leave it suspends their workspace membership,
+          ends their browser access to that workspace, and revokes keys issued from that membership.
         </:dek>
       </.docs_header>
 
@@ -162,8 +162,9 @@
           <span>
             When the directory deactivates or removes a user,
             <strong class="text-zinc-200">deprovisioning suspends the member</strong>
-            — sessions end and their API keys are revoked immediately, so directory
-            offboarding revokes emisar access on its own. The person and audit history remain.
+            — their existing browser access to this workspace ends and keys issued from that
+            membership are revoked immediately. Independently proved access to other workspaces
+            remains available. The person and audit history remain.
             Deactivation can be reversed with <code>active:true</code>; after DELETE, the
             directory must POST the same <code>externalId</code>
             to restore the resource.

@@ -763,7 +763,7 @@ defmodule Emisar.Approvals do
   # The run's arguments stay in Emisar; the count is what lets a remote card say
   # how much detail its one command line is standing in for.
   defp run_argument_count(run, subject) do
-    case Runs.project_action_args(run, subject) do
+    case Runs.project_authorized_account_args(run, subject.account.id) do
       {:ok, args} -> map_size(args)
       _unreadable -> nil
     end
@@ -1321,10 +1321,9 @@ defmodule Emisar.Approvals do
   defp approval_pack_id(nil), do: {:ok, nil}
 
   defp deliver_approval_email(membership, request, {:action_run, run}, :requested) do
-    # The mail shows only what THIS recipient may see: the eligible active
-    # membership we just filtered to IS their authorization, so the notifier
-    # projects the run's arguments through their own subject.
-    subject = Subject.for_user(membership.user, request.account, membership)
+    # Eligibility and scope were checked above. Mail delivery is independent of
+    # a browser session and always consumes the same redacted argument projection.
+    args = Runs.project_authorized_account_args(run, request.account_id)
 
     deliver_approval_email_result(
       membership,
@@ -1332,7 +1331,7 @@ defmodule Emisar.Approvals do
       fn ->
         Emisar.Mailers.UserNotifier.deliver_approval_request(
           membership,
-          subject,
+          args,
           request,
           run,
           approval_actor_label(request.account_id, request.requested_by_id)

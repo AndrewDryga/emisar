@@ -13,6 +13,7 @@ defmodule Emisar.Auth do
   alias Emisar.Auth.Role
   alias Emisar.Auth.SecurityAttemptWindow
   alias Emisar.Auth.SessionFacts
+  alias Emisar.Auth.SessionGrants
   alias Emisar.Auth.Subject
   alias Emisar.Auth.UserToken
   alias Emisar.Crypto
@@ -71,6 +72,9 @@ defmodule Emisar.Auth do
   subject for subsequent row scoping. This does not replace session validation,
   current target access checks, or mutation-specific locking.
   """
+  def fetch_current_subject(required_permissions, %Subject{actor: %Users.User{}} = subject),
+    do: __MODULE__.Authorizer.fetch_authorized_subject(subject, required_permissions)
+
   def fetch_current_subject(required_permissions, %Subject{} = subject) do
     with :ok <- __MODULE__.Authorizer.ensure_has_permissions(subject, required_permissions),
          {:ok, current_subject} <- __MODULE__.CurrentSubject.fetch(subject),
@@ -133,12 +137,6 @@ defmodule Emisar.Auth do
     metadata = %{ip_address: context.ip_address, user_agent: context.user_agent}
 
     Multi.new()
-    |> Multi.run(:account, fn repo, _changes ->
-      case Accounts.fetch_and_lock_account(account_id, repo: repo) do
-        {:ok, account} -> {:ok, account}
-        {:error, :not_found} -> {:error, :account_disabled}
-      end
-    end)
     |> SSO.put_sign_in_authority(user, account_id, opts)
     |> Multi.merge(fn %{sso_user: locked_user} ->
       Users.put_sign_in(Multi.new(), locked_user, "sso", context)
@@ -148,11 +146,65 @@ defmodule Emisar.Auth do
 
       UserToken.Changeset.session(signed_in_user, digest, metadata, :sso, mfa_verified_at, opts)
     end)
+    |> Multi.run(:member_grants, fn repo, %{token: session, sso_destinations: destinations} ->
+      SessionGrants.insert_sso(repo, session, destinations)
+    end)
     |> Repo.commit_multi()
     |> case do
       {:ok, %{sso_provider: provider}} -> {:ok, token, provider.satisfies_mfa}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @doc "Internal — rotate one purpose-bound browser after SSO verifies the exact existing identity."
+  def complete_sso_session_step_up(stashed, claims, presented_digest, %Subject{} = subject) do
+    {raw, digest} = Crypto.session_token()
+    metadata = %{ip_address: subject.context.ip_address, user_agent: subject.context.user_agent}
+
+    Multi.new()
+    |> SSO.put_session_step_up_authority(stashed, claims, subject)
+    |> Multi.run(:donor, fn repo, _changes ->
+      fetch_and_lock_subject_session(presented_digest, subject, repo)
+    end)
+    |> Multi.merge(fn %{sso_user: locked_user} ->
+      Users.put_sign_in(Multi.new(), locked_user, "sso", subject.context)
+    end)
+    |> Multi.insert(:token, fn changes ->
+      UserToken.Changeset.sso_step_up(
+        changes.sign_in,
+        digest,
+        metadata,
+        changes.sso_provider,
+        changes.sso_identity,
+        changes.donor
+      )
+    end)
+    |> Multi.run(:member_grants, fn repo, changes ->
+      SessionGrants.transfer_for_sso_step_up(
+        repo,
+        changes.donor,
+        changes.token,
+        changes.sso_destinations
+      )
+    end)
+    |> Multi.delete(:consumed_donor, fn %{donor: donor} -> donor end)
+    |> Repo.commit_multi(
+      after_commit: fn %{donor: donor} ->
+        disconnect_live_socket_topics([live_socket_topic(donor.token)])
+      end
+    )
+    |> case do
+      {:ok, %{sign_in: user, account: account}} ->
+        {:ok, %{user: user, account: account, token: raw}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc "Internal — donor account fence discovery; these persisted parents do not grant authority."
+  def session_grant_account_ids(token_id) do
+    if Repo.valid_uuid?(token_id), do: SessionGrants.account_ids(token_id), else: []
   end
 
   @doc """
@@ -176,23 +228,78 @@ defmodule Emisar.Auth do
     end
   end
 
-  @doc """
-  Internal — does this session still count as second-factor verified? Judges the
-  exact `{user, token}` pair `fetch_user_and_token_by_session_token/1` returns,
-  and it is what the boundary calls to BUILD a `%Subject{}`, so there is no
-  Subject to take.
+  @doc "Internal — exact live workspace Members proved by this bearer; missing evidence grants nothing."
+  def session_membership_ids(user_id, session) when is_binary(user_id),
+    do: SessionGrants.membership_ids(user_id, session)
 
-  Local proof is carried separately from the authentication-time assurance: an
-  SSO session may prove Emisar TOTP after the IdP authenticated it. The local
-  stamp is bound to the user's CURRENT enrollment; the SSO stamp remains the
-  IdP's independent claim.
-  """
-  def session_mfa_verified?(%Users.User{} = user, %UserToken{} = session) do
-    not is_nil(session_mfa_enrollment_verified_at(user, session)) or
-      sso_mfa_verified_at_authentication?(session)
+  @doc "Internal — current destination provenance for a boundary's already-resolved exact Member."
+  def session_subject_options(%Accounts.Membership{} = member, session),
+    do: SessionGrants.subject_options(member, session)
+
+  @doc "Internal — personal self-service requires an unexpired mailbox proof on this exact live bearer."
+  def ensure_personal_session(%Subject{} = subject),
+    do: SessionGrants.ensure_personal_session(subject)
+
+  @doc "Internal — display eligibility from a boundary's already-resolved live token; writes revalidate the Subject."
+  def personal_session?(%UserToken{} = session), do: ensure_personal_proof(session) == :ok
+  def personal_session?(_session), do: false
+
+  @doc "Internal — lock the personally proved User and exact browser before a personal mutation."
+  def put_personal_session(
+        %Multi{} = multi,
+        %Subject{actor: %Users.User{id: user_id}, session_token_id: session_id}
+      ) do
+    multi
+    |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(user_id, repo) end)
+    |> Multi.run(:personal_session, fn repo, %{user: user} ->
+      queryable =
+        UserToken.Query.by_id(session_id)
+        |> UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("session")
+        |> UserToken.Query.not_expired("session")
+        |> UserToken.Query.lock_for_update()
+
+      with {:ok, session} <- repo.fetch(queryable, UserToken.Query),
+           :ok <- ensure_personal_proof(session) do
+        {:ok, session}
+      else
+        _ -> {:error, :unauthorized}
+      end
+    end)
   end
 
-  def session_mfa_verified?(_user, _auth), do: false
+  @doc "Internal — grant only the newly created owner Member, retaining this browser's proof ages."
+  def put_created_membership_grant(%Multi{} = multi) do
+    Multi.run(multi, :member_grants, fn repo, %{personal_session: session, membership: member} ->
+      SessionGrants.insert_personal(repo, session, %{
+        grant_member_candidates: [],
+        grant_accounts: %{},
+        membership: member
+      })
+    end)
+  end
+
+  @doc "The caller's exact live browser session and current User, independent of workspace or personal proof."
+  def fetch_current_session(%Subject{actor: %Users.User{id: user_id}} = subject),
+    do: SessionGrants.fetch_token(user_id, subject)
+
+  def fetch_current_session(%Subject{}), do: {:error, :unauthorized}
+
+  @doc "Internal — retire one Member's grants inside the account-fenced mutation, preserving every bearer."
+  def delete_membership_session_grants(%Accounts.Membership{} = member, repo) do
+    with {:ok, %{count: count, token_digests: digests}} <-
+           SessionGrants.delete_member_grants(repo, member) do
+      {:ok, %{count: count, socket_topics: Enum.map(digests, &live_socket_topic/1)}}
+    end
+  end
+
+  @doc "Internal — refresh only browsers with this exact Member's persisted grant after a role or policy commit."
+  def broadcast_disconnect_for_membership(%Accounts.Membership{} = member) do
+    member
+    |> SessionGrants.member_token_digests()
+    |> Enum.map(&live_socket_topic/1)
+    |> disconnect_live_socket_topics()
+  end
 
   @doc """
   Internal — the exact local enrollment epoch this session proved, or nil. The
@@ -201,20 +308,16 @@ defmodule Emisar.Auth do
   """
   def session_mfa_enrollment_verified_at(
         %Users.User{mfa_enabled_at: %DateTime{} = enabled_at},
-        %UserToken{mfa_enrollment_verified_at: %DateTime{} = verified_enrollment}
+        %UserToken{
+          mfa_enrollment_verified_at: %DateTime{} = verified_enrollment,
+          local_mfa_expires_at: %DateTime{} = expires_at
+        }
       )
-      when enabled_at == verified_enrollment,
-      do: enabled_at
+      when enabled_at == verified_enrollment do
+    if DateTime.after?(expires_at, DateTime.utc_now()), do: enabled_at
+  end
 
   def session_mfa_enrollment_verified_at(_user, _auth), do: nil
-
-  defp sso_mfa_verified_at_authentication?(%UserToken{
-         auth_method: :sso,
-         mfa_verified_at: %DateTime{}
-       }),
-       do: true
-
-  defp sso_mfa_verified_at_authentication?(_session), do: false
 
   @doc """
   Internal — FORCED invalidation of the session row behind a cookie (the
@@ -287,8 +390,9 @@ defmodule Emisar.Auth do
   Internal — `EmisarWeb.UserAuth` (and sibling revoke-all paths) calls this
   for the user already resolved from their session, so no Subject. Deletes
   every session token for the user. Returns `{:ok, count}` so a caller can
-  compose it into its own transaction via `Multi.run` (the team-admin "sign
-  out everywhere" does) — token internals stay private to Auth.
+  compose it into its own User-fenced MFA-reset transaction via `Multi.run` —
+  token internals stay private to Auth. Ordinary workspace revocation retires
+  Member grants instead of deleting a shared browser token.
   """
   def delete_all_session_tokens(%Users.User{} = user) do
     {count, _} =
@@ -300,53 +404,15 @@ defmodule Emisar.Auth do
   end
 
   @doc """
-  Internal — an account ending its own hold on a user: revoke the sessions
-  authenticated through `identity_ids` (that account's SSO connections) and
-  disconnect every live socket the user holds.
-
-  A session token is per-user, not per-account, so revoking them ALL signed the
-  person out of every other account they belong to — one tenant's directory
-  reaching into another's browser. Only the credentials bound to this account's
-  connections are destroyed. The broad disconnect is not a logout: each socket
-  re-mounts and re-resolves its membership, which is what actually ends access to
-  the suspended account, and leaves the others signed in.
+  Internal — retire exact destination identity routes inside their owner's
+  transaction. Other routes and the bearer survive. DELETE RETURNING captures
+  affected socket topics for the caller's outer after-commit effect.
   """
-  def revoke_identity_sessions(%Users.User{} = user, identity_ids) when is_list(identity_ids) do
-    topics = live_socket_topics_for_user(user)
-
-    Repo.delete_all(identity_session_tokens_query(user.id, identity_ids))
-    disconnect_live_sessions(topics)
-    :ok
-  end
-
-  @doc """
-  Internal — delete the exact identity-bound sessions inside a caller's
-  transaction and return their socket topics for that caller's after-commit
-  effect. The session rows are the only source for those topics, so they must be
-  selected through the same DELETE that removes them.
-  """
-  def delete_identity_session_tokens(%Users.User{} = user, identity_ids, repo)
-      when is_list(identity_ids) do
-    delete_identity_session_tokens(user.id, identity_ids, repo)
-  end
-
-  def delete_identity_session_tokens(user_id, identity_ids, repo)
-      when is_binary(user_id) and is_list(identity_ids) do
-    queryable =
-      user_id
-      |> identity_session_tokens_query(identity_ids)
-      |> UserToken.Query.select_token_digests()
-
-    {count, digests} = repo.delete_all(queryable)
-
-    {:ok, %{count: count, socket_topics: Enum.map(digests, &live_socket_topic/1)}}
-  end
-
-  # Both transactional deletion and SCIM revocation use this exact session set.
-  defp identity_session_tokens_query(user_id, identity_ids) do
-    UserToken.Query.by_user_id(user_id)
-    |> UserToken.Query.by_context("session")
-    |> UserToken.Query.by_user_identity_ids(identity_ids)
+  def delete_identity_session_routes(identity_ids, repo) when is_list(identity_ids) do
+    with {:ok, %{count: count, token_digests: digests}} <-
+           SessionGrants.delete_identity_routes(repo, identity_ids) do
+      {:ok, %{count: count, socket_topics: Enum.map(digests, &live_socket_topic/1)}}
+    end
   end
 
   @doc """
@@ -354,8 +420,7 @@ defmodule Emisar.Auth do
   session rows inside a transaction can still disconnect the sockets afterwards.
 
   A topic is derived from its `user_tokens` row, so reading it after the delete
-  yields nothing: `broadcast_disconnect_for_user/2` called from an `after_commit`
-  that deleted the rows disconnects no one. Capture inside the transaction, then
+  yields nothing. Capture inside the transaction, then
   hand the result to `disconnect_live_socket_topics/1` after it commits.
   """
   def capture_live_socket_topics(%Users.User{} = user), do: live_socket_topics_for_user(user)
@@ -391,6 +456,12 @@ defmodule Emisar.Auth do
         |> UserToken.Query.select_token_digests()
 
       Multi.new()
+      |> put_personal_session(subject)
+      |> Multi.run(:kept_session, fn _repo, %{personal_session: session} ->
+        if current_session?(session.token, keep_digest),
+          do: {:ok, session.id},
+          else: {:error, :unauthorized}
+      end)
       |> Multi.delete_all(:sessions, sessions_query)
       |> Audit.Multi.log_for_user(:audit, user, "user.other_sessions_revoked",
         extra: [context: subject.context],
@@ -411,41 +482,10 @@ defmodule Emisar.Auth do
 
   def revoke_and_disconnect_other_sessions(_, %Subject{}), do: {:error, :unauthorized}
 
-  @doc """
-  Internal — fan-out helper for Auth's own session-revocation paths (no
-  user-facing caller), so the already-resolved user is passed, not a Subject.
-  Broadcasts a per-session "disconnect" message to every active
-  session for `user`, optionally skipping the session whose token
-  digest matches `except:` (used by "sign out everywhere else" to
-  keep the caller's tab alive).
-
-  Pure side-effect — does NOT delete tokens from the DB. Pair with
-  `delete_all_session_tokens/1` or a transactional delete when you
-  also want to invalidate the cookies on the server side.
-
-  The actual PubSub broadcast lives in `EmisarWeb.SessionDisconnector`
-  (configured with its owning application via
-  `:emisar, :session_disconnect_handler`) because
-  `%Phoenix.Socket.Broadcast{}` — the struct Phoenix.LiveView listens
-  for — lives in the `phoenix` package, which the data-layer app
-  deliberately doesn't depend on. Auth knows WHICH topics to kill;
-  the web app knows HOW to broadcast.
-  """
-  def broadcast_disconnect_for_user(%Users.User{} = user, opts \\ []) do
-    user
-    |> live_socket_topics_for_user(opts)
-    |> disconnect_live_sessions()
-
-    :ok
-  end
-
-  defp live_socket_topics_for_user(%Users.User{} = user, opts \\ []) do
-    skip_digest = Keyword.get(opts, :except)
-
+  defp live_socket_topics_for_user(%Users.User{} = user) do
     UserToken.Query.by_user_id(user.id)
     |> UserToken.Query.by_context("session")
     |> Repo.all()
-    |> Enum.reject(&(&1.token == skip_digest))
     |> Enum.map(&live_socket_topic(&1.token))
   end
 
@@ -1131,7 +1171,7 @@ defmodule Emisar.Auth do
     mfa_verified_at = if proof, do: DateTime.utc_now()
 
     Multi.new()
-    |> lock_sign_in_account(account)
+    |> SessionGrants.put_personal_authority(user, account)
     |> Multi.run(:user, fn repo, _changes ->
       Users.fetch_and_lock_user_by_id(user.id, repo)
     end)
@@ -1157,6 +1197,9 @@ defmodule Emisar.Auth do
     end)
     |> Multi.insert(:token, fn %{sign_in: signed_in_user} ->
       UserToken.Changeset.session(signed_in_user, digest, metadata, :magic_link, mfa_verified_at)
+    end)
+    |> Multi.run(:member_grants, fn repo, %{token: session} = changes ->
+      SessionGrants.insert_personal(repo, session, changes)
     end)
     |> Multi.delete(:consumed_magic_factor, fn %{verified_factor: factor} -> factor end)
     |> Repo.commit_multi(after_commit: &Accounts.after_membership_activation_committed/1)
@@ -1203,17 +1246,6 @@ defmodule Emisar.Auth do
          :ok <- ensure_mfa_state_current(loaded_user, proof) do
       {:ok, loaded_user}
     end
-  end
-
-  defp lock_sign_in_account(multi, nil), do: multi
-
-  defp lock_sign_in_account(multi, %Accounts.Account{id: account_id}) do
-    Multi.run(multi, :sign_in_account, fn repo, _changes ->
-      case Accounts.fetch_and_lock_account(account_id, repo: repo) do
-        {:ok, account} -> {:ok, account}
-        {:error, :not_found} -> {:error, :account_disabled}
-      end
-    end)
   end
 
   # Factor one against an enrolled user is unfinished business, not a session.
@@ -1426,8 +1458,8 @@ defmodule Emisar.Auth do
       |> Multi.run(:user, fn repo, _changes ->
         Users.fetch_and_lock_user_by_id(user_id, repo)
       end)
-      |> Multi.run(:session, fn repo, %{user: user} ->
-        fetch_and_lock_personal_session(presented_digest, user.id, repo)
+      |> Multi.run(:session, fn repo, _changes ->
+        fetch_and_lock_personal_session(presented_digest, subject, repo)
       end)
       |> Multi.run(:factor_outcome, fn repo, %{user: user} ->
         verify_email_change_factor(repo, user, requested_email, factor)
@@ -1551,8 +1583,8 @@ defmodule Emisar.Auth do
   defp finish_email_change(token_id, nonce, code, presented_digest, user, subject) do
     Multi.new()
     |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(user.id, repo) end)
-    |> Multi.run(:session, fn repo, %{user: user} ->
-      fetch_and_lock_personal_session(presented_digest, user.id, repo)
+    |> Multi.run(:session, fn repo, _changes ->
+      fetch_and_lock_personal_session(presented_digest, subject, repo)
     end)
     |> Multi.run(:proof_outcome, fn repo, %{user: user, session: session} ->
       verify_new_email_proof(repo, token_id, nonce, code, user, session)
@@ -1620,13 +1652,21 @@ defmodule Emisar.Auth do
   defp datetime_or_nil(nil), do: nil
   defp datetime_or_nil(%DateTime{} = value), do: DateTime.to_iso8601(value)
 
-  defp fetch_and_lock_personal_session(digest, user_id, repo) do
-    case fetch_and_lock_current_session(digest, user_id, repo) do
-      {:ok, %UserToken{auth_method: :magic_link} = session} -> {:ok, session}
-      {:ok, _session} -> {:error, :unauthorized}
-      {:error, reason} -> {:error, reason}
+  defp fetch_and_lock_personal_session(digest, subject, repo) do
+    with {:ok, session} <- fetch_and_lock_subject_session(digest, subject, repo),
+         :ok <- ensure_personal_proof(session) do
+      {:ok, session}
     end
   end
+
+  defp ensure_personal_proof(%UserToken{
+         personal_proved_at: %DateTime{},
+         personal_expires_at: %DateTime{} = expires_at
+       }) do
+    if DateTime.after?(expires_at, DateTime.utc_now()), do: :ok, else: {:error, :unauthorized}
+  end
+
+  defp ensure_personal_proof(%UserToken{}), do: {:error, :unauthorized}
 
   @doc "Cancel this browser's exact pending new-address proof without changing its current email."
   def cancel_email_change(
@@ -1641,7 +1681,7 @@ defmodule Emisar.Auth do
           Multi.new()
           |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(id, repo) end)
           |> Multi.run(:session, fn repo, _changes ->
-            fetch_and_lock_personal_session(presented_digest, id, repo)
+            fetch_and_lock_personal_session(presented_digest, subject, repo)
           end)
           |> Multi.run(:cancelled, fn repo, %{user: user, session: session} ->
             token =
@@ -2121,20 +2161,19 @@ defmodule Emisar.Auth do
 
   @doc """
   The caller's own second-factor state for display: is TOTP on, and how many
-  recovery codes are left. Self-service — the subject's actor snapshot IS the
-  answer, so this reads no rows and never surfaces the TOTP secret or the
-  recovery-code digests. Returns `{:ok, %MfaFacts{}}`, or `{:error,
-  :unauthorized}` for a non-user subject.
+  recovery codes are left. Rechecks the live browser and current User, never
+  surfacing the TOTP secret or recovery-code digests. Returns `{:ok, %MfaFacts{}}`
+  or `{:error, :unauthorized}` when the browser no longer authenticates this User.
   """
-  def mfa_facts(%Subject{actor: %Users.User{} = user}) do
-    {:ok,
-     %MfaFacts{
-       enabled?: mfa_enabled?(user),
-       recovery_codes_remaining: recovery_codes_remaining(user)
-     }}
+  def mfa_facts(%Subject{} = subject) do
+    with {:ok, %UserToken{user: user}} <- fetch_current_session(subject) do
+      {:ok,
+       %MfaFacts{
+         enabled?: mfa_enabled?(user),
+         recovery_codes_remaining: recovery_codes_remaining(user)
+       }}
+    end
   end
-
-  def mfa_facts(%Subject{}), do: {:error, :unauthorized}
 
   defp mfa_enabled?(%Users.User{mfa_enabled_at: %DateTime{}}), do: true
   defp mfa_enabled?(%Users.User{}), do: false
@@ -2160,8 +2199,8 @@ defmodule Emisar.Auth do
   when the address cannot receive Emisar mail, or `{:error, reason}` when the
   mail provider rejects the send.
   """
-  def issue_mfa_enrollment_code(%Subject{actor: %Users.User{id: id}} = subject) do
-    with {:ok, user} <- Users.fetch_user_by_id(id),
+  def issue_mfa_enrollment_code(%Subject{} = subject) do
+    with {:ok, %UserToken{user: user}} <- fetch_current_session(subject),
          :ok <- ensure_mfa_not_enabled(user),
          :ok <- ensure_mfa_enrollment_email(user),
          :ok <-
@@ -2292,10 +2331,10 @@ defmodule Emisar.Auth do
   """
   def verify_mfa_enrollment_code(
         code,
-        %Subject{actor: %Users.User{id: id}} = subject
+        %Subject{} = subject
       )
       when is_binary(code) do
-    with {:ok, user} <- Users.fetch_user_by_id(id),
+    with {:ok, %UserToken{user: user}} <- fetch_current_session(subject),
          :ok <- ensure_mfa_not_enabled(user),
          :ok <- ensure_mfa_enrollment_email(user),
          :ok <-
@@ -2429,8 +2468,8 @@ defmodule Emisar.Auth do
           {:ok, loaded_user}
         end
       end)
-      |> Multi.run(:session, fn repo, %{user: loaded_user} ->
-        fetch_and_lock_current_session(presented_digest, loaded_user.id, repo)
+      |> Multi.run(:session, fn repo, _changes ->
+        fetch_and_lock_subject_session(presented_digest, subject, repo)
       end)
       |> Multi.run(:enabled_at, fn _repo, _changes -> {:ok, DateTime.utc_now()} end)
       |> Multi.merge(fn %{user: loaded_user, session: session, enabled_at: enabled_at} ->
@@ -2459,6 +2498,20 @@ defmodule Emisar.Auth do
   end
 
   def enable_mfa(_, _, _, _, %Subject{}), do: {:error, :mfa_enrollment_proof_stale}
+
+  defp fetch_and_lock_subject_session(
+         digest,
+         %Subject{actor: %Users.User{id: user_id}, session_token_id: session_id},
+         repo
+       ) do
+    with true <- Repo.valid_uuid?(session_id),
+         {:ok, %UserToken{id: ^session_id} = session} <-
+           fetch_and_lock_current_session(digest, user_id, repo) do
+      {:ok, session}
+    else
+      _ -> {:error, :session_not_found}
+    end
+  end
 
   defp fetch_and_lock_current_session(presented_digest, user_id, repo)
        when is_binary(presented_digest) and is_binary(user_id) do
@@ -2517,7 +2570,7 @@ defmodule Emisar.Auth do
   validate against the current row under a lock.
 
   Sessions survive: a session's `mfa_verified_at` is bound to the enrollment it
-  proved (`session_mfa_verified?/2`), so tearing the factor down already strips
+  proved (`session_mfa_enrollment_verified_at/2`), so tearing the factor down already strips
   every live session of its second-factor claim without signing anyone out.
 
   Their live SOCKETS do not survive, because a mounted socket decided its gates
@@ -2531,37 +2584,61 @@ defmodule Emisar.Auth do
   factor is rejected, {:error, :rate_limited} once the shared per-user MFA
   attempt window is exhausted, or the underlying update error.
   """
-  def disable_mfa(code, %Subject{actor: %Users.User{id: id}} = subject)
+  def disable_mfa(code, %Subject{actor: %Users.User{}} = subject)
       when is_binary(code) do
     code = String.trim(code)
 
-    with {:ok, user} <- Users.fetch_user_by_id(id),
-         {:ok, _verified} <- verify_current_mfa_factor(user, code, subject.context) do
-      # Captured before the write and broadcast after it, the same order the
-      # sibling revocation paths use, so every "this credential changed, re-decide"
-      # site reads as one shape. The broadcast is a best-effort side effect on the
-      # way out rather than a transaction hook, which keeps this entry point safe
-      # to call from a caller that already holds a transaction.
-      socket_topics = capture_live_socket_topics(user)
+    with {:ok, %UserToken{user: user} = session} <- fetch_current_session(subject),
+         :ok <- throttle_mfa_challenge(user, subject.context) do
+      factor = current_mfa_factor(code)
 
-      case Users.update_user_mfa(id, nil, nil, [],
-             audit: &Audit.user_changesets(&1, "user.mfa_disabled", context: subject.context)
-           ) do
-        {:ok, disabled_user} ->
-          disconnect_live_socket_topics(socket_topics)
+      Multi.new()
+      |> put_current_mfa_authority(subject, session)
+      |> Multi.run(:socket_topics, fn _repo, %{user: user} ->
+        {:ok, capture_live_socket_topics(user)}
+      end)
+      |> Multi.merge(fn %{user: user} ->
+        Users.put_mfa_disable(Multi.new(), user, factor, subject.context)
+      end)
+      |> Repo.commit_multi(after_commit: &disconnect_after_mfa_disable/1)
+      |> case do
+        {:ok, %{disabled_user: disabled_user}} ->
           {:ok, disabled_user}
+
+        {:error, reason} when reason in [:invalid, :replay] ->
+          record_mfa_mutation_failure(user, factor, reason, subject.context)
 
         {:error, reason} ->
           {:error, reason}
       end
-    else
-      {:error, :invalid} -> {:error, :invalid_code}
-      {:error, :not_found} -> {:error, :invalid_code}
-      {:error, reason} -> {:error, reason}
     end
   end
 
   def disable_mfa(_, %Subject{}), do: {:error, :invalid_code}
+
+  defp put_current_mfa_authority(multi, subject, session) do
+    multi
+    |> Multi.run(:user, fn repo, _changes ->
+      Users.fetch_and_lock_user_by_id(session.user_id, repo)
+    end)
+    |> Multi.run(:session, fn repo, _changes ->
+      fetch_and_lock_subject_session(session.token, subject, repo)
+    end)
+  end
+
+  defp disconnect_after_mfa_disable(%{socket_topics: topics}),
+    do: disconnect_live_socket_topics(topics)
+
+  defp record_mfa_mutation_failure(user, factor, reason, context) do
+    Audit.log_for_user(user, "user.mfa_failed",
+      context: context,
+      payload: %{
+        reason: if(reason == :replay, do: "replay", else: regeneration_failure_reason(factor))
+      }
+    )
+
+    {:error, if(reason == :replay, do: :replay, else: :invalid_code)}
+  end
 
   defp verify_current_mfa_factor(user, code, context) do
     if Regex.match?(~r/\A\d{6}\z/, code) do
@@ -2579,50 +2656,39 @@ defmodule Emisar.Auth do
   """
   def regenerate_mfa_recovery_codes(
         code,
-        %Subject{actor: %Users.User{id: id}} = subject
+        %Subject{actor: %Users.User{}} = subject
       )
       when is_binary(code) do
     code = String.trim(code)
 
-    with {:ok, user} <- Users.fetch_user_by_id(id),
+    with {:ok, %UserToken{user: user} = session} <- fetch_current_session(subject),
          :ok <- ensure_mfa_enabled(user),
          :ok <- throttle_mfa_challenge(user, subject.context) do
       factor = current_mfa_factor(code)
       {plain_codes, digests} = generate_recovery_codes()
 
-      id
-      |> Users.regenerate_user_mfa_recovery_codes(factor, digests,
-        audit:
-          &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated",
-            context: subject.context
-          )
-      )
+      Multi.new()
+      |> put_current_mfa_authority(subject, session)
+      |> Multi.merge(fn %{user: user} ->
+        Users.put_mfa_recovery_code_regeneration(
+          Multi.new(),
+          user,
+          factor,
+          digests,
+          subject.context
+        )
+      end)
+      |> Repo.commit_multi()
       |> case do
-        {:ok, updated} ->
+        {:ok, %{regenerated_user: updated}} ->
           {:ok, updated, plain_codes}
 
-        {:error, :invalid} ->
-          Audit.log_for_user(user, "user.mfa_failed",
-            context: subject.context,
-            payload: %{reason: regeneration_failure_reason(factor)}
-          )
-
-          {:error, :invalid_code}
-
-        {:error, :replay} ->
-          Audit.log_for_user(user, "user.mfa_failed",
-            context: subject.context,
-            payload: %{reason: "replay"}
-          )
-
-          {:error, :replay}
+        {:error, reason} when reason in [:invalid, :replay] ->
+          record_mfa_mutation_failure(user, factor, reason, subject.context)
 
         {:error, reason} ->
           {:error, reason}
       end
-    else
-      {:error, :not_found} -> {:error, :invalid_code}
-      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -2842,12 +2908,12 @@ defmodule Emisar.Auth do
   """
   def verify_current_session_mfa_challenge(
         factor,
-        %Subject{actor: %Users.User{} = user, context: context}
+        %Subject{context: context} = subject
       ) do
-    verify_mfa_challenge(user, factor, context)
+    with {:ok, %UserToken{user: user}} <- fetch_current_session(subject) do
+      verify_mfa_challenge(user, factor, context)
+    end
   end
-
-  def verify_current_session_mfa_challenge(_, %Subject{}), do: {:error, :unauthorized}
 
   @doc """
   Internal — wrap a just-verified local factor or dedicated SSO
@@ -2967,7 +3033,7 @@ defmodule Emisar.Auth do
   def complete_current_session_mfa(
         proof,
         presented_digest,
-        %Subject{actor: %Users.User{id: subject_user_id}, context: context}
+        %Subject{actor: %Users.User{id: subject_user_id}, context: context} = subject
       )
       when is_binary(proof) and is_binary(presented_digest) do
     case mfa_proof_user_id(proof) do
@@ -2976,8 +3042,8 @@ defmodule Emisar.Auth do
         |> Multi.run(:user, fn repo, _changes ->
           lock_signing_in_user(subject_user_id, proof, repo)
         end)
-        |> Multi.run(:session, fn repo, %{user: user} ->
-          fetch_and_lock_current_session(presented_digest, user.id, repo)
+        |> Multi.run(:session, fn repo, _changes ->
+          fetch_and_lock_subject_session(presented_digest, subject, repo)
         end)
         |> Multi.update(:mfa_session, fn %{user: user, session: session} ->
           UserToken.Changeset.local_mfa_verified(session, user.mfa_enabled_at)

@@ -26,6 +26,9 @@ defmodule Emisar.Auth.UserToken do
     field :auth_method, Ecto.Enum, values: [:magic_link, :sso]
     field :mfa_verified_at, :utc_datetime_usec
     field :mfa_enrollment_verified_at, :utc_datetime_usec
+    field :local_mfa_expires_at, :utc_datetime_usec
+    field :personal_proved_at, :utc_datetime_usec
+    field :personal_expires_at, :utc_datetime_usec
 
     belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :user_identity, Emisar.SSO.UserIdentity, where: [deleted_at: nil]

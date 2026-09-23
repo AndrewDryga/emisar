@@ -1,9 +1,9 @@
 defmodule EmisarWeb.RequireSSOTest do
   @moduledoc """
   Per-account `require_sso` (enforcement approach B): a member must hold an SSO
-  session FOR THIS ACCOUNT to reach it. A magic-link session — or an SSO
-  session for a *different* account — reaches an explicit sign-out step before
-  this account's branded SSO sign-in. The owner-only toggle can't be turned on
+  proof FOR THIS ACCOUNT to reach it. A personal session reaches a bound SSO
+  continuation; an unlinked identity gets explicit recovery choices.
+  The owner-only toggle can't be turned on
   without an enabled SSO connection (no lock-out).
   """
   use EmisarWeb.ConnCase, async: true
@@ -160,46 +160,58 @@ defmodule EmisarWeb.RequireSSOTest do
       %{conn: conn, account: account}
     end
 
-    test "GET renders an explicit sign-out step without revoking the session", %{
+    test "GET explains missing identity binding without revoking the session", %{
       conn: conn,
       account: account
     } do
       conn = get(conn, ~p"/app/#{account}/sso_required")
 
-      assert html_response(conn, 200) =~ "Sign out and continue"
+      assert html_response(conn, 200) =~ "not linked to an enabled identity provider"
+      assert html_response(conn, 200) =~ "Sign out and sign in again"
       assert html_response(conn, 200) =~ ~s|method="post"|
       assert get_session(conn, :user_token)
     end
 
-    test "the interstitial offers no link back into the app", %{conn: conn, account: account} do
+    test "the interstitial offers recovery instead of a guarded sign-in loop", %{
+      conn: conn,
+      account: account
+    } do
       # The signed-in sign-in route redirects an authed session to /app, and
       # the compliance gate bounces /app straight back here — so a "back to
-      # sign-in" link was a closed loop. The sign-out POST is the only exit.
+      # sign-in" link was a closed loop. Recovery remains renderable while signed in.
       html = conn |> get(~p"/app/#{account}/sso_required") |> html_response(200)
 
       refute html =~ ~s|href="/app/#{account.slug}/sign_in"|
       refute html =~ "Back to this team"
+      assert html =~ ~s|href="/session/recover"|
     end
 
     test "session revocation requires the explicit CSRF-protected POST", %{
       conn: conn,
       account: account
     } do
-      path = ~p"/app/#{account}/sso_required"
-      show_conn = get(conn, path)
-      csrf_token = Plug.CSRFProtection.get_csrf_token()
+      path = ~p"/session/recover"
+      show_conn = get(conn, ~p"/app/#{account}/sso_required")
+
+      [csrf_token] =
+        show_conn.resp_body
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("form input[name='_csrf_token']")
+        |> LazyHTML.attribute("value")
+
       conn_without_csrf = Plug.Conn.put_private(conn, :plug_skip_csrf_protection, false)
 
       assert_error_sent(403, fn -> post(conn_without_csrf, path, %{}) end)
 
       conn =
         show_conn
+        |> recycle()
         |> Plug.Conn.put_private(:plug_skip_csrf_protection, false)
-        |> post(path, %{"_csrf_token" => csrf_token})
+        |> post(path, %{"_csrf_token" => csrf_token, "account_id_or_slug" => account.id})
 
       assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
       refute get_session(conn, :user_token)
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "requires single sign-on"
+      assert html_response(get(conn, ~p"/app/#{account}/sign_in"), 200) =~ "Sign in to"
     end
   end
 

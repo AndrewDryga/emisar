@@ -1,17 +1,9 @@
 defmodule EmisarWeb.EndAllSessionsDisconnectTest do
   @moduledoc """
-  Admin "end all sessions" must tear the member's open LiveView down, not only
-  delete their cookie.
-
-  Each disconnect topic is derived from its `user_tokens` row, so a lookup made
-  AFTER the transaction deleted those rows resolves to nothing and disconnects
-  no one. That regression is invisible from the `emisar` app alone — the
-  disconnect handler lives in `emisar_web` — and it is silent in production:
-  the member's cookie dies, so the next HTTP request fails, while their already
-  mounted LiveView keeps working until they navigate.
-
-  `Accounts.end_all_sessions_for/2` therefore captures the topics inside the
-  transaction and broadcasts the captured list after commit.
+  Workspace session revocation remounts the affected browser after commit.
+  The exact Member's grants disappear, while the bearer and independently proved
+  workspaces remain usable. Topics are captured before the grants are deleted;
+  the real web disconnect handler delivers the resulting Phoenix broadcast.
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Accounts, Auth, Fixtures}
@@ -37,22 +29,46 @@ defmodule EmisarWeb.EndAllSessionsDisconnectTest do
         role: "operator"
       )
 
+    sibling = Fixtures.Accounts.create_account()
+
+    sibling_member =
+      Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: member.id)
+
     token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
     topic = Auth.live_socket_topic_for_session(token)
     EmisarWeb.Endpoint.subscribe(topic)
 
-    %{owner_subject: owner_subject, membership: membership, token: token, topic: topic}
+    %{
+      owner_subject: owner_subject,
+      membership: membership,
+      sibling_member: sibling_member,
+      token: token,
+      topic: topic
+    }
   end
 
-  test "ending a member's sessions disconnects their live socket, not just the cookie", %{
+  test "ending workspace sessions reconnects the browser without deleting sibling authority", %{
     owner_subject: owner_subject,
     membership: membership,
+    sibling_member: sibling_member,
     token: token,
     topic: topic
   } do
     assert Accounts.end_all_sessions_for(membership, owner_subject) == :ok
 
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
-    assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+    assert {:ok, user, session} = Auth.fetch_user_and_token_by_session_token(token)
+
+    assert Accounts.fetch_membership_by_account_id_or_slug(user, membership.account_id, session) ==
+             {:error, :not_found}
+
+    assert {:ok, survivor} =
+             Accounts.fetch_membership_by_account_id_or_slug(
+               user,
+               sibling_member.account_id,
+               session
+             )
+
+    assert survivor.id == sibling_member.id
   end
 end

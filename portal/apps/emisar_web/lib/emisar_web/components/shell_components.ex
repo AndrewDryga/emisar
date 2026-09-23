@@ -78,7 +78,6 @@ defmodule EmisarWeb.ShellComponents do
         <.shell_brand
           current_account={@current_account}
           switchable_accounts={@chrome.switchable_accounts}
-          sso_session?={@current_subject.auth_method == :sso}
         />
         <.shell_nav
           current_account={@current_account}
@@ -123,7 +122,6 @@ defmodule EmisarWeb.ShellComponents do
             <.shell_brand
               current_account={@current_account}
               switchable_accounts={@chrome.switchable_accounts}
-              sso_session?={@current_subject.auth_method == :sso}
             />
             <button
               type="button"
@@ -285,7 +283,6 @@ defmodule EmisarWeb.ShellComponents do
 
   attr :current_account, :map, required: true
   attr :switchable_accounts, :list, required: true
-  attr :sso_session?, :boolean, default: false
 
   defp shell_brand(assigns) do
     others =
@@ -322,12 +319,6 @@ defmodule EmisarWeb.ShellComponents do
         <p class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Switch workspace
         </p>
-        <%!-- An SSO session reaches only the workspaces that use the same identity
-             provider, so the list below is that set; say where any others are. --%>
-        <p :if={@sso_session?} class="mt-1 text-xs leading-5 text-zinc-500">
-          You signed in with single sign-on, so this list shows the workspaces on that identity
-          provider. Sign in with your email to open any other workspace.
-        </p>
       </div>
 
       <ul class="scrollbar-subtle max-h-[60vh] overflow-y-auto py-1">
@@ -361,7 +352,7 @@ defmodule EmisarWeb.ShellComponents do
 
       <div class="border-t border-zinc-800/70 p-1">
         <.link
-          navigate={~p"/onboarding"}
+          href={~p"/onboarding"}
           class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
         >
           <.icon name="action.add" class="h-4 w-4 shrink-0" />

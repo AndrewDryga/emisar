@@ -649,8 +649,9 @@ defmodule Emisar.AuditTest do
       identity_id = Repo.generate_id()
 
       subject =
-        Fixtures.Subjects.subject_for(user, account,
-          role: :owner,
+        Fixtures.Subjects.build_subject(
+          actor: user,
+          account: account,
           auth_method: :sso,
           mfa: true,
           user_identity_id: identity_id
@@ -671,7 +672,7 @@ defmodule Emisar.AuditTest do
       user: user,
       account: account
     } do
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.build_subject(actor: user, account: account)
       updated = %{account | name: "Renamed"}
 
       {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))

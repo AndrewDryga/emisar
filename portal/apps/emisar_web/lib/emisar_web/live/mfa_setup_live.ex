@@ -11,7 +11,7 @@ defmodule EmisarWeb.MfaSetupLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.Auth
-  alias EmisarWeb.{MfaEnrollment, MfaErrors}
+  alias EmisarWeb.{MfaEnrollment, MfaErrors, UserAuth}
 
   @email_unavailable_error "Your profile has no email address. Ask your workspace administrator for help, or contact support@emisar.dev."
   @email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
@@ -224,6 +224,9 @@ defmodule EmisarWeb.MfaSetupLive do
       {:error, :mfa_already_enabled} ->
         {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
 
+      {:error, :unauthorized} ->
+        {:noreply, UserAuth.reauthenticate(socket)}
+
       {:error, _reason} ->
         {:noreply, assign(socket, :mfa_start_error, @email_delivery_error)}
     end
@@ -265,6 +268,9 @@ defmodule EmisarWeb.MfaSetupLive do
         {:error, :mfa_already_enabled} ->
           {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
 
+        {:error, :unauthorized} ->
+          {:noreply, UserAuth.reauthenticate(socket)}
+
         {:error, _reason} ->
           {:noreply,
            assign(socket, :mfa_enrollment_email_error, "Could not verify that code. Try again.")}
@@ -297,6 +303,9 @@ defmodule EmisarWeb.MfaSetupLive do
         {:error, :mfa_already_enabled} ->
           {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
 
+        {:error, :unauthorized} ->
+          {:noreply, UserAuth.reauthenticate(socket)}
+
         {:error, _reason} ->
           {:noreply, assign(socket, :mfa_enrollment_email_error, @email_delivery_error)}
       end
@@ -311,26 +320,25 @@ defmodule EmisarWeb.MfaSetupLive do
     if is_nil(secret) do
       {:noreply, put_flash(socket, :error, "Still preparing — try again in a second.")}
     else
-      case Auth.enable_mfa(
-             secret,
-             otp,
-             socket.assigns.mfa_enrollment_proof,
-             socket.assigns.current_auth.token,
-             socket.assigns.current_subject
-           ) do
-        {:ok, updated, recovery_codes} ->
-          {:noreply,
-           socket
-           |> assign(:current_user, updated)
-           |> MfaEnrollment.assign_current_proof(updated)
-           |> assign(:mfa_recovery_codes, recovery_codes)
-           |> assign(:codes_saved?, false)
-           |> MfaEnrollment.reset()
-           |> assign(:mfa_start_error, nil)
-           |> assign(:codes_saved?, false)
-           |> assign_mfa_enrollment_email_form()
-           |> assign_mfa_form()}
-
+      with {:ok, updated, recovery_codes} <-
+             Auth.enable_mfa(
+               secret,
+               otp,
+               socket.assigns.mfa_enrollment_proof,
+               socket.assigns.current_auth.token,
+               socket.assigns.current_subject
+             ),
+           {:ok, socket} <- MfaEnrollment.assign_current_proof(socket, updated) do
+        {:noreply,
+         socket
+         |> assign(:mfa_recovery_codes, recovery_codes)
+         |> assign(:codes_saved?, false)
+         |> MfaEnrollment.reset()
+         |> assign(:mfa_start_error, nil)
+         |> assign(:codes_saved?, false)
+         |> assign_mfa_enrollment_email_form()
+         |> assign_mfa_form()}
+      else
         {:error, :invalid_otp} ->
           {:noreply,
            socket
@@ -347,14 +355,11 @@ defmodule EmisarWeb.MfaSetupLive do
            |> assign_mfa_form()
            |> assign(:mfa_start_error, MfaErrors.message(:mfa_enrollment_proof_stale))}
 
-        {:error, :mfa_already_enabled} ->
+        {:error, reason} when reason in [:mfa_already_enabled, :mfa_proof_stale] ->
           {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
 
-        {:error, :session_not_found} ->
-          {:noreply,
-           socket
-           |> put_flash(:error, MfaErrors.message(:session_not_found))
-           |> redirect(to: ~p"/sign_in/magic")}
+        {:error, reason} when reason in [:unauthorized, :session_not_found] ->
+          {:noreply, UserAuth.reauthenticate(socket)}
 
         {:error, _changeset} ->
           {:noreply, assign(socket, :mfa_error, MfaErrors.message(:enable_failed))}
@@ -397,11 +402,8 @@ defmodule EmisarWeb.MfaSetupLive do
       {:error, :rate_limited} ->
         {:noreply, assign(socket, :mfa_challenge_error, MfaErrors.message(:rate_limited))}
 
-      {:error, :session_not_found} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "Your session changed. Sign in again to continue.")
-         |> redirect(to: ~p"/sign_in/magic")}
+      {:error, reason} when reason in [:unauthorized, :session_not_found] ->
+        {:noreply, UserAuth.reauthenticate(socket)}
 
       {:error, :mfa_proof_stale} ->
         {:noreply,

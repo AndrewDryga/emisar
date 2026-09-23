@@ -472,8 +472,25 @@ defmodule Emisar.Runs do
              subject,
              Authorizer.view_runs_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, run.account_id),
-         {:ok, args} <- decode_action_args(run.args_raw) do
+         :ok <- Subject.ensure_in_account(subject, run.account_id) do
+      project_redacted_args(run)
+    end
+  end
+
+  @doc """
+  Internal — project an already-authorized account's run without another read.
+  Approval receipts authorize their page once; notification fan-out checks each
+  exact recipient Member's role and runner/pack access. Neither path invents a
+  browser Subject or performs another identity query per projected row.
+  """
+  def project_authorized_account_args(%ActionRun{account_id: account_id} = run, account_id),
+    do: project_redacted_args(run)
+
+  def project_authorized_account_args(%ActionRun{}, _account_id),
+    do: {:error, :not_found}
+
+  defp project_redacted_args(run) do
+    with {:ok, args} <- decode_action_args(run.args_raw) do
       {:ok, redact_sensitive_args(args, run.sensitive_arg_names)}
     end
   end
@@ -3172,7 +3189,7 @@ defmodule Emisar.Runs do
            Accounts.fetch_and_lock_membership(account.id, subject.membership_id, repo: repo),
          true <- membership.user_id == user_id,
          {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
-         current_subject = Subject.for_user(user, account, membership, subject.context),
+         current_subject = Subject.rebuild(subject, user, account, membership),
          :ok <-
            Auth.Authorizer.ensure_has_permissions(
              current_subject,

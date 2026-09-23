@@ -79,12 +79,7 @@ defmodule Emisar.OAuthTest do
   defp subject_from_session(account, raw_token) do
     assert {:ok, user, session} = Auth.fetch_user_and_token_by_session_token(raw_token)
 
-    Fixtures.Subjects.subject_for(user, account,
-      auth_method: session.auth_method,
-      mfa: Auth.session_mfa_verified?(user, session),
-      mfa_enrollment_verified_at: Auth.session_mfa_enrollment_verified_at(user, session),
-      user_identity_id: session.user_identity_id
-    )
+    Fixtures.Subjects.subject_for(user, account, session: session)
   end
 
   defp refute_oauth_mint(account) do
@@ -383,7 +378,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
 
       assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
-               {:error, :not_found}
+               {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -398,7 +393,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
 
       assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
-               {:error, :not_found}
+               {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -436,7 +431,7 @@ defmodule Emisar.OAuthTest do
       borrowed = %{subject | membership_id: peer_membership.id}
 
       assert OAuth.issue_code(client, authorization_params(challenge), borrowed) ==
-               {:error, :not_found}
+               {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -458,7 +453,7 @@ defmodule Emisar.OAuthTest do
       borrowed = %{subject | membership_id: other_membership.id}
 
       assert OAuth.issue_code(client, authorization_params(challenge), borrowed) ==
-               {:error, :not_found}
+               {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -666,7 +661,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "an SSO session stops minting when its current provider no longer satisfies MFA" do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject()
+      {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
       provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: true)
@@ -714,8 +709,8 @@ defmodule Emisar.OAuthTest do
              ) == 1
     end
 
-    test "an MFA-satisfying SSO identity from another account mints nothing" do
-      {user, identity_account, _subject} = Fixtures.Subjects.owner_subject()
+    test "an MFA-satisfying SSO origin cannot override the destination's weaker assurance" do
+      {user, identity_account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
       provider =
         Fixtures.SSO.create_identity_provider(
@@ -730,7 +725,7 @@ defmodule Emisar.OAuthTest do
           user_id: user.id
         })
 
-      chosen = Fixtures.Accounts.create_account()
+      chosen = Fixtures.Accounts.create_account(plan: "team")
 
       Fixtures.Memberships.create_membership(
         account_id: chosen.id,
@@ -739,6 +734,19 @@ defmodule Emisar.OAuthTest do
       )
 
       Fixtures.Accounts.set_account_settings(chosen, %{require_mfa: true})
+
+      destination_provider =
+        Fixtures.SSO.create_identity_provider(
+          account_id: chosen.id,
+          issuer: provider.issuer,
+          satisfies_mfa: false
+        )
+
+      Fixtures.SSO.create_user_identity(
+        account_id: chosen.id,
+        provider_id: destination_provider.id,
+        user_id: user.id
+      )
 
       raw_token =
         Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
@@ -1290,13 +1298,11 @@ defmodule Emisar.OAuthTest do
       params = %{"refresh_token" => tokens.refresh_token, "client_id" => client.id}
       assert OAuth.refresh(params) == {:error, :invalid_grant}
 
-      assert {:ok, _account} =
-               Emisar.Accounts.set_account_disabled_for_support(
-                 account.id,
-                 false,
-                 "Hold resolved",
-                 subject
-               )
+      assert {:ok, %{disabled: false}} =
+               Emisar.Admin.execute("emisar.admin.account.enable", [
+                 "account=#{account.slug}",
+                 "reason=Hold resolved"
+               ])
 
       assert {:ok, _fresh} = OAuth.refresh(params)
     end

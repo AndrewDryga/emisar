@@ -3,7 +3,7 @@ id: emisar.admin.member.suspend
 title: Suspend account member
 kind: script
 risk: high
-description: Suspend one membership and revoke its sessions and delegated API keys.
+description: Suspend one membership, end its browser access to this account, and revoke its delegated API keys.
 side_effects: [Removes access immediately while preserving membership history.]
 args:
   - name: account

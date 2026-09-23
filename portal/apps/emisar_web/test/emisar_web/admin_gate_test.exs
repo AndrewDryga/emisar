@@ -109,7 +109,14 @@ defmodule EmisarWeb.AdminGateTest do
       # `mfa_verified_at` set and no local enrollment proof. A real identity in
       # the staff user's own account so the session resolves that account and
       # the staff gate — not the tenant boundary — is what rejects it.
-      provider = Fixtures.SSO.create_identity_provider(%{account_id: account.id, name: "Okta"})
+      Fixtures.Accounts.create_subscription(account, "team")
+
+      provider =
+        Fixtures.SSO.create_identity_provider(%{
+          account_id: account.id,
+          name: "Okta",
+          satisfies_mfa: true
+        })
 
       identity =
         Fixtures.SSO.create_user_identity(%{
@@ -125,6 +132,10 @@ defmodule EmisarWeb.AdminGateTest do
           user_identity_id: identity.id
         )
 
+      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
+      subject = Fixtures.Subjects.subject_for(user, account, session: session)
+      assert subject.mfa
+      assert is_nil(session.mfa_enrollment_verified_at)
       conn = conn |> put_session(:user_token, token) |> get("/ops/live")
 
       assert redirected_to(conn) == ~p"/sign_in"

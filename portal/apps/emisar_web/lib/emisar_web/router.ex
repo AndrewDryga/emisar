@@ -269,6 +269,10 @@ defmodule EmisarWeb.Router do
     pipe_through [:browser, :noindex]
 
     get "/sign_in/sso/callback", SSOController, :callback
+    # Renderable for a valid bearer with no remaining workspace proof as well as
+    # an expired one. No authenticated redirect or workspace grant is required.
+    get "/session/recover", SessionRecoveryController, :show
+    post "/session/recover", SessionRecoveryController, :restart
   end
 
   # -- Auth surface (only when signed-out) ----------------------------
@@ -395,12 +399,10 @@ defmodule EmisarWeb.Router do
     get "/checkout/success", CheckoutController, :success
     get "/:account_id_or_slug/checkout/success", CheckoutController, :success
 
-    # require_sso step-up shim: :ensure_sso_compliant bounces a non-SSO session here;
-    # GET renders the explicit sign-out form; POST revokes the session and lands on
-    # the account's branded SSO sign-in. OUTSIDE the slug live_session below, so it
-    # never re-triggers the gate (no redirect loop).
+    # Workspace SSO continuation preserves this browser until the bound proof
+    # succeeds. Outside the compliance-gated live_session to avoid a loop.
     get "/:account_id_or_slug/sso_required", SSORequiredController, :show
-    post "/:account_id_or_slug/sso_required", SSORequiredController, :revoke
+    post "/:account_id_or_slug/sso_required", SSOController, :begin_session_step_up
 
     # Outside the slug scope on purpose: this is where ensure_account_compliant
     # sends a non-compliant member, so it must mount without that combined gate (it
@@ -498,10 +500,13 @@ defmodule EmisarWeb.Router do
     # this pipeline on every one of them.
     pipe_through [:browser, :noindex]
 
+    get "/onboarding", OnboardingController, :new
+    post "/onboarding", OnboardingController, :create
+    post "/accept_invitation/:token", AcceptInvitationController, :create
+
     live_session :onboarding,
       session: {__MODULE__, :auth_live_session, []},
       on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
-      live "/onboarding", OnboardingLive, :new
       # Invitation acceptance has to work whether the visitor is signed
       # in or not: a brand-new invitee enters their name and requests a
       # sign-in link here, but a

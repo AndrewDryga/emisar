@@ -1,15 +1,11 @@
 defmodule EmisarWeb.SSORequiredController do
   @moduledoc """
-  The require_sso step-up shim (enforcement approach B). `on_mount(:ensure_sso_compliant)`
-  bounces a non-SSO session here when the account mandates single sign-on. The GET
-  only explains the next step; the explicit POST revokes the session and lands the
-  operator on the account's branded sign-in, where they re-authenticate through the
-  account's identity provider. Lives OUTSIDE the slug `live_session`, so it doesn't
-  re-trigger the gate — no redirect loop.
+  Workspace SSO step-up. A read-only GET offers the current Member's linked
+  providers; the explicit POST starts a purpose-bound SSOController ceremony.
+  Lives outside the compliance-gated live_session so recovery cannot loop.
   """
   use EmisarWeb, :controller
-  alias Emisar.Accounts
-  alias EmisarWeb.UserAuth
+  alias Emisar.{Accounts, SSO}
 
   def show(conn, _params) do
     account = conn.assigns.current_account
@@ -19,23 +15,22 @@ defmodule EmisarWeb.SSORequiredController do
     # be shown a false "SSO required" state and pushed to sign out.
     case Accounts.ensure_account_compliant(account, conn.assigns.current_subject) do
       {:error, :sso_required} ->
-        form = Phoenix.Component.to_form(%{}, as: "sso_required")
-        render(conn, :show, account: account, form: form)
+        case SSO.list_session_step_up_providers(conn.assigns.current_subject) do
+          {:ok, providers} ->
+            render(conn, :show, account: account, providers: providers)
 
-      _ ->
+          {:error, _reason} ->
+            redirect(conn, to: ~p"/session/recover")
+        end
+
+      :ok ->
         redirect(conn, to: ~p"/app/#{account}")
+
+      {:error, :mfa_required} ->
+        redirect(conn, to: ~p"/app/mfa_setup")
+
+      {:error, _reason} ->
+        redirect(conn, to: ~p"/session/recover")
     end
-  end
-
-  def revoke(conn, _params) do
-    # require_authenticated_user → assign_current_account resolved the slug to a
-    # membership (the user IS a member; require_sso is about HOW they signed in).
-    account = conn.assigns.current_account
-
-    UserAuth.log_out_user_with_flash(
-      conn,
-      "This team requires single sign-on. Sign in with your identity provider to continue.",
-      ~p"/app/#{account}/sign_in"
-    )
   end
 end

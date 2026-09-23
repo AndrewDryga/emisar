@@ -13,6 +13,8 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
       secret = Auth.generate_mfa_secret()
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
       session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(session_token)
+      subject = Fixtures.Subjects.subject_for(user, account, session: session)
       peer_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       parent = self()
 
@@ -74,7 +76,7 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
   end
 
   test "two concurrent enrollments upgrade only the winning browser session" do
-    unboxed_owner(fn user, _account, subject ->
+    unboxed_owner(fn user, account, subject ->
       secret = Auth.generate_mfa_secret()
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
       otp = NimbleTOTP.verification_code(secret)
@@ -83,6 +85,12 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
         first: Fixtures.Auth.create_session_token!(user, :magic_link, nil),
         second: Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       }
+
+      subjects =
+        Map.new(tokens, fn {label, raw} ->
+          {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+          {label, Fixtures.Subjects.subject_for(user, account, session: session)}
+        end)
 
       parent = self()
 
@@ -109,7 +117,7 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
         Enum.map(tokens, fn {label, token} ->
           unboxed_task(fn ->
             send(parent, {:enrollment_backend, label, backend_pid()})
-            {label, Auth.enable_mfa(secret, otp, proof, Crypto.hash(token), subject)}
+            {label, Auth.enable_mfa(secret, otp, proof, Crypto.hash(token), subjects[label])}
           end)
         end)
 
@@ -153,6 +161,69 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
     end)
   end
 
+  for operation <- [:disable_mfa, :regenerate_mfa_recovery_codes] do
+    @operation operation
+    test "revocation while #{@operation} waits for the user lock prevents credential mutation" do
+      unboxed_owner(fn user, account, revoker ->
+        code = "disposable-concurrent-factor"
+
+        enrolled =
+          Fixtures.Users.set_mfa_state(user,
+            mfa_secret: Auth.generate_mfa_secret(),
+            mfa_enabled_at: DateTime.utc_now(),
+            mfa_recovery_codes: [Crypto.hash(code)]
+          )
+
+        raw = Fixtures.Auth.create_session_token!(enrolled, :magic_link, nil)
+        {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+        subject = Fixtures.Subjects.subject_for(enrolled, account, session: session)
+        parent = self()
+
+        blocker =
+          unboxed_task(fn ->
+            Repo.transaction(fn ->
+              {:ok, _user} = Users.fetch_and_lock_user_by_id(user.id, Repo)
+              send(parent, {:credential_user_locked, backend_pid()})
+
+              receive do
+                :release -> :ok
+              end
+            end)
+          end)
+
+        assert_receive {:credential_user_locked, blocker_backend}, 5_000
+
+        mutation =
+          unboxed_task(fn ->
+            send(parent, {:credential_mutation_backend, backend_pid()})
+            apply(Auth, @operation, [code, subject])
+          end)
+
+        try do
+          assert_receive {:credential_mutation_backend, mutation_backend}, 5_000
+          await_blocked_by(mutation_backend, blocker_backend)
+          assert Auth.revoke_session(session.id, revoker) == :ok
+          assert Auth.fetch_user_and_token_by_session_token(raw) == {:error, :not_found}
+          send(blocker.pid, :release)
+          assert Task.await(blocker, 30_000) == {:ok, :ok}
+          assert Task.await(mutation, 30_000) == {:error, :session_not_found}
+          assert Repo.reload!(enrolled) == enrolled
+
+          for event <- ["user.mfa_disabled", "user.mfa_recovery_codes_regenerated"] do
+            refute Repo.exists?(
+                     Emisar.Audit.Event.Query.all()
+                     |> Emisar.Audit.Event.Query.by_account_id(account.id)
+                     |> Emisar.Audit.Event.Query.by_event_type(event)
+                   )
+          end
+        after
+          send(blocker.pid, :release)
+          stop_tasks([blocker, mutation])
+        end
+      end)
+    end
+  end
+
   test "TOTP time is sampled once after the user lock and stamps that exact bucket" do
     unboxed_owner(fn user, _account, _subject ->
       secret = "JBSWY3DPEHPK3PXP"
@@ -165,10 +236,8 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
       refute Crypto.valid_totp?(secret, code, before_boundary)
       assert Crypto.valid_totp?(secret, code, boundary)
 
-      {:ok, user} =
-        Users.update_user_mfa(user.id, secret, before_boundary, [],
-          audit: &Emisar.Audit.user_changesets(&1, "user.mfa_enabled")
-        )
+      user =
+        Fixtures.Users.set_mfa_state(user, mfa_secret: secret, mfa_enabled_at: before_boundary)
 
       blocker =
         unboxed_task(fn ->

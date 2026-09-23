@@ -11,10 +11,10 @@ defmodule Emisar.Fixtures.Subjects do
   alias Emisar.Users.User
 
   @doc """
-  Builds a `%Subject{}` for an account-scoped test caller. Looks up
-  the user's membership in the account; defaults to `:owner` if the
-  user isn't a member yet. Use this anywhere a test needs to call a
-  Subject-gated context function.
+  Builds a `%Subject{}` for an account-scoped test caller with a real frozen
+  session grant. Creates an owner membership if the user isn't a member yet.
+  Pass an existing `:session` to exercise an older bearer's exact authority;
+  use `build_subject/1` for intentionally unbound or malformed callers.
 
       account = Fixtures.Accounts.create_account()
       user = Fixtures.Users.create_user()
@@ -27,20 +27,31 @@ defmodule Emisar.Fixtures.Subjects do
 
     membership =
       Fixtures.Memberships.fetch_membership(account.id, user.id) ||
-        %Membership{role: role, user_id: user.id, account_id: account.id}
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: role
+        )
 
-    Subject.for_user(user, account, membership, context,
-      auth_method: opts[:auth_method],
-      mfa: opts[:mfa],
-      mfa_enrollment_verified_at: opts[:mfa_enrollment_verified_at],
-      user_identity_id: opts[:user_identity_id]
-    )
+    session = opts[:session] || session_for(user, opts)
+    auth_opts = Emisar.Auth.session_subject_options(membership, session)
+    Subject.for_user(user, account, membership, context, auth_opts)
+  end
+
+  defp session_for(user, opts) do
+    method = Keyword.get(opts, :auth_method, :magic_link)
+    mfa_at = if opts[:mfa], do: DateTime.utc_now()
+    raw = Fixtures.Auth.create_session_token!(user, method, mfa_at, %{}, opts)
+    {:ok, _user, token} = Emisar.Auth.fetch_user_and_token_by_session_token(raw)
+    token
   end
 
   @doc "Builds a `%Subject{}` for an existing membership — loads its user and account, carrying the membership's own role and id."
   def membership_subject(%Membership{} = membership) do
     %{user: user, account: account} = Repo.preload(membership, [:user, :account])
-    Subject.for_user(user, account, membership)
+    session = session_for(user, [])
+    auth_opts = Emisar.Auth.session_subject_options(membership, session)
+    Subject.for_user(user, account, membership, %RequestContext{}, auth_opts)
   end
 
   @doc """

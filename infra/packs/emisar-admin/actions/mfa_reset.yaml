@@ -4,7 +4,9 @@ title: Reset member MFA
 kind: script
 risk: high
 description: Clear one member's TOTP factor and recovery codes so they can re-enroll.
-side_effects: [Removes the current second factor and records an MFA-bypass audit event.]
+side_effects:
+  - Removes the current second factor and records an MFA-bypass audit event.
+  - Ends every browser session for the linked personal user.
 args:
   - name: account
     type: string

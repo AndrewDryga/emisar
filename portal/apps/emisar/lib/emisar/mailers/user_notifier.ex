@@ -14,7 +14,6 @@ defmodule Emisar.Mailers.UserNotifier do
   """
   import Swoosh.Email
   alias Emisar.Accounts
-  alias Emisar.Auth.Subject
   alias Emisar.Crypto
   alias Emisar.Mail
   alias Emisar.Mailer
@@ -294,13 +293,13 @@ defmodule Emisar.Mailers.UserNotifier do
   preview of the arguments — that an experienced operator can decide
   from their inbox without context-switching into the app.
 
-  The recipient is the account-owned membership; arguments are projected
-  through `Runs.project_action_args/2`, so the mail shows exactly what that
-  approver may see, with every declared sensitive value redacted.
+  The recipient is the already-authorized account-owned membership; arguments
+  arrive as the domain's redacted projection, never raw payload or a synthesized
+  browser Subject.
   """
   def deliver_approval_request(
         %Accounts.Membership{} = approver,
-        %Subject{} = subject,
+        args_projection,
         %{} = request,
         %Runs.ActionRun{} = run,
         requester_name \\ nil
@@ -336,7 +335,7 @@ defmodule Emisar.Mailers.UserNotifier do
       |> add_quoted_block("Expected result", Map.get(request, :expected))
       |> Kernel.++([
         {:section, "Redacted arguments"},
-        {:pre, format_args_for_email(run, subject)}
+        {:pre, format_args_for_email(args_projection)}
       ])
 
     deliver_transactional(
@@ -522,8 +521,8 @@ defmodule Emisar.Mailers.UserNotifier do
   # output because Jason's pretty-print already wraps reasonably. A run whose
   # stored payload won't project says so rather than guessing at content — the
   # approval page is the fallback, and a mail can't ask for a second opinion.
-  defp format_args_for_email(%Runs.ActionRun{} = run, %Subject{} = subject) do
-    case Runs.project_action_args(run, subject) do
+  defp format_args_for_email(projection) do
+    case projection do
       {:ok, args} when map_size(args) > 0 -> indented_args(args)
       {:ok, _empty} -> "  (none)"
       {:error, _reason} -> "  (unavailable)"

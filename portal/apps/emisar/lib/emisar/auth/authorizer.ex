@@ -15,7 +15,8 @@ defmodule Emisar.Auth.Authorizer do
         |> Repo.fetch(Entity.Query, opts)
       end
   """
-  alias Emisar.Auth.Subject
+  alias Emisar.Auth.{SessionGrants, Subject}
+  alias Emisar.Users
 
   @type permission :: {module(), atom()}
 
@@ -55,21 +56,52 @@ defmodule Emisar.Auth.Authorizer do
   permission, `{:error, :unauthorized}` otherwise. Supports
   `{:one_of, [perm, ...]}` shorthand.
   """
-  def ensure_has_permissions(%Subject{} = subject, {:one_of, perms}) when is_list(perms) do
-    if Enum.any?(perms, &has_permission?(subject, &1)),
-      do: :ok,
-      else: {:error, :unauthorized}
+  def ensure_has_permissions(%Subject{} = subject, required) do
+    case fetch_authorized_subject(subject, required) do
+      {:ok, _current} -> :ok
+      {:error, :unauthorized} = error -> error
+    end
   end
 
-  def ensure_has_permissions(%Subject{} = subject, perm) when is_tuple(perm) do
-    if has_permission?(subject, perm),
-      do: :ok,
-      else: {:error, :unauthorized}
+  @doc "Internal — return the same freshly resolved authority whose permissions and policy passed."
+  def fetch_authorized_subject(%Subject{} = subject, required) do
+    with {:ok, current} <- fetch_addressable_subject(subject, required),
+         :ok <- ensure_session_compliant(current) do
+      {:ok, current}
+    else
+      _ -> {:error, :unauthorized}
+    end
   end
 
-  def ensure_has_permissions(%Subject{} = subject, perms) when is_list(perms) do
-    if Enum.all?(perms, &has_permission?(subject, &1)),
-      do: :ok,
-      else: {:error, :unauthorized}
+  @doc "Internal — exact live authority for account selection and step-up, without authorizing protected work."
+  def fetch_addressable_subject(%Subject{} = subject, required) do
+    with true <- holds_permissions?(subject, required),
+         {:ok, current} <- current_authority(subject),
+         true <- holds_permissions?(current, required) do
+      {:ok, current}
+    else
+      _ -> {:error, :unauthorized}
+    end
   end
+
+  # Never lock here: contexts also call this gate while holding their own
+  # resource locks. Mutation-specific fences own serialization; this read closes
+  # held-Subject/reconnect access after a bearer, grant or Member is revoked.
+  defp current_authority(%Subject{actor: %Users.User{}} = subject),
+    do: SessionGrants.fetch_subject(subject)
+
+  defp current_authority(%Subject{} = subject), do: {:ok, subject}
+
+  defp ensure_session_compliant(%Subject{actor: %Users.User{}} = subject),
+    do: Emisar.Accounts.account_compliance_for_session(subject.account, subject)
+
+  defp ensure_session_compliant(%Subject{}), do: :ok
+
+  defp holds_permissions?(subject, {:one_of, perms}) when is_list(perms),
+    do: Enum.any?(perms, &has_permission?(subject, &1))
+
+  defp holds_permissions?(subject, perm) when is_tuple(perm), do: has_permission?(subject, perm)
+
+  defp holds_permissions?(subject, perms) when is_list(perms),
+    do: Enum.all?(perms, &has_permission?(subject, &1))
 end

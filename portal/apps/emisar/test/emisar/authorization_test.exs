@@ -9,9 +9,8 @@ defmodule Emisar.AuthorizationTest do
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
 
-  # A PERSISTED member: gates that read current runner/pack access resolve it
-  # from the membership row, and an unresolvable membership fails closed — so a
-  # struct-only subject would be denied for the wrong reason.
+  # A persisted Member and proved browser: denial cases must reach the intended
+  # role gate, not fail earlier for missing session authority.
   defp subject_with_role(account, role) do
     user = Fixtures.Users.create_user()
 
@@ -22,7 +21,7 @@ defmodule Emisar.AuthorizationTest do
         role: Atom.to_string(role)
       )
 
-    Subject.for_user(user, account, membership)
+    Fixtures.Subjects.membership_subject(membership)
   end
 
   describe "Audit reads" do

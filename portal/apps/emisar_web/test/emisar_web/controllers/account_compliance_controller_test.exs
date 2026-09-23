@@ -14,7 +14,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
   the sso_required shim a bounced session lands on stays reachable (no loop).
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Audit, Fixtures, OAuth, Repo}
+  alias Emisar.{Audit, Auth, Fixtures, OAuth, Repo}
   alias Emisar.SSO.UserIdentity
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
@@ -218,7 +218,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
         role: "owner"
       )
 
-      conn = put_session(conn, :current_account_id, session_account.id)
+      conn = conn |> log_in_user(user) |> put_session(:current_account_id, session_account.id)
       client = register_client!()
 
       params = authorize_params(client, %{"account_id" => chosen.id, "decision" => "approve"})
@@ -241,7 +241,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
         role: "owner"
       )
 
-      conn = put_session(conn, :current_account_id, session_account.id)
+      conn = conn |> log_in_user(user) |> put_session(:current_account_id, session_account.id)
       client = register_client!()
 
       params = authorize_params(client, %{"account_id" => chosen.id, "decision" => "approve"})
@@ -273,7 +273,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
         role: "owner"
       )
 
-      conn = put_session(conn, :current_account_id, session_account.id)
+      conn = conn |> log_in_user(user) |> put_session(:current_account_id, session_account.id)
       client = register_client!()
 
       params = authorize_params(client, %{"account_id" => grantee.id, "decision" => "approve"})
@@ -293,12 +293,12 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       _ = enabled_provider(account)
       require_sso!(account)
 
-      # The shim carries NO compliance plug, so the bounced magic-link session
-      # can reach its explicit sign-out prompt without revoking on GET.
+      token = get_session(conn, :user_token)
       conn = get(conn, ~p"/app/#{account}/sso_required")
 
-      assert html_response(conn, 200) =~ "Sign out and continue"
-      assert get_session(conn, :user_token)
+      assert html_response(conn, 200) =~ "Sign out and sign in again"
+      assert get_session(conn, :user_token) == token
+      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(token)
     end
   end
 end

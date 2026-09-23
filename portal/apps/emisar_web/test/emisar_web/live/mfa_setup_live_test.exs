@@ -8,9 +8,18 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   alias Emisar.{Accounts, Auth, Mail, Users}
 
   setup %{conn: conn} do
-    {_owner_conn, owner, account} = register_and_log_in(conn)
-    owner_subject = owner_subject(owner, account)
-    {_owner, _codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject)
+    {owner_conn, owner, account} = register_and_log_in(conn)
+    owner_token = get_session(owner_conn, :user_token)
+    {:ok, _user, owner_auth} = Auth.fetch_user_and_token_by_session_token(owner_token)
+    owner_subject = Fixtures.Subjects.subject_for(owner, account, session: owner_auth)
+
+    {:ok, owner, _codes} =
+      Fixtures.Users.enroll_mfa(Auth.generate_mfa_secret(), owner_subject,
+        session_token: owner_token
+      )
+
+    {:ok, _user, owner_auth} = Auth.fetch_user_and_token_by_session_token(owner_token)
+    owner_subject = Fixtures.Subjects.subject_for(owner, account, session: owner_auth)
 
     {:ok, account} =
       Accounts.update_account(
@@ -34,6 +43,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       conn: conn,
       user: user,
       owner: owner,
+      owner_subject: owner_subject,
       subject: Fixtures.Subjects.membership_subject(membership),
       account: account
     }
@@ -44,6 +54,69 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     account: account
   } do
     assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} = live(conn, ~p"/app/#{account}")
+  end
+
+  @tag :step_up_review
+  test "revocation between the MFA page GET and socket connection reaches recovery", %{
+    conn: conn,
+    user: user,
+    account: account,
+    owner_subject: owner_subject
+  } do
+    shown = get(conn, ~p"/app/mfa_setup")
+    assert html_response(shown, 200) =~ "authentication"
+    member = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    assert Accounts.end_all_sessions_for(member, owner_subject) == :ok
+    assert {:error, {:redirect, %{to: "/session/recover"}}} = live(shown)
+    assert html_response(get(shown, ~p"/session/recover"), 200) =~ "Choose how to continue"
+  end
+
+  for event <- [
+        "start_mfa",
+        "resend_mfa_enrollment_email",
+        "verify_mfa_enrollment_email",
+        "verify_totp",
+        "verify_recovery"
+      ] do
+    @event event
+    @tag :mfa_session_recovery
+    test "#{event} reauthenticates a revoked mounted browser through workspace sign-in", %{
+      conn: conn,
+      user: user,
+      account: account,
+      subject: subject
+    } do
+      if @event in ["verify_totp", "verify_recovery"] do
+        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+
+      params =
+        case @event do
+          event when event in ["resend_mfa_enrollment_email", "verify_mfa_enrollment_email"] ->
+            render_click(lv, "start_mfa", %{})
+            assert_received {:email, email}
+            %{"mfa_enrollment" => %{"code" => Fixtures.Auth.code_from_email(email)}}
+
+          "verify_totp" ->
+            %{"otp" => "000000"}
+
+          "verify_recovery" ->
+            %{"code" => "irrelevant-after-revocation"}
+
+          _ ->
+            %{}
+        end
+
+      before = Emisar.Repo.reload!(user)
+      assert Auth.delete_session_token(get_session(conn, :user_token)) == :ok
+      render_hook(lv, @event, params)
+      flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
+      assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
+      assert Emisar.Repo.reload!(user) == before
+      refute_received {:email, _}
+    end
   end
 
   test "enrolls in place: scan, confirm, save recovery codes, continue", %{
@@ -77,6 +150,13 @@ defmodule EmisarWeb.MfaSetupLiveTest do
              Auth.fetch_user_and_token_by_session_token(get_session(conn, :user_token))
 
     assert current_session.mfa_enrollment_verified_at == enrolled.mfa_enabled_at
+    assigns = :sys.get_state(lv.pid).socket.assigns
+    assert assigns.current_auth.local_mfa_expires_at == current_session.local_mfa_expires_at
+
+    assert assigns.current_auth.mfa_enrollment_verified_at ==
+             current_session.mfa_enrollment_verified_at
+
+    assert assigns.current_subject.mfa
 
     assert {:ok, sibling_user, sibling_session} =
              Auth.fetch_user_and_token_by_session_token(sibling_token)
@@ -371,7 +451,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
   test "an account that stops requiring MFA mid-flow sends the member to the dashboard", %{
     conn: conn,
-    owner: owner,
+    owner_subject: owner_subject,
     account: account
   } do
     # the interstitial exists only to enforce `require_mfa`.
@@ -382,7 +462,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       Accounts.update_account(
         account,
         %{settings: %{require_mfa: false}},
-        owner_subject(owner, account)
+        owner_subject
       )
 
     assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
@@ -405,6 +485,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
           role: "owner"
         )
 
+      conn = log_in_user(conn, user)
       assert {:ok, _lv, _html} = live(conn, ~p"/app/#{no_mfa}/runners")
     end
 
@@ -465,6 +546,8 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     account: account,
     subject: subject
   } do
+    Fixtures.Accounts.create_subscription(account, "team")
+
     {enrolled, [recovery_code | _]} =
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
@@ -504,6 +587,8 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert session.user_identity_id == identity.id
     assert session.mfa_verified_at == idp_verified_at
     assert session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
+    assert is_nil(session.personal_proved_at)
+    assert is_nil(session.personal_expires_at)
 
     assert {:ok, _dashboard, _html} = live(conn, ~p"/app/#{account}")
   end

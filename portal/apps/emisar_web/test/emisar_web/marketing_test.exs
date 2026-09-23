@@ -492,6 +492,8 @@ defmodule EmisarWeb.MarketingTest do
     # Deprovisioning suspends, never deletes (must match the built behavior).
     assert html =~ "suspends"
     refute html =~ "deletes the user"
+    assert squish(html) =~ "keys issued from that membership are revoked immediately"
+    assert squish(html) =~ "Independently proved access to other workspaces remains available"
     # Owner is never assignable via sync.
     assert html =~ "Owner is never assignable through"
     assert html =~ "Role mapping"
@@ -1989,6 +1991,16 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Require SSO"
       assert html =~ "SCIM directory sync"
       assert html =~ "Sessions and offboarding"
+      assert squish(html) =~ "Eligible workspaces are recorded at sign-in"
+
+      assert squish(html) =~
+               "does not add access merely because a membership or identity link was added later"
+
+      assert squish(html) =~ "unexpired personal email-link proof"
+      assert squish(html) =~ "complete SSO step-up before continuing"
+      assert squish(html) =~ "Independently proved access to other workspaces remains available"
+      refute html =~ "unavailable to SSO sessions"
+      refute html =~ "in SSO-only workspaces"
 
       for provider <- ["Okta", "Microsoft Entra", "JumpCloud", "Google Workspace", "Keycloak"] do
         assert html =~ provider
@@ -2014,9 +2026,21 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Require SSO for the account"
       assert html =~ "Rotate a client secret"
       assert html =~ "Disable or delete a connection"
+      assert html =~ "Other sign-in proof and access to other workspaces remain available"
+      assert html =~ "Re-enabling the connection does not restore retired proof"
       assert html =~ "Troubleshooting"
       assert html =~ "Restore sign-in"
       assert html =~ "The provider need not send an email for this recovery."
+      assert html =~ "owner browser with valid SSO proof for this workspace"
+      assert html =~ "An email-only session cannot change this setting while SSO is required"
+      assert html =~ "controls which hosts a new member can act on"
+      refute html =~ "can see and use"
+    end
+
+    test "team invitations explain fresh sign-in without expanding an old browser", %{conn: conn} do
+      html = conn |> get(~p"/docs/teams-and-access") |> html_response(200) |> squish()
+      assert html =~ "It does not add access to an existing browser session"
+      assert html =~ "accept the invitation, then sign out and sign in again"
     end
 
     test "the SCIM page publishes the wire and directory authorization contracts", %{conn: conn} do
@@ -2050,10 +2074,10 @@ defmodule EmisarWeb.MarketingTest do
 
     test "authentication docs expose review dates without a dead edit action", %{conn: conn} do
       review_dates = [
-        {"/docs/authentication", "September 22, 2026"},
-        {"/docs/teams-and-access", "September 22, 2026"},
-        {"/docs/sso", "September 22, 2026"},
-        {"/docs/scim", "September 22, 2026"}
+        {"/docs/authentication", "September 23, 2026"},
+        {"/docs/teams-and-access", "September 23, 2026"},
+        {"/docs/sso", "September 23, 2026"},
+        {"/docs/scim", "September 23, 2026"}
       ]
 
       for {route, date} <- review_dates do
@@ -2832,6 +2856,7 @@ defmodule EmisarWeb.MarketingTest do
       # Replacing an OIDC secret is not a session revocation; SCIM has no overlap.
       assert html =~ "Replacing the secret does not end existing sessions"
       assert html =~ "leaving API keys and OAuth credentials active"
+      assert html =~ "Other sign-in proof and access to other workspaces remain available"
       assert html =~ "Rotation replaces the bearer immediately with no overlap"
     end
 

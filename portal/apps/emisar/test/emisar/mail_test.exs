@@ -626,7 +626,8 @@ defmodule Emisar.MailTest do
         account: account
       }
 
-      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
+      args = Runs.project_authorized_account_args(run, subject.account.id)
+      UserNotifier.deliver_approval_request(member_for(subject), args, request, run)
 
       assert_email_sent(fn email ->
         assert email.subject =~ "Approval · caddy.reload_config"
@@ -653,7 +654,8 @@ defmodule Emisar.MailTest do
 
       request = %{id: "req-id-9", reason: "x", matched_rules: [], account: account}
 
-      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
+      args = Runs.project_authorized_account_args(run, subject.account.id)
+      UserNotifier.deliver_approval_request(member_for(subject), args, request, run)
 
       assert_email_sent(fn email ->
         assert email.text_body =~ "id #{String.slice(run.runner_id, 0, 8)}…"
@@ -677,7 +679,8 @@ defmodule Emisar.MailTest do
         context: %{"action_id" => "linux.uptime"}
       }
 
-      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
+      args = Runs.project_authorized_account_args(run, subject.account.id)
+      UserNotifier.deliver_approval_request(member_for(subject), args, request, run)
       assert_receive {:email, initial}
 
       root = "<approval.request.request-123.#{subject.membership_id}@emisar.dev>"
@@ -720,7 +723,8 @@ defmodule Emisar.MailTest do
         account: hostile_account
       }
 
-      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
+      args = Runs.project_authorized_account_args(run, subject.account.id)
+      UserNotifier.deliver_approval_request(member_for(subject), args, request, run)
 
       assert_email_sent(fn email ->
         refute email.subject =~ "\r"
@@ -781,7 +785,8 @@ defmodule Emisar.MailTest do
 
       request = %{id: "req-id-7", reason: "x", matched_rules: [], account: account}
 
-      UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
+      args = Runs.project_authorized_account_args(run, subject.account.id)
+      UserNotifier.deliver_approval_request(member_for(subject), args, request, run)
 
       assert_email_sent(fn email ->
         assert email.text_body =~ "(unavailable)"
@@ -860,9 +865,10 @@ defmodule Emisar.MailTest do
       persisted = Fixtures.Runs.create_run(account_id: account.id)
       {:ok, run} = Runs.fetch_run_by_id(persisted.id, subject, preload: [:runner])
       request = %{id: "r", reason: "x", matched_rules: [], account: account}
+      args = Runs.project_authorized_account_args(run, account.id)
 
       assert {:ok, %{suppressed: true}} =
-               UserNotifier.deliver_approval_request(member_for(subject), subject, request, run)
+               UserNotifier.deliver_approval_request(member_for(subject), args, request, run)
     end
   end
 

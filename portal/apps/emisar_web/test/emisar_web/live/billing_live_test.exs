@@ -68,8 +68,8 @@ defmodule EmisarWeb.BillingLiveTest do
   alias EmisarWeb.BillingIntent
   alias EmisarWeb.BillingLiveTest.InvoicePaddleClient
 
-  defp downgrade_to(user, role) when is_binary(role) do
-    {:ok, membership} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+  defp downgrade_to(user, account, role) when is_binary(role) do
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
     Fixtures.Memberships.force_role(membership, role)
   end
 
@@ -748,7 +748,7 @@ defmodule EmisarWeb.BillingLiveTest do
       user: user,
       account: account
     } do
-      downgrade_to(user, "admin")
+      downgrade_to(user, account, "admin")
       account = attach_customer(account, "ctm_admin_manage_01")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -771,7 +771,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # so the result is a permission flash and no portal redirect. (Customer
       # attached, to prove the gate — not the no-customer branch — is what
       # refuses.)
-      downgrade_to(user, "operator")
+      downgrade_to(user, account, "operator")
       account = attach_customer(account, "ctm_operator_manage_01")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -788,7 +788,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # The Manage-subscription button is gated on subject_can_manage_billing? AND a
       # customer being present. A viewer has a customer but not the permission, so
       # the button is suppressed (the manage-gated affordance never renders for them).
-      downgrade_to(user, "viewer")
+      downgrade_to(user, account, "viewer")
       account = attach_customer(account, "ctm_viewer_manage_01")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -810,7 +810,7 @@ defmodule EmisarWeb.BillingLiveTest do
       user: user,
       account: account
     } do
-      downgrade_to(user, "viewer")
+      downgrade_to(user, account, "viewer")
       attach_customer(account, "ctm_viewer_no_ledger")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -838,7 +838,7 @@ defmodule EmisarWeb.BillingLiveTest do
       user: user,
       account: account
     } do
-      downgrade_to(user, "viewer")
+      downgrade_to(user, account, "viewer")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -855,7 +855,7 @@ defmodule EmisarWeb.BillingLiveTest do
   describe "as an admin" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      downgrade_to(user, "admin")
+      downgrade_to(user, account, "admin")
       %{conn: conn, user: user, account: account}
     end
 
@@ -896,7 +896,7 @@ defmodule EmisarWeb.BillingLiveTest do
   describe "as an operator" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
-      downgrade_to(user, "operator")
+      downgrade_to(user, account, "operator")
       %{conn: conn, user: user, account: account}
     end
 
@@ -1233,7 +1233,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # gated on subject_can_manage_billing? — a viewer sees the nudge with no
       # Manage-billing button to act on.
       {conn, user, account} = register_and_log_in(conn)
-      downgrade_to(user, "viewer")
+      downgrade_to(user, account, "viewer")
       insert_subscription(account, "past_due")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")

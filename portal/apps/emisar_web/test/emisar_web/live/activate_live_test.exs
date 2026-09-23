@@ -193,6 +193,7 @@ defmodule EmisarWeb.ActivateLiveTest do
 
       {_device_code, user_code, _grant} = open_grant()
 
+      conn = conn |> log_in_user(user) |> put_session(:current_account_id, account.id)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
 
       assert has_element?(lv, "select#activate-account")

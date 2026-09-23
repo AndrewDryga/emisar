@@ -436,7 +436,12 @@ defmodule EmisarWeb.SSOControllerTest do
       assert get(reset.conn, path).status == 404
 
       show_conn = get(reset.conn, ~p"/app/#{reset.account}/settings/team")
-      csrf_token = Plug.CSRFProtection.get_csrf_token()
+
+      [csrf_token] =
+        show_conn.resp_body
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("meta[name='csrf-token']")
+        |> LazyHTML.attribute("content")
 
       assert_error_sent(403, fn ->
         reset.conn
@@ -446,6 +451,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       allowed =
         show_conn
+        |> recycle()
         |> Plug.Conn.put_private(:plug_skip_csrf_protection, false)
         |> post(path, %{"_csrf_token" => csrf_token})
 
@@ -791,14 +797,12 @@ defmodule EmisarWeb.SSOControllerTest do
       Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
 
       for purpose <- [:link, :verify_provider] do
-        link = identity_link_controller_fixture(conn, purpose: purpose)
         other_account = Fixtures.Accounts.create_account(plan: "enterprise")
 
-        _other_membership =
-          Fixtures.Memberships.create_membership(
-            account_id: other_account.id,
-            user_id: link.user.id,
-            role: "owner"
+        link =
+          identity_link_controller_fixture(conn,
+            purpose: purpose,
+            additional_account: other_account
           )
 
         wrong_account =
@@ -1067,7 +1071,7 @@ defmodule EmisarWeb.SSOControllerTest do
       assert request.recovery_identity_id == identity.id
       assert request.matched_membership_id == replacement.id
       assert is_nil(Repo.reload!(identity).membership_id)
-      assert Repo.aggregate(Auth.UserToken, :count) == 0
+      assert Auth.UserToken.Query.by_user_id(user.id) |> Repo.aggregate(:count) == 0
 
       page = conn |> recycle() |> get(~p"/sign_in/sso/pending") |> html_response(200)
       assert page =~ "must restore its"
@@ -1398,6 +1402,15 @@ defmodule EmisarWeb.SSOControllerTest do
 
   defp identity_link_controller_fixture(conn, opts \\ []) do
     {user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+
+    if additional_account = opts[:additional_account] do
+      Fixtures.Memberships.create_membership(
+        account_id: additional_account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+    end
+
     membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
     purpose = Keyword.get(opts, :purpose, :link)
     provider = provider_fixture(account, enabled: Keyword.get(opts, :enabled, true))

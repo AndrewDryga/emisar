@@ -6,24 +6,41 @@ defmodule Emisar.Seeds.Helpers do
   it is done.
   """
 
+  alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.Accounts.Account
   alias Emisar.ApiKeys
   alias Emisar.Auth
-  alias Emisar.Auth.Subject
+  alias Emisar.Auth.{SessionGrants, Subject, UserToken}
   alias Emisar.Billing
   alias Emisar.Billing.Subscription
   alias Emisar.Catalog.PackBaseline
+  alias Emisar.Crypto
   alias Emisar.Repo
+  alias Emisar.RequestContext
   alias Emisar.Runbooks.Runbook
   alias Emisar.Runners.Runner
   alias Emisar.Users
   alias Emisar.Users.User
 
-  @password "Sleep-tight-1234"
+  @session_ids_key {__MODULE__, :temporary_session_ids}
 
-  @doc "The password every screenshot persona signs in with."
-  def password, do: @password
+  @doc "Owns the synchronous seed's temporary credentials, including cleanup after a failed section."
+  def with_temporary_sessions(fun) do
+    previous = Process.put(@session_ids_key, [])
+
+    try do
+      fun.()
+    after
+      UserToken.Query.by_ids(Process.get(@session_ids_key))
+      |> UserToken.Query.by_context("session")
+      |> Repo.delete_all()
+
+      if is_nil(previous),
+        do: Process.delete(@session_ids_key),
+        else: Process.put(@session_ids_key, previous)
+    end
+  end
 
   @doc "Prints one progress line; every section ends with one."
   def say(message, color \\ IO.ANSI.cyan()) do
@@ -39,13 +56,13 @@ defmodule Emisar.Seeds.Helpers do
   @doc """
   Registers a persona, or converges a returning one: the display name, the
   confirmation, and any second factor a developer enrolled by hand (cleared so
-  the login walkthrough stays a password).
+  the login walkthrough uses an email code).
   """
   def ensure_persona(email, full_name) do
     case Users.fetch_user_by_email(email) do
       {:error, :not_found} ->
         {:ok, user} =
-          Users.register_user(%{full_name: full_name, email: email, password: @password})
+          Users.register_user(%{full_name: full_name, email: email})
 
         user |> confirm_user() |> clear_seeded_mfa()
 
@@ -72,7 +89,8 @@ defmodule Emisar.Seeds.Helpers do
 
   def clear_seeded_mfa(%User{} = user) do
     otp = NimbleTOTP.verification_code(user.mfa_secret)
-    {:ok, updated} = Auth.disable_mfa(otp, %Subject{actor: user})
+    session = temporary_session(user)
+    {:ok, updated} = Auth.disable_mfa(otp, %Subject{actor: user, session_token_id: session.id})
     updated
   end
 
@@ -88,6 +106,13 @@ defmodule Emisar.Seeds.Helpers do
     end
   end
 
+  @doc "Restores screenshot personas' email-sign-in baseline; never called for staff or ordinary accounts."
+  def reset_screenshot_sign_in_policy(%Account{} = account) do
+    account
+    |> Account.Changeset.update(%{settings: %{require_mfa: false, require_sso: false}})
+    |> Repo.update!()
+  end
+
   @doc "A reseed converges a renamed account back onto its persona."
   def ensure_account_name(%Account{name: name} = account, name, _subject), do: account
 
@@ -98,7 +123,33 @@ defmodule Emisar.Seeds.Helpers do
 
   @doc "The subject a standing member acts as inside the account."
   def subject_for(%Account{} = account, %User{} = member) do
-    Subject.for_user(member, account, Accounts.peek_sync_membership(account.id, member.id))
+    session = temporary_session(member)
+    {:ok, membership} = Accounts.fetch_membership_for_session(member, account.id, session)
+    options = Auth.session_subject_options(membership, session)
+    Subject.for_user(member, account, membership, %RequestContext{}, options)
+  end
+
+  # Only the local seeder uses fabricated proof. Production sign-in owns its
+  # factors. Persist the normal shape so domain gates and User audit attribution
+  # remain in force; never retain these credentials or delete somebody else's.
+  defp temporary_session(%User{} = user) do
+    ids = Process.get(@session_ids_key) || raise "seed sessions require with_temporary_sessions/1"
+    {_raw, digest} = Crypto.session_token()
+
+    {:ok, %{token: session}} =
+      Multi.new()
+      |> SessionGrants.put_personal_authority(user, nil)
+      |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(user.id, repo) end)
+      |> Multi.insert(:token, fn %{user: current} ->
+        UserToken.Changeset.session(current, digest, %{}, :magic_link, nil)
+      end)
+      |> Multi.run(:member_grants, fn repo, %{token: session} = changes ->
+        SessionGrants.insert_personal(repo, session, changes)
+      end)
+      |> Repo.commit_multi()
+
+    Process.put(@session_ids_key, [session.id | ids])
+    session
   end
 
   # Plan now lives on the account's subscription (no `accounts.plan` column) —

@@ -72,8 +72,8 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
 
   # Downgrade the logged-in owner to a viewer (same move team_live_test
   # uses). `register_and_log_in` always creates an owner.
-  defp downgrade_to_viewer(user) do
-    {:ok, m} = Emisar.Accounts.fetch_membership_for_session(user, nil, nil)
+  defp downgrade_to_viewer(user, account) do
+    m = Fixtures.Memberships.fetch_membership(account.id, user.id)
     Fixtures.Memberships.force_role(m, "viewer")
   end
 
@@ -123,7 +123,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       request = pending_request(account, user)
-      downgrade_to_viewer(user)
+      downgrade_to_viewer(user, account)
       %{conn: conn, account: account, request: request}
     end
 

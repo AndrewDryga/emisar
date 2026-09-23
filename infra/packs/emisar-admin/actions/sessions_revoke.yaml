@@ -3,8 +3,8 @@ id: emisar.admin.sessions.revoke
 title: Revoke member sessions
 kind: script
 risk: high
-description: Revoke all browser sessions for one member and disconnect active LiveViews.
-side_effects: [Signs the user out of every account because sessions are user-global.]
+description: End one member's existing browser access to the selected account.
+side_effects: [Disconnects affected LiveViews; independently proved access to other accounts remains available.]
 args:
   - name: account
     type: string

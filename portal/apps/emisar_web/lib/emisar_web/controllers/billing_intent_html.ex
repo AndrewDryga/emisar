@@ -46,7 +46,7 @@ defmodule EmisarWeb.BillingIntentHTML do
 
       <div class="mt-6 space-y-3">
         <.button
-          navigate={~p"/onboarding?billing_intent=#{@token}"}
+          href={~p"/onboarding?billing_intent=#{@token}"}
           variant={:secondary}
           class="w-full"
         >

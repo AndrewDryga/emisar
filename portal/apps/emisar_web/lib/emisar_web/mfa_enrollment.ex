@@ -60,24 +60,29 @@ defmodule EmisarWeb.MfaEnrollment do
   end
 
   @doc """
-  Carries a just-completed enrollment into the live socket's own authority.
-
-  Without this the page keeps rendering from the subject it mounted with, which
-  still says the member has no second factor — so a freshly enrolled operator
-  would be told to enrol again by the very page that just enrolled them.
+  Carries the persisted proof into the socket, preserving destination identity
+  and attenuated permissions. A revoked browser or concurrently changed factor
+  is refused before the caller reveals the returned recovery codes.
   """
   def assign_current_proof(socket, user) do
-    subject = %{
-      socket.assigns.current_subject
-      | actor: user,
-        mfa: true,
-        mfa_enrollment_verified_at: user.mfa_enabled_at
-    }
+    with {:ok, auth} <- Auth.fetch_current_session(socket.assigns.current_subject),
+         %DateTime{} = epoch <- Auth.session_mfa_enrollment_verified_at(auth.user, auth),
+         true <- epoch == user.mfa_enabled_at do
+      subject = %{
+        socket.assigns.current_subject
+        | actor: auth.user,
+          mfa: true,
+          mfa_enrollment_verified_at: epoch
+      }
 
-    auth = %{socket.assigns.current_auth | mfa_enrollment_verified_at: user.mfa_enabled_at}
-
-    socket
-    |> assign(:current_subject, subject)
-    |> assign(:current_auth, auth)
+      {:ok,
+       socket
+       |> assign(:current_user, auth.user)
+       |> assign(:current_subject, subject)
+       |> assign(:current_auth, auth)}
+    else
+      {:error, :unauthorized} -> {:error, :session_not_found}
+      _ -> {:error, :mfa_proof_stale}
+    end
   end
 end

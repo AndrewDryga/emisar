@@ -11,7 +11,7 @@ defmodule Emisar.SSO.SCIM do
   """
   import Emisar.SSO.Provisioning
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, Users}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, SSO, Users}
   alias Emisar.SSO.{DirectoryGroup, DirectoryGroupMember, GroupRoleMapping}
   alias Emisar.SSO.GroupRunnerAccessMapping
   alias Emisar.SSO.IdentityProvider
@@ -341,16 +341,21 @@ defmodule Emisar.SSO.SCIM do
         prepare_repost_identity(repo, locked_identity, external_id, state)
       end)
       |> Multi.merge(&reconcile_provisioned_membership_multi(&1, active, authorization))
-      |> Multi.run(:updated_identity, fn repo, %{adopted_identity: locked_identity} = changes ->
+      |> Multi.run(:identity_write, fn repo, %{adopted_identity: locked_identity} = changes ->
         with {:ok, identity} <- put_repost_identity_state(repo, locked_identity, active, state) do
           case {active, changes.membership_transition.membership} do
             {true, %Accounts.Membership{} = member} ->
-              identity |> UserIdentity.Changeset.bind_membership(member) |> repo.update()
+              identity
+              |> UserIdentity.Changeset.bind_membership(member)
+              |> SSO.update_identity_binding(repo)
 
             _ ->
-              {:ok, identity}
+              {:ok, %{identity: identity, socket_topics: []}}
           end
         end
+      end)
+      |> Multi.run(:updated_identity, fn _repo, %{identity_write: %{identity: identity}} ->
+        {:ok, identity}
       end)
       |> maybe_put_repost_authorization(authorization)
       |> Multi.run(:result, fn _repo, changes ->
@@ -533,10 +538,21 @@ defmodule Emisar.SSO.SCIM do
   defp maybe_put_repost_authorization(multi, _authorization), do: multi
 
   defp repost_effects(changes) do
+    Auth.disconnect_live_socket_topics(changes.identity_write.socket_topics)
+
     case changes.membership_transition.effect do
-      {:suspended, membership} -> :ok = Accounts.membership_suspended_effects(membership)
-      {:reinstated, membership} -> :ok = Accounts.membership_reinstated_effects(membership)
-      nil -> :ok
+      {:suspended, membership} ->
+        :ok =
+          Accounts.membership_suspended_effects(
+            membership,
+            changes.lifecycle_credential_revocation.sessions.socket_topics
+          )
+
+      {:reinstated, membership} ->
+        :ok = Accounts.membership_reinstated_effects(membership)
+
+      nil ->
+        :ok
     end
 
     if Map.has_key?(changes, :target) do
@@ -760,7 +776,7 @@ defmodule Emisar.SSO.SCIM do
       end)
       |> Multi.merge(&put_deleted_scim_authorization/1)
       |> Multi.run(:identity_sessions, fn repo, %{identity: identity} ->
-        Auth.delete_identity_session_tokens(identity.user_id, [identity.id], repo)
+        Auth.delete_identity_session_routes([identity.id], repo)
       end)
       |> Multi.run(:deleted_identity, fn repo,
                                          %{

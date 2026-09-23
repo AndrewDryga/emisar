@@ -45,6 +45,8 @@ defmodule Emisar.SSO.IdentityProvider.Query do
 
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 
+  def ordered_by_id(queryable), do: order_by(queryable, [providers: p], asc: p.id)
+
   # Rows whose SCIM last-seen is stale (never set, or older than `cutoff`) — the
   # throttle for stamping `scim_last_seen_at` so a sync burst writes at most once
   # per window instead of once per request.

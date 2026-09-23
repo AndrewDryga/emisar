@@ -1,29 +1,12 @@
 defmodule Emisar.Auth.CurrentSubject do
   @moduledoc false
 
-  alias Emisar.{Accounts, ApiKeys, Repo, Users}
+  alias Emisar.{Accounts, ApiKeys, Repo}
   alias Emisar.Auth.{Permissions, Subject}
 
   # Auth.fetch_current_subject/2 checks the caller's snapshot permissions first.
   # These existing context lookups own the active-account and identity queries;
   # this module only binds their results to the authenticated subject.
-  def fetch(
-        %Subject{
-          account: %Accounts.Account{id: account_id},
-          actor: %Users.User{id: user_id} = user,
-          membership_id: membership_id
-        } = subject
-      ) do
-    with true <- valid_ids?([account_id, user_id, membership_id]),
-         {:ok, %Accounts.Membership{id: ^membership_id} = membership} <-
-           Accounts.fetch_membership_by_account_id_or_slug(user, account_id, subject) do
-      role = Subject.effective_membership_role(membership)
-      {:ok, refreshed(subject, membership.account, membership.user, role)}
-    else
-      _ -> {:error, :unauthorized}
-    end
-  end
-
   def fetch(
         %Subject{
           account: %Accounts.Account{id: account_id},
@@ -37,11 +20,7 @@ defmodule Emisar.Auth.CurrentSubject do
          true <- key_binding(key) == key_binding(snapshot_key),
          true <- Repo.valid_uuid?(key.created_by_id),
          {:ok, %Accounts.Membership{id: ^membership_id} = membership} <-
-           Accounts.fetch_membership_by_account_id_or_slug(
-             %Users.User{id: key.created_by_id},
-             account_id,
-             nil
-           ) do
+           Accounts.fetch_api_key_membership(key) do
       {:ok, refreshed(subject, membership.account, key, :api_client)}
     else
       _ -> {:error, :unauthorized}

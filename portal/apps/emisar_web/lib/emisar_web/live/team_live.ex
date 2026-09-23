@@ -631,7 +631,7 @@ defmodule EmisarWeb.TeamLive do
   def handle_event("end_sessions", %{"membership_id" => id}, socket) do
     with_membership(socket, id, fn membership ->
       case Accounts.end_all_sessions_for(membership, socket.assigns.current_subject) do
-        :ok -> {:ok, "All sessions ended for that user."}
+        :ok -> {:ok, "This member's sessions in this workspace ended."}
         {:error, reason} -> {:error, MemberErrors.message(reason)}
       end
     end)
@@ -1316,7 +1316,7 @@ defmodule EmisarWeb.TeamLive do
   defp open_member_action_dialog(_pending), do: open_confirm("member-action")
 
   defp member_action_title(%{action: "suspend"}), do: "Suspend this member's access?"
-  defp member_action_title(%{action: "end_sessions"}), do: "End all sessions for this member?"
+  defp member_action_title(%{action: "end_sessions"}), do: "End this member's workspace sessions?"
   defp member_action_title(%{action: "remove"}), do: "Remove from team"
 
   defp member_action_label(%{action: "suspend"}), do: "Suspend access"
@@ -2026,7 +2026,7 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp approval_error_message(:link_target_in_other_accounts) do
-    "That email belongs to someone who is also a member of another workspace. Linking here would give this connection's sign-in their access there too, so it can't be approved from this workspace."
+    "That person also belongs to another workspace, so this link cannot be approved from this workspace."
   end
 
   defp approval_error_message(:email_taken) do
@@ -3027,13 +3027,21 @@ defmodule EmisarWeb.TeamLive do
                 on_confirm={confirm_member_action(@pending_member_action)}
               >
                 <:body>
+                  <% membership = @pending_member_action.facts.membership %>
                   <%= case @pending_member_action.action do %>
                     <% "suspend" -> %>
-                      {RoleCopy.suspend_body()}
+                      {RoleCopy.suspend_body(
+                        Accounts.member_display_name(membership) || membership.id
+                      )}
                     <% "end_sessions" -> %>
-                      Signs this member out on all devices.
+                      Ends browser access to this workspace for
+                      <span class="font-medium">
+                        {Accounts.member_display_name(membership) || membership.id}
+                      </span>
+                      on all devices.
+                      Access to other workspaces is unchanged.
                     <% "remove" -> %>
-                      <% membership = @pending_member_action.facts.membership %> Permanently removes
+                      Permanently removes
                       <span class="font-medium text-rose-100">
                         {Accounts.member_display_name(membership) || "this member"}
                       </span>

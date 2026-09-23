@@ -189,7 +189,8 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
         render(view)
       end)
 
-    assert length(queries) == 1
+    assert length(queries) == 2
+    assert Enum.count(queries, &String.contains?(&1, "auth_member_grant_routes")) == 1
     refreshed = :sys.get_state(view.pid).socket.assigns
     assert refreshed.current_subject == original.current_subject
     assert refreshed.current_membership.runner_access_mode == :none

@@ -1341,38 +1341,46 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert html =~ "NeverBot"
     end
 
-    test "a tick polls visible usage once and recomputes activity without a full reload", %{
-      conn: conn
-    } do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
-      {:ok, _raw, key} = ApiKeys.create_key(%{name: "PollingBot"}, subject)
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
-      assert html =~ "never used"
+    for key_count <- [1, 8] do
+      test "a tick polls #{key_count} visible keys once without per-row authorization reads", %{
+        conn: conn
+      } do
+        {conn, user, account} = register_and_log_in(conn)
+        subject = owner_subject(user, account)
+        {:ok, _raw, key} = ApiKeys.create_key(%{name: "PollingBot"}, subject)
 
-      test_pid = self()
-      handler = make_ref()
+        for index <- 1..unquote(key_count), index > 1 do
+          {:ok, _raw, _key} = ApiKeys.create_key(%{name: "PollingBot#{index}"}, subject)
+        end
 
-      :telemetry.attach(
-        handler,
-        [:emisar, :repo, :query],
-        fn _event, _measurements, _metadata, _config ->
-          send(test_pid, {:repo_query, self()})
-        end,
-        nil
-      )
+        {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
+        assert html =~ "never used"
 
-      on_exit(fn -> :telemetry.detach(handler) end)
+        test_pid = self()
+        handler = make_ref()
 
-      key
-      |> Ecto.Changeset.change(last_used_at: DateTime.utc_now())
-      |> Repo.update!()
+        :telemetry.attach(
+          handler,
+          [:emisar, :repo, :query],
+          fn _event, _measurements, _metadata, _config ->
+            send(test_pid, {:repo_query, self()})
+          end,
+          nil
+        )
 
-      send(lv.pid, :tick)
-      html = render(lv)
+        on_exit(fn -> :telemetry.detach(handler) end)
 
-      assert html =~ "active"
-      assert drain_repo_query_count(lv.pid) == 1
+        key
+        |> Ecto.Changeset.change(last_used_at: DateTime.utc_now())
+        |> Repo.update!()
+
+        send(lv.pid, :tick)
+        html = render(lv)
+
+        assert html =~ "active"
+        # One exact live grant read and one batched usage read, regardless of rows.
+        assert drain_repo_query_count(lv.pid) == 2
+      end
     end
 
     test "custom-key form shows validation errors inline on the field, not in a flash",

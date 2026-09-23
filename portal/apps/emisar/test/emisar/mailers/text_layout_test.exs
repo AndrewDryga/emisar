@@ -162,7 +162,8 @@ defmodule Emisar.Mailers.TextLayoutTest do
       account: account
     }
 
-    UserNotifier.deliver_approval_request(membership, subject, request, run)
+    args = Runs.project_authorized_account_args(run, account.id)
+    UserNotifier.deliver_approval_request(membership, args, request, run)
     sent_text_body()
   end
 

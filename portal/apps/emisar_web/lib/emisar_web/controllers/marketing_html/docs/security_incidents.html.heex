@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="security-incidents"
-      updated="August 22, 2026"
+      updated="September 23, 2026"
       toc={[
         {"sequence", "The sequence, every time"},
         {"evidence", "Preserve this before you clean up"},
@@ -445,10 +445,11 @@
               href={~p"/app/sso"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Team → Single sign-on</a>. Complete a real sign-in, then remove the old provider
-            secret. Replacing the secret does not end existing sessions — to end them, disable
-            or delete the connection, which revokes the sessions it authenticated while
-            leaving API keys and OAuth credentials active. Neither action suspends or deletes
-            members.
+            secret. Replacing the secret does not end existing sessions. To remove the
+            connection's existing sign-in proof for this workspace and stop new sign-ins,
+            disable or delete it, leaving API keys and OAuth credentials active. Other
+            sign-in proof and access to other workspaces remain available. Neither action
+            suspends or deletes members.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

@@ -1,6 +1,6 @@
 defmodule EmisarWeb.AcceptInvitationLiveTest do
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Accounts
+  alias Emisar.{Accounts, Auth}
 
   # Mints a pending invitation and returns its token. The invitee is a
   # brand-new email (anonymous-accept flow), so the accept page renders
@@ -272,10 +272,11 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       %{owner: owner, account: account}
     end
 
-    test "the invitee accepts in place and lands in the invited account", %{
-      owner: owner,
-      account: account
-    } do
+    test "HTTP acceptance preserves existing proof and opens the new workspace after fresh sign-in",
+         %{
+           owner: owner,
+           account: account
+         } do
       # The invitee is already signed in to a different account. Accepting must
       # target the invitation instead of following the stale account session.
       invitee = Fixtures.Users.create_user()
@@ -297,16 +298,52 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
           owner_subject(owner, account)
         )
 
-      {:ok, lv, html} =
+      signed_in =
         build_conn()
         |> log_in_user(invitee)
         |> put_session(:current_account_id, old_account.id)
-        |> live(~p"/accept_invitation/#{token}")
+
+      {:ok, lv, html} = live(signed_in, ~p"/accept_invitation/#{token}")
 
       assert html =~ "You&#39;re signed in as"
+      assert has_element?(lv, "#accept_existing_form[action='/accept_invitation/#{token}']")
+      raw = get_session(signed_in, :user_token)
+      other = log_in_user(build_conn(), invitee)
+      other_raw = get_session(other, :user_token)
+      shown = get(signed_in, ~p"/accept_invitation/#{token}")
 
-      render_click(lv, "accept_existing", %{})
-      assert_redirect(lv, "/app/#{account.slug}")
+      [csrf] =
+        shown.resp_body
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("#accept_existing_form input[name='_csrf_token']")
+        |> LazyHTML.attribute("value")
+
+      protected = shown |> recycle() |> put_private(:plug_skip_csrf_protection, false)
+      assert_error_sent(403, fn -> post(protected, ~p"/accept_invitation/#{token}", %{}) end)
+      assert {:ok, _pending} = Accounts.fetch_invitation_by_token(token)
+      accepted = post(protected, ~p"/accept_invitation/#{token}", %{_csrf_token: csrf})
+      assert redirected_to(accepted) == ~p"/session/recover"
+      assert get_session(accepted, :user_token) == raw
+      assert html_response(get(accepted, ~p"/session/recover"), 200) =~ "Invitation accepted"
+      assert html_response(get(accepted, ~p"/app/#{old_account}"), 200)
+
+      for existing <- [raw, other_raw] do
+        assert {:ok, _, session} = Auth.fetch_user_and_token_by_session_token(existing)
+
+        assert Accounts.fetch_membership_by_account_id_or_slug(invitee, account.id, session) ==
+                 {:error, :not_found}
+      end
+
+      replayed = post(accepted, ~p"/accept_invitation/#{token}", %{_csrf_token: csrf})
+      assert redirected_to(replayed) == ~p"/accept_invitation/#{token}"
+
+      restarted = post(accepted, ~p"/session/recover", %{_csrf_token: csrf})
+      assert redirected_to(restarted) == ~p"/sign_in"
+      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(other_raw)
+      fresh = restarted |> recycle() |> log_in_user(invitee)
+      assert html_response(get(fresh, ~p"/app/#{account}"), 200)
+      assert html_response(get(fresh, ~p"/app/#{old_account}"), 200)
 
       # Accepted: the token is burned.
       assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
@@ -328,14 +365,16 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
           owner_subject(owner, account)
         )
 
-      {:ok, lv, _html} =
-        build_conn() |> log_in_user(invitee) |> live(~p"/accept_invitation/#{token}")
+      signed_in = build_conn() |> log_in_user(invitee)
+      {:ok, _lv, _html} = live(signed_in, ~p"/accept_invitation/#{token}")
 
       # An admin revokes the invitation while the invitee's tab sits open.
       {:ok, membership} = Accounts.fetch_invitation_by_token(token)
       Fixtures.Memberships.mark_membership_as_deleted(membership)
 
-      html = render_click(lv, "accept_existing", %{})
+      rejected = post(signed_in, ~p"/accept_invitation/#{token}", %{})
+      assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
+      html = rejected |> get(~p"/accept_invitation/#{token}") |> html_response(200)
 
       assert html =~ "Invitation unavailable"
       assert html =~ "Go to sign in"
@@ -355,7 +394,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       assert html =~ "Sign in with your invited email"
       assert html =~ "Sign out"
-      refute html =~ "phx-click=\"accept_existing\""
+      refute html =~ "accept_existing_form"
     end
 
     test "a signed-in stranger cannot burn the invitation with a crafted accept", %{
@@ -373,6 +412,11 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       # the gate: the anonymous branch would otherwise provision the invitee
       # and write the bystander's name onto the invited membership.
       render_click(lv, "accept", %{"member" => %{"display_name" => "Bystander"}})
+
+      for attempted <- [build_conn(), log_in_user(build_conn(), bystander)] do
+        rejected = post(attempted, ~p"/accept_invitation/#{token}", %{})
+        assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
+      end
 
       assert {:ok, _still_pending} = Accounts.fetch_invitation_by_token(token)
       assert Emisar.Repo.reload!(pending_membership.user).full_name == nil

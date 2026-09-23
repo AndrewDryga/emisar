@@ -1,7 +1,7 @@
 ---
 name: security-model
 sources: [runner/internal/engine, runner/internal/admission, runner/internal/validation, runner/internal/redact, runner/internal/packs, runner/internal/attest, portal/apps/emisar/lib/emisar/auth/authorizer.ex, portal/apps/emisar/lib/emisar/policies.ex, portal/apps/emisar/lib/emisar/runs.ex, portal/apps/emisar/lib/emisar/runners/runner.ex]
-updated: 2026-09-17
+updated: 2026-09-23
 ---
 
 # Security model
@@ -169,7 +169,7 @@ its actions from itself:
 | LLM passes unexpected arguments          | Unknown args rejected; declared schema enforced on runner.     |
 | Cloud bug sends bogus opts (huge timeout)| Opts clamped to action min/max.                               |
 | LLM tries to read /etc/shadow            | Path arg `allowed_prefixes`/`allowed_paths` confine it to the intended location (`denied_*` only carves extra exclusions out of that allowlist, and alone admits every unnamed path); the runner's own config/state roots are refused whatever the pack declares; OS perms still apply. |
-| A customer's identity provider asserts an email it does not own | Users are global rows keyed by email, and a provider may JIT- or SCIM-create one for any address it asserts as verified. The session such a provider mints is authority only in the accounts that federate with that same IdP identity: every pre-auth membership resolver, the workspace switcher, and the switch itself scope an `:sso` session to the accounts where the same user holds a live identity under an enabled provider with the same issuer (the org running several workspaces on one IdP), so whoever runs that IdP inherits nothing the person joins or creates elsewhere — a workspace joined by email or a different IdP, or one that turned that SSO off, is out of reach. A magic-link session — proof of the person's own inbox — reaches all of their memberships. Creating a new workspace needs an email session: a fresh workspace has no provider to federate with. |
+| A customer's identity provider asserts an email it does not own | Browser authority comes from persisted grants for exact Memberships and independently aged proof routes. Sign-in records eligible personal or same-issuer SSO destinations; membership and identity reads never add authority. Member revocation and provider retirement remove only the affected workspace proof. Personal controls and workspace creation require live independent mailbox proof on the exact browser; SSO step-up can preserve but cannot create or renew that proof. Authorized workspace creation explicitly grants only the newly created owner Membership. Remaining limitation: Users are still global email-keyed rows, and JIT/SCIM can create one from an IdP assertion; optional personal links are not implemented yet. |
 | Action reads the runner's own secrets through `/proc` | The daemon is non-dumpable (`PR_SET_DUMPABLE=0`), so `/proc/<runner pid>/environ` (runner.env) and `mem` (the bearer token) are root-owned and refuse same-user ptrace whatever the Yama scope, and the runner's own `/proc/<pid>` tree is a protected root for every path argument. Other pids stay inspectable. |
 | Output contains a stray bearer token     | Default + per-action redaction rules; size caps.              |
 | Runaway process                          | Timeouts enforced via `context.WithTimeout`.                  |

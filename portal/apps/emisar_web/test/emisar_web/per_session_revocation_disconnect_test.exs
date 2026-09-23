@@ -43,11 +43,10 @@ defmodule EmisarWeb.PerSessionRevocationDisconnectTest do
   test "a foreign session id emits no disconnect and leaves its token live", %{
     subject: subject
   } do
-    {other_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+    other_user = Fixtures.Users.create_user()
     other_token = Fixtures.Auth.create_session_token!(other_user, :magic_link, nil)
 
-    assert {:ok, [other_session], _metadata} =
-             Auth.list_sessions_for_user(nil, %{other_subject | auth_method: :magic_link})
+    assert {:ok, _user, other_session} = Auth.fetch_user_and_token_by_session_token(other_token)
 
     other_topic = Auth.live_socket_topic_for_session(other_token)
     EmisarWeb.Endpoint.subscribe(other_topic)
@@ -61,17 +60,13 @@ defmodule EmisarWeb.PerSessionRevocationDisconnectTest do
 
   test "a rolled-back revocation emits no disconnect and preserves the token", %{
     user: user,
-    account: account
+    subject: subject
   } do
     token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-    subject =
-      Fixtures.Subjects.subject_for(user, account,
-        auth_method: :magic_link,
-        context: %RequestContext{request_id: %{invalid: true}}
-      )
+    subject = %{subject | context: %RequestContext{request_id: %{invalid: true}}}
 
-    assert {:ok, [session], _metadata} = Auth.list_sessions_for_user(nil, subject)
+    assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
     topic = Auth.live_socket_topic_for_session(token)
     EmisarWeb.Endpoint.subscribe(topic)
 

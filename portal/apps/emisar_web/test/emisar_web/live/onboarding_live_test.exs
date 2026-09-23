@@ -1,30 +1,55 @@
 defmodule EmisarWeb.OnboardingLiveTest do
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Auth, Repo}
+  alias Emisar.{Accounts, Audit, Auth, Repo}
   alias Emisar.Accounts.Membership
   alias EmisarWeb.BillingIntent
 
   describe "workspace creation" do
-    test "an 80-char name is accepted and arms the switch POST", %{conn: conn} do
-      # (upper bound) — the account name's max is 80; a name at
-      # that boundary creates the workspace and arms the hidden POST to
-      # AccountSwitchController (phx-trigger-action) that pins the new tenant.
+    test "creation requires the rendered CSRF token", %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/onboarding")
+      shown = get(conn, ~p"/onboarding")
 
-      name = String.duplicate("a", 80)
-      html = lv |> form("#onboarding_form", %{"account" => %{"name" => name}}) |> render_submit()
+      [csrf] =
+        shown.resp_body
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("meta[name='csrf-token']")
+        |> LazyHTML.attribute("content")
 
-      assert html =~ "phx-trigger-action"
-      assert html =~ ~s|action="/app/accounts/switch"|
+      assert_error_sent(403, fn ->
+        conn
+        |> put_private(:plug_skip_csrf_protection, false)
+        |> post(~p"/onboarding", account: %{name: "Forged Create"})
+      end)
 
-      names =
-        Accounts.Account.Query.not_deleted() |> Repo.all() |> Enum.map(& &1.name)
+      assert Repo.aggregate(Accounts.Account, :count) == 1
 
-      assert name in names
+      created =
+        shown
+        |> recycle()
+        |> put_private(:plug_skip_csrf_protection, false)
+        |> post(~p"/onboarding", account: %{name: "Proved Create"}, _csrf_token: csrf)
+
+      assert redirected_to(created) == ~p"/app/proved-create"
     end
 
-    test "an SSO session cannot create a workspace — it signs in with email first", %{conn: conn} do
+    test "an 80-char name arms HTTP submission without creating anything in the socket", %{
+      conn: conn
+    } do
+      {conn, _user, _account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/onboarding")
+      name = String.duplicate("a", 80)
+      html = lv |> form("#onboarding_form", account: %{name: name}) |> render_submit()
+
+      assert html =~ "phx-trigger-action"
+      assert html =~ ~s(action="/onboarding")
+      assert Repo.aggregate(Accounts.Account, :count) == 1
+
+      created = post(conn, ~p"/onboarding", account: %{name: name})
+      assert redirected_to(created) =~ "/app/"
+      assert html_response(get(created, redirected_to(created)), 200) =~ name
+    end
+
+    test "SSO without personal proof reaches recovery without creating a workspace", %{conn: conn} do
       {_conn, user, account} = register_and_log_in(conn)
       Fixtures.Accounts.maybe_seed_plan(account, "team")
       provider = Fixtures.SSO.create_identity_provider(%{account_id: account.id, name: "Okta"})
@@ -42,96 +67,90 @@ defmodule EmisarWeb.OnboardingLiveTest do
         )
 
       sso_conn = build_conn() |> init_test_session(%{}) |> put_session(:user_token, token)
-      {:ok, lv, _html} = live(sso_conn, ~p"/onboarding")
+      before = Repo.aggregate(Accounts.Account, :count)
 
-      before = Accounts.Account.Query.not_deleted() |> Repo.aggregate(:count)
+      assert redirected_to(get(sso_conn, ~p"/onboarding")) ==
+               ~p"/session/recover?reason=personal_required"
 
-      {:ok, _conn} =
-        lv
-        |> form("#onboarding_form", %{"account" => %{"name" => "Second Workspace"}})
-        |> render_submit()
-        |> follow_redirect(sso_conn, ~p"/sign_in")
+      refused = post(sso_conn, ~p"/onboarding", account: %{name: "Second Workspace"})
 
-      assert Accounts.Account.Query.not_deleted() |> Repo.aggregate(:count) == before
+      assert redirected_to(refused) == ~p"/session/recover?reason=personal_required"
+      recovery = refused |> get(redirected_to(refused)) |> html_response(200)
+      assert recovery =~ "Sign out and sign in by email to create a workspace"
+      refute recovery =~ "Something went wrong"
+      assert Repo.aggregate(Accounts.Account, :count) == before
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(token)
     end
 
-    test "a name colliding with an existing slug is deduped, both coexist", %{conn: conn} do
-      # `suggest_unique_slug` appends a counter when the base
-      # slug is taken, so a second workspace named identically to an existing one
-      # gets a distinct slug; both accounts survive.
+    test "anonymous and revoked browsers cannot create a workspace", %{conn: conn} do
+      assert redirected_to(post(conn, ~p"/onboarding", account: %{name: "Anonymous"})) ==
+               ~p"/sign_in"
+
+      refute Repo.exists?(Accounts.Account)
+
+      {conn, _user, _account} = register_and_log_in(build_conn())
+      Auth.delete_session_token(get_session(conn, :user_token))
+
+      assert redirected_to(post(conn, ~p"/onboarding", account: %{name: "Revoked"})) ==
+               ~p"/sign_in"
+
+      assert Repo.aggregate(Accounts.Account, :count) == 1
+    end
+
+    test "expired personal proof cannot create a workspace while its bearer survives", %{
+      conn: conn
+    } do
+      {conn, _user, _account} = register_and_log_in(conn)
+      raw = get_session(conn, :user_token)
+      Fixtures.Auth.expire_session_independent_proofs!(raw)
+
+      assert redirected_to(get(conn, ~p"/onboarding")) ==
+               ~p"/session/recover?reason=personal_required"
+
+      refused = post(conn, ~p"/onboarding", account: %{name: "Expired"})
+
+      assert redirected_to(refused) == ~p"/session/recover?reason=personal_required"
+      assert Repo.aggregate(Accounts.Account, :count) == 1
+      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(raw)
+    end
+
+    test "a colliding slug is deduped and both workspaces coexist", %{conn: conn} do
       {conn, _user, existing} =
         register_and_log_in(conn, %{account: %{name: "Collide Co", slug: "collide-co"}})
 
-      {:ok, lv, _html} = live(conn, ~p"/onboarding")
+      created = post(conn, ~p"/onboarding", account: %{name: "Collide Co"})
+      assert redirected_to(created) =~ "/app/"
 
-      lv
-      |> form("#onboarding_form", %{"account" => %{"name" => "Collide Co"}})
-      |> render_submit()
-
-      slugs =
-        Accounts.Account.Query.not_deleted()
-        |> Repo.all()
-        |> Enum.filter(&(&1.name == "Collide Co"))
-        |> Enum.map(& &1.slug)
-
+      slugs = Accounts.Account.Query.not_deleted() |> Repo.all() |> Enum.map(& &1.slug)
       assert length(slugs) == 2
       assert existing.slug in slugs
       assert Enum.uniq(slugs) == slugs
     end
 
-    test "a name over 80 chars renders the length error inline on the field", %{conn: conn} do
-      # the derived slug is truncated to fit, but the account
-      # NAME validation (max 80) fails, so `create_account_with_owner` returns a
-      # changeset error and the LV re-renders it inline on the name field (no create).
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/onboarding")
+    test "a transaction failure retains the name and plan with no partial account", %{conn: conn} do
+      {conn, user, _account} = register_and_log_in(conn)
+      user |> Ecto.Changeset.change(email: "invalid-fixture-address") |> Repo.update!()
+      token = BillingIntent.sign("team", :year)
 
-      name = String.duplicate("x", 81)
-      html = lv |> form("#onboarding_form", %{"account" => %{"name" => name}}) |> render_submit()
+      failed =
+        post(conn, ~p"/onboarding", account: %{name: "Unsaved Workspace"}, billing_intent: token)
 
-      assert html =~ "should be at most 80 character"
-      refute html =~ "phx-trigger-action=\"true\""
-    end
-
-    test "a name whose derived slug is too short renders the slug error inline", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/onboarding")
-
-      html = lv |> form("#onboarding_form", %{"account" => %{"name" => "x"}}) |> render_submit()
-
-      assert html =~ "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars"
-      assert html =~ ~s(value="x")
-      refute html =~ "phx-trigger-action=\"true\""
-    end
-
-    test "an unexpected transaction error keeps the typed name and reports the failure", %{
-      conn: conn
-    } do
-      {conn, _user, _account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/onboarding")
-
-      :sys.replace_state(lv.pid, &put_in(&1.socket.assigns.current_user.id, nil))
-
-      html =
-        lv
-        |> form("#onboarding_form", %{"account" => %{"name" => "Unsaved Workspace"}})
-        |> render_submit()
+      html = html_response(failed, 422)
 
       assert html =~ "Couldn&#39;t create this workspace. Try again."
       assert html =~ ~s(value="Unsaved Workspace")
-      refute html =~ "phx-trigger-action=\"true\""
+      assert html =~ ~s(name="billing_intent" value="#{token}")
+      assert Repo.aggregate(Accounts.Account, :count) == 1
     end
 
-    test "the creator becomes owner of ONLY the new account (no privilege spill)", %{conn: conn} do
-      # creating a workspace makes the user its :owner and
-      # nothing more: their membership set gains exactly one owner row for the new
-      # account, leaving their existing memberships untouched.
+    test "creates only the new owner seat and audits its switch, ignoring a supplied account", %{
+      conn: conn
+    } do
       {conn, user, first} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/onboarding")
+      foreign = Fixtures.Accounts.create_account()
 
-      lv
-      |> form("#onboarding_form", %{"account" => %{"name" => "Fresh Workspace"}})
-      |> render_submit()
+      created =
+        post(conn, ~p"/onboarding", account: %{name: "Fresh Workspace"}, account_id: foreign.id)
 
       memberships =
         Membership.Query.not_deleted()
@@ -141,199 +160,125 @@ defmodule EmisarWeb.OnboardingLiveTest do
 
       new = Enum.find(memberships, &(&1.account.name == "Fresh Workspace"))
       assert new.role == :owner
-      # The pre-existing account is still owned, unchanged — no spill either way.
       assert Enum.find(memberships, &(&1.account_id == first.id)).role == :owner
-      assert Enum.count(memberships, &(&1.account.name == "Fresh Workspace")) == 1
+      assert length(memberships) == 2
+      assert get_session(created, :current_account_id) == new.account_id
+      assert redirected_to(created) == ~p"/app/#{new.account}"
+
+      [event] =
+        Audit.Event.Query.all()
+        |> Audit.Event.Query.by_account_id(new.account_id)
+        |> Repo.all()
+        |> Enum.filter(&(&1.event_type == "session.account_switched"))
+
+      assert event.actor_id == user.id
     end
   end
 
-  describe "no-membership entry + tenant pinning" do
+  describe "memberless entry and billing choice" do
     test "a memberless user can sign out without creating a workspace", %{conn: conn} do
-      user = Fixtures.Users.create_user(confirmed?: false)
-      conn = log_in_user(conn, user)
-      token = Plug.Conn.get_session(conn, :user_token)
+      conn = log_in_user(conn, Fixtures.Users.create_user(confirmed?: false))
+      token = get_session(conn, :user_token)
       {:ok, lv, _html} = live(conn, ~p"/onboarding")
-
       assert has_element?(lv, "a[href='/sign_out'][data-method=delete]", "Sign out")
 
-      conn = delete(conn, ~p"/sign_out")
-
-      assert redirected_to(conn) == "/"
-      refute Plug.Conn.get_session(conn, :user_token)
+      signed_out = delete(conn, ~p"/sign_out")
+      assert redirected_to(signed_out) == "/"
+      refute get_session(signed_out, :user_token)
       assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
       refute Repo.exists?(Membership)
     end
 
-    test "a no-membership user landing on /app is routed to onboarding to create a workspace", %{
-      conn: conn
-    } do
-      # a confirmed user with no membership (and not fully
-      # suspended) who hits the app isn't 404'd or logged out: `require_authenticated_user`
-      # → `assign_current_account` (the nil-ref branch) steers them to /onboarding,
-      # and the page renders the create-workspace form so they can self-serve.
-      user = Fixtures.Users.create_user()
-      conn = log_in_user(conn, user)
-
+    test "a memberless browser reaches onboarding and opens its new workspace", %{conn: conn} do
+      conn = log_in_user(conn, Fixtures.Users.create_user())
       assert redirected_to(get(conn, ~p"/app")) == ~p"/onboarding"
-
-      {:ok, lv, html} = live(conn, ~p"/onboarding")
-      state = :sys.get_state(lv.pid)
-
-      assert state.socket.assigns.current_user.id == user.id
+      {:ok, _lv, html} = live(conn, ~p"/onboarding")
       assert html =~ "Create your workspace"
-      assert html =~ "onboarding_form"
+
+      created = post(conn, ~p"/onboarding", account: %{name: "First Workspace"})
+      assert redirected_to(created) == ~p"/app/first-workspace"
+      assert html_response(get(created, redirected_to(created)), 200) =~ "First Workspace"
     end
 
-    test "the switch POST pins the new tenant before landing — never the old/zero workspace", %{
+    test "a Team choice survives creation and routes to the new workspace's Billing page", %{
       conn: conn
     } do
-      # after `create_account_with_owner`, the LV arms a real
-      # POST to AccountSwitchController (phx-trigger-action) carrying the new
-      # account_id. Replaying that POST is what pins the session to the NEW tenant
-      # and redirects to its slug — so a creator never lands back in a previous
-      # (or zero) workspace. Drive the create, then the armed POST, end to end.
-      {conn, user, first} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/onboarding")
-
-      html =
-        lv
-        |> form("#onboarding_form", %{"account" => %{"name" => "Brand New Space"}})
-        |> render_submit()
-
-      assert html =~ "phx-trigger-action"
-
-      # The just-created account, carried in the form's hidden account_id, is what
-      # the armed POST pins. Resolve it from the user's memberships.
-      created =
-        Membership.Query.not_deleted()
-        |> Membership.Query.by_user_id(user.id)
-        |> Repo.all()
-        |> Repo.preload(:account)
-        |> Enum.find(&(&1.account.name == "Brand New Space"))
-
-      # Replay the armed switch POST.
-      switched = post(conn, ~p"/app/accounts/switch", account_id: created.account_id)
-
-      # Lands on the NEW tenant's slug and pins it in the session — not the
-      # pre-existing `first` workspace the user was already in.
-      assert redirected_to(switched) == ~p"/app/#{created.account}"
-      assert get_session(switched, :current_account_id) == created.account_id
-      refute get_session(switched, :current_account_id) == first.id
-    end
-
-    test "a Team choice survives workspace creation and lands on Billing for the new workspace",
-         %{
-           conn: conn
-         } do
-      user = Fixtures.Users.create_user()
       token = BillingIntent.sign("team", :year)
 
       conn =
-        conn
-        |> log_in_user(user)
-        |> Plug.Conn.put_session(:billing_intent, token)
+        conn |> log_in_user(Fixtures.Users.create_user()) |> put_session(:billing_intent, token)
 
-      {:ok, lv, html} = live(conn, ~p"/onboarding")
+      {:ok, _lv, html} = live(conn, ~p"/onboarding")
       assert html =~ "Selected plan"
       assert html =~ "Annual"
-      assert html =~ "Create this workspace on Free, then review the Team upgrade"
       assert html =~ ~s(name="billing_intent" value="#{token}")
 
-      submitted =
-        lv
-        |> form("#onboarding_form", %{"account" => %{"name" => "Annual Team Space"}})
-        |> render_submit()
-
-      assert submitted =~ "phx-trigger-action"
-
       created =
-        Membership.Query.not_deleted()
-        |> Membership.Query.by_user_id(user.id)
-        |> Repo.all()
-        |> Repo.preload(:account)
-        |> Enum.find(&(&1.account.name == "Annual Team Space"))
+        post(conn, ~p"/onboarding", account: %{name: "Annual Team Space"}, billing_intent: token)
 
-      switched =
-        post(conn, ~p"/app/accounts/switch", %{
-          "account_id" => created.account_id,
-          "billing_intent" => token
-        })
+      assert redirected_to(created) ==
+               ~p"/app/annual-team-space/settings/billing?billing_intent=#{token}"
 
-      assert redirected_to(switched) ==
-               ~p"/app/#{created.account}/settings/billing?billing_intent=#{token}"
-
-      assert get_session(switched, :current_account_id) == created.account_id
-      refute get_session(switched, :billing_intent)
+      assert get_session(created, :current_account_id)
+      refute get_session(created, :billing_intent)
     end
 
     test "an invalid Team choice degrades to ordinary Free onboarding", %{conn: conn} do
       conn =
         conn
         |> log_in_user(Fixtures.Users.create_user())
-        |> Plug.Conn.put_session(:billing_intent, "forged")
+        |> put_session(:billing_intent, "forged")
 
       {:ok, _lv, html} = live(conn, ~p"/onboarding")
-
       assert html =~ "Starts on the Free plan"
       refute html =~ "Selected plan"
       refute html =~ ~s(name="billing_intent")
+
+      created =
+        post(conn, ~p"/onboarding", account: %{name: "Free Workspace"}, billing_intent: "forged")
+
+      assert redirected_to(created) == ~p"/app/free-workspace"
     end
   end
 
-  describe "workspace-name form validation" do
+  describe "workspace-name validation" do
     setup %{conn: conn} do
       {conn, _user, _account} = register_and_log_in(conn)
       %{conn: conn}
     end
 
-    test "a blank name renders inline on the field, not in a flash", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/onboarding")
-
-      html =
-        lv
-        |> form("#onboarding_form", %{"account" => %{"name" => ""}})
-        |> render_submit()
-
-      # Inline field error under the name input.
-      assert html =~ "can&#39;t be blank"
-      # Old flash copy is gone.
-      refute html =~ "Unable to create. Try a different name."
-    end
-
-    test "phx-change surfaces a blank-name error inline without submitting", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/onboarding")
-
-      # `_target` is the field the operator is editing. A browser always sends it;
-      # the test helper only does when asked, so pass it — clearing the name is
-      # exactly the case that SHOULD report blank straight away, and without the
-      # target this reads as an untouched field and stays quiet.
-      html =
-        lv
-        |> form("#onboarding_form", %{"account" => %{"name" => ""}})
-        |> render_change(%{"_target" => ["account", "name"]})
-
-      assert html =~ "can&#39;t be blank"
-    end
-
-    test "a short name yielding an invalid slug surfaces the error on the name field", %{
+    test "HTTP rejection retains blank, short and long names and their field errors", %{
       conn: conn
     } do
-      # a 1- or 2-char name passes the name validation (min 1) but
-      # `suggest_unique_slug` derives a slug ("x") that FAILS the account slug format
-      # (3-64 chars). `create_account_with_owner` returns a changeset whose error is
-      # on :slug — but the form has only a :name input, so the error is orphaned: the
-      # page re-renders with NO error and NO creation (verified: "3-64 chars" absent,
-      # no phx-trigger-action). The user is stuck with no feedback. The CORRECT
-      # behavior (asserted here, skipped until fixed) is to surface that slug-format
-      # error on the name field the user actually controls.
+      for {name, error} <- [
+            {"", "can&#39;t be blank"},
+            {"x", "3-64 chars"},
+            {String.duplicate("x", 81), "should be at most 80 character"}
+          ] do
+        html = conn |> post(~p"/onboarding", account: %{name: name}) |> html_response(422)
+        assert html =~ error
+        assert html =~ ~s(value="#{name}")
+        refute html =~ ~s(phx-trigger-action="true")
+        assert Repo.aggregate(Accounts.Account, :count) == 1
+      end
+    end
+
+    test "malformed form input is rejected without creating anything", %{conn: conn} do
+      for params <- [%{}, %{"account" => "wrong"}, %{"account" => %{"name" => []}}] do
+        assert html_response(post(conn, ~p"/onboarding", params), 422) =~ "can&#39;t be blank"
+      end
+
+      assert Repo.aggregate(Accounts.Account, :count) == 1
+    end
+
+    test "live change and submit show errors without writing", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/onboarding")
-
-      html = lv |> form("#onboarding_form", %{"account" => %{"name" => "x"}}) |> render_submit()
-
-      # No workspace was created (the slug is invalid)…
-      refute html =~ "phx-trigger-action=\"true\""
-      # …and the reason must be visible to the operator (this is the failing assertion).
-      assert html =~ "3-64 chars" or html =~ "must be"
+      form = form(lv, "#onboarding_form", account: %{name: ""})
+      assert render_change(form, %{"_target" => ["account", "name"]}) =~ "can&#39;t be blank"
+      html = render_submit(form)
+      assert html =~ "can&#39;t be blank"
+      refute html =~ ~s(phx-trigger-action="true")
+      assert Repo.aggregate(Accounts.Account, :count) == 1
     end
   end
 end

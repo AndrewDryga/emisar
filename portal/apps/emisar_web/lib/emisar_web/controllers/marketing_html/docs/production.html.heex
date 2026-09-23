@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="production"
-      updated="September 8, 2026"
+      updated="September 23, 2026"
       toc={[
         {"fleet-shape", "The shape of a production fleet"},
         {"phased-rollout", "Roll out in phases"},
@@ -172,8 +172,9 @@
             navigate={~p"/docs/scim"}
             class="text-brand-400 hover:text-brand-300"
           >SCIM</.link>
-          so a suspension in your directory ends sessions and revokes keys in emisar — no
-          manual checklist. <.plan_note tier={:enterprise} />
+          so a suspension in your directory ends the member's browser access to this workspace
+          and revokes keys issued from that membership — no manual checklist.
+          <.plan_note tier={:enterprise} />
         </li>
         <li>
           <strong class="text-zinc-200">Connect your SIEM.</strong>
@@ -352,8 +353,8 @@
         <ul class="mt-3 space-y-3 text-base leading-7 text-zinc-300">
           <li class="flex items-start gap-2.5">
             <.icon name="state.included" class="mt-1 h-4 w-4 flex-none text-brand-400" />
-            <span>Configure SCIM so a suspension in your directory ends sessions and revokes keys in
-            emisar.</span>
+            <span>Configure SCIM so a suspension in your directory ends browser access to this
+            workspace and revokes keys issued from that membership.</span>
           </li>
         </ul>
       </.docs_callout>

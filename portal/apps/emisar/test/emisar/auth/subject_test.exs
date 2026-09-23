@@ -129,12 +129,7 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test ":ok when the subject holds the permission", %{account: account, user: user} do
-      subject =
-        Subject.for_user(user, account, %Membership{
-          role: :owner,
-          user_id: user.id,
-          account_id: account.id
-        })
+      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       assert Emisar.Auth.Authorizer.ensure_has_permissions(
                subject,
@@ -143,12 +138,7 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test "{:error, :unauthorized} when the subject lacks it", %{account: account, user: user} do
-      subject =
-        Subject.for_user(user, account, %Membership{
-          role: :viewer,
-          user_id: user.id,
-          account_id: account.id
-        })
+      subject = Fixtures.Subjects.subject_for(user, account, role: :viewer)
 
       assert Emisar.Auth.Authorizer.ensure_has_permissions(
                subject,
@@ -160,12 +150,7 @@ defmodule Emisar.Auth.SubjectTest do
       account: account,
       user: user
     } do
-      operator =
-        Subject.for_user(user, account, %Membership{
-          role: :operator,
-          user_id: user.id,
-          account_id: account.id
-        })
+      operator = Fixtures.Subjects.subject_for(user, account, role: :operator)
 
       # Operator does NOT hold manage_runners but DOES hold view_runners.
       perms = [
@@ -177,12 +162,7 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test "rejects {:one_of, [...]} if the subject holds none", %{account: account, user: user} do
-      viewer =
-        Subject.for_user(user, account, %Membership{
-          role: :viewer,
-          user_id: user.id,
-          account_id: account.id
-        })
+      viewer = Fixtures.Subjects.subject_for(user, account, role: :viewer)
 
       perms = [
         Emisar.Accounts.Authorizer.manage_security_settings_permission(),
@@ -197,12 +177,7 @@ defmodule Emisar.Auth.SubjectTest do
       account: account,
       user: user
     } do
-      owner =
-        Subject.for_user(user, account, %Membership{
-          role: :owner,
-          user_id: user.id,
-          account_id: account.id
-        })
+      owner = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       # Owner holds both of these.
       perms = [
@@ -217,12 +192,7 @@ defmodule Emisar.Auth.SubjectTest do
       account: account,
       user: user
     } do
-      admin =
-        Subject.for_user(user, account, %Membership{
-          role: :admin,
-          user_id: user.id,
-          account_id: account.id
-        })
+      admin = Fixtures.Subjects.subject_for(user, account, role: :admin)
 
       # Admin holds manage_team but NOT manage_owners (owner-only), so requiring
       # both fails — a permission list requires ALL of them.

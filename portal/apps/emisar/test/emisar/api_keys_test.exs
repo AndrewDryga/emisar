@@ -1474,7 +1474,7 @@ defmodule Emisar.ApiKeysTest do
                  subject
                )
 
-      assert ApiKeys.rotate_api_key(key, subject) == {:error, :not_found}
+      assert ApiKeys.rotate_api_key(key, subject) == {:error, :unauthorized}
     end
 
     test "an owner of account B cannot rotate account A's key (cross-account → :not_found)" do
@@ -3044,7 +3044,7 @@ defmodule Emisar.ApiKeysTest do
       |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
       |> Repo.update!()
 
-      assert ApiKeys.approve_device_grant(grant, subject) == {:error, :not_found}
+      assert ApiKeys.approve_device_grant(grant, subject) == {:error, :unauthorized}
       assert Repo.reload!(grant).status == :pending
       refute Repo.one(Audit.Event)
     end
@@ -3108,7 +3108,7 @@ defmodule Emisar.ApiKeysTest do
       |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
       |> Repo.update!()
 
-      assert ApiKeys.deny_device_grant(grant, subject) == {:error, :not_found}
+      assert ApiKeys.deny_device_grant(grant, subject) == {:error, :unauthorized}
       assert Repo.reload!(grant).status == :pending
       refute Repo.one(Audit.Event)
     end
@@ -3384,13 +3384,11 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKeys.claim_device_grant(device_code) == {:error, :access_denied}
       assert Repo.all(ApiKey) == []
 
-      assert {:ok, _account} =
-               Emisar.Accounts.set_account_disabled_for_support(
-                 account.id,
-                 false,
-                 "Hold resolved",
-                 subject
-               )
+      assert {:ok, %{disabled: false}} =
+               Emisar.Admin.execute("emisar.admin.account.enable", [
+                 "account=#{account.slug}",
+                 "reason=Hold resolved"
+               ])
 
       assert {:ok, %{client_keys: %{"claude-code" => _raw_key}}} =
                ApiKeys.claim_device_grant(device_code)

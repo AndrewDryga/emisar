@@ -130,6 +130,9 @@ defmodule Emisar.Accounts.Account.Query do
     |> where([memberships: m], m.user_id == ^user_id)
   end
 
+  def by_membership_ids(queryable, membership_ids),
+    do: where(queryable, [memberships: m], m.id in ^membership_ids)
+
   # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query

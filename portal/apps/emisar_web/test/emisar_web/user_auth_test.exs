@@ -186,7 +186,8 @@ defmodule EmisarWeb.UserAuthTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert Emisar.Repo.aggregate(Emisar.Auth.UserToken, :count) == 0
+      assert Emisar.Auth.UserToken.Query.by_user_id(user.id)
+             |> Emisar.Repo.aggregate(:count) == 0
     end
   end
 

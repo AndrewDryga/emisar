@@ -90,10 +90,9 @@ defmodule Emisar.OperationalReadAuthorityTest do
     assert Policies.list_scoped_policy_summaries(subject) == {:error, :unauthorized}
   end
 
-  test "permission denials and per-row argument projections never query identity" do
+  test "permission denials never query identity" do
     membership = Fixtures.Memberships.create_membership(role: "operator")
     subject = Fixtures.Subjects.membership_subject(membership)
-    run = Fixtures.Runs.create_run(account_id: subject.account.id)
     denied = %{subject | permissions: MapSet.new()}
     handler = "operational-read-#{System.unique_integer([:positive])}"
     :ok = :telemetry.attach(handler, [:emisar, :repo, :query], &__MODULE__.query_event/4, self())
@@ -102,8 +101,36 @@ defmodule Emisar.OperationalReadAuthorityTest do
     assert Runs.list_runs(denied) == {:error, :unauthorized}
     assert Audit.list_events(denied) == {:error, :unauthorized}
     assert Policies.fetch_policy(denied) == {:error, :unauthorized}
-    for _row <- 1..100, do: assert(Runs.project_action_args(run, subject) == {:ok, %{}})
     refute_receive :operational_read_query
+  end
+
+  describe "project_authorized_account_args/2" do
+    test "already-authorized per-row projection is query-free and rejects foreign runs" do
+      account = Fixtures.Accounts.create_account()
+
+      run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          args_raw: ~s({"token":"private","count":1}),
+          sensitive_arg_names: ["token"]
+        )
+
+      foreign_id = Ecto.UUID.generate()
+      handler = "run-projection-#{System.unique_integer([:positive])}"
+
+      :ok =
+        :telemetry.attach(handler, [:emisar, :repo, :query], &__MODULE__.query_event/4, self())
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      for _row <- 1..100 do
+        assert {:ok, %{"token" => "[REDACTED]", "count" => _}} =
+                 Runs.project_authorized_account_args(run, account.id)
+      end
+
+      assert Runs.project_authorized_account_args(run, foreign_id) == {:error, :not_found}
+      refute_receive :operational_read_query
+    end
   end
 
   def query_event(_event, _measurements, _metadata, owner) do

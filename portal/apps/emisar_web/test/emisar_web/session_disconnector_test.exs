@@ -28,7 +28,9 @@ defmodule EmisarWeb.SessionDisconnectorTest do
     topic = Auth.live_socket_topic(Crypto.hash(token))
     EmisarWeb.Endpoint.subscribe(topic)
 
-    assert Auth.broadcast_disconnect_for_user(user) == :ok
+    assert user |> Auth.capture_live_socket_topics() |> Auth.disconnect_live_socket_topics() ==
+             :ok
+
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect", payload: %{}}
 
     assert {:ok, _user, _auth} = Auth.fetch_user_and_token_by_session_token(token)

@@ -87,8 +87,21 @@ defmodule EmisarWeb.ProfileLiveTest do
       conn = conn |> init_test_session(%{}) |> put_session(:user_token, sso_raw)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile?cursor=invalid")
-      assert html =~ "personal email-link sign-in"
+      assert html =~ "personal email-link proof"
       assert has_element?(lv, "#sessions-personal-sign-in-required")
+
+      assert has_element?(
+               lv,
+               "#personal-sign-in-required a[href='/session/recover']",
+               "Sign out and sign in by email"
+             )
+
+      assert has_element?(
+               lv,
+               "#sessions-personal-sign-in-required a[href='/session/recover']",
+               "Sign out and sign in by email"
+             )
+
       refute has_element?(lv, "#change-name")
       refute has_element?(lv, "#change-email")
       refute has_element?(lv, "#active-sessions")
@@ -113,7 +126,7 @@ defmodule EmisarWeb.ProfileLiveTest do
             {"revoke_other_sessions", %{}}
           ] do
         assert render_click(lv, event, params) =~
-                 "These controls require a personal email-link sign-in in a workspace that allows it."
+                 "These controls require unexpired personal email-link proof in this browser."
       end
 
       render_click(lv, "retry_sessions", %{})
@@ -276,7 +289,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert Emisar.Repo.reload!(user).full_name == user.full_name
     end
 
-    test "a save after the user is deleted keeps the typed name and reports the failure", %{
+    test "a save after the user is deleted requires signing in again", %{
       conn: conn
     } do
       {conn, user, account} = register_and_log_in(conn)
@@ -284,13 +297,12 @@ defmodule EmisarWeb.ProfileLiveTest do
       lv |> element("#change-name") |> render_click()
       Fixtures.Users.mark_user_as_deleted(user)
 
-      html =
-        lv
-        |> form("#profile_form", %{"profile" => %{"full_name" => "Unsaved Name"}})
-        |> render_submit()
+      lv
+      |> form("#profile_form", %{"profile" => %{"full_name" => "Unsaved Name"}})
+      |> render_submit()
 
-      assert html =~ "Couldn&#39;t update your name. Try again."
-      assert html =~ ~s(value="Unsaved Name")
+      flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
+      assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
     end
   end
 
@@ -497,7 +509,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       account: account
     } do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
+      subject = browser_subject(conn, user, account)
 
       for index <- 1..5 do
         assert Auth.issue_email_change_code("spent-#{index}@example.com", subject) == {:ok, :sent}
@@ -527,14 +539,13 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       Fixtures.Users.mark_user_as_deleted(user)
 
-      html =
-        lv
-        |> edit_email()
-        |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
-        |> render_submit()
+      lv
+      |> edit_email()
+      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
+      |> render_submit()
 
-      assert html =~ "Couldn&#39;t start the email change. Try again."
-      assert has_element?(lv, "#email_form")
+      flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
+      assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
       refute_received {:email, _}
     end
 
@@ -574,10 +585,9 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       Fixtures.Users.mark_user_as_deleted(user)
 
-      html = lv |> element("#email_step_form button", "Resend code") |> render_click()
-
-      assert html =~ "Couldn&#39;t send a new code. Try again."
-      refute html =~ "We sent a new code"
+      lv |> element("#email_step_form button", "Resend code") |> render_click()
+      flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
+      assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
     end
 
     test "an MFA-on user proves TOTP and then the new mailbox before the email changes", %{
@@ -977,6 +987,10 @@ defmodule EmisarWeb.ProfileLiveTest do
           provisioned_via: :oidc_link
         })
 
+      token =
+        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
+
+      conn = put_session(conn, :user_token, token)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
       render_click(lv, "retry_oidc_identities", %{})
@@ -1029,7 +1043,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       html = render(lv)
       assert html =~ "This session"
 
-      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
+      subject = browser_subject(conn, user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 2
 
@@ -1067,7 +1081,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute has_element?(lv, "#active-sessions", "Last active")
       assert has_element?(lv, "#active-sessions li", "This session")
 
-      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
+      subject = browser_subject(conn, user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 2
     end
@@ -1161,10 +1175,20 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       # 10 more devices on top of the current session — 11 total, one past a page.
       for n <- 1..10 do
-        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          ip_address: "203.0.113.#{n}",
-          user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
-        })
+        token =
+          Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+            ip_address: "203.0.113.#{n}",
+            user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
+          })
+
+        # Page two must contain another device, not this browser, whose row
+        # deliberately has no self-revoke control.
+        if n == 1 do
+          Fixtures.Auth.backdate_session_token!(
+            token,
+            DateTime.add(DateTime.utc_now(), -1, :hour)
+          )
+        end
       end
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -1179,11 +1203,11 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert rendered_session_rows(lv) == 1
       assert html =~ "Prev"
 
-      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
+      subject = browser_subject(conn, user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       oldest_session = List.last(sessions)
 
-      html = render_hook(lv, "revoke_session", %{"id" => oldest_session.id})
+      html = lv |> element("#signout-session-#{oldest_session.id}-confirm") |> render_click()
 
       assert rendered_session_rows(lv) == 0
       assert html =~ "This page no longer has results."
@@ -1230,7 +1254,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         user_agent: user_agent
       })
 
-      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
+      subject = browser_subject(conn, user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       first_session = Enum.find(sessions, &(&1.ip_address == "203.0.113.10"))
       second_session = Enum.find(sessions, &(&1.ip_address == "203.0.113.11"))
@@ -1265,7 +1289,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
-      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
+      subject = browser_subject(conn, user, account)
 
       {:ok, sessions, _meta} =
         Auth.list_sessions_for_user(Emisar.Crypto.hash(session_token(conn)), subject,
@@ -1296,7 +1320,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
-      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
+      subject = browser_subject(conn, user, account)
 
       {:ok, sessions, _meta} =
         Auth.list_sessions_for_user(Emisar.Crypto.hash(session_token(conn)), subject,
@@ -1326,7 +1350,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # 100 more sessions (register_and_log_in already created one) → 101 total.
       for _ <- 1..100, do: Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
+      subject = browser_subject(conn, user, account)
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
       assert length(sessions) == 100
 
@@ -1357,6 +1381,9 @@ defmodule EmisarWeb.ProfileLiveTest do
       # The seeded device's metadata is NOT read on the dead pass.
       assert dead =~ "Loading sessions"
       assert dead =~ "Loading sign-in methods"
+      assert dead =~ "Loading MFA settings"
+      assert dead =~ "Loading personal details"
+      refute dead =~ "Workspace SSO does not grant access"
       refute dead =~ "No single sign-on providers are enabled"
       refute dead =~ "203.0.113.9"
       refute dead =~ "This session"
@@ -1411,7 +1438,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       account: account
     } do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      subject = Fixtures.Subjects.subject_for(user, account, auth_method: :magic_link)
+      subject = browser_subject(conn, user, account)
       current_digest = Emisar.Crypto.hash(session_token(conn))
       {:ok, sessions, _meta} = Auth.list_sessions_for_user(current_digest, subject)
       other = Enum.find(sessions, &(not &1.current?))
@@ -1466,6 +1493,79 @@ defmodule EmisarWeb.ProfileLiveTest do
       %{conn: conn, user: user, account: account}
     end
 
+    for event <- [
+          "start_mfa",
+          "resend_mfa_enrollment_email",
+          "verify_mfa_enrollment_email",
+          "confirm_mfa",
+          "disable_mfa",
+          "regenerate_recovery_codes"
+        ] do
+      @event event
+      @tag :mfa_session_recovery
+      test "#{event} sends an expired mounted browser back to workspace sign-in", %{
+        conn: conn,
+        user: user,
+        account: account
+      } do
+        if @event in ["disable_mfa", "regenerate_recovery_codes"] do
+          Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
+        end
+
+        {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+        params =
+          case @event do
+            "confirm_mfa" ->
+              secret = lv |> begin_mfa_enrollment() |> mfa_secret_from()
+              %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}}
+
+            event when event in ["resend_mfa_enrollment_email", "verify_mfa_enrollment_email"] ->
+              render_click(lv, "start_mfa", %{})
+              assert_received {:email, email}
+              %{"mfa_enrollment" => %{"code" => Fixtures.Auth.code_from_email(email)}}
+
+            "disable_mfa" ->
+              %{"mfa_disable" => %{"code" => "irrelevant-after-expiry"}}
+
+            "regenerate_recovery_codes" ->
+              %{"mfa_recovery_regeneration" => %{"code" => "irrelevant-after-expiry"}}
+
+            _ ->
+              %{}
+          end
+
+        before = Emisar.Repo.reload!(user)
+
+        Fixtures.Auth.backdate_session_token!(
+          session_token(conn),
+          DateTime.add(DateTime.utc_now(), -61, :day)
+        )
+
+        render_hook(lv, @event, params)
+        flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
+        assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
+        assert Emisar.Repo.reload!(user) == before
+        refute_received {:email, _}
+      end
+    end
+
+    @tag :mfa_session_recovery
+    test "refreshing MFA facts after browser expiry reauthenticates without crashing", %{
+      conn: conn,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      Fixtures.Auth.backdate_session_token!(
+        session_token(conn),
+        DateTime.add(DateTime.utc_now(), -61, :day)
+      )
+
+      render_patch(lv, ~p"/app/#{account}/settings/profile?cursor=expired")
+      assert_redirect(lv, ~p"/app/#{account}/sign_in")
+    end
+
     test "email proof → authenticator confirm enables MFA and shows recovery codes once", %{
       conn: conn,
       user: user,
@@ -1485,6 +1585,17 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "MFA enabled."
       assert html =~ "recovery codes"
       assert Emisar.Repo.reload!(user).mfa_enabled_at
+
+      {:ok, _enrolled, persisted} =
+        Auth.fetch_user_and_token_by_session_token(session_token(conn))
+
+      assigns = :sys.get_state(lv.pid).socket.assigns
+      assert assigns.current_auth.local_mfa_expires_at == persisted.local_mfa_expires_at
+
+      assert assigns.current_auth.mfa_enrollment_verified_at ==
+               persisted.mfa_enrollment_verified_at
+
+      assert assigns.current_subject.mfa
 
       # Codes are shown exactly once — the panel goes away on dismiss
       # (the enable flash still mentions them, so check the element).
@@ -1951,14 +2062,17 @@ defmodule EmisarWeb.ProfileLiveTest do
     } do
       secret = Auth.generate_mfa_secret()
 
-      Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+      {user, _codes} =
+        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       render_click(lv, "start_regenerate_recovery_codes", %{})
 
-      assert {:ok, _disabled} =
-               Emisar.Users.update_user_mfa(user.id, nil, nil, [],
-                 audit: &Emisar.Audit.user_changesets(&1, "user.mfa_disabled")
-               )
+      Fixtures.Users.set_mfa_state(user,
+        mfa_secret: nil,
+        mfa_enabled_at: nil,
+        mfa_recovery_codes: []
+      )
 
       render_submit(lv, "regenerate_recovery_codes", %{
         "mfa_recovery_regeneration" => %{
@@ -2058,6 +2172,11 @@ defmodule EmisarWeb.ProfileLiveTest do
   # The raw session token the logged-in conn presents — what the page hands
   # `Auth.list_sessions_for_user/3` so its own row comes back `current?: true`.
   defp session_token(conn), do: Plug.Conn.get_session(conn, :user_token)
+
+  defp browser_subject(conn, user, account) do
+    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(session_token(conn))
+    Fixtures.Subjects.subject_for(user, account, session: session)
+  end
 
   # Count of session rows rendered on the current page — each stream row is an
   # <li id="sessions-<uuid>">, so the ids that match are exactly this page's rows.

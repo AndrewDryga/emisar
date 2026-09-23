@@ -139,7 +139,8 @@ defmodule Emisar.Audit.Event.Query do
        {"user.mfa_reset_by_admin", "MFA reset by admin", "MFA reset by admin"},
        {"user.session_revoked", "Session revoked", "Session revoked"},
        {"user.other_sessions_revoked", "Other sessions revoked", "Other sessions revoked"},
-       {"user.sessions_revoked", "All sessions revoked by admin", "All sessions revoked by admin"}
+       {"user.sessions_revoked", "Workspace sessions ended by admin",
+        "Workspace sessions ended by admin"}
      ]},
     {"Team",
      [
@@ -737,7 +738,8 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true,
        "The maximum standing-grant lifetime changed, or standing grants were disabled."},
     "account.disabled" =>
-      {false, false, true, "Emisar staff suspended this workspace — its members are signed out."},
+      {false, false, true,
+       "Emisar staff suspended this workspace — browser access to it is blocked."},
     "account.enabled" => {false, false, true, "Emisar staff lifted a workspace suspension."},
     "account.closed" =>
       {true, true, true, "The account was closed after subscription cleanup completed."},
@@ -899,7 +901,9 @@ defmodule Emisar.Audit.Event.Query do
     "user.session_revoked" => {true, true, false, "A user revoked one of their own sessions."},
     "user.other_sessions_revoked" =>
       {true, true, false, "A user revoked every session except the current one."},
-    "user.sessions_revoked" => {true, true, true, "An admin revoked a teammate's sessions."},
+    "user.sessions_revoked" =>
+      {true, true, true,
+       "An admin ended a teammate's existing access to this workspace across their browser sessions."},
     "user.mfa_reset_by_admin" =>
       {true, true, true, "An admin cleared a teammate's second factor so they can re-enroll."},
     "membership.role_changed" => {true, true, true, "An admin changed a member's role."},
@@ -1003,7 +1007,7 @@ defmodule Emisar.Audit.Event.Query do
        "The identity provider changed the name this account shows for a member."},
     "membership.deprovisioned_via_scim" =>
       {true, false, true,
-       "The identity provider deprovisioned a member (suspended, sessions killed)."},
+       "The identity provider suspended a member and ended their existing access to this workspace."},
     "membership.reprovisioned_via_scim" =>
       {true, false, true, "The identity provider re-activated a previously deprovisioned member."},
     "membership.role_synced_via_scim" =>

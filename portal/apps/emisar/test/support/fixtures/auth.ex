@@ -4,7 +4,8 @@ defmodule Emisar.Fixtures.Auth do
   `Fixtures.Auth.create_session_token!/5`.
   """
 
-  alias Emisar.Auth.UserToken
+  alias Emisar.{Accounts, SSO}
+  alias Emisar.Auth.{SessionGrants, UserToken}
   alias Emisar.Crypto
   alias Emisar.Repo
   alias Emisar.Users.User
@@ -62,6 +63,17 @@ defmodule Emisar.Fixtures.Auth do
     :ok
   end
 
+  @doc "Expires independent personal and local-factor proof without ending the session or its SSO routes."
+  def expire_session_independent_proofs!(raw) do
+    expired_at = DateTime.add(DateTime.utc_now(), -1, :second)
+
+    {1, _} =
+      UserToken.Query.by_token_digest(Crypto.hash(raw))
+      |> Repo.update_all(set: [personal_expires_at: expired_at, local_mfa_expires_at: expired_at])
+
+    :ok
+  end
+
   @doc """
   Persists a session row with arbitrary provenance and returns the raw token.
   `mfa_verified_at` is when this session proved a second factor, or nil for
@@ -83,10 +95,51 @@ defmodule Emisar.Fixtures.Auth do
       ) do
     {token, digest} = Crypto.session_token()
 
-    Repo.insert!(
-      UserToken.Changeset.session(user, digest, metadata, auth_method, mfa_verified_at, opts)
-    )
+    session =
+      Repo.insert!(
+        UserToken.Changeset.session(user, digest, metadata, auth_method, mfa_verified_at, opts)
+      )
+
+    insert_fixture_grants(session, user, auth_method, opts)
 
     token
   end
+
+  # Consumers need the same frozen authority shape as a real sign-in. These
+  # fixtures never make grantless tokens authoritative in production; deliberate
+  # invalid/retired SSO origins keep a token with no workspace grants.
+  defp insert_fixture_grants(session, user, :magic_link, _opts) do
+    members = Accounts.list_active_memberships_for_user(user)
+
+    {:ok, _grants} =
+      SessionGrants.insert_personal(Repo, session, %{
+        grant_member_candidates: members,
+        grant_accounts: Map.new(members, &{&1.account_id, &1.account})
+      })
+  end
+
+  defp insert_fixture_grants(session, user, :sso, opts) do
+    identity_id = opts[:user_identity_id]
+
+    identity =
+      if Repo.valid_uuid?(identity_id) do
+        SSO.UserIdentity.Query.not_deleted()
+        |> SSO.UserIdentity.Query.by_id(identity_id)
+        |> Repo.peek()
+      end
+
+    if identity do
+      Ecto.Multi.new()
+      |> SSO.put_sign_in_authority(user, identity.account_id,
+        user_identity_id: identity.id,
+        provider_identifier: identity.provider_identifier
+      )
+      |> Ecto.Multi.run(:fixture_grants, fn repo, %{sso_destinations: destinations} ->
+        SessionGrants.insert_sso(repo, session, destinations)
+      end)
+      |> Repo.commit_multi()
+    end
+  end
+
+  defp insert_fixture_grants(_session, _user, _method, _opts), do: :ok
 end

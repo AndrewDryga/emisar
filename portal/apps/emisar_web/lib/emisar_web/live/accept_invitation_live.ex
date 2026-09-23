@@ -6,8 +6,8 @@ defmodule EmisarWeb.AcceptInvitationLive do
 
     * Not signed in → a name form; accepting provisions the member and
       emails them a magic-link sign-in (no password to set).
-    * Signed in AS the invited email → one-click accept (no password
-      re-entry); we mark the membership accepted and forward to the invited account.
+    * Signed in AS the invited email → accept over HTTP, then explicitly sign
+      in again. Acceptance never adds the new membership to an old browser's proof.
     * Signed in as a DIFFERENT email → "this invite is for X, sign out
       first" with an explicit sign-out link. Previously the visitor was
       silently bounced to /app and never saw the invite.
@@ -154,9 +154,17 @@ defmodule EmisarWeb.AcceptInvitationLive do
         as <.chip>{Emisar.Auth.role_label(@membership.role)}</.chip>.
       </p>
 
-      <.button class="w-full" phx-click="accept_existing" phx-disable-with="Accepting...">
-        Accept invitation <span aria-hidden="true">→</span>
-      </.button>
+      <p class="mb-6 text-sm text-zinc-400">
+        After accepting, sign in again to open this workspace. Accepting does not sign you out.
+      </p>
+      <.form
+        for={%{}}
+        id="accept_existing_form"
+        action={~p"/accept_invitation/#{@token}"}
+        method="post"
+      >
+        <.button class="w-full">Accept invitation <span aria-hidden="true">→</span></.button>
+      </.form>
     </.auth_layout>
     """
   end
@@ -191,8 +199,8 @@ defmodule EmisarWeb.AcceptInvitationLive do
   # IL-15: the rendered branch is not the gate. A crafted push can name any
   # event from any state, so each handler declares the state it belongs to and
   # everything else is a no-op — an unavailable invitation has no `membership`,
-  # `token` or `form` assigned at all, and a signed-in stranger must not be able
-  # to burn a forwarded link past `mark_invitation_accepted/3`'s same-user head.
+  # `token` or `form` assigned at all. Signed-in acceptance is an HTTP form;
+  # its controller and context recheck the invitation and same-user boundary.
   def handle_event(
         "validate",
         %{"member" => params} = event,
@@ -223,32 +231,6 @@ defmodule EmisarWeb.AcceptInvitationLive do
         {:noreply, assign_invitation_unavailable(socket, :not_found)}
 
       {:error, _other} ->
-        {:noreply, put_flash(socket, :error, "Could not accept the invitation.")}
-    end
-  end
-
-  # Signed-in user accepting their own invitation: the user record
-  # already exists + confirmed, so we skip provisioning entirely and
-  # just mark the membership accepted in-place.
-  def handle_event("accept_existing", _params, %{assigns: %{state: :signed_in_match}} = socket) do
-    membership = socket.assigns.membership
-
-    case Accounts.mark_invitation_accepted(
-           membership,
-           socket.assigns.token,
-           socket.assigns.current_user
-         ) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Welcome to #{membership.account.name}.")
-         |> push_navigate(to: ~p"/app/#{membership.account}")}
-
-      # Same race as the anonymous accept: no longer pending → terminal state.
-      {:error, :not_found} ->
-        {:noreply, assign_invitation_unavailable(socket, :not_found)}
-
-      {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not accept the invitation.")}
     end
   end

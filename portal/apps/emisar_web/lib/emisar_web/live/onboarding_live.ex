@@ -2,35 +2,37 @@ defmodule EmisarWeb.OnboardingLive do
   @moduledoc """
   Workspace creation flow. Shown when a user has no membership yet
   (first-run signup) AND from the in-app workspace switcher ("Create
-  new workspace"). After the workspace is created we trigger a real
-  POST to `AccountSwitchController` so the next-request session gets
-  pinned to the new tenant — otherwise the previous session-pinned
-  account would persist and the user would land back in the old
-  workspace after the redirect.
+  new workspace"). Live validation accompanies a native HTTP submission:
+  creation can retire an old SSO route and disconnect this socket, so the
+  committing response and new-workspace redirect must not depend on it.
   """
   use EmisarWeb, :live_view
-  alias Emisar.Accounts
+  alias Emisar.{Accounts, Auth}
   alias EmisarWeb.{BillingIntent, LiveForm}
+  on_mount {EmisarWeb.UserAuth, :mount_current_user}
 
   # The live_session only mounts the current user; it does not require one. A
   # signed-out visitor got the full setup form, and submitting it reached
-  # create_account_with_owner_from_name/2 with a nil user — whose only clause
-  # requires a %User{} — so the socket died with a FunctionClauseError and no
+  # create_account_with_owner_from_name/2 without an actor, so the socket died with no
   # explanation. Send them to sign in instead of rendering a form that cannot
   # succeed.
-  def mount(params, session, socket) do
+  def mount(_params, session, socket) do
     if socket.assigns[:current_user] do
-      {billing_intent, billing_choice} =
-        billing_choice(params["billing_intent"] || session["billing_intent"])
+      if Auth.personal_session?(socket.assigns.current_auth) do
+        {billing_intent, billing_choice} = billing_choice(session["billing_intent"])
 
-      {:ok,
-       socket
-       |> assign(:page_title, "Create your workspace")
-       |> assign(:billing_intent, billing_intent)
-       |> assign(:billing_choice, billing_choice)
-       |> assign(:trigger_submit, false)
-       |> assign(:created_account_id, "")
-       |> assign_form(Accounts.change_account(%Accounts.Account{}, %{"plan" => "free"}))}
+        {:ok,
+         socket
+         |> assign(:page_title, "Create your workspace")
+         |> assign(:billing_intent, billing_intent)
+         |> assign(:billing_choice, billing_choice)
+         |> assign(:trigger_submit, false)
+         |> assign(:form, initial_form(session))}
+      else
+        {:ok,
+         socket
+         |> redirect(to: ~p"/session/recover?reason=personal_required")}
+      end
     else
       {:ok,
        socket
@@ -55,7 +57,7 @@ defmodule EmisarWeb.OnboardingLive do
         phx-change="validate"
         phx-submit="create"
         phx-trigger-action={@trigger_submit}
-        action={~p"/app/accounts/switch"}
+        action={~p"/onboarding"}
         method="post"
       >
         <.input
@@ -66,7 +68,6 @@ defmodule EmisarWeb.OnboardingLive do
           placeholder="Acme Corp"
           required
         />
-        <input type="hidden" name="account_id" value={@created_account_id} />
         <input
           :if={@billing_intent}
           type="hidden"
@@ -100,58 +101,30 @@ defmodule EmisarWeb.OnboardingLive do
     {:noreply, assign_form(socket, changeset)}
   end
 
-  def handle_event("create", %{"account" => %{"name" => name}}, socket) do
-    user = socket.assigns.current_user
+  def handle_event("create", %{"account" => params}, socket) do
+    # Unload the socket and submit over HTTP before any operation that can
+    # disconnect it. The controller rechecks proof and all creation constraints.
+    changeset = Accounts.change_account(%Accounts.Account{}, params)
 
-    # An SSO session is authority only in the workspaces that federate with its
-    # identity provider. A brand-new workspace has no provider to federate with,
-    # so the session could not hold it past this request — and letting an SSO
-    # session into a non-federated workspace is exactly the hole the scope
-    # closes. The person signs in with their email first (the same rule the
-    # switcher explains). IL-15: the check is here, at the action, not the UI.
-    if socket.assigns.current_auth.auth_method == :sso do
-      {:noreply,
-       socket
-       |> put_flash(
-         :error,
-         "Sign in with your email to create a workspace — this session used a workspace's single sign-on."
-       )
-       |> redirect(to: ~p"/sign_in")}
-    else
-      create_workspace(socket, user, name)
-    end
-  end
-
-  defp create_workspace(socket, user, name) do
-    case Accounts.create_account_with_owner_from_name(name, user) do
-      {:ok, account} ->
-        # `trigger_submit: true` fires the form's `action=` POST in the
-        # next browser tick — `AccountSwitchController` validates the
-        # just-created membership and pins it in the session before the
-        # redirect to /app.
-        {:noreply,
-         socket
-         |> assign(:created_account_id, account.id)
-         |> assign(:trigger_submit, true)}
-
-      # A blank/invalid name renders inline on the name field; Accounts already
-      # moved a derived-slug error onto :name, the only field this form has.
-      # Membership and policy changesets do not belong to this form.
-      {:error, %Ecto.Changeset{data: %Accounts.Account{}} = changeset} ->
-        {:noreply, assign_form(socket, changeset)}
-
-      {:error, _reason} ->
-        changeset = Accounts.change_account(%Accounts.Account{}, %{"name" => name})
-
-        {:noreply,
-         socket
-         |> assign_form(changeset)
-         |> put_flash(:error, "Couldn't create this workspace. Try again.")}
-    end
+    {:noreply,
+     socket
+     |> assign_form(%{changeset | action: :validate})
+     # Slug creation belongs to the HTTP transaction; this form edits only name.
+     |> assign(:trigger_submit, is_nil(changeset.errors[:name]))}
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "account"))
+
+  defp initial_form(%{"onboarding_params" => %{} = params} = session) do
+    to_form(params, as: "account", errors: session["onboarding_errors"] || [], action: :validate)
+  end
+
+  defp initial_form(_session) do
+    %Accounts.Account{}
+    |> Accounts.change_account(%{"plan" => "free"})
+    |> to_form(as: "account")
+  end
 
   defp billing_choice(token) do
     case BillingIntent.verify(token) do

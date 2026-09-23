@@ -2120,9 +2120,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                   phx-click={show_confirm_dialog("delete-provider-#{@provider.id}")}
                 >
                   <:body>
-                    Removes the connection and stops new sign-ins through it. Members who sign in
-                    only through it lose access until it's re-added, and the sessions they signed
-                    in with are ended.
+                    Stops new sign-ins through this connection and removes the access it proved
+                    in this workspace. Access proved another way, including access to other
+                    workspaces, is unchanged.
                   </:body>
                   Delete connection
                 </.confirm_zone>
@@ -2144,8 +2144,8 @@ defmodule EmisarWeb.SSOSettingsLive do
               <:body>
                 Permanently removes the
                 <span class="font-medium text-rose-100">{@provider.name}</span>
-                connection. Members who sign in only through it lose access until it's re-added.
-                The sessions they signed in through it are ended.
+                connection and the access it proved in this workspace. Access proved another
+                way, including access to other workspaces, is unchanged.
               </:body>
             </.confirm_dialog>
           </div>
@@ -2209,9 +2209,9 @@ defmodule EmisarWeb.SSOSettingsLive do
           phx-click={show_confirm_dialog("delete-provider-#{@provider.id}")}
         >
           <:body>
-            Removes the connection and stops new sign-ins through it. Members who sign in only
-            through it lose access, and the sessions they signed in with are ended. This can't be
-            undone.
+            Stops new sign-ins through this connection and removes the access it proved in
+            this workspace. Access proved another way, including access to other workspaces,
+            is unchanged. This can't be undone.
           </:body>
           Delete connection
         </.confirm_zone>
@@ -2231,8 +2231,8 @@ defmodule EmisarWeb.SSOSettingsLive do
       >
         <:body>
           Permanently removes the <span class="font-medium text-rose-100">{@provider.name}</span>
-          connection. Members who sign in only through it lose access, and the sessions they
-          signed in with are ended.
+          connection and the access it proved in this workspace. Access proved another way,
+          including access to other workspaces, is unchanged.
         </:body>
       </.confirm_dialog>
     </section>

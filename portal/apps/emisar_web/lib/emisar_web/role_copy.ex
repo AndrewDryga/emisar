@@ -37,7 +37,7 @@ defmodule EmisarWeb.RoleCopy do
   def access_hint(_), do: nil
 
   @doc "The consequences shared by Team and connection member controls."
-  def suspend_body do
-    "This member loses access and is signed out of this account. Their agent credentials and standing approvals are revoked. Restoring access won't restore those credentials or approvals."
+  def suspend_body(name) do
+    "#{name} loses access and is signed out of this account. Their agent credentials and standing approvals are revoked. Restoring access won't restore those credentials or approvals."
   end
 end

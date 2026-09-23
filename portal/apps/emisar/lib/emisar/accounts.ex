@@ -81,6 +81,30 @@ defmodule Emisar.Accounts do
     end
   end
 
+  @doc "Internal — lock discovered accounts canonically before shared identity rows; return only active accounts."
+  def fetch_and_lock_session_accounts(account_ids, repo) when is_list(account_ids) do
+    accounts =
+      account_ids
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.reduce(%{}, fn account_id, accounts ->
+        # Rotation also carries dormant proof for disabled accounts. Their
+        # break-glass revocation uses this same fence, but they cannot mint.
+        case fetch_and_lock_account(account_id, repo: repo, include_deleted?: true) do
+          {:ok, %{disabled_at: nil, deleted_at: nil} = account} ->
+            Map.put(accounts, account_id, account)
+
+          {:ok, _inactive} ->
+            accounts
+
+          {:error, :not_found} ->
+            accounts
+        end
+      end)
+
+    {:ok, accounts}
+  end
+
   @doc """
   Internal — lock an active membership inside the caller's transaction.
   The account and membership ids are both part of the scope, and the inner
@@ -142,22 +166,27 @@ defmodule Emisar.Accounts do
     * `:ok` — compliant, or the account mandates neither control.
 
   SSO precedence mirrors the hook order (SSO is satisfied before MFA is asked
-  for). LOCATION exemptions (the sso_required shim, the MFA interstitial, the
-  profile page) are the caller's to layer on — they turn on WHERE the request
+  for). LOCATION exemptions (the sso_required shim and the MFA interstitial)
+  are the caller's to layer on — they turn on WHERE the request
   lands, not on whether the account is compliant.
   """
   def ensure_account_compliant(%Account{} = account, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
+    with {:ok, current} <-
+           Auth.Authorizer.fetch_addressable_subject(
              subject,
              Authorizer.view_own_account_permission()
            ),
          :ok <- Subject.ensure_in_account(subject, account.id) do
-      cond do
-        sso_step_up_required?(account, subject) -> {:error, :sso_required}
-        mfa_enrollment_required?(account, subject) -> {:error, :mfa_required}
-        true -> :ok
-      end
+      account_compliance_for_session(current.account, current)
+    end
+  end
+
+  @doc "Internal — evaluate freshly resolved session proof without recursively entering its permission gate."
+  def account_compliance_for_session(%Account{} = account, %Subject{} = subject) do
+    cond do
+      sso_step_up_required?(account, subject) -> {:error, :sso_required}
+      account.settings.require_mfa and not subject.mfa -> {:error, :mfa_required}
+      true -> :ok
     end
   end
 
@@ -174,50 +203,10 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # The session authenticated through an IdP this account federates with — its
-  # own provider or a sibling's on the same issuer — the same relationship the
-  # membership resolvers scope by, so a workspace that require_sso's is satisfied
-  # by the org's one login rather than rejecting its own federated siblings.
+  # The resolver already checked the frozen destination route and its current
+  # identity/provider. Never rediscover authority from a token's origin here.
   defp sso_session_for_account?(%Subject{} = subject, %Account{} = account) do
-    subject.auth_method == :sso and
-      SSO.identity_federates_with_account?(subject.user_identity_id, account.id)
-  end
-
-  # require_mfa: an enforcing account needs proof bound to THIS session and the
-  # user's CURRENT local enrollment. Enrollment alone is not proof: otherwise a
-  # stolen pre-enrollment cookie becomes compliant when its victim enrolls. An
-  # SSO session is independently exempt only while THIS account's provider says
-  # it enforces MFA.
-  defp mfa_enrollment_required?(%Account{} = account, %Subject{} = subject) do
-    cond do
-      not account.settings.require_mfa -> false
-      local_mfa_session_current?(subject) -> false
-      sso_session_satisfies_mfa?(subject, account) -> false
-      true -> true
-    end
-  end
-
-  # Both values must be timestamps before equality: nil == nil would otherwise
-  # turn an unenrolled actor and an unproved session into a valid pair. OAuth
-  # copies the proved epoch while replacing `actor` with its locked re-read, so
-  # disable/re-enroll between consent render and mint fails this same choke point.
-  defp local_mfa_session_current?(%Subject{
-         actor: %Users.User{mfa_enabled_at: %DateTime{} = enabled_at},
-         mfa_enrollment_verified_at: %DateTime{} = verified_enrollment
-       })
-       when enabled_at == verified_enrollment,
-       do: true
-
-  defp local_mfa_session_current?(%Subject{}), do: false
-
-  # Account-scoped: the SSO identity must federate with THIS account AND the
-  # provider it federates through — this account's own, on the same issuer —
-  # must satisfy MFA, so each workspace applies its own policy to a login proved
-  # at the shared IdP. A session SSO-authed via an unrelated IdP inherits no MFA
-  # exemption here — it never proved a second factor to THIS account.
-  defp sso_session_satisfies_mfa?(%Subject{} = subject, %Account{} = account) do
-    sso_session_for_account?(subject, account) and
-      SSO.federated_provider_satisfies_mfa?(subject.user_identity_id, account.id)
+    subject.auth_method == :sso and subject.account.id == account.id
   end
 
   @doc """
@@ -251,11 +240,11 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal support operation. A trusted admin or release-task boundary supplies
+  Internal support operation. The trusted private-pack/release-RPC boundary supplies
   the audit subject; this function is not exposed to ordinary account callers.
   The transition is idempotent and its audit row commits atomically.
 
-  The subject must be SCOPED TO THE TARGET account — the admin console builds a
+  The subject must be SCOPED TO THE TARGET account — `Admin` builds an actorless
   support subject for the account being disabled — and hold
   `manage_own_account`. The account-scope check is load-bearing, not decoration:
   `manage_own_account` is held by every owner/admin for their OWN account, so
@@ -397,22 +386,14 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # Disconnect the members' live sockets so every mounted LiveView remounts and
-  # re-resolves; do NOT delete their session tokens.
-  #
-  # A session token is per-USER, not per-account — the account is resolved from
-  # the URL on every request — so revoking them signed a member out of every
-  # OTHER account they belong to as well, mid-incident, with no audit event
-  # naming those accounts. Nothing is lost by not revoking: authorization for
-  # the disabled account is enforced at request time
-  # (`Auth.fetch_user_and_token_by_session_token/1` matches
-  # `%Account{disabled_at: nil}`), so a remount cannot get back in.
+  # Refresh only browsers with a grant in this account. Bearers and their
+  # independently proved access elsewhere survive; current grant resolution
+  # rejects the disabled/deleted account before any protected work.
   defp disconnect_account_members(account_id) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.with_preloaded_user()
     |> Repo.all()
-    |> Enum.each(&Auth.broadcast_disconnect_for_user(&1.user))
+    |> Enum.each(&Auth.broadcast_disconnect_for_membership/1)
 
     :ok
   end
@@ -498,47 +479,35 @@ defmodule Emisar.Accounts do
   def list_accounts_for_user(%Subject{actor: %Users.User{id: user_id}} = subject, opts \\ []) do
     Account.Query.active()
     |> Account.Query.by_membership_user_id(user_id)
-    |> scope_accounts_to_session(session_account_scope(subject))
+    |> scope_accounts_to_session(session_account_scope(user_id, subject))
     |> Account.Query.ordered_by_name()
     |> Repo.list(Account.Query, opts)
   end
 
-  # An SSO session's authority follows the identity provider it proved, not a
-  # single account. Users are global rows keyed by email, and a provider may
-  # create one for any address it asserts as verified; if the session it mints
-  # for that row could reach every workspace the row belongs to, the provider's
-  # owner would inherit any workspace the real person joins. So the scope of a
-  # session is a fact of HOW it was authenticated: a magic-link session (a proof
-  # of the person's own inbox) reaches all of their memberships; an `:sso`
-  # session reaches every account that INDEPENDENTLY federates with the same
-  # provider identity — the org running several workspaces on one IdP — and
-  # nothing else. A workspace the person joined by email or a different IdP is
-  # reached by signing in the matching way. `require_sso` accounts already
-  # impose the same rule in reverse. Every pre-auth membership resolver, the
-  # switcher, and the switch itself apply it, so it holds for existing sessions.
-  defp session_account_scope(%{auth_method: :sso, user_identity_id: identity_id})
-       when is_binary(identity_id) do
-    case SSO.fetch_federated_account_ids(identity_id) do
-      {:ok, account_ids} -> {:accounts, account_ids}
-      {:error, :not_found} -> :none
+  # Memberships and links created after proof never widen an existing bearer.
+  # In particular, nil is not a browser authorization bypass for API keys.
+  defp session_account_scope(user_id, session), do: Auth.session_membership_ids(user_id, session)
+
+  defp scope_memberships_to_session(queryable, membership_ids),
+    do: Membership.Query.by_ids(queryable, membership_ids)
+
+  defp scope_accounts_to_session(queryable, membership_ids),
+    do: Account.Query.by_membership_ids(queryable, membership_ids)
+
+  @doc "Internal — an API key authenticates its exact creator Member independently of browser grants."
+  def fetch_api_key_membership(%Emisar.ApiKeys.ApiKey{} = key) do
+    if Enum.all?([key.id, key.account_id, key.created_by_membership_id], &Repo.valid_uuid?/1) do
+      Membership.Query.authorized()
+      |> Membership.Query.by_account_id(key.account_id)
+      |> Membership.Query.by_id(key.created_by_membership_id)
+      |> Membership.Query.by_active_api_key_id(key.id, DateTime.utc_now())
+      |> Membership.Query.with_preloaded_account()
+      |> Membership.Query.with_preloaded_user()
+      |> Repo.fetch(Membership.Query)
+    else
+      {:error, :not_found}
     end
   end
-
-  # An SSO session with no identity behind it cannot name its accounts: nothing.
-  defp session_account_scope(%{auth_method: :sso}), do: :none
-  defp session_account_scope(_session), do: :any
-
-  defp scope_memberships_to_session(queryable, :any), do: queryable
-  defp scope_memberships_to_session(queryable, :none), do: Membership.Query.none(queryable)
-
-  defp scope_memberships_to_session(queryable, {:accounts, account_ids}),
-    do: Membership.Query.by_account_ids(queryable, account_ids)
-
-  defp scope_accounts_to_session(queryable, :any), do: queryable
-  defp scope_accounts_to_session(queryable, :none), do: Account.Query.none(queryable)
-
-  defp scope_accounts_to_session(queryable, {:accounts, account_ids}),
-    do: Account.Query.by_ids(queryable, account_ids)
 
   @doc """
   Internal — pre-auth self-serve signup. Validates the proposed workspace first,
@@ -673,9 +642,9 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — onboarding: an existing user stands up another workspace, so unlike
-  `begin_owner_registration/2` there is a user row already but still no `%Subject{}` for
-  the new tenant. Creates an account with the given user as `:owner`, wrapped
+  Internal — trusted setup for an existing user, without granting browser access.
+  Interactive onboarding uses `create_account_with_owner_from_name/2` instead.
+  Creates an account with the given user as `:owner`, wrapped
   in a transaction so a half-created account is impossible. `account.created`
   records the user who created it; an existing user has not signed up again.
   """
@@ -692,23 +661,34 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — onboarding from the workspace form, which has one input: derive
-  the unique slug from the operator-typed `name` and create the account with
-  `user` as `:owner`. No `%Subject{}` can exist for this new tenant yet. A
+  Personal self-service — derive the unique slug from the operator-typed `name`
+  and create a workspace with the actor as owner. The Subject needs no existing
+  workspace, but must hold live independent personal proof. The new Member and
+  its grant to this exact browser commit together, without refreshing old proof
+  or granting access to other memberships. A
   rejected slug is reported on `:name` — the only field the operator can
   correct it through. Returns
   `{:ok, account} | {:error, %Ecto.Changeset{} | reason}`.
   """
-  def create_account_with_owner_from_name(name, %Users.User{} = user) do
-    case create_account_with_owner(%{name: name, slug: suggest_unique_slug(name)}, user) do
-      {:ok, account} ->
-        {:ok, account}
+  def create_account_with_owner_from_name(name, %Subject{} = subject) do
+    with :ok <- Subject.ensure_personal_user(subject) do
+      attrs = %{name: name, slug: suggest_unique_slug(name)}
 
-      {:error, %Ecto.Changeset{data: %Account{}} = changeset} ->
-        {:error, surface_slug_error_on_name(changeset)}
+      Multi.new()
+      |> Auth.put_personal_session(subject)
+      |> put_account_with_owner(attrs)
+      |> Auth.put_created_membership_grant()
+      |> Repo.commit_multi(after_commit: &after_membership_activation_committed/1)
+      |> case do
+        {:ok, %{account: account}} ->
+          {:ok, account}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, {:account, %Ecto.Changeset{} = changeset}} ->
+          {:error, surface_slug_error_on_name(changeset)}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -2375,7 +2355,7 @@ defmodule Emisar.Accounts do
   `{:ok, membership} | {:error, :not_found}`.
   """
   def fetch_membership_for_session(%Users.User{id: user_id}, account_id, session) do
-    scope = session_account_scope(session)
+    scope = session_account_scope(user_id, session)
 
     case maybe_fetch_session_membership(user_id, account_id, scope) do
       {:ok, membership} ->
@@ -2416,9 +2396,9 @@ defmodule Emisar.Accounts do
   indistinguishable, so a slugged URL never confirms a tenant exists (404, never
   403). Suspended (`disabled_at`) members, unresolved invitations, and
   soft-deleted accounts/users are excluded. `session` is the `%Auth.UserToken{}`
-  or `%Subject{}` behind the request (nil for an API key, which is bound to its
-  own account): an `:sso` session resolves only inside its provider's account,
-  and an account outside that scope is `:not_found` like any other.
+  or `%Subject{}` behind the request. Only its persisted, live proof for the exact
+  membership permits resolution; nil or missing proof returns `:not_found`.
+  API keys use `fetch_api_key_membership/1` with their exact creator membership.
   """
   def fetch_membership_by_account_id_or_slug(
         %Users.User{id: user_id},
@@ -2428,7 +2408,7 @@ defmodule Emisar.Accounts do
     Membership.Query.authorized()
     |> Membership.Query.by_user_id(user_id)
     |> scope_to_account_ref(account_id_or_slug)
-    |> scope_memberships_to_session(session_account_scope(session))
+    |> scope_memberships_to_session(session_account_scope(user_id, session))
     |> Membership.Query.with_preloaded_account()
     |> Membership.Query.with_preloaded_user()
     |> Repo.fetch(Membership.Query)
@@ -2483,13 +2463,13 @@ defmodule Emisar.Accounts do
   of having succeeded.
   """
   def switch_account(account_id, %Subject{actor: %Users.User{id: user_id}} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
+    with {:ok, current} <-
+           Auth.Authorizer.fetch_addressable_subject(
              subject,
              Authorizer.view_own_account_permission()
            ) do
       if Repo.valid_uuid?(account_id),
-        do: commit_account_switch(account_id, user_id, subject),
+        do: commit_account_switch(account_id, user_id, current),
         else: {:error, :not_found}
     end
   end
@@ -2507,7 +2487,7 @@ defmodule Emisar.Accounts do
     |> Multi.run(:membership, fn repo, _changes ->
       Membership.Query.authorized()
       |> Membership.Query.by_account_and_user(account_id, user_id)
-      |> scope_memberships_to_session(session_account_scope(subject))
+      |> scope_memberships_to_session(session_account_scope(user_id, subject))
       |> Membership.Query.with_preloaded_account()
       |> Membership.Query.with_preloaded_user()
       |> Membership.Query.lock_for_update()
@@ -2530,19 +2510,15 @@ defmodule Emisar.Accounts do
   def membership_disabled?(%Membership{} = membership), do: Membership.disabled?(membership)
 
   @doc """
-  Internal — predicate composed by the web session checks (`UserAuth`) /
-  sibling contexts, off a `%Users.User{}` with no subject yet. True if every
-  membership the user holds is suspended (and they have at least one). Distinct
-  from "user has no memberships" — the UI needs to show "your access was
-  suspended" rather than send them to onboarding.
+  Internal — the browser boundary distinguishes recovery from first-run onboarding.
+  This predicate exposes no workspace names or authority. Include retired Members:
+  losing the last workspace does not mean the person has never joined one.
   """
-  def all_memberships_suspended?(%Users.User{id: user_id}) do
-    base =
-      Membership.Query.not_deleted()
-      |> Membership.Query.not_pending_invitation()
-      |> Membership.Query.by_user_id(user_id)
-
-    Repo.exists?(base) and not Repo.exists?(Membership.Query.not_disabled(base))
+  def has_membership_history?(%Users.User{id: user_id}) do
+    Membership.Query.all()
+    |> Membership.Query.not_pending_invitation()
+    |> Membership.Query.by_user_id(user_id)
+    |> Repo.exists?()
   end
 
   @doc """
@@ -2766,9 +2742,21 @@ defmodule Emisar.Accounts do
   defp revoke_membership_delegations(repo, %Membership{} = membership) do
     with {:ok, credentials} <- ApiKeys.revoke_credentials_for_membership(repo, membership.id),
          {:ok, grants} <- Approvals.revoke_grants_granted_by_membership(repo, membership),
-         {:ok, decisions} <- Approvals.revoke_decisions_by_membership(repo, membership) do
-      {:ok, Map.merge(credentials, %{approval_grants: grants, approval_decisions: decisions})}
+         {:ok, decisions} <- Approvals.revoke_decisions_by_membership(repo, membership),
+         {:ok, sessions} <- revoke_inactive_member_sessions(repo, membership) do
+      {:ok,
+       Map.merge(credentials, %{
+         approval_grants: grants,
+         approval_decisions: decisions,
+         sessions: sessions
+       })}
     end
+  end
+
+  defp revoke_inactive_member_sessions(repo, membership) do
+    if Membership.authorizable?(membership),
+      do: {:ok, %{count: 0, socket_topics: []}},
+      else: Auth.delete_membership_session_grants(membership, repo)
   end
 
   # A reduced role must retire what it delegated under the old authority. Run
@@ -2796,12 +2784,8 @@ defmodule Emisar.Accounts do
     not MapSet.subset?(Auth.Permissions.for_role(old_role), Auth.Permissions.for_role(new_role))
   end
 
-  defp refresh_member_sessions(%Membership{} = membership) do
-    case Users.fetch_user_by_id(membership.user_id) do
-      {:ok, user} -> Auth.broadcast_disconnect_for_user(user)
-      {:error, _reason} -> :ok
-    end
-  end
+  defp refresh_member_sessions(%Membership{} = membership),
+    do: Auth.broadcast_disconnect_for_membership(membership)
 
   defp broadcast_membership_suspended(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
@@ -3036,11 +3020,11 @@ defmodule Emisar.Accounts do
           revoke_membership_delegations(repo, suspended)
         end)
         |> Repo.commit_multi(
-          after_commit: fn %{membership: suspended} ->
+          after_commit: fn %{membership: suspended, credential_revocation: revocation} ->
             # Broadcast first so the team-page LV refreshes the row before we
             # kill the user's sessions — keeps the visual ordering sane.
             :ok = broadcast_membership_suspended(suspended)
-            :ok = end_account_sessions(suspended)
+            :ok = Auth.disconnect_live_socket_topics(revocation.sessions.socket_topics)
           end
         )
 
@@ -3132,23 +3116,14 @@ defmodule Emisar.Accounts do
   @doc """
   Internal — directory sync: the post-commit side effects of a COMMITTED sync
   suspend. Broadcast first so the team-page LV refreshes the row before the
-  member's sessions die, then end this account's sessions. Durable credential
+  member's sockets reconnect, using the topics captured before deleting grants. Durable credential
   revocation is part of `put_sync_membership_lifecycle/4`; only external effects
   stay here so a later rollback cannot leave the member signed out.
   """
-  def membership_suspended_effects(%Membership{} = membership) do
+  def membership_suspended_effects(%Membership{} = membership, socket_topics)
+      when is_list(socket_topics) do
     :ok = broadcast_membership_suspended(membership)
-    :ok = end_account_sessions(membership)
-  end
-
-  # Only the sessions THIS account authenticated. Revoking every session token the
-  # person holds signed them out of every other workspace they belong to — one
-  # tenant reaching into another's browser. Their membership here is already
-  # suspended or gone, and a session re-resolves its membership on the next
-  # request, so nothing outlives this.
-  defp end_account_sessions(%Membership{} = membership) do
-    SSO.end_account_sessions_for_user(membership.user_id, membership.account_id)
-    :ok
+    :ok = Auth.disconnect_live_socket_topics(socket_topics)
   end
 
   defp ensure_not_suspended(%Membership{disabled_at: nil}), do: :ok
@@ -3268,7 +3243,7 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal — directory sync: the post-commit side effect of a COMMITTED sync
-  reinstate (the team-page broadcast). See `membership_suspended_effects/1`
+  reinstate (the team-page broadcast). See `membership_suspended_effects/2`
   for why it is not fired inside the write.
   """
   def membership_reinstated_effects(%Membership{} = membership),
@@ -3277,9 +3252,17 @@ defmodule Emisar.Accounts do
   @doc "Fire a composed membership lifecycle's external effects after its outer commit."
   def membership_lifecycle_effects(%{membership_transition: transition} = changes) do
     case transition.effect do
-      {:suspended, membership} -> membership_suspended_effects(membership)
-      {:reinstated, membership} -> membership_reinstated_effects(membership)
-      nil -> :ok
+      {:suspended, membership} ->
+        membership_suspended_effects(
+          membership,
+          changes.lifecycle_credential_revocation.sessions.socket_topics
+        )
+
+      {:reinstated, membership} ->
+        membership_reinstated_effects(membership)
+
+      nil ->
+        :ok
     end
 
     after_membership_activation_committed(changes)
@@ -3761,16 +3744,7 @@ defmodule Emisar.Accounts do
   defp ensure_member_mfa_reset_actor(%Membership{}), do: {:error, :unauthorized}
 
   defp current_member_mfa_reset_subject(subject, account, actor_membership) do
-    Subject.for_user(
-      subject.actor,
-      account,
-      actor_membership,
-      subject.context,
-      auth_method: subject.auth_method,
-      mfa: subject.mfa,
-      mfa_enrollment_verified_at: subject.mfa_enrollment_verified_at,
-      user_identity_id: subject.user_identity_id
-    )
+    Subject.rebuild(subject, subject.actor, account, actor_membership)
   end
 
   defp ensure_member_mfa_reset_target(%Membership{} = membership) do
@@ -4081,42 +4055,28 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Admin-triggered "sign out everywhere" for a member. Kills every
-  session on the user record. Audit-logged. Same authorization as
-  membership changes.
+  End a member's sessions in this workspace, preserving the bearer and its
+  independently proved access elsewhere. Audit-logged; requires manage_team.
   """
   def end_all_sessions_for(%Membership{} = membership, %Subject{} = subject) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- ensure_subject_in_account(subject, membership.account_id) do
-      # The DB-side delete of session tokens is the source of truth — bundle
-      # it with the audit row so we never end up with "tokens deleted but no
-      # audit" or vice versa. The user read lives INSIDE the transaction so
-      # it shares the snapshot with the delete (which Auth owns — token
-      # internals stay private to it). The PubSub disconnect broadcast is a
-      # side effect that fires only after the rows commit.
-      #
-      # The socket topics are CAPTURED before the delete: each one is derived
-      # from its `user_tokens` row, so an after-commit lookup finds nothing and
-      # silently disconnects no one — the member's cookie dies while their open
-      # LiveView keeps working.
       Multi.new()
+      |> put_membership_account_lock(membership.account_id)
       |> lock_target_membership(membership, subject, &ensure_can_modify_membership(&1, subject))
       |> Multi.run(:user, fn _repo, %{target: loaded_membership} ->
         Users.fetch_user_by_id(loaded_membership.user_id)
       end)
-      |> Multi.run(:socket_topics, fn _repo, %{user: user} ->
-        {:ok, Emisar.Auth.capture_live_socket_topics(user)}
-      end)
-      |> Multi.run(:tokens, fn _repo, %{user: user} ->
-        Emisar.Auth.delete_all_session_tokens(user)
+      |> Multi.run(:sessions, fn repo, %{target: loaded_membership} ->
+        Auth.delete_membership_session_grants(loaded_membership, repo)
       end)
       |> Multi.insert(:audit, fn %{target: loaded_membership, user: user} ->
         Audit.Events.user_sessions_revoked(subject, loaded_membership, user)
       end)
       |> Repo.commit_multi(
-        after_commit: fn %{socket_topics: socket_topics} ->
-          Emisar.Auth.disconnect_live_socket_topics(socket_topics)
+        after_commit: fn %{sessions: %{socket_topics: socket_topics}} ->
+          Auth.disconnect_live_socket_topics(socket_topics)
           :ok
         end
       )
@@ -4201,13 +4161,13 @@ defmodule Emisar.Accounts do
         revoke_membership_delegations(repo, removed)
       end)
       |> Repo.commit_multi(
-        after_commit: fn %{membership: removed} ->
+        after_commit: fn %{membership: removed, credential_revocation: revocation} ->
           :ok = broadcast_membership_removed(removed)
 
           # A removed member's mounted session still carries its old Subject
           # until it remounts. Disconnect it after the delete commits; durable
           # credentials were revoked in the same transaction as the tombstone.
-          :ok = end_account_sessions(removed)
+          :ok = Auth.disconnect_live_socket_topics(revocation.sessions.socket_topics)
         end
       )
       |> case do

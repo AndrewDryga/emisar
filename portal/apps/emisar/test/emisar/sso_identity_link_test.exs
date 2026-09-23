@@ -27,9 +27,11 @@ defmodule Emisar.SSOIdentityLinkTest do
 
   setup do
     Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
-    {user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Workforce")
     raw_session = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw_session)
+    subject = Fixtures.Subjects.subject_for(user, account, session: session)
 
     %{
       account: account,
@@ -294,7 +296,8 @@ defmodule Emisar.SSOIdentityLinkTest do
 
     test "only a usable alternative unblocks required-SSO removal",
          %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
-      link_identity(context)
+      identity = link_identity(context)
+      context = with_sso_session(context, identity)
       Fixtures.Accounts.set_account_settings(context.account, %{require_sso: true})
 
       for state <- [:disabled, :deleted_provider, :retired, :deleted_identity] do
@@ -390,7 +393,8 @@ defmodule Emisar.SSOIdentityLinkTest do
         user_id: context.user.id
       })
 
-      link_identity(context)
+      identity = link_identity(context)
+      context = with_sso_session(context, identity)
       Fixtures.Accounts.set_account_settings(context.account, %{require_sso: true})
       assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
       assert facts.provider_id == context.provider.id
@@ -623,7 +627,7 @@ defmodule Emisar.SSOIdentityLinkTest do
                begun,
                context.session_digest,
                context.subject
-             ) == {:error, :identity_step_up_stale}
+             ) == {:error, :unauthorized}
     end
 
     test "rechecks administrator authority at the provider callback",
@@ -658,6 +662,7 @@ defmodule Emisar.SSOIdentityLinkTest do
     test "a stale allowed presentation never bypasses the locked required-SSO check",
          %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
       identity = link_identity(context)
+      context = with_sso_session(context, identity)
 
       alternative =
         Fixtures.SSO.create_identity_provider(
@@ -684,7 +689,7 @@ defmodule Emisar.SSOIdentityLinkTest do
       refute Repo.reload!(identity).deleted_at
     end
 
-    test "removes the binding and only revokes sessions created through it",
+    test "removes the binding and its destination proof without deleting bearers",
          %{provider: _provider, subject: _subject, user: _user} = context do
       identity = link_identity(context)
 
@@ -719,7 +724,15 @@ defmodule Emisar.SSOIdentityLinkTest do
                )
 
       assert event.target_label == "Workspace Unlinker"
-      assert Auth.fetch_user_and_token_by_session_token(provider_session) == {:error, :not_found}
+      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(provider_session)
+
+      assert Emisar.Accounts.fetch_membership_by_account_id_or_slug(
+               context.user,
+               context.account.id,
+               session
+             ) ==
+               {:error, :not_found}
+
       assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(unrelated_session)
 
       assert {:ok, _user, _token} =
@@ -729,6 +742,7 @@ defmodule Emisar.SSOIdentityLinkTest do
     test "does not strand a membership when its account requires SSO",
          %{account: account, subject: _subject} = context do
       identity = link_identity(context)
+      context = with_sso_session(context, identity)
       _account = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
       proof = local_proof(context, :unlink)
 
@@ -770,6 +784,17 @@ defmodule Emisar.SSOIdentityLinkTest do
       assert removed.scim_active
       assert %DateTime{} = removed.provider_identifier_retired_at
     end
+  end
+
+  defp with_sso_session(context, identity) do
+    raw =
+      Fixtures.Auth.create_session_token!(context.user, :sso, nil, %{},
+        user_identity_id: identity.id
+      )
+
+    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    subject = Fixtures.Subjects.subject_for(context.user, context.account, session: session)
+    %{context | raw_session: raw, session_digest: Crypto.hash(raw), subject: subject}
   end
 
   defp local_proof(context, purpose) do

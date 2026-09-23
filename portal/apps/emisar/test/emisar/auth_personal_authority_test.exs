@@ -4,18 +4,41 @@ defmodule Emisar.AuthPersonalAuthorityTest do
   alias Emisar.Auth.UserToken
 
   setup do
-    {user, account, subject} = Fixtures.Subjects.owner_subject()
+    {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
     raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
     {:ok, _, token} = Auth.fetch_user_and_token_by_session_token(raw)
 
     %{
       user: user,
       account: account,
-      subject: %{subject | auth_method: :magic_link},
+      subject: Fixtures.Subjects.subject_for(user, account, session: token),
       raw: raw,
       digest: Crypto.hash(raw),
       token: token
     }
+  end
+
+  defp nonpersonal_subject(personal, :sso) do
+    provider =
+      Fixtures.SSO.create_identity_provider(account_id: personal.account.id, satisfies_mfa: true)
+
+    identity =
+      Fixtures.SSO.create_user_identity(
+        account_id: personal.account.id,
+        provider_id: provider.id,
+        user_id: personal.actor.id
+      )
+
+    Fixtures.Subjects.subject_for(personal.actor, personal.account,
+      auth_method: :sso,
+      user_identity_id: identity.id
+    )
+  end
+
+  defp nonpersonal_subject(personal, nil) do
+    raw = Fixtures.Auth.create_session_token!(personal.actor, nil, nil)
+    {:ok, _user, token} = Auth.fetch_user_and_token_by_session_token(raw)
+    %{personal | session_token_id: token.id, member_grant_id: nil, auth_method: nil, mfa: true}
   end
 
   for method <- [:sso, nil] do
@@ -28,7 +51,7 @@ defmodule Emisar.AuthPersonalAuthorityTest do
       token: token
     } do
       # Neither an owner role nor an assurance stamp supplies personal authority.
-      subject = %{personal | auth_method: @method, mfa: true}
+      subject = nonpersonal_subject(personal, @method)
       assert Auth.Subject.ensure_personal_user(subject) == {:error, :unauthorized}
 
       assert Users.update_user_profile(%{full_name: "Workspace chosen"}, subject) ==
@@ -72,7 +95,7 @@ defmodule Emisar.AuthPersonalAuthorityTest do
     before = Repo.get!(UserToken, proof.token_id)
 
     for method <- [:sso, nil] do
-      subject = %{personal | auth_method: method}
+      subject = nonpersonal_subject(personal, method)
 
       assert Auth.complete_email_change(proof.token_id, proof.nonce, code, digest, subject) ==
                {:error, :unauthorized}
@@ -117,8 +140,7 @@ defmodule Emisar.AuthPersonalAuthorityTest do
 
   test "independent MFA enrollment stays available to SSO without granting personal authority", %{
     user: user,
-    account: account,
-    subject: personal
+    account: account
   } do
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: false)
 
@@ -130,13 +152,15 @@ defmodule Emisar.AuthPersonalAuthorityTest do
       })
 
     raw = Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
-    subject = %{personal | auth_method: :sso, user_identity_id: identity.id}
+    {:ok, _user, sso_session} = Auth.fetch_user_and_token_by_session_token(raw)
+    subject = Fixtures.Subjects.subject_for(user, account, session: sso_session)
+    Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
     secret = Auth.generate_mfa_secret()
     {enrolled, codes} = Fixtures.Users.enable_mfa!(secret, subject, session_token: raw)
     assert codes != []
     assert {:ok, _, session} = Auth.fetch_user_and_token_by_session_token(raw)
     assert session.auth_method == :sso
-    assert Auth.session_mfa_verified?(enrolled, session)
+    assert Auth.session_mfa_enrollment_verified_at(enrolled, session) == enrolled.mfa_enabled_at
 
     subject = %{
       subject

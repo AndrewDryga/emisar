@@ -231,7 +231,8 @@ defmodule Emisar.OAuth do
     # read-only viewer could walk the consent flow into an execute-capable token
     # they could never mint in-product (privilege escalation). The locked-row
     # re-check below is what makes it authoritative.
-    with :ok <- ensure_can_issue_backing_key(subject) do
+    with :ok <- Accounts.ensure_account_compliant(subject.account, subject),
+         :ok <- ensure_can_issue_backing_key(subject) do
       raw = "emoc-" <> Crypto.random_secret()
 
       Multi.new()
@@ -301,16 +302,10 @@ defmodule Emisar.OAuth do
          %{user: user, account: account, membership: membership},
          %Subject{} = subject
        ) do
-    fresh =
-      Subject.for_user(user, account, membership, subject.context,
-        auth_method: subject.auth_method,
-        mfa: subject.mfa,
-        mfa_enrollment_verified_at: subject.mfa_enrollment_verified_at,
-        user_identity_id: subject.user_identity_id
-      )
+    fresh = Subject.rebuild(subject, user, account, membership)
 
-    with :ok <- ensure_can_issue_backing_key(fresh),
-         :ok <- Accounts.ensure_account_compliant(account, fresh) do
+    with :ok <- Accounts.ensure_account_compliant(account, fresh),
+         :ok <- ensure_can_issue_backing_key(fresh) do
       {:ok, fresh}
     end
   end

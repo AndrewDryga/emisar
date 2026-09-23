@@ -1434,7 +1434,7 @@ defmodule Emisar.RunsTest do
     # a hundred rows, so the page's advertisements are ONE plain read: never a
     # fetch per run, and never the dispatch transaction's row locks, which
     # would queue every poll behind an in-flight dispatch or trust write.
-    test "resolves a page of parked runs in one read that takes no row lock", %{
+    test "authorizes once and resolves a page of parked runs in one unlocked catalog read", %{
       account: account,
       subject: subject,
       runner: runner,
@@ -1475,8 +1475,9 @@ defmodule Emisar.RunsTest do
                ["df -P -h /srv/alpha", "df -P -h /srv/beta", "df -P -h /srv/gamma"]
 
       queries = drain_runs_queries(test_pid)
-      assert length(queries) == 1
-      assert hd(queries) =~ ~s|"catalog_runner_actions"|
+      assert length(queries) == 2
+      assert Enum.count(queries, &(&1 =~ ~s|"auth_member_grant_routes"|)) == 1
+      assert Enum.count(queries, &(&1 =~ ~s|"catalog_runner_actions"|)) == 1
       refute Enum.any?(queries, &(String.upcase(&1) =~ "FOR UPDATE"))
       refute Enum.any?(queries, &(String.upcase(&1) =~ "FOR NO KEY UPDATE"))
     end
@@ -3627,7 +3628,7 @@ defmodule Emisar.RunsTest do
         role: "admin"
       )
 
-    owner_subject = Emisar.Auth.Subject.for_user(user, account, membership)
+    owner_subject = Fixtures.Subjects.membership_subject(membership)
     {:ok, _raw, key} = ApiKeys.create_key(%{name: "MCP fanout", kind: :mcp}, owner_subject)
     subject = Emisar.Auth.Subject.for_api_key(key, account)
 

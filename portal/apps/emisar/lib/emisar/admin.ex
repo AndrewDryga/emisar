@@ -1,7 +1,7 @@
 defmodule Emisar.Admin do
   @moduledoc """
-  Emisar staff operations. Two entries, both gated on the global `is_admin`
-  flag; neither is a tenant's own surface, so neither carries a `%Subject{}`.
+  Emisar staff operations. Trusted release-RPC mutations and staff-only console
+  reads have separate authority boundaries; neither is a tenant's own surface.
 
   `execute/2` is the private administrative command boundary invoked through
   release RPC. The public web and MCP routers never call it; the colocated

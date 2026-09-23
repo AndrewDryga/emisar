@@ -19,7 +19,7 @@ defmodule Emisar.MCPOperationsTest do
         role: "owner"
       )
 
-    owner_subject = Auth.Subject.for_user(user, account, membership)
+    owner_subject = Fixtures.Subjects.membership_subject(membership)
     {:ok, _raw, key} = ApiKeys.create_key(%{name: "MCP"}, owner_subject)
     key_subject = Auth.Subject.for_api_key(key, account)
 
@@ -194,7 +194,7 @@ defmodule Emisar.MCPOperationsTest do
           role: "owner"
         )
 
-      foreign_owner = Auth.Subject.for_user(foreign_user, foreign_account, foreign_membership)
+      foreign_owner = Fixtures.Subjects.membership_subject(foreign_membership)
       {:ok, _raw, foreign_key} = ApiKeys.create_key(%{name: "Foreign MCP"}, foreign_owner)
       foreign_subject = Auth.Subject.for_api_key(foreign_key, foreign_account)
       refute MCPOperations.operation_id(request, foreign_subject) == operation_id
@@ -273,7 +273,7 @@ defmodule Emisar.MCPOperationsTest do
           role: "owner"
         )
 
-      other_owner = Auth.Subject.for_user(other_user, other_account, other_membership)
+      other_owner = Fixtures.Subjects.membership_subject(other_membership)
       {:ok, _raw, foreign_key} = ApiKeys.create_key(%{name: "Foreign MCP"}, other_owner)
       foreign_subject = Auth.Subject.for_api_key(foreign_key, other_account)
 

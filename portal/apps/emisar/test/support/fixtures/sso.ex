@@ -65,6 +65,23 @@ defmodule Emisar.Fixtures.SSO do
     provider |> Ecto.Changeset.change(enabled: false) |> Repo.update!()
   end
 
+  @doc "Arranges the persisted result of a successful sign-in verification for this configuration."
+  def verify_provider_sign_in(%IdentityProvider{} = provider, user) do
+    digest =
+      [
+        provider.kind,
+        provider.issuer,
+        provider.client_id,
+        provider.client_secret,
+        provider.identifier_claim,
+        provider.allowed_email_domain
+      ]
+      |> :erlang.term_to_binary()
+      |> Emisar.Crypto.hash()
+
+    provider |> IdentityProvider.Changeset.verify_sign_in(user.id, digest) |> Repo.update!()
+  end
+
   @doc "Soft-deletes a provider directly, for tests exercising a concurrently-removed connection."
   def mark_provider_deleted(%IdentityProvider{} = provider) do
     provider |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()

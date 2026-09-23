@@ -26,7 +26,12 @@ defmodule Emisar.AccountsAuditReceiptsTest do
     test "records general changes alongside a dedicated security-setting event" do
       account = Fixtures.Accounts.create_account(name: "Original")
       Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      user =
+        Fixtures.Users.create_user()
+        |> Fixtures.Users.set_mfa_state(mfa_enabled_at: DateTime.utc_now())
+
+      subject = Fixtures.Subjects.subject_for(user, account, mfa: true)
 
       attrs = %{
         name: "Renamed",

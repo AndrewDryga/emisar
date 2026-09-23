@@ -506,45 +506,54 @@ defmodule Emisar.SSOGroupsTest do
     end
   end
 
-  describe "end_account_sessions_for_user/2" do
-    test "ends the sessions this account minted, and only those" do
-      %{provider: provider, account: account} = scim_provider()
-      %{identity: identity} = provision(provider, "okta|sessions")
-      {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
+  test "SCIM deletion retires its local grants while preserving bearers and other workspaces" do
+    %{provider: provider, account: account} = scim_provider()
+    %{identity: identity} = provision(provider, "okta|sessions")
+    {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
 
-      mine =
-        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
+    mine =
+      Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
-      other_account = Fixtures.Accounts.create_account()
-      other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
-      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
+    other_account = Fixtures.Accounts.create_account(plan: "team")
+    other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
+    Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
 
-      other_identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: other_account.id,
-          provider_id: other_provider.id,
-          user_id: user.id
-        )
+    other_identity =
+      Fixtures.SSO.create_user_identity(
+        account_id: other_account.id,
+        provider_id: other_provider.id,
+        user_id: user.id
+      )
 
-      theirs =
-        Fixtures.Auth.create_session_token!(user, :sso, nil, %{},
-          user_identity_id: other_identity.id
-        )
+    theirs =
+      Fixtures.Auth.create_session_token!(user, :sso, nil, %{},
+        user_identity_id: other_identity.id
+      )
 
-      assert SSO.end_account_sessions_for_user(user.id, account.id) == :ok
+    assert {:ok, _deleted} = SSO.scim_delete_user(provider, identity.id)
 
-      assert Auth.fetch_user_and_token_by_session_token(mine) == {:error, :not_found}
-      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(theirs)
-    end
+    assert {:ok, _user, local_session} = Auth.fetch_user_and_token_by_session_token(mine)
+    assert Auth.session_membership_ids(user.id, local_session) == []
+    assert {:ok, _user, other_session} = Auth.fetch_user_and_token_by_session_token(theirs)
 
-    test "a user with no identity in the account is a no-op" do
-      %{account: account} = scim_provider()
-      user = Fixtures.Users.create_user()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    assert {:ok, _member} =
+             Accounts.fetch_membership_by_account_id_or_slug(
+               user,
+               other_account.id,
+               other_session
+             )
 
-      assert SSO.end_account_sessions_for_user(user.id, account.id) == :ok
-      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
-    end
+    assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, local_session) ==
+             {:error, :not_found}
+  end
+
+  test "SCIM deletion of an unknown identity leaves personal sessions intact" do
+    %{provider: provider} = scim_provider()
+    user = Fixtures.Users.create_user()
+    token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+
+    assert SSO.scim_delete_user(provider, Ecto.UUID.generate()) == {:error, :not_found}
+    assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
   end
 
   describe "externalId-less group authorization" do

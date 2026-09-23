@@ -7,7 +7,7 @@ defmodule Emisar.Seeds.DemoAccount do
 
   alias Emisar.Accounts
   alias Emisar.Accounts.Account
-  alias Emisar.Auth.Subject
+  alias Emisar.Accounts.Membership
   alias Emisar.Policies
   alias Emisar.Repo
   alias Emisar.Runbooks
@@ -27,11 +27,16 @@ defmodule Emisar.Seeds.DemoAccount do
   """
   def run do
     user = Helpers.ensure_persona(@email, @full_name)
-    account = Helpers.ensure_account(@account_name, "demo", user)
-    {:ok, owner_membership} = Accounts.fetch_membership_for_session(user, account.id, nil)
-    owner_subject = Subject.for_user(user, account, owner_membership)
+
+    account =
+      @account_name
+      |> Helpers.ensure_account("demo", user)
+      |> Helpers.reset_screenshot_sign_in_policy()
+
+    owner_subject = Helpers.subject_for(account, user)
+    owner_membership = Accounts.peek_sync_membership(account.id, user.id)
     account = Helpers.ensure_account_name(account, @account_name, owner_subject)
-    owner_subject = Subject.for_user(user, account, owner_membership)
+    owner_subject = %{owner_subject | account: account}
 
     # The demo account is enterprise so SSO/SCIM is testable here.
     Helpers.seed_subscription(account, "enterprise")
@@ -45,9 +50,7 @@ defmodule Emisar.Seeds.DemoAccount do
 
     retire_first_pass_artifacts(ctx)
 
-    Helpers.say(
-      "✓ #{@account_name} ready (slug=demo, owner=#{@email}, password=#{Helpers.password()})"
-    )
+    Helpers.say("✓ #{@account_name} ready (slug=demo; sign in by email as #{@email})")
 
     policy = seed_default_policy(ctx)
 
@@ -189,6 +192,11 @@ defmodule Emisar.Seeds.DemoAccount do
           {:ok, _membership} = Accounts.mark_invitation_accepted(membership, token, invited)
           invited
       end
+
+    account.id
+    |> Accounts.peek_sync_membership(member.id)
+    |> Membership.Changeset.profile(%{display_name: full_name})
+    |> Repo.update!()
 
     member
     |> Helpers.ensure_profile(full_name)

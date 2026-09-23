@@ -79,13 +79,11 @@ defmodule Emisar.SSOSCIMTest do
 
       assert SSO.authenticate_scim_token(token) == {:error, :unauthorized}
 
-      assert {:ok, _account} =
-               Accounts.set_account_disabled_for_support(
-                 account.id,
-                 false,
-                 "Hold resolved",
-                 subject
-               )
+      assert {:ok, %{disabled: false}} =
+               Emisar.Admin.execute("emisar.admin.account.enable", [
+                 "account=#{account.slug}",
+                 "reason=Hold resolved"
+               ])
 
       assert {:ok, _provider} = SSO.authenticate_scim_token(token)
     end

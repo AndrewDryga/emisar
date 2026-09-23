@@ -481,6 +481,174 @@ defmodule Emisar.SSO do
 
   # -- Self-service OIDC identity linking -----------------------------
 
+  @session_step_up_max_age_seconds 600
+
+  @doc "Existing linked providers this exact browser may use to prove its workspace SSO requirement."
+  def list_session_step_up_providers(%Subject{actor: %Users.User{}} = subject) do
+    with {:ok, current} <-
+           Auth.Authorizer.fetch_addressable_subject(
+             subject,
+             Authorizer.view_sso_posture_permission()
+           ) do
+      identities =
+        UserIdentity.Query.not_deleted()
+        |> UserIdentity.Query.provider_identifier_active()
+        |> UserIdentity.Query.by_user_id(current.actor.id)
+        |> UserIdentity.Query.by_membership_id(current.membership_id)
+        |> UserIdentity.Query.with_preloaded_provider()
+        |> Authorizer.for_subject(current)
+        |> Repo.all()
+
+      providers =
+        if Billing.sso_available?(current.account) do
+          identities
+          |> Enum.map(& &1.provider)
+          |> Enum.filter(&match?(%IdentityProvider{enabled: true, deleted_at: nil}, &1))
+          |> Enum.sort_by(& &1.name)
+        else
+          []
+        end
+
+      {:ok, providers}
+    end
+  end
+
+  def list_session_step_up_providers(%Subject{}), do: {:error, :unauthorized}
+
+  @doc "Begin workspace SSO without ending the browser or borrowing anonymous JIT/link authority."
+  def begin_session_step_up(provider_id, redirect_uri, digest, %Subject{} = subject)
+      when is_binary(provider_id) and is_binary(redirect_uri) and is_binary(digest) do
+    with {:ok, current, session} <- session_step_up_actor(digest, subject),
+         {:ok, identity, provider} <- session_step_up_identity(provider_id, current),
+         {:ok, begun} <- OIDC.begin_authorization(provider, redirect_uri: redirect_uri) do
+      {:ok,
+       Map.merge(begun, %{
+         purpose: :workspace_sso,
+         actor_id: current.actor.id,
+         actor_membership_id: current.membership_id,
+         actor_session_token_id: session.id,
+         actor_session_token_digest: session.token,
+         member_grant_id: current.member_grant_id,
+         account_id: current.account.id,
+         provider_id: provider.id,
+         identity_id: identity.id,
+         provider_identifier: identity.provider_identifier,
+         namespace: callback_namespace(provider),
+         started_at: System.system_time(:second)
+       })}
+    end
+  end
+
+  def begin_session_step_up(_provider_id, _redirect_uri, _digest, %Subject{}),
+    do: {:error, :unauthorized}
+
+  @doc "Complete the bound SSO continuation; failure leaves its browser and all independent proof intact."
+  def complete_session_step_up(params, stashed, digest, %Subject{} = subject)
+      when is_map(params) and is_map(stashed) and is_binary(digest) do
+    with {:ok, current, session} <- session_step_up_actor(digest, subject),
+         :ok <- ensure_session_step_up_stash(stashed, current, session),
+         {:ok, identity, provider} <- session_step_up_identity(stashed.provider_id, current),
+         :ok <- ensure_session_step_up_identity(stashed, identity, provider),
+         {:ok, %{identifier: identifier, claims: claims}} <-
+           OIDC.verify_callback(provider, params, stashed),
+         true <- identifier == stashed.provider_identifier do
+      Auth.complete_sso_session_step_up(stashed, claims, digest, current)
+    else
+      false -> {:error, :session_step_up_invalid}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def complete_session_step_up(_params, _stashed, _digest, %Subject{}),
+    do: {:error, :session_step_up_invalid}
+
+  defp session_step_up_actor(digest, %Subject{actor: %Users.User{}} = subject) do
+    with {:ok, current} <-
+           Auth.Authorizer.fetch_addressable_subject(
+             subject,
+             Authorizer.view_sso_posture_permission()
+           ),
+         {:ok, session} <- Auth.fetch_current_session(current),
+         true <- Crypto.secure_compare(session.token, digest) do
+      {:ok, current, session}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp session_step_up_actor(_digest, %Subject{}), do: {:error, :unauthorized}
+
+  defp session_step_up_identity(provider_id, current) do
+    identity_query =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_provider_id(provider_id)
+      |> UserIdentity.Query.by_user_id(current.actor.id)
+      |> UserIdentity.Query.by_membership_id(current.membership_id)
+      |> UserIdentity.Query.with_preloaded_provider()
+      |> Authorizer.for_subject(current)
+
+    with true <- Repo.valid_uuid?(provider_id),
+         true <- Billing.sso_available?(current.account),
+         %UserIdentity{provider: %IdentityProvider{enabled: true, deleted_at: nil} = provider} =
+           identity <- Repo.peek(identity_query) do
+      {:ok, identity, provider}
+    else
+      _ -> {:error, :identity_not_linked}
+    end
+  end
+
+  defp ensure_session_step_up_stash(stashed, current, session) do
+    now = System.system_time(:second)
+    started_at = Map.get(stashed, :started_at)
+
+    valid? =
+      Map.get(stashed, :purpose) == :workspace_sso and
+        Map.get(stashed, :actor_id) == current.actor.id and
+        Map.get(stashed, :account_id) == current.account.id and
+        Map.get(stashed, :actor_membership_id) == current.membership_id and
+        Map.get(stashed, :member_grant_id) == current.member_grant_id and
+        Map.get(stashed, :actor_session_token_id) == session.id and
+        Map.get(stashed, :actor_session_token_digest) == session.token and
+        is_integer(started_at) and started_at <= now and
+        started_at >= now - @session_step_up_max_age_seconds and
+        Repo.valid_uuid?(Map.get(stashed, :provider_id))
+
+    if valid?, do: :ok, else: {:error, :session_step_up_invalid}
+  end
+
+  defp ensure_session_step_up_identity(stashed, identity, provider) do
+    if Map.get(stashed, :identity_id) == identity.id and
+         Map.get(stashed, :provider_identifier) == identity.provider_identifier and
+         Map.get(stashed, :namespace) == callback_namespace(provider),
+       do: :ok,
+       else: {:error, :session_step_up_invalid}
+  end
+
+  @doc "Internal — recheck the bound continuation under the same fences as SSO sign-in and revocation."
+  def put_session_step_up_authority(multi, stashed, claims, %Subject{} = subject) do
+    multi
+    |> put_sign_in_authority(subject.actor, subject.account.id,
+      user_identity_id: stashed.identity_id,
+      provider_identifier: stashed.provider_identifier,
+      donor_session_token_id: subject.session_token_id
+    )
+    |> Multi.run(:session_step_up_authority, fn _repo, changes ->
+      with :ok <-
+             ensure_session_step_up_identity(stashed, changes.sso_identity, changes.sso_provider),
+           true <- changes.sso_membership.id == subject.membership_id,
+           :ok <- ensure_email_domain_allowed(changes.sso_provider, claims),
+           {:ok, current, session} <-
+             session_step_up_actor(stashed.actor_session_token_digest, subject),
+           :ok <- ensure_session_step_up_stash(stashed, current, session) do
+        {:ok, current}
+      else
+        false -> {:error, :session_step_up_invalid}
+        {:error, reason} -> {:error, reason}
+      end
+    end)
+  end
+
   @identity_link_reauthentication_max_age_seconds 120
   @identity_link_reauthentication_clock_skew_seconds 30
 
@@ -782,8 +950,12 @@ defmodule Emisar.SSO do
     |> Multi.run(:actor, fn repo, %{account: account, provider: locked_provider} ->
       lock_identity_link_actor(repo, account, locked_provider, stashed, digest, subject)
     end)
-    |> Multi.run(:identity, fn repo, %{actor: %{membership: member}, provider: locked_provider} ->
+    |> Multi.run(:identity_write, fn repo,
+                                     %{actor: %{membership: member}, provider: locked_provider} ->
       link_identity_to_actor(repo, locked_provider, member, identifier, claims)
+    end)
+    |> Multi.run(:identity, fn _repo, %{identity_write: %{identity: identity}} ->
+      {:ok, identity}
     end)
     |> Multi.insert(:identity_audit, fn %{
                                           actor: %{subject: current_subject, membership: member},
@@ -792,7 +964,7 @@ defmodule Emisar.SSO do
       Audit.Events.sso_identity_linked(current_subject, member, locked_provider)
     end)
     |> Multi.merge(&provider_verification_writes(&1, stashed.purpose))
-    |> Repo.commit_multi()
+    |> Repo.commit_multi(after_commit: &disconnect_identity_write/1)
     |> case do
       {:ok, %{identity: identity, provider: locked_provider}} ->
         {:ok, %{identity: identity, provider: locked_provider, purpose: stashed.purpose}}
@@ -855,12 +1027,7 @@ defmodule Emisar.SSO do
   end
 
   defp current_identity_link_subject(subject, user, account, membership) do
-    Subject.for_user(user, account, membership, subject.context,
-      auth_method: subject.auth_method,
-      mfa: subject.mfa,
-      mfa_enrollment_verified_at: subject.mfa_enrollment_verified_at,
-      user_identity_id: subject.user_identity_id
-    )
+    Subject.rebuild(subject, user, account, membership)
   end
 
   defp ensure_identity_link_purpose_authorized(subject, :verify_provider),
@@ -903,21 +1070,52 @@ defmodule Emisar.SSO do
   defp ensure_identity_link_target(nil, nil, _user_id), do: :ok
 
   defp persist_self_verified_identity(repo, provider, member, nil, identifier, claims) do
-    UserIdentity.Changeset.create(provider.account_id, provider.id, member, %{
-      provider_identifier: identifier,
-      claims: claims,
-      created_by: :user,
-      provisioned_via: :oidc_link
-    })
-    |> repo.insert()
+    changeset =
+      UserIdentity.Changeset.create(provider.account_id, provider.id, member, %{
+        provider_identifier: identifier,
+        claims: claims,
+        created_by: :user,
+        provisioned_via: :oidc_link
+      })
+
+    with {:ok, identity} <- repo.insert(changeset),
+         do: {:ok, %{identity: identity, socket_topics: []}}
   end
 
   defp persist_self_verified_identity(repo, _provider, member, identity, identifier, claims) do
     identity
     |> UserIdentity.Changeset.verify_by_user(identifier, claims)
     |> UserIdentity.Changeset.bind_membership(member)
-    |> repo.update()
+    |> update_identity_binding(repo)
   end
+
+  @doc "Internal — update a locked identity binding, retiring old proof before any referenced Member changes."
+  def update_identity_binding(%Ecto.Changeset{data: %UserIdentity{} = identity} = changeset, repo) do
+    authority_fields = [
+      :provider_identifier,
+      :membership_id,
+      :user_id,
+      :provider_identifier_retired_at,
+      :deleted_at
+    ]
+
+    with {:ok, effect} <-
+           retire_changed_identity_routes(identity, changeset, authority_fields, repo),
+         {:ok, updated} <- repo.update(changeset) do
+      {:ok, %{identity: updated, socket_topics: effect.socket_topics}}
+    end
+  end
+
+  defp retire_changed_identity_routes(identity, changeset, authority_fields, repo) do
+    if Enum.any?(authority_fields, &Map.has_key?(changeset.changes, &1)),
+      do: Auth.delete_identity_session_routes([identity.id], repo),
+      else: {:ok, %{socket_topics: []}}
+  end
+
+  defp disconnect_identity_write(%{identity_write: %{socket_topics: topics}}),
+    do: Auth.disconnect_live_socket_topics(topics)
+
+  defp disconnect_identity_write(_changes), do: :ok
 
   defp provider_verification_writes(changes, :verify_provider) do
     provider = changes.provider
@@ -974,8 +1172,8 @@ defmodule Emisar.SSO do
       |> Multi.update(:removed_identity, fn %{identity: identity} ->
         unlink_identity_changeset(identity)
       end)
-      |> Multi.run(:session_effect, fn repo, %{actor: %{user: user}, identity: identity} ->
-        Auth.delete_identity_session_tokens(user, [identity.id], repo)
+      |> Multi.run(:session_effect, fn repo, %{identity: identity} ->
+        Auth.delete_identity_session_routes([identity.id], repo)
       end)
       |> Multi.insert(:audit, fn %{
                                    actor: %{subject: current_subject, membership: member},
@@ -1125,7 +1323,7 @@ defmodule Emisar.SSO do
                                        } ->
         if Ecto.Changeset.get_change(changeset, :enabled) == false or
              Ecto.Changeset.get_change(changeset, :satisfies_mfa) == false do
-          delete_provider_session_tokens(provider, repo)
+          delete_provider_session_routes(provider, repo)
         else
           {:ok, %{socket_topics: []}}
         end
@@ -1230,7 +1428,7 @@ defmodule Emisar.SSO do
         |> then(&prepare_provider_authorization_change(loaded_provider, &1, true))
       end)
       |> Multi.run(:session_effect, fn repo, %{provider: provider} ->
-        delete_provider_session_tokens(provider, repo)
+        delete_provider_session_routes(provider, repo)
       end)
       |> Multi.insert(:audit, fn %{provider: provider} ->
         Audit.Events.identity_provider_deleted(subject, provider)
@@ -1749,54 +1947,16 @@ defmodule Emisar.SSO do
     dismissed
   end
 
-  defp delete_provider_session_tokens(%IdentityProvider{} = provider, repo) do
+  defp delete_provider_session_routes(%IdentityProvider{} = provider, repo) do
     # Retired identities can still carry valid cookies. Revoke every identity
     # the provider vouched for, not just the currently visible ones.
-    topics =
+    ids =
       UserIdentity.Query.all()
       |> UserIdentity.Query.by_provider_id(provider.id)
       |> repo.all()
-      |> Enum.group_by(& &1.user_id, & &1.id)
-      |> Enum.flat_map(fn {user_id, identity_ids} ->
-        {:ok, %{socket_topics: topics}} =
-          Auth.delete_identity_session_tokens(user_id, identity_ids, repo)
-
-        topics
-      end)
-
-    {:ok, %{socket_topics: topics}}
-  end
-
-  @doc """
-  Internal — SCIM deprovision: end the sessions this ACCOUNT authenticated for
-  `user_id`, leaving any other account's untouched. Called from the membership
-  suspend's after_commit, which holds the provider but cannot read SSO's tables.
-  """
-  def end_account_sessions_for_user(user_id, account_id)
-      when is_binary(user_id) and is_binary(account_id) do
-    identity_ids =
-      UserIdentity.Query.all()
-      |> UserIdentity.Query.by_account_id(account_id)
-      |> UserIdentity.Query.by_user_id(user_id)
-      |> Repo.all()
       |> Enum.map(& &1.id)
 
-    end_identity_sessions(user_id, identity_ids)
-  end
-
-  defp end_identity_sessions(user_id, identity_ids) do
-    case Users.fetch_user_by_id(user_id) do
-      {:ok, user} ->
-        Auth.revoke_identity_sessions(user, identity_ids)
-
-      {:error, reason} ->
-        Logger.warning("sso_session_user_missing",
-          user_id: user_id,
-          reason: inspect(reason)
-        )
-
-        :ok
-    end
+    Auth.delete_identity_session_routes(ids, repo)
   end
 
   @authorization_reconcile_batch_size 100
@@ -2716,14 +2876,12 @@ defmodule Emisar.SSO do
   end
 
   @doc """
-  Internal — compose the current SSO authority into Auth's session transaction.
+  Internal — freeze the exact SSO destinations for Auth's sign-in transaction.
 
-  The account is already locked by the caller. This takes the remaining durable
-  locks in subscription -> provider -> user -> identity order, then Auth writes
-  the session while all of them remain held. The callback checked the same facts,
-  but its transaction is already over; re-reading here prevents a disable,
-  retirement, or cross-account membership activation from leaving a session
-  minted through stale authority.
+  Discovering candidates grants nothing. All account, subscription and provider
+  fences precede the shared User lock; each identity and Member is then rechecked.
+  The origin and every independently qualified same-issuer destination remain
+  separate proofs, so later origin revocation cannot revoke a sibling's grant.
   """
   def put_sign_in_authority(
         %Multi{} = multi,
@@ -2732,42 +2890,72 @@ defmodule Emisar.SSO do
         opts
       )
       when is_binary(user_id) and is_binary(account_id) and is_list(opts) do
-    user_identity_id = Keyword.get(opts, :user_identity_id)
-    provider_identifier = Keyword.get(opts, :provider_identifier)
+    identity_id = Keyword.get(opts, :user_identity_id)
+    identifier = Keyword.get(opts, :provider_identifier)
 
-    if is_binary(user_identity_id) and is_binary(provider_identifier) do
+    if Repo.valid_uuid?(identity_id) and is_binary(identifier) do
       multi
-      |> Multi.run(:sso_entitlement, fn repo, _changes ->
-        if Billing.sso_available_for_account_id?(account_id, repo: repo, lock?: true),
-          do: {:ok, :available},
-          else: {:error, :provider_disabled}
-      end)
-      # This read grants nothing; it only identifies the provider row that must
-      # precede the user lock. The exact binding is locked and revalidated below.
       |> Multi.run(:sso_identity_hint, fn repo, _changes ->
-        hint =
+        sign_in_identity_hint(repo, user_id, account_id, identity_id, identifier)
+      end)
+      |> Multi.run(:sso_candidates, fn repo, %{sso_identity_hint: hint} ->
+        siblings =
           UserIdentity.Query.not_deleted()
           |> UserIdentity.Query.provider_identifier_active()
-          |> UserIdentity.Query.by_id(user_identity_id)
           |> UserIdentity.Query.by_user_id(user_id)
-          |> UserIdentity.Query.by_account_id(account_id)
-          |> UserIdentity.Query.by_provider_identifier(provider_identifier)
-          |> repo.peek()
+          |> UserIdentity.Query.by_active_provider_issuer(hint.provider.issuer)
+          |> UserIdentity.Query.with_authorized_membership()
+          |> repo.all()
 
-        if hint, do: {:ok, hint}, else: {:error, :provider_disabled}
+        {:ok, Enum.uniq_by([hint | siblings], & &1.id)}
       end)
-      |> Multi.run(:sso_provider, fn repo, %{sso_identity_hint: hint} ->
-        current =
-          IdentityProvider.Query.not_deleted()
-          |> IdentityProvider.Query.by_account_id(account_id)
-          |> IdentityProvider.Query.by_id(hint.provider_id)
-          |> IdentityProvider.Query.lock_for_update()
-          |> repo.peek()
+      |> Multi.run(:sso_accounts, fn repo, %{sso_candidates: candidates} ->
+        donor_accounts =
+          Auth.session_grant_account_ids(Keyword.get(opts, :donor_session_token_id))
 
-        case current do
-          %IdentityProvider{enabled: true} = provider -> {:ok, provider}
-          _ -> {:error, :provider_disabled}
+        account_ids = Enum.map(candidates, & &1.account_id) ++ donor_accounts
+        Accounts.fetch_and_lock_session_accounts(account_ids, repo)
+      end)
+      |> Multi.run(:account, fn _repo, %{sso_accounts: accounts} ->
+        case Map.fetch(accounts, account_id) do
+          {:ok, account} -> {:ok, account}
+          :error -> {:error, :account_disabled}
         end
+      end)
+      |> Multi.run(:sso_entitlements, fn repo, %{sso_accounts: accounts} ->
+        entitlements =
+          accounts
+          |> Map.keys()
+          |> Enum.sort()
+          |> Map.new(fn id ->
+            {id, Billing.sso_available_for_account_id?(id, repo: repo, lock?: true)}
+          end)
+
+        {:ok, entitlements}
+      end)
+      |> Multi.run(:sso_providers, fn repo, %{sso_accounts: accounts} ->
+        providers =
+          accounts
+          |> Map.keys()
+          |> Enum.sort()
+          |> Enum.flat_map(fn id ->
+            IdentityProvider.Query.not_deleted()
+            |> IdentityProvider.Query.by_account_id(id)
+            |> IdentityProvider.Query.ordered_by_id()
+            |> IdentityProvider.Query.lock_for_update()
+            |> repo.all()
+          end)
+
+        {:ok, Map.new(providers, &{&1.id, &1})}
+      end)
+      |> Multi.run(:sso_provider, fn _repo, changes ->
+        hint = changes.sso_identity_hint
+        provider = changes.sso_providers[hint.provider_id]
+
+        if provider && provider.enabled && provider.issuer == hint.provider.issuer &&
+             changes.sso_entitlements[account_id],
+           do: {:ok, provider},
+           else: {:error, :provider_disabled}
       end)
       |> Multi.run(:sso_user, fn repo, _changes ->
         case Users.fetch_and_lock_user_by_id(user_id, repo) do
@@ -2775,25 +2963,14 @@ defmodule Emisar.SSO do
           {:error, :not_found} -> {:error, :provider_disabled}
         end
       end)
-      |> Multi.run(:sso_identity, fn repo, %{sso_provider: provider} ->
-        identity =
-          UserIdentity.Query.not_deleted()
-          |> UserIdentity.Query.provider_identifier_active()
-          |> UserIdentity.Query.by_id(user_identity_id)
-          |> UserIdentity.Query.by_user_id(user_id)
-          |> UserIdentity.Query.by_account_id(account_id)
-          |> UserIdentity.Query.by_provider_id(provider.id)
-          |> UserIdentity.Query.by_provider_identifier(provider_identifier)
-          |> UserIdentity.Query.lock_for_update()
-          |> repo.peek()
-
-        if identity, do: {:ok, identity}, else: {:error, :provider_disabled}
+      |> Multi.run(:sso_identity, fn repo, %{sso_identity_hint: hint} ->
+        lock_sign_in_identity(repo, hint, user_id)
       end)
       |> Multi.run(:sso_membership, fn repo, %{sso_identity: identity} ->
-        case Accounts.fetch_and_lock_active_membership(repo, account_id, identity.membership_id) do
-          {:ok, member} when member.user_id == user_id -> {:ok, member}
-          _ -> {:error, :membership_unavailable}
-        end
+        lock_sign_in_member(repo, identity, user_id)
+      end)
+      |> Multi.run(:sso_destinations, fn repo, changes ->
+        {:ok, sign_in_destinations(repo, changes)}
       end)
     else
       Multi.error(multi, :sso_provider, :provider_disabled)
@@ -2802,6 +2979,95 @@ defmodule Emisar.SSO do
 
   def put_sign_in_authority(%Multi{} = multi, _user, _account_id, _opts) do
     Multi.error(multi, :sso_provider, :provider_disabled)
+  end
+
+  defp sign_in_identity_hint(repo, user_id, account_id, identity_id, identifier) do
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_id(identity_id)
+      |> UserIdentity.Query.by_user_id(user_id)
+      |> UserIdentity.Query.by_account_id(account_id)
+      |> UserIdentity.Query.by_provider_identifier(identifier)
+      |> UserIdentity.Query.with_preloaded_provider()
+
+    case repo.peek(queryable) do
+      %UserIdentity{} = identity -> {:ok, identity}
+      nil -> {:error, :provider_disabled}
+    end
+  end
+
+  defp lock_sign_in_identity(repo, hint, user_id) do
+    queryable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_id(hint.id)
+      |> UserIdentity.Query.by_user_id(user_id)
+      |> UserIdentity.Query.by_account_id(hint.account_id)
+      |> UserIdentity.Query.by_provider_id(hint.provider_id)
+      |> UserIdentity.Query.by_provider_identifier(hint.provider_identifier)
+      |> UserIdentity.Query.lock_for_update()
+
+    case repo.peek(queryable) do
+      %UserIdentity{membership_id: member_id} = identity when member_id == hint.membership_id ->
+        {:ok, identity}
+
+      _ ->
+        {:error, :provider_disabled}
+    end
+  end
+
+  defp lock_sign_in_member(repo, identity, user_id) do
+    case Accounts.fetch_and_lock_active_membership(
+           repo,
+           identity.account_id,
+           identity.membership_id
+         ) do
+      {:ok, member} when member.user_id == user_id -> {:ok, member}
+      _ -> {:error, :membership_unavailable}
+    end
+  end
+
+  defp sign_in_destinations(repo, changes) do
+    changes.sso_candidates
+    |> Enum.sort_by(& &1.id)
+    |> Enum.flat_map(fn hint ->
+      provider = changes.sso_providers[hint.provider_id]
+
+      if provider && provider.enabled &&
+           provider.issuer == changes.sso_provider.issuer &&
+           changes.sso_entitlements[hint.account_id] do
+        with {:ok, identity} <- lock_sign_in_identity(repo, hint, changes.sso_user.id),
+             {:ok, member} <- lock_sign_in_member(repo, identity, changes.sso_user.id) do
+          direct? = identity.id == changes.sso_identity.id
+          mfa? = sign_in_destination_mfa?(provider, direct?, changes.sso_providers)
+
+          [
+            %{
+              identity: %{identity | provider: provider},
+              membership: member,
+              direct?: direct?,
+              mfa?: mfa?
+            }
+          ]
+        else
+          {:error, _reason} -> []
+        end
+      else
+        []
+      end
+    end)
+  end
+
+  defp sign_in_destination_mfa?(provider, true, _providers), do: provider.satisfies_mfa
+
+  defp sign_in_destination_mfa?(provider, false, providers) do
+    providers
+    |> Map.values()
+    |> Enum.filter(
+      &(&1.account_id == provider.account_id and &1.enabled and &1.issuer == provider.issuer)
+    )
+    |> Enum.all?(& &1.satisfies_mfa)
   end
 
   # Sign-in and revocation take the same provider lock, so a callback carrying
@@ -3671,6 +3937,7 @@ defmodule Emisar.SSO do
       case Repo.commit_multi(multi) do
         {:ok, %{user: user, identity: identity} = changes} ->
           :ok = link_approval_membership_effects(changes)
+          :ok = disconnect_identity_write(changes)
           broadcast_link_request_approved(request)
           {:ok, %{user: user, identity: identity}}
 
@@ -3699,8 +3966,8 @@ defmodule Emisar.SSO do
   # whoever holds that credential can afterwards sign in as them. The approver is
   # also whoever configured the IdP, so without a limit they can assert any
   # email, approve their own request, and authenticate as that member — an admin
-  # reaching owner, and (because a session can switch accounts) reaching every
-  # other account that person belongs to.
+  # reaching owner. Frozen session grants constrain the workspace destinations;
+  # they do not make an account admin an authority over a shared personal User.
   #
   # Three limits, all judged on the matched member rather than on the request:
   #
@@ -3710,8 +3977,8 @@ defmodule Emisar.SSO do
   #     no-escalation primitive role changes and invites use — so an admin can
   #     never bind themselves onto an owner;
   #   * the target must not hold an active membership in another account, because
-  #     this account's admin has no authority there and the resulting session
-  #     would reach it.
+  #     this account's admin has no authority over a User shared with another
+  #     account. This guard remains until personal linking is independently proved.
   #
   # A request with no match provisions a fresh user and escalates nothing.
   defp ensure_link_target_within_authority(
@@ -3929,8 +4196,11 @@ defmodule Emisar.SSO do
       |> Multi.merge(fn %{user: user} ->
         approved_membership_multi(locked_provider, user, request)
       end)
-      |> Multi.run(:identity, fn _repo, %{membership: member} ->
-        link_identity(locked_provider, member, request)
+      |> Multi.run(:identity_write, fn repo, %{membership: member} ->
+        link_identity(locked_provider, member, request, repo)
+      end)
+      |> Multi.run(:identity, fn _repo, %{identity_write: %{identity: identity}} ->
+        {:ok, identity}
       end)
       |> Multi.insert(:audit, fn %{membership: member} ->
         Audit.Events.sso_existing_user_linked(subject, member, locked_provider)
@@ -4146,7 +4416,7 @@ defmodule Emisar.SSO do
           |> UserIdentity.Query.by_ids(removed_ids)
           |> repo.update_all(set: [deleted_at: now, updated_at: now])
 
-        {:ok, session_effect} = Auth.delete_identity_session_tokens(user_id, ids, repo)
+        {:ok, session_effect} = Auth.delete_identity_session_routes(ids, repo)
         {:ok, %{count: preserved + removed, socket_topics: session_effect.socket_topics}}
     end
   end
@@ -4196,7 +4466,7 @@ defmodule Emisar.SSO do
   # sub, the next OIDC login then failed to find the person and parked its own
   # request, and approving THAT overwrote the externalId — back and forth, one
   # approval at a time, with whichever side was not current unable to see them.
-  defp link_identity(%IdentityProvider{} = provider, member, %LinkRequest{} = request) do
+  defp link_identity(%IdentityProvider{} = provider, member, %LinkRequest{} = request, repo) do
     case peek_identity(provider, member.user_id) do
       %UserIdentity{scim_deleted_at: %DateTime{}} ->
         {:error, :scim_resource_retired}
@@ -4205,7 +4475,7 @@ defmodule Emisar.SSO do
         identity
         |> rebind_changeset(request)
         |> UserIdentity.Changeset.bind_membership(member)
-        |> Repo.update()
+        |> update_identity_binding(repo)
 
       nil ->
         # OIDC does not get to reserve the directory namespace. A SCIM request
@@ -4219,9 +4489,10 @@ defmodule Emisar.SSO do
           provisioned_via: :manual
         }
 
-        provider.account_id
-        |> UserIdentity.Changeset.create(provider.id, member, attrs)
-        |> Repo.insert()
+        changeset = UserIdentity.Changeset.create(provider.account_id, provider.id, member, attrs)
+
+        with {:ok, identity} <- repo.insert(changeset),
+             do: {:ok, %{identity: identity, socket_topics: []}}
     end
   end
 
@@ -4312,47 +4583,11 @@ defmodule Emisar.SSO do
   """
   def provider_satisfies_mfa?(%IdentityProvider{satisfies_mfa: satisfies}), do: satisfies
 
-  @doc """
-  Internal — require_mfa enforcement: does the provider through which this SSO
-  identity federates with `account_id` satisfy MFA? For the identity's own
-  account that is its own provider's `satisfies_mfa`; for a federated sibling it
-  is the sibling's enabled provider on the same issuer, so each workspace applies
-  its OWN policy to a login proved at the shared IdP. The `require_mfa` exemption
-  gates on THIS, not merely on the session being SSO, so a provider marked
-  `satisfies_mfa: false` still forces emisar TOTP. False for a nil, unknown, or
-  retired identity, or an account that does not federate (fail closed).
-  """
-  def federated_provider_satisfies_mfa?(user_identity_id, account_id)
-      when is_binary(user_identity_id) and is_binary(account_id) do
-    identity =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.provider_identifier_active()
-      |> UserIdentity.Query.by_id(user_identity_id)
-      |> UserIdentity.Query.with_authorized_membership()
-      |> UserIdentity.Query.with_preloaded_provider()
-      |> Repo.peek()
-
-    case identity do
-      # The identity's own account: its own provider's policy, as before.
-      %UserIdentity{account_id: ^account_id, provider: %IdentityProvider{} = provider} ->
-        provider_satisfies_mfa?(provider)
-
-      # A federated sibling: that workspace's own enabled provider on the same
-      # issuer decides whether a login proved at the shared IdP counts as MFA.
-      %UserIdentity{provider: %IdentityProvider{issuer: issuer}} ->
-        sibling_providers_satisfy_mfa?(account_id, issuer)
-
-      nil ->
-        false
-    end
-  end
-
-  def federated_provider_satisfies_mfa?(_user_identity_id, _account_id), do: false
-
   # Fail-safe on both edges: no matching provider means the account does not
   # federate (no exemption), and a mixed set of same-issuer providers must all
   # agree before a second factor is waived.
-  defp sibling_providers_satisfy_mfa?(account_id, issuer) do
+  @doc "Internal — all currently enabled destination providers on an inferred route's issuer must trust MFA."
+  def issuer_satisfies_mfa_for_account?(issuer, account_id) do
     providers =
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.by_account_id(account_id)
@@ -4361,80 +4596,6 @@ defmodule Emisar.SSO do
       |> Repo.all()
 
     providers != [] and Enum.all?(providers, &provider_satisfies_mfa?/1)
-  end
-
-  @doc """
-  Internal — require_sso enforcement: does this session's SSO identity federate
-  with `account_id`? (Pre-Subject.) True for the identity's own account and for
-  every sibling in its federation set — an enabled provider on the same issuer
-  holding this user's identity — so an org running several workspaces on one IdP
-  satisfies each workspace's `require_sso` with one login. Provider disable/delete
-  owns exact credential revocation after its transaction commits; once an
-  identity is soft-deleted or retired this predicate fails closed.
-  """
-  def identity_federates_with_account?(user_identity_id, account_id)
-      when is_binary(user_identity_id) and is_binary(account_id) do
-    case fetch_federated_account_ids(user_identity_id) do
-      {:ok, account_ids} -> account_id in account_ids
-      {:error, :not_found} -> false
-    end
-  end
-
-  def identity_federates_with_account?(_user_identity_id, _account_id), do: false
-
-  @doc """
-  Internal — pre-auth: the set of accounts an `:sso` session is authority for.
-
-  An SSO session proves the person at one identity provider, so it is authority
-  in every account that INDEPENDENTLY federates with that same provider identity
-  — where this same user holds a live identity under an enabled provider with the
-  same issuer. That is the org running several workspaces on one IdP: one login
-  reaches all of them. A workspace the person joined by email or a different IdP,
-  or one that turned this SSO off, is not in the set.
-
-  The authenticating identity's own account is always included, even if its
-  provider was since disabled — the session it minted stays authority there. A
-  retired or soft-deleted binding (or a soft-deleted provider, which the inner
-  join drops) answers `{:error, :not_found}` and the session reaches nothing.
-  """
-  def fetch_federated_account_ids(user_identity_id) when is_binary(user_identity_id) do
-    identity =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.provider_identifier_active()
-      |> UserIdentity.Query.by_id(user_identity_id)
-      |> UserIdentity.Query.with_authorized_membership()
-      |> UserIdentity.Query.with_preloaded_provider()
-      |> Repo.peek()
-
-    case identity do
-      %UserIdentity{
-        user_id: user_id,
-        account_id: account_id,
-        provider: %IdentityProvider{issuer: issuer}
-      } ->
-        {:ok, federated_account_ids(user_id, account_id, issuer)}
-
-      nil ->
-        {:error, :not_found}
-    end
-  end
-
-  def fetch_federated_account_ids(_user_identity_id), do: {:error, :not_found}
-
-  # issuer is a required, URL-validated provider field, so it is always a
-  # non-empty string here; a hypothetical NULL would match no provider and
-  # collapse to the identity's own account, which stays safe.
-  defp federated_account_ids(user_id, account_id, issuer) do
-    ids =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.provider_identifier_active()
-      |> UserIdentity.Query.by_user_id(user_id)
-      |> UserIdentity.Query.by_active_provider_issuer(issuer)
-      |> UserIdentity.Query.with_authorized_membership()
-      |> UserIdentity.Query.select_account_ids()
-      |> Repo.all()
-
-    Enum.uniq([account_id | ids])
   end
 
   # -- Authorization ---------------------------------------------------
