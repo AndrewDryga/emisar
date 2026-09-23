@@ -3,7 +3,7 @@ id: consul.node_health
 title: GET /v1/health/node/<node>
 kind: script
 risk: low
-description: List all checks for one node + their status.
+description: List all checks for one node + their status. Omits each check's Output text.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: node
@@ -15,9 +15,9 @@ args:
       pattern: "^[a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,127}$"
 execution:
   script:
-    path: scripts/api_request.sh
+    path: scripts/check_status_request.sh
     interpreter: /bin/sh
-  argv: [GET, "/v1/health/node/{{ args.node }}"]
+  argv: ["/v1/health/node/{{ args.node }}"]
   timeout: 30s
 output:
   parser: json

@@ -2,10 +2,11 @@ schema_version: 1
 
 id: consul
 name: HashiCorp Consul operations
-version: 0.2.36
-# The kv reads returned secret-bearing values at a tier the default policy
-# auto-runs; every version below fails closed rather than skipping approval.
-retired_below: 0.2.25
+version: 0.2.37
+# Versions below this passed each health check's raw Output (arbitrary
+# application text) through low-risk status reads; earlier ones also returned
+# secret-bearing kv values at an auto-run tier. They fail closed.
+retired_below: 0.2.37
 description: >
   Deep Consul ops — agent self/metrics/host introspection, operator
   raft + autopilot + reload, catalog (services + nodes + datacenters),

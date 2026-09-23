@@ -3,7 +3,7 @@ id: consul.list_checks_critical
 title: GET /v1/health/state/critical
 kind: script
 risk: low
-description: List every check currently in CRITICAL state across the catalog.
+description: List every check currently in CRITICAL state across the catalog. Omits each check's Output text.
 side_effects: ["One API call.", "Read-only."]
 search_terms:
   - what is failing
@@ -11,9 +11,9 @@ search_terms:
 args: []
 execution:
   script:
-    path: scripts/api_request.sh
+    path: scripts/check_status_request.sh
     interpreter: /bin/sh
-  argv: [GET, /v1/health/state/critical]
+  argv: [/v1/health/state/critical]
   timeout: 30s
 output:
   parser: json

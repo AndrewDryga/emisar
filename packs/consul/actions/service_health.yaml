@@ -3,7 +3,7 @@ id: consul.service_health
 title: Health of a service's instances
 kind: script
 risk: low
-description: Show per-node health for one service.
+description: Show per-node health for one service. Omits each check's Output text.
 side_effects:
   - One health request.
   - Read-only.
@@ -19,9 +19,9 @@ args:
       pattern: "^[a-zA-Z0-9_.][a-zA-Z0-9_.\\-]{0,127}$"
 execution:
   script:
-    path: scripts/api_request.sh
+    path: scripts/check_status_request.sh
     interpreter: /bin/sh
-  argv: [GET, "/v1/health/service/{{ args.service }}"]
+  argv: ["/v1/health/service/{{ args.service }}"]
   timeout: 30s
 output:
   parser: json

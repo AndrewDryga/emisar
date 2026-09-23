@@ -11,6 +11,16 @@ cases:
   - action: consul.agent_checks
     expect:
       stdout_contains: ["{}"]
+  - name: consul.health-reads-omit-check-output
+    action: consul.list_checks_critical
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT --data ''{"ID":"packtest-outcheck","Name":"packtest-outcheck","Check":{"TTL":"30s"}}'' "$CONSUL_HTTP_ADDR/v1/agent/service/register"']
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT "$CONSUL_HTTP_ADDR/v1/agent/check/fail/service:packtest-outcheck?note=emisar-check-output-canary-9f3a"']
+    expect:
+      stdout_contains: ['"Status":"critical"', '"ServiceName":"packtest-outcheck"']
+      stdout_not_contains: [emisar-check-output-canary-9f3a]
+    cleanup:
+      - argv: [/bin/sh, -c, 'curl -fsS -X PUT "$CONSUL_HTTP_ADDR/v1/agent/service/deregister/packtest-outcheck"']
   - action: consul.agent_host_info
     expect:
       stdout_contains: [Memory, CPU]

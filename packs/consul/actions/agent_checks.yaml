@@ -3,14 +3,14 @@ id: consul.agent_checks
 title: GET /v1/agent/checks
 kind: script
 risk: low
-description: List checks registered with the local agent + their current status.
+description: List checks registered with the local agent + their current status. Omits each check's Output text.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
   script:
-    path: scripts/api_request.sh
+    path: scripts/check_status_request.sh
     interpreter: /bin/sh
-  argv: [GET, /v1/agent/checks]
+  argv: [/v1/agent/checks]
   timeout: 15s
 output:
   parser: json

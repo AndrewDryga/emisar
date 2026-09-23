@@ -3,14 +3,14 @@ id: consul.list_checks_warning
 title: GET /v1/health/state/warning
 kind: script
 risk: low
-description: List every check currently in WARNING state.
+description: List every check currently in WARNING state. Omits each check's Output text.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
   script:
-    path: scripts/api_request.sh
+    path: scripts/check_status_request.sh
     interpreter: /bin/sh
-  argv: [GET, /v1/health/state/warning]
+  argv: [/v1/health/state/warning]
   timeout: 30s
 output:
   parser: json

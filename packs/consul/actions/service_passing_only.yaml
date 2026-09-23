@@ -3,7 +3,7 @@ id: consul.service_passing_only
 title: GET /v1/health/service/<name>?passing
 kind: script
 risk: low
-description: List only healthy (all-passing) instances of one service. What service discovery would return.
+description: List only healthy (all-passing) instances of one service. What service discovery would return. Omits each check's Output text.
 side_effects: ["One API call.", "Read-only."]
 args:
   - name: service
@@ -14,9 +14,9 @@ args:
       pattern: "^[a-zA-Z0-9_.\\-]{1,128}$"
 execution:
   script:
-    path: scripts/api_request.sh
+    path: scripts/check_status_request.sh
     interpreter: /bin/sh
-  argv: [GET, "/v1/health/service/{{ args.service }}?passing"]
+  argv: ["/v1/health/service/{{ args.service }}?passing"]
   timeout: 30s
 output:
   parser: json
