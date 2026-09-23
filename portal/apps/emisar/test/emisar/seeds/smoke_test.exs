@@ -1,6 +1,6 @@
 defmodule Emisar.Seeds.SmokeTest do
   use Emisar.DataCase, async: false
-  alias Emisar.{Accounts, Auth, Fixtures, Repo, Runbooks, Users}
+  alias Emisar.{Accounts, Approvals, Auth, Fixtures, Repo, Runbooks, Users}
 
   test "reseed attributes a changed release to the seed owner without replacing its author" do
     user = Fixtures.Users.create_user(email: "demo@emisar.dev")
@@ -111,6 +111,15 @@ defmodule Emisar.Seeds.SmokeTest do
 
       refute Repo.exists?(Auth.MemberGrant)
       refute Repo.exists?(Auth.MemberGrantRoute)
+
+      grants = Repo.all(Approvals.Grant)
+      assert length(grants) == 2
+
+      for grant <- grants do
+        issuer = Accounts.peek_active_membership(grant.account_id, grant.granted_by_membership_id)
+        assert issuer.role == :owner
+        assert grant.granted_by_id == nil
+      end
 
       for {email, name} <- [
             {"jordan@emisar.dev", "Jordan Lee"},

@@ -22,12 +22,14 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequestsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
+        initiating_membership_id:
+          Fixtures.Memberships.create_membership(account_id: account.id).id,
         args: %{},
         reason: "expiry sweep test",
         status: :pending_approval
       })
 
-    {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+    {:ok, request} = Approvals.create_request(run, "x")
 
     yesterday = DateTime.add(DateTime.utc_now(), -24 * 3600, :second)
     {:ok, request} = request |> Ecto.Changeset.change(expires_at: yesterday) |> Repo.update()
@@ -53,12 +55,14 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequestsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
+        initiating_membership_id:
+          Fixtures.Memberships.create_membership(account_id: account.id).id,
         args: %{},
         reason: "still fresh",
         status: :pending_approval
       })
 
-    {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+    {:ok, request} = Approvals.create_request(run, "x")
 
     assert ExpireOverdueRequests.execute([]) == :ok
 
@@ -96,12 +100,14 @@ defmodule Emisar.Approvals.Jobs.ExpireOverdueRequestsLogTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
+        initiating_membership_id:
+          Fixtures.Memberships.create_membership(account_id: account.id).id,
         args: %{},
         reason: "expiry sweep test",
         status: :pending_approval
       })
 
-    {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+    {:ok, request} = Approvals.create_request(run, "x")
     yesterday = DateTime.add(DateTime.utc_now(), -24 * 3600, :second)
     {:ok, _} = request |> Ecto.Changeset.change(expires_at: yesterday) |> Repo.update()
     :ok

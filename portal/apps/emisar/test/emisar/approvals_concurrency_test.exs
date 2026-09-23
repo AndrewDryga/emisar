@@ -356,7 +356,7 @@ defmodule Emisar.ApprovalsConcurrencyTest do
         })
 
       {:ok, request} =
-        Approvals.create_request(run, initiator.id, "urgent", min_approvals: 2)
+        Approvals.create_request(run, "urgent", min_approvals: 2)
 
       try do
         fun.(%{

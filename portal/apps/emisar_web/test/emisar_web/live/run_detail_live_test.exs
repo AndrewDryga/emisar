@@ -190,7 +190,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "reload after validation")
+    {:ok, request} = Approvals.create_request(run, "reload after validation")
 
     {:ok, _} =
       Approvals.approve_request(
@@ -225,7 +225,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "reload after validation")
+    {:ok, request} = Approvals.create_request(run, "reload after validation")
 
     {:ok, _} =
       Approvals.approve_request(
@@ -244,13 +244,11 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert has_element?(lv, "#run-approval", "Jordan Approver")
   end
 
-  # A request decided before per-vote rows existed holds its decision on its
-  # own final columns; the page still answers "who let this run" for it.
-  test "a request decided without vote rows still names its decider, time, and note",
+  test "a User-only historical finalization keeps its time and note without a Member label",
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "reload after validation")
+    {:ok, request} = Approvals.create_request(run, "reload after validation")
     jordan = reviewer(account, "Jordan Approver")
 
     Fixtures.Approvals.approve_request(
@@ -265,7 +263,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     refute html =~ "Waiting for approval"
     assert has_element?(lv, "#run-approval", "Approved")
-    assert has_element?(lv, "#run-approval", "Jordan Approver")
+    refute has_element?(lv, "#run-approval", "Jordan Approver")
     assert has_element?(lv, "#run-approval", "approved")
     assert has_element?(lv, "#run-approval", "“validated config, deploy window open”")
     assert has_element?(lv, "#run-approval time")
@@ -275,7 +273,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "needs two", min_approvals: 2)
+    {:ok, request} = Approvals.create_request(run, "needs two", min_approvals: 2)
 
     {:ok, {%Approvals.Request{status: :pending}, :pending}} =
       Approvals.approve_request(request, reviewer(account, "Casey Approver"), "first")
@@ -309,7 +307,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "reload after validation")
+    {:ok, request} = Approvals.create_request(run, "reload after validation")
 
     # Well inside the 2000-grapheme note ceiling an approver may type, and past
     # the projection's 1000-encoded-byte bound.
@@ -334,7 +332,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "needs three", min_approvals: 3)
+    {:ok, request} = Approvals.create_request(run, "needs three", min_approvals: 3)
 
     {:ok, {%Approvals.Request{status: :pending}, :pending}} =
       Approvals.approve_request(request, reviewer(account, "Casey Approver"), "first")
@@ -360,7 +358,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn, %{user: %{full_name: "Maya Owner"}})
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "needs three", min_approvals: 3)
+    {:ok, request} = Approvals.create_request(run, "needs three", min_approvals: 3)
 
     {:ok, _} =
       Approvals.approve_request(request, reviewer(account, "Jordan Approver"), "one route")
@@ -400,7 +398,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn, %{user: %{full_name: "Maya Owner"}})
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "needs one")
+    {:ok, request} = Approvals.create_request(run, "needs one")
 
     {:ok, {%Approvals.Request{status: :approved}, _run}} =
       Approvals.override_request(request, "Nobody else is on call.", owner_subject(user, account))
@@ -421,7 +419,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn, %{user: %{full_name: "Maya Owner"}})
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "needs one")
+    {:ok, request} = Approvals.create_request(run, "needs one")
 
     request
     |> Fixtures.Approvals.approve_request(user.id, "Emergency release.")
@@ -436,11 +434,11 @@ defmodule EmisarWeb.RunDetailLiveTest do
     refute ledger =~ "Emergency release."
   end
 
-  test "a viewer reads the review by the names this account knows; a departed reviewer is a Former member",
+  test "a viewer reads a completed review by its exact Member's retained local name",
        %{conn: conn} do
     {_conn, user, account} = register_and_log_in(conn)
     run = gated_run(account, user)
-    {:ok, request} = Approvals.create_request(run, user.id, "needs two", min_approvals: 2)
+    {:ok, request} = Approvals.create_request(run, "needs one")
     jordan = reviewer(account, "Jordan Approver")
     {:ok, _} = Approvals.approve_request(request, jordan, "looks fine")
 
@@ -457,7 +455,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert has_element?(lv, "#run-approval", "1 of 2 approvals")
+    assert has_element?(lv, "#run-approval", "Approved")
     assert has_element?(lv, "#run-approval", "Jordan Approver")
     assert has_element?(lv, "#run-approval", "“looks fine”")
 
@@ -468,8 +466,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert has_element?(lv, "#run-approval", "Former member")
-    refute has_element?(lv, "#run-approval", "Jordan Approver")
+    refute has_element?(lv, "#run-approval", "Former member")
+    assert has_element?(lv, "#run-approval", "Jordan Approver")
     assert has_element?(lv, "#run-approval", "“looks fine”")
   end
 
@@ -512,8 +510,14 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "a denied run surfaces the denial + reason, not a bare cancellation", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
-    run = run_with(account, %{status: :pending_approval, requires_approval: true})
-    {:ok, request} = Emisar.Approvals.create_request(run, user.id, "deploy")
+    run =
+      run_with(account, %{
+        status: :pending_approval,
+        requires_approval: true,
+        requested_by_id: user.id
+      })
+
+    {:ok, request} = Emisar.Approvals.create_request(run, "deploy")
 
     {:ok, _} =
       Emisar.Approvals.deny_request(
@@ -544,8 +548,14 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "the held-run approval CTA uses the shared arrow, not a literal glyph", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
 
-    run = run_with(account, %{status: :pending_approval, requires_approval: true})
-    {:ok, _request} = Emisar.Approvals.create_request(run, user.id, "deploy")
+    run =
+      run_with(account, %{
+        status: :pending_approval,
+        requires_approval: true,
+        requested_by_id: user.id
+      })
+
+    {:ok, _request} = Emisar.Approvals.create_request(run, "deploy")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
@@ -1140,8 +1150,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "an approval hold can be cancelled before it reaches the runner", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    run = run_with(account, %{status: :pending_approval})
-    {:ok, request} = Approvals.create_request(run, user.id, "please review")
+    run = run_with(account, %{status: :pending_approval, requested_by_id: user.id})
+    {:ok, request} = Approvals.create_request(run, "please review")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
@@ -1165,8 +1175,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "a stale held-run page reports a current in-flight cancellation truthfully", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    run = run_with(account, %{status: :pending_approval})
-    {:ok, request} = Approvals.create_request(run, user.id, "please review")
+    run = run_with(account, %{status: :pending_approval, requested_by_id: user.id})
+    {:ok, request} = Approvals.create_request(run, "please review")
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 

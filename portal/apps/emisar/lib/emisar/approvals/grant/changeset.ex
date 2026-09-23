@@ -11,7 +11,7 @@ defmodule Emisar.Approvals.Grant.Changeset do
       :pack_ref,
       :runner_id,
       :args_sha256,
-      :granted_by_id,
+      :granted_by_membership_id,
       :granted_at,
       :expires_at,
       :max_uses,
@@ -19,10 +19,20 @@ defmodule Emisar.Approvals.Grant.Changeset do
       :last_used_at,
       :approval_request_id
     ])
-    |> validate_required([:account_id, :api_key_id, :action_id, :pack_ref, :granted_at])
+    |> validate_required([
+      :account_id,
+      :api_key_id,
+      :action_id,
+      :pack_ref,
+      :granted_at,
+      :granted_by_membership_id
+    ])
+    |> foreign_key_constraint(:granted_by_membership_id)
   end
 
-  def revoke(%Grant{} = grant, by_user_id) do
-    change(grant, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
+  def revoke(%Grant{} = grant, by_membership_id) do
+    grant
+    |> change(revoked_at: DateTime.utc_now(), revoked_by_membership_id: by_membership_id)
+    |> foreign_key_constraint(:revoked_by_membership_id)
   end
 end

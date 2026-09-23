@@ -344,6 +344,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, run} =
         Emisar.Runs.create_run(%{
           account_id: account.id,
+          requested_by_id: user.id,
           runner_id: runner.id,
           action_id: "linux.uptime",
           args: %{},
@@ -351,7 +352,7 @@ defmodule EmisarWeb.DashboardLiveTest do
           source: "operator"
         })
 
-      {:ok, _request} = Emisar.Approvals.create_request(run, user.id, "confirm the change")
+      {:ok, _request} = Emisar.Approvals.create_request(run, "confirm the change")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -589,6 +590,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, run_a} =
         Emisar.Runs.create_run(%{
           account_id: account_a.id,
+          requested_by_id: user_a.id,
           runner_id: runner_a.id,
           action_id: "linux.alpha_dash",
           args: %{},
@@ -596,7 +598,7 @@ defmodule EmisarWeb.DashboardLiveTest do
           source: "operator"
         })
 
-      {:ok, _request_a} = Emisar.Approvals.create_request(run_a, user_a.id, "needs sign-off")
+      {:ok, _request_a} = Emisar.Approvals.create_request(run_a, "needs sign-off")
 
       # Account B (a different owner) has its own runner, run, and approval.
       {user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
@@ -605,6 +607,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, run_b} =
         Emisar.Runs.create_run(%{
           account_id: account_b.id,
+          requested_by_id: user_b.id,
           runner_id: runner_b.id,
           action_id: "linux.bravo_dash",
           args: %{},
@@ -612,7 +615,7 @@ defmodule EmisarWeb.DashboardLiveTest do
           source: "operator"
         })
 
-      {:ok, _request_b} = Emisar.Approvals.create_request(run_b, user_b.id, "b's sign-off")
+      {:ok, _request_b} = Emisar.Approvals.create_request(run_b, "b's sign-off")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account_a}")
 

@@ -240,7 +240,7 @@ defmodule EmisarWeb.ApprovalsLive do
     |> assign(:decided_error?, decided_error?)
     |> assign(:filter_params, params)
     |> assign(:runner_labels, runner_labels_for(subject.account.id, pending ++ decided))
-    |> assign(:user_labels, user_labels_for(pending ++ decided, grants, subject))
+    |> assign(:member_labels, member_labels_for(pending ++ decided, grants, subject))
     # Risk tier per pending request so the queue is triageable at a glance — an
     # approver shouldn't have to open each card to see if it's a scary one.
     |> assign(:risk_labels, risk_labels_for(pending, subject))
@@ -282,10 +282,12 @@ defmodule EmisarWeb.ApprovalsLive do
   # requesters and deciders of the listed requests, plus whoever minted each
   # standing grant. A denied or oversized read degrades to no labels, which the
   # renderer already shows as "Former member".
-  defp user_labels_for(requests, grants, subject) do
+  defp member_labels_for(requests, grants, subject) do
     ids =
-      Enum.flat_map(requests, fn r -> [r.requested_by_id, r.decided_by_id] end) ++
-        Enum.map(grants, & &1.granted_by_id)
+      Enum.flat_map(requests, fn r ->
+        [r.requested_by_membership_id, r.decided_by_membership_id]
+      end) ++
+        Enum.map(grants, & &1.granted_by_membership_id)
 
     case Approvals.actor_labels_for_ids(ids, subject) do
       {:ok, labels} -> labels
@@ -362,10 +364,9 @@ defmodule EmisarWeb.ApprovalsLive do
   defp plural(1, noun), do: noun
   defp plural(_count, noun), do: noun <> "s"
 
-  defp user_label(nil, _labels), do: "—"
-  # A labels miss means the user row is gone — the approval detail page
-  # renders the same state as "Former member", so the two surfaces agree.
-  defp user_label(id, labels), do: labels[id] || "Former member"
+  defp member_label(nil, _labels), do: "—"
+  # An unavailable exact Member label uses the same fallback as the detail page.
+  defp member_label(id, labels), do: labels[id] || "Former member"
 
   # -- Grant helpers (moved from old GrantsLive) ---------------------
 
@@ -553,9 +554,9 @@ defmodule EmisarWeb.ApprovalsLive do
                         />
                       </div>
                       <div class="mt-0.5 text-xs text-zinc-400 sm:truncate">
-                        {request_scope_label(request, @runner_labels)} · requested by {user_label(
-                          request.requested_by_id,
-                          @user_labels
+                        {request_scope_label(request, @runner_labels)} · requested by {member_label(
+                          request.requested_by_membership_id,
+                          @member_labels
                         )}
                       </div>
                       <p
@@ -701,7 +702,7 @@ defmodule EmisarWeb.ApprovalsLive do
               <%!-- Canvas rows; the per-row key icon died with the island — every
                  row wearing the same glyph decorated nothing. --%>
               <:item :let={g}>
-                <.list_row padding="py-4">
+                <.list_row padding="py-4" meta_wrap={is_nil(g.granted_by_membership_id)}>
                   <:title>
                     <span class="truncate font-mono text-sm text-zinc-100">{g.action_id}</span>
                   </:title>
@@ -715,6 +716,9 @@ defmodule EmisarWeb.ApprovalsLive do
                       value={if g.args_sha256, do: "Same", else: "Any"}
                     />
                     <.chip :if={g.expires_at == nil} tone={:amber}>No expiration date</.chip>
+                    <.chip :if={is_nil(g.granted_by_membership_id)} tone={:amber}>
+                      Issuer unavailable
+                    </.chip>
                   </:chips>
                   <:meta>
                     <div
@@ -724,6 +728,9 @@ defmodule EmisarWeb.ApprovalsLive do
                     >
                       {grant_args_line(g)}
                     </div>
+                    <p :if={is_nil(g.granted_by_membership_id)}>
+                      This grant cannot authorize runs. Revoke it and approve a new request.
+                    </p>
 
                     <%!-- Line 1 = accountability: which key HOLDS the capability,
                        who granted it, and WHEN (an unexplained grant minted
@@ -731,8 +738,8 @@ defmodule EmisarWeb.ApprovalsLive do
                        scans for). Line 2 = lifetime + usage. --%>
                     <.meta_line class="mt-1">
                       <:seg>via {grant_key_label(g)}</:seg>
-                      <:seg :if={g.granted_by_id}>
-                        granted by {user_label(g.granted_by_id, @user_labels)}
+                      <:seg :if={g.granted_by_membership_id}>
+                        granted by {member_label(g.granted_by_membership_id, @member_labels)}
                         <.local_time
                           id={"grant-created-#{g.id}"}
                           value={g.inserted_at}
@@ -916,11 +923,14 @@ defmodule EmisarWeb.ApprovalsLive do
                            (approved / denied / expired); the meta just attributes
                            the decider. An expired request has none, so it shows
                            only the badge. --%>
-                        <span :if={request.requested_by_id}>
-                          · requested by {user_label(request.requested_by_id, @user_labels)}
+                        <span :if={request.requested_by_membership_id}>
+                          · requested by {member_label(
+                            request.requested_by_membership_id,
+                            @member_labels
+                          )}
                         </span>
-                        <span :if={request.decided_by_id}>
-                          · decided by {user_label(request.decided_by_id, @user_labels)}
+                        <span :if={request.decided_by_membership_id}>
+                          · decided by {member_label(request.decided_by_membership_id, @member_labels)}
                         </span>
                       </div>
                     </div>

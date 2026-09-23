@@ -200,13 +200,14 @@ defmodule Emisar.Approvals.Request.Query do
   # Apply before pagination and badge counts. Target access is a separate
   # predicate: expiry, separation of duties and an existing vote do not hide
   # the request from the workspace's shared review/history surface.
-  def awaiting_decision_by(queryable, user_id, now) do
+  def awaiting_decision_by(queryable, membership_id, now) do
     decision =
       Emisar.Approvals.Decision.Query.all()
       |> where(
         [approval_decisions: decision],
         decision.account_id == parent_as(:requests).account_id and
-          decision.request_id == parent_as(:requests).id and decision.decider_id == ^user_id
+          decision.request_id == parent_as(:requests).id and
+          decision.decider_membership_id == ^membership_id
       )
       |> select([approval_decisions: _decision], 1)
 
@@ -215,8 +216,8 @@ defmodule Emisar.Approvals.Request.Query do
     |> where(
       [requests: request],
       (is_nil(request.expires_at) or request.expires_at > ^now) and
-        (request.allow_self_approval or is_nil(request.requested_by_id) or
-           request.requested_by_id != ^user_id) and not exists(decision)
+        (request.allow_self_approval or
+           request.requested_by_membership_id != ^membership_id) and not exists(decision)
     )
   end
 
@@ -280,7 +281,7 @@ defmodule Emisar.Approvals.Request.Query do
   `overridden?` marks a release by override on the row itself, in the same
   write as the decision it stands for.
   """
-  def decide_pending(id, status, by_user_id, reason, now, overridden?)
+  def decide_pending(id, status, by_membership_id, reason, now, overridden?)
       when is_boolean(overridden?) do
     all()
     |> where(
@@ -291,7 +292,7 @@ defmodule Emisar.Approvals.Request.Query do
     |> update(
       set: [
         status: ^status,
-        decided_by_id: ^by_user_id,
+        decided_by_membership_id: ^by_membership_id,
         decided_at: ^now,
         decision_reason: ^reason,
         overridden: ^overridden?

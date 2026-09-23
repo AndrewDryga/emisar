@@ -127,6 +127,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
   defp pending_request!(account, requester_id, reason) do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
+    membership = Fixtures.Memberships.fetch_membership(account.id, requester_id)
     Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot")
 
     {:ok, run} =
@@ -135,6 +136,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
         runner_id: runner.id,
         action_id: "linux.reboot",
         source: "operator",
+        initiating_membership_id: membership.id,
         args: %{},
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
@@ -142,7 +144,7 @@ defmodule EmisarWeb.ApprovalsLiveTest do
         status: :pending_approval
       })
 
-    {:ok, request} = Approvals.create_request(run, requester_id, reason)
+    {:ok, request} = Approvals.create_request(run, reason)
     request
   end
 
@@ -162,12 +164,13 @@ defmodule EmisarWeb.ApprovalsLiveTest do
         pack_ref: @grant_pack_ref,
         expected_pack_hash: @grant_pack_hash,
         api_key_id: key.id,
+        initiating_membership_id: key.created_by_membership_id,
         args: %{},
         args_sha256: "abc123",
         status: :pending_approval
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, reason)
+    {:ok, request} = Approvals.create_request(run, reason)
     request
   end
 

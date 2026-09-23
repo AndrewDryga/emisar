@@ -32,7 +32,6 @@ defmodule Emisar.Approvals do
   use Supervisor
   alias Ecto.Multi
   alias Emisar.Accounts
-  alias Emisar.ApiKeys
   alias Emisar.Approvals.{Authorizer, Decision, DecisionInput, Grant, GrantLifetimeInput, Request}
   alias Emisar.{Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs, Users}
   alias Emisar.Auth.Subject
@@ -152,7 +151,7 @@ defmodule Emisar.Approvals do
     if subject_can_decide_approval?(subject) do
       query
       |> scope_requests_to_subject(subject)
-      |> Request.Query.awaiting_decision_by(Subject.actor_id(subject), DateTime.utc_now())
+      |> Request.Query.awaiting_decision_by(subject.membership_id, DateTime.utc_now())
     else
       Request.Query.none(query)
     end
@@ -568,7 +567,7 @@ defmodule Emisar.Approvals do
       |> Map.new()
 
     receipts = Audit.approval_decision_receipts(request_ids, subject.account.id)
-    labels = review_actor_labels(requests, decisions, receipts, subject)
+    labels = review_actor_labels(requests, decisions, subject)
     runs_by_id = Map.new(runs, &{&1.id, &1})
     now = DateTime.utc_now()
     statuses = Map.new(requests, &{&1.run_id, request_facts(&1, now).status})
@@ -614,15 +613,17 @@ defmodule Emisar.Approvals do
   defp command_wanted?(_run, :pending), do: true
   defp command_wanted?(_run, _status), do: false
 
-  defp review_actor_labels(requests, decisions, receipts, subject) do
+  defp review_actor_labels(requests, decisions, subject) do
     # The request's own decider covers a record decided without vote rows.
     final_ids =
-      for request <- requests, is_binary(request.decided_by_id), do: request.decided_by_id
+      for request <- requests,
+          is_binary(request.decided_by_membership_id),
+          do: request.decided_by_membership_id
 
-    decider_ids = for {_request_id, votes} <- decisions, vote <- votes, do: vote.decider_id
-    override_ids = for {_request_id, %{override: %{actor_id: id}}} <- receipts, do: id
+    decider_membership_ids =
+      for {_request_id, votes} <- decisions, vote <- votes, do: vote.decider_membership_id
 
-    Accounts.user_labels_for_ids(final_ids ++ decider_ids ++ override_ids, subject.account.id)
+    Accounts.member_labels_for_ids(final_ids ++ decider_membership_ids, subject.account.id)
   end
 
   defp review_receipt(%Request{} = request, run, subject, facts) do
@@ -651,7 +652,7 @@ defmodule Emisar.Approvals do
       # clause synthesizes a decision from no rows at all, so the count floors
       # at zero rather than going negative.
       decisions_omitted: max(length(facts.decisions) - length(decisions), 0),
-      override: projected_override(facts.receipt.override, facts.labels)
+      override: projected_override(facts.receipt.override, request, facts.labels)
     }
   end
 
@@ -668,7 +669,7 @@ defmodule Emisar.Approvals do
 
     {[
        projected_decision(
-         Map.get(labels, request.decided_by_id),
+         Map.get(labels, request.decided_by_membership_id),
          decision,
          request.decided_at,
          presence(request.decision_reason)
@@ -682,10 +683,14 @@ defmodule Emisar.Approvals do
       |> Enum.take(-@max_projected_decisions)
       |> Enum.map(fn decision ->
         projected_decision(
-          Map.get(facts.labels, decision.decider_id),
+          Map.get(facts.labels, decision.decider_membership_id),
           decision.decision,
           decision.decided_at,
-          Map.get(facts.receipt.decisions, decision.decider_id)
+          Audit.approval_decision_receipt(
+            facts.receipt.decisions,
+            decision.decider_membership_id,
+            decision.decider_id
+          )
         )
       end)
       |> within_decisions_budget()
@@ -739,18 +744,18 @@ defmodule Emisar.Approvals do
   defp presence(text) when is_binary(text) and text != "", do: text
   defp presence(_text), do: nil
 
-  defp projected_override(nil, _labels), do: nil
+  defp projected_override(nil, _request, _labels), do: nil
 
   # An override's mandatory reason is the same free text under the same
   # grapheme-counted ceiling as a vote's note, and it rides the same frame, so
   # it spends the same bound. It is never part of the vote list's shared
   # allowance: an override is WHY the run was released, and dropping it for room
   # would leave a released run with no account of what released it.
-  defp projected_override(override, labels) do
+  defp projected_override(override, request, labels) do
     {reason, reason_cut?} = bounded_text(override.reason, @max_projected_decision_reason_bytes)
 
     %{
-      actor: Map.get(labels, override.actor_id),
+      actor: Map.get(labels, request.decided_by_membership_id),
       reason: reason,
       reason_truncated: reason_cut?,
       approved_count: override.approved_count,
@@ -827,7 +832,7 @@ defmodule Emisar.Approvals do
       decisions =
         Decision.Query.all()
         |> Decision.Query.by_request_id(request.id)
-        |> Decision.Query.with_preloaded_decider()
+        |> Decision.Query.with_preloaded_decider_membership()
         |> Decision.Query.ordered_by_decided()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -856,15 +861,15 @@ defmodule Emisar.Approvals do
 
   @doc """
   Account-local display labels for the humans an approval surface names —
-  `{:ok, %{user_id => label}}`. Requires `view` on approvals and resolves ids
-  only within the subject's own account, so an id from another account (or one
-  whose membership is gone) simply has no label and the caller renders its
-  own former-member text.
+  `{:ok, %{membership_id => label}}`. Requires `view` on approvals and resolves
+  exact recorded Members within the subject's own account, including tombstones
+  for history. Missing or foreign Members have no label; no replacement or
+  personal profile is used.
   """
   def actor_labels_for_ids(ids, %Subject{} = subject) when is_list(ids) do
     with {:ok, subject} <-
            Auth.fetch_current_subject(Authorizer.view_approvals_permission(), subject) do
-      {:ok, Accounts.user_labels_for_ids(ids, subject.account.id)}
+      {:ok, Accounts.member_labels_for_ids(ids, subject.account.id)}
     end
   end
 
@@ -891,14 +896,13 @@ defmodule Emisar.Approvals do
   @doc """
   Internal — called from `Runs.dispatch_run` (already authorized via its
   own Subject) to file an approval request for a gated run.
-  `requested_by_id` is whoever asked for the run (UI/runbook); for an
-  MCP-triggered run it's `nil` and the effective requester is resolved to
-  the api-key owner. `opts` carries the gate snapshot: `:min_approvals`
+  The run's exact initiating Member is the accountable requester, including
+  calls through that Member's API key. `opts` carries the gate snapshot: `:min_approvals`
   (default 1) and `:allow_self_approval` (default true), stamped onto the
   request so a later policy edit can't move this request's bar.
   """
-  def create_request(%Runs.ActionRun{} = run, requested_by_id, reason \\ nil, opts \\ []) do
-    changeset = request_changeset(run, requested_by_id, reason, opts)
+  def create_request(%Runs.ActionRun{} = run, reason \\ nil, opts \\ []) do
+    changeset = request_changeset(run, reason, opts)
 
     with {:ok, request} <- Repo.insert(changeset) do
       notify_approval_created(request, run)
@@ -914,13 +918,13 @@ defmodule Emisar.Approvals do
   `changes[run_key]`. Broadcast + email are post-commit through
   `notify_request_created/1`.
   """
-  def create_request_in_multi(multi, run_key, requested_by_id, reason, opts) do
+  def create_request_in_multi(multi, run_key, reason, opts) do
     request_key = nested_multi_key(:approval_request, run_key)
 
     Multi.insert(
       multi,
       request_key,
-      &request_changeset(Map.fetch!(&1, run_key), requested_by_id, reason, opts)
+      &request_changeset(Map.fetch!(&1, run_key), reason, opts)
     )
   end
 
@@ -950,7 +954,7 @@ defmodule Emisar.Approvals do
         Request.Changeset.create(%{
           account_id: execution.account_id,
           runbook_execution_id: execution.id,
-          requested_by_id: effective_execution_requester(execution),
+          requested_by_membership_id: execution.initiating_membership_id,
           requested_at: now,
           expires_at: expires_at,
           reason: execution.reason,
@@ -1032,15 +1036,6 @@ defmodule Emisar.Approvals do
     :ok
   end
 
-  defp effective_execution_requester(%{requested_by_id: requested_by_id})
-       when is_binary(requested_by_id),
-       do: requested_by_id
-
-  defp effective_execution_requester(%{api_key_id: api_key_id}) when is_binary(api_key_id),
-    do: ApiKeys.fetch_owner_user_id(api_key_id)
-
-  defp effective_execution_requester(_execution), do: nil
-
   @doc "Internal — `Runs.create_run` post-commit hook for the atomic approval-dispatch path."
   def notify_request_created(%{
         approval_request: %Request{} = request,
@@ -1052,19 +1047,17 @@ defmodule Emisar.Approvals do
   def notify_request_created(%Request{} = request, %Runs.ActionRun{} = run),
     do: notify_approval_created(request, run)
 
-  defp request_changeset(%Runs.ActionRun{} = run, requested_by_id, reason, opts) do
+  defp request_changeset(%Runs.ActionRun{} = run, reason, opts) do
     now = DateTime.utc_now()
     default_expiry = DateTime.add(now, @default_pending_ttl_hours * @one_hour_seconds, :second)
     expires_at = earliest_expiry(default_expiry, Keyword.get(opts, :expires_at))
 
-    # Why: an MCP run's `requested_by_id` is nil (the run's requester is an
-    # api_key), so "self" must record the HUMAN behind the trigger — the
-    # api-key's owner. Stamping the owner here means `allow_self_approval=false`
-    # can't be laundered through one's own key by routing the run via MCP.
+    # Dispatch has already recorded the accountable Member for both console
+    # and MCP runs. Do not resolve a replacement seat or accept a caller override.
     Request.Changeset.create(%{
       account_id: run.account_id,
       run_id: run.id,
-      requested_by_id: effective_requester(run, requested_by_id),
+      requested_by_membership_id: run.initiating_membership_id,
       requested_at: now,
       expires_at: expires_at,
       reason: reason,
@@ -1099,7 +1092,7 @@ defmodule Emisar.Approvals do
 
     run_notify(fn ->
       notify_if_pending(request, fn current ->
-        notify_approvers(current, run, current.requested_by_id, :requested)
+        notify_approvers(current, run, current.requested_by_membership_id, :requested)
       end)
     end)
 
@@ -1130,14 +1123,6 @@ defmodule Emisar.Approvals do
       else: :ok
   end
 
-  # The passed requester wins when present (UI/runbook); otherwise an
-  # api-key-triggered run attributes the request to the key's owner.
-  defp effective_requester(%Runs.ActionRun{api_key_id: nil}, passed), do: passed
-  defp effective_requester(%Runs.ActionRun{}, passed) when is_binary(passed), do: passed
-
-  defp effective_requester(%Runs.ActionRun{api_key_id: api_key_id}, nil),
-    do: ApiKeys.fetch_owner_user_id(api_key_id)
-
   # Two modes:
   #
   #   * Sync (tests): `notify_approvers_async?: false` runs the closure
@@ -1161,7 +1146,7 @@ defmodule Emisar.Approvals do
   # batch isn't a memory hazard if a future plan removes the cap entirely.
   @notify_page_size 200
 
-  defp notify_approvers(%Request{} = request, run, requested_by_id, event) do
+  defp notify_approvers(%Request{} = request, run, requested_by_membership_id, event) do
     # Preload runner so the email body can show the runner's name
     # ("db-prod-01") instead of its UUID — approvers shouldn't need to
     # context-switch into the app just to know what's being touched.
@@ -1177,7 +1162,7 @@ defmodule Emisar.Approvals do
       notify_approvers_pages(
         request,
         {:action_run, run},
-        requested_by_id,
+        requested_by_membership_id,
         %{runners: [runner], pack_ids: [pack_id]},
         nil,
         event
@@ -1199,7 +1184,7 @@ defmodule Emisar.Approvals do
       notify_approvers_pages(
         request,
         :runbook_execution,
-        request.requested_by_id,
+        request.requested_by_membership_id,
         target_access,
         nil,
         event
@@ -1218,7 +1203,7 @@ defmodule Emisar.Approvals do
   defp notify_approvers_pages(
          %Request{} = request,
          target,
-         requested_by_id,
+         requested_by_membership_id,
          target_access,
          cursor,
          event
@@ -1234,15 +1219,15 @@ defmodule Emisar.Approvals do
       Auth.Permissions.roles_with_permission(Authorizer.decide_approval_permission())
 
     access_by_membership = Accounts.runner_access_for_memberships(memberships)
-    already_decided = notified_decider_ids(request, memberships, event)
+    already_decided = notified_decider_membership_ids(request, memberships, event)
 
     memberships
     |> Enum.filter(fn membership ->
       # Only members who can decide get pinged (viewers can't); the user who
       # triggered the request is excluded since they already saw it in the UI.
       Accounts.membership_authorized?(membership) and membership.role in approver_roles and
-        membership.user_id != requested_by_id and
-        not MapSet.member?(already_decided, membership.user_id) and
+        membership.id != requested_by_membership_id and
+        not MapSet.member?(already_decided, membership.id) and
         membership_covers_targets?(
           Map.get(access_by_membership, membership.id, Accounts.RunnerAccess.none()),
           target_access
@@ -1250,22 +1235,31 @@ defmodule Emisar.Approvals do
     end)
     |> Enum.each(&deliver_approval_email(&1, request, target, event))
 
-    if next,
-      do: notify_approvers_pages(request, target, requested_by_id, target_access, next, event),
-      else: :ok
+    if next do
+      notify_approvers_pages(
+        request,
+        target,
+        requested_by_membership_id,
+        target_access,
+        next,
+        event
+      )
+    else
+      :ok
+    end
   end
 
-  defp notified_decider_ids(request, memberships, :requested) do
+  defp notified_decider_membership_ids(request, memberships, :requested) do
     Decision.Query.all()
     |> Decision.Query.by_account_id(request.account_id)
     |> Decision.Query.by_request_id(request.id)
-    |> Decision.Query.by_decider_ids(Enum.map(memberships, & &1.user_id))
-    |> Decision.Query.select_decider_ids()
+    |> Decision.Query.by_decider_membership_ids(Enum.map(memberships, & &1.id))
+    |> Decision.Query.select_decider_membership_ids()
     |> Repo.all()
     |> MapSet.new()
   end
 
-  defp notified_decider_ids(_request, _memberships, _event), do: MapSet.new()
+  defp notified_decider_membership_ids(_request, _memberships, _event), do: MapSet.new()
 
   defp membership_covers_targets?(
          %Accounts.RunnerAccess{} = access,
@@ -1334,7 +1328,7 @@ defmodule Emisar.Approvals do
           args,
           request,
           run,
-          approval_actor_label(request.account_id, request.requested_by_id)
+          approval_actor_label(request.account_id, request.requested_by_membership_id)
         )
       end
     )
@@ -1348,7 +1342,7 @@ defmodule Emisar.Approvals do
         Emisar.Mailers.UserNotifier.deliver_runbook_execution_approval_request(
           membership,
           request,
-          approval_actor_label(request.account_id, request.requested_by_id)
+          approval_actor_label(request.account_id, request.requested_by_membership_id)
         )
       end
     )
@@ -1489,7 +1483,7 @@ defmodule Emisar.Approvals do
 
   Returns `{:ok, {request, run}}` when the vote finalizes + dispatches,
   `{:ok, {request, :pending}}` when recorded but below the distinct-approver
-  threshold, or `{:error, %Ecto.Changeset{} | :self_approval_forbidden |
+  threshold, or `{:error, %Ecto.Changeset{} | :self_approval_forbidden | :requester_unavailable |
   :already_decided | :expired | :unauthorized | :not_found |
   :decision_reason_too_long | :decision_reason_unsafe_text |
   {:grant_failed, changeset}}`. Rejected input records nothing.
@@ -1527,7 +1521,7 @@ defmodule Emisar.Approvals do
          :ok <- ensure_request_pending(request),
          :ok <- recheck_override_trust(request, subject),
          :ok <- check_attestation_fresh(:approve, request) do
-      by_user_id = Subject.actor_id(subject)
+      by_membership_id = subject.membership_id
 
       result =
         Multi.new()
@@ -1550,7 +1544,7 @@ defmodule Emisar.Approvals do
           recheck_locked_override(locked)
         end)
         |> Multi.run(:outcome, fn repo, %{locked: locked} ->
-          finalize_override(repo, locked, by_user_id, reason)
+          finalize_override(repo, locked, by_membership_id, reason)
         end)
         |> Multi.insert(:audit, fn %{locked: locked, outcome: outcome} ->
           Audit.Events.approval_overridden(
@@ -1663,7 +1657,7 @@ defmodule Emisar.Approvals do
          :ok <- check_self_approval(decision, request, subject),
          :ok <- recheck_trust(decision, request, subject),
          :ok <- check_attestation_fresh(decision, request) do
-      by_user_id = Subject.actor_id(subject)
+      by_membership_id = subject.membership_id
       grant_attrs = Map.from_struct(input)
 
       result =
@@ -1684,10 +1678,10 @@ defmodule Emisar.Approvals do
           fetch_locked_decision_request(repo, request, subject, access)
         end)
         |> Multi.run(:decision, fn _repo, %{locked: locked} ->
-          insert_decision(locked, by_user_id, decision)
+          insert_decision(locked, by_membership_id, decision)
         end)
         |> Multi.run(:outcome, fn repo, %{locked: locked} ->
-          finalize(repo, locked, decision, by_user_id, reason, grant_attrs)
+          finalize(repo, locked, decision, by_membership_id, reason, grant_attrs)
         end)
         # A finalizing deny cancels the run as steps in THIS transaction (no
         # premature broadcast) — they run only when :outcome succeeded, so the
@@ -1797,24 +1791,24 @@ defmodule Emisar.Approvals do
     Runners.fetch_and_lock_cancellation_runners(account_id, runner_ids, repo: repo)
   end
 
-  # Self-approval gate (server-side, IL-15 — UI hiding is cosmetic only). Only an
-  # APPROVE by the recorded requester is blocked, and only when the request's
-  # snapshotted policy forbade self-approval. Deny and the permissive case fall
-  # through. Self-approval is a policy setting only — there is no account-wide flag.
+  # Separation is enforced server-side even for an unresolved historical
+  # requester. Denial is still possible; only explicit override may waive this gate.
+  defp check_self_approval(
+         :approve,
+         %Request{allow_self_approval: false, requested_by_membership_id: nil},
+         _subject
+       ),
+       do: {:error, :requester_unavailable}
+
   defp check_self_approval(:approve, %Request{allow_self_approval: false} = request, subject) do
     if self?(subject, request), do: {:error, :self_approval_forbidden}, else: :ok
   end
 
   defp check_self_approval(_decision, _request, _subject), do: :ok
 
-  defp self?(%Subject{} = subject, %Request{requested_by_id: rb}) when is_binary(rb),
-    do: Subject.actor_id(subject) == rb
+  defp self?(%Subject{} = subject, %Request{requested_by_membership_id: rb}) when is_binary(rb),
+    do: subject.membership_id == rb
 
-  # No resolvable requester (e.g. an api-key whose creator was since deleted →
-  # nil owner) has no "self", so the self-approval gate is vacuous for it. That
-  # is not a bypass: min_approvals still requires N distinct approvers, and the
-  # ghost requester can't log in to approve. Failing closed here (block everyone)
-  # would instead strand such a request forever.
   defp self?(_subject, _request), do: false
 
   # Re-gate pack trust before an approve: the pack could have drifted to
@@ -2004,9 +1998,9 @@ defmodule Emisar.Approvals do
   defp check_attestation_fresh(:deny, _request), do: :ok
 
   # Insert this decider's vote; a second vote by the same operator hits the
-  # (request_id, decider_id) unique index → :already_decided.
-  defp insert_decision(%Request{} = request, by_user_id, decision) do
-    Decision.Changeset.create(request.account_id, request.id, by_user_id, %{
+  # (request_id, decider_membership_id) unique index → :already_decided.
+  defp insert_decision(%Request{} = request, by_membership_id, decision) do
+    Decision.Changeset.create(request.account_id, request.id, by_membership_id, %{
       decision: decision,
       decided_at: DateTime.utc_now()
     })
@@ -2028,14 +2022,14 @@ defmodule Emisar.Approvals do
   # distinct-approve count read INSIDE the transaction are the only inputs —
   # never the caller's stale struct. Returns an outcome map the audit step,
   # after-commit, and return shape all read from `changes`.
-  defp finalize(_repo, nil, _decision, _by_user_id, _reason, _grant_attrs),
+  defp finalize(_repo, nil, _decision, _by_membership_id, _reason, _grant_attrs),
     do: {:error, :not_found}
 
   defp finalize(
          repo,
          %Request{status: :pending, run_id: run_id} = locked,
          :deny,
-         by_user_id,
+         by_membership_id,
          reason,
          _attrs
        )
@@ -2047,7 +2041,7 @@ defmodule Emisar.Approvals do
     # broadcast before the denial commits.
     count = repo.one(Decision.Query.approved_distinct_decider_count(locked.id))
 
-    with {:ok, denied} <- guarded_transition(locked, :denied, by_user_id, reason) do
+    with {:ok, denied} <- guarded_transition(locked, :denied, by_membership_id, reason) do
       {:ok, %{action: :cancelled, request: denied, approved_count: count}}
     end
   end
@@ -2060,23 +2054,30 @@ defmodule Emisar.Approvals do
            runbook_execution_id: execution_id
          } = locked,
          :deny,
-         by_user_id,
+         by_membership_id,
          reason,
          _attrs
        )
        when is_binary(execution_id) do
     count = repo.one(Decision.Query.approved_distinct_decider_count(locked.id))
 
-    with {:ok, denied} <- guarded_transition(locked, :denied, by_user_id, reason) do
+    with {:ok, denied} <- guarded_transition(locked, :denied, by_membership_id, reason) do
       {:ok, %{action: :halt_runbook_execution, request: denied, approved_count: count}}
     end
   end
 
-  defp finalize(repo, %Request{status: :pending} = locked, :approve, by_user_id, reason, attrs) do
+  defp finalize(
+         repo,
+         %Request{status: :pending} = locked,
+         :approve,
+         by_membership_id,
+         reason,
+         attrs
+       ) do
     count = repo.one(Decision.Query.approved_distinct_decider_count(locked.id))
 
     if count >= locked.min_approvals,
-      do: finalize_approved(repo, locked, by_user_id, reason, attrs, count),
+      do: finalize_approved(repo, locked, by_membership_id, reason, attrs, count),
       else: {:ok, %{action: :recorded_pending, request: locked, run: nil, approved_count: count}}
   end
 
@@ -2090,17 +2091,17 @@ defmodule Emisar.Approvals do
   defp finalize(_repo, %Request{status: :cancelled}, _decision, _by, _reason, _attrs),
     do: {:error, :run_cancelled}
 
-  defp finalize(_repo, %Request{}, _decision, _by_user_id, _reason, _attrs),
+  defp finalize(_repo, %Request{}, _decision, _by_membership_id, _reason, _attrs),
     do: {:error, :already_decided}
 
-  defp finalize_override(repo, %Request{status: :pending} = locked, by_user_id, reason) do
+  defp finalize_override(repo, %Request{status: :pending} = locked, by_membership_id, reason) do
     count = repo.one(Decision.Query.approved_distinct_decider_count(locked.id))
 
     if count < locked.min_approvals do
       finalize_approved(
         repo,
         locked,
-        by_user_id,
+        by_membership_id,
         reason,
         %{duration: :once, scope: :exact_args, max_uses: nil},
         count,
@@ -2111,13 +2112,13 @@ defmodule Emisar.Approvals do
     end
   end
 
-  defp finalize_override(_repo, %Request{status: :expired}, _by_user_id, _reason),
+  defp finalize_override(_repo, %Request{status: :expired}, _by_membership_id, _reason),
     do: {:error, :expired}
 
-  defp finalize_override(_repo, %Request{status: :cancelled}, _by_user_id, _reason),
+  defp finalize_override(_repo, %Request{status: :cancelled}, _by_membership_id, _reason),
     do: {:error, :run_cancelled}
 
-  defp finalize_override(_repo, %Request{}, _by_user_id, _reason),
+  defp finalize_override(_repo, %Request{}, _by_membership_id, _reason),
     do: {:error, :already_decided}
 
   # Compose the run cancel into the decision transaction — only for a deny.
@@ -2153,7 +2154,15 @@ defmodule Emisar.Approvals do
   # `overridden?` identifies the override's release: the row records it in the
   # same write as the decision, since the audit receipt alone does not outlive
   # retention.
-  defp finalize_approved(repo, locked, by_user_id, reason, attrs, count, overridden? \\ false)
+  defp finalize_approved(
+         repo,
+         locked,
+         by_membership_id,
+         reason,
+         attrs,
+         count,
+         overridden? \\ false
+       )
 
   defp finalize_approved(
          repo,
@@ -2161,7 +2170,7 @@ defmodule Emisar.Approvals do
            run_id: nil,
            runbook_execution_id: execution_id
          } = locked,
-         by_user_id,
+         by_membership_id,
          reason,
          _attrs,
          count,
@@ -2171,7 +2180,7 @@ defmodule Emisar.Approvals do
     with {:ok, execution} <-
            Emisar.Runbooks.activate_pending_approval(repo, execution_id),
          {:ok, approved} <-
-           guarded_transition(locked, :approved, by_user_id, reason, overridden?) do
+           guarded_transition(locked, :approved, by_membership_id, reason, overridden?) do
       {:ok,
        %{
          action: :advance_runbook_execution,
@@ -2184,7 +2193,15 @@ defmodule Emisar.Approvals do
     end
   end
 
-  defp finalize_approved(repo, %Request{} = locked, by_user_id, reason, attrs, count, overridden?) do
+  defp finalize_approved(
+         repo,
+         %Request{} = locked,
+         by_membership_id,
+         reason,
+         attrs,
+         count,
+         overridden?
+       ) do
     # Lock the gated run IN THIS transaction and confirm it's still
     # `:pending_approval` — a cancel/expiry between parking and this approval
     # makes it non-dispatchable, so the approve must abort rather than resurrect
@@ -2193,9 +2210,9 @@ defmodule Emisar.Approvals do
          :ok <- Runbooks.ensure_attempt_approvable(repo, run),
          :ok <- Runs.ensure_run_initiator_authorized(repo, run),
          {:ok, approved} <-
-           guarded_transition(locked, :approved, by_user_id, reason, overridden?),
+           guarded_transition(locked, :approved, by_membership_id, reason, overridden?),
          {:ok, released_run} <- Runs.release_pending_approval_run(run, repo: repo),
-         {:ok, grant} <- mint_grant(locked, released_run, by_user_id, attrs) do
+         {:ok, grant} <- mint_grant(locked, released_run, by_membership_id, attrs) do
       {:ok,
        %{
          action: :dispatch,
@@ -2210,11 +2227,11 @@ defmodule Emisar.Approvals do
 
   # A grant is minted only for a windowed duration on an api-key-triggered
   # run; `:once` and a runner-/operator-sourced run mint nothing.
-  defp mint_grant(%Request{}, %{api_key_id: nil}, _by_user_id, _attrs), do: {:ok, nil}
-  defp mint_grant(%Request{}, _run, _by_user_id, %{duration: :once}), do: {:ok, nil}
+  defp mint_grant(%Request{}, %{api_key_id: nil}, _by_membership_id, _attrs), do: {:ok, nil}
+  defp mint_grant(%Request{}, _run, _by_membership_id, %{duration: :once}), do: {:ok, nil}
 
-  defp mint_grant(%Request{} = request, %Runs.ActionRun{} = run, by_user_id, attrs) do
-    case create_grant(request, run, by_user_id, attrs) do
+  defp mint_grant(%Request{} = request, %Runs.ActionRun{} = run, by_membership_id, attrs) do
+    case create_grant(request, run, by_membership_id, attrs) do
       {:ok, grant} ->
         {:ok, grant}
 
@@ -2230,11 +2247,17 @@ defmodule Emisar.Approvals do
   # stamping decider/reason and whether an override released it. 0 rows means
   # another decision or the expiry landed between the lock and here → classify
   # so the caller flashes the right cause.
-  defp guarded_transition(%Request{} = locked, status, by_user_id, reason, overridden? \\ false) do
+  defp guarded_transition(
+         %Request{} = locked,
+         status,
+         by_membership_id,
+         reason,
+         overridden? \\ false
+       ) do
     now = DateTime.utc_now()
 
     {affected, _} =
-      Request.Query.decide_pending(locked.id, status, by_user_id, reason, now, overridden?)
+      Request.Query.decide_pending(locked.id, status, by_membership_id, reason, now, overridden?)
       |> Repo.update_all([])
 
     case affected do
@@ -2364,7 +2387,7 @@ defmodule Emisar.Approvals do
         %Request{run_id: run_id} when is_binary(run_id) ->
           case Runs.peek_run_by_id(run_id) do
             %Runs.ActionRun{} = run ->
-              notify_approvers(request, run, request.requested_by_id, event)
+              notify_approvers(request, run, request.requested_by_membership_id, event)
 
             nil ->
               Logger.warning("action_approval_update_notification_target_missing",
@@ -2395,7 +2418,7 @@ defmodule Emisar.Approvals do
       id: decision.id,
       kind: kind,
       approved_count: count,
-      actor_label: approval_actor_label(request.account_id, decision.decider_id),
+      actor_label: approval_actor_label(request.account_id, decision.decider_membership_id),
       occurred_at: decision.decided_at,
       reason: request.decision_reason
     }
@@ -2406,7 +2429,7 @@ defmodule Emisar.Approvals do
       id: request.id,
       kind: :overridden,
       approved_count: count,
-      actor_label: approval_actor_label(request.account_id, request.decided_by_id),
+      actor_label: approval_actor_label(request.account_id, request.decided_by_membership_id),
       occurred_at: request.decided_at,
       reason: request.decision_reason
     }
@@ -2416,19 +2439,21 @@ defmodule Emisar.Approvals do
   defp requester_event_kind(%{outcome: %{request: %Request{status: :approved}}}), do: :overridden
   defp requester_event_kind(_changes), do: nil
 
-  defp approval_actor_label(account_id, user_id) do
-    case Accounts.fetch_active_membership_for_user(account_id, user_id) do
-      {:ok, membership} -> Accounts.member_display_name(membership) || "An approver"
-      _ -> "An approver"
+  defp approval_actor_label(account_id, membership_id) do
+    case Accounts.peek_membership_profile_by_id(account_id, membership_id) do
+      %Accounts.Membership{} = membership ->
+        Accounts.member_display_name(membership) || "An approver"
+
+      _ ->
+        "An approver"
     end
   end
 
   # The operator who asked hears the outcome once it's terminal — a vote that
   # leaves the request :pending below the threshold is not news yet. Same
   # detached-task seam as the created-email so a slow SMTP call never sits in
-  # front of dispatch. `requested_by_id` is already the accountable human
-  # (`effective_requester/2` resolves an API-key run to the key's owner at
-  # creation), so a request with no resolvable person simply gets no email.
+  # front of dispatch. The exact requester Member owns the destination; a
+  # replacement seat or a personal User address is never a fallback.
   defp notify_requester_of_decision(request, approved_count, event_kind \\ nil)
 
   defp notify_requester_of_decision(
@@ -2444,9 +2469,8 @@ defmodule Emisar.Approvals do
   defp notify_requester_of_decision(%Request{}, _approved_count, _event_kind), do: :ok
 
   defp deliver_decision_email(%Request{} = request, approved_count, event_kind) do
-    with {:ok, requester} <- Users.fetch_user_by_id(request.requested_by_id),
-         {:ok, membership} <-
-           Accounts.fetch_active_membership_for_user(request.account_id, requester.id),
+    with %Accounts.Membership{} = membership <-
+           Accounts.peek_active_membership(request.account_id, request.requested_by_membership_id),
          true <- is_binary(membership.contact_email) do
       # Preloaded here rather than at the call site: the email builds the
       # canonical slugged approval link, and a slug-less URL 404s.
@@ -2465,7 +2489,7 @@ defmodule Emisar.Approvals do
 
         {:error, reason} ->
           Logger.warning("approval_decision_email_failed",
-            user_id: requester.id,
+            membership_id: membership.id,
             req_id: request.id,
             error: inspect(reason)
           )
@@ -2480,7 +2504,7 @@ defmodule Emisar.Approvals do
   end
 
   defp requester_decision_actor_label(%Request{status: :denied} = request),
-    do: approval_actor_label(request.account_id, request.decided_by_id)
+    do: approval_actor_label(request.account_id, request.decided_by_membership_id)
 
   defp requester_decision_actor_label(%Request{}), do: nil
 
@@ -2773,7 +2797,7 @@ defmodule Emisar.Approvals do
   The originating request, runner, and api_key are pulled off the
   approval `request` so the grant carries the same shape.
   """
-  def create_grant(%Request{} = request, %Runs.ActionRun{} = run, granted_by_id, attrs) do
+  def create_grant(%Request{} = request, %Runs.ActionRun{} = run, granted_by_membership_id, attrs) do
     now = DateTime.utc_now()
     duration = attrs[:duration]
 
@@ -2785,7 +2809,7 @@ defmodule Emisar.Approvals do
         pack_ref: run.pack_ref,
         runner_id: run.runner_id,
         args_sha256: if(attrs[:scope] == :any_args, do: nil, else: run.args_sha256),
-        granted_by_id: granted_by_id,
+        granted_by_membership_id: granted_by_membership_id,
         granted_at: now,
         expires_at: expires_at_for(duration, now),
         max_uses: max_uses_for(duration, attrs[:max_uses]),
@@ -2947,7 +2971,7 @@ defmodule Emisar.Approvals do
     key = {:revoked_grant, grant.id}
 
     multi
-    |> Multi.update(key, Grant.Changeset.revoke(grant, Subject.actor_id(subject)))
+    |> Multi.update(key, Grant.Changeset.revoke(grant, subject.membership_id))
     |> Multi.insert(
       {:grant_revocation_audit, grant.id},
       &Audit.Events.approval_grant_revoked(subject, Map.fetch!(&1, key))
@@ -3022,9 +3046,9 @@ defmodule Emisar.Approvals do
   approver's own credentials therefore does not reach it, and a ninety-day
   grant kept bypassing the human prompt long after its approver was gone.
 
-  Grants record `granted_by_id` as a USER, so the membership's
-  `(account_id, user_id)` pair is the match and no grant column has to change.
-  Already-expired grants are inert and stay historical rows. `revoked_by_id`
+  Grants record the exact issuing Member, so retiring a replacement seat cannot
+  retarget another Member's historical delegation.
+  Already-expired grants are inert and stay historical rows. `revoked_by_membership_id`
   stays nil — nobody revoked this one by hand; the audit row says why.
   """
   def revoke_grants_granted_by_membership(repo, %Accounts.Membership{} = membership) do
@@ -3033,7 +3057,7 @@ defmodule Emisar.Approvals do
     queryable =
       Grant.Query.not_revoked()
       |> Grant.Query.by_account_id(membership.account_id)
-      |> Grant.Query.by_granted_by_user_id(membership.user_id)
+      |> Grant.Query.by_granted_by_membership_id(membership.id)
       |> Grant.Query.not_expired(now)
       |> Grant.Query.select_all()
 
@@ -3062,7 +3086,7 @@ defmodule Emisar.Approvals do
     queryable =
       Decision.Query.all()
       |> Decision.Query.by_account_id(membership.account_id)
-      |> Decision.Query.by_decider_ids([membership.user_id])
+      |> Decision.Query.by_decider_membership_ids([membership.id])
       |> Decision.Query.approve_votes()
       |> Decision.Query.on_pending_requests()
       |> Decision.Query.select_all()
@@ -3161,13 +3185,13 @@ defmodule Emisar.Approvals do
   # revoke changeset, and `approval.grant_revoked` audit row, scoped by the
   # explicit account id instead of the subject's runner access.
   defp revoke_grant_in_account(%Grant{} = grant, account_id, %Subject{} = subject) do
-    by_user_id = Subject.actor_id(subject)
+    by_membership_id = subject.membership_id
 
     Grant.Query.all()
     |> Grant.Query.by_id(grant.id)
     |> Grant.Query.by_account_id(account_id)
     |> Repo.fetch_and_update(Grant.Query,
-      with: &Grant.Changeset.revoke(&1, by_user_id),
+      with: &Grant.Changeset.revoke(&1, by_membership_id),
       audit: &Audit.Events.approval_grant_revoked(subject, &1)
     )
   end

@@ -1232,8 +1232,20 @@ defmodule Emisar.RunnerAccessTest do
       db: db,
       edge: edge
     } do
-      db_run = Fixtures.Runs.create_run(account_id: account.id, runner_id: db.id)
-      edge_run = Fixtures.Runs.create_run(account_id: account.id, runner_id: edge.id)
+      db_run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: db.id,
+          initiating_membership_id: owner_subject.membership_id
+        )
+
+      edge_run =
+        Fixtures.Runs.create_run(
+          account_id: account.id,
+          runner_id: edge.id,
+          initiating_membership_id: owner_subject.membership_id
+        )
+
       db_request = Fixtures.Approvals.create_request(account_id: account.id, run_id: db_run.id)
 
       edge_request =

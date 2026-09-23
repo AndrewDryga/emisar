@@ -4953,7 +4953,7 @@ defmodule Emisar.RunsTest do
       {:ok, parked} =
         Runs.create_run(base_attrs(account.id, runner.id, %{status: :pending_approval}))
 
-      {:ok, _request} = Approvals.create_request(parked, user.id, "needs review")
+      {:ok, _request} = Approvals.create_request(parked, "needs review")
 
       assert {:ok, %ActionRun{status: :cancelled}} =
                Runs.cancel_run(parked, subject, "changed my mind")

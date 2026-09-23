@@ -17,14 +17,10 @@ defmodule Emisar.ApprovalsTest do
     # An approvable run needs a currently-advertised action: approve re-resolves
     # the trusted contract and fails closed when it is gone.
     Fixtures.Catalog.create_action(runner: runner)
-    initiator = Fixtures.Users.create_user()
 
     initiating_membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: initiator.id,
-        role: "operator"
-      )
+      Keyword.get(opts, :initiating_membership) ||
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     {:ok, run} =
       Runs.create_run(%{
@@ -32,7 +28,7 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        requested_by_id: initiator.id,
+        requested_by_id: initiating_membership.user_id,
         initiating_membership_id: initiating_membership.id,
         args: %{},
         # A parked gated run carries the trusted pack contract dispatch would
@@ -117,13 +113,124 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
+  describe "exact Member attribution" do
+    test "the approval requester is the run's exact initiating Member" do
+      {_account, run} = run_fixture()
+
+      assert {:ok, request} =
+               Approvals.create_request(run, "Review this action")
+
+      assert request.requested_by_membership_id == run.initiating_membership_id
+      assert request.requested_by_id == nil
+    end
+
+    test "a recorded vote retains its exact deciding Member" do
+      %{account: account, request: request} = gated_request(min_approvals: 2)
+      subject = distinct_member(account, :admin)
+
+      assert {:ok, {_request, :pending}} = Approvals.approve_request(request, subject, "Reviewed")
+      assert Repo.one!(Decision).decider_membership_id == subject.membership_id
+      assert Repo.one!(Decision).decider_id == nil
+    end
+
+    test "the final decision retains its exact deciding Member" do
+      %{account: account, request: request} = gated_request()
+      subject = distinct_member(account, :admin)
+
+      assert {:ok, {decided, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, subject, "Reviewed")
+
+      assert decided.decided_by_membership_id == subject.membership_id
+      assert decided.decided_by_id == nil
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+    end
+
+    test "offboarding retires the old vote and rejoining creates a distinct voter" do
+      %{account: account, request: request} = gated_request(min_approvals: 3)
+      manager = distinct_member(account, :owner)
+      voter = distinct_member(account, :admin)
+      member = Fixtures.Memberships.fetch_membership(account.id, voter.actor.id)
+
+      assert {:ok, {_request, :pending}} =
+               Approvals.approve_request(request, voter, "First review")
+
+      assert {:ok, _deleted} = Accounts.delete_membership(member, manager)
+      assert Approvals.approved_count_for_request(request, manager) == {:ok, 0}
+
+      replacement =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: voter.actor.id,
+          role: "admin",
+          display_name: "Rejoined member"
+        )
+
+      replacement_subject = Fixtures.Subjects.membership_subject(replacement)
+
+      assert {:ok, {_request, :pending}} =
+               Approvals.approve_request(request, replacement_subject, "Independent new review")
+
+      assert Repo.one!(Decision).decider_membership_id == replacement.id
+      assert Approvals.approved_count_for_request(request, manager) == {:ok, 1}
+
+      assert Approvals.approve_request(request, replacement_subject, "Repeated") ==
+               {:error, :already_decided}
+
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+    end
+
+    test "a deleted issuer makes matching and held-grant consumption fail closed" do
+      account = Fixtures.Accounts.create_account()
+      {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      issuer = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      grant =
+        Fixtures.Approvals.create_grant(
+          account_id: account.id,
+          api_key_id: key.id,
+          granted_by_membership_id: issuer.id
+        )
+
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      assert Approvals.peek_matching_grant(
+               account.id,
+               key.id,
+               grant.action_id,
+               grant.pack_ref,
+               runner.id,
+               nil
+             ).id == grant.id
+
+      Fixtures.Memberships.hard_delete_membership(issuer)
+      retained = Repo.reload!(grant)
+      assert retained.account_id == account.id
+      assert retained.granted_by_membership_id == nil
+      refute Grant.usable?(retained)
+
+      assert Approvals.peek_matching_grant(
+               account.id,
+               key.id,
+               grant.action_id,
+               grant.pack_ref,
+               runner.id,
+               nil
+             ) == nil
+
+      assert {:error, :grant_use, :grant_unusable, %{}} =
+               Multi.new() |> Approvals.consume_grant_in_multi(:run, grant) |> Repo.transaction()
+
+      assert Repo.reload!(grant).uses_count == 0
+    end
+  end
+
   # -- Grants ---------------------------------------------------------
 
   describe "fetch_approval_review/2" do
     setup do
       {account, run} = run_fixture()
       subject = operator_subject(account)
-      {:ok, request} = Approvals.create_request(run, run.requested_by_id, "Review this action")
+      {:ok, request} = Approvals.create_request(run, "Review this action")
       %{account: account, run: run, subject: subject, request: Repo.reload!(request)}
     end
 
@@ -350,7 +457,9 @@ defmodule Emisar.ApprovalsTest do
   end
 
   defp insert_decision(account, request, decider) do
-    Decision.Changeset.create(account.id, request.id, decider.id, %{
+    membership = Fixtures.Memberships.fetch_membership(account.id, decider.id)
+
+    Decision.Changeset.create(account.id, request.id, membership.id, %{
       decision: :approve,
       decided_at: DateTime.utc_now()
     })
@@ -430,7 +539,7 @@ defmodule Emisar.ApprovalsTest do
         status: :pending_approval
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, "x")
+    {:ok, request} = Approvals.create_request(run, "x")
     {subject, key, request}
   end
 
@@ -523,7 +632,7 @@ defmodule Emisar.ApprovalsTest do
 
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-    membership = Fixtures.Memberships.fetch_membership(account.id, decider.id)
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     {:ok, run} =
       Runs.create_run(%{
@@ -531,7 +640,7 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        requested_by_id: decider.id,
+        requested_by_id: membership.user_id,
         initiating_membership_id: membership.id,
         args: %{},
         status: :pending_approval
@@ -548,14 +657,7 @@ defmodule Emisar.ApprovalsTest do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     Fixtures.Catalog.create_action(runner: runner)
     Emisar.Runners.subscribe_runner_transport(runner)
-    initiator = Fixtures.Users.create_user()
-
-    initiating_membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: initiator.id,
-        role: "operator"
-      )
+    requester_subject = distinct_member(account, Keyword.get(opts, :requester_role, :operator))
 
     {:ok, run} =
       Runs.create_run(%{
@@ -563,8 +665,8 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        requested_by_id: initiator.id,
-        initiating_membership_id: initiating_membership.id,
+        requested_by_id: requester_subject.actor.id,
+        initiating_membership_id: requester_subject.membership_id,
         args: %{},
         # A parked gated run carries the trusted pack contract dispatch would
         # have snapshotted; approve re-resolves it and compares the hash.
@@ -575,21 +677,8 @@ defmodule Emisar.ApprovalsTest do
         status: :pending_approval
       })
 
-    requester_subject =
-      case Keyword.get(opts, :requester_role) do
-        nil -> nil
-        role -> distinct_member(account, role)
-      end
-
-    requester =
-      cond do
-        requested_by_id = Keyword.get(opts, :requested_by_id) -> requested_by_id
-        requester_subject -> requester_subject.actor.id
-        true -> Fixtures.Users.create_user().id
-      end
-
     {:ok, request} =
-      Approvals.create_request(run, requester, "needs review",
+      Approvals.create_request(run, "needs review",
         min_approvals: Keyword.get(opts, :min_approvals, 1),
         allow_self_approval: Keyword.get(opts, :allow_self_approval, true)
       )
@@ -599,7 +688,7 @@ defmodule Emisar.ApprovalsTest do
       runner: runner,
       run: run,
       request: request,
-      requester_id: requester,
+      requester_id: requester_subject.actor.id,
       requester_subject: requester_subject
     }
   end
@@ -637,7 +726,7 @@ defmodule Emisar.ApprovalsTest do
       })
 
     {:ok, request} =
-      Approvals.create_request(run, initiator.id, "needs review",
+      Approvals.create_request(run, "needs review",
         min_approvals: Keyword.get(opts, :min_approvals, 1)
       )
 
@@ -672,7 +761,7 @@ defmodule Emisar.ApprovalsTest do
       })
 
     {:ok, _request} =
-      Approvals.create_request(run, initiator.id, "needs review", min_approvals: 2)
+      Approvals.create_request(run, "needs review", min_approvals: 2)
 
     run
   end
@@ -752,7 +841,7 @@ defmodule Emisar.ApprovalsTest do
       })
 
     {:ok, request} =
-      Approvals.create_request(run, requester.id, "please", min_approvals: 2)
+      Approvals.create_request(run, "please", min_approvals: 2)
 
     %{request: request, owner: distinct_member(account, :owner)}
   end
@@ -763,8 +852,8 @@ defmodule Emisar.ApprovalsTest do
       {_, run2} = run_fixture(account: account)
       subject = operator_subject(account)
 
-      {:ok, req_pending} = Approvals.create_request(run1, Fixtures.Users.create_user().id, nil)
-      {:ok, req_to_deny} = Approvals.create_request(run2, Fixtures.Users.create_user().id, nil)
+      {:ok, req_pending} = Approvals.create_request(run1, nil)
+      {:ok, req_to_deny} = Approvals.create_request(run2, nil)
       {:ok, _} = Approvals.deny_request(req_to_deny, subject, "nope")
 
       {:ok, pending, _} = Approvals.list_pending_approval_requests(subject)
@@ -782,7 +871,7 @@ defmodule Emisar.ApprovalsTest do
       requests =
         for _ <- 1..6 do
           {_, run} = run_fixture(account: account)
-          {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, nil)
+          {:ok, request} = Approvals.create_request(run, nil)
           request
         end
 
@@ -802,7 +891,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "does not list another account's pending requests" do
       {_account_a, run_a} = run_fixture()
-      {:ok, _request} = Approvals.create_request(run_a, Fixtures.Users.create_user().id, nil)
+      {:ok, _request} = Approvals.create_request(run_a, nil)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
@@ -817,10 +906,10 @@ defmodule Emisar.ApprovalsTest do
       {_, web_run} = run_fixture(account: account, runner: web_runner)
 
       {:ok, db_request} =
-        Approvals.create_request(db_run, Fixtures.Users.create_user().id, "database")
+        Approvals.create_request(db_run, "database")
 
       {:ok, web_request} =
-        Approvals.create_request(web_run, Fixtures.Users.create_user().id, "web")
+        Approvals.create_request(web_run, "web")
 
       {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
 
@@ -968,7 +1057,7 @@ defmodule Emisar.ApprovalsTest do
     test "missing or malformed frozen approval targets fail closed" do
       {account, run} = run_fixture()
       subject = operator_subject(account)
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, nil)
+      {:ok, request} = Approvals.create_request(run, nil)
 
       {1, _} =
         ActionRun.Query.all()
@@ -1001,9 +1090,9 @@ defmodule Emisar.ApprovalsTest do
       {_, run3} = run_fixture(account: account)
       subject = operator_subject(account)
 
-      {:ok, _} = Approvals.create_request(run1, Fixtures.Users.create_user().id, nil)
-      {:ok, _} = Approvals.create_request(run2, Fixtures.Users.create_user().id, nil)
-      {:ok, to_deny} = Approvals.create_request(run3, Fixtures.Users.create_user().id, nil)
+      {:ok, _} = Approvals.create_request(run1, nil)
+      {:ok, _} = Approvals.create_request(run2, nil)
+      {:ok, to_deny} = Approvals.create_request(run3, nil)
       {:ok, _} = Approvals.deny_request(to_deny, subject, "no")
 
       assert Approvals.count_pending_approval_requests(subject) == 2
@@ -1017,7 +1106,7 @@ defmodule Emisar.ApprovalsTest do
     test "is scoped to the subject's account (cross-account isolation)" do
       {account_a, run_a} = run_fixture()
       {account_b, _} = run_fixture()
-      {:ok, _} = Approvals.create_request(run_a, Fixtures.Users.create_user().id, nil)
+      {:ok, _} = Approvals.create_request(run_a, nil)
 
       # Account B has zero requests; the helper must not leak A's count.
       assert Approvals.count_pending_approval_requests(operator_subject(account_a)) == 1
@@ -1122,15 +1211,15 @@ defmodule Emisar.ApprovalsTest do
     test "counts unresolved requests across ALL accounts (fleet-wide, no subject)" do
       {_account_a, run_a} = run_fixture()
       {_account_b, run_b} = run_fixture()
-      {:ok, _} = Approvals.create_request(run_a, Fixtures.Users.create_user().id, "a")
-      {:ok, _} = Approvals.create_request(run_b, Fixtures.Users.create_user().id, "b")
+      {:ok, _} = Approvals.create_request(run_a, "a")
+      {:ok, _} = Approvals.create_request(run_b, "b")
 
       assert %{count: 2} = Approvals.pending_queue_stats()
     end
 
     test "oldest_age_seconds reflects the longest-waiting request" do
       {_account, run} = run_fixture()
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       # Backdate the request 90s into the past so the age is deterministic.
       query = Request.Query.all() |> Request.Query.by_id(request.id)
@@ -1152,7 +1241,7 @@ defmodule Emisar.ApprovalsTest do
         )
 
       subject = Fixtures.Subjects.subject_for(operator, account, role: :owner)
-      {:ok, request} = Approvals.create_request(run, operator.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       assert %{count: 1} = Approvals.pending_queue_stats()
 
@@ -1165,7 +1254,7 @@ defmodule Emisar.ApprovalsTest do
   describe "list_approval_requests_for_account/2" do
     test "lists pending requests with no filter, narrows by status, scopes to the account" do
       {account, run} = run_fixture()
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       subject = operator_subject(account)
 
       # No :status filter — the pending request is returned.
@@ -1189,7 +1278,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "filters by status (a decided request shows under :denied, not :pending)" do
       {account, run} = run_fixture()
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       subject = operator_subject(account)
       {:ok, _} = Approvals.deny_request(request, subject, "no")
 
@@ -1204,7 +1293,7 @@ defmodule Emisar.ApprovalsTest do
   describe "fetch_approval_request_by_id/3" do
     test "returns the request inside the subject's account; cross-account is :not_found" do
       {account, run} = run_fixture()
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       subject = operator_subject(account)
 
       assert {:ok, %Request{id: id}} = Approvals.fetch_approval_request_by_id(request.id, subject)
@@ -1241,7 +1330,7 @@ defmodule Emisar.ApprovalsTest do
       Fixtures.Catalog.create_action(runner: runner, risk: "high")
       subject = operator_subject(account)
 
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, nil)
+      {:ok, request} = Approvals.create_request(run, nil)
 
       assert Approvals.risk_by_request_ids([request.id], subject) ==
                {:ok, %{request.id => :high}}
@@ -1264,7 +1353,7 @@ defmodule Emisar.ApprovalsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       {_account, run} = run_fixture(account: account, runner: runner)
 
-      {:ok, action_request} = Approvals.create_request(run, requester.id, nil)
+      {:ok, action_request} = Approvals.create_request(run, nil)
       Fixtures.Catalog.delete_actions_for_runner(runner.id)
 
       # One unresolved item makes the whole plan unknown — the readable
@@ -1287,10 +1376,10 @@ defmodule Emisar.ApprovalsTest do
       Fixtures.Catalog.create_action(runner: db_runner, risk: "high")
       Fixtures.Catalog.create_action(runner: web_runner, risk: "critical")
 
-      {:ok, db_request} = Approvals.create_request(db_run, Fixtures.Users.create_user().id, nil)
+      {:ok, db_request} = Approvals.create_request(db_run, nil)
 
       {:ok, web_request} =
-        Approvals.create_request(web_run, Fixtures.Users.create_user().id, nil)
+        Approvals.create_request(web_run, nil)
 
       {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
 
@@ -1305,7 +1394,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "omits another account's request and ids that resolve to nothing" do
       {_account_a, run_a} = run_fixture()
-      {:ok, request_a} = Approvals.create_request(run_a, Fixtures.Users.create_user().id, nil)
+      {:ok, request_a} = Approvals.create_request(run_a, nil)
       {account_b, _run_b} = run_fixture()
 
       ids = [request_a.id, Ecto.UUID.generate(), "not-a-uuid"]
@@ -1330,7 +1419,7 @@ defmodule Emisar.ApprovalsTest do
       owner = operator_subject(account)
 
       {:ok, request} =
-        Approvals.create_request(run, Fixtures.Users.create_user().id, "review required")
+        Approvals.create_request(run, "review required")
 
       {:ok, _raw, key} = Emisar.ApiKeys.create_key(%{name: "approval observer"}, owner)
       subject = Emisar.Auth.Subject.for_api_key(key, account)
@@ -1457,13 +1546,12 @@ defmodule Emisar.ApprovalsTest do
 
       assert denial.reason == "Please narrow the query to the affected service."
 
-      # A reviewer this account no longer knows keeps their vote but not a name:
-      # the label is the membership's fact, never a guess from a global profile.
+      # The exact recorded tombstone retains workspace history, not authority.
       account.id
       |> Fixtures.Memberships.fetch_membership(first.actor.id)
       |> Fixtures.Memberships.mark_membership_as_deleted()
 
-      assert {:ok, %{decisions: [%{actor: nil, decision: :approve} | _]}} =
+      assert {:ok, %{decisions: [%{actor: "Jane Doe", decision: :approve} | _]}} =
                project_review(run, subject)
     end
 
@@ -1524,7 +1612,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert [
                %{
-                 actor: "Jane Doe",
+                 actor: nil,
                  decision: :approve,
                  decided_at: %DateTime{},
                  reason: "Validated on staging."
@@ -1616,7 +1704,7 @@ defmodule Emisar.ApprovalsTest do
 
       Fixtures.Approvals.override_with_old_writer(request, reviewer, "Emergency release.")
 
-      assert {:ok, %{decisions: [], override: %{actor: "Alex Admin"}}} =
+      assert {:ok, %{decisions: [], override: %{actor: nil}}} =
                project_review(run, subject)
 
       Fixtures.Approvals.prune_override_receipt(request)
@@ -1930,14 +2018,13 @@ defmodule Emisar.ApprovalsTest do
     test "a justification past its ceiling in encoded bytes is cut and flagged, a fitting one is not" do
       {account, run} = run_fixture()
       subject = operator_subject(account)
-      requester = Fixtures.Users.create_user()
 
       # 1500 graphemes of a three-byte CJK character: 4500 bytes.
       cjk = String.duplicate("日", 1_500)
       assert String.length(cjk) == 1_500
       assert byte_size(cjk) == 4_500
 
-      assert {:ok, request} = Approvals.create_request(run, requester.id, cjk)
+      assert {:ok, request} = Approvals.create_request(run, cjk)
       assert {:ok, review} = project_review(run, subject)
 
       # 666 whole characters (1998 bytes): the 667th would split a code point.
@@ -1958,7 +2045,7 @@ defmodule Emisar.ApprovalsTest do
 
       {account, run} = run_fixture()
       subject = operator_subject(account)
-      assert {:ok, request} = Approvals.create_request(run, requester.id, quotes)
+      assert {:ok, request} = Approvals.create_request(run, quotes)
       assert {:ok, review} = project_review(run, subject)
 
       # 1000 quotes cost exactly the ceiling on the wire.
@@ -1969,7 +2056,7 @@ defmodule Emisar.ApprovalsTest do
 
       {account, run} = run_fixture()
       subject = operator_subject(account)
-      assert {:ok, _request} = Approvals.create_request(run, requester.id, "needs review")
+      assert {:ok, _request} = Approvals.create_request(run, "needs review")
       assert {:ok, review} = project_review(run, subject)
 
       assert review.reason == "needs review"
@@ -2063,7 +2150,7 @@ defmodule Emisar.ApprovalsTest do
       # Oldest-first: a's approve, then b's deny.
       assert Enum.map(decisions, & &1.decision) == [:approve, :deny]
       # The decider is preloaded for the UI tally (not an unloaded assoc).
-      assert Enum.map(decisions, & &1.decider.id) == [a.actor.id, b.actor.id]
+      assert Enum.map(decisions, & &1.decider_membership.id) == [a.membership_id, b.membership_id]
     end
 
     test "a viewer (no view_approvals) is refused with :unauthorized", %{
@@ -2144,15 +2231,15 @@ defmodule Emisar.ApprovalsTest do
       membership =
         Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
-      _other_membership =
+      other_membership =
         Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: outsider.id)
 
       _membership = Fixtures.Memberships.sync_display_name(membership, "Directory Name")
 
-      ids = [user.id, outsider.id, nil, user.id]
+      ids = [membership.id, other_membership.id, nil, membership.id]
 
       assert Approvals.actor_labels_for_ids(ids, subject) ==
-               {:ok, %{user.id => "Directory Name"}}
+               {:ok, %{membership.id => "Directory Name"}}
     end
 
     test "denies a principal without approval visibility" do
@@ -2169,21 +2256,19 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "create_request/4" do
+  describe "create_request/3" do
     test "creates an approval request in :pending status" do
       {_account, run} = run_fixture()
-      operator = Fixtures.Users.create_user()
 
       assert {:ok, %Request{status: :pending, run_id: run_id}} =
-               Approvals.create_request(run, operator.id, "high-risk action")
+               Approvals.create_request(run, "high-risk action")
 
       assert run_id == run.id
     end
 
     test "sets expires_at 24h from now by default" do
       {_account, run} = run_fixture()
-      user = Fixtures.Users.create_user()
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       assert request.expires_at != nil
       assert DateTime.diff(request.expires_at, DateTime.utc_now(), :hour) in 23..24
@@ -2193,7 +2278,7 @@ defmodule Emisar.ApprovalsTest do
       {_account, run} = run_fixture()
 
       assert {:error, changeset} =
-               Approvals.create_request(run, Fixtures.Users.create_user().id, "x",
+               Approvals.create_request(run, "x",
                  min_approvals: Emisar.Policies.max_min_approvals() + 1
                )
 
@@ -2205,6 +2290,7 @@ defmodule Emisar.ApprovalsTest do
     test "snapshots the run's evidence/expected justification chain onto the request" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -2213,6 +2299,7 @@ defmodule Emisar.ApprovalsTest do
           action_id: "linux.uptime",
           source: "mcp",
           reason: "restart the stuck worker",
+          initiating_membership_id: member.id,
           evidence: "run 0f9c showed the queue depth climbing for 20m",
           expected: "queue depth drops to zero within a minute",
           args: %{},
@@ -2220,7 +2307,7 @@ defmodule Emisar.ApprovalsTest do
         })
 
       assert {:ok, request} =
-               Approvals.create_request(run, Fixtures.Users.create_user().id, run.reason)
+               Approvals.create_request(run, run.reason)
 
       assert request.evidence == "run 0f9c showed the queue depth climbing for 20m"
       assert request.expected == "queue depth drops to zero within a minute"
@@ -2228,16 +2315,16 @@ defmodule Emisar.ApprovalsTest do
 
     test "a duplicate request for the same run is rejected by the unique constraint" do
       {_account, run} = run_fixture()
-      {:ok, _} = Approvals.create_request(run, Fixtures.Users.create_user().id, "first")
+      {:ok, _} = Approvals.create_request(run, "first")
 
       assert {:error, %Ecto.Changeset{} = changeset} =
-               Approvals.create_request(run, Fixtures.Users.create_user().id, "second")
+               Approvals.create_request(run, "second")
 
       assert "has already been taken" in errors_on(changeset).run_id
     end
   end
 
-  describe "create_request/4 approver notifications" do
+  describe "create_request/3 approver notifications" do
     setup do
       account = Fixtures.Accounts.create_account()
 
@@ -2264,6 +2351,8 @@ defmodule Emisar.ApprovalsTest do
           action_id: "linux.uptime",
           source: "operator",
           pack_ref: @grant_pack_ref,
+          initiating_membership_id:
+            Fixtures.Memberships.create_membership(account_id: account.id).id,
           args: %{},
           status: :pending_approval
         })
@@ -2277,7 +2366,7 @@ defmodule Emisar.ApprovalsTest do
     } do
       # Requested by an unrelated user so no decider is excluded as the asker.
       {:ok, _req} =
-        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs approval")
+        Approvals.create_request(run, "needs approval")
 
       recipients = notified_recipients()
 
@@ -2288,7 +2377,9 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "excludes the requester from their own notification", %{run: run, members: members} do
-      {:ok, _req} = Approvals.create_request(run, members["owner"].id, "needs approval")
+      membership = Fixtures.Memberships.fetch_membership(run.account_id, members["owner"].id)
+      run = Fixtures.Runs.set_initiating_membership(run, membership)
+      {:ok, _req} = Approvals.create_request(run, "needs approval")
 
       recipients = notified_recipients()
 
@@ -2314,7 +2405,7 @@ defmodule Emisar.ApprovalsTest do
       assert Accounts.membership_invitation_pending?(invitation)
 
       {:ok, _request} =
-        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs approval")
+        Approvals.create_request(run, "needs approval")
 
       recipients = notified_recipients()
       assert members["owner"].email in recipients
@@ -2336,7 +2427,7 @@ defmodule Emisar.ApprovalsTest do
         )
 
       {:ok, _req} =
-        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs approval")
+        Approvals.create_request(run, "needs approval")
 
       recipients = notified_recipients()
 
@@ -2365,7 +2456,7 @@ defmodule Emisar.ApprovalsTest do
       )
 
       {:ok, _request} =
-        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs approval")
+        Approvals.create_request(run, "needs approval")
 
       recipients = notified_recipients()
 
@@ -2380,7 +2471,7 @@ defmodule Emisar.ApprovalsTest do
       members: members
     } do
       {:ok, request} =
-        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs approval")
+        Approvals.create_request(run, "needs approval")
 
       _created = notified_emails()
 
@@ -2406,7 +2497,7 @@ defmodule Emisar.ApprovalsTest do
     end
   end
 
-  describe "create_request_in_multi/5" do
+  describe "create_request_in_multi/4" do
     # create_request_in_multi composes the request insert into create_run's
     # dispatch transaction; the approval-gated MCP dispatch path is its real
     # exercise — a gated run and its request must commit atomically.
@@ -2433,7 +2524,6 @@ defmodule Emisar.ApprovalsTest do
                |> Multi.put(:run, run)
                |> Approvals.create_request_in_multi(
                  :run,
-                 Fixtures.Users.create_user().id,
                  "x",
                  []
                )
@@ -2583,7 +2673,7 @@ defmodule Emisar.ApprovalsTest do
         Request.Changeset.create(%{
           account_id: account.id,
           run_id: run.id,
-          requested_by_id: Fixtures.Users.create_user().id,
+          requested_by_membership_id: run.initiating_membership_id,
           requested_at: DateTime.utc_now(),
           expires_at: DateTime.add(DateTime.utc_now(), 3600, :second)
         })
@@ -2619,7 +2709,7 @@ defmodule Emisar.ApprovalsTest do
         Request.Changeset.create(%{
           account_id: account.id,
           run_id: run.id,
-          requested_by_id: Fixtures.Users.create_user().id,
+          requested_by_membership_id: run.initiating_membership_id,
           requested_at: DateTime.utc_now(),
           expires_at: DateTime.add(DateTime.utc_now(), 3600, :second)
         })
@@ -2637,7 +2727,7 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       decider: decider
     } do
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "review")
+      {:ok, request} = Approvals.create_request(run, "review")
       assert decider.email in notified_recipients()
 
       request
@@ -2656,7 +2746,9 @@ defmodule Emisar.ApprovalsTest do
       |> Ecto.Changeset.change(status: :pending, expires_at: nil, min_approvals: 2)
       |> Repo.update!()
 
-      Decision.Changeset.create(account.id, request.id, decider.id, %{
+      membership = Fixtures.Memberships.fetch_membership(account.id, decider.id)
+
+      Decision.Changeset.create(account.id, request.id, membership.id, %{
         decision: :approve,
         decided_at: DateTime.utc_now()
       })
@@ -2683,7 +2775,7 @@ defmodule Emisar.ApprovalsTest do
       {:ok, access} = Accounts.RunnerAccess.new(:restricted, ["before"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
 
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "review")
+      {:ok, request} = Approvals.create_request(run, "review")
       assert decider.email in notified_recipients()
       runner |> Ecto.Changeset.change(group: "after") |> Repo.update!()
       assert Approvals.notify_request_created(request, run) == :ok
@@ -2957,7 +3049,7 @@ defmodule Emisar.ApprovalsTest do
     # queue and must not clear it. This is the product's core safety mutation and
     # nothing proved the gate held.
     test "a viewer is refused and the request stays pending", %{run: run, subject: subject} do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
 
       viewer = Fixtures.Users.create_user()
 
@@ -2985,7 +3077,7 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       subject: subject
     } do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
       other_subject = operator_subject(Fixtures.Accounts.create_account())
 
       assert Approvals.approve_request(request, other_subject, "lgtm") ==
@@ -2996,7 +3088,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "transitions the run to :sent + writes an audit event", %{run: run, subject: subject} do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, subject, "lgtm")
@@ -3018,7 +3110,7 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       subject: subject
     } do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
       too_long = String.duplicate("a", Approvals.max_decision_reason_length() + 1)
 
       assert Approvals.approve_request(request, subject, too_long) ==
@@ -3036,7 +3128,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "stores a decision note at the maximum length", %{run: run, subject: subject} do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
       at_limit = String.duplicate("a", Approvals.max_decision_reason_length())
 
       assert {:ok, {%Request{status: :approved} = decided, _run}} =
@@ -3047,7 +3139,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "rejects a decision note carrying a bidi override", %{run: run, subject: subject} do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
 
       assert Approvals.approve_request(request, subject, "reviewed \u202Ednetxe-emit") ==
                {:error, :decision_reason_unsafe_text}
@@ -3064,7 +3156,8 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       subject: subject
     } do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      requester = Accounts.peek_membership_profile_by_id(account.id, run.initiating_membership_id)
+      {:ok, request} = Approvals.create_request(run, "needs approve")
       # Drop the approval-needed blast so only the decision email is left.
       _created = notified_emails()
 
@@ -3075,7 +3168,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert [email] =
                Enum.filter(emails, fn email ->
-                 Enum.map(email.to, &elem(&1, 1)) == [subject.actor.email]
+                 Enum.map(email.to, &elem(&1, 1)) == [requester.contact_email]
                end)
 
       assert email.subject == "Approval · linux.uptime · #{request.id}"
@@ -3096,8 +3189,10 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       subject: subject
     } do
+      requester = Accounts.peek_membership_profile_by_id(account.id, run.initiating_membership_id)
+
       {:ok, request} =
-        Approvals.create_request(run, subject.actor.id, "needs approve", min_approvals: 2)
+        Approvals.create_request(run, "needs approve", min_approvals: 2)
 
       _created = notified_emails()
 
@@ -3107,7 +3202,7 @@ defmodule Emisar.ApprovalsTest do
       emails = notified_emails()
       recipients = Enum.flat_map(emails, &Enum.map(&1.to, fn {_name, email} -> email end))
 
-      refute subject.actor.email in recipients
+      refute requester.contact_email in recipients
 
       assert Enum.any?(
                emails,
@@ -3119,32 +3214,34 @@ defmodule Emisar.ApprovalsTest do
 
     test "a removed requester receives no tenant outcome detail", %{
       account: account,
-      run: run,
-      subject: requester_subject
+      run: run
     } do
       {:ok, request} =
-        Approvals.create_request(run, requester_subject.actor.id, "needs approve")
+        Approvals.create_request(run, "needs approve")
 
       _created = notified_emails()
 
       membership =
-        Fixtures.Memberships.fetch_membership(account.id, requester_subject.actor.id)
+        Accounts.peek_membership_profile_by_id(account.id, run.initiating_membership_id)
 
       Fixtures.Memberships.suspend_membership(membership)
       decider = operator_subject(account)
 
-      assert {:ok, {%Request{status: :approved}, _run}} =
-               Approvals.approve_request(request, decider, "reviewed")
+      assert Approvals.approve_request(request, decider, "reviewed") ==
+               {:error, :initiator_no_longer_authorized}
+
+      assert {:ok, {%Request{status: :denied}, _run}} =
+               Approvals.deny_request(request, decider, "The requester no longer has access")
 
       recipients = notified_recipients()
-      refute requester_subject.actor.email in recipients
+      refute membership.contact_email in recipients
     end
 
     test "a decision emits [:emisar, :approval, :decided] tagged by the decision", %{
       run: run,
       subject: subject
     } do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
 
       handler = make_ref()
       test_pid = self()
@@ -3170,7 +3267,7 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       subject: subject
     } do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
 
       # Simulate the request lapsing past its 24h expiry before the
       # every-few-minutes sweep flips it to :expired — the row is still
@@ -3192,8 +3289,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "a viewer (cannot decide) is refused with :unauthorized", %{account: account, run: run} do
-      decider = operator_subject(account)
-      {:ok, request} = Approvals.create_request(run, decider.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
 
       viewer = Fixtures.Users.create_user()
 
@@ -3211,9 +3307,8 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "an owner of account B cannot approve account A's request (cross-account → :not_found)" do
-      {account_a, run_a} = run_fixture()
-      decider_a = operator_subject(account_a)
-      {:ok, req_a} = Approvals.create_request(run_a, decider_a.actor.id, "needs approve")
+      {_account_a, run_a} = run_fixture()
+      {:ok, req_a} = Approvals.create_request(run_a, "needs approve")
 
       account_b = Fixtures.Accounts.create_account()
       owner_b = Fixtures.Users.create_user()
@@ -3231,9 +3326,8 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "ABUSE: a forged request struct cannot cross the account boundary" do
-      {account_a, run_a} = run_fixture()
-      decider_a = operator_subject(account_a)
-      {:ok, request_a} = Approvals.create_request(run_a, decider_a.actor.id, "needs approve")
+      {_account_a, run_a} = run_fixture()
+      {:ok, request_a} = Approvals.create_request(run_a, "needs approve")
 
       account_b = Fixtures.Accounts.create_account()
       subject_b = operator_subject(account_b)
@@ -3249,7 +3343,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "the second operator's decision loses with :already_decided" do
       {account, run} = run_fixture()
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       first = operator_subject(account)
       second = operator_subject(account)
 
@@ -3299,7 +3393,7 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       {:ok, _} = Approvals.approve_request(request, subject, "ok", duration: :once)
 
       assert Fixtures.Approvals.grants_for_api_key(key.id) == []
@@ -3314,7 +3408,7 @@ defmodule Emisar.ApprovalsTest do
       {account, run} = run_fixture()
       assert run.api_key_id == nil
       subject = operator_subject(account)
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, subject, "ok",
@@ -3348,7 +3442,7 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       {:ok, _} =
         Approvals.approve_request(request, subject, nil, duration: :one_day, scope: :exact_args)
@@ -3389,7 +3483,7 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       {:ok, _} = Approvals.approve_request(request, subject, nil, duration: :one_day, max_uses: 5)
 
@@ -3430,7 +3524,7 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       {:ok, _} =
         Approvals.approve_request(request, subject, nil, duration: :one_day, scope: :exact_args)
@@ -3472,7 +3566,7 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       # Force create_grant to fail deterministically: blank the run's
       # pack_ref (bypassing the create changeset). Grant.Changeset.create
@@ -3527,7 +3621,7 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       # Exactly what the browser posts — the context types it, the web doesn't.
       attrs = %{
@@ -3566,7 +3660,7 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       Emisar.Runners.subscribe_runner_transport(runner)
 
       attrs = %{"duration" => "forever", "scope" => "any_args", "max_uses" => "3"}
@@ -3611,7 +3705,7 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       {:ok, _} =
         Approvals.approve_request(request, subject, nil, duration: :ninety_days, scope: :any_args)
@@ -3741,7 +3835,7 @@ defmodule Emisar.ApprovalsTest do
           attestation: attestation
         })
 
-      {:ok, request} = Approvals.create_request(run, requester.id, "please")
+      {:ok, request} = Approvals.create_request(run, "please")
 
       # Refused before finalizing, so there's no approved-but-dead run; the
       # request stays pending for a re-issued (freshly-signed) request.
@@ -3783,7 +3877,7 @@ defmodule Emisar.ApprovalsTest do
           attestation: attestation
         })
 
-      {:ok, request} = Approvals.create_request(run, requester.id, "please")
+      {:ok, request} = Approvals.create_request(run, "please")
 
       assert {:ok, {%Request{status: :approved}, _run}} =
                Approvals.approve_request(request, approver_subject, "go")
@@ -3892,7 +3986,7 @@ defmodule Emisar.ApprovalsTest do
                  admin_subject
                )
 
-      assert overridden.decided_by_id == admin.id
+      assert overridden.decided_by_membership_id == admin_subject.membership_id
       assert overridden.decision_reason == "Production recovery cannot wait"
       assert overridden.overridden
       assert approved_count(request.id) == 1
@@ -4188,13 +4282,12 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "ABUSE: self-approval is refused server-side even when the UI would hide the button", %{
-      requester: requester,
       subject: subject,
       run: run
     } do
       # The requester is the operator approving. allow_self_approval: false.
       {:ok, request} =
-        Approvals.create_request(run, requester.id, "x",
+        Approvals.create_request(run, "x",
           min_approvals: 1,
           allow_self_approval: false
         )
@@ -4222,12 +4315,11 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "a permissive request lets its requester self-approve (self-approval allowed)", %{
-      requester: requester,
       subject: subject,
       run: run
     } do
       {:ok, request} =
-        Approvals.create_request(run, requester.id, "x",
+        Approvals.create_request(run, "x",
           min_approvals: 1,
           allow_self_approval: true
         )
@@ -4238,10 +4330,7 @@ defmodule Emisar.ApprovalsTest do
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 
-    # a nil requester has no "self" to block (vacuous, not a
-    # bypass): even with allow_self_approval: false the self-check can't match, so
-    # the gate is min_approvals alone — N distinct deciders still required.
-    test "a nil requester is vacuously non-self; min_approvals still requires N distinct" do
+    test "an absent legacy User requester cannot bypass exact Member self denial or quorum" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Catalog.create_action(runner: runner)
@@ -4256,7 +4345,6 @@ defmodule Emisar.ApprovalsTest do
           role: "operator"
         )
 
-      # Operator-source run (no api_key) so effective_requester keeps the nil.
       {:ok, run} =
         Runs.create_run(%{
           account_id: account.id,
@@ -4272,14 +4360,18 @@ defmodule Emisar.ApprovalsTest do
         })
 
       {:ok, request} =
-        Approvals.create_request(run, nil, "x", min_approvals: 2, allow_self_approval: false)
+        Approvals.create_request(run, "x", min_approvals: 2, allow_self_approval: false)
 
       assert is_nil(Repo.reload!(request).requested_by_id)
+      assert request.requested_by_membership_id == initiating_membership.id
+      requester = Fixtures.Subjects.membership_subject(initiating_membership)
+
+      assert Approvals.approve_request(request, requester, "self") ==
+               {:error, :self_approval_forbidden}
 
       a = distinct_operator(account)
       b = distinct_operator(account)
 
-      # First approve is sub-threshold (no self to short-circuit, no bypass either).
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, a, "lgtm-1")
 
@@ -4293,10 +4385,24 @@ defmodule Emisar.ApprovalsTest do
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 
-    # an MCP run's requested_by_id is nil, so
-    # effective_requester resolves "self" to the api-key OWNER; the owner can't
-    # launder a self-approval through their own key under allow_self_approval:
-    # false, while a different operator still approves.
+    test "an unresolved historical requester cannot satisfy separation of duties" do
+      %{account: account, request: request, run: run} =
+        gated_request(min_approvals: 2, allow_self_approval: false)
+
+      request = Fixtures.Approvals.clear_requester_membership(request)
+      approver = distinct_operator(account)
+
+      assert Approvals.approve_request(request, approver, "reviewed") ==
+               {:error, :requester_unavailable}
+
+      assert approved_count(request.id) == 0
+      assert Repo.reload!(run).status == :pending_approval
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+
+      assert {:ok, {%Request{status: :denied}, _run}} =
+               Approvals.deny_request(request, approver, "Please submit a new request")
+    end
+
     test "ABUSE: an MCP run (requested_by_id nil) attributes self to the api-key owner; the owner can't self-approve" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
@@ -4321,6 +4427,7 @@ defmodule Emisar.ApprovalsTest do
           action_id: "linux.uptime",
           source: "mcp",
           api_key_id: key.id,
+          initiating_membership_id: key.created_by_membership_id,
           args: %{},
           args_sha256: "abc123",
           pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -4328,12 +4435,10 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      # MCP-triggered: requested_by_id is nil. The request must record the
-      # api-key OWNER as the effective requester.
       {:ok, request} =
-        Approvals.create_request(run, nil, "x", min_approvals: 1, allow_self_approval: false)
+        Approvals.create_request(run, "x", min_approvals: 1, allow_self_approval: false)
 
-      assert request.requested_by_id == owner.id
+      assert request.requested_by_membership_id == key.created_by_membership_id
 
       # The owner (the human behind the key) cannot launder a self-approval
       # through their own key.
@@ -4391,12 +4496,14 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "custom.do",
           source: "operator",
+          initiating_membership_id:
+            Fixtures.Memberships.create_membership(account_id: account.id).id,
           args: %{},
           status: :pending_approval
         })
 
       {:ok, request} =
-        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs review")
+        Approvals.create_request(run, "needs review")
 
       operator = distinct_operator(account)
 
@@ -4460,7 +4567,7 @@ defmodule Emisar.ApprovalsTest do
 
       # Created under min 2 (the policy's posture at dispatch time).
       {:ok, request} =
-        Approvals.create_request(run, Fixtures.Users.create_user().id, "x", min_approvals: 2)
+        Approvals.create_request(run, "x", min_approvals: 2)
 
       assert request.min_approvals == 2
 
@@ -4518,7 +4625,7 @@ defmodule Emisar.ApprovalsTest do
 
       # Snapshotted self-approval-ALLOWED (the policy's posture at dispatch time).
       {:ok, request} =
-        Approvals.create_request(run, requester.id, "x",
+        Approvals.create_request(run, "x",
           min_approvals: 1,
           allow_self_approval: true
         )
@@ -4572,7 +4679,7 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       subject: subject
     } do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
 
       assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
                Approvals.deny_request(request, subject, "not now")
@@ -4585,7 +4692,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "emails the requester that it was denied", %{run: run, subject: subject} do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
       _created = notified_emails()
 
       assert {:ok, {%Request{status: :denied}, _run}} =
@@ -4613,7 +4720,7 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       subject: subject
     } do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       assert {:ok, {%Request{status: :denied}, cancelled_run}} =
                Approvals.deny_request(request, subject)
@@ -4625,7 +4732,7 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       subject: subject
     } do
-      {:ok, request} = Approvals.create_request(run, subject.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
       at_limit = String.duplicate("a", Approvals.max_decision_reason_length())
 
       assert {:ok, {%Request{status: :denied} = decided, cancelled_run}} =
@@ -4658,8 +4765,7 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "a viewer (cannot decide) is refused with :unauthorized", %{account: account, run: run} do
-      decider = operator_subject(account)
-      {:ok, request} = Approvals.create_request(run, decider.actor.id, "needs approve")
+      {:ok, request} = Approvals.create_request(run, "needs approve")
 
       viewer = Fixtures.Users.create_user()
 
@@ -4686,7 +4792,7 @@ defmodule Emisar.ApprovalsTest do
       run: run,
       subject: subject
     } do
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       assert {:ok, {%Request{status: :denied}, %ActionRun{status: :cancelled}}} =
                Approvals.deny_request(request, subject, "not now")
@@ -4705,9 +4811,8 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "an owner of account B cannot deny account A's request (cross-account → :not_found)" do
-      {account_a, run_a} = run_fixture()
-      decider_a = operator_subject(account_a)
-      {:ok, req_a} = Approvals.create_request(run_a, decider_a.actor.id, "needs approve")
+      {_account_a, run_a} = run_fixture()
+      {:ok, req_a} = Approvals.create_request(run_a, "needs approve")
 
       account_b = Fixtures.Accounts.create_account()
       owner_b = Fixtures.Users.create_user()
@@ -4752,12 +4857,13 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
+          initiating_membership_id: subject.membership_id,
           args: %{},
           status: :pending_approval
         })
 
       {:ok, request} =
-        Approvals.create_request(run, requester.id, "x",
+        Approvals.create_request(run, "x",
           min_approvals: 1,
           allow_self_approval: false
         )
@@ -4809,12 +4915,14 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "custom.do",
           source: "operator",
+          initiating_membership_id:
+            Fixtures.Memberships.create_membership(account_id: account.id).id,
           args: %{},
           status: :pending_approval
         })
 
       {:ok, request} =
-        Approvals.create_request(run, Fixtures.Users.create_user().id, "needs review")
+        Approvals.create_request(run, "needs review")
 
       operator = distinct_operator(account)
 
@@ -4978,7 +5086,7 @@ defmodule Emisar.ApprovalsTest do
   describe "broadcast_request_cancelled/1" do
     test "broadcasts the request on the account approvals feed for a {:cancelled, request} tuple" do
       {account, run} = run_fixture()
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       :ok = Approvals.subscribe_account_approvals(account.id)
 
@@ -5001,7 +5109,7 @@ defmodule Emisar.ApprovalsTest do
   describe "subscribe_account_approvals/1" do
     test "the subscriber receives the account's approval-feed broadcasts" do
       {account, run} = run_fixture()
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       subject = operator_subject(account)
 
       assert Approvals.subscribe_account_approvals(account.id) == :ok
@@ -5015,7 +5123,7 @@ defmodule Emisar.ApprovalsTest do
     test "a subscriber to account A does not receive account B's broadcasts" do
       {account_a, _run_a} = run_fixture()
       {account_b, run_b} = run_fixture()
-      {:ok, request_b} = Approvals.create_request(run_b, Fixtures.Users.create_user().id, "x")
+      {:ok, request_b} = Approvals.create_request(run_b, "x")
       subject_b = operator_subject(account_b)
 
       assert Approvals.subscribe_account_approvals(account_a.id) == :ok
@@ -5030,7 +5138,7 @@ defmodule Emisar.ApprovalsTest do
       database_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       web_runner = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
       {_, web_run} = run_fixture(account: account, runner: web_runner)
-      {:ok, request} = Approvals.create_request(web_run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(web_run, "x")
       {:ok, database_access} = Accounts.RunnerAccess.restricted(["database"], [])
 
       restricted_subject =
@@ -5056,10 +5164,10 @@ defmodule Emisar.ApprovalsTest do
       {_account, other_run} = run_fixture(account: account)
 
       {:ok, watched} =
-        Approvals.create_request(watched_run, Fixtures.Users.create_user().id, "watched")
+        Approvals.create_request(watched_run, "watched")
 
       {:ok, other} =
-        Approvals.create_request(other_run, Fixtures.Users.create_user().id, "other")
+        Approvals.create_request(other_run, "other")
 
       subject = operator_subject(account)
       assert Approvals.subscribe_request(account.id, watched.id) == :ok
@@ -5077,7 +5185,7 @@ defmodule Emisar.ApprovalsTest do
     test "the exact request topic is account-qualified" do
       {account_a, run_a} = run_fixture()
       {account_b, _run_b} = run_fixture()
-      {:ok, request_a} = Approvals.create_request(run_a, Fixtures.Users.create_user().id, "x")
+      {:ok, request_a} = Approvals.create_request(run_a, "x")
 
       assert Approvals.subscribe_request(account_b.id, request_a.id) == :ok
       assert {:ok, _} = Approvals.deny_request(request_a, operator_subject(account_a), "no")
@@ -5542,7 +5650,7 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, operator.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       %{account: account, run: run, request: request, operator: operator}
     end
 
@@ -5550,10 +5658,20 @@ defmodule Emisar.ApprovalsTest do
          %{account: account, run: run, request: request, operator: operator} do
       Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 86_400)
 
-      assert Approvals.create_grant(request, run, operator.id, %{duration: :ninety_days}) ==
+      assert Approvals.create_grant(
+               request,
+               run,
+               Fixtures.Memberships.fetch_membership(request.account_id, operator.id).id,
+               %{duration: :ninety_days}
+             ) ==
                {:error, :grant_exceeds_account_max_lifetime}
 
-      assert Approvals.create_grant(request, run, operator.id, %{duration: :thirty_days}) ==
+      assert Approvals.create_grant(
+               request,
+               run,
+               Fixtures.Memberships.fetch_membership(request.account_id, operator.id).id,
+               %{duration: :thirty_days}
+             ) ==
                {:error, :grant_exceeds_account_max_lifetime}
     end
 
@@ -5562,10 +5680,20 @@ defmodule Emisar.ApprovalsTest do
       Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 86_400)
 
       assert {:ok, %Grant{}} =
-               Approvals.create_grant(request, run, operator.id, %{duration: :one_day})
+               Approvals.create_grant(
+                 request,
+                 run,
+                 Fixtures.Memberships.fetch_membership(request.account_id, operator.id).id,
+                 %{duration: :one_day}
+               )
 
       assert {:ok, %Grant{}} =
-               Approvals.create_grant(request, run, operator.id, %{duration: :one_hour})
+               Approvals.create_grant(
+                 request,
+                 run,
+                 Fixtures.Memberships.fetch_membership(request.account_id, operator.id).id,
+                 %{duration: :one_hour}
+               )
     end
 
     test "exempts :once (single-use, not a standing grant) even under a tight cap",
@@ -5573,24 +5701,44 @@ defmodule Emisar.ApprovalsTest do
       Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 60)
 
       assert {:ok, %Grant{}} =
-               Approvals.create_grant(request, run, operator.id, %{duration: :once})
+               Approvals.create_grant(
+                 request,
+                 run,
+                 Fixtures.Memberships.fetch_membership(request.account_id, operator.id).id,
+                 %{duration: :once}
+               )
     end
 
     test "no cap → any duration allowed",
          %{run: run, request: request, operator: operator} do
       assert {:ok, %Grant{}} =
-               Approvals.create_grant(request, run, operator.id, %{duration: :ninety_days})
+               Approvals.create_grant(
+                 request,
+                 run,
+                 Fixtures.Memberships.fetch_membership(request.account_id, operator.id).id,
+                 %{duration: :ninety_days}
+               )
     end
 
     test "cap 0 (standing grants disabled) refuses every windowed duration, :once still works",
          %{account: account, run: run, request: request, operator: operator} do
       Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 0)
 
-      assert Approvals.create_grant(request, run, operator.id, %{duration: :one_hour}) ==
+      assert Approvals.create_grant(
+               request,
+               run,
+               Fixtures.Memberships.fetch_membership(request.account_id, operator.id).id,
+               %{duration: :one_hour}
+             ) ==
                {:error, :grant_exceeds_account_max_lifetime}
 
       assert {:ok, %Grant{}} =
-               Approvals.create_grant(request, run, operator.id, %{duration: :once})
+               Approvals.create_grant(
+                 request,
+                 run,
+                 Fixtures.Memberships.fetch_membership(request.account_id, operator.id).id,
+                 %{duration: :once}
+               )
     end
   end
 
@@ -5672,10 +5820,10 @@ defmodule Emisar.ApprovalsTest do
 
       admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
 
-      assert {:ok, %Grant{revoked_at: %DateTime{}, revoked_by_id: revoked_by}} =
+      assert {:ok, %Grant{revoked_at: %DateTime{}, revoked_by_membership_id: revoked_by}} =
                Approvals.revoke_grant(grant, admin_subject)
 
-      assert revoked_by == admin.id
+      assert revoked_by == admin_subject.membership_id
     end
 
     test "an owner of account B cannot revoke account A's grant (cross-account → :not_found)" do
@@ -5745,11 +5893,11 @@ defmodule Emisar.ApprovalsTest do
       assert %DateTime{} = first
 
       # A second revoke on the same (already-revoked) grant succeeds and re-stamps.
-      assert {:ok, %Grant{revoked_at: second, revoked_by_id: by}} =
+      assert {:ok, %Grant{revoked_at: second, revoked_by_membership_id: by}} =
                Approvals.revoke_grant(grant, subject)
 
       assert %DateTime{} = second
-      assert by == user.id
+      assert by == subject.membership_id
       assert DateTime.compare(second, first) != :lt
     end
   end
@@ -5874,7 +6022,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert event.actor_kind == "system"
       assert event.target_id == mine.id
-      assert event.payload["granted_by_id"] == approver.id
+      assert event.payload["granted_by_membership_id"] == approver_membership.id
     end
 
     test "a membership in another account revokes nothing" do
@@ -5956,7 +6104,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert event.actor_kind == "system"
       assert event.target_id == pending.id
-      assert event.payload["decider_id"] == leaver.id
+      assert event.payload["decider_membership_id"] == leaver_membership.id
     end
 
     test "removing a member voids their pending vote, so one remaining vote cannot release a two-approver request" do
@@ -6380,14 +6528,19 @@ defmodule Emisar.ApprovalsTest do
           status: :pending_approval
         })
 
-      {:ok, request} = Approvals.create_request(run, operator.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       subject = operator_subject(account)
 
       {:ok, grant} =
-        Approvals.create_grant(request, run, operator.id, %{
-          duration: :one_day,
-          scope: :exact_args
-        })
+        Approvals.create_grant(
+          request,
+          run,
+          Fixtures.Memberships.fetch_membership(request.account_id, operator.id).id,
+          %{
+            duration: :one_day,
+            scope: :exact_args
+          }
+        )
 
       %{account: account, grant: grant, subject: subject}
     end
@@ -6489,7 +6642,7 @@ defmodule Emisar.ApprovalsTest do
   describe "expire_overdue_requests/1" do
     test "expires a request exactly at its decision deadline" do
       {_account, run} = run_fixture()
-      {:ok, request} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       now = DateTime.utc_now()
 
       {1, _} =
@@ -6504,9 +6657,8 @@ defmodule Emisar.ApprovalsTest do
 
     test "transitions pending requests past expires_at to expired + cancels the run" do
       {account, run} = run_fixture()
-      user = Fixtures.Users.create_user()
       subject = operator_subject(account)
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
 
       # Move the request's expiry into the past.
       past = DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:microsecond)
@@ -6541,8 +6693,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "is idempotent — second sweep is a no-op" do
       {_account, run} = run_fixture()
-      user = Fixtures.Users.create_user()
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       past = DateTime.utc_now() |> DateTime.add(-3600, :second)
 
       Request.Query.all()
@@ -6555,8 +6706,7 @@ defmodule Emisar.ApprovalsTest do
 
     test "leaves pending requests within the window alone" do
       {_account, run} = run_fixture()
-      user = Fixtures.Users.create_user()
-      {:ok, request} = Approvals.create_request(run, user.id, "x")
+      {:ok, request} = Approvals.create_request(run, "x")
       # default 24h is in the future
       assert Approvals.expire_overdue_requests() == 0
 

@@ -1706,6 +1706,25 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — exact account-owned Member labels for already-authorized historical
+  attribution. Tombstones retain their local profile; a replacement seat or a
+  private personal User is never a fallback. Missing/foreign ids have no label.
+  """
+  def member_labels_for_ids(ids, account_id) when is_list(ids) and is_binary(account_id) do
+    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    case ids do
+      [] ->
+        %{}
+
+      ids ->
+        account_id
+        |> list_membership_profiles_by_id(ids)
+        |> Map.new(&{&1.id, member_display_name(&1)})
+    end
+  end
+
+  @doc """
   Internal — Audit's user-event fan-out: EVERY membership that currently grants
   authority, so a user-scoped security event lands one row per
   account the user belongs to (each account legitimately sees its own copy). No
@@ -2251,19 +2270,6 @@ defmodule Emisar.Accounts do
   end
 
   def fetch_active_membership(_repo, _account_id, _membership_id), do: {:error, :not_found}
-
-  @doc """
-  Internal — approval notification eligibility: the active membership for one
-  user in one account. Returns `{:ok, membership} | {:error, :not_found}`.
-  """
-  def fetch_active_membership_for_user(account_id, user_id)
-      when is_binary(account_id) and is_binary(user_id) do
-    Membership.Query.authorized()
-    |> Membership.Query.by_account_and_user(account_id, user_id)
-    |> Repo.fetch(Membership.Query)
-  end
-
-  def fetch_active_membership_for_user(_account_id, _user_id), do: {:error, :not_found}
 
   @doc "Internal - lock a run initiator's current active membership in the caller's transaction."
   def fetch_and_lock_active_membership(repo, account_id, membership_id)

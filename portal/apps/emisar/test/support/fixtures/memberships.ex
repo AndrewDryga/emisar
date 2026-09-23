@@ -139,6 +139,9 @@ defmodule Emisar.Fixtures.Memberships do
     suspended
   end
 
+  @doc "Permanently removes an owned fixture Member to exercise attribution FK behavior."
+  def hard_delete_membership(%Membership{} = membership), do: Repo.delete!(membership)
+
   @doc "Soft-deletes a membership, returning the tombstoned row."
   def mark_membership_as_deleted(%Membership{} = membership) do
     {:ok, deleted} =

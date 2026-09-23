@@ -75,6 +75,7 @@ defmodule Emisar.RunsCancellationTest do
           Fixtures.Runs.create_run(
             account_id: account.id,
             runner_id: runner.id,
+            initiating_membership_id: membership.id,
             status: status,
             pack_ref: pack_ref("postgres")
           )
@@ -158,7 +159,10 @@ defmodule Emisar.RunsCancellationTest do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
       subject = Fixtures.Subjects.membership_subject(membership)
-      run = Fixtures.Runs.create_run(account_id: account.id)
+
+      run =
+        Fixtures.Runs.create_run(account_id: account.id, initiating_membership_id: membership.id)
+
       request = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
       Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
 
@@ -424,6 +428,7 @@ defmodule Emisar.RunsCancellationTest do
       status: status,
       source: :mcp,
       api_key_id: key.id,
+      initiating_membership_id: key.created_by_membership_id,
       pack_ref: pack_ref("postgres"),
       operation_id: "op_724NN9NMDZ1T76NARWCKM5A0D6",
       runner_ref: runner_ref

@@ -27,12 +27,11 @@ defmodule EmisarWeb.MCPCancelRunTest do
   test "cancels the caller's own run while it waits for approval and closes the request", %{
     conn: conn,
     account: account,
-    user: user,
     key: key,
     runner: runner
   } do
     run = own_run(account, runner, key, :pending_approval)
-    {:ok, request} = Approvals.create_request(run, user.id, run.reason)
+    {:ok, request} = Approvals.create_request(run, run.reason)
 
     result =
       call(conn, "cancel_run", %{
@@ -120,6 +119,7 @@ defmodule EmisarWeb.MCPCancelRunTest do
 
     Fixtures.Runs.create_run(
       account_id: account.id,
+      initiating_membership_id: key.created_by_membership_id,
       runner_id: runner.id,
       status: status,
       requires_approval: status == :pending_approval,

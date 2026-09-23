@@ -17,13 +17,23 @@ defmodule Emisar.Fixtures.Approvals do
     attrs = Map.new(attrs)
 
     run =
-      if attrs[:run_id],
-        do: nil,
-        else: Fixtures.Runs.create_run(Map.take(attrs, [:account_id]))
+      if attrs[:run_id] do
+        Repo.get!(Emisar.Runs.ActionRun, attrs.run_id)
+      else
+        membership = Fixtures.Memberships.create_membership(Map.take(attrs, [:account_id]))
+
+        Fixtures.Runs.create_run(%{
+          account_id: membership.account_id,
+          initiating_membership_id: membership.id,
+          requested_by_id: membership.user_id
+        })
+      end
 
     params = %{
       account_id: attrs[:account_id] || run.account_id,
       run_id: attrs[:run_id] || run.id,
+      requested_by_membership_id:
+        attrs[:requested_by_membership_id] || run.initiating_membership_id,
       requested_at: attrs[:requested_at] || DateTime.utc_now(),
       reason: attrs[:reason]
     }
@@ -38,6 +48,7 @@ defmodule Emisar.Fixtures.Approvals do
           overridden: if(status in [:approved, :denied], do: false),
           decided_at: attrs[:decided_at] || DateTime.utc_now(),
           decided_by_id: attrs[:decided_by_id],
+          decided_by_membership_id: attrs[:decided_by_membership_id],
           decision_reason: attrs[:decision_reason]
         )
         |> Repo.update!()
@@ -69,6 +80,11 @@ defmodule Emisar.Fixtures.Approvals do
     request |> change(overridden: nil) |> Repo.update!()
   end
 
+  @doc "Models retained history whose exact requester is unavailable."
+  def clear_requester_membership(%Approvals.Request{} = request) do
+    request |> change(requested_by_membership_id: nil) |> Repo.update!()
+  end
+
   @doc "Finalizes as an old override writer, without touching the provenance column."
   def override_with_old_writer(%Approvals.Request{} = request, subject, reason) do
     overridden =
@@ -81,7 +97,23 @@ defmodule Emisar.Fixtures.Approvals do
       )
       |> Repo.update!()
 
-    subject |> Audit.Events.approval_overridden(request, reason, 0) |> Repo.insert!()
+    Audit.changeset(request.account_id, "approval.overridden",
+      actor_kind: "user",
+      actor_id: subject.actor.id,
+      target_kind: "approval_request",
+      target_id: request.id,
+      payload: %{
+        run_id: request.run_id,
+        runbook_execution_id: request.runbook_execution_id,
+        reason: reason,
+        approved_count: 0,
+        min_approvals: request.min_approvals,
+        remaining_approvals_waived: request.min_approvals,
+        self_approval_waived: false
+      }
+    )
+    |> Repo.insert!()
+
     overridden
   end
 
@@ -270,7 +302,7 @@ defmodule Emisar.Fixtures.Approvals do
     Approvals.Request.Changeset.create(%{
       account_id: account.id,
       runbook_execution_id: execution.id,
-      requested_by_id: requested_by.id,
+      requested_by_membership_id: membership.id,
       requested_at: DateTime.utc_now(),
       expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
       reason: execution.reason,
@@ -311,16 +343,28 @@ defmodule Emisar.Fixtures.Approvals do
 
   @doc """
   Persists a standing approval grant. Caller supplies `:account_id` and
-  `:api_key_id`; `:granted_by_id` defaults to a fresh user, and every other
+  `:api_key_id`; `:granted_by_membership_id` defaults to a same-account Member, and every other
   field to a usable, never-expiring grant.
   """
   def create_grant(attrs \\ %{}) do
     attrs = Map.new(attrs)
 
+    issuer_id =
+      cond do
+        attrs[:granted_by_membership_id] ->
+          attrs.granted_by_membership_id
+
+        attrs[:granted_by_id] ->
+          Fixtures.Memberships.fetch_membership(attrs.account_id, attrs.granted_by_id).id
+
+        true ->
+          Fixtures.Memberships.create_membership(account_id: attrs.account_id, role: "admin").id
+      end
+
     defaults = %{
       action_id: "linux.uptime",
       pack_ref: Fixtures.Catalog.default_pack_ref(),
-      granted_by_id: attrs[:granted_by_id] || Fixtures.Users.create_user().id,
+      granted_by_membership_id: issuer_id,
       granted_at: DateTime.utc_now()
     }
 

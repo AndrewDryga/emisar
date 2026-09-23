@@ -63,7 +63,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       })
 
     {:ok, request} =
-      Approvals.create_request(run, requested_by.id, "please approve",
+      Approvals.create_request(run, "please approve",
         allow_self_approval: Keyword.get(opts, :allow_self_approval, true),
         min_approvals: Keyword.get(opts, :min_approvals, 1)
       )
@@ -193,6 +193,27 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Other Employee"
   end
 
+  test "a requester without a local profile has a visible label without personal details", %{
+    conn: conn
+  } do
+    {conn, _owner, account} = register_and_log_in(conn)
+    requester = Fixtures.Users.create_user(full_name: "Private Personal Name")
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: requester.id,
+      display_name: nil,
+      contact_email: nil
+    )
+
+    request = pending_request(account, requester)
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Former member"
+    refute html =~ requester.full_name
+    refute html =~ requester.email
+  end
+
   test "a withdrawn request explains that the action did not run", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user)
@@ -246,6 +267,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
+        requested_by_id: user.id,
         runner_id: runner.id,
         action_id: "linux.reboot",
         source: "operator",
@@ -255,7 +277,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         expected_pack_hash: Fixtures.Catalog.default_pack_hash()
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    {:ok, request} = Approvals.create_request(run, "please approve")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     # The risk is proven against the frozen pack and rendered as a pill.
@@ -270,6 +292,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
+        requested_by_id: user.id,
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "mcp",
@@ -280,7 +303,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         status: :pending_approval
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, run.reason)
+    {:ok, request} = Approvals.create_request(run, run.reason)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -310,6 +333,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
+        requested_by_id: user.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -319,7 +343,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         expected_pack_hash: PublishedRegistry.get("cloud-init").content_hash
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    {:ok, request} = Approvals.create_request(run, "please approve")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -353,6 +377,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
+        requested_by_id: user.id,
         runner_id: runner.id,
         action_id: "linux.systemctl_restart",
         source: "operator",
@@ -362,7 +387,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         expected_pack_hash: nil
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    {:ok, request} = Approvals.create_request(run, "please approve")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -391,6 +416,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
+        requested_by_id: user.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -399,7 +425,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         expected_pack_hash: "sha256:#{String.duplicate("0", 64)}"
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    {:ok, request} = Approvals.create_request(run, "please approve")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -427,6 +453,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
+        requested_by_id: user.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -435,7 +462,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         expected_pack_hash: pack.content_hash
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    {:ok, request} = Approvals.create_request(run, "please approve")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -461,6 +488,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
+        requested_by_id: user.id,
         runner_id: runner.id,
         action_id: "database.scale",
         source: "mcp",
@@ -469,7 +497,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         sensitive_arg_names: ["token"]
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    {:ok, request} = Approvals.create_request(run, "please approve")
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert html =~ "0.1234567890123456789"
@@ -490,6 +518,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
+        requested_by_id: user.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -500,7 +529,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         expected_pack_hash: PublishedRegistry.get("cloud-init").content_hash
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    {:ok, request} = Approvals.create_request(run, "please approve")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -534,6 +563,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
+        requested_by_id: user.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -543,7 +573,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         expected_pack_hash: PublishedRegistry.get("cloud-init").content_hash
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, "please approve")
+    {:ok, request} = Approvals.create_request(run, "please approve")
     Fixtures.Runs.put_malformed_args_raw(run, ~s({"canary":"secret-value",}))
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
@@ -838,6 +868,42 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ note
   end
 
+  test "an unknown requester blocks ordinary approval and names the explicit override waiver", %{
+    conn: conn
+  } do
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner, allow_self_approval: false)
+    request = Fixtures.Approvals.clear_requester_membership(request)
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "The original requester is unavailable"
+    refute has_element?(lv, "#approval-decision-form button[value=approve]")
+    assert has_element?(lv, "#approval-decision-form button[value=deny]")
+    refute html =~ "This also allows you to approve your own request."
+    assert has_element?(lv, "#override-approval-reviews", "differs from the original requester")
+
+    note = "Please submit a fresh request."
+    render_submit(lv, "decide", %{"decision" => "approve", "reason" => note})
+    assert has_element?(lv, "#approval-decision-form textarea", note)
+    assert Repo.reload!(request).status == :pending
+
+    lv
+    |> form("#approval-override-form")
+    |> render_change(%{"reason" => "Approved emergency recovery"})
+
+    assert confirm_dialog(lv, "override-approval-reviews", "Approve with override") =~
+             "Approval override recorded."
+
+    event =
+      Audit.Event.Query.all()
+      |> Audit.Event.Query.by_event_type("approval.overridden")
+      |> Repo.one!()
+
+    assert event.payload["self_approval_waived"]
+    assert event.payload["decider_membership_id"] == owner_subject(owner, account).membership_id
+  end
+
   test "a self-blocked requester gets deny-only copy, no Approve affordance", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user, allow_self_approval: false)
@@ -1062,9 +1128,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         pack_ref: Fixtures.Catalog.default_pack_ref()
       )
 
+    requester = Fixtures.Memberships.create_membership(account_id: account.id)
+
     run =
       Fixtures.Runs.create_signed_run(%{
         account_id: account.id,
+        initiating_membership_id: requester.id,
+        requested_by_id: requester.user_id,
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "mcp",
@@ -1075,9 +1145,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         attestation: attestation
       })
 
-    # A different requester so this is a real (non-self) approval.
-    requester = Fixtures.Users.create_user()
-    {:ok, request} = Approvals.create_request(run, requester.id, "please")
+    {:ok, request} = Approvals.create_request(run, "please")
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -1679,7 +1747,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       })
 
     {:ok, request} =
-      Approvals.create_request(run, owner.id, "please approve", min_approvals: 2)
+      Approvals.create_request(run, "please approve", min_approvals: 2)
 
     first_approver = Fixtures.Users.create_user(full_name: "Casey Approver")
 
@@ -1777,7 +1845,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Decisions</h3>"
   end
 
-  test "a completed single-approver request renders its legacy final decision in Decisions", %{
+  test "a User-only historical final decision keeps its note without inventing a Member", %{
     conn: conn
   } do
     {conn, user, account} = register_and_log_in(conn)
@@ -1793,7 +1861,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
-    assert has_element?(lv, ~s([data-shot="approval-decisions"]), user.full_name)
+    refute has_element?(lv, ~s([data-shot="approval-decisions"]), user.full_name)
     assert has_element?(lv, ~s([data-shot="approval-decisions"]), "Reviewed the final plan.")
     refute has_element?(lv, ~s([data-shot="approval-verdict"]), user.full_name)
   end
@@ -1921,38 +1989,24 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert Repo.reload!(request).status == :pending
   end
 
-  test "a removed requester is labelled as a former member and still renders", %{conn: conn} do
-    # the requester user is soft-deleted, so `lookup_user/1`
-    # (which scopes to not_deleted) returns nil while `requested_by_id` stays set.
-    # The "Requested by" field names the missing account relationship without
-    # exposing an opaque UUID. A hard delete instead nilifies requested_by_id.
+  test "a removed requester's exact Member keeps its local historical label", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
-
-    # A separate requester we then soft-delete (keeping the request's requested_by_id).
     requester = Fixtures.Users.create_user()
 
-    {:ok, run} =
-      Runs.create_run(%{
+    member =
+      Fixtures.Memberships.create_membership(
         account_id: account.id,
-        runner_id: Fixtures.Runners.create_runner(account_id: account.id).id,
-        action_id: "linux.uptime",
-        source: "operator",
-        args: %{},
-        status: :pending_approval
-      })
+        user_id: requester.id,
+        display_name: "Retired Local Requester"
+      )
 
-    {:ok, request} = Approvals.create_request(run, requester.id, "please approve")
-
-    # Soft-delete the requester — the label resolver must tolerate the missing row.
-    Emisar.Users.User.Query.all()
-    |> Emisar.Users.User.Query.by_id(requester.id)
-    |> Repo.update_all(set: [deleted_at: DateTime.utc_now()])
+    request = pending_request(account, requester)
+    Fixtures.Memberships.mark_membership_as_deleted(member)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     refute html =~ requester.email
-    assert html =~ "Former member"
-    # Sanity: the decision panel still rendered (the owner can decide).
+    assert html =~ "Retired Local Requester"
     assert html =~ "approval-decision-form"
   end
 end

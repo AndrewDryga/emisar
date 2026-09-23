@@ -30,12 +30,15 @@ defmodule Emisar.ApprovalVisibilityTest do
   describe "list_pending_approval_requests/2" do
     test "eligibility applies before FIFO pagination and matches the badge", %{subject: subject} do
       self_request =
-        request(subject, requested_by_id: subject.actor.id, allow_self_approval: false)
+        request(subject,
+          requested_by_membership_id: subject.membership_id,
+          allow_self_approval: false
+        )
 
       expired = request(subject, expires_at: DateTime.add(DateTime.utc_now(), -1))
       voted = request(subject, min_approvals: 2)
 
-      Approvals.Decision.Changeset.create(subject.account.id, voted.id, subject.actor.id, %{
+      Approvals.Decision.Changeset.create(subject.account.id, voted.id, subject.membership_id, %{
         decision: :approve,
         decided_at: DateTime.utc_now()
       })
@@ -68,7 +71,7 @@ defmodule Emisar.ApprovalVisibilityTest do
     test "nil deadlines and permitted self approval remain actionable", %{subject: subject} do
       own =
         request(subject,
-          requested_by_id: subject.actor.id,
+          requested_by_membership_id: subject.membership_id,
           allow_self_approval: true,
           expires_at: nil
         )

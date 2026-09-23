@@ -68,19 +68,21 @@ defmodule Emisar.TelemetryTest do
   describe "measure_approval_queue/0" do
     test "emits [:emisar, :approvals, :pending] with count + oldest_age_seconds" do
       account = Fixtures.Accounts.create_account()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, run} =
         Runs.create_run(%{
           account_id: account.id,
           runner_id: runner.id,
+          requested_by_id: membership.user_id,
           action_id: "linux.uptime",
           source: "operator",
           args: %{},
           status: :pending_approval
         })
 
-      {:ok, _} = Approvals.create_request(run, Fixtures.Users.create_user().id, "x")
+      {:ok, _} = Approvals.create_request(run, "x")
 
       measurements =
         capture_measurements(

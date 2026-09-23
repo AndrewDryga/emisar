@@ -89,11 +89,20 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
 
   test "badge bursts do no immediate SQL and refresh each family once", %{
     conn: conn,
+    user: user,
     account: account,
     runner: runner
   } do
     {:ok, view, _html} = live(conn, ~p"/app/#{account}/runs")
-    run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id)
+    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+    run =
+      Fixtures.Runs.create_run(
+        account_id: account.id,
+        runner_id: runner.id,
+        initiating_membership_id: membership.id
+      )
+
     request = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
 
     assert capture_queries(view.pid, fn ->
@@ -130,11 +139,18 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
     account: account,
     runner: runner
   } do
-    account.id
-    |> Fixtures.Memberships.fetch_membership(user.id)
-    |> Fixtures.Memberships.force_role("admin")
+    membership =
+      account.id
+      |> Fixtures.Memberships.fetch_membership(user.id)
+      |> Fixtures.Memberships.force_role("admin")
 
-    run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id)
+    run =
+      Fixtures.Runs.create_run(
+        account_id: account.id,
+        runner_id: runner.id,
+        initiating_membership_id: membership.id
+      )
+
     request = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
     {:ok, view, _html} = live(conn, ~p"/app/#{account}/runs")
     assert :sys.get_state(view.pid).socket.assigns.shell_chrome.pending_approvals_count == 1

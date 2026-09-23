@@ -186,18 +186,24 @@ defmodule EmisarWeb.ApprovalDetailLive do
         {:error, _} -> {0, true}
       end
 
-    actor_id = subject.actor && subject.actor.id
+    membership_id = subject.membership_id
 
     socket
     |> assign(:decisions, decisions)
     |> assign(:decisions_error?, decisions_failed? or count_failed?)
     |> assign(:approval_event_refs, approval_event_refs(request, subject))
-    |> assign(:user_labels, user_labels_for(request, decisions, subject))
+    |> assign(:member_labels, member_labels_for(request, decisions, subject))
     |> assign(:approved_count, approved_count)
-    |> assign(:already_decided?, Enum.any?(decisions, &(&1.decider_id == actor_id)))
+    |> assign(
+      :already_decided?,
+      Enum.any?(decisions, &(&1.decider_membership_id == membership_id))
+    )
+    |> assign(:requester_unavailable?, is_nil(request.requested_by_membership_id))
     |> assign(
       :self_blocked?,
-      not request.allow_self_approval and request.requested_by_id == actor_id
+      not request.allow_self_approval and
+        (is_nil(request.requested_by_membership_id) or
+           request.requested_by_membership_id == membership_id)
     )
   end
 
@@ -210,9 +216,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp empty_approval_event_refs, do: %{final: nil, override: nil, decisions: %{}}
 
-  defp user_labels_for(request, decisions, subject) do
-    decision_ids = Enum.map(decisions, & &1.decider_id)
-    ids = [request.requested_by_id, request.decided_by_id | decision_ids]
+  defp member_labels_for(request, decisions, subject) do
+    decision_ids = Enum.map(decisions, & &1.decider_membership_id)
+    ids = [request.requested_by_membership_id, request.decided_by_membership_id | decision_ids]
 
     case Approvals.actor_labels_for_ids(ids, subject) do
       {:ok, labels} -> labels
@@ -544,6 +550,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
      |> put_flash(:error, "You can't approve your own request.")}
   end
 
+  defp decision_failed(socket, :requester_unavailable, params) do
+    {:noreply,
+     socket
+     |> assign_decision_fields(params)
+     |> refetch_request()}
+  end
+
   # The note is too long to store. Nothing was decided and the request is
   # untouched, and it is the one refusal here the operator fixes by editing what
   # they just typed — so it belongs inline at the textarea, not in a flash on a
@@ -773,8 +786,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp blank_or(""), do: nil
   defp blank_or(value), do: value
 
-  defp user_label(labels, id) when is_binary(id), do: Map.get(labels, id, "Former member")
-  defp user_label(_labels, _id), do: "—"
+  defp member_label(labels, id) when is_binary(id), do: labels[id] || "Former member"
+  defp member_label(_labels, _id), do: "—"
 
   # Hover context for the source qualifier. `:operator` (a human from the
   # console) carries no qualifier at all — the requester name says it; `:mcp`
@@ -928,7 +941,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             <.meta_field label="Requested by" wrap>
               <span class="block">
                 <span class="text-zinc-200">
-                  {user_label(@user_labels, @request.requested_by_id)}
+                  {member_label(@member_labels, @request.requested_by_membership_id)}
                 </span>
                 <%!-- The source qualifier is quiet TYPE after the name (the
                      run-detail "Dispatched by" grammar), never a filled chip —
@@ -1190,7 +1203,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                   <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span class="min-w-0 flex-1 truncate text-zinc-200">
-                        {user_label(@user_labels, decision.decider_id)}
+                        {member_label(@member_labels, decision.decider_membership_id)}
                       </span>
                       <span class="text-xs text-zinc-400">{decision_verb(decision.decision)}</span>
                       <.local_time
@@ -1247,6 +1260,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               execution_request?={@execution_request?}
               execution_kind={@request.context["execution_kind"]}
               self_blocked?={@self_blocked?}
+              requester_unavailable?={@requester_unavailable?}
               already_decided?={@already_decided?}
               approved_count={@approved_count}
               decisions_error?={@decisions_error?}
@@ -1299,6 +1313,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # requester and self-approval is forbidden; already_decided? hides both forms
   # once they've voted. The CONTEXT re-checks both (IL-15) — these are cosmetic.
   attr :self_blocked?, :boolean, default: false
+  attr :requester_unavailable?, :boolean, default: false
   attr :already_decided?, :boolean, default: false
   attr :approved_count, :integer, default: 0
   attr :decisions_error?, :boolean, default: false
@@ -1434,7 +1449,12 @@ defmodule EmisarWeb.ApprovalDetailLive do
             :if={@self_blocked? and is_nil(@approval_block)}
             class="mt-4 text-xs leading-relaxed text-zinc-400"
           >
-            Policy doesn't allow you to approve your own request. Another approver is needed.
+            <%= if @requester_unavailable? do %>
+              The original requester is unavailable, so separation of duties cannot be checked.
+              Deny this request and ask for a new one, or use an authorized override.
+            <% else %>
+              Policy doesn't allow you to approve your own request. Another approver is needed.
+            <% end %>
           </p>
           <%!-- ONE decision form: a single note field logged with whichever
                decision is taken (two competing optional textareas doubled the
@@ -1638,6 +1658,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         approved_count={@approved_count}
         min_approvals={@min_approvals}
         self_blocked?={@self_blocked?}
+        requester_unavailable?={@requester_unavailable?}
       />
     </section>
     """
@@ -1649,6 +1670,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :approved_count, :integer, required: true
   attr :min_approvals, :integer, required: true
   attr :self_blocked?, :boolean, required: true
+  attr :requester_unavailable?, :boolean, required: true
 
   defp override_dialog(assigns) do
     ~H"""
@@ -1669,7 +1691,13 @@ defmodule EmisarWeb.ApprovalDetailLive do
           with <span class="font-medium text-zinc-200">
             {@approved_count}/{@min_approvals} required approvals
           </span>. This skips the remaining reviews.
-          <span :if={@self_blocked?}>This also allows you to approve your own request.</span>
+          <%= cond do %>
+            <% @self_blocked? and @requester_unavailable? -> %>
+              This also bypasses the check that the approver differs from the original requester.
+            <% @self_blocked? -> %>
+              This also allows you to approve your own request.
+            <% true -> %>
+          <% end %>
           All other policy and runner checks still apply.
         </p>
       </:body>
@@ -1779,6 +1807,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
       [
         %{
           id: event_id,
+          decider_membership_id: request.decided_by_membership_id,
           decider_id: request.decided_by_id,
           decision: :override,
           decided_at: request.decided_at
@@ -1813,6 +1842,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   defp final_decision(%Approvals.Request{} = request) do
     %{
       id: request.id,
+      decider_membership_id: request.decided_by_membership_id,
       decider_id: request.decided_by_id,
       decision: if(request.status == :approved, do: :approve, else: :deny),
       decided_at: request.decided_at
@@ -1824,14 +1854,29 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_event_id(%{override: event_id} = refs, _request, decision)
        when is_binary(event_id),
-       do: refs.decisions[decision.decider_id]
+       do: decision_receipt(refs, decision)
 
-  defp decision_event_id(refs, request, decision)
-       when request.status in [:approved, :denied] and
-              decision.decider_id == request.decided_by_id,
-       do: refs.final || refs.decisions[decision.decider_id]
+  defp decision_event_id(refs, request, decision) do
+    if request.status in [:approved, :denied] and final_decider?(request, decision),
+      do: refs.final || decision_receipt(refs, decision),
+      else: decision_receipt(refs, decision)
+  end
 
-  defp decision_event_id(refs, _request, decision), do: refs.decisions[decision.decider_id]
+  defp decision_receipt(refs, decision) do
+    Audit.approval_decision_receipt(
+      refs.decisions,
+      decision.decider_membership_id,
+      decision.decider_id
+    )
+  end
+
+  defp final_decider?(request, decision) do
+    if is_binary(request.decided_by_membership_id) do
+      request.decided_by_membership_id == decision.decider_membership_id
+    else
+      is_binary(request.decided_by_id) and request.decided_by_id == decision.decider_id
+    end
+  end
 
   defp decision_reason(request, %{decision: :override}, %{override: event_id})
        when is_binary(event_id) and is_binary(request.decision_reason) and
@@ -1843,9 +1888,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp decision_reason(request, decision, _refs)
        when request.status in [:approved, :denied] and
-              decision.decider_id == request.decided_by_id and
               is_binary(request.decision_reason) and request.decision_reason != "",
-       do: request.decision_reason
+       do: if(final_decider?(request, decision), do: request.decision_reason)
 
   defp decision_reason(_request, _decision, _refs), do: nil
 end

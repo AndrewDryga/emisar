@@ -46,6 +46,7 @@ defmodule EmisarWeb.GrantsLiveTest do
         %{
           account_id: account.id,
           api_key_id: key.id,
+          granted_by_membership_id: key.created_by_membership_id,
           action_id: "linux.uptime",
           pack_ref: @grant_pack_ref,
           granted_at: DateTime.utc_now()
@@ -91,6 +92,29 @@ defmodule EmisarWeb.GrantsLiveTest do
     assert has_element?(lv, "#grants li", "last used never")
     refute html =~ "No active grants"
     assert has_element?(lv, "#revoke-grant-#{g.id}")
+  end
+
+  test "a grant without its exact issuer explains the denial and can be revoked", %{conn: conn} do
+    {conn, _user, account, api_key, _runner} = seed_account(conn)
+    issuer = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+    grant =
+      insert_grant!(account, api_key,
+        action_id: "linux.uptime",
+        granted_by_membership_id: issuer.id
+      )
+
+    Fixtures.Memberships.hard_delete_membership(issuer)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
+
+    assert has_element?(lv, "#grants", "Issuer unavailable")
+    assert has_element?(lv, "#grants", "This grant cannot authorize runs.")
+    assert has_element?(lv, "#grants", "Revoke it and approve a new request.")
+
+    html = lv |> element("#revoke-grant-#{grant.id} button", "Revoke grant") |> render_click()
+    assert html =~ "Grant revoked"
+    assert html =~ "No active grants"
+    assert Repo.reload!(grant).revoked_at
   end
 
   test "hides revoked grants", %{conn: conn} do

@@ -8,7 +8,7 @@ defmodule Emisar.Approvals.Request.Changeset do
       :account_id,
       :run_id,
       :runbook_execution_id,
-      :requested_by_id,
+      :requested_by_membership_id,
       :requested_at,
       :reason,
       :evidence,
@@ -20,6 +20,7 @@ defmodule Emisar.Approvals.Request.Changeset do
     ])
     |> validate_required([
       :account_id,
+      :requested_by_membership_id,
       :requested_at,
       :min_approvals,
       :allow_self_approval
@@ -36,6 +37,7 @@ defmodule Emisar.Approvals.Request.Changeset do
       name: :approval_requests_runbook_execution_index
     )
     |> check_constraint(:run_id, name: :approval_requests_exactly_one_target_check)
+    |> foreign_key_constraint(:requested_by_membership_id)
   end
 
   defp validate_exactly_one_target(changeset) do

@@ -17,8 +17,8 @@ defmodule Emisar.Approvals.Grant.Query do
   def by_api_key_id(queryable, api_key_id),
     do: where(queryable, [grants: g], g.api_key_id == ^api_key_id)
 
-  def by_granted_by_user_id(queryable, user_id),
-    do: where(queryable, [grants: g], g.granted_by_id == ^user_id)
+  def by_granted_by_membership_id(queryable, membership_id),
+    do: where(queryable, [grants: g], g.granted_by_membership_id == ^membership_id)
 
   def not_revoked(queryable \\ all()),
     do: where(queryable, [grants: g], is_nil(g.revoked_at))
@@ -161,6 +161,7 @@ defmodule Emisar.Approvals.Grant.Query do
   def consumable_by_id(id, now) do
     all()
     |> where([grants: g], g.id == ^id)
+    |> where([grants: g], not is_nil(g.granted_by_membership_id))
     |> where([grants: g], is_nil(g.revoked_at))
     |> where([grants: g], is_nil(g.expires_at) or g.expires_at > ^now)
     |> where([grants: g], is_nil(g.max_uses) or g.uses_count < g.max_uses)
@@ -174,9 +175,8 @@ defmodule Emisar.Approvals.Grant.Query do
   end
 
   # -- Preload helpers --------------------------------------------------
-  # All belongs_to and optional (a deleted key/runner/user must not hide
-  # the grant from the audit-relevant list), so every join is :left and
-  # scoped to the assoc's not_deleted() where one exists.
+  # Optional associations must not hide a grant from its audit-relevant list.
+  # Left joins retain it; exact historical Members remain readable after retirement.
 
   @doc "Left-join + preload the grant's (non-deleted) API key, idempotently."
   def with_preloaded_api_key(queryable) do
@@ -248,17 +248,16 @@ defmodule Emisar.Approvals.Grant.Query do
   def cursor_fields,
     do: [{:grants, :desc, :granted_at}, {:grants, :asc, :id}]
 
-  # api_key / runner / the user assocs are soft-delete schemas — scope
-  # each preload to not_deleted() so the filter is explicit at the
-  # preload site. approval_request has no deleted_at and falls through
-  # to Ecto's machinery.
+  # Keys and runners exclude tombstones; Member attribution retains exact history.
   @impl Emisar.Repo.Query
   def preloads,
     do: [
       api_key:
         {Emisar.ApiKeys.ApiKey.Query.not_deleted(), Emisar.ApiKeys.ApiKey.Query.preloads()},
       runner: {Emisar.Runners.Runner.Query.not_deleted(), Emisar.Runners.Runner.Query.preloads()},
-      granted_by: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()},
-      revoked_by: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()}
+      granted_by_membership:
+        {Emisar.Accounts.Membership.Query.all(), Emisar.Accounts.Membership.Query.preloads()},
+      revoked_by_membership:
+        {Emisar.Accounts.Membership.Query.all(), Emisar.Accounts.Membership.Query.preloads()}
     ]
 end

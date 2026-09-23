@@ -67,8 +67,14 @@ defmodule Emisar.Runs.Jobs.ActionRunRetentionTest do
 
   test "prunes old action runs and cascades their child rows" do
     account = Fixtures.Accounts.create_account()
+    member = Fixtures.Memberships.create_membership(account_id: account.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    old_run = finished_run(account, runner, @beyond_window_days)
+
+    old_run =
+      account
+      |> finished_run(runner, @beyond_window_days)
+      |> Fixtures.Runs.set_initiating_membership(member)
+
     event = add_event(old_run)
     request = Fixtures.Approvals.create_request(account_id: account.id, run_id: old_run.id)
 

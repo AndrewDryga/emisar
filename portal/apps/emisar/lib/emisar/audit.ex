@@ -381,7 +381,7 @@ defmodule Emisar.Audit do
   The retained audit receipts for approval decisions, keyed by request id.
   Requires audit-view permission and returns
   `{:ok, %{request_id => %{final: event_id, override: event_id | nil,
-  decisions: %{actor_id => event_id}}}}`
+  decisions: %{{:membership | :user, id} => event_id}}}}`
   or `{:error, :unauthorized}`. Invalid or cross-account request ids contribute
   no entries.
   """
@@ -411,7 +411,7 @@ defmodule Emisar.Audit do
       refs,
       [Access.key(event.target_id, empty_approval_refs())],
       &update_in(&1, [:decisions], fn decisions ->
-        Map.put_new(decisions, event.actor_id, event.id)
+        Map.put_new(decisions, approval_receipt_actor_key(event), event.id)
       end)
     )
   end
@@ -450,7 +450,7 @@ defmodule Emisar.Audit do
 
   @doc """
   Internal — the retained decision NOTES for approval requests, keyed by request
-  id: `%{request_id => %{decisions: %{actor_id => reason}, override: %{...} |
+  id: `%{request_id => %{decisions: %{{:membership | :user, id} => reason}, override: %{...} |
   nil}}`.
 
   An `Emisar.Approvals.Decision` row records the vote, never the operator's
@@ -487,7 +487,7 @@ defmodule Emisar.Audit do
       receipts,
       [Access.key(event.target_id, empty_decision_receipts())],
       &update_in(&1, [:decisions], fn decisions ->
-        Map.put_new(decisions, event.actor_id, event.payload["reason"])
+        Map.put_new(decisions, approval_receipt_actor_key(event), event.payload["reason"])
       end)
     )
   end
@@ -514,6 +514,26 @@ defmodule Emisar.Audit do
   end
 
   defp empty_decision_receipts, do: %{decisions: %{}, override: nil}
+
+  defp approval_receipt_actor_key(%Event{payload: %{"decider_membership_id" => id}})
+       when is_binary(id),
+       do: {:membership, id}
+
+  defp approval_receipt_actor_key(%Event{actor_id: id}), do: {:user, id}
+
+  @doc """
+  Selects a decision's retained note or event reference from an already-loaded
+  receipt map. Exact Member receipts take precedence, including an empty note.
+  Historical fallback uses only the decision row's retained User id, never a
+  lookup of the Member's current personal link.
+  """
+  def approval_decision_receipt(receipts, membership_id, legacy_user_id) do
+    case Map.fetch(receipts, {:membership, membership_id}) do
+      {:ok, receipt} -> receipt
+      :error when is_binary(legacy_user_id) -> Map.get(receipts, {:user, legacy_user_id})
+      :error -> nil
+    end
+  end
 
   @doc """
   Searchable actors from the caller's readable audit history, sorted by label

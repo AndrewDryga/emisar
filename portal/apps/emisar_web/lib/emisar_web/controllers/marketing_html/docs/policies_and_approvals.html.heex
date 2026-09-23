@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="policies-and-approvals"
-      updated="September 22, 2026"
+      updated="September 23, 2026"
       toc={[
         {"how-decisions", "How a decision is made"},
         {"first-policy", "A sensible first policy"},
@@ -158,6 +158,12 @@
         with a direct link, and the request appears under <strong>Approvals</strong>
         in the console with a live badge.
       </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Requests, votes, and grants belong to a person's exact membership in this account.
+        Removing and re-inviting someone does not transfer their earlier approvals to the
+        new membership. Losing approval authority retires pending votes and standing grants;
+        completed decisions keep their recorded member's local name when available.
+      </p>
       <.docs_screenshot
         src="/images/screenshots/loop/approval-pending.webp"
         preview_h="max-h-[32rem]"
@@ -172,6 +178,9 @@
             One approval releases a run by default. For destructive work, require
             <strong class="text-zinc-200">two approvers</strong>
             with self-approval off — the requester cannot approve their own request.
+            If the original requester is unavailable, ordinary approval is blocked because
+            separation cannot be checked. Deny the request and ask for a new one, or use an
+            authorized override.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -254,6 +263,8 @@
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Approvals</a>
             where you can choose Revoke and confirm to end it early. Every use is still a fully audited run.
+            A grant marked <strong class="text-zinc-200">Issuer unavailable</strong>
+            cannot authorize runs. Revoke it and approve a new request.
           </span>
         </li>
       </ul>

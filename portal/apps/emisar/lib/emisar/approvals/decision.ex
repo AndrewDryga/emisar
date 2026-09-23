@@ -2,7 +2,7 @@ defmodule Emisar.Approvals.Decision do
   @moduledoc """
   One operator's recorded vote on an `Emisar.Approvals.Request`. A request
   finalizes (dispatches the run, or cancels it) once enough DISTINCT
-  approvers vote — distinctness enforced by the `(request_id, decider_id)`
+  approvers vote — distinctness enforced by the `(request_id, decider_membership_id)`
   unique index, never an app-side count.
   """
   use Emisar, :schema
@@ -14,6 +14,8 @@ defmodule Emisar.Approvals.Decision do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :request, Emisar.Approvals.Request
     belongs_to :decider, Emisar.Users.User, where: [deleted_at: nil]
+    # The exact historical voter survives offboarding for attribution only.
+    belongs_to :decider_membership, Emisar.Accounts.Membership
 
     timestamps()
   end

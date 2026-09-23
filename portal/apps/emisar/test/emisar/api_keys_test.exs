@@ -2790,22 +2790,6 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
-  describe "fetch_owner_user_id/1" do
-    test "returns the user id that minted the key" do
-      {user, account, _subject} = owner_subject_pair()
-
-      {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
-
-      assert ApiKeys.fetch_owner_user_id(key.id) == user.id
-    end
-
-    test "returns nil for an unknown id and for a non-binary arg" do
-      assert is_nil(ApiKeys.fetch_owner_user_id(Ecto.UUID.generate()))
-      assert is_nil(ApiKeys.fetch_owner_user_id(nil))
-    end
-  end
-
   describe "no_agents?/1" do
     test "is true when the account has no live MCP key, false once one exists" do
       {_user, account, subject} = owner_subject_pair()

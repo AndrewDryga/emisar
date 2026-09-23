@@ -1740,7 +1740,7 @@ defmodule Emisar.Runs do
     %{
       attrs: attrs,
       delivery: :approval,
-      approval: {attrs[:requested_by_id], attrs[:reason], request_opts}
+      approval: {attrs[:reason], request_opts}
     }
   end
 
@@ -1773,11 +1773,10 @@ defmodule Emisar.Runs do
 
   defp append_mcp_approval(multi, _run_key, nil), do: multi
 
-  defp append_mcp_approval(multi, run_key, {requested_by_id, reason, opts}) do
+  defp append_mcp_approval(multi, run_key, {reason, opts}) do
     Emisar.Approvals.create_request_in_multi(
       multi,
       run_key,
-      requested_by_id,
       reason,
       opts
     )
@@ -2553,7 +2552,6 @@ defmodule Emisar.Runs do
       &Emisar.Approvals.create_request_in_multi(
         &1,
         :run,
-        attrs[:requested_by_id],
         attrs[:reason],
         request_opts
       )

@@ -25,7 +25,7 @@ defmodule Emisar.ApprovalGrantAuthorityTest do
       Fixtures.Memberships.force_runner_access(context.membership, access)
 
       assert {:ok, revoked} = Approvals.revoke_grant(grant, context.admin)
-      assert revoked.revoked_by_id == context.admin.actor.id
+      assert revoked.revoked_by_membership_id == context.admin.membership_id
       assert revoked.revoked_at
     end
 

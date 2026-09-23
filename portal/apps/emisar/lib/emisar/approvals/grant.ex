@@ -43,6 +43,9 @@ defmodule Emisar.Approvals.Grant do
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
     belongs_to :granted_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :revoked_by, Emisar.Users.User, where: [deleted_at: nil]
+    # Historical attribution includes offboarded Members, never replacement seats.
+    belongs_to :granted_by_membership, Emisar.Accounts.Membership
+    belongs_to :revoked_by_membership, Emisar.Accounts.Membership
     belongs_to :approval_request, Emisar.Approvals.Request
 
     timestamps()
@@ -51,6 +54,7 @@ defmodule Emisar.Approvals.Grant do
   @doc "Is the grant still usable right now?"
   def usable?(grant, now \\ DateTime.utc_now())
 
+  def usable?(%__MODULE__{granted_by_membership_id: nil}, _), do: false
   def usable?(%__MODULE__{revoked_at: r}, _) when not is_nil(r), do: false
 
   def usable?(%__MODULE__{expires_at: e} = grant, now) when not is_nil(e),

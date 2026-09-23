@@ -2179,7 +2179,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -2202,7 +2201,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         expected: filler.(2_000)
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, filler.(2_000), min_approvals: 20)
+    {:ok, request} = Approvals.create_request(run, filler.(2_000), min_approvals: 20)
 
     # Stack votes so the projected receipt fills its whole decisions byte budget
     # on top of the maxed reason/evidence/expected — enough that the receipt
@@ -3060,7 +3059,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key
   } do
     runner = setup_runner!(account, subject, "denial-summary")
@@ -3097,7 +3095,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         policy_reason: "Default for high-risk actions"
       })
 
-    {:ok, request} = Approvals.create_request(approval_run, user.id, "needs review")
+    {:ok, request} = Approvals.create_request(approval_run, "needs review")
 
     assert {:ok, {%{status: :denied}, %{status: :cancelled}}} =
              Approvals.deny_request(request, subject, "not during the change freeze")
@@ -3135,7 +3133,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3160,7 +3157,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     # The dispatch reason IS the request's reason on the real path
     # (`Runs.create_gated_run` passes `attrs[:reason]` straight through).
-    {:ok, request} = Approvals.create_request(run, user.id, reason, min_approvals: 2)
+    {:ok, request} = Approvals.create_request(run, reason, min_approvals: 2)
     first = named_reviewer(account, "Jane Doe")
 
     assert {:ok, {%{status: :pending}, :pending}} =
@@ -3229,7 +3226,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3255,7 +3251,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       })
 
     {:ok, request} =
-      Approvals.create_request(run, user.id, run.reason, min_approvals: 2)
+      Approvals.create_request(run, run.reason, min_approvals: 2)
 
     reviewer = named_reviewer(account, "Jane Doe")
 
@@ -3294,7 +3290,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3319,7 +3314,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         expected: "A usage line for /srv, so the investigation can close."
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, run.reason, min_approvals: 2)
+    {:ok, request} = Approvals.create_request(run, run.reason, min_approvals: 2)
     reviewer = named_reviewer(account, "Jane Doe")
 
     assert {:ok, {%{status: :pending}, :pending}} =
@@ -3339,7 +3334,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3364,7 +3358,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         expected: "A usage line for /srv, so the investigation can close."
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, run.reason)
+    {:ok, request} = Approvals.create_request(run, run.reason)
     reviewer = named_reviewer(account, "Jane Doe")
 
     assert {:ok, {%{status: :denied}, %{status: :cancelled}}} =
@@ -3439,7 +3433,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3458,7 +3451,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         reason: "ok"
       })
 
-    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+    assert {:ok, _request} = Approvals.create_request(run, run.reason)
 
     # Not a denial to report as one: a run with no operation id is outside the
     # fixed MCP history contract, so this API cannot see it at all.
@@ -3475,7 +3468,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3495,7 +3487,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         reason: token
       })
 
-    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+    assert {:ok, _request} = Approvals.create_request(run, run.reason)
 
     review = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]["review"]
 
@@ -3515,7 +3507,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3534,7 +3525,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         expected: String.duplicate(secret, 2_000)
       })
 
-    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+    assert {:ok, _request} = Approvals.create_request(run, run.reason)
 
     response =
       rpc(conn, "tools/call", %{
@@ -3570,7 +3561,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3591,7 +3581,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         expected: String.duplicate(emoji, 1_999) <> secret
       })
 
-    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+    assert {:ok, _request} = Approvals.create_request(run, run.reason)
 
     response =
       rpc(conn, "tools/call", %{
@@ -3626,7 +3616,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3648,7 +3637,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         expected: String.duplicate(backslash, 1_999) <> secret
       })
 
-    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+    assert {:ok, _request} = Approvals.create_request(run, run.reason)
 
     response =
       rpc(conn, "tools/call", %{
@@ -3686,7 +3675,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3723,7 +3711,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         reason: "Check whether the mount filled before the reload storm."
       })
 
-    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+    assert {:ok, _request} = Approvals.create_request(run, run.reason)
 
     response =
       rpc(conn, "tools/call", %{
@@ -3756,7 +3744,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3782,7 +3769,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
           reason: "Rotate the node before the window closes."
         })
 
-      assert {:ok, request} = Approvals.create_request(run, user.id, run.reason)
+      assert {:ok, request} = Approvals.create_request(run, run.reason)
 
       assert {:ok, {%{status: :approved}, _released}} =
                Approvals.approve_request(request, reviewer, "Agreed.")
@@ -3816,7 +3803,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3850,7 +3836,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         expected: String.duplicate("界", 2_000)
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, run.reason, min_approvals: 25)
+    {:ok, request} = Approvals.create_request(run, run.reason, min_approvals: 25)
 
     # More votes than the count ceiling holds, each maximal.
     for index <- 1..22 do
@@ -3928,7 +3914,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3949,7 +3934,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         reason: "Rotate the node before the maintenance window closes."
       })
 
-    {:ok, request} = Approvals.create_request(run, user.id, run.reason, min_approvals: 25)
+    {:ok, request} = Approvals.create_request(run, run.reason, min_approvals: 25)
 
     for index <- 1..20 do
       reviewer = named_reviewer(account, "Reviewer #{index}")
@@ -3977,7 +3962,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -3994,7 +3978,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         evidence: "The ticket quoted the token in plain text."
       })
 
-    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+    assert {:ok, _request} = Approvals.create_request(run, run.reason)
 
     review = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]["review"]
 
@@ -4015,7 +3999,6 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     conn: conn,
     account: account,
     subject: subject,
-    user: user,
     key: key,
     membership: membership
   } do
@@ -4031,7 +4014,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
         reason: reason
       })
 
-    assert {:ok, _request} = Approvals.create_request(run, user.id, run.reason)
+    assert {:ok, _request} = Approvals.create_request(run, run.reason)
 
     # `call/3` validates the receipt against the published schema.
     review = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]["review"]
@@ -4312,6 +4295,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
       Map.merge(
         %{
           account_id: account.id,
+          initiating_membership_id: key.created_by_membership_id,
           runner_id: runner.id,
           request_id: Emisar.Crypto.run_request_id(),
           action_id: "operations.health",

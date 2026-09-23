@@ -16,10 +16,6 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def by_ids(queryable \\ all(), ids) when is_list(ids),
     do: where(queryable, [api_keys: k], k.id in ^ids)
 
-  @doc "Selects only the creator's user id — for the approval gate's owner lookup."
-  def select_created_by_id(queryable),
-    do: select(queryable, [api_keys: k], k.created_by_id)
-
   @doc "Selects only the key ids — for the OAuth cleanup's stale-backing-key lookup."
   def select_ids(queryable),
     do: select(queryable, [api_keys: k], k.id)

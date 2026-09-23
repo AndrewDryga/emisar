@@ -441,7 +441,6 @@ defmodule Emisar.Seeds.ActionRuns do
     {:ok, req1} =
       Approvals.create_request(
         pending1,
-        user.id,
         pending1.reason
       )
 
@@ -468,7 +467,6 @@ defmodule Emisar.Seeds.ActionRuns do
     {:ok, req2} =
       Approvals.create_request(
         pending2,
-        priya.id,
         pending2.reason
       )
 
@@ -504,7 +502,7 @@ defmodule Emisar.Seeds.ActionRuns do
       |> backdate(approved_at)
 
     {:ok, %ApprovalRequest{} = approved_req} =
-      Approvals.create_request(approved_run, user.id, approved_run.reason)
+      Approvals.create_request(approved_run, approved_run.reason)
 
     approved_req = backdate_request(approved_req, approved_at)
     backdate_dispatch_audit(approved_run, approved_at)
@@ -516,7 +514,7 @@ defmodule Emisar.Seeds.ActionRuns do
       |> Ecto.Changeset.change(
         status: :approved,
         overridden: false,
-        decided_by_id: jordan.id,
+        decided_by_membership_id: jordan_subject.membership_id,
         decided_at: approved_decided_at,
         decision_reason: approved_decision_reason
       )
@@ -578,7 +576,6 @@ defmodule Emisar.Seeds.ActionRuns do
     {:ok, denied_req} =
       Approvals.create_request(
         denied_run,
-        user.id,
         denied_run.reason
       )
 
@@ -590,7 +587,7 @@ defmodule Emisar.Seeds.ActionRuns do
       |> Ecto.Changeset.change(
         status: :denied,
         overridden: false,
-        decided_by_id: jordan.id,
+        decided_by_membership_id: jordan_subject.membership_id,
         decided_at: denied_at,
         decision_reason: denied_decision_reason
       )
@@ -626,7 +623,7 @@ defmodule Emisar.Seeds.ActionRuns do
   # specific actions without re-asking. Demonstrates the "ask once,
   # then run autonomously" workflow on the Grants page.
   defp seed_standing_grants(
-         %{account: account, user: user, agent_key: agent_key} = ctx,
+         %{account: account, owner_subject: owner_subject, agent_key: agent_key} = ctx,
          approved_req
        ) do
     edge = runner_named(ctx, "edge-fra-01")
@@ -650,7 +647,7 @@ defmodule Emisar.Seeds.ActionRuns do
       }
 
       {:ok, _grant} =
-        Approvals.create_grant(approved_req, fake_run, user.id, %{
+        Approvals.create_grant(approved_req, fake_run, owner_subject.membership_id, %{
           duration: duration,
           scope: scope
         })

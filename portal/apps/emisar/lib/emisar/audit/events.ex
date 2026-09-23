@@ -1322,6 +1322,7 @@ defmodule Emisar.Audit.Events do
             run_id: request.run_id,
             runbook_execution_id: request.runbook_execution_id,
             decision: decision,
+            decider_membership_id: subject.membership_id,
             reason: reason,
             approved_count: count,
             min_approvals: request.min_approvals
@@ -1377,9 +1378,11 @@ defmodule Emisar.Audit.Events do
             approved_count: approved_count,
             min_approvals: request.min_approvals,
             remaining_approvals_waived: max(request.min_approvals - approved_count, 0),
+            decider_membership_id: subject.membership_id,
             self_approval_waived:
               not request.allow_self_approval and
-                request.requested_by_id == Subject.actor_id(subject)
+                (is_nil(request.requested_by_membership_id) or
+                   request.requested_by_membership_id == subject.membership_id)
           }
         ]
     )
@@ -1450,7 +1453,7 @@ defmodule Emisar.Audit.Events do
       payload: %{
         action_id: grant.action_id,
         api_key_id: grant.api_key_id,
-        granted_by_id: grant.granted_by_id
+        granted_by_membership_id: grant.granted_by_membership_id
       }
     )
   end
@@ -1466,7 +1469,10 @@ defmodule Emisar.Audit.Events do
       actor_kind: "system",
       target_kind: "approval_request",
       target_id: decision.request_id,
-      payload: %{decider_id: decision.decider_id, decision: decision.decision}
+      payload: %{
+        decider_membership_id: decision.decider_membership_id,
+        decision: decision.decision
+      }
     )
   end
 

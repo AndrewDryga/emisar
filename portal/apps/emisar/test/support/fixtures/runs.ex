@@ -77,6 +77,13 @@ defmodule Emisar.Fixtures.Runs do
   defp maybe_put_datetime(attrs, key, %DateTime{} = value), do: Map.put(attrs, key, value)
   defp maybe_put_datetime(attrs, _key, _value), do: attrs
 
+  @doc "Sets the exact human initiator for approval and attribution fixture scenarios."
+  def set_initiating_membership(%ActionRun{} = run, membership) do
+    run
+    |> change(initiating_membership_id: membership.id, requested_by_id: membership.user_id)
+    |> Repo.update!()
+  end
+
   @doc """
   Replaces a run's stored argument bytes with a payload the create changeset
   would have rejected, so a display path can be driven against arguments that

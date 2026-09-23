@@ -13,11 +13,11 @@ defmodule Emisar.Approvals.Decision.Query do
   def by_request_ids(queryable \\ all(), request_ids) when is_list(request_ids),
     do: where(queryable, [approval_decisions: d], d.request_id in ^request_ids)
 
-  def by_decider_ids(queryable, ids),
-    do: where(queryable, [approval_decisions: d], d.decider_id in ^ids)
+  def by_decider_membership_ids(queryable, ids),
+    do: where(queryable, [approval_decisions: d], d.decider_membership_id in ^ids)
 
-  def select_decider_ids(queryable),
-    do: select(queryable, [approval_decisions: d], d.decider_id)
+  def select_decider_membership_ids(queryable),
+    do: select(queryable, [approval_decisions: d], d.decider_membership_id)
 
   def select_all(queryable), do: select(queryable, [approval_decisions: d], d)
 
@@ -44,7 +44,7 @@ defmodule Emisar.Approvals.Decision.Query do
 
   @doc """
   Distinct count of approvers for a request — the finalize check. Built as a
-  `COUNT(DISTINCT decider_id)` over the approve votes; the context runs it
+  `COUNT(DISTINCT decider_membership_id)` over the approve votes; the context runs it
   with `Repo.one` to get the integer (a double-submit inserts 0 extra rows,
   so it can't inflate the count).
   """
@@ -52,11 +52,11 @@ defmodule Emisar.Approvals.Decision.Query do
     all()
     |> by_request_id(request_id)
     |> where([approval_decisions: d], d.decision == :approve)
-    |> select([approval_decisions: d], count(d.decider_id, :distinct))
+    |> select([approval_decisions: d], count(d.decider_membership_id, :distinct))
   end
 
   @doc """
-  Distinct approvers PER request — the same `COUNT(DISTINCT decider_id)` as
+  Distinct approvers PER request — the same `COUNT(DISTINCT decider_membership_id)` as
   `approved_distinct_decider_count/1`, grouped so one query tallies a whole page
   of requests instead of one round trip each. Requests with no approve vote are
   absent from the result; the caller reads them as zero.
@@ -66,26 +66,34 @@ defmodule Emisar.Approvals.Decision.Query do
     |> by_request_ids(request_ids)
     |> where([approval_decisions: d], d.decision == :approve)
     |> group_by([approval_decisions: d], d.request_id)
-    |> select([approval_decisions: d], {d.request_id, count(d.decider_id, :distinct)})
+    |> select([approval_decisions: d], {d.request_id, count(d.decider_membership_id, :distinct)})
   end
 
-  @doc "Left-join + preload the (non-deleted) deciding user, idempotently."
-  def with_preloaded_decider(queryable) do
+  @doc "Left-join the exact historical deciding Member, including tombstones."
+  def with_joined_decider_membership(queryable \\ all()) do
     queryable
-    |> with_named_binding(:decider, fn queryable, binding ->
+    |> with_named_binding(:decider_membership, fn queryable, binding ->
       join(
         queryable,
         :left,
         [approval_decisions: d],
-        decider in ^Emisar.Users.User.Query.not_deleted(),
-        on: d.decider_id == decider.id,
+        decider in ^Emisar.Accounts.Membership.Query.all(),
+        on: d.decider_membership_id == decider.id,
         as: ^binding
       )
     end)
-    |> preload([decider: decider], decider: decider)
+  end
+
+  def with_preloaded_decider_membership(queryable \\ all()) do
+    queryable
+    |> with_joined_decider_membership()
+    |> preload([decider_membership: decider], decider_membership: decider)
   end
 
   @impl Emisar.Repo.Query
   def preloads,
-    do: [decider: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()}]
+    do: [
+      decider_membership:
+        {Emisar.Accounts.Membership.Query.all(), Emisar.Accounts.Membership.Query.preloads()}
+    ]
 end

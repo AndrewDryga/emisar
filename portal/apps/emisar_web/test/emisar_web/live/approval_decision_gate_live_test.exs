@@ -55,7 +55,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       })
 
     {:ok, request} =
-      Approvals.create_request(run, requested_by.id, "please approve",
+      Approvals.create_request(run, "please approve",
         min_approvals: Keyword.get(opts, :min_approvals, 1),
         allow_self_approval: Keyword.get(opts, :allow_self_approval, true)
       )

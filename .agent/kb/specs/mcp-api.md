@@ -1,7 +1,7 @@
 ---
 name: mcp-api
 sources: [portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar_web/lib/emisar_web/controllers/mcp, portal/apps/emisar_web/lib/emisar_web/controllers/mcp_rpc_controller.ex, portal/apps/emisar/lib/emisar/mcp_operations.ex, mcp/protocol.go]
-updated: 2026-09-22
+updated: 2026-09-23
 ---
 
 # MCP action API specification
@@ -1112,8 +1112,9 @@ carries no `review` at all; its absence never means "nobody voted".
 reports `approved` while it runs, and a pending request past its deadline reads
 `expired` before any sweep rewrites it. `required_approvals` is the count
 snapshotted when the request was filed, so a later policy edit cannot move it,
-and `approved_count` counts DISTINCT approvers: a repeated or replayed vote
-never raises it, and an override never adds to it.
+and `approved_count` counts distinct recorded workspace Members: a repeated or
+replayed vote never raises it, an unresolved voter cannot satisfy quorum, and
+an override never adds to it.
 
 `reason`, `evidence`, and `expected` are the approver-facing justification
 chain snapshotted with the request, with the run's own `sensitive` argument
@@ -1154,10 +1155,12 @@ allowance. Masking runs strictly before the cut, so no cut can split a
 redaction marker; the cut lands on a code point boundary and the text stays
 valid UTF-8. A command Emisar cannot prove is absent rather than reconstructed.
 
-`decisions` lists the recorded votes oldest first, each with the name this
-account currently knows the reviewer by (absent for someone it no longer knows —
-their vote still stands), the vote, its time, and that reviewer's own note when
-they left one. A request with more votes than the page holds returns its most
+`decisions` lists the recorded votes oldest first, each with the local name of
+the exact recorded workspace Member, the vote, its time, and that reviewer's own
+note when they left one. Retained historical Members keep their local labels;
+the name is absent when no exact Member or local label is available. Removing
+approval authority retires that Member's pending votes, while completed decisions
+remain historical records. A request with more votes than the page holds returns its most
 recent ones — a deny finalizes on the spot and the approve that meets quorum is
 the last vote, so the decision itself is always present — and counts the older
 ones in `decisions_omitted`.

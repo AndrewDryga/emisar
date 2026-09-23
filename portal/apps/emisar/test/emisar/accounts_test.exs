@@ -3418,6 +3418,49 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "member_labels_for_ids/2" do
+    test "keeps exact local history without resolving a replacement or foreign seat" do
+      account = Fixtures.Accounts.create_account()
+      user = Fixtures.Users.create_user(full_name: "Private personal name")
+
+      original =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          display_name: "Original local name"
+        )
+
+      Fixtures.Memberships.mark_membership_as_deleted(original)
+
+      replacement =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          display_name: "Replacement local name"
+        )
+
+      blank =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: nil,
+          contact_email: nil
+        )
+
+      foreign = Fixtures.Memberships.create_membership(user_id: user.id)
+      ids = [original.id, replacement.id, blank.id, foreign.id, user.id, nil, original.id]
+
+      assert Accounts.member_labels_for_ids(ids, account.id) == %{
+               original.id => "Original local name",
+               replacement.id => "Replacement local name",
+               blank.id => nil
+             }
+
+      Fixtures.Memberships.hard_delete_membership(original)
+      assert Accounts.member_labels_for_ids([original.id], account.id) == %{}
+      assert Accounts.member_labels_for_ids([], account.id) == %{}
+    end
+  end
+
   describe "list_active_memberships_for_user/1" do
     test "returns one membership per account the user actively belongs to" do
       user = Fixtures.Users.create_user()
@@ -3593,38 +3636,6 @@ defmodule Emisar.AccountsTest do
 
       # Nothing was written — the user has no membership in the account.
       assert is_nil(Fixtures.Memberships.fetch_membership(account.id, user.id))
-    end
-  end
-
-  describe "fetch_active_membership_for_user/2" do
-    test "returns only the exact account's active membership" do
-      account = Fixtures.Accounts.create_account()
-      other_account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      assert {:ok, %Membership{id: id}} =
-               Accounts.fetch_active_membership_for_user(account.id, user.id)
-
-      assert id == membership.id
-
-      assert Accounts.fetch_active_membership_for_user(other_account.id, user.id) ==
-               {:error, :not_found}
-    end
-
-    test "does not return a suspended membership" do
-      account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      Fixtures.Memberships.suspend_membership(membership)
-
-      assert Accounts.fetch_active_membership_for_user(account.id, user.id) ==
-               {:error, :not_found}
     end
   end
 
@@ -4172,9 +4183,6 @@ defmodule Emisar.AccountsTest do
       assert Accounts.peek_active_membership(invited_account.id, invitation.id) == nil
 
       assert Accounts.fetch_active_membership(Repo, invited_account.id, invitation.id) ==
-               {:error, :not_found}
-
-      assert Accounts.fetch_active_membership_for_user(invited_account.id, user.id) ==
                {:error, :not_found}
 
       assert Accounts.fetch_and_lock_active_membership(
@@ -7451,8 +7459,8 @@ defmodule Emisar.AccountsTest do
       assert result.membership.account_id == account.id
       assert result.user.id == invitee.id
 
-      assert {:ok, %Membership{role: :owner}} =
-               Accounts.fetch_active_membership_for_user(other_account.id, invitee.id)
+      assert %Membership{role: :owner} =
+               Fixtures.Memberships.fetch_membership(other_account.id, invitee.id)
     end
 
     test "a suppressed address still gets the invitation, but no email is sent" do

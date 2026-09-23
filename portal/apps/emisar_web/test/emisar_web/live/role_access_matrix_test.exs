@@ -17,14 +17,22 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
     account = Fixtures.Accounts.create_account()
     owner = Fixtures.Users.create_user()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: owner.id,
-      role: "owner"
-    )
+    membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: owner.id,
+        role: "owner"
+      )
 
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-    run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id)
+
+    run =
+      Fixtures.Runs.create_run(
+        account_id: account.id,
+        runner_id: runner.id,
+        initiating_membership_id: membership.id
+      )
+
     approval = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
     Fixtures.Policies.create_policy(account_id: account.id, created_by_id: owner.id)
 

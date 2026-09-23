@@ -45,6 +45,10 @@ defmodule Emisar.Approvals.Request do
     belongs_to(:requested_by, Emisar.Users.User, where: [deleted_at: nil])
     belongs_to(:decided_by, Emisar.Users.User, where: [deleted_at: nil])
 
+    # Historical attribution includes offboarded Members, never replacement seats.
+    belongs_to(:requested_by_membership, Emisar.Accounts.Membership)
+    belongs_to(:decided_by_membership, Emisar.Accounts.Membership)
+
     has_many(:decisions, Emisar.Approvals.Decision)
 
     timestamps()
