@@ -1172,17 +1172,15 @@ defmodule Emisar.ApiKeys do
   """
   def revoke_api_key(%ApiKey{} = key, %Subject{} = subject) do
     with :ok <- ensure_can_manage_key(key, subject) do
-      Multi.new()
-      |> put_active_account_lock(subject.account.id)
-      |> put_current_subject(subject)
-      |> Multi.run(:revocation, fn repo, %{current_subject: current} ->
-        source_queryable =
-          ApiKey.Query.not_deleted()
-          |> ApiKey.Query.by_id(key.id)
-          |> ApiKey.Query.lock_for_update()
-          |> Authorizer.for_subject(current)
+      source_queryable =
+        ApiKey.Query.not_deleted()
+        |> ApiKey.Query.by_id(key.id)
+        |> ApiKey.Query.lock_for_update()
+        |> Authorizer.for_subject(subject)
 
-        revoke_key_chain(repo, source_queryable, current)
+      Multi.new()
+      |> Multi.run(:revocation, fn repo, _changes ->
+        revoke_key_chain(repo, source_queryable, subject)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{revocation: %{revoked: revoked}} ->
@@ -1209,12 +1207,8 @@ defmodule Emisar.ApiKeys do
       when is_binary(membership_id) do
     with :ok <- ensure_can_revoke_member_keys(membership_id, subject) do
       Multi.new()
-      |> put_active_account_lock(subject.account.id)
-      |> put_current_subject(subject)
-      |> Multi.run(:revocation, fn repo, %{current_subject: current} ->
-        with :ok <- ensure_can_revoke_member_keys(membership_id, current) do
-          revoke_member_key_chains(repo, membership_id, current)
-        end
+      |> Multi.run(:revocation, fn repo, _changes ->
+        revoke_member_key_chains(repo, membership_id, subject)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{revocation: %{revoked: revoked}} ->
@@ -1405,32 +1399,18 @@ defmodule Emisar.ApiKeys do
       prefix = String.slice(raw, 0, prefix_size)
       hash = Crypto.hash(raw)
 
-      # Discover routing without a row lock. First use of a successor retires
-      # ancestors, so it must take the same account-first fence as containment
-      # before locking ANY key. Otherwise first use (B -> A) and revocation
-      # (A -> B) can deadlock. Ordinary use needs only the credential row lock.
+      # `key_prefix` is unique only among live rows. The row lock makes this
+      # usability check serialize with explicit revocation: once revoke returns,
+      # no stale pre-revocation lookup can authenticate afterward.
       queryable =
         ApiKey.Query.not_deleted()
         |> ApiKey.Query.by_key_prefix(prefix)
+        |> ApiKey.Query.lock_for_update()
 
       multi =
         Multi.new()
-        |> Multi.run(:snapshot, fn repo, _changes ->
+        |> Multi.run(:candidate, fn repo, _changes ->
           authenticate_candidate(repo, queryable, hash)
-        end)
-        |> Multi.run(:rotation_account, fn repo, %{snapshot: key} ->
-          lock_first_rotation_use(repo, key)
-        end)
-        |> Multi.run(:candidate, fn repo, %{snapshot: snapshot} ->
-          # A live prefix can be reused after deletion. Recheck the exact row,
-          # secret and usability after waiting; discovery granted no authority.
-          locked =
-            queryable
-            |> ApiKey.Query.by_id(snapshot.id)
-            |> ApiKey.Query.by_account_id(snapshot.account_id)
-            |> ApiKey.Query.lock_for_update()
-
-          authenticate_candidate(repo, locked, hash)
         end)
         |> Multi.run(:membership, fn repo, %{candidate: key} ->
           fetch_authorized_key_membership(repo, key)
@@ -1480,16 +1460,6 @@ defmodule Emisar.ApiKeys do
       _ -> {:error, :invalid}
     end
   end
-
-  defp lock_first_rotation_use(repo, %ApiKey{last_used_at: nil, replaces_id: replaced_id} = key)
-       when not is_nil(replaced_id) do
-    case Accounts.fetch_and_lock_account(key.account_id, repo: repo) do
-      {:ok, account} -> {:ok, account}
-      {:error, :not_found} -> {:error, :invalid}
-    end
-  end
-
-  defp lock_first_rotation_use(_repo, %ApiKey{}), do: {:ok, nil}
 
   # Skips the write while the stamp is fresh (see @usage_stamp_interval_seconds);
   # the row stays locked either way, so revocation still serializes with use.

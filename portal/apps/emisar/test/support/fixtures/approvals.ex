@@ -80,11 +80,6 @@ defmodule Emisar.Fixtures.Approvals do
     request |> change(overridden: nil) |> Repo.update!()
   end
 
-  @doc "Models retained history whose exact requester is unavailable."
-  def clear_requester_membership(%Approvals.Request{} = request) do
-    request |> change(requested_by_membership_id: nil) |> Repo.update!()
-  end
-
   @doc "Finalizes as an old override writer, without touching the provenance column."
   def override_with_old_writer(%Approvals.Request{} = request, subject, reason) do
     overridden =

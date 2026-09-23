@@ -1483,7 +1483,7 @@ defmodule Emisar.Approvals do
 
   Returns `{:ok, {request, run}}` when the vote finalizes + dispatches,
   `{:ok, {request, :pending}}` when recorded but below the distinct-approver
-  threshold, or `{:error, %Ecto.Changeset{} | :self_approval_forbidden | :requester_unavailable |
+  threshold, or `{:error, %Ecto.Changeset{} | :self_approval_forbidden |
   :already_decided | :expired | :unauthorized | :not_found |
   :decision_reason_too_long | :decision_reason_unsafe_text |
   {:grant_failed, changeset}}`. Rejected input records nothing.
@@ -1791,15 +1791,10 @@ defmodule Emisar.Approvals do
     Runners.fetch_and_lock_cancellation_runners(account_id, runner_ids, repo: repo)
   end
 
-  # Separation is enforced server-side even for an unresolved historical
-  # requester. Denial is still possible; only explicit override may waive this gate.
-  defp check_self_approval(
-         :approve,
-         %Request{allow_self_approval: false, requested_by_membership_id: nil},
-         _subject
-       ),
-       do: {:error, :requester_unavailable}
-
+  # Self-approval gate (server-side, IL-15 — UI hiding is cosmetic only). Only an
+  # APPROVE by the recorded requester is blocked, and only when the request's
+  # snapshotted policy forbade self-approval. Deny and the permissive case fall
+  # through. Self-approval is a policy setting only — there is no account-wide flag.
   defp check_self_approval(:approve, %Request{allow_self_approval: false} = request, subject) do
     if self?(subject, request), do: {:error, :self_approval_forbidden}, else: :ok
   end
@@ -1809,6 +1804,11 @@ defmodule Emisar.Approvals do
   defp self?(%Subject{} = subject, %Request{requested_by_membership_id: rb}) when is_binary(rb),
     do: subject.membership_id == rb
 
+  # No resolvable requester (e.g. one erased with their account data) has no
+  # "self", so the self-approval gate is vacuous for it. That
+  # is not a bypass: min_approvals still requires N distinct approvers, and the
+  # ghost requester can't log in to approve. Failing closed here (block everyone)
+  # would instead strand such a request forever.
   defp self?(_subject, _request), do: false
 
   # Re-gate pack trust before an approve: the pack could have drifted to

@@ -868,42 +868,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ note
   end
 
-  test "an unknown requester blocks ordinary approval and names the explicit override waiver", %{
-    conn: conn
-  } do
-    {conn, owner, account} = register_and_log_in(conn)
-    request = pending_request(account, owner, allow_self_approval: false)
-    request = Fixtures.Approvals.clear_requester_membership(request)
-
-    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
-
-    assert html =~ "The original requester is unavailable"
-    refute has_element?(lv, "#approval-decision-form button[value=approve]")
-    assert has_element?(lv, "#approval-decision-form button[value=deny]")
-    refute html =~ "This also allows you to approve your own request."
-    assert has_element?(lv, "#override-approval-reviews", "differs from the original requester")
-
-    note = "Please submit a fresh request."
-    render_submit(lv, "decide", %{"decision" => "approve", "reason" => note})
-    assert has_element?(lv, "#approval-decision-form textarea", note)
-    assert Repo.reload!(request).status == :pending
-
-    lv
-    |> form("#approval-override-form")
-    |> render_change(%{"reason" => "Approved emergency recovery"})
-
-    assert confirm_dialog(lv, "override-approval-reviews", "Approve with override") =~
-             "Approval override recorded."
-
-    event =
-      Audit.Event.Query.all()
-      |> Audit.Event.Query.by_event_type("approval.overridden")
-      |> Repo.one!()
-
-    assert event.payload["self_approval_waived"]
-    assert event.payload["decider_membership_id"] == owner_subject(owner, account).membership_id
-  end
-
   test "a self-blocked requester gets deny-only copy, no Approve affordance", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     request = pending_request(account, user, allow_self_approval: false)

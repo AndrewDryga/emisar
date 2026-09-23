@@ -1381,8 +1381,7 @@ defmodule Emisar.Audit.Events do
             decider_membership_id: subject.membership_id,
             self_approval_waived:
               not request.allow_self_approval and
-                (is_nil(request.requested_by_membership_id) or
-                   request.requested_by_membership_id == subject.membership_id)
+                request.requested_by_membership_id == subject.membership_id
           }
         ]
     )

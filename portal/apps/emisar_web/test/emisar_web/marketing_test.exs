@@ -1777,9 +1777,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "creates no standing grant"
       assert html =~ "gets its own audit record"
       assert squish(html) =~ "a person's exact membership in this account"
-      assert squish(html) =~ "separation cannot be checked"
-      assert html =~ "Issuer unavailable"
-      assert squish(html) =~ "cannot authorize runs. Revoke it and approve a new request."
       refute html =~ "type a confirmation"
     end
 

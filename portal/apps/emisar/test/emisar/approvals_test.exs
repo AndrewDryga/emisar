@@ -179,18 +179,10 @@ defmodule Emisar.ApprovalsTest do
       refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
-    test "a deleted issuer makes matching and held-grant consumption fail closed" do
+    test "a grant without its issuer fails closed for matching and held-grant consumption" do
       account = Fixtures.Accounts.create_account()
       {_, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
-      issuer = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-
-      grant =
-        Fixtures.Approvals.create_grant(
-          account_id: account.id,
-          api_key_id: key.id,
-          granted_by_membership_id: issuer.id
-        )
-
+      grant = Fixtures.Approvals.create_grant(account_id: account.id, api_key_id: key.id)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       assert Approvals.peek_matching_grant(
@@ -202,11 +194,8 @@ defmodule Emisar.ApprovalsTest do
                nil
              ).id == grant.id
 
-      Fixtures.Memberships.hard_delete_membership(issuer)
-      retained = Repo.reload!(grant)
-      assert retained.account_id == account.id
-      assert retained.granted_by_membership_id == nil
-      refute Grant.usable?(retained)
+      grant = grant |> Ecto.Changeset.change(granted_by_membership_id: nil) |> Repo.update!()
+      refute Grant.usable?(grant)
 
       assert Approvals.peek_matching_grant(
                account.id,
@@ -4385,22 +4374,36 @@ defmodule Emisar.ApprovalsTest do
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 
-    test "an unresolved historical requester cannot satisfy separation of duties" do
-      %{account: account, request: request, run: run} =
-        gated_request(min_approvals: 2, allow_self_approval: false)
+    test "an erased requester is vacuously non-self; min_approvals still requires N distinct" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      request = Fixtures.Approvals.clear_requester_membership(request)
-      approver = distinct_operator(account)
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          requested_by_id: member.user_id,
+          initiating_membership_id: member.id,
+          args: %{},
+          pack_ref: Fixtures.Catalog.default_pack_ref(),
+          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
+          status: :pending_approval
+        })
 
-      assert Approvals.approve_request(request, approver, "reviewed") ==
-               {:error, :requester_unavailable}
+      {:ok, request} =
+        Approvals.create_request(run, "x", min_approvals: 2, allow_self_approval: false)
 
-      assert approved_count(request.id) == 0
-      assert Repo.reload!(run).status == :pending_approval
-      refute_receive {:cloud_to_runner, _generation, _}, 100
+      request =
+        request |> Ecto.Changeset.change(requested_by_membership_id: nil) |> Repo.update!()
 
-      assert {:ok, {%Request{status: :denied}, _run}} =
-               Approvals.deny_request(request, approver, "Please submit a new request")
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, distinct_operator(account), "lgtm-1")
+
+      assert approved_count(request.id) == 1
     end
 
     test "ABUSE: an MCP run (requested_by_id nil) attributes self to the api-key owner; the owner can't self-approve" do

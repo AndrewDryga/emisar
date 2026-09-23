@@ -198,12 +198,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
       :already_decided?,
       Enum.any?(decisions, &(&1.decider_membership_id == membership_id))
     )
-    |> assign(:requester_unavailable?, is_nil(request.requested_by_membership_id))
     |> assign(
       :self_blocked?,
-      not request.allow_self_approval and
-        (is_nil(request.requested_by_membership_id) or
-           request.requested_by_membership_id == membership_id)
+      not request.allow_self_approval and request.requested_by_membership_id == membership_id
     )
   end
 
@@ -548,13 +545,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
      socket
      |> assign_decision_fields(params)
      |> put_flash(:error, "You can't approve your own request.")}
-  end
-
-  defp decision_failed(socket, :requester_unavailable, params) do
-    {:noreply,
-     socket
-     |> assign_decision_fields(params)
-     |> refetch_request()}
   end
 
   # The note is too long to store. Nothing was decided and the request is
@@ -1260,7 +1250,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
               execution_request?={@execution_request?}
               execution_kind={@request.context["execution_kind"]}
               self_blocked?={@self_blocked?}
-              requester_unavailable?={@requester_unavailable?}
               already_decided?={@already_decided?}
               approved_count={@approved_count}
               decisions_error?={@decisions_error?}
@@ -1313,7 +1302,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # requester and self-approval is forbidden; already_decided? hides both forms
   # once they've voted. The CONTEXT re-checks both (IL-15) — these are cosmetic.
   attr :self_blocked?, :boolean, default: false
-  attr :requester_unavailable?, :boolean, default: false
   attr :already_decided?, :boolean, default: false
   attr :approved_count, :integer, default: 0
   attr :decisions_error?, :boolean, default: false
@@ -1449,12 +1437,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             :if={@self_blocked? and is_nil(@approval_block)}
             class="mt-4 text-xs leading-relaxed text-zinc-400"
           >
-            <%= if @requester_unavailable? do %>
-              The original requester is unavailable, so separation of duties cannot be checked.
-              Deny this request and ask for a new one, or use an authorized override.
-            <% else %>
-              Policy doesn't allow you to approve your own request. Another approver is needed.
-            <% end %>
+            Policy doesn't allow you to approve your own request. Another approver is needed.
           </p>
           <%!-- ONE decision form: a single note field logged with whichever
                decision is taken (two competing optional textareas doubled the
@@ -1658,7 +1641,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
         approved_count={@approved_count}
         min_approvals={@min_approvals}
         self_blocked?={@self_blocked?}
-        requester_unavailable?={@requester_unavailable?}
       />
     </section>
     """
@@ -1670,7 +1652,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
   attr :approved_count, :integer, required: true
   attr :min_approvals, :integer, required: true
   attr :self_blocked?, :boolean, required: true
-  attr :requester_unavailable?, :boolean, required: true
 
   defp override_dialog(assigns) do
     ~H"""
@@ -1691,13 +1672,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
           with <span class="font-medium text-zinc-200">
             {@approved_count}/{@min_approvals} required approvals
           </span>. This skips the remaining reviews.
-          <%= cond do %>
-            <% @self_blocked? and @requester_unavailable? -> %>
-              This also bypasses the check that the approver differs from the original requester.
-            <% @self_blocked? -> %>
-              This also allows you to approve your own request.
-            <% true -> %>
-          <% end %>
+          <span :if={@self_blocked?}>This also allows you to approve your own request.</span>
           All other policy and runner checks still apply.
         </p>
       </:body>

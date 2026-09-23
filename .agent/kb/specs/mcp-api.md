@@ -1113,8 +1113,7 @@ reports `approved` while it runs, and a pending request past its deadline reads
 `expired` before any sweep rewrites it. `required_approvals` is the count
 snapshotted when the request was filed, so a later policy edit cannot move it,
 and `approved_count` counts distinct recorded workspace Members: a repeated or
-replayed vote never raises it, an unresolved voter cannot satisfy quorum, and
-an override never adds to it.
+replayed vote never raises it, and an override never adds to it.
 
 `reason`, `evidence`, and `expected` are the approver-facing justification
 chain snapshotted with the request, with the run's own `sensitive` argument

@@ -702,7 +702,7 @@ defmodule EmisarWeb.ApprovalsLive do
               <%!-- Canvas rows; the per-row key icon died with the island — every
                  row wearing the same glyph decorated nothing. --%>
               <:item :let={g}>
-                <.list_row padding="py-4" meta_wrap={is_nil(g.granted_by_membership_id)}>
+                <.list_row padding="py-4">
                   <:title>
                     <span class="truncate font-mono text-sm text-zinc-100">{g.action_id}</span>
                   </:title>
@@ -728,9 +728,6 @@ defmodule EmisarWeb.ApprovalsLive do
                     >
                       {grant_args_line(g)}
                     </div>
-                    <p :if={is_nil(g.granted_by_membership_id)}>
-                      This grant cannot authorize runs. Revoke it and approve a new request.
-                    </p>
 
                     <%!-- Line 1 = accountability: which key HOLDS the capability,
                        who granted it, and WHEN (an unexplained grant minted

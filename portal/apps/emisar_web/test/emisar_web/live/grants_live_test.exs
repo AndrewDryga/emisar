@@ -94,22 +94,17 @@ defmodule EmisarWeb.GrantsLiveTest do
     assert has_element?(lv, "#revoke-grant-#{g.id}")
   end
 
-  test "a grant without its exact issuer explains the denial and can be revoked", %{conn: conn} do
+  test "a grant without its issuer is marked and can be revoked", %{conn: conn} do
     {conn, _user, account, api_key, _runner} = seed_account(conn)
-    issuer = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
     grant =
-      insert_grant!(account, api_key,
-        action_id: "linux.uptime",
-        granted_by_membership_id: issuer.id
-      )
+      account
+      |> insert_grant!(api_key, action_id: "linux.uptime")
+      |> Ecto.Changeset.change(granted_by_membership_id: nil)
+      |> Repo.update!()
 
-    Fixtures.Memberships.hard_delete_membership(issuer)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
-
     assert has_element?(lv, "#grants", "Issuer unavailable")
-    assert has_element?(lv, "#grants", "This grant cannot authorize runs.")
-    assert has_element?(lv, "#grants", "Revoke it and approve a new request.")
 
     html = lv |> element("#revoke-grant-#{grant.id} button", "Revoke grant") |> render_click()
     assert html =~ "Grant revoked"
