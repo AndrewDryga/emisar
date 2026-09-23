@@ -47,7 +47,7 @@ Infer only the narrowest mode the operator explicitly requested:
 
 | Mode | What may proceed |
 | --- | --- |
-| **Investigate** | Catalog/history reads and low-risk observational actions whose trusted contract indicates no production state change. |
+| **Investigate** | Catalog/history reads and `low` or `medium` risk observational actions whose trusted contract indicates no production state change. |
 | **Contain** | Investigate, then apply the smallest reversible mitigation inside the named service, environment, and impact after the operator explicitly asks to contain, stabilize, remediate, or stop the bleed. |
 | **Break glass** | Use a separately approved, exact, time-bounded emergency-access plan only when no viable Emisar path exists. Never infer this mode. |
 | **Deploy** | The operator deploys the permanent source-controlled fix. Never infer deployment authority from investigate, contain, code-edit, or break-glass authority. |
@@ -70,7 +70,7 @@ Start a compact working record and update it as evidence changes:
 
 ```text
 Incident: <short factual title>
-State: INVESTIGATING | CONTAINING | CONTAINED | FIXING | WAITING_DEPLOYMENT | VERIFYING | RESOLVED | BLOCKED
+State: INVESTIGATING | CONTAINING | CONTAINED | FIXING | WAITING_DEPLOYMENT | VERIFYING | RESOLVED | BLOCKED | UNRESOLVED
 Scope: <service, environment, exact known targets>
 Impact: <user-visible or operational impact; unknown stays unknown>
 Started/detected: <UTC timestamps or unknown>
@@ -80,8 +80,8 @@ Temporary changes: <exact actions and rollback, or none>
 ```
 
 Give the operator short updates when the state, leading hypothesis, impact, or
-human-owned next step changes. Do not expose hidden reasoning or narrate every
-tool call. State the latest evidence, what it means, and what happens next.
+human-owned next step changes. State the latest evidence, what it means, and
+what happens next.
 
 ## 1. Frame the incident
 
@@ -166,9 +166,11 @@ For a new incident question that no returned continuation already answers:
      even when the action itself is low-risk and changes no production state.
    - A mitigation changes state.
 4. Under **Investigate**, call `run_action` only when the complete trusted
-   descriptor indicates an observational job: `risk: low`, a read/check/list/
-   show purpose, and empty or explicitly non-changing side effects. Otherwise,
-   ask for the required response mode or choose a safer check.
+   descriptor indicates an observational job: `risk: low` or `medium`, a
+   read/check/list/show purpose, and empty or explicitly non-changing side
+   effects. Raw log and application reads are `medium` for the data they return,
+   not for a state change. Otherwise, ask for the required response mode or
+   choose a safer check.
 5. Use exact returned `action_id`, `pack_ref`, runner refs, and schema-valid
    arguments. Refresh `get_action` immediately before execution when the
    catalog observation may be stale.

@@ -146,12 +146,14 @@ PY
 esac
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
-if ! command -v gh >/dev/null 2>&1 ||
-  ! gh attestation verify --help 2>&1 | grep -q -- '--bundle'; then
+if ! command -v gh >/dev/null 2>&1; then
   # Prefer installing GitHub CLI; if the operator declines, the installer
   # verifies only the release checksum and warns (ask before continuing).
-  echo "GitHub CLI with attestation bundle support is not available;" >&2
-  echo "install it, or let the installer fall back to checksum-only (see its --help)." >&2
+  echo "GitHub CLI is not installed; install it, or let the installer fall back" >&2
+  echo "to checksum-only (see its --help)." >&2
+elif ! gh attestation verify --help 2>&1 | grep -q -- '--bundle'; then
+  echo "GitHub CLI lacks attestation bundle support; update it, or the" >&2
+  echo "installer's signature check fails." >&2
 fi
 curl -fsSL "$EMISAR_URL/install-mcp.sh" -o "$installer"
 bash "$installer" --help
@@ -197,8 +199,8 @@ Test through the configured client itself, never a synthetic harness:
 
 1. Confirm `tools/list` matches the fixed catalog in
    `https://emisar.dev/docs/mcp-reference`.
-2. Call `list_runners` with issues included. Require the intended runner to be
-   `connected` with no unexplained issues.
+2. Call `list_runners`; every runner in the response carries its `issues`.
+   Require the intended runner to be `connected` with no unexplained issues.
 3. Call `list_packs` with `include: "all"` and require the intended packs
    to be present and executable without descriptor or deployment issues. An
    absent expected ref is not diagnosable through MCP; an operator reviews its

@@ -33,10 +33,11 @@ Verify commands and schemas before using them:
   `https://emisar.dev/docs/pack-registry` (self-hosted registries), and
   `https://emisar.dev/docs/mcp-reference` (MCP catalog contract).
 - Use the signed-in portal's **Packs** page for trust decisions and each
-  runner's **Advertised actions** for what the fleet actually serves.
+  runner's **Actions** section for what the fleet actually serves.
 - Study installed packs as worked examples: `emisar pack install <name> --dest
-  ./examples` fetches a public pack you can read; pick one whose shape matches
-  the job (exec reads, script actions, credentialed services).
+  ./examples --no-verify` copies a public pack into `./examples/<name>` without
+  running any of its actions; pick one whose shape matches the job (exec reads,
+  script actions, credentialed services).
 
 Never reconstruct a YAML field, flag, or config shape from memory when the
 validator, installed help, or a public reference can confirm it.
@@ -101,8 +102,12 @@ Decide these per action, and write them down — they become the YAML:
 
 - **One action, one job, a searchable description.** The MCP catalog is what
   an LLM keyword-matches; open read descriptions with the verb of the job
-  (List, Show, Get, Tail, Check), and make `description` a real doc string.
-  List every file, network, and process side effect under `side_effects`.
+  (List, Show, Get, Tail, Check). Write `description` as the action's
+  contract: what it does and returns, when to use it and when not to, and its
+  limits and caveats. Give every arg a `description` of what its value means.
+  Emisar tells agents to treat pack text as untrusted data, so state facts
+  about the action, not instructions to the agent. List every file, network,
+  and process side effect under `side_effects`.
 - **Risk is honest.** `low` covers structured status, metadata, and cheap
   bounded probes. Raw log or application output, bounded recoverable changes,
   opening a listener, and link-saturating probes are at least `medium`.
@@ -195,6 +200,7 @@ args:
   - name: lines
     type: integer
     default: 100
+    description: Number of most recent entries to return.
     validation: { min: 1, max: 1000 }
 execution:
   command:
@@ -234,8 +240,10 @@ On the authoring runner:
    `allowed_prefixes`, an oversized string, a number past `max` — and require
    a validation rejection, not an execution. An action whose denial you have
    not seen is unproven.
-6. `emisar doctor` — confirm the runner still reports healthy, with required
-   binaries present and env vars allowlisted.
+6. `emisar doctor` — confirm the runner still reports healthy and every
+   action's executable resolves on `PATH`. `emisar pack info <id>` checks the
+   pack's required binaries and flags required variables missing from
+   `execution.inherit_env`.
 
 ## 5. Distribute it
 

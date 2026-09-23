@@ -179,8 +179,10 @@ installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT HUP INT TERM
 # Confirmed with the operator beforehand: without GitHub CLI the installer
 # checks only the release checksum and says so.
-if ! command -v gh >/dev/null 2>&1 || ! gh attestation verify --help 2>&1 | grep -q -- '--bundle'; then
-  echo "GitHub CLI with attestation bundle verification is not installed; the installer will check only the release checksum" >&2
+if ! command -v gh >/dev/null 2>&1; then
+  echo "GitHub CLI is not installed; the installer will check only the release checksum" >&2
+elif ! gh attestation verify --help 2>&1 | grep -q -- '--bundle'; then
+  echo "GitHub CLI lacks attestation bundle support; update it, or the installer's signature check fails" >&2
 fi
 curl -fsSL "$EMISAR_URL/install.sh" -o "$installer"
 bash "$installer" --help
@@ -269,10 +271,9 @@ pack-preserving upgrade so recommendations follow the current installed CLI.
    and systemd presence. Its evidence is a recommendation, not proof of service
    identity. It omits packs that are already installed, so merge its result with
    `pack list` and the full catalog rather than presenting it alone.
-3. Add the OS-compatible core baseline named by the current `emisar pack
-   suggest --help`, resolving its current metadata from the full catalog. A core
-   pack may have no service-detection signal and therefore be absent from the
-   lean recommendation index; that does not erase the CLI's documented baseline.
+3. `pack suggest` includes the OS-compatible core baseline named in its
+   `--help` (evidence `core baseline`) for each core pack not yet installed.
+   Resolve every recommendation's current metadata from the full catalog.
 4. Confirm matches against the safe host inventory from section 1. Compare the
    intended workload with the full catalog to find relevant packs that cannot
    be host-detected, such as remote API or cloud-service packs. Suggest only
@@ -405,8 +406,11 @@ every installed pack, including packs preserved through an upgrade.
      allowlisted names, and do not duplicate the `execution` section. Validate
      the staged config with the installed CLI before atomically replacing the
      original. Never put secret values in YAML.
-   - Never allowlist `EMISAR_ENROLLMENT_KEY`, `LD_*`, `DYLD_*`, or `BASH_ENV`.
-     Never pass pack credentials as action arguments or command-line flags.
+   - Never allowlist `EMISAR_ENROLLMENT_KEY`, or a variable that injects code
+     into child processes (`LD_*`, `DYLD_*`, `BASH_ENV`, `NODE_OPTIONS`,
+     `RUBYOPT`, `PERL5OPT`, `GIT_SSH_COMMAND`); the runner's config validation
+     rejects the latter. Never pass pack credentials as action arguments or
+     command-line flags.
    - For file-based credentials such as kubeconfig, `.pgpass`, or provider CLI
      profiles, preserve the documented restrictive mode and owner. Prove the
      actual runner service user can read the file and traverse its parent
