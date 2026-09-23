@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -45,15 +46,53 @@ func TestRemotePortalCommandQuotesArguments(t *testing.T) {
 
 func TestParseDatabaseOptions(t *testing.T) {
 	options, err := parseDatabaseOptions([]string{
-		"--host", "portal-a", "--port", "15433",
+		"--instance", "emisar-restore-202609230800", "--host", "portal-a", "--port", "15433",
 		"--psql", "--", "--command=select 1",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.host != "portal-a" || options.port != 15433 ||
+	if options.instance != "emisar-restore-202609230800" || options.host != "portal-a" || options.port != 15433 ||
 		!options.psql || !reflect.DeepEqual(options.psqlArgs, []string{"--command=select 1"}) {
 		t.Fatalf("unexpected options: %#v", options)
+	}
+}
+
+func TestParseDatabaseOptionsInstance(t *testing.T) {
+	options, err := parseDatabaseOptions(nil)
+	if err != nil || options.instance != "emisar" {
+		t.Fatalf("default instance = %q, %v", options.instance, err)
+	}
+	for _, name := range []string{"-x", "Emisar", "emisar_restore"} {
+		if _, err := parseDatabaseOptions([]string{"--instance", name}); !IsUsage(err) {
+			t.Errorf("--instance %q: err = %v, want a usage error", name, err)
+		}
+	}
+}
+
+// The recovery runbook's database commands are run under pressure, so each
+// one has to parse, the verifier needs its expected principal, and the
+// retained clone has to be named rather than falling back to emisar.
+func TestInfraReadmeDatabaseCommandsParse(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(repositoryRoot(t), "infra", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme := strings.ReplaceAll(string(raw), "\\\n", " ")
+	placeholder := regexp.MustCompile(`<[^>]*>`)
+	named := false
+	for _, match := range regexp.MustCompile("\\./run ops database([^\n`#]*)").FindAllStringSubmatch(readme, -1) {
+		options, err := parseDatabaseOptions(strings.Fields(placeholder.ReplaceAllString(match[1], "x")))
+		if err != nil {
+			t.Errorf("%q does not parse: %v", match[0], err)
+		}
+		if strings.Contains(match[1], "verify-iam.sql") && !strings.Contains(match[1], "expected_session_user=") {
+			t.Errorf("%q runs the verifier without expected_session_user", match[0])
+		}
+		named = named || options.instance != "emisar"
+	}
+	if !named {
+		t.Error("no README database command names the retained recovery clone")
 	}
 }
 

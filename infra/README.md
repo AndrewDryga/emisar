@@ -441,13 +441,40 @@ proxy connection name baked into cloud-init, every Cloud SQL IAM condition
 restore is served by teaching Terraform that the clone IS `emisar`, never by
 re-creating the instance. The old instance carries `prevent_destroy` and both
 deletion-protection flags, so nothing below can destroy it by accident. In
-order, from a workstation with `./run ops database` authority:
+order, from a workstation signed in to gcloud as the provisioned database
+operator, with authority to clone Cloud SQL instances and edit project IAM:
 
 1. Clone: `gcloud sql instances clone emisar emisar-restore-<yyyymmddhhmm>
    --point-in-time=<RFC 3339>` (the drill does exactly this at now−5 min).
-2. Verify in isolation: `./run ops drill pitr` proves the clone answers as
-   `emisar_owner`; run `infra/tests/database/verify-iam.sql` against it and
-   check the newest application row is the one you expect.
+2. Verify the clone in isolation. `./run ops drill pitr` cannot do this: it
+   only exercises its own scratch clone. The operator's Cloud SQL grants cover
+   only `emisar`, so grant them on the clone for the check, run the verifier
+   and a freshness query there, and read the same values from production as
+   they stood at the restore point:
+
+   ```bash
+   for role in roles/cloudsql.client roles/cloudsql.instanceUser; do
+     gcloud projects add-iam-policy-binding <project> \
+       --member=user:<operator> --role=$role \
+       --condition='expression=resource.name == "projects/<project>/instances/emisar-restore-<stamp>" && resource.type == "sqladmin.googleapis.com/Instance",title=emisar_restore_verification'
+   done
+   ./run ops database --instance emisar-restore-<stamp> --psql -- \
+     -v expected_session_user=<operator> \
+     --file=infra/tests/database/verify-iam.sql \
+     --command='SELECT (SELECT max(version) FROM schema_migrations) AS newest_migration, (SELECT max(inserted_at) FROM audit_events) AS newest_audit_event;'
+   ./run ops database --psql -- \
+     --command="SELECT (SELECT max(version) FROM schema_migrations WHERE inserted_at <= '<point>') AS newest_migration, (SELECT max(inserted_at) FROM audit_events WHERE inserted_at <= '<point>') AS newest_audit_event;"
+   ```
+
+   `<point>` is step 1's `--point-in-time` written in UTC (`…Z`), because
+   those columns have no time zone. The last command only reads production.
+   Promote only if the verifier exits 0 and both rows match. Stop and clone
+   again at a corrected point if the verifier fails, if the rows differ, or if
+   `<point>` is not before the first bad write or lies further back than the
+   committed RPO. Either way, remove both grants afterwards with
+   `gcloud projects remove-iam-policy-binding` and the same `--member`,
+   `--role` and `--condition`; only an exact match removes a conditional
+   binding. A first denial can be IAM propagation; retry after a minute.
 3. Point Terraform at the clone: set `name = "emisar-restore-<stamp>"` on the
    `emisar` instance resource, then in the HCP workspace run
    `terraform state rm google_sql_database_instance.emisar` and
@@ -463,9 +490,13 @@ order, from a workstation with `./run ops database` authority:
    NEVER`; keep it for the backup retention window before deleting it and
    removing it from the `emisar_database_only` condition history.
 
-Rehearse the clone-and-verify half with `./run ops drill pitr --apply` and keep
-its manifest as the RPO evidence; steps 3–5 are the RTO half and are exercised
-only in a real recovery.
+The served instance keeps the clone's name. From then on, pass
+`--instance emisar-restore-<stamp>` to `./run ops database`; without it the
+helper targets the retired instance.
+
+`./run ops drill pitr --apply` rehearses step 1 plus an `emisar_owner` login on
+its own scratch clone, which it then deletes; keep its manifest as the RPO
+evidence. Step 2 and steps 3–5 run only against a real retained clone.
 
 pgAudit records only `ROLE` and `DDL`. In Cloud Audit Logs these are Data Access
 entries with `protoPayload.methodName=cloudsql.instances.query`; parameters are

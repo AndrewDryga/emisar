@@ -20,6 +20,7 @@ const databaseUsage = `usage: ./run ops database [options] [-- psql-args...]
 
 Options:
   --project PROJECT   GCP project
+  --instance NAME     Cloud SQL instance; defaults to emisar
   --host NAME         Portal VM used for private routing
   --port PORT         local PostgreSQL port; defaults from 15432
   --psql              open psql instead of Postico 2
@@ -30,6 +31,7 @@ var emailAddress = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
 type databaseOptions struct {
 	project   string
+	instance  string
 	host      string
 	port      int
 	user      string
@@ -40,11 +42,12 @@ type databaseOptions struct {
 
 func parseDatabaseOptions(args []string) (databaseOptions, error) {
 	options := databaseOptions{
-		project: os.Getenv("EMISAR_GCP_PROJECT"),
+		project:  os.Getenv("EMISAR_GCP_PROJECT"),
+		instance: "emisar",
 	}
 	for len(args) > 0 {
 		switch args[0] {
-		case "--project", "--host", "--port":
+		case "--project", "--instance", "--host", "--port":
 			if len(args) < 2 {
 				return options, usage("%s requires a value", args[0])
 			}
@@ -52,6 +55,8 @@ func parseDatabaseOptions(args []string) (databaseOptions, error) {
 			switch args[0] {
 			case "--project":
 				options.project = value
+			case "--instance":
+				options.instance = value
 			case "--host":
 				options.host = value
 			case "--port":
@@ -74,6 +79,9 @@ func parseDatabaseOptions(args []string) (databaseOptions, error) {
 		default:
 			return options, usage("unknown option: %s", args[0])
 		}
+	}
+	if !hostName.MatchString(options.instance) {
+		return options, usage("invalid Cloud SQL instance name: %s", options.instance)
 	}
 	if options.host != "" && !hostName.MatchString(options.host) {
 		return options, usage("invalid Portal host name: %s", options.host)
@@ -272,7 +280,7 @@ func (a *App) database(ctx context.Context, args []string) error {
 		}
 	}
 	users, err := a.output(ctx, a.Root, nil, "gcloud", "sql", "users", "list",
-		"--project="+options.project, "--instance=emisar", "--filter=type=CLOUD_IAM_USER",
+		"--project="+options.project, "--instance="+options.instance, "--filter=type=CLOUD_IAM_USER",
 		"--format=value(name)")
 	if err != nil {
 		return err
@@ -284,7 +292,7 @@ func (a *App) database(ctx context.Context, args []string) error {
 		}
 	}
 	if !provisioned {
-		return fmt.Errorf("%s is not provisioned as the Emisar Cloud SQL IAM operator", options.user)
+		return fmt.Errorf("%s is not provisioned as a Cloud SQL IAM user on %s", options.user, options.instance)
 	}
 	instances, err := a.databaseInventory(ctx, options.project)
 	if err != nil {
@@ -294,14 +302,14 @@ func (a *App) database(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	connection, err := a.output(ctx, a.Root, nil, "gcloud", "sql", "instances", "describe", "emisar",
+	connection, err := a.output(ctx, a.Root, nil, "gcloud", "sql", "instances", "describe", options.instance,
 		"--project="+options.project, "--format=value(connectionName)")
 	if err != nil {
 		return err
 	}
 	connectionName := strings.TrimSpace(string(connection))
 	if connectionName == "" {
-		return fmt.Errorf("no Cloud SQL instance emisar in project %s", options.project)
+		return fmt.Errorf("no Cloud SQL instance %s in project %s", options.instance, options.project)
 	}
 	var accessToken, loginToken string
 	if options.psql {
@@ -310,7 +318,7 @@ func (a *App) database(ctx context.Context, args []string) error {
 			return fmt.Errorf("generating Cloud SQL connector token: %w", err)
 		}
 		loginOutput, err := a.output(ctx, a.Root, nil, "gcloud", "sql", "generate-login-token",
-			"--instance=emisar", "--project="+options.project)
+			"--instance="+options.instance, "--project="+options.project)
 		if err != nil {
 			return fmt.Errorf("generating Cloud SQL login token: %w", err)
 		}
@@ -374,7 +382,7 @@ Password: none (automatic IAM authentication)
 		return waitForTunnel(ctx, sshProcess, proxyProcess)
 	}
 	if options.psql {
-		fmt.Fprintf(a.Err, "Connecting to emisar as %s with psql...\n", options.user)
+		fmt.Fprintf(a.Err, "Connecting to %s as %s with psql...\n", options.instance, options.user)
 		psqlArgs := append([]string(nil), options.psqlArgs...)
 		psqlArgs = append(psqlArgs,
 			"--host=127.0.0.1", fmt.Sprintf("--port=%d", options.port),
