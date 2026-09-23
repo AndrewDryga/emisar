@@ -1,0 +1,62 @@
+schema_version: 1
+
+id: emqx
+name: EMQX MQTT broker
+version: 0.1.0
+description: >
+  Read-only diagnostics for an EMQX 5 broker over its REST API: node status
+  and versions, listeners, connection, subscription, and retained-message
+  counts, authentication and authorization outcomes, and rule engine metrics.
+  The API key and secret are streamed over curl stdin.
+vendor: emisar
+homepage: https://emisar.dev/packs/emqx
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# `emisar pack suggest`: the dashboard and REST API port, which is EMQX's own.
+detect:
+  ports:
+    - 18083
+
+setup:
+  summary: >
+    Every action calls the EMQX REST API at `$EMQX_URL` via curl on the runner
+    host, with HTTP Basic auth from `$EMQX_API_KEY` and `$EMQX_API_SECRET` sent
+    over curl stdin, so neither appears in the process arguments or the audit
+    log.
+  env:
+    - name: EMQX_URL
+      default: http://127.0.0.1:18083
+      description: >
+        Base URL of the dashboard listener, which serves the REST API — scheme,
+        host, and port. Each action appends its /api/v5 path.
+      example: http://emqx:18083
+    - name: EMQX_API_KEY
+      required: true
+      description: >
+        An API key from the Dashboard's System → API Key page, or the first
+        field of an `api_key.bootstrap_file` line (`<key>:<secret>:viewer`).
+        Use the `viewer` role where the edition has roles (Enterprise 5.3 and
+        later, and 5.9 and later). Open-source 5.8 keys are always
+        administrators; this pack still sends only GETs.
+    - name: EMQX_API_SECRET
+      required: true
+      description: >
+        The key's secret, shown once when the key is created, or the second
+        field of the bootstrap file line.
+  notes:
+    - "Any of `EMQX_URL` / `EMQX_API_KEY` / `EMQX_API_SECRET` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Every action is a read-only GET. Client kick, subscribe, publish, ban, and listener or rule changes are deliberately excluded."
+    - "Rule SQL and client identities are not read: rule_metrics returns rule ids and counters only."
+  verify: emqx.nodes
+
+actions:
+  - actions/nodes.yaml
+  - actions/listeners.yaml
+  - actions/stats.yaml
+  - actions/auth_metrics.yaml
+  - actions/rule_metrics.yaml

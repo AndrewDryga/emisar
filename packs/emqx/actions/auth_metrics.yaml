@@ -1,0 +1,30 @@
+schema_version: 1
+id: emqx.auth_metrics
+title: Show authentication and authorization outcomes
+kind: script
+risk: low
+description: >
+  Show success, failure, and no-match counts per authenticator, allow and
+  deny counts per authorization source, and the banned-client count, summed
+  across the cluster, with GET /api/v5/prometheus/auth.
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/prometheus/auth endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - mqtt auth failures
+  - clients rejected
+  - acl denied
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - auth-metrics
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Authentication and authorization outcomes
+    args: {}

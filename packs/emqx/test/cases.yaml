@@ -1,0 +1,55 @@
+services: [emqx]
+versions:
+  - version: 5.8.9
+    digest: "@sha256:35b46f7aa7a0d51f3959e4344221ac5ec7f948b03e43099286b6c40a07bb393b"
+    default: true
+secret_env: [EMQX_API_KEY, EMQX_API_SECRET]
+env:
+  EMQX_API_KEY: packtest-canary-emqx-key-3b7d
+  EMQX_API_SECRET: packtest-canary-emqx-secret-9e1f
+  EMQX_URL: "http://emqx:18083"
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: emqx.nodes
+    expect:
+      json:
+        /0/node: emqx@127.0.0.1
+        /0/node_status: running
+  - name: emqx.nodes-invalid-secret
+    action: emqx.nodes
+    env:
+      EMQX_API_SECRET: packtest-canary-emqx-invalid-2c8a
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["curl: (22)"]
+      stdout_contains: [BAD_API_KEY_OR_SECRET]
+  - name: emqx.nodes-missing-secret
+    action: emqx.nodes
+    unset_env: [EMQX_API_SECRET]
+    expect:
+      status: failure
+      stderr_contains: [EMQX_API_SECRET]
+  - action: emqx.listeners
+    expect:
+      stdout_contains: ['"id":"tcp:default"', current_connections]
+  - action: emqx.stats
+    expect:
+      json:
+        /connections.count: 0
+      stdout_contains: ['"retained.count"', '"subscriptions.count"']
+  - action: emqx.auth_metrics
+    expect:
+      # The runner's redaction reads "password_based:<backend>" as a password
+      # assignment and masks the backend, so only the prefix is asserted.
+      stdout_contains: ['"id":"password_based:', emqx_authn_failed, emqx_authz_deny, emqx_banned_count]
+  - action: emqx.rule_metrics
+    arrange:
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$EMQX_API_KEY:$EMQX_API_SECRET" -H "Content-Type: application/json" -X POST "$EMQX_URL/api/v5/rules" -d "{\"id\":\"packtest_rule\",\"sql\":\"SELECT * FROM \\\"packtest/#\\\"\",\"actions\":[]}" >/dev/null']
+      - argv: [/bin/sh, -c, 'curl -fsS -u "$EMQX_API_KEY:$EMQX_API_SECRET" -H "Content-Type: application/json" -X POST "$EMQX_URL/api/v5/publish" -d "{\"topic\":\"packtest/a\",\"payload\":\"hello\",\"qos\":0}" >/dev/null']
+    expect:
+      json:
+        /rules/0/id: packtest_rule
+        /rules/0/emqx_rule_matched: 1
