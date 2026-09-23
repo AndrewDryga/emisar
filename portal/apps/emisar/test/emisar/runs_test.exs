@@ -4184,12 +4184,23 @@ defmodule Emisar.RunsTest do
 
       {:ok, run} =
         Runs.create_run(
-          base_attrs(account.id, runner.id, %{expected_pack_hash: "sha256:AUTHORIZED"})
+          base_attrs(account.id, runner.id, %{
+            pack_ref: Fixtures.Catalog.default_pack_ref(),
+            expected_pack_hash: Fixtures.Catalog.default_pack_hash()
+          })
         )
 
       assert Runs.dispatch_queued_for_runner(runner.id) == :ok
       assert Runs.peek_run_by_id(run.id).status == :pending
       refute_receive {:cloud_to_runner, _generation, _payload}, 100
+
+      # The runner's catalog arrives and advertises the action again.
+      Fixtures.Catalog.create_action(runner: runner)
+      assert Runs.dispatch_queued_for_runner(runner.id) == :ok
+
+      request_id = run.request_id
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}, 500
+      assert Runs.peek_run_by_id(run.id).status == :sent
     end
   end
 
@@ -4266,6 +4277,70 @@ defmodule Emisar.RunsTest do
       assert Runs.peek_run_by_id(run.id).status == :cancelling
       assert Runs.peek_run_by_id(pending.id).status == :pending
       refute_receive {:cloud_to_runner, _generation, _message}, 100
+    end
+
+    test "settles only this runner's queued runs whose action it no longer advertises", %{
+      account: account,
+      runner: runner
+    } do
+      Fixtures.Catalog.create_action(runner: runner)
+      dropped = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.load")
+
+      snapshot = %{
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash()
+      }
+
+      withdrawn = Map.put(snapshot, :action_id, dropped.action_id)
+
+      {:ok, inflight} = Runs.create_run(base_attrs(account.id, runner.id, snapshot))
+      assert Runs.dispatch_to_runner(inflight) == :ok
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+
+      {:ok, stale} = Runs.create_run(base_attrs(account.id, runner.id, withdrawn))
+      {:ok, successor} = Runs.create_run(base_attrs(account.id, runner.id, snapshot))
+
+      peer = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, peer_run} = Runs.create_run(base_attrs(account.id, peer.id, withdrawn))
+
+      other_account = Fixtures.Accounts.create_account()
+      foreign = Fixtures.Runners.create_runner(account_id: other_account.id)
+      {:ok, foreign_run} = Runs.create_run(base_attrs(other_account.id, foreign.id, withdrawn))
+
+      # The runner's latest advertisement no longer carries linux.load.
+      Repo.delete!(dropped)
+
+      assert Runs.resume_runs_for_runner(runner.id) == :ok
+      inflight_request_id = inflight.request_id
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^inflight_request_id}}, 500
+
+      settled = Runs.peek_run_by_id(stale.id)
+      assert settled.status == :unknown_action
+      assert settled.error_message =~ "no longer advertises this action"
+
+      # The in-flight run still holds the slot, and other runners' queues are
+      # judged by their own advertisements.
+      assert Runs.peek_run_by_id(successor.id).status == :pending
+      assert Runs.peek_run_by_id(peer_run.id).status == :pending
+      assert Runs.peek_run_by_id(foreign_run.id).status == :pending
+
+      assert Runs.resume_runs_for_runner(runner.id) == :ok
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^inflight_request_id}}, 500
+      assert Runs.peek_run_by_id(stale.id) == settled
+
+      assert [%Audit.Event{payload: %{"run_id" => settled_run_id}}] =
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_event_type("action_run.unknown_action")
+               |> Repo.all()
+
+      assert settled_run_id == stale.id
+
+      # Once the slot opens, the queue moves past the settled run.
+      assert Runs.dispatch_queued_for_runner(runner.id) == :ok
+      successor_request_id = successor.request_id
+
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^successor_request_id}},
+                     500
     end
   end
 

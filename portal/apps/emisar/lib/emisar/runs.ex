@@ -2661,13 +2661,18 @@ defmodule Emisar.Runs do
 
   @doc """
   Internal — reconciles a runner after its authoritative state advertisement.
-  Exact in-flight envelopes are replayed first: an existing handler ignores the
-  duplicate, while a restarted runner converts its durable pending reservation
-  to outcome-unknown without executing again. Outstanding cancellation follows
-  the replay. A never-sent pending run is dispatched only when no in-flight work
-  needs resolution; each terminal result opens the next queue slot.
+  A pending run whose action that advertisement no longer carries is settled
+  first as `:unknown_action`: it can never be delivered, and as the oldest
+  queued run it would hold every later one behind it. Exact in-flight envelopes
+  are replayed next: an existing handler ignores the duplicate, while a
+  restarted runner converts its durable pending reservation to outcome-unknown
+  without executing again. Outstanding cancellation follows the replay. A
+  never-sent pending run is dispatched only when no in-flight work needs
+  resolution; each terminal result opens the next queue slot.
   """
   def resume_runs_for_runner(runner_id) when is_binary(runner_id) do
+    settle_withdrawn_pending_runs(runner_id)
+
     inflight_runs =
       ActionRun.Query.all()
       |> ActionRun.Query.by_runner_id(runner_id)
@@ -2703,6 +2708,37 @@ defmodule Emisar.Runs do
     end)
 
     :ok
+  end
+
+  # Only the post-runner_state reconcile calls this, so the catalog now holds
+  # exactly the host's last successful advertisement. Delivery alone cannot
+  # tell a withdrawn action from a reconnect whose catalog is still in flight,
+  # so it leaves the run pending. Here absence is authoritative. The transition
+  # is fenced to `:pending`, leaving a run that has moved on alone.
+  defp settle_withdrawn_pending_runs(runner_id) do
+    ActionRun.Query.all()
+    |> ActionRun.Query.by_runner_id(runner_id)
+    |> ActionRun.Query.status_in([:pending])
+    |> Repo.all()
+    |> Enum.each(&settle_withdrawn_pending_run/1)
+  end
+
+  # A run with no pack snapshot is delivered without a catalog lookup, and the
+  # runner answers an unknown action itself, so it never holds the queue.
+  defp settle_withdrawn_pending_run(%ActionRun{expected_pack_hash: nil}), do: :ok
+
+  defp settle_withdrawn_pending_run(%ActionRun{} = run) do
+    case Catalog.fetch_action_for_account(run.action_id, run.runner_id, run.account_id) do
+      {:ok, _action} ->
+        :ok
+
+      {:error, :not_found} ->
+        transition_from(run, :pending, :unknown_action, %{
+          finished_at: DateTime.utc_now(),
+          error_message:
+            "the runner no longer advertises this action, so the queued run never ran — restore the pack that provides it, reload the runner, and dispatch again"
+        })
+    end
   end
 
   defp recover_inflight_run(%ActionRun{} = run) do
@@ -2843,8 +2879,9 @@ defmodule Emisar.Runs do
 
       {:error, :action_not_found} = error ->
         # A reconnect owns the socket before its runner_state catalog arrives.
-        # Leave pending work retryable; the socket schedules another dispatch
-        # after every successful catalog sync.
+        # Leave pending work retryable: `resume_runs_for_runner/1` runs after
+        # every runner_state and settles the run once that advertisement
+        # confirms the action is gone.
         error
 
       {:error, :action_unavailable} = error ->

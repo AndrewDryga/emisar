@@ -494,32 +494,10 @@ defmodule EmisarWeb.RunnerSocketTest do
       refute_receive :resume_runs
 
       # On connect the runner advertises its catalog; delivering the queued run
-      # re-resolves the trusted contract, so the action must be present. Mirror
-      # the default fixture action so its descriptor matches the trusted pin.
-      raw =
-        runner_frame(%{
-          "type" => "runner_state",
-          "packs" => %{
-            "fixture-pack" => %{
-              "version" => "1.0",
-              "hash" => Fixtures.Catalog.default_pack_hash()
-            }
-          },
-          "actions" => [
-            %{
-              "id" => "linux.uptime",
-              "pack_id" => "fixture-pack",
-              "title" => "Uptime",
-              "kind" => "exec",
-              "risk" => "low",
-              "description" => "Reports uptime + load.",
-              "side_effects" => ["reads /proc"],
-              "args" => []
-            }
-          ]
-        })
+      # re-resolves the trusted contract, so the action must be present.
+      assert {:ok, refreshed_state} =
+               RunnerSocket.handle_in({fixture_runner_state(), text()}, state)
 
-      assert {:ok, refreshed_state} = RunnerSocket.handle_in({raw, text()}, state)
       assert_receive :resume_runs, 500
 
       assert {:ok, ^refreshed_state} =
@@ -531,6 +509,60 @@ defmodule EmisarWeb.RunnerSocketTest do
 
       assert request_id == run.request_id
       assert Repo.get!(ActionRun, run.id).status == :sent
+    end
+
+    test "a reload that drops a queued run's action settles it and delivers the next queued run",
+         %{account: account, runner: runner, token: token, subject: subject} do
+      Fixtures.Catalog.create_action(runner: runner, action_id: "linux.load")
+      assert {:ok, state} = RunnerSocket.init(%{token: token, runner: runner})
+
+      {:ok, :running, stale} =
+        Runs.dispatch_run(%{dispatch_attrs(account, runner) | action_id: "linux.load"}, subject)
+
+      {:ok, :running, successor} = Runs.dispatch_run(dispatch_attrs(account, runner), subject)
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 1_000
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 1_000
+
+      # The runner is at its concurrency cap, so both dispatches return to the queue.
+      for run <- [stale, successor] do
+        refusal =
+          runner_frame(%{
+            "type" => "error",
+            "code" => "concurrency_cap_reached",
+            "request_id" => run.request_id
+          })
+
+        assert {:ok, _state} = RunnerSocket.handle_in({refusal, text()}, state)
+      end
+
+      assert Enum.map([stale, successor], &Repo.get!(ActionRun, &1.id).status) ==
+               [:pending, :pending]
+
+      # A reload re-advertises the pack without linux.load, so the catalog sync
+      # prunes it before the socket resumes the runner's queue.
+      assert {:ok, state} = RunnerSocket.handle_in({fixture_runner_state(), text()}, state)
+      assert_receive :resume_runs, 500
+      assert {:ok, ^state} = RunnerSocket.handle_info(:resume_runs, state)
+
+      successor_request_id = successor.request_id
+
+      assert_receive {:cloud_to_runner, _generation,
+                      %{"type" => "run_action", "request_id" => ^successor_request_id}},
+                     1_000
+
+      assert Repo.get!(ActionRun, successor.id).status == :sent
+
+      settled = Repo.get!(ActionRun, stale.id)
+      assert settled.status == :unknown_action
+      assert settled.error_message =~ "no longer advertises this action"
+
+      assert [%Emisar.Audit.Event{payload: %{"run_id" => settled_run_id}}] =
+               Emisar.Audit.Event.Query.all()
+               |> Emisar.Audit.Event.Query.by_account_id(account.id)
+               |> Emisar.Audit.Event.Query.by_event_type("action_run.unknown_action")
+               |> Repo.all()
+
+      assert settled_run_id == stale.id
     end
 
     test "a duplicate live runner identity is closed with an actionable reason",
@@ -1910,6 +1942,29 @@ defmodule EmisarWeb.RunnerSocketTest do
 
   defp runner_frame(message),
     do: message |> Map.put("protocol_version", 1) |> Jason.encode!()
+
+  # The runner_state of a host running only the default fixture pack: its one
+  # action mirrors the fixture's descriptor, so it matches the trusted pin.
+  defp fixture_runner_state do
+    runner_frame(%{
+      "type" => "runner_state",
+      "packs" => %{
+        "fixture-pack" => %{"version" => "1.0", "hash" => Fixtures.Catalog.default_pack_hash()}
+      },
+      "actions" => [
+        %{
+          "id" => "linux.uptime",
+          "pack_id" => "fixture-pack",
+          "title" => "Uptime",
+          "kind" => "exec",
+          "risk" => "low",
+          "description" => "Reports uptime + load.",
+          "side_effects" => ["reads /proc"],
+          "args" => []
+        }
+      ]
+    })
+  end
 
   defp count_runner_error_events,
     do: Emisar.Audit.Event |> Repo.all() |> Enum.count(&(&1.event_type == "runner.error"))
