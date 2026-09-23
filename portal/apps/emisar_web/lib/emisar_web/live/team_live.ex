@@ -2049,14 +2049,8 @@ defmodule EmisarWeb.TeamLive do
   defp approval_title(%{request: %{matched_user_id: nil} = request}),
     do: "Approve access for #{request_label(request)}?"
 
-  defp approval_title(%{request: %{recovery_identity_id: id} = request}) when is_binary(id),
-    do: "Restore sign-in for #{request_label(request)}?"
-
   defp approval_title(%{request: %{matched_user_id: _id}}),
     do: "Link this identity to the existing member?"
-
-  defp approval_action_label(%{request: %{recovery_identity_id: id}}) when is_binary(id),
-    do: "Restore sign-in"
 
   defp approval_action_label(%{request: %{matched_user_id: matched_user_id}})
        when not is_nil(matched_user_id),
@@ -2064,18 +2058,12 @@ defmodule EmisarWeb.TeamLive do
 
   defp approval_action_label(_request_facts), do: "Approve"
 
-  defp approval_success_message(%{recovery_identity_id: id} = request) when is_binary(id),
-    do: "Sign-in restored for #{request_label(request)}."
-
   defp approval_success_message(%{matched_user_id: matched_user_id} = request)
        when not is_nil(matched_user_id),
        do: "#{request_label(request)} linked — they can sign in now."
 
   defp approval_success_message(request),
     do: "#{request_label(request)} approved — they can sign in now."
-
-  defp approval_confirm_label(%{request: %{recovery_identity_id: id}}) when is_binary(id),
-    do: "Restore sign-in"
 
   defp approval_confirm_label(%{request: %{matched_user_id: matched_user_id}})
        when not is_nil(matched_user_id),
@@ -2443,18 +2431,14 @@ defmodule EmisarWeb.TeamLive do
                 </:fields>
                 <:body>
                   <p class="text-sm leading-relaxed text-zinc-300">
-                    <%= cond do %>
-                      <% request.recovery_identity_id -> %>
-                        This restores the existing sign-in identity for this workspace member.
-                        Their current role, runner access, and pack access stay unchanged.
-                      <% request.matched_user_id -> %>
-                        This replaces the member's sign-in identifier while keeping their directory
-                        lifecycle linked through the provider external ID. Their current role, runner
-                        access, and pack access stay unchanged.
-                      <% true -> %>
-                        This creates a member with the {Emisar.Auth.role_label(
-                          request_facts.default_role
-                        )} role and the runner and pack access selected above.
+                    <%= if request.matched_user_id do %>
+                      This replaces the member's sign-in identifier while keeping their directory
+                      lifecycle linked through the provider external ID. Their current role, runner
+                      access, and pack access stay unchanged.
+                    <% else %>
+                      This creates a member with the {Emisar.Auth.role_label(
+                        request_facts.default_role
+                      )} role and the runner and pack access selected above.
                     <% end %>
                   </p>
                 </:body>

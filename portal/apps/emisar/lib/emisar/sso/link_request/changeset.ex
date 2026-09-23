@@ -2,7 +2,7 @@ defmodule Emisar.SSO.LinkRequest.Changeset do
   use Emisar, :changeset
   alias Emisar.SSO.LinkRequest
 
-  @fields ~w[provider_identifier source namespace_fingerprint email full_name claims matched_user_id matched_membership_id recovery_identity_id]a
+  @fields ~w[provider_identifier source namespace_fingerprint email full_name claims matched_user_id matched_membership_id]a
 
   @doc "Capture (or refresh) a pending link request for `(provider, sub)` — upserted on the unique index."
   def create(account_id, provider_id, attrs) do
@@ -14,9 +14,6 @@ defmodule Emisar.SSO.LinkRequest.Changeset do
     |> foreign_key_constraint(:matched_user_id)
     |> foreign_key_constraint(:matched_membership_id,
       name: :sso_link_requests_membership_account_fkey
-    )
-    |> foreign_key_constraint(:recovery_identity_id,
-      name: :sso_link_requests_recovery_identity_account_fkey
     )
     |> unique_constraint([:provider_id, :provider_identifier],
       name: :sso_link_requests_provider_identifier_index

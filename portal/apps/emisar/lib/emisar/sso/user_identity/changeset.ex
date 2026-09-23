@@ -34,7 +34,6 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   def bind_membership(changeset_or_identity, %Emisar.Accounts.Membership{} = member) do
     changeset_or_identity
     |> change(membership_id: member.id, user_id: member.user_id)
-    |> validate_required([:membership_id])
     |> put_live_constraints()
   end
 

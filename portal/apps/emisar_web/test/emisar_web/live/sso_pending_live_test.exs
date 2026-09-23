@@ -77,27 +77,6 @@ defmodule EmisarWeb.SSOPendingLiveTest do
     refute html =~ "signed you in as"
   end
 
-  test "unresolved binding recovery explains the admin step without private email", %{conn: conn} do
-    %{conn: conn, account: account, provider: provider, request: request} = pending(conn)
-    member = Fixtures.Memberships.create_membership(account_id: account.id)
-
-    identity =
-      Fixtures.SSO.create_user_identity(
-        account_id: account.id,
-        provider_id: provider.id,
-        user_id: member.user_id
-      )
-
-    request
-    |> Ecto.Changeset.change(email: nil, recovery_identity_id: identity.id)
-    |> Repo.update!()
-
-    {:ok, _lv, html} = live(conn, ~p"/sign_in/sso/pending")
-    assert html =~ "Your identity provider verified your sign-in."
-    assert html =~ "link to your workspace membership"
-    refute html =~ "signed you in as"
-  end
-
   test "re-runs SSO automatically when an admin approves", %{conn: conn} do
     %{conn: conn, request: request, provider: provider} = pending(conn)
     {:ok, lv, _html} = live(conn, ~p"/sign_in/sso/pending")

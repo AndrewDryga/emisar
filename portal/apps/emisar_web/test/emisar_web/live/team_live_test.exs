@@ -555,56 +555,6 @@ defmodule EmisarWeb.TeamLiveTest do
                original_access
     end
 
-    test "recovery names the local member and restores only the existing sign-in", %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
-      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      user = Fixtures.Users.create_user(email: "private-personal@example.test")
-
-      member =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          display_name: "Local Directory Member",
-          contact_email: nil
-        )
-
-      identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id
-        )
-
-      Fixtures.SSO.clear_identity_membership(identity)
-
-      request =
-        Fixtures.SSO.create_link_request(
-          provider: provider,
-          provider_identifier: identity.provider_identifier,
-          email: nil,
-          full_name: member.display_name,
-          claims: %{},
-          matched_user_id: user.id,
-          matched_membership_id: member.id,
-          recovery_identity_id: identity.id
-        )
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-      row = "#pending-access-request-#{request.id}"
-      dialog = "#approve-request-dialog-#{request.id}"
-      assert has_element?(lv, row, "Restore sign-in")
-      assert has_element?(lv, dialog, "Restore sign-in for Local Directory Member?")
-      assert has_element?(lv, dialog, "Current role unchanged")
-      assert has_element?(lv, dialog, "Not provided")
-      refute has_element?(lv, dialog, user.email)
-
-      html = render_click(lv, "approve_request", %{"id" => request.id})
-      assert html =~ "Sign-in restored for Local Directory Member."
-      assert Emisar.Repo.reload!(identity).membership_id == member.id
-      assert Emisar.Repo.reload!(member).role == member.role
-      refute Emisar.Repo.reload(request)
-    end
-
     test "approval tells the operator when the matched member must accept an invitation first", %{
       conn: conn
     } do

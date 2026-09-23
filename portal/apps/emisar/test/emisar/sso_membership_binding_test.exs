@@ -49,187 +49,6 @@ defmodule Emisar.SSOMembershipBindingTest do
     )
   end
 
-  defp ambiguous_oidc_member do
-    {owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
-    provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-    claims = %{"sub" => "oidc-without-email"}
-
-    assert {:ok, %{user: user, identity: identity}} =
-             SSO.complete_auth(provider, %{"claims" => claims}, %{})
-
-    original = Accounts.peek_sync_membership_by_id(account.id, identity.membership_id)
-    assert {:ok, _removed} = Accounts.delete_membership(original, subject)
-    replacement = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-    # The forward migration deliberately leaves this multi-history case unbound.
-    identity = Fixtures.SSO.clear_identity_membership(identity)
-
-    owner_identity =
-      Fixtures.SSO.create_user_identity(
-        account_id: account.id,
-        provider_id: provider.id,
-        user_id: owner.id
-      )
-
-    subject =
-      Fixtures.Subjects.subject_for(owner, account,
-        auth_method: :sso,
-        user_identity_id: owner_identity.id
-      )
-
-    Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
-
-    %{
-      subject: subject,
-      provider: provider,
-      identity: identity,
-      member: replacement,
-      claims: claims
-    }
-  end
-
-  test "an ambiguous no-email OIDC binding requires exact admin recovery before login" do
-    context = ambiguous_oidc_member()
-
-    assert {:pending, request} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    assert request.matched_membership_id == context.member.id
-    assert request.recovery_identity_id == context.identity.id
-    assert is_nil(Repo.reload!(context.identity).membership_id)
-
-    assert context.member.user_id
-           |> Auth.UserToken.Query.by_user_id()
-           |> Repo.aggregate(:count) == 0
-
-    assert {:pending, repeated} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    assert repeated.id == request.id
-
-    assert {:ok, %{identity: rebound}} =
-             SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject)
-
-    assert rebound.id == context.identity.id
-    assert rebound.membership_id == context.member.id
-    assert rebound.created_by == :admin
-    assert Repo.reload!(context.member).role == context.member.role
-
-    assert {:ok, %{identity: returned}} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    assert returned.id == rebound.id
-  end
-
-  test "an ambiguous identity recovery cannot adopt another removed and rejoined seat" do
-    context = ambiguous_oidc_member()
-
-    assert {:pending, request} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    assert {:ok, _removed} = Accounts.delete_membership(context.member, context.subject)
-
-    Fixtures.Memberships.create_membership(
-      account_id: context.provider.account_id,
-      user_id: context.member.user_id
-    )
-
-    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject) ==
-             {:error, :matched_user_unavailable}
-
-    assert is_nil(Repo.reload!(context.identity).membership_id)
-  end
-
-  test "recovery uses the established identity, never another person's asserted email" do
-    context = ambiguous_oidc_member()
-    other = Fixtures.Users.create_user()
-
-    Fixtures.Memberships.create_membership(
-      account_id: context.provider.account_id,
-      user_id: other.id
-    )
-
-    claims = Map.merge(context.claims, %{"email" => other.email, "email_verified" => true})
-
-    assert {:pending, request} = SSO.complete_auth(context.provider, %{"claims" => claims}, %{})
-    assert request.matched_user_id == context.member.user_id
-    assert request.matched_membership_id == context.member.id
-    assert request.email == context.member.contact_email
-    refute request.email == other.email
-  end
-
-  test "recovery keeps permission and cross-account approval denials" do
-    context = ambiguous_oidc_member()
-
-    assert {:pending, request} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    viewer =
-      Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), context.subject.account,
-        role: :viewer
-      )
-
-    {_foreign_user, _foreign_account, foreign_subject} =
-      Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
-
-    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), viewer) ==
-             {:error, :unauthorized}
-
-    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), foreign_subject) ==
-             {:error, :not_found}
-
-    assert is_nil(Repo.reload!(context.identity).membership_id)
-  end
-
-  test "recovery refuses a target suspended after the pending request" do
-    context = ambiguous_oidc_member()
-
-    assert {:pending, request} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    assert {:ok, _suspended} = Accounts.suspend_membership(context.member, context.subject)
-
-    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject) ==
-             {:error, :matched_user_unavailable}
-
-    assert Repo.reload!(context.member).disabled_at
-    assert is_nil(Repo.reload!(context.identity).membership_id)
-  end
-
-  test "recovery refuses an identity already rebound since capture" do
-    context = ambiguous_oidc_member()
-
-    assert {:pending, request} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    Fixtures.SSO.bind_identity_membership(context.identity, context.member)
-
-    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject) ==
-             {:error, :matched_user_unavailable}
-  end
-
-  test "ordinary recapture clears the recovery proof instead of inheriting it" do
-    context = ambiguous_oidc_member()
-
-    assert {:pending, recovery} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    assert {:ok, ordinary} =
-             SSO.Provisioning.capture_link_request(
-               context.provider,
-               context.identity.provider_identifier,
-               nil,
-               nil,
-               context.claims,
-               :oidc
-             )
-
-    assert ordinary.id == recovery.id
-    assert is_nil(ordinary.recovery_identity_id)
-    assert is_nil(Repo.reload!(ordinary).recovery_identity_id)
-    assert is_nil(ordinary.matched_membership_id)
-    assert is_nil(Repo.reload!(context.identity).membership_id)
-  end
-
   test "ordinary OIDC proof cannot adopt a replacement membership", %{
     member: member,
     subject: subject,
@@ -249,6 +68,25 @@ defmodule Emisar.SSOMembershipBindingTest do
              SSO.complete_auth(provider, %{"claims" => claims}, %{})
 
     assert Repo.reload!(replacement).display_name == "Replacement Member"
+  end
+
+  test "an identity written without a Member during a rolling deploy binds to the live seat", %{
+    member: member,
+    identity: identity,
+    user: user,
+    provider: provider
+  } do
+    identity |> Ecto.Changeset.change(membership_id: nil) |> Repo.update!()
+
+    claims = %{
+      "sub" => identity.provider_identifier,
+      "email" => user.email,
+      "email_verified" => true
+    }
+
+    assert {:ok, %{identity: signed_in}} = SSO.complete_auth(provider, %{"claims" => claims}, %{})
+    assert signed_in.membership_id == member.id
+    assert Repo.reload!(identity).membership_id == member.id
   end
 
   test "session mint rechecks the exact membership after callback completion", %{

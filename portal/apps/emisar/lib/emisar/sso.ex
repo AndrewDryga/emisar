@@ -2529,31 +2529,6 @@ defmodule Emisar.SSO do
   # So the first login against a synthesized identifier has to agree on WHO, not
   # only on the identifier. When it does not, nothing is authenticated: it becomes
   # a link request for an admin, which is what an unrecognized person gets anyway.
-  defp existing_auth_writes(
-         provider,
-         %UserIdentity{membership_id: nil, scim_external_id: nil} = identity,
-         user,
-         claims
-       ) do
-    member = Accounts.peek_sync_membership(provider.account_id, user.id)
-
-    if member && Accounts.Membership.authorizable?(member) do
-      Multi.new()
-      |> put_identity_recovery_request(
-        :link_request,
-        provider,
-        identity,
-        member,
-        claims
-      )
-      |> Multi.run(:auth_result, fn _repo, %{link_request: request} ->
-        {:ok, {:pending, request}}
-      end)
-    else
-      Multi.error(Multi.new(), :membership, :membership_unavailable)
-    end
-  end
-
   defp existing_auth_writes(%IdentityProvider{} = provider, identity, user, claims) do
     if synthesized_oidc_identifier?(identity) do
       if claims_name_the_same_person?(provider, identity, user, claims) do
@@ -2566,25 +2541,39 @@ defmodule Emisar.SSO do
     end
   end
 
+  # During a rolling deploy the previous release still inserts identities with
+  # no Member. Bind such a row to the user's live seat, the backfill's rule; a
+  # bound identity never moves to another seat.
   defp returning_auth_writes(provider, identity, locked_user) do
     Multi.new()
     |> Multi.run(:membership, fn repo, _changes ->
       case Accounts.fetch_and_lock_active_membership(
              repo,
              provider.account_id,
-             identity.membership_id
+             identity.membership_id || live_seat_id(provider, locked_user)
            ) do
         {:ok, member} when member.user_id == locked_user.id -> {:ok, member}
         _ -> {:error, :membership_unavailable}
       end
     end)
-    |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
+    |> Multi.update(:identity, fn %{membership: member} ->
+      identity
+      |> UserIdentity.Changeset.touch_last_seen()
+      |> UserIdentity.Changeset.bind_membership(member)
+    end)
     |> Multi.run(:user, fn _repo, _changes ->
       {:ok, locked_user}
     end)
     |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
       {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
     end)
+  end
+
+  defp live_seat_id(provider, user) do
+    case Accounts.peek_sync_membership(provider.account_id, user.id) do
+      %Accounts.Membership{id: id} -> id
+      nil -> nil
+    end
   end
 
   defp synthesized_oidc_identifier?(%UserIdentity{provisioned_via: :scim} = identity),
@@ -4174,7 +4163,7 @@ defmodule Emisar.SSO do
         fetch_matched_member(locked_provider, request, subject, repo)
       end)
       |> Multi.merge(fn %{user: user} ->
-        approved_membership_multi(locked_provider, user, request)
+        ensure_active_membership_multi(locked_provider, user)
       end)
       |> Multi.run(:identity_write, fn repo, %{membership: member} ->
         link_identity(locked_provider, member, request, repo)
@@ -4186,22 +4175,6 @@ defmodule Emisar.SSO do
         Audit.Events.sso_existing_user_linked(subject, member, locked_provider)
       end)
       |> Multi.delete(:link_request, request)
-    end)
-  end
-
-  defp approved_membership_multi(provider, user, %LinkRequest{recovery_identity_id: nil}),
-    do: ensure_active_membership_multi(provider, user)
-
-  defp approved_membership_multi(provider, user, %LinkRequest{} = request) do
-    Multi.run(Multi.new(), :membership, fn repo, _changes ->
-      case Accounts.fetch_and_lock_active_membership(
-             repo,
-             provider.account_id,
-             request.matched_membership_id
-           ) do
-        {:ok, member} when member.user_id == user.id -> {:ok, member}
-        _ -> {:error, :matched_user_unavailable}
-      end
     end)
   end
 
@@ -4220,13 +4193,13 @@ defmodule Emisar.SSO do
          repo
        ) do
     with :ok <- ensure_request_matches_current_namespace(provider, request),
+         :ok <- ensure_matched_request_has_trusted_email(provider, request),
          {:ok, approver_role} <- ensure_approver_still_holds_authority(provider, subject, repo),
          {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
          %Accounts.Membership{user_id: user_id} <-
            Accounts.peek_sync_membership_by_id(provider.account_id, request.matched_membership_id),
          true <- user_id == user.id,
-         :ok <- ensure_link_target_within_authority(request, provider, approver_role, repo),
-         :ok <- ensure_matched_request_binding_proof(provider, request, repo) do
+         :ok <- ensure_link_target_within_authority(request, provider, approver_role, repo) do
       {:ok, user}
     else
       {:error, reason} when is_atom(reason) -> {:error, reason}
@@ -4238,10 +4211,9 @@ defmodule Emisar.SSO do
   # boundary: a stale node or restored database must not turn raw OIDC display
   # email into an existing-member credential binding. SCIM email is asserted by
   # the directory and remains the separate authoritative path.
-  defp ensure_matched_request_binding_proof(
+  defp ensure_matched_request_has_trusted_email(
          %IdentityProvider{} = provider,
-         %LinkRequest{recovery_identity_id: nil, source: :oidc, claims: claims},
-         _repo
+         %LinkRequest{source: :oidc, claims: claims}
        ) do
     if is_binary(verified_email(provider, claims)) do
       :ok
@@ -4250,34 +4222,11 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp ensure_matched_request_binding_proof(
+  defp ensure_matched_request_has_trusted_email(
          %IdentityProvider{},
-         %LinkRequest{recovery_identity_id: nil, source: :scim},
-         _repo
+         %LinkRequest{source: :scim}
        ),
        do: :ok
-
-  # This is not an email-match exception for arbitrary requests. A fresh OIDC
-  # callback captured this exact unresolved credential and its existing Member.
-  # The User fence above precedes this identity lock, as it does at sign-in.
-  defp ensure_matched_request_binding_proof(provider, %LinkRequest{source: :oidc} = request, repo) do
-    identity =
-      UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_account_id(provider.account_id)
-      |> UserIdentity.Query.by_id(request.recovery_identity_id)
-      |> UserIdentity.Query.by_provider_and_identifier(provider.id, request.provider_identifier)
-      |> UserIdentity.Query.by_user_id(request.matched_user_id)
-      |> UserIdentity.Query.lock_for_update()
-      |> repo.peek()
-
-    case identity do
-      %UserIdentity{membership_id: nil, scim_external_id: nil} -> :ok
-      _ -> {:error, :matched_user_unavailable}
-    end
-  end
-
-  defp ensure_matched_request_binding_proof(_provider, _request, _repo),
-    do: {:error, :matched_user_unavailable}
 
   defp ensure_request_matches_current_namespace(
          %IdentityProvider{} = provider,

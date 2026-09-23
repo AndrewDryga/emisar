@@ -2030,8 +2030,6 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Other sign-in proof and access to other workspaces remain available"
       assert html =~ "Re-enabling the connection does not restore retired proof"
       assert html =~ "Troubleshooting"
-      assert html =~ "Restore sign-in"
-      assert html =~ "The provider need not send an email for this recovery."
       assert html =~ "owner browser with valid SSO proof for this workspace"
       assert html =~ "An email-only session cannot change this setting while SSO is required"
       assert html =~ "controls which hosts a new member can act on"

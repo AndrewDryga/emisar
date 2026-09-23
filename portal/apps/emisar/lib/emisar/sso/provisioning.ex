@@ -81,33 +81,9 @@ defmodule Emisar.SSO.Provisioning do
       full_name: full_name,
       claims: claims,
       matched_user_id: member && member.user_id,
-      matched_membership_id: member && member.id,
-      recovery_identity_id: nil
+      matched_membership_id: member && member.id
     }
 
-    insert_link_request(multi, key, provider, attrs)
-  end
-
-  # The verified returning identity, not an email claim, names this pending
-  # recovery target. Approval rechecks the captured identity and Member before
-  # explicitly restoring this OIDC-only binding; capture grants nothing.
-  def put_identity_recovery_request(multi, key, provider, identity, member, claims) do
-    attrs = %{
-      provider_identifier: identity.provider_identifier,
-      source: :oidc,
-      namespace_fingerprint: namespace_fingerprint(provider),
-      email: member.contact_email,
-      full_name: member.display_name,
-      claims: claims,
-      matched_user_id: member.user_id,
-      matched_membership_id: member.id,
-      recovery_identity_id: identity.id
-    }
-
-    insert_link_request(multi, key, provider, attrs)
-  end
-
-  defp insert_link_request(multi, key, provider, attrs) do
     changeset = LinkRequest.Changeset.create(provider.account_id, provider.id, attrs)
 
     # `source` is replaced with the rest. A re-capture of the same identifier from
@@ -123,7 +99,6 @@ defmodule Emisar.SSO.Provisioning do
            :claims,
            :matched_user_id,
            :matched_membership_id,
-           :recovery_identity_id,
            :source,
            :namespace_fingerprint,
            :updated_at

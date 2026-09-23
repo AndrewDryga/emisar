@@ -127,16 +127,6 @@ defmodule Emisar.Fixtures.SSO do
     identity
   end
 
-  @doc "Models an identity left unbound by an ambiguous historical membership migration."
-  def clear_identity_membership(%UserIdentity{} = identity) do
-    identity |> Ecto.Changeset.change(membership_id: nil) |> Repo.update!()
-  end
-
-  @doc "Binds an identity directly for tests exercising a later stale request."
-  def bind_identity_membership(%UserIdentity{} = identity, member) do
-    identity |> UserIdentity.Changeset.bind_membership(member) |> Repo.update!()
-  end
-
   @doc "A directory-linked roster member, with optional existing user and membership."
   def create_directory_member(provider, attrs \\ %{}) do
     attrs = Map.new(attrs)
