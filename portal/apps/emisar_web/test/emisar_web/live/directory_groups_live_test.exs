@@ -29,7 +29,7 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
     assert patched =~ "name_or_email=Engineer+1"
     assert has_element?(lv, "#member-row-#{member.membership.id}")
     assert length(:sys.get_state(lv.pid).socket.assigns.member_facts) == 1
-    send(lv.pid, {:list_changed, :team, "membership.updated", member.user.id})
+    send(lv.pid, {:list_changed, :team, "membership.updated", member.membership.id})
     render(lv)
     assert length(:sys.get_state(lv.pid).socket.assigns.member_facts) == 1
     assert :sys.get_state(lv.pid).socket.assigns.filter_params["name_or_email"] == "Engineer 1"
@@ -288,8 +288,11 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
     assert has_element?(lv, "#synced-member-groups-#{member.identity.id}-toggle", "+10 groups")
-    render_click(lv, "toggle_member_groups", %{"user_id" => member.user.id})
-    assert :sys.get_state(lv.pid).socket.assigns.member_group_list.user_id == member.user.id
+    render_click(lv, "toggle_member_groups", %{"membership_id" => member.membership.id})
+
+    assert :sys.get_state(lv.pid).socket.assigns.member_group_list.membership_id ==
+             member.membership.id
+
     assert length(:sys.get_state(lv.pid).socket.assigns.member_group_list.groups) == 10
     render_click(lv, "page_member_groups", %{"direction" => "next"})
     assert length(:sys.get_state(lv.pid).socket.assigns.member_group_list.groups) == 3

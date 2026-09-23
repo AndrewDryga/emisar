@@ -1118,7 +1118,8 @@ defmodule EmisarWeb.ProfileLiveTest do
         )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      href = ~p"/app/#{account}/agents?#{[owner: user.id]}"
+      own = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      href = ~p"/app/#{account}/agents?#{[owner: own.id]}"
       assert has_element?(lv, ~s(#sessions-help p + p a[href="#{href}"]), "Review your agents")
 
       {:ok, agents, _html} =
@@ -1149,15 +1150,16 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "the own-agents filter stays readable for a profile without email", %{account: account} do
       user = Fixtures.Users.create_sso_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "viewer"
-      )
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "viewer"
+        )
 
       conn = log_in_user(build_conn(), user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      href = ~p"/app/#{account}/agents?#{[owner: user.id]}"
+      href = ~p"/app/#{account}/agents?#{[owner: membership.id]}"
 
       {:ok, agents, _html} =
         lv |> element("#review-your-agents") |> render_click() |> follow_redirect(conn, href)

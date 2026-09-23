@@ -4001,7 +4001,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           full_name: "Frankie Link"
         })
 
-      membership = Accounts.peek_sync_membership(provider.account_id, identity.user_id)
+      membership =
+        Accounts.peek_sync_membership_by_id(provider.account_id, identity.membership_id)
+
       {:ok, provider} = SSO.disable_scim(provider, owner)
 
       %{conn: conn, account: account, provider: provider, membership: membership}

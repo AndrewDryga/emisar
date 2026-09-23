@@ -41,6 +41,8 @@ defmodule Emisar.Auth.MemberGrantRoute.Query do
   # Every predicate judges the presented token and its frozen destination in
   # one snapshot. No origin identity or current membership discovery can widen
   # this set, and an expired/deleted bearer cannot keep a held Subject alive.
+  # An SSO route's identity must still be bound to the route's Member, which in
+  # turn must still belong to the bearer's person.
   def current(queryable \\ all()) do
     live_tokens =
       Auth.UserToken.Query.by_context("session")
@@ -70,7 +72,7 @@ defmodule Emisar.Auth.MemberGrantRoute.Query do
       r.expires_at > from_now(0, "second") and m.user_id == t.user_id and
         ((r.auth_method == :magic_link and t.personal_expires_at > from_now(0, "second")) or
            (r.auth_method == :sso and i.account_id == r.account_id and
-              i.membership_id == r.membership_id and i.user_id == t.user_id and
+              i.membership_id == r.membership_id and
               is_nil(i.provider_identifier_retired_at) and
               i.provider_identifier == r.provider_identifier and p.enabled and
               p.issuer == r.issuer))

@@ -180,6 +180,7 @@ defmodule Emisar.SSO.SCIM do
     |> UserIdentity.Query.scim_not_deleted()
     |> UserIdentity.Query.by_account_id(provider.account_id)
     |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
+    |> UserIdentity.Query.with_preloaded_membership()
     |> Repo.peek()
   end
 
@@ -193,6 +194,7 @@ defmodule Emisar.SSO.SCIM do
     |> UserIdentity.Query.without_scim_external_id()
     |> UserIdentity.Query.by_account_id(provider.account_id)
     |> UserIdentity.Query.by_provider_and_identifier(provider.id, external_id)
+    |> UserIdentity.Query.with_preloaded_membership()
     |> Repo.peek()
   end
 
@@ -206,6 +208,7 @@ defmodule Emisar.SSO.SCIM do
     |> UserIdentity.Query.by_account_id(provider.account_id)
     |> UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
     |> UserIdentity.Query.latest_scim_deleted()
+    |> UserIdentity.Query.with_preloaded_membership()
     |> Repo.peek()
   end
 
@@ -324,13 +327,13 @@ defmodule Emisar.SSO.SCIM do
       |> put_current_scim_provider(provider, expected_version)
       # A re-POST may INSERT a new seat, whose User FK takes a key-share lock.
       # Foreign invitation acceptance holds that User before retiring bindings;
-      # use the same User -> identity order, not identity -> FK wait.
-      |> Multi.run(:user, fn repo, _changes ->
-        Users.fetch_and_lock_user_by_id(identity.user_id, repo)
-      end)
-      |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider, user: user} ->
+      # use the same User -> identity order, not identity -> FK wait. That User
+      # is the one linked to the identity's seat; the locked identity must still
+      # be on that seat.
+      |> Multi.run(:user, fn repo, _changes -> lock_seat_user(repo, identity) end)
+      |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider} ->
         with {:ok, locked} <- lock_repost_identity(locked_provider, identity.id, state, repo),
-             true <- locked.user_id == user.id do
+             true <- locked.membership_id == identity.membership_id do
           {:ok, locked}
         else
           false -> {:error, :not_found}
@@ -636,7 +639,7 @@ defmodule Emisar.SSO.SCIM do
   end
 
   # Only an identifier collision is the race the re-call converges on, so only it
-  # earns a retry. The one-live-identity-per-person index is a different answer —
+  # earns a retry. The one-live-identity-per-member index is a different answer —
   # the re-call would peek by identifier, miss, provision, collide again, forever.
 
   defp identifier_race?(%Ecto.Changeset{errors: errors}) do

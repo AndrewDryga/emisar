@@ -158,10 +158,8 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   accountable HUMAN behind an API-key/MCP actor the way `account_id` knows
   them. Joins the key's EXACT minting membership — another membership of the
   same person never stands in — using only its workspace name or contact.
-  INNER joins throughout: a
-  key whose minting membership is gone, suspended, or in another account (or
-  whose user was deleted) resolves no row, and the trail degrades to the key
-  name.
+  An INNER join: a key whose minting membership is gone, suspended, or in
+  another account resolves no row, and the trail degrades to the key name.
   """
   def select_owner_labels(queryable, ids, account_id) do
     owner_membership =
@@ -173,10 +171,6 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
     |> join(:inner, [api_keys: k], m in ^owner_membership,
       on: m.id == k.created_by_membership_id,
       as: :owner_membership
-    )
-    |> join(:inner, [owner_membership: m], u in ^Emisar.Users.User.Query.not_deleted(),
-      on: u.id == m.user_id,
-      as: :owner
     )
     |> select(
       [api_keys: k, owner_membership: m],
@@ -252,15 +246,15 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
         title: "Owner",
         type: {:list, {:string, :uuid}},
         values: [],
-        fun: fn queryable, ids -> {queryable, dynamic([api_keys: k], k.created_by_id in ^ids)} end
+        fun: fn queryable, ids ->
+          {queryable, dynamic([api_keys: k], k.created_by_membership_id in ^ids)}
+        end
       }
     ]
 
   @doc """
-  One `{user_id, local_label}` option per creator of a still-visible key. Use
-  their most recent key-owning membership's label if they left and rejoined;
-  the filter groups keys by user, while individual rows retain exact attribution.
-  Compose with `for_subject/2`.
+  One `{membership_id, local_label}` option per creating Member of a still-visible
+  key, a removed one included under its own label. Compose with `for_subject/2`.
   """
   def owner_options(queryable \\ visible_to_operators()) do
     queryable
@@ -268,16 +262,10 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
       on: m.id == k.created_by_membership_id and m.account_id == k.account_id,
       as: :owner_membership
     )
-    |> distinct([owner_membership: m], [m.account_id, m.user_id])
-    |> order_by([owner_membership: m],
-      asc: m.account_id,
-      asc: m.user_id,
-      desc: m.inserted_at,
-      desc: m.id
-    )
+    |> distinct(true)
     |> select(
       [owner_membership: m],
-      {m.user_id,
+      {m.id,
        coalesce(
          fragment("NULLIF(BTRIM(?), '')", m.display_name),
          coalesce(

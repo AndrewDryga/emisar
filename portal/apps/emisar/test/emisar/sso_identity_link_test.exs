@@ -482,7 +482,7 @@ defmodule Emisar.SSOIdentityLinkTest do
                  context.subject
                )
 
-      assert identity.user_id == context.user.id
+      assert identity.membership_id == context.subject.membership_id
       assert identity.provider_id == context.provider.id
       assert identity.created_by == :user
       assert identity.provisioned_via == :oidc_link
@@ -556,8 +556,63 @@ defmodule Emisar.SSOIdentityLinkTest do
       refute Repo.exists?(
                UserIdentity.Query.not_deleted()
                |> UserIdentity.Query.by_provider_id(context.provider.id)
-               |> UserIdentity.Query.by_user_id(context.user.id)
+               |> UserIdentity.Query.by_member_user_id(context.user.id)
              )
+    end
+
+    test "a member invited back links the identity left on their removed seat to the new one",
+         %{account: _account, provider: _provider, user: _user} = context do
+      seat = Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: context.account.id,
+          provider_id: context.provider.id,
+          membership: seat,
+          provider_identifier: "workforce|returning"
+        })
+
+      Fixtures.Memberships.mark_membership_as_deleted(seat)
+
+      replacement =
+        Fixtures.Memberships.create_membership(
+          account_id: context.account.id,
+          user_id: context.user.id,
+          role: "admin"
+        )
+
+      raw = Fixtures.Auth.create_session_token!(context.user, :magic_link, nil)
+      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+
+      subject =
+        Fixtures.Subjects.subject_for(context.user, context.account,
+          session: session,
+          membership: replacement
+        )
+
+      context = %{context | raw_session: raw, session_digest: Crypto.hash(raw), subject: subject}
+      proof = local_proof(context, :link)
+
+      {:ok, begun} =
+        SSO.begin_identity_link(
+          context.provider.id,
+          :link,
+          "https://emisar.test/sign_in/sso/callback",
+          proof,
+          context.session_digest,
+          context.subject
+        )
+
+      assert {:ok, %{identity: linked}} =
+               SSO.complete_identity_link(
+                 callback("workforce|returning"),
+                 begun,
+                 context.session_digest,
+                 context.subject
+               )
+
+      assert linked.id == identity.id
+      assert linked.membership_id == replacement.id
     end
 
     test "provider verification works while disabled and becomes stale after config changes",

@@ -199,7 +199,7 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
       capture_queries(view.pid, fn ->
         Emisar.PubSub.broadcast(
           "account:#{account.id}:team",
-          {:list_changed, :team, "membership.runner_access_changed", user.id}
+          {:list_changed, :team, "membership.runner_access_changed", membership.id}
         )
 
         render(view)

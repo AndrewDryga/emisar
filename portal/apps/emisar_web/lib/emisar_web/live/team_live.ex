@@ -1280,11 +1280,11 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp member_action_available?(
-         %{assigns: %{can_manage_team?: true, current_user: %{id: current_user_id}}},
+         %{assigns: %{can_manage_team?: true, current_membership: %{id: current_id}}},
          action,
-         %{membership: %{user_id: user_id}, manageable?: true} = facts
+         %{membership: %{id: id}, manageable?: true} = facts
        )
-       when user_id != current_user_id do
+       when id != current_id do
     action != "suspend" or not facts.disabled?
   end
 
@@ -1639,9 +1639,9 @@ defmodule EmisarWeb.TeamLive do
         # still owns their directory profile), so the row can attribute + link
         # them. manage_sso-gated, so a non-SSO-admin viewing the team simply sees
         # no sync badge.
-        directory_by_user_id =
+        directory_by_membership_id =
           case SSO.member_directory_facts(
-                 Enum.map(member_facts, & &1.membership.user_id),
+                 Enum.map(member_facts, & &1.membership.id),
                  socket.assigns.current_subject
                ) do
             {:ok, facts} -> facts
@@ -1674,7 +1674,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:metadata, meta)
         |> assign_security_facts()
         |> assign(:filter_params, params)
-        |> assign(:directory_by_user_id, directory_by_user_id)
+        |> assign(:directory_by_membership_id, directory_by_membership_id)
         |> assign(:runners, runners)
         |> assign(:runners_by_id, runners_by_id)
         |> assign(:runner_load_error?, runner_load_error?)
@@ -1696,7 +1696,7 @@ defmodule EmisarWeb.TeamLive do
         |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
         |> assign(:security_facts, unavailable_security_facts())
         |> assign(:filter_params, params)
-        |> assign(:directory_by_user_id, %{})
+        |> assign(:directory_by_membership_id, %{})
         |> assign(:runners, [])
         |> assign(:runners_by_id, %{})
         |> assign(:runner_load_error?, true)
@@ -1901,7 +1901,8 @@ defmodule EmisarWeb.TeamLive do
   # access grant around the reviewed controls in the approval event itself.
   defp approval_params(socket, id) do
     case Enum.find(socket.assigns.pending_requests, &(&1.request.id == id)) do
-      %{request: %{matched_user_id: matched_user_id}} when not is_nil(matched_user_id) ->
+      %{request: %{matched_membership_id: matched_membership_id}}
+      when not is_nil(matched_membership_id) ->
         %{
           "runner_access_mode" => "none",
           "scope" => [],
@@ -2046,33 +2047,33 @@ defmodule EmisarWeb.TeamLive do
   defp request_label(request),
     do: Accounts.user_display_name(request) || "this member"
 
-  defp approval_title(%{request: %{matched_user_id: nil} = request}),
+  defp approval_title(%{request: %{matched_membership_id: nil} = request}),
     do: "Approve access for #{request_label(request)}?"
 
-  defp approval_title(%{request: %{matched_user_id: _id}}),
+  defp approval_title(%{request: %{matched_membership_id: _id}}),
     do: "Link this identity to the existing member?"
 
-  defp approval_action_label(%{request: %{matched_user_id: matched_user_id}})
-       when not is_nil(matched_user_id),
+  defp approval_action_label(%{request: %{matched_membership_id: matched_membership_id}})
+       when not is_nil(matched_membership_id),
        do: "Link identity"
 
   defp approval_action_label(_request_facts), do: "Approve"
 
-  defp approval_success_message(%{matched_user_id: matched_user_id} = request)
-       when not is_nil(matched_user_id),
+  defp approval_success_message(%{matched_membership_id: matched_membership_id} = request)
+       when not is_nil(matched_membership_id),
        do: "#{request_label(request)} linked — they can sign in now."
 
   defp approval_success_message(request),
     do: "#{request_label(request)} approved — they can sign in now."
 
-  defp approval_confirm_label(%{request: %{matched_user_id: matched_user_id}})
-       when not is_nil(matched_user_id),
+  defp approval_confirm_label(%{request: %{matched_membership_id: matched_membership_id}})
+       when not is_nil(matched_membership_id),
        do: "Link identity"
 
   defp approval_confirm_label(_request_facts), do: "Approve access"
 
   defp unmatched_directory_request?(%{
-         request: %{matched_user_id: nil},
+         request: %{matched_membership_id: nil},
          provider: %{directory_sync?: true}
        }),
        do: true
@@ -2086,8 +2087,8 @@ defmodule EmisarWeb.TeamLive do
     "No directory member matches this sign-in. Fix the externalId mapping in #{request_facts.provider.name} so it sends the same value as the #{request_facts.provider.identifier_claim} claim, then have the user sign in again."
   end
 
-  defp approval_disabled?(%{request: %{matched_user_id: matched_user_id}}, _assigns)
-       when not is_nil(matched_user_id),
+  defp approval_disabled?(%{request: %{matched_membership_id: matched_membership_id}}, _assigns)
+       when not is_nil(matched_membership_id),
        do: false
 
   defp approval_disabled?(%{request: %{id: request_id}}, assigns) do
@@ -2286,7 +2287,7 @@ defmodule EmisarWeb.TeamLive do
                   </span>
                 </:title>
                 <:chips>
-                  <.chip :if={request_facts.request.matched_user_id} tone={:amber}>
+                  <.chip :if={request_facts.request.matched_membership_id} tone={:amber}>
                     Existing member
                   </.chip>
                 </:chips>
@@ -2377,14 +2378,14 @@ defmodule EmisarWeb.TeamLive do
                       </dd>
                       <dt class="text-zinc-400">Workspace role</dt>
                       <dd class="min-w-0 text-zinc-200">
-                        {if request.matched_user_id,
+                        {if request.matched_membership_id,
                           do: "Current role unchanged",
                           else: Emisar.Auth.role_label(request_facts.default_role)}
                       </dd>
                     </dl>
 
                     <form
-                      :if={is_nil(request.matched_user_id)}
+                      :if={is_nil(request.matched_membership_id)}
                       id={"approve-request-#{request.id}"}
                       phx-change="approval_access_changed"
                       class="space-y-3 border-t border-zinc-800/70 pt-5"
@@ -2431,7 +2432,7 @@ defmodule EmisarWeb.TeamLive do
                 </:fields>
                 <:body>
                   <p class="text-sm leading-relaxed text-zinc-300">
-                    <%= if request.matched_user_id do %>
+                    <%= if request.matched_membership_id do %>
                       This replaces the member's sign-in identifier while keeping their directory
                       lifecycle linked through the provider external ID. Their current role, runner
                       access, and pack access stay unchanged.
@@ -2472,7 +2473,7 @@ defmodule EmisarWeb.TeamLive do
               <:item :let={member}>
                 <li class="py-4">
                   <% membership = member.membership %>
-                  <% directory = Map.get(@directory_by_user_id, membership.user_id) %>
+                  <% directory = Map.get(@directory_by_membership_id, membership.id) %>
                   <% suspended_by_label = Map.get(member, :suspended_by_label) %>
                   <%!-- Until desktop width, identity owns the row and the
                    controls sit beneath it. Splitting sooner reserves a wide
@@ -2526,7 +2527,7 @@ defmodule EmisarWeb.TeamLive do
                             directory={directory}
                             account={@current_account}
                           />
-                          <.chip :if={membership.user_id == @current_user.id} tone={:neutral}>
+                          <.chip :if={membership.id == @current_membership.id} tone={:neutral}>
                             You
                           </.chip>
                         </div>
@@ -2541,7 +2542,7 @@ defmodule EmisarWeb.TeamLive do
                          the two activity segments can't strand a separator
                          after the email. --%>
                         <% show_activity? =
-                          @can_manage_team? or membership.user_id == @current_user.id %>
+                          @can_manage_team? or membership.id == @current_membership.id %>
                         <%!-- Exceptional account-access states get their own compact
                        amber lines beneath identity. A pending invitation is ordinary
                        lifecycle metadata below, not a warning (§7.62). --%>
@@ -2787,7 +2788,7 @@ defmodule EmisarWeb.TeamLive do
                        row with no verb. --%>
                       <.member_actions
                         member={member}
-                        current_user_id={@current_user.id}
+                        current_membership_id={@current_membership.id}
                         can_manage?={member.manageable?}
                         can_manage_team?={@can_manage_team?}
                         can_view_member_activity?={
@@ -3177,7 +3178,7 @@ defmodule EmisarWeb.TeamLive do
   # full Actions menu on everyone else's row, and a non-manager gets nothing on
   # a teammate's row.
   attr :member, :map, required: true
-  attr :current_user_id, :string, required: true
+  attr :current_membership_id, :string, required: true
   attr :can_manage?, :boolean, required: true
   attr :can_manage_team?, :boolean, required: true
   # A reader who only sees the billing slice of the trail finds nothing under a
@@ -3194,7 +3195,7 @@ defmodule EmisarWeb.TeamLive do
 
     ~H"""
     <%= cond do %>
-      <% @membership.user_id == @current_user_id -> %>
+      <% @membership.id == @current_membership_id -> %>
         <%!-- Your own row is the only one that offers a jump into a person's
              audit trail as a plain button: a teammate's trail is a MANAGER's
              affordance and lives in the Actions menu below, so the roster no

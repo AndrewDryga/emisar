@@ -186,17 +186,17 @@ defmodule EmisarWeb.RunsLiveTest do
     # No kind picked → none of the three children render.
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
     refute html =~ ~s(name="api_key_id")
-    refute html =~ ~s(name="requested_by_id")
+    refute html =~ ~s(name="initiating_membership_id")
     refute html =~ ~s(name="runbook_id")
 
     # AI agent picked → the Agent picker appears (and only it).
     {:ok, _lv, mcp} = live(conn, ~p"/app/#{account}/runs?source=mcp")
     assert mcp =~ ~s(name="api_key_id")
-    refute mcp =~ ~s(name="requested_by_id")
+    refute mcp =~ ~s(name="initiating_membership_id")
 
     # Operator picked → the Operator picker appears (and only it).
     {:ok, _lv, operator} = live(conn, ~p"/app/#{account}/runs?source=operator")
-    assert operator =~ ~s(name="requested_by_id")
+    assert operator =~ ~s(name="initiating_membership_id")
     refute operator =~ ~s(name="api_key_id")
   end
 

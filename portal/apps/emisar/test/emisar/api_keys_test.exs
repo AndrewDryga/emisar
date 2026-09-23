@@ -111,11 +111,10 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.membership_subject(member)
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
-      assert {:ok, [{user_id, "Account member"}]} = ApiKeys.list_key_owner_options(subject)
-      assert user_id == member.user_id
+      assert ApiKeys.list_key_owner_options(subject) == {:ok, [{member.id, "Account member"}]}
     end
 
-    test "rejoining yields one owner choice while each key keeps its exact historical profile" do
+    test "a rejoined member is a new owner choice; each key keeps its exact historical profile" do
       {_owner, account, reader} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
       member =
@@ -146,12 +145,21 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, new_key} =
         ApiKeys.create_key(%{name: "new agent"}, Fixtures.Subjects.membership_subject(rejoined))
 
-      assert {:ok, [{user_id, "Rejoined Member"}]} = ApiKeys.list_key_owner_options(reader)
-      assert user_id == person.id
+      assert {:ok, options} = ApiKeys.list_key_owner_options(reader)
+
+      assert Enum.sort(options) ==
+               Enum.sort([{member.id, "First Membership"}, {rejoined.id, "Rejoined Member"}])
+
+      assert {:ok, [key], _} =
+               ApiKeys.list_api_keys_for_account(reader,
+                 filter: [owner: [rejoined.id], status: ["live", "revoked"]]
+               )
+
+      assert key.id == new_key.id
 
       assert {:ok, keys, _} =
                ApiKeys.list_api_keys_for_account(reader,
-                 filter: [owner: [person.id], status: ["live", "revoked"]],
+                 filter: [owner: [member.id, rejoined.id], status: ["live", "revoked"]],
                  preload: [:created_by_membership]
                )
 
@@ -173,12 +181,13 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.membership_subject(member)
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
-      assert {:ok, [{user_id, "Directory Operator"}]} = ApiKeys.list_key_owner_options(subject)
-      assert user_id == member.user_id
+
+      assert ApiKeys.list_key_owner_options(subject) ==
+               {:ok, [{member.id, "Directory Operator"}]}
     end
 
     test "returns the distinct creators of the account's visible (non-audit) keys" do
-      {user, account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, _k1} = ApiKeys.create_key(%{name: "a"}, subject)
@@ -187,17 +196,18 @@ defmodule Emisar.ApiKeysTest do
       # an agents "owner".
       {:ok, _raw, _siem} = ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject)
 
-      assert {:ok, [{owner_id, owner_email}]} = ApiKeys.list_key_owner_options(subject)
-      assert owner_id == user.id
-      assert owner_email == "Test User"
+      assert ApiKeys.list_key_owner_options(subject) ==
+               {:ok, [{subject.membership_id, "Test User"}]}
     end
 
     test "the owner filter narrows to a creator's keys; another account sees none" do
-      {user, _account, subject} = owner_subject_pair()
+      {_user, _account, subject} = owner_subject_pair()
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine"}, subject)
 
       assert {:ok, [key], _} =
-               ApiKeys.list_api_keys_for_account(subject, filter: [owner: [user.id]])
+               ApiKeys.list_api_keys_for_account(subject,
+                 filter: [owner: [subject.membership_id]]
+               )
 
       assert key.name == "mine"
 

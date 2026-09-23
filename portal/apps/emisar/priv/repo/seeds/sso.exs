@@ -183,10 +183,8 @@ defmodule Emisar.Seeds.SSO do
 
       membership_query =
         Accounts.Membership.Query.not_deleted()
-        |> Accounts.Membership.Query.by_account_and_user(
-          identity.account_id,
-          identity.user_id
-        )
+        |> Accounts.Membership.Query.by_account_id(identity.account_id)
+        |> Accounts.Membership.Query.by_id(identity.membership_id)
 
       for membership <- Repo.all(membership_query) do
         {:ok, _} =
@@ -258,7 +256,7 @@ defmodule Emisar.Seeds.SSO do
     Enum.each(synced_identities, fn identity ->
       identity |> Ecto.Changeset.change(inserted_at: scim_synced_at) |> Repo.update!()
 
-      case Accounts.peek_sync_membership(account.id, identity.user_id) do
+      case Accounts.peek_sync_membership_by_id(account.id, identity.membership_id) do
         nil ->
           :ok
 

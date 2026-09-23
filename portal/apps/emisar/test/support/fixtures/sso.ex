@@ -127,6 +127,12 @@ defmodule Emisar.Fixtures.SSO do
     identity
   end
 
+  @doc "The seat an identity is bound to now; the identity is reloaded so a rebind is followed."
+  def identity_membership(%UserIdentity{} = identity) do
+    %UserIdentity{membership_id: membership_id} = Repo.reload!(identity)
+    Repo.get!(Emisar.Accounts.Membership, membership_id)
+  end
+
   @doc "A directory-linked roster member, with optional existing user and membership."
   def create_directory_member(provider, attrs \\ %{}) do
     attrs = Map.new(attrs)
@@ -206,16 +212,6 @@ defmodule Emisar.Fixtures.SSO do
         },
         Map.drop(attrs, [:account_id, :provider])
       )
-
-    request_attrs =
-      case request_attrs[:matched_user_id] do
-        nil ->
-          request_attrs
-
-        user_id ->
-          member = Emisar.Fixtures.Memberships.fetch_membership(provider.account_id, user_id)
-          Map.put_new(request_attrs, :matched_membership_id, member && member.id)
-      end
 
     {:ok, request} =
       Repo.insert(

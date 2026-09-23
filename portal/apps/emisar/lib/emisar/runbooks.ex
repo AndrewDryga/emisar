@@ -17,7 +17,6 @@ defmodule Emisar.Runbooks do
   alias Emisar.Runbooks.{EditorProjection, ExecutionItem, ExecutionProjection, Naming, Release}
   alias Emisar.Runbooks.{Runbook, RunbookExecution, Scheduler}
   alias Emisar.SafeText
-  alias Emisar.Users
 
   # One runbook list page is 35 rows; 64 bounds the batch without capping the
   # page it serves.
@@ -1518,36 +1517,18 @@ defmodule Emisar.Runbooks do
   def execution_who_via(%RunbookExecution{} = execution),
     do: {execution_who(execution), execution_via(execution)}
 
-  # An unloaded requester is UNKNOWN, never a fall-through to the key owner:
-  # only an explicit `nil` means no operator asked for this execution, which is
-  # when the key's owner IS the accountable human.
-  defp execution_who(%RunbookExecution{requested_by: %Users.User{} = user} = execution),
-    do: accountable_name(execution, user)
-
-  defp execution_who(
-         %RunbookExecution{
-           requested_by: nil,
-           api_key: %ApiKeys.ApiKey{created_by: %Users.User{} = user}
-         } = execution
-       ),
-       do: accountable_name(execution, user)
-
-  defp execution_who(%RunbookExecution{}), do: nil
-
-  # The membership is the account-local naming authority, and
+  # The initiating Member is the accountable human for an operator's execution
+  # and for an MCP one alike — an MCP execution's Member minted its key. It is
+  # the account-local naming authority, and
   # `RunbookExecution.Query.with_attribution/1` is its only loader: its join
-  # already binds this execution's own membership, in this account, for this
-  # person. An absent or unloaded membership names nobody; it cannot disclose
-  # the linked person's private profile or contact.
-  defp accountable_name(
-         %RunbookExecution{initiating_membership: %Accounts.Membership{} = membership},
-         %Users.User{}
-       ),
+  # already binds this execution's own membership, in this account. An absent
+  # or unloaded membership names nobody.
+  defp execution_who(%RunbookExecution{
+         initiating_membership: %Accounts.Membership{} = membership
+       }),
        do: Accounts.member_display_name(membership)
 
-  defp accountable_name(%RunbookExecution{initiating_membership: nil}, %Users.User{}), do: nil
-
-  defp accountable_name(%RunbookExecution{}, %Users.User{}), do: nil
+  defp execution_who(%RunbookExecution{}), do: nil
 
   defp execution_via(%RunbookExecution{api_key_id: nil}), do: nil
 
@@ -1726,11 +1707,10 @@ defmodule Emisar.Runbooks do
       Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
     end)
     |> Multi.run(:author, fn repo, _changes ->
-      with {:ok, membership} <-
+      with {:ok, _membership} <-
              Accounts.fetch_and_lock_membership(subject.account.id, subject.membership_id,
                repo: repo
              ),
-           {:ok, _user} <- Users.fetch_and_lock_user_by_id(membership.user_id, repo),
            true <-
              is_nil(Subject.api_key_id(subject)) or
                ApiKeys.api_key_usable_in_account?(

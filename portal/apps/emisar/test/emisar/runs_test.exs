@@ -1,7 +1,7 @@
 defmodule Emisar.RunsTest do
   use Emisar.DataCase, async: true
   alias Ecto.Multi
-  alias Emisar.{ApiKeys, Approvals, Audit, Catalog, Fixtures}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Catalog, Fixtures}
   alias Emisar.{MCPOperations, Repo, RequestContext, Runners, Runs}
   alias Emisar.Runners.Presence
   alias Emisar.Runs.{ActionRun, RunEvent}
@@ -83,7 +83,7 @@ defmodule Emisar.RunsTest do
                :runner_id,
                :source,
                :api_key_id,
-               :requested_by_id,
+               :initiating_membership_id,
                :runbook_id
              ]
     end
@@ -286,7 +286,7 @@ defmodule Emisar.RunsTest do
         account_id: account.id,
         initiating_membership_id: other_membership.id,
         source: :operator,
-        requested_by: %{requester | memberships: [other_membership]}
+        initiating_membership: other_membership
       }
 
       assert Runs.run_who_via(foreign_run) == {nil, nil}
@@ -329,16 +329,16 @@ defmodule Emisar.RunsTest do
       assert {:ok, [former], _metadata} = Runs.list_runs(subject, preload: [:attribution])
       assert Runs.run_who_via(former) == {"Local Key Owner", "Claude Code"}
 
-      _user = Fixtures.Users.mark_user_as_deleted(key_owner)
+      assert {:ok, _erased} = Accounts.erase_user_and_owned_accounts(key_owner.id)
 
-      assert {:ok, [deleted], _metadata} = Runs.list_runs(subject, preload: [:attribution])
-      assert Runs.run_who_via(deleted) == {nil, "Claude Code"}
+      assert {:ok, [erased], _metadata} = Runs.list_runs(subject, preload: [:attribution])
+      assert Runs.run_who_via(erased) == {nil, "Claude Code"}
     end
 
     test "does not reinterpret unloaded or legacy associations" do
       key = %ApiKeys.ApiKey{name: "Claude Code"}
       unloaded = %ActionRun{source: :mcp, api_key: key}
-      legacy = %ActionRun{source: :operator, requested_by: nil}
+      legacy = %ActionRun{source: :operator, initiating_membership: nil}
 
       assert Runs.run_who_via(unloaded) == {nil, "Claude Code"}
       assert Runs.run_who_via(legacy) == {nil, nil}
@@ -433,7 +433,7 @@ defmodule Emisar.RunsTest do
       assert count_sql =~ ~s|"runner_id"|
     end
 
-    test "preloads only the requester's membership in the run account" do
+    test "preloads only the run's initiating membership in the run account" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       other_account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -466,11 +466,11 @@ defmodule Emisar.RunsTest do
 
       {:ok, _run} = Runs.create_run(base_attrs(account.id, runner.id, attrs))
 
-      assert {:ok, [listed], _meta} = Runs.list_runs(subject, preload: [:requested_by])
-      assert Enum.map(listed.requested_by.memberships, & &1.id) == [local_membership.id]
+      assert {:ok, [listed], _meta} = Runs.list_runs(subject, preload: [:attribution])
+      assert listed.initiating_membership.id == local_membership.id
     end
 
-    test "preloads the API key owner's membership in the run account" do
+    test "names an agent run through the key owner's membership in the run account" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       other_account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -509,9 +509,10 @@ defmodule Emisar.RunsTest do
           })
         )
 
-      assert {:ok, [listed], _meta} = Runs.list_runs(subject, preload: [:api_key])
-      assert listed.api_key.created_by.id == key_owner.id
-      assert listed.api_key.created_by_membership.id == local_membership.id
+      assert {:ok, [listed], _meta} = Runs.list_runs(subject, preload: [:attribution])
+      assert listed.api_key.id == key.id
+      assert listed.initiating_membership.id == local_membership.id
+      assert Runs.run_who_via(listed) == {"Maya C. (Contractor)", key.name}
     end
 
     test "a viewer can list runs (view_runs is enough for a read)" do
@@ -565,20 +566,27 @@ defmodule Emisar.RunsTest do
       assert listed.id == agent_run.id
     end
 
-    test "the requested_by_id (Operator) and runbook_id (Runbook) filters scope the feed" do
+    test "the Operator (member) and Runbook filters scope the feed" do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       runbook = Fixtures.Runbooks.create_runbook(account_id: account.id)
 
       {:ok, my_run} =
-        Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
+        Runs.create_run(
+          base_attrs(account.id, runner.id, %{
+            requested_by_id: user.id,
+            initiating_membership_id: subject.membership_id
+          })
+        )
 
       {:ok, runbook_run} =
         Runs.create_run(
           base_attrs(account.id, runner.id, %{source: "runbook", runbook_id: runbook.id})
         )
 
-      assert {:ok, [listed], _meta} = Runs.list_runs(subject, filter: [requested_by_id: user.id])
+      assert {:ok, [listed], _meta} =
+               Runs.list_runs(subject, filter: [initiating_membership_id: subject.membership_id])
+
       assert listed.id == my_run.id
 
       assert {:ok, [listed], _meta} = Runs.list_runs(subject, filter: [runbook_id: runbook.id])
@@ -590,7 +598,7 @@ defmodule Emisar.RunsTest do
     # filled in at render time and never validated, so the declared TYPE is the
     # only boundary: a non-UUID must come back as a bad filter, not as an
     # `Ecto.Query.CastError` 500 from a `binary_id` comparison.
-    for name <- [:runner_id, :api_key_id, :requested_by_id, :runbook_id] do
+    for name <- [:runner_id, :api_key_id, :initiating_membership_id, :runbook_id] do
       test "the #{name} filter rejects a non-UUID instead of raising" do
         {_user, _account, subject} = Fixtures.Subjects.owner_subject()
 
@@ -647,12 +655,15 @@ defmodule Emisar.RunsTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       _membership = Fixtures.Memberships.sync_display_name(membership, "Local Operator")
 
-      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
-      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
-      # A run with no requesting user (an engine path) contributes no option.
-      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: nil}))
+      mine = %{requested_by_id: user.id, initiating_membership_id: membership.id}
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, mine))
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, mine))
+      # A run with no initiating member (an engine path) contributes no option.
+      engine = %{requested_by_id: nil, initiating_membership_id: nil}
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, engine))
 
-      assert Runs.list_run_operator_options(subject) == {:ok, [{user.id, "Local Operator"}]}
+      assert Runs.list_run_operator_options(subject) ==
+               {:ok, [{membership.id, "Local Operator"}]}
     end
 
     test "a subject without view_runs permission is refused" do

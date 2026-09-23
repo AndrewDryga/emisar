@@ -59,7 +59,7 @@ defmodule EmisarWeb.SSOPendingLiveTest do
       )
 
     request
-    |> Ecto.Changeset.change(matched_user_id: user.id, matched_membership_id: member.id)
+    |> Ecto.Changeset.change(matched_membership_id: member.id)
     |> Repo.update!()
 
     {:ok, _lv, html} = live(conn, ~p"/sign_in/sso/pending")

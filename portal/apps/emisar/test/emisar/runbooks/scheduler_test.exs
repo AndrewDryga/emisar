@@ -349,7 +349,40 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert length(runs(account.id, result.execution_id)) == 1
   end
 
-  for mismatch <- [:requested_user, :initiating_member, :key_creator, :deleted_user] do
+  test "a delayed execution continues on its initiating member's authority alone", %{
+    account: account,
+    subject: subject,
+    runner: runner
+  } do
+    runbook =
+      published_runbook(
+        subject,
+        definition([
+          stage("inspect", "sequential", 1, [step("check", runner.group)]),
+          stage("change", "sequential", 1, [step("apply", runner.group)])
+        ])
+      )
+
+    assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "member authority", subject)
+    assert [first] = runs(account.id, result.execution_id)
+
+    execution(result.execution_id)
+    |> Ecto.Changeset.change(requested_by_id: nil)
+    |> Repo.update!()
+
+    assert {:ok, _} =
+             Fixtures.Runs.finish(first, %{
+               "status" => "success",
+               "structured_output" => %{"ready" => true}
+             })
+
+    assert execution(result.execution_id).status == :active
+    assert [_first, second] = runs(account.id, result.execution_id)
+    assert second.runbook_step_id == "apply"
+    assert second.initiating_membership_id == subject.membership_id
+  end
+
+  for mismatch <- [:foreign_member, :key_creator, :removed_member] do
     test "delayed execution refuses #{mismatch} before the next physical attempt", %{
       account: account,
       subject: subject,
@@ -372,11 +405,8 @@ defmodule Emisar.Runbooks.SchedulerTest do
 
       changes =
         case unquote(mismatch) do
-          :requested_user ->
-            %{requested_by_id: other.user_id}
-
-          :initiating_member ->
-            %{initiating_membership_id: other.id}
+          :foreign_member ->
+            %{initiating_membership_id: Fixtures.Memberships.create_membership().id}
 
           :key_creator ->
             {_raw, key} =
@@ -387,8 +417,11 @@ defmodule Emisar.Runbooks.SchedulerTest do
 
             %{api_key_id: key.id}
 
-          :deleted_user ->
-            Fixtures.Users.mark_user_as_deleted(subject.actor)
+          :removed_member ->
+            account.id
+            |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+            |> Fixtures.Memberships.mark_membership_as_deleted()
+
             %{}
         end
 

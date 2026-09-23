@@ -41,11 +41,24 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_provider_identifier(queryable, identifier),
     do: where(queryable, [identities: i], i.provider_identifier == ^identifier)
 
-  def by_user_id(queryable, user_id),
-    do: where(queryable, [identities: i], i.user_id == ^user_id)
-
   def by_membership_id(queryable, membership_id),
     do: where(queryable, [identities: i], i.membership_id == ^membership_id)
+
+  def by_membership_ids(queryable, membership_ids),
+    do: where(queryable, [identities: i], i.membership_id in ^membership_ids)
+
+  @doc """
+  Identities bound to any seat of this personal login, live or removed. A
+  subquery rather than a join, so a caller's row lock takes identities only.
+  """
+  def by_member_user_id(queryable, user_id) do
+    seat_ids =
+      Emisar.Accounts.Membership.Query.all()
+      |> Emisar.Accounts.Membership.Query.by_user_id(user_id)
+      |> Emisar.Accounts.Membership.Query.select_ids()
+
+    where(queryable, [identities: i], i.membership_id in subquery(seat_ids))
+  end
 
   def with_live_membership(queryable) do
     queryable
@@ -132,9 +145,6 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def select_account_ids(queryable),
     do: queryable |> select([identities: i], i.account_id) |> distinct(true)
 
-  def by_user_ids(queryable, user_ids),
-    do: where(queryable, [identities: i], i.user_id in ^user_ids)
-
   # Join (if needed) + preload the identity's provider — powers the team page's
   # "synced from <provider>" attribution and the provider's synced-users list.
   # Matched on the account as well as the id: the identity carries its own
@@ -162,15 +172,15 @@ defmodule Emisar.SSO.UserIdentity.Query do
     |> order_by([identities: i, provider: p], desc: p.scim_enabled, asc: p.name, asc: p.id)
   end
 
-  # `{user_id, provider_id, provider_name, provisioned_via, directory_managed?}` —
-  # the roster's narrow attribution projection. The connection's configuration
+  # `{membership_id, provider_id, provider_name, provisioned_via, directory_managed?}`
+  # — the roster's narrow attribution projection. The connection's configuration
   # (secrets, claim mapping, defaults) never leaves the query.
   def select_directory_facts(queryable) do
     queryable
     |> with_joined_provider()
     |> select(
       [identities: i, provider: p],
-      {i.user_id, i.provider_id, p.name, i.provisioned_via, p.scim_enabled}
+      {i.membership_id, i.provider_id, p.name, i.provisioned_via, p.scim_enabled}
     )
   end
 
@@ -178,27 +188,6 @@ defmodule Emisar.SSO.UserIdentity.Query do
     queryable
     |> with_joined_provider()
     |> preload([identities: i, provider: provider], provider: provider)
-  end
-
-  # Join (if needed) + preload the identity's user — for the provider's
-  # synced-users list (name/email alongside the SCIM external id + state).
-  def with_joined_user(queryable) do
-    with_named_binding(queryable, :user, fn queryable, binding ->
-      join(
-        queryable,
-        :inner,
-        [identities: i],
-        user in ^Emisar.Users.User.Query.not_deleted(),
-        on: i.user_id == user.id,
-        as: ^binding
-      )
-    end)
-  end
-
-  def with_preloaded_user(queryable) do
-    queryable
-    |> with_joined_user()
-    |> preload([identities: i, user: user], user: user)
   end
 
   @doc """
@@ -282,7 +271,7 @@ defmodule Emisar.SSO.UserIdentity.Query do
         :left,
         [identities: i],
         m in Emisar.Accounts.Membership,
-        on: m.account_id == i.account_id and m.id == i.membership_id and m.user_id == i.user_id,
+        on: m.account_id == i.account_id and m.id == i.membership_id,
         as: ^binding
       )
     end)

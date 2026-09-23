@@ -805,7 +805,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
   attr :load_error?, :boolean, required: true
   attr :member_role_options, :list, required: true
   attr :can_configure_directory_sync?, :boolean, required: true
-  attr :current_user_id, :string, required: true
+  attr :current_membership_id, :string, required: true
   attr :scim_enabled, :boolean, required: true
   attr :account, :any, required: true
 
@@ -855,7 +855,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
                 {Accounts.member_display_name(member.profile) || member.identity.scim_external_id ||
                   member.identity.provider_identifier}
               </span>
-              <.chip :if={member.membership && member.membership.user_id == @current_user_id}>
+              <.chip :if={member.membership && member.membership.id == @current_membership_id}>
                 You
               </.chip>
               <.chip :if={is_nil(member.membership)} tone={:rose}>Removed</.chip>
@@ -887,8 +887,8 @@ defmodule EmisarWeb.SSODirectoryComponents do
             </div>
             <DirectoryGroups.member_groups
               id={"synced-member-groups-#{member.identity.id}"}
-              user_id={member.identity.user_id}
-              summary={Map.get(@group_summaries, member.identity.user_id)}
+              membership_id={member.identity.membership_id}
+              summary={Map.get(@group_summaries, member.identity.membership_id)}
               list={@member_group_list}
               error?={@groups_error?}
               path={@path}
@@ -899,7 +899,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
           </div>
 
           <div :if={member.membership} class="flex shrink-0 items-center gap-2">
-            <%= if member.membership.user_id == @current_user_id do %>
+            <%= if member.membership.id == @current_membership_id do %>
               <.tooltip
                 id={"self-role-lock-#{member.membership.id}"}
                 text="You can't change your own role."

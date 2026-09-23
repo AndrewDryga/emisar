@@ -101,6 +101,8 @@ defmodule Emisar.Accounts.Membership.Query do
   def excluding_account_id(queryable, account_id),
     do: where(queryable, [memberships: m], m.account_id != ^account_id)
 
+  def select_ids(queryable), do: select(queryable, [memberships: m], m.id)
+
   def select_account_ids(queryable), do: select(queryable, [memberships: m], m.account_id)
 
   def select_user_ids(queryable), do: select(queryable, [memberships: m], m.user_id)

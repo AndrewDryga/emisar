@@ -33,8 +33,7 @@ defmodule Emisar.Auth.CurrentSubject do
   # Mutable usage/name/expiry facts refresh normally; immutable credential
   # identity must never be rebound to another creator, kind, or recovery lineage.
   defp key_binding(key) do
-    {key.account_id, key.created_by_id, key.created_by_membership_id, key.kind,
-     key.credential_lineage_id}
+    {key.account_id, key.created_by_membership_id, key.kind, key.credential_lineage_id}
   end
 
   defp refreshed(subject, account, actor, role) do

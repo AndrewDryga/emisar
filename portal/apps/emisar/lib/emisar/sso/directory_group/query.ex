@@ -44,12 +44,12 @@ defmodule Emisar.SSO.DirectoryGroup.Query do
   def by_external_group_id(queryable, external_group_id),
     do: where(queryable, [groups: g], g.external_group_id == ^external_group_id)
 
-  def for_roster_user(queryable, user_id, account_id) do
+  def for_roster_member(queryable, membership_id, account_id) do
     group_ids =
       Emisar.SSO.DirectoryGroupMember.Query.not_deleted()
       |> Emisar.SSO.DirectoryGroupMember.Query.by_account_id(account_id)
       |> Emisar.SSO.DirectoryGroupMember.Query.with_directory_roster()
-      |> Emisar.SSO.DirectoryGroupMember.Query.by_roster_user_ids([user_id])
+      |> Emisar.SSO.DirectoryGroupMember.Query.by_roster_membership_ids([membership_id])
       |> Emisar.SSO.DirectoryGroupMember.Query.select_roster_group_ids()
 
     where(queryable, [groups: g], g.id in subquery(group_ids))

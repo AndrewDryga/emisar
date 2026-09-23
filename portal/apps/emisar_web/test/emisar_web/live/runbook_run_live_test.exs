@@ -504,7 +504,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       receipt = preview_id(lv)
 
       Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
-      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
       assert render(lv) =~ "Your access changed"
       after_change = :sys.get_state(lv.pid).socket.assigns
       assert after_change.reason == before.reason
@@ -528,7 +528,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       render_click(lv, "recheck_plan", %{})
       assert :sys.get_state(lv.pid).socket.assigns.preflight.state == :error
       Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
-      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
       render(lv)
       assert has_element?(lv, "#start-runbook-button[disabled]")
       render_click(lv, "recheck_plan", %{})
@@ -1580,7 +1580,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         pack_mode: :all
       })
 
-      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
       render(lv)
       assert :sys.get_state(lv.pid).socket.assigns.result == before.result
       assert :sys.get_state(lv.pid).socket.assigns.events_by_attempt == before.events_by_attempt
@@ -1595,7 +1595,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
              )
 
       Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
-      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
       render(lv)
       assert has_element?(lv, "#cancel-runbook-execution-confirm:not([disabled])")
     end

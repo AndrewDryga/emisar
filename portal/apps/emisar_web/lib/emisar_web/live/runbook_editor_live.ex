@@ -474,8 +474,8 @@ defmodule EmisarWeb.RunbookEditorLive do
   def handle_info({:runbook_preview, _stale_generation}, socket), do: {:noreply, socket}
 
   def handle_info(
-        {:list_changed, :team, "membership.runner_access_changed", user_id},
-        %{assigns: %{current_user: %{id: user_id}}} = socket
+        {:list_changed, :team, "membership.runner_access_changed", membership_id},
+        %{assigns: %{current_subject: %{membership_id: membership_id}}} = socket
       ) do
     # UserAuth refreshed the exact current membership. Do not sync the draft:
     # that can rewrite argument/output bindings the operator is still editing.

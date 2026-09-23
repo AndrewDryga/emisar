@@ -121,7 +121,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert has_element?(lv, "#dispatch_form button:not([disabled])", "Run on")
 
     Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
-    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
     assert render(lv) =~ "Outside your action access"
     assert has_element?(lv, "#dispatch_form button[disabled]", "Run on")
     assert has_element?(lv, ~s(input[name="args[path]"][value="/var/log/service.log"]))
@@ -131,7 +131,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     refute Repo.one(Runs.ActionRun)
 
     Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
-    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
     render(lv)
     assert has_element?(lv, "#dispatch_form button:not([disabled])", "Run on")
     assert has_element?(lv, "textarea[name=reason]", "Investigate an error")

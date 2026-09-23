@@ -39,7 +39,6 @@ defmodule Emisar.Catalog do
   alias Emisar.Catalog.{MCPProjection, PackBaseline, PackRetentionInput}
   alias Emisar.Catalog.{PackVersion, PublishedRegistry}
   alias Emisar.Catalog.{RunnerAction, TrustedManifest}
-  alias Emisar.Users
   require Logger
 
   def start_link(opts) do
@@ -892,12 +891,14 @@ defmodule Emisar.Catalog do
 
   defp fetch_locked_catalog_manager(
          repo,
-         %Subject{actor: %Users.User{id: user_id}, account: account} = subject
+         %Subject{account: %Accounts.Account{} = account} = subject
        ) do
     with {:ok, membership} <-
-           Accounts.fetch_and_lock_membership(account.id, subject.membership_id, repo: repo),
-         true <- membership.user_id == user_id,
-         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+           Accounts.fetch_and_lock_membership(
+             account.id,
+             Subject.human_membership_id(subject),
+             repo: repo
+           ),
          {:ok, subject} <-
            Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
       {:ok,

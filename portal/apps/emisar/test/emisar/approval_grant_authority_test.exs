@@ -1,7 +1,7 @@
 defmodule Emisar.ApprovalGrantAuthorityTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts.RunnerAccess
-  alias Emisar.{Approvals, Audit, Fixtures, Repo, Runners}
+  alias Emisar.{Approvals, Audit, Fixtures, Repo, Runners, Runs}
 
   setup do
     {user, account, owner} = Fixtures.Subjects.owner_subject()
@@ -157,6 +157,31 @@ defmodule Emisar.ApprovalGrantAuthorityTest do
     end
   end
 
+  describe "approve_request/2" do
+    test "the deciding Member releases another Member's run; a forged or own vote does not",
+         %{account: _, admin: _, membership: _, key: _} = context do
+      requester =
+        [account_id: context.account.id, role: "admin"]
+        |> Fixtures.Memberships.create_membership()
+        |> Fixtures.Subjects.membership_subject()
+
+      request = pending_request(context.account, requester)
+      foreign = Fixtures.Memberships.create_membership(role: "admin")
+
+      for forged <- [
+            %{context.admin | membership_id: foreign.id},
+            %{context.admin | actor: Fixtures.Users.create_user()}
+          ] do
+        assert Approvals.approve_request(request, forged) == {:error, :unauthorized}
+      end
+
+      assert Approvals.approve_request(request, requester) == {:error, :self_approval_forbidden}
+
+      assert {:ok, {%Approvals.Request{status: :approved}, %Runs.ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, context.admin)
+    end
+  end
+
   describe "update_grant_lifetime_settings/3" do
     test "a scoped manager's zero cap still contains all grants, but a stale manager cannot set it",
          %{account: _, admin: _, membership: _, key: _} = context do
@@ -188,6 +213,31 @@ defmodule Emisar.ApprovalGrantAuthorityTest do
       assert Repo.reload!(context.account).settings.max_grant_lifetime_seconds == 0
       assert Repo.reload!(grant).revoked_at
     end
+  end
+
+  defp pending_request(account, requester) do
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    Fixtures.Catalog.create_action(runner: runner)
+    Runners.subscribe_runner_transport(runner)
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "operator",
+        requested_by_id: requester.actor.id,
+        initiating_membership_id: requester.membership_id,
+        args: %{},
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
+        status: :pending_approval
+      })
+
+    {:ok, request} =
+      Approvals.create_request(run, "needs review", min_approvals: 1, allow_self_approval: false)
+
+    request
   end
 
   defp grant(context, runner_id, attrs \\ []) do

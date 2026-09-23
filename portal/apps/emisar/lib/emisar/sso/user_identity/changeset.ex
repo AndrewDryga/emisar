@@ -13,13 +13,11 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     |> cast(attrs, @fields)
     |> put_change(:account_id, account_id)
     |> put_change(:provider_id, provider_id)
-    |> put_change(:user_id, member.user_id)
     |> put_change(:membership_id, member.id)
     |> put_change(:last_seen_at, DateTime.utc_now())
     |> validate_required([
       :account_id,
       :provider_id,
-      :user_id,
       :membership_id,
       :provider_identifier,
       :created_by,
@@ -33,7 +31,7 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   @doc "Bind an explicitly approved link or directory re-provision to its exact seat."
   def bind_membership(changeset_or_identity, %Emisar.Accounts.Membership{} = member) do
     changeset_or_identity
-    |> change(membership_id: member.id, user_id: member.user_id)
+    |> change(membership_id: member.id)
     |> put_live_constraints()
   end
 
@@ -146,8 +144,8 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     |> unique_constraint([:account_id, :provider_id, :scim_external_id],
       name: :sso_user_identities_scim_external_id_index
     )
-    |> unique_constraint(:user_id,
-      name: :sso_user_identities_live_user_index,
+    |> unique_constraint(:membership_id,
+      name: :sso_user_identities_live_membership_index,
       message: "already has an identity for this connection"
     )
   end

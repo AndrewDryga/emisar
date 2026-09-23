@@ -53,13 +53,13 @@ defmodule EmisarWeb.SCIMControllerTest do
 
     rows =
       for n <- 1..count do
-        user = Fixtures.Users.create_user()
+        membership = Fixtures.Memberships.create_membership(account_id: provider.account_id)
 
         %{
           id: Repo.generate_id(),
           account_id: provider.account_id,
           provider_id: provider.id,
-          user_id: user.id,
+          membership_id: membership.id,
           provider_identifier: "filler|#{n}",
           scim_external_id: "filler|#{n}",
           claims: %{},
@@ -1051,7 +1051,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       identities =
         SSO.UserIdentity.Query.all()
-        |> SSO.UserIdentity.Query.by_user_id(user.id)
+        |> SSO.UserIdentity.Query.by_member_user_id(user.id)
         |> Repo.all()
 
       assert [identity] = identities

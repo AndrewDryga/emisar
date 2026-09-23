@@ -71,7 +71,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
             )
         end
 
-        send(view.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+        send(view.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
         assert_redirect(view, ~p"/app/#{account}")
       end
     end

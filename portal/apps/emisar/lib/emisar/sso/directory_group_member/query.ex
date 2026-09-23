@@ -58,14 +58,10 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
         member.id == identity.membership_id and member.account_id == identity.account_id and
           is_nil(member.deleted_at)
     )
-    |> join(:inner, [directory_identity: identity], user in Emisar.Users.User,
-      as: :directory_user,
-      on: user.id == identity.user_id and is_nil(user.deleted_at)
-    )
   end
 
-  def by_roster_user_ids(queryable, ids),
-    do: where(queryable, [directory_identity: i], i.user_id in ^ids)
+  def by_roster_membership_ids(queryable, ids),
+    do: where(queryable, [directory_identity: i], i.membership_id in ^ids)
 
   def select_roster_group_ids(queryable),
     do: select(queryable, [group_members: l], l.directory_group_id)
@@ -78,17 +74,17 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
     |> group_by([group_members: link], link.directory_group_id)
     |> select([group_members: link, directory_identity: identity], %{
       directory_group_id: link.directory_group_id,
-      member_count: count(identity.user_id, :distinct)
+      member_count: count(identity.membership_id, :distinct)
     })
   end
 
-  # Rank distinct groups across ALL of a person's provider identities. Keep the
+  # Rank distinct groups across ALL of a member's provider identities. Keep the
   # outer base table so Authorizer can still add its account fence.
-  def first_groups_per_user(queryable, limit) do
+  def first_groups_per_member(queryable, limit) do
     distinct_groups =
       queryable
       |> distinct([directory_identity: identity, directory_group: group], [
-        identity.user_id,
+        identity.membership_id,
         group.id
       ])
       |> select(
@@ -100,7 +96,7 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
         ],
         %{
           link_id: link.id,
-          user_id: identity.user_id,
+          membership_id: identity.membership_id,
           id: group.id,
           provider_id: group.provider_id,
           provider_name: provider.name,
@@ -113,9 +109,9 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
       from(group in subquery(distinct_groups),
         as: :group_facts,
         windows: [
-          person: [partition_by: group.user_id],
+          member: [partition_by: group.membership_id],
           ordered: [
-            partition_by: group.user_id,
+            partition_by: group.membership_id,
             order_by: [
               asc:
                 fragment(
@@ -130,7 +126,7 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
           ]
         ],
         select:
-          merge(group, %{position: over(row_number(), :ordered), total: over(count(), :person)})
+          merge(group, %{position: over(row_number(), :ordered), total: over(count(), :member)})
       )
 
     all()
@@ -138,9 +134,9 @@ defmodule Emisar.SSO.DirectoryGroupMember.Query do
       as: :group_facts,
       on: group.link_id == link.id and group.position <= ^limit
     )
-    |> order_by([group_facts: group], asc: group.user_id, asc: group.position)
+    |> order_by([group_facts: group], asc: group.membership_id, asc: group.position)
     |> select([group_facts: g], %{
-      user_id: type(g.user_id, Ecto.UUID),
+      membership_id: type(g.membership_id, Ecto.UUID),
       id: type(g.id, Ecto.UUID),
       provider_id: type(g.provider_id, Ecto.UUID),
       provider_name: g.provider_name,

@@ -695,13 +695,8 @@ defmodule EmisarWeb.AgentsLive do
     # Profile can link to your own agents before you have any. Keep that selected
     # owner readable without offering every member as an empty filter option.
     owners =
-      if subject.actor.id in List.wrap(params["owner"]) do
-        List.keystore(
-          owners,
-          subject.actor.id,
-          0,
-          {subject.actor.id, "You"}
-        )
+      if subject.membership_id in List.wrap(params["owner"]) do
+        List.keystore(owners, subject.membership_id, 0, {subject.membership_id, "You"})
       else
         owners
       end

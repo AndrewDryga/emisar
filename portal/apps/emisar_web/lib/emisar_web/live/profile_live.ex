@@ -1801,7 +1801,9 @@ defmodule EmisarWeb.ProfileLive do
             <p :if={ApiKeys.subject_can_view_api_keys?(@current_subject)} class="mt-4">
               <.link
                 id="review-your-agents"
-                navigate={~p"/app/#{@current_account}/agents?#{[owner: @current_user.id]}"}
+                navigate={
+                  ~p"/app/#{@current_account}/agents?#{[owner: @current_subject.membership_id]}"
+                }
                 class="group text-brand-400 hover:text-brand-300"
               >Review your agents in this workspace&nbsp;<.cta_arrow /></.link>
             </p>

@@ -46,7 +46,7 @@ defmodule Emisar.RunsDispatchAuthorityTest do
     end
   end
 
-  test "a queued human run binds its exact live user and current dispatch permission" do
+  test "a queued human run binds its exact live member and current dispatch permission" do
     membership = Fixtures.Memberships.create_membership(role: "admin")
     subject = Fixtures.Subjects.membership_subject(membership)
     runner = Fixtures.Runners.create_runner(account_id: subject.account.id, connected?: false)
@@ -61,16 +61,41 @@ defmodule Emisar.RunsDispatchAuthorityTest do
       )
 
     assert authorize_initiator(run) == {:ok, :authorized}
-    foreign_user = Fixtures.Users.create_user()
+    # The initiating Member is the authority; no personal login is consulted.
+    assert authorize_initiator(%{run | requested_by_id: nil}) == {:ok, :authorized}
+    foreign = Fixtures.Memberships.create_membership(role: "admin")
 
-    assert authorize_initiator(%{run | requested_by_id: foreign_user.id}) ==
+    assert authorize_initiator(%{run | initiating_membership_id: foreign.id}) ==
              {:error, :initiator_no_longer_authorized}
 
     Fixtures.Memberships.force_role(membership, "viewer")
     assert authorize_initiator(run) == {:error, :initiator_no_longer_authorized}
-    Fixtures.Memberships.force_role(membership, "admin")
-    Fixtures.Users.mark_user_as_deleted(subject.actor)
+    membership = membership |> Repo.reload!() |> Fixtures.Memberships.force_role("admin")
+    assert authorize_initiator(run) == {:ok, :authorized}
+    Fixtures.Memberships.mark_membership_as_deleted(membership)
     assert authorize_initiator(run) == {:error, :initiator_no_longer_authorized}
+  end
+
+  test "a subject carrying another person or another account's member cannot dispatch" do
+    membership = Fixtures.Memberships.create_membership(role: "admin")
+    subject = Fixtures.Subjects.membership_subject(membership)
+    runner = Fixtures.Runners.create_runner(account_id: subject.account.id)
+    Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+    Fixtures.Policies.create_policy(account_id: subject.account.id)
+    attrs = Fixtures.Runs.dispatch_attrs(account_id: subject.account.id, runner_id: runner.id)
+    Runners.subscribe_runner_transport(runner)
+    foreign = Fixtures.Memberships.create_membership(role: "admin")
+
+    for forged <- [
+          %{subject | membership_id: foreign.id},
+          %{subject | actor: Fixtures.Users.create_user()}
+        ] do
+      assert Runs.dispatch_run(attrs, forged) == {:error, :unauthorized}
+      assert locked_access(forged) == {:error, :unauthorized}
+    end
+
+    refute Repo.exists?(Runs.ActionRun)
+    refute_receive {:cloud_to_runner, _, _}
   end
 
   test "delayed pack authority comes from the frozen reference without any current catalog" do

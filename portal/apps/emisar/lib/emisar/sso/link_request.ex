@@ -4,9 +4,10 @@ defmodule Emisar.SSO.LinkRequest do
   connection and is waiting for an admin to approve their access. Captures the
   real `provider_identifier` (the OIDC `sub` / SCIM `externalId`) + the claims so
   the admin recognizes the person; approving binds THAT id — never the email
-  (H1). When the captured email matches an EXISTING account member, `matched_user`
-  records them so approval links the identity to that user instead of creating a
-  duplicate. Hard-deleted on approve/dismiss (transient by design).
+  (H1). When the captured email matches an EXISTING account member,
+  `matched_membership` records them so approval links the identity to that member
+  instead of creating a duplicate. Hard-deleted on approve/dismiss (transient by
+  design).
   """
   use Emisar, :schema
 
@@ -24,7 +25,6 @@ defmodule Emisar.SSO.LinkRequest do
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :provider, Emisar.SSO.IdentityProvider, where: [deleted_at: nil]
-    belongs_to :matched_user, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :matched_membership, Emisar.Accounts.Membership
 
     timestamps()

@@ -829,12 +829,9 @@ defmodule Emisar.Accounts do
 
   # The account is locked by the setter. Only all-pack authority is required;
   # runner restrictions do not change the pack-cleanup schedule contract.
-  defp lock_current_pack_manager(
-         %Subject{account: %{id: account_id}, actor: %Users.User{id: user_id}} = subject
-       ) do
-    with {:ok, %Membership{user_id: ^user_id}} <-
-           fetch_and_lock_membership(account_id, subject.membership_id),
-         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, Repo),
+  defp lock_current_pack_manager(%Subject{account: %{id: account_id}} = subject) do
+    with {:ok, _member} <-
+           fetch_and_lock_membership(account_id, Subject.human_membership_id(subject)),
          {:ok, current} <-
            Auth.fetch_current_subject(
              Emisar.Catalog.Authorizer.manage_catalog_permission(),
@@ -880,14 +877,11 @@ defmodule Emisar.Accounts do
   end
 
   # The setter holds the active account lock. Cleanup is fleet-wide, so current
-  # management permission and all-runner authority must survive exact actor locks.
-  # Pack-only restrictions do not change this contract.
-  defp lock_current_runner_manager(
-         %Subject{account: %{id: account_id}, actor: %Users.User{id: user_id}} = subject
-       ) do
-    with {:ok, %Membership{user_id: ^user_id}} <-
-           fetch_and_lock_membership(account_id, subject.membership_id),
-         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, Repo),
+  # management permission and all-runner authority must survive the exact
+  # member lock. Pack-only restrictions do not change this contract.
+  defp lock_current_runner_manager(%Subject{account: %{id: account_id}} = subject) do
+    with {:ok, _member} <-
+           fetch_and_lock_membership(account_id, Subject.human_membership_id(subject)),
          {:ok, current} <-
            Auth.fetch_current_subject(
              Emisar.Runners.Authorizer.manage_runners_permission(),
@@ -910,7 +904,7 @@ defmodule Emisar.Accounts do
   `account.max_grant_lifetime_set` in the same transaction. `nil` removes the
   cap; `0` disables standing grants. Returns `{:ok, account}` or
   `{:error, %Ecto.Changeset{} | :not_found | :unauthorized}`. The current
-  manager's membership and user are revalidated under locks before the write.
+  manager's exact membership is revalidated under lock before the write.
   """
   def put_account_max_grant_lifetime_seconds(account_id, seconds, %Subject{} = subject)
       when is_nil(seconds) or (is_integer(seconds) and seconds >= 0) do
@@ -933,14 +927,11 @@ defmodule Emisar.Accounts do
   end
 
   # The active account row is locked by the setter above. Keep the manager's
-  # exact member/user authority stable through the cap write, including the
+  # exact member authority stable through the cap write, including the
   # workspace-wide zero-cap containment exception owned by Approvals.
-  defp lock_current_grant_manager(
-         %Subject{account: %{id: account_id}, actor: %Users.User{id: user_id}} = subject
-       ) do
-    with {:ok, %Membership{user_id: ^user_id}} <-
-           fetch_and_lock_membership(account_id, subject.membership_id),
-         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, Repo),
+  defp lock_current_grant_manager(%Subject{account: %{id: account_id}} = subject) do
+    with {:ok, _member} <-
+           fetch_and_lock_membership(account_id, Subject.human_membership_id(subject)),
          {:ok, _current} <-
            Auth.fetch_current_subject(
              Emisar.Approvals.Authorizer.manage_grants_permission(),
@@ -1135,26 +1126,25 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Advances the authenticated user's current membership activity timestamp when
-  its previous value is older than five minutes. Requires `view_own_account`;
-  the membership id, user id, active account, and subject account must all
-  agree. Returns `{:ok, :touched | :unchanged}` or `{:error, :unauthorized}`.
+  Advances the authenticated person's exact member activity timestamp when its
+  previous value is older than five minutes. Requires `view_own_account`; the
+  member, active account, and subject account must all agree. Returns
+  `{:ok, :touched | :unchanged}` or `{:error, :unauthorized}`.
   """
-  def touch_membership_activity(%Subject{membership_id: membership_id} = subject) do
-    user_id = Subject.user_id(subject)
+  def touch_membership_activity(%Subject{} = subject) do
+    membership_id = Subject.human_membership_id(subject)
 
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.view_own_account_permission()
            ),
-         true <- Repo.valid_uuid?(membership_id) and Repo.valid_uuid?(user_id) do
+         true <- Repo.valid_uuid?(membership_id) do
       now = DateTime.utc_now()
 
       {count, _} =
         Membership.Query.authorized()
         |> Membership.Query.by_id(membership_id)
-        |> Membership.Query.by_user_id(user_id)
         |> Membership.Query.with_joined_account()
         |> Membership.Query.last_active_before(DateTime.add(now, -5, :minute))
         |> Authorizer.for_subject(subject)
@@ -1326,7 +1316,7 @@ defmodule Emisar.Accounts do
           not membership.directory_managed,
       resend_invitation?: pending_invitation? and not disabled?,
       resend_confirmation?:
-        confirmation_pending? and membership.user_id == Subject.actor_id(subject),
+        confirmation_pending? and membership.id == Subject.human_membership_id(subject),
       # A second factor belongs to the person, not to this workspace: an admin
       # here may take it away only when this workspace is the only one the
       # person belongs to. Otherwise the member resets it themselves with a
@@ -1383,22 +1373,20 @@ defmodule Emisar.Accounts do
 
   # Only the ACTOR's own owner row is off-limits: an owner editing another owner,
   # or an admin editing their own row, is ordinary team administration.
-  defp self_owner?(%Membership{user_id: user_id, role: :owner}, %Subject{
-         actor: %Users.User{id: user_id}
-       }),
-       do: true
+  defp self_owner?(%Membership{role: :owner} = membership, %Subject{} = subject),
+    do: membership.id == Subject.human_membership_id(subject)
 
   defp self_owner?(%Membership{}, %Subject{}), do: false
 
   @doc """
-  The memberships for the given `user_ids` in `account`, each preloaded with its
-  user — for surfacing and acting on synced members from the SSO connection page.
-  Bounded (the caller passes a known set of ids), so it returns the full list, not
-  a page. Requires `view_own_account`; scoped to the account.
+  The live memberships among `membership_ids` in `account`, each preloaded with
+  its user — for surfacing and acting on synced members from the SSO connection
+  page. Bounded (the caller passes a known set of ids), so it returns the full
+  list, not a page. Requires `view_own_account`; scoped to the account.
   Returns `{:ok, [%Membership{}]}`.
   """
-  def list_memberships_for_users(%Account{id: account_id}, user_ids, %Subject{} = subject)
-      when is_list(user_ids) do
+  def list_memberships_by_ids(%Account{id: account_id}, membership_ids, %Subject{} = subject)
+      when is_list(membership_ids) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -1408,7 +1396,7 @@ defmodule Emisar.Accounts do
       memberships =
         Membership.Query.not_deleted()
         |> Membership.Query.by_account_id(account_id)
-        |> Membership.Query.by_user_ids(user_ids)
+        |> Membership.Query.by_ids(membership_ids)
         |> Membership.Query.with_preloaded_user()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
@@ -2221,7 +2209,7 @@ defmodule Emisar.Accounts do
   defp broadcast_membership_runner_access_changed(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
-      {:list_changed, :team, "membership.runner_access_changed", membership.user_id}
+      {:list_changed, :team, "membership.runner_access_changed", membership.id}
     )
   end
 
@@ -2694,7 +2682,7 @@ defmodule Emisar.Accounts do
   defp broadcast_membership_role_changed(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
-      {:list_changed, :team, "membership.role_changed", membership.user_id}
+      {:list_changed, :team, "membership.role_changed", membership.id}
     )
   end
 
@@ -2783,28 +2771,28 @@ defmodule Emisar.Accounts do
   defp broadcast_membership_suspended(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
-      {:list_changed, :team, "membership.suspended", membership.user_id}
+      {:list_changed, :team, "membership.suspended", membership.id}
     )
   end
 
   defp broadcast_membership_reinstated(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
-      {:list_changed, :team, "membership.reinstated", membership.user_id}
+      {:list_changed, :team, "membership.reinstated", membership.id}
     )
   end
 
   defp broadcast_membership_invitation_resent(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
-      {:list_changed, :team, "membership.invitation_resent", membership.user_id}
+      {:list_changed, :team, "membership.invitation_resent", membership.id}
     )
   end
 
   defp broadcast_membership_invitation_accepted(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
-      {:list_changed, :team, "membership.invitation_accepted", membership.user_id}
+      {:list_changed, :team, "membership.invitation_accepted", membership.id}
     )
   end
 
@@ -2817,7 +2805,7 @@ defmodule Emisar.Accounts do
   defp broadcast_membership_removed(%Membership{} = membership) do
     Emisar.PubSub.broadcast(
       account_team_topic(membership.account_id),
-      {:list_changed, :team, "membership.removed", membership.user_id}
+      {:list_changed, :team, "membership.removed", membership.id}
     )
   end
 
@@ -2850,7 +2838,7 @@ defmodule Emisar.Accounts do
       # Can't grant a role whose permissions you don't already hold (no
       # escalation by proxy). On your own membership that's self-promotion.
       not Auth.Permissions.covers_role?(subject, new_role) ->
-        if membership.user_id == Subject.actor_id(subject),
+        if membership.id == Subject.human_membership_id(subject),
           do: {:error, :cannot_self_promote},
           else: {:error, :insufficient_privileges}
 
@@ -3801,8 +3789,7 @@ defmodule Emisar.Accounts do
          actor_session_token_digest,
          subject
        ) do
-    if payload.actor_id == Subject.actor_id(subject) and
-         payload.actor_membership_id == subject.membership_id and
+    if payload.actor_membership_id == Subject.human_membership_id(subject) and
          payload.actor_session_token_digest == actor_session_token_digest and
          payload.account_id == membership.account_id and
          payload.account_id == subject.account.id and
@@ -3841,7 +3828,7 @@ defmodule Emisar.Accounts do
     SSO.ensure_member_mfa_reset_reauthentication_current(
       repo,
       reauthentication,
-      Subject.actor_id(subject),
+      Subject.human_membership_id(subject),
       subject.account.id
     )
   end
@@ -3993,10 +3980,9 @@ defmodule Emisar.Accounts do
 
   def update_own_member_profile(_attrs, %Subject{}), do: {:error, :unauthorized}
 
-  defp own_member_query(%Subject{membership_id: id, actor: %Users.User{id: user_id}}) do
+  defp own_member_query(%Subject{membership_id: id}) do
     Membership.Query.authorized()
     |> Membership.Query.by_id(id)
-    |> Membership.Query.by_user_id(user_id)
   end
 
   defp member_profile_directory_managed?(%Membership{} = membership),
@@ -4089,9 +4075,9 @@ defmodule Emisar.Accounts do
   # around a superior).
   defp ensure_can_modify_membership(%Membership{} = membership, %Subject{} = subject) do
     cond do
-      # The staff id on an actorless support subject is audit attribution, not
-      # a browser user identity. Such a subject cannot be modifying itself.
-      membership.user_id == Subject.user_id(subject) ->
+      # An actorless support subject holds no member, so it is never modifying
+      # itself.
+      membership.id == Subject.human_membership_id(subject) ->
         {:error, :cannot_modify_self}
 
       not Auth.Permissions.covers_role?(subject, membership.role) ->
@@ -5040,7 +5026,7 @@ defmodule Emisar.Accounts do
   @doc "Whether the subject may manage this other member; mutations recheck current state."
   def subject_can_manage_member?(%Membership{} = membership, %Subject{} = subject) do
     membership.account_id == subject.account.id and
-      membership.user_id != Subject.user_id(subject) and
+      membership.id != Subject.human_membership_id(subject) and
       subject_can_assign_member_role?(membership.role, subject)
   end
 

@@ -7,7 +7,7 @@ defmodule Emisar.Runbooks.Scheduler do
   """
 
   alias Ecto.Multi
-  alias Emisar.{Accounts, ActionContract, ApiKeys, Audit, Auth, Crypto, Repo, Runs, Users}
+  alias Emisar.{Accounts, ActionContract, ApiKeys, Audit, Auth, Crypto, Repo, Runs}
   alias Emisar.Auth.Subject
   alias Emisar.Runbooks.{Definition, ExecutionItem, ExecutionStage}
   alias Emisar.Runbooks.RunbookExecution
@@ -212,8 +212,7 @@ defmodule Emisar.Runbooks.Scheduler do
              execution.account_id,
              execution.initiating_membership_id
            ),
-         {:ok, user} <- Users.fetch_user_by_id(membership.user_id),
-         true <- execution_identity_authorized?(execution, membership, user) do
+         true <- execution_member_authorized?(execution, membership) do
       :ok
     else
       _ -> {:error, :authorization_lost}
@@ -368,31 +367,27 @@ defmodule Emisar.Runbooks.Scheduler do
          repo,
          %{execution: execution, membership: membership}
        ) do
-    with {:ok, user} <- Users.fetch_and_lock_user_by_id(membership.user_id, repo),
-         true <-
+    with true <-
            is_nil(execution.api_key_id) or
              ApiKeys.api_key_usable_in_account?(repo, execution.api_key_id, execution.account_id),
-         true <- execution_identity_authorized?(execution, membership, user) do
+         true <- execution_member_authorized?(execution, membership) do
       {:ok, :current}
     else
       _ -> {:ok, :lost}
     end
   end
 
-  defp execution_identity_authorized?(%{api_key_id: nil} = execution, membership, user) do
-    execution.requested_by_id == user.id and
-      MapSet.member?(
-        Auth.Permissions.for_role(Subject.effective_membership_role(membership)),
-        Runs.Authorizer.dispatch_run_permission()
-      )
+  defp execution_member_authorized?(%{api_key_id: nil}, membership) do
+    MapSet.member?(
+      Auth.Permissions.for_role(Subject.effective_membership_role(membership)),
+      Runs.Authorizer.dispatch_run_permission()
+    )
   end
 
-  defp execution_identity_authorized?(execution, membership, user) do
+  defp execution_member_authorized?(execution, membership) do
     case ApiKeys.peek_api_key_by_id(execution.api_key_id) do
       %ApiKeys.ApiKey{kind: :mcp} = key ->
-        key.account_id == execution.account_id and
-          key.created_by_membership_id == membership.id and key.created_by_id == user.id and
-          execution.requested_by_id in [nil, user.id]
+        key.account_id == execution.account_id and key.created_by_membership_id == membership.id
 
       _ ->
         false

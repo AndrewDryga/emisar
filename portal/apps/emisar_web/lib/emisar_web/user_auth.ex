@@ -779,10 +779,10 @@ defmodule EmisarWeb.UserAuth do
   defp handle_account_lifecycle(_message, socket), do: {:cont, socket}
 
   defp refresh_membership_action_access(
-         {:list_changed, :team, "membership.runner_access_changed", user_id},
+         {:list_changed, :team, "membership.runner_access_changed", membership_id},
          %{
            assigns: %{
-             current_subject: %{actor: %{id: user_id}} = subject,
+             current_subject: %{membership_id: membership_id} = subject,
              current_membership: previous_membership
            }
          } = socket
@@ -835,8 +835,8 @@ defmodule EmisarWeb.UserAuth do
   end
 
   defp refresh_pending_approvals(
-         {:list_changed, :team, "membership.runner_access_changed", user_id},
-         %{assigns: %{current_user: %{id: user_id}}} = socket
+         {:list_changed, :team, "membership.runner_access_changed", membership_id},
+         %{assigns: %{current_subject: %{membership_id: membership_id}}} = socket
        ),
        do: {:cont, schedule_badge_recompute(socket, :approvals)}
 

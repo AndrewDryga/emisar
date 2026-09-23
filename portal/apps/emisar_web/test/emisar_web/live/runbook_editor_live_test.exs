@@ -1478,7 +1478,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
           end
 
         Fixtures.Memberships.force_runner_access(membership, narrowed)
-        send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+        send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
         html = render(lv)
         after_change = :sys.get_state(lv.pid).socket.assigns
 
@@ -1509,7 +1509,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         refute Repo.exists?(Runbook)
 
         Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
-        send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+        send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
         render(lv)
         restored = :sys.get_state(lv.pid).socket.assigns
         assert restored.authoring_error == nil
@@ -1551,7 +1551,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
       Fixtures.Memberships.force_runner_access(membership, access)
-      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
       html = render(lv)
       [new_source] = Regex.run(~r/data-combobox-source="([^"]+)"/, html, capture: :all_but_first)
       assert new_source != source
@@ -1571,7 +1571,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       {:ok, denied} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, [])
       Fixtures.Memberships.force_runner_access(membership, denied)
-      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
       render(lv)
       repaired = put_in(before.draft, ["stages", Access.at(0), "steps"], [])
       change(lv, repaired)

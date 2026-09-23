@@ -32,46 +32,46 @@ defmodule Emisar.DirectoryRelationshipsTest do
           )
         end
 
-      assert {:ok, summaries} = SSO.member_group_summaries([member.user.id], owner)
-      assert summaries[member.user.id].count == 12
+      assert {:ok, summaries} = SSO.member_group_summaries([member.membership.id], owner)
+      assert summaries[member.membership.id].count == 12
 
-      assert Enum.map(summaries[member.user.id].groups, & &1.display) == [
+      assert Enum.map(summaries[member.membership.id].groups, & &1.display) == [
                "Group 01",
                "Group 02",
                "Group 03"
              ]
 
-      assert Enum.map(summaries[member.user.id].groups, & &1.id) ==
+      assert Enum.map(summaries[member.membership.id].groups, & &1.id) ==
                Enum.map(Enum.take(groups, 3), & &1.id)
 
-      assert Enum.map(summaries[member.user.id].groups, & &1.provider_id) ==
+      assert Enum.map(summaries[member.membership.id].groups, & &1.provider_id) ==
                [second.id, first.id, second.id]
 
       assert {:ok, scoped} =
-               SSO.member_group_summaries([member.user.id], owner, provider_id: first.id)
+               SSO.member_group_summaries([member.membership.id], owner, provider_id: first.id)
 
-      assert scoped[member.user.id].count == 6
+      assert scoped[member.membership.id].count == 6
 
       assert {:ok, page, metadata} =
-               SSO.list_member_groups(member.user.id, owner, page: [limit: 10])
+               SSO.list_member_groups(member.membership.id, owner, page: [limit: 10])
 
       assert length(page) == 10
       assert metadata.count == 12
 
       assert {:ok, rest, _} =
-               SSO.list_member_groups(member.user.id, owner,
+               SSO.list_member_groups(member.membership.id, owner,
                  page: [limit: 10, cursor: metadata.next_page_cursor]
                )
 
       assert MapSet.new(Enum.map(page ++ rest, & &1.id)) == MapSet.new(Enum.map(groups, & &1.id))
 
       assert {:ok, [found], _} =
-               SSO.list_member_groups(member.user.id, owner, filter: [search: "Group 12"])
+               SSO.list_member_groups(member.membership.id, owner, filter: [search: "Group 12"])
 
       assert found.display == "Group 12"
 
       assert {:ok, [by_id], _} =
-               SSO.list_member_groups(member.user.id, owner, filter: [search: found.id])
+               SSO.list_member_groups(member.membership.id, owner, filter: [search: found.id])
 
       assert by_id.id == found.id
     end
@@ -90,8 +90,8 @@ defmodule Emisar.DirectoryRelationshipsTest do
       other_account = Fixtures.Accounts.create_account()
       other = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), other_account)
 
-      assert SSO.member_group_summaries([member.user.id], viewer) == {:error, :unauthorized}
-      assert SSO.list_member_groups(member.user.id, viewer) == {:error, :unauthorized}
+      assert SSO.member_group_summaries([member.membership.id], viewer) == {:error, :unauthorized}
+      assert SSO.list_member_groups(member.membership.id, viewer) == {:error, :unauthorized}
       assert SSO.fetch_directory_group_facts(group.id, viewer) == {:error, :unauthorized}
 
       assert SSO.list_synced_users(provider, viewer, directory_group_id: group.id) ==
@@ -102,12 +102,12 @@ defmodule Emisar.DirectoryRelationshipsTest do
       assert SSO.list_synced_users(provider, other, directory_group_id: group.id) ==
                {:error, :not_found}
 
-      assert {:ok, summaries} = SSO.member_group_summaries([member.user.id], other)
-      assert summaries[member.user.id] == %{groups: [], count: 0}
-      assert {:ok, [], _} = SSO.list_member_groups(member.user.id, other)
+      assert {:ok, summaries} = SSO.member_group_summaries([member.membership.id], other)
+      assert summaries[member.membership.id] == %{groups: [], count: 0}
+      assert {:ok, [], _} = SSO.list_member_groups(member.membership.id, other)
       assert SSO.fetch_directory_group_facts("invalid", owner) == {:error, :not_found}
 
-      assert SSO.member_group_summaries(List.duplicate(member.user.id, 101), owner) ==
+      assert SSO.member_group_summaries(List.duplicate(member.membership.id, 101), owner) ==
                {:error, :invalid_request}
 
       assert SSO.member_group_summaries([%{}], owner) == {:error, :invalid_request}
@@ -138,13 +138,13 @@ defmodule Emisar.DirectoryRelationshipsTest do
       Fixtures.SSO.create_directory_group(other, identities: [other_member.identity])
 
       assert {:ok, [listed], metadata} =
-               SSO.list_member_groups(member.user.id, subject, provider_id: provider.id)
+               SSO.list_member_groups(member.membership.id, subject, provider_id: provider.id)
 
       assert listed.id == group.id
       assert metadata.count == 1
       assert SSO.list_member_groups("invalid", subject) == {:error, :not_found}
 
-      assert SSO.list_member_groups(member.user.id, subject, provider_id: %{}) ==
+      assert SSO.list_member_groups(member.membership.id, subject, provider_id: %{}) ==
                {:error, :not_found}
 
       assert {:ok, [], _} = SSO.list_member_groups(Ecto.UUID.generate(), subject)
@@ -171,8 +171,8 @@ defmodule Emisar.DirectoryRelationshipsTest do
       assert {:ok, _} = SSO.scim_delete_group(provider, group.id)
       assert SSO.fetch_directory_group_facts(group.id, owner) == {:error, :not_found}
       assert {:ok, [], _} = SSO.list_directory_groups(owner)
-      assert {:ok, summaries} = SSO.member_group_summaries([member.user.id], owner)
-      assert summaries[member.user.id].count == 0
+      assert {:ok, summaries} = SSO.member_group_summaries([member.membership.id], owner)
+      assert summaries[member.membership.id].count == 0
     end
   end
 
@@ -306,7 +306,7 @@ defmodule Emisar.DirectoryRelationshipsTest do
         for n <- 1..7,
             do: Fixtures.SSO.create_directory_member(provider, full_name: "Person #{n}")
 
-      first = Enum.min_by(members, & &1.user.id)
+      first = Enum.min_by(members, & &1.membership.id)
       Fixtures.Memberships.sync_display_name(first.membership, "Directory name")
       Fixtures.Memberships.suspend_membership(first.membership)
 
@@ -316,7 +316,7 @@ defmodule Emisar.DirectoryRelationshipsTest do
           identities: Enum.map(members, & &1.identity)
         )
 
-      removed = Enum.max_by(members, & &1.user.id)
+      removed = Enum.max_by(members, & &1.membership.id)
       Fixtures.Memberships.mark_membership_as_deleted(removed.membership)
 
       assert {:ok, [suspended], metadata} =
@@ -341,7 +341,7 @@ defmodule Emisar.DirectoryRelationshipsTest do
                )
 
       assert length(Enum.uniq_by(page ++ rest, & &1.id)) == 6
-      refute Enum.any?(page ++ rest, &(&1.user_id == removed.user.id))
+      refute Enum.any?(page ++ rest, &(&1.membership_id == removed.membership.id))
     end
 
     test "directory member search retains local history without exposing personal edits after removal" do
@@ -354,7 +354,7 @@ defmodule Emisar.DirectoryRelationshipsTest do
       assert {:ok, [named], _} =
                SSO.list_synced_users(provider, owner, filter: [search: "Workspace name"])
 
-      assert named.user_id == member.user.id
+      assert named.membership_id == member.membership.id
       Fixtures.Memberships.mark_membership_as_deleted(member.membership)
 
       member.user
@@ -367,7 +367,7 @@ defmodule Emisar.DirectoryRelationshipsTest do
       assert {:ok, [historical], _} =
                SSO.list_synced_users(provider, owner, filter: [search: "Workspace name"])
 
-      assert historical.user_id == member.user.id
+      assert historical.membership_id == member.membership.id
 
       assert {:ok, [], _} =
                SSO.list_synced_users(provider, owner,
@@ -377,7 +377,7 @@ defmodule Emisar.DirectoryRelationshipsTest do
       assert {:ok, [retained], _} =
                SSO.list_synced_users(provider, owner, filter: [search: member.user.email])
 
-      assert retained.user_id == member.user.id
+      assert retained.membership_id == member.membership.id
     end
   end
 end

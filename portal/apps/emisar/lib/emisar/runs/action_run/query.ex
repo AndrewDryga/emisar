@@ -1,6 +1,6 @@
 defmodule Emisar.Runs.ActionRun.Query do
   use Emisar, :query
-  alias Emisar.{Accounts, ApiKeys, Runners, Users}
+  alias Emisar.{Accounts, ApiKeys, Runners}
   alias Emisar.Repo.{Filter, Like}
 
   def all,
@@ -238,11 +238,7 @@ defmodule Emisar.Runs.ActionRun.Query do
     |> preload([runner: runner], runner: runner)
   end
 
-  @doc """
-  Left-join + preload the run's (non-deleted) API key, idempotently — with the
-  key's creator, so an MCP run can name its accountable human ("by
-  jordan@… via Claude Code").
-  """
+  @doc "Left-join + preload the run's (non-deleted) API key, idempotently."
   def with_preloaded_api_key(queryable) do
     queryable
     |> with_named_binding(:api_key, fn queryable, binding ->
@@ -254,92 +250,46 @@ defmodule Emisar.Runs.ActionRun.Query do
         # Tenancy rides the join condition, matching the runbook-execution join.
         # A run's key is always in the run's account, so this changes nothing on
         # correct data — and on incorrect data it resolves to no key rather than
-        # naming another tenant's owner in an attribution line.
+        # naming another tenant's key in an attribution line.
         on: r.api_key_id == api_key.id and api_key.account_id == r.account_id,
         as: ^binding
       )
     end)
-    |> with_named_binding(:api_key_created_by, fn queryable, binding ->
-      join(
-        queryable,
-        :left,
-        [api_key: api_key],
-        created_by in ^Users.User.Query.not_deleted(),
-        on: api_key.created_by_id == created_by.id,
-        as: ^binding
-      )
-    end)
-    |> with_named_binding(:api_key_created_by_membership, fn queryable, binding ->
-      join(
-        queryable,
-        :left,
-        [runs: r, api_key: api_key, api_key_created_by: created_by],
-        membership in ^Accounts.Membership.Query.all(),
-        on:
-          membership.id == api_key.created_by_membership_id and
-            membership.id == r.initiating_membership_id and
-            membership.user_id == created_by.id and membership.account_id == r.account_id,
-        as: ^binding
-      )
-    end)
-    |> preload(
-      [
-        api_key: api_key,
-        api_key_created_by: created_by,
-        api_key_created_by_membership: membership
-      ],
-      api_key: {
-        api_key,
-        created_by: created_by, created_by_membership: membership
-      }
-    )
+    |> preload([api_key: api_key], api_key: api_key)
   end
 
-  @doc "Left-join + preload the run's (non-deleted) requesting user, idempotently."
-  def with_preloaded_requested_by(queryable) do
+  @doc """
+  Left-join + preload the run's accountable Member, idempotently: the operator
+  who dispatched it, or the Member whose API key did. A directory can call the
+  same person something different in each account, so the run is named only
+  through the exact seat it recorded, in its own account — a removed seat
+  included, as history.
+  """
+  def with_preloaded_initiating_membership(queryable) do
     queryable
-    |> with_named_binding(:requested_by, fn queryable, binding ->
+    |> with_named_binding(:initiating_membership, fn queryable, binding ->
       join(
         queryable,
         :left,
         [runs: r],
-        requested_by in ^Users.User.Query.not_deleted(),
-        on: r.requested_by_id == requested_by.id,
-        as: ^binding
-      )
-    end)
-    # The run's OWN initiating membership rides along, because a directory can
-    # call the same person something different in each account and
-    # `users.full_name` is cross-account. Pinning the join to the recorded
-    # `initiating_membership_id` (not merely to the account) means the row that
-    # names the requester is the one this run was actually dispatched under.
-    |> with_named_binding(:requested_by_membership, fn queryable, binding ->
-      join(
-        queryable,
-        :left,
-        [runs: r, requested_by: requested_by],
         membership in ^Accounts.Membership.Query.all(),
         on:
           membership.id == r.initiating_membership_id and
-            membership.user_id == requested_by.id and membership.account_id == r.account_id,
+            membership.account_id == r.account_id,
         as: ^binding
       )
     end)
-    |> preload(
-      [requested_by: requested_by, requested_by_membership: membership],
-      requested_by: {requested_by, memberships: membership}
-    )
+    |> preload([initiating_membership: membership], initiating_membership: membership)
   end
 
   @doc """
-  Everything the accountable-actor projection reads — the requesting user with
-  the run's initiating membership, plus the API key with its creator and that
-  creator's membership. Compose it once instead of pairing the two preloads by
-  hand at every call site (`Emisar.Runs.run_who_via/1` consumes exactly this).
+  Everything the accountable-actor projection reads — the run's initiating
+  Member plus its API key. Compose it once instead of pairing the two preloads
+  by hand at every call site (`Emisar.Runs.run_who_via/1` consumes exactly this).
   """
   def with_attribution(queryable) do
     queryable
-    |> with_preloaded_requested_by()
+    |> with_preloaded_initiating_membership()
     |> with_preloaded_api_key()
   end
 
@@ -475,14 +425,20 @@ defmodule Emisar.Runs.ActionRun.Query do
           {queryable, dynamic([runs: r], r.api_key_id == ^api_key_id)}
         end
       },
+      # A person's own dispatches: the runs their Member initiated without an
+      # API key, so their agents' runs stay under "LLM agent".
       %Filter{
-        name: :requested_by_id,
+        name: :initiating_membership_id,
         title: "Operator",
         type: {:string, :uuid},
         search: true,
         values: [],
-        fun: fn queryable, user_id ->
-          {queryable, dynamic([runs: r], r.requested_by_id == ^user_id)}
+        fun: fn queryable, membership_id ->
+          {queryable,
+           dynamic(
+             [runs: r],
+             r.initiating_membership_id == ^membership_id and is_nil(r.api_key_id)
+           )}
         end
       },
       %Filter{
@@ -498,23 +454,23 @@ defmodule Emisar.Runs.ActionRun.Query do
     ]
 
   @doc """
-  Distinct `{user_id, name-or-email}` of the runs' dispatching operators —
+  Distinct `{membership_id, name-or-email}` of the runs' dispatching operators —
   options for the runs page's Operator picker. Compose with `for_subject/2`.
   """
   def operator_options(queryable \\ all()) do
     queryable
-    |> join(:inner, [runs: r], u in assoc(r, :requested_by), as: :requested_by)
+    |> where([runs: r], is_nil(r.api_key_id))
     |> join(
       :inner,
-      [runs: r, requested_by: u],
+      [runs: r],
       membership in ^Accounts.Membership.Query.all(),
-      on: membership.user_id == u.id and membership.account_id == r.account_id,
-      as: :requested_by_membership
+      on: membership.id == r.initiating_membership_id and membership.account_id == r.account_id,
+      as: :initiating_membership
     )
     |> distinct(true)
     |> select(
-      [requested_by: u, requested_by_membership: membership],
-      {u.id,
+      [initiating_membership: membership],
+      {membership.id,
        coalesce(
          fragment("NULLIF(BTRIM(?), '')", membership.display_name),
          membership.contact_email

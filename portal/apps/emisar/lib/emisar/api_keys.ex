@@ -104,10 +104,10 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
-  `{:ok, [{user_id, local_label}]}` — the distinct creators of the account's visible
-  agent keys (the same `visible_to_operators` + `kind: :mcp` set the agents
-  list shows), for that page's "Owner" filter options. `%Subject{}` needs
-  `view_api_keys`.
+  `{:ok, [{membership_id, local_label}]}` — the distinct creating Members of the
+  account's visible agent keys (the same `visible_to_operators` + `kind: :mcp`
+  set the agents list shows), for that page's "Owner" filter options.
+  `%Subject{}` needs `view_api_keys`.
   """
   def list_key_owner_options(%Subject{} = subject) do
     with :ok <-
@@ -523,7 +523,7 @@ defmodule Emisar.ApiKeys do
       |> Multi.insert(:key, fn %{current_subject: current_subject} ->
         ApiKey.Changeset.create(
           account_id,
-          Subject.actor_id(current_subject),
+          Subject.user_id(current_subject),
           current_subject.membership_id,
           prefix,
           hash,
@@ -768,20 +768,15 @@ defmodule Emisar.ApiKeys do
   # it names and rebuilds its permissions before any key row is inserted or
   # locked, so a concurrent suspension, removal, or demotion either lands first
   # and refuses this request or lands second and revokes what this request made.
-  defp put_current_subject(
-         multi,
-         %Subject{actor: %Users.User{id: user_id}, membership_id: membership_id} = subject
-       )
-       when is_binary(membership_id) do
+  defp put_current_subject(multi, %Subject{actor: %Users.User{}} = subject) do
     Multi.run(multi, :current_subject, fn repo, %{active_account: account} ->
       with {:ok, membership} <-
-             Accounts.fetch_and_lock_membership(account.id, membership_id, repo: repo),
-           true <- membership.user_id == user_id,
-           {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo) do
-        {:ok, Subject.rebuild(subject, %{membership | user: user}, account)}
-      else
-        false -> {:error, :not_found}
-        {:error, reason} -> {:error, reason}
+             Accounts.fetch_and_lock_membership(
+               account.id,
+               Subject.human_membership_id(subject),
+               repo: repo
+             ) do
+        {:ok, Subject.rebuild(subject, %{membership | user: subject.actor}, account)}
       end
     end)
   end
@@ -1126,7 +1121,7 @@ defmodule Emisar.ApiKeys do
     |> Multi.insert(:key, fn %{current_subject: current_subject} ->
       ApiKey.Changeset.mint_quick(
         account_id,
-        Subject.actor_id(current_subject),
+        Subject.user_id(current_subject),
         current_subject.membership_id,
         prefix,
         hash,
@@ -1897,7 +1892,7 @@ defmodule Emisar.ApiKeys do
     DeviceGrant.Changeset.approve(
       grant,
       account.id,
-      Subject.actor_id(current_subject),
+      Subject.user_id(current_subject),
       current_subject.membership_id
     )
   end
@@ -1906,7 +1901,7 @@ defmodule Emisar.ApiKeys do
     DeviceGrant.Changeset.deny(
       grant,
       account.id,
-      Subject.actor_id(current_subject),
+      Subject.user_id(current_subject),
       current_subject.membership_id
     )
   end
@@ -2012,7 +2007,6 @@ defmodule Emisar.ApiKeys do
 
     if membership.id == grant.approved_by_membership_id and
          membership.account_id == grant.account_id and
-         membership.user_id == grant.approved_by_id and
          permission in Authorizer.list_permissions_for_role(role) do
       {:ok, membership}
     else
@@ -2025,9 +2019,7 @@ defmodule Emisar.ApiKeys do
          account,
          %Accounts.Membership{} = membership
        ) do
-    if grant.account_id == account.id and
-         grant.approved_by_membership_id == membership.id and
-         grant.approved_by_id == membership.user_id do
+    if grant.account_id == account.id and grant.approved_by_membership_id == membership.id do
       case judge_device_grant_state(grant) do
         :approved -> {:ok, grant}
         reason -> {:error, reason}

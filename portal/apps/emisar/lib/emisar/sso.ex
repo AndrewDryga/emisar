@@ -100,38 +100,39 @@ defmodule Emisar.SSO do
   end
 
   @doc """
-  Directory facts for the given member `user_ids` in the subject's account: which
-  connection provisioned each person, and whether that connection currently owns
+  Directory facts for the given `membership_ids` in the subject's account: which
+  connection provisioned each member, and whether that connection currently owns
   their directory profile. Bounded — the caller passes the ids on its page.
 
   Read from CURRENT rows, so turning directory sync off (or deleting the
-  connection) changes the answer for a roster loaded a moment earlier. A person
+  connection) changes the answer for a roster loaded a moment earlier. A member
   holding identities on several connections attributes deterministically: the
   directory-managed one wins, then provider name, then id. Requires `manage_sso`;
-  account-scoped. Returns `{:ok, %{user_id => facts}}`.
+  account-scoped. Returns `{:ok, %{membership_id => facts}}`.
   """
-  def member_directory_facts(user_ids, %Subject{} = subject) when is_list(user_ids) do
+  def member_directory_facts(membership_ids, %Subject{} = subject)
+      when is_list(membership_ids) do
     with :ok <- ensure_can_manage_sso(subject) do
       rows =
         UserIdentity.Query.not_deleted()
-        |> UserIdentity.Query.by_user_ids(user_ids)
+        |> UserIdentity.Query.by_membership_ids(membership_ids)
         |> UserIdentity.Query.with_live_membership()
         |> UserIdentity.Query.ordered_by_directory_precedence()
         |> UserIdentity.Query.select_directory_facts()
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      {:ok, member_directory_facts_by_user_id(rows)}
+      {:ok, member_directory_facts_by_membership_id(rows)}
     end
   end
 
-  # The rows arrive in precedence order, so the first one per person is both the
+  # The rows arrive in precedence order, so the first one per member is both the
   # display identity and the directory-managed answer.
-  defp member_directory_facts_by_user_id(rows) do
-    Enum.reduce(rows, %{}, fn {user_id, provider_id, provider_name, provisioned_via,
+  defp member_directory_facts_by_membership_id(rows) do
+    Enum.reduce(rows, %{}, fn {membership_id, provider_id, provider_name, provisioned_via,
                                directory_managed?},
                               facts ->
-      Map.put_new(facts, user_id, %{
+      Map.put_new(facts, membership_id, %{
         identity: %{
           provider_id: provider_id,
           provider_name: provider_name,
@@ -142,26 +143,29 @@ defmodule Emisar.SSO do
     end)
   end
 
-  @doc "At most three distinct directory groups per visible user, with the full count. Requires manage_sso."
-  def member_group_summaries(user_ids, %Subject{} = subject, opts \\ []) do
+  @doc "At most three distinct directory groups per visible member, with the full count. Requires manage_sso."
+  def member_group_summaries(membership_ids, %Subject{} = subject, opts \\ []) do
     with :ok <- ensure_can_manage_sso(subject),
          true <-
-           is_list(user_ids) and length(user_ids) <= 100 and
-             Enum.all?(user_ids, &Repo.valid_uuid?/1),
+           is_list(membership_ids) and length(membership_ids) <= 100 and
+             Enum.all?(membership_ids, &Repo.valid_uuid?/1),
          :ok <- validate_group_provider_option(opts) do
       rows =
         directory_roster_query(subject, opts)
-        |> DirectoryGroupMember.Query.by_roster_user_ids(user_ids)
-        |> DirectoryGroupMember.Query.first_groups_per_user(3)
+        |> DirectoryGroupMember.Query.by_roster_membership_ids(membership_ids)
+        |> DirectoryGroupMember.Query.first_groups_per_member(3)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
 
-      summaries = Map.new(user_ids, &{&1, %{groups: [], count: 0}})
+      summaries = Map.new(membership_ids, &{&1, %{groups: [], count: 0}})
 
       {:ok,
        Enum.reduce(rows, summaries, fn row, acc ->
-         Map.update!(acc, row.user_id, fn summary ->
-           %{groups: summary.groups ++ [Map.drop(row, [:user_id, :total])], count: row.total}
+         Map.update!(acc, row.membership_id, fn summary ->
+           %{
+             groups: summary.groups ++ [Map.drop(row, [:membership_id, :total])],
+             count: row.total
+           }
          end)
        end)}
     else
@@ -171,15 +175,15 @@ defmodule Emisar.SSO do
   end
 
   @doc "One searchable page of a member's groups, across providers unless provider_id is supplied."
-  def list_member_groups(user_id, %Subject{} = subject, opts \\ []) do
+  def list_member_groups(membership_id, %Subject{} = subject, opts \\ []) do
     with :ok <- ensure_can_manage_sso(subject),
-         true <- Repo.valid_uuid?(user_id),
+         true <- Repo.valid_uuid?(membership_id),
          :ok <- validate_group_provider_option(opts) do
       {provider_id, opts} = Keyword.pop(opts, :provider_id)
 
       DirectoryGroup.Query.not_deleted()
       |> DirectoryGroup.Query.by_account_id(subject.account.id)
-      |> DirectoryGroup.Query.for_roster_user(user_id, subject.account.id)
+      |> DirectoryGroup.Query.for_roster_member(membership_id, subject.account.id)
       |> maybe_group_provider(provider_id)
       |> DirectoryGroup.Query.with_live_provider()
       |> DirectoryGroup.Query.select_directory_labels()
@@ -277,11 +281,11 @@ defmodule Emisar.SSO do
   end
 
   @doc """
-  The users provisioned through `provider` — its `UserIdentity` rows (SCIM sync,
-  SSO first-login, or approved link), each preloaded with the user, most-recent
-  first. Powers the connection page's "Synced members" list. Paginated, because a
-  directory is exactly what makes this set large. Requires `manage_sso`; scoped to
-  the account. Returns `{:ok, [%UserIdentity{}], %Paginator.Metadata{}}`.
+  The members provisioned through `provider` — its `UserIdentity` rows (SCIM sync,
+  SSO first-login, or approved link), each preloaded with its member profile,
+  most-recent first. Powers the connection page's "Synced members" list. Paginated,
+  because a directory is exactly what makes this set large. Requires `manage_sso`;
+  scoped to the account. Returns `{:ok, [%UserIdentity{}], %Paginator.Metadata{}}`.
   """
   def list_synced_users(%IdentityProvider{} = provider, %Subject{} = subject, opts \\ []) do
     {group_id, opts} = Keyword.pop(opts, :directory_group_id)
@@ -291,7 +295,6 @@ defmodule Emisar.SSO do
       # No `ordered_by_recent/1`: the query module's `cursor_fields/0` is that
       # same order, and `Repo.list/3` applies it.
       queryable
-      |> UserIdentity.Query.with_preloaded_user()
       |> UserIdentity.Query.with_preloaded_membership()
       |> Authorizer.for_subject(subject)
       |> Repo.list(UserIdentity.Query, opts)
@@ -485,8 +488,8 @@ defmodule Emisar.SSO do
 
   @doc """
   Existing linked providers this exact browser may use to prove its workspace
-  SSO requirement. A person holds one live seat per workspace, so an identity of
-  theirs on another seat is on a removed one: a member invited back continues
+  SSO requirement. A person holds one live seat per workspace, so an identity on
+  another of their seats is on a removed one: a member invited back continues
   with it, and completing SSO moves it to the current seat.
   """
   def list_session_step_up_providers(%Subject{actor: %Users.User{}} = subject) do
@@ -498,7 +501,7 @@ defmodule Emisar.SSO do
       identities =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.provider_identifier_active()
-        |> UserIdentity.Query.by_user_id(current.actor.id)
+        |> UserIdentity.Query.by_member_user_id(current.actor.id)
         |> UserIdentity.Query.with_preloaded_provider()
         |> Authorizer.for_subject(current)
         |> Repo.all()
@@ -582,10 +585,10 @@ defmodule Emisar.SSO do
     |> put_sso_entitlement(provider.account_id)
     |> put_callback_provider_lock(provider, stashed.namespace, claims)
     |> Multi.run(:locked_user, fn repo, _changes ->
-      Users.fetch_and_lock_user_by_id(identity.user_id, repo)
+      Users.fetch_and_lock_user_by_id(subject.actor.id, repo)
     end)
-    |> Multi.run(:locked_identity, fn repo, _changes ->
-      case lock_step_up_identity(repo, identity) do
+    |> Multi.run(:locked_identity, fn repo, %{locked_user: user} ->
+      case lock_step_up_identity(repo, identity, user) do
         %UserIdentity{} = locked -> {:ok, locked}
         nil -> {:error, :session_step_up_invalid}
       end
@@ -597,7 +600,7 @@ defmodule Emisar.SSO do
                provider.account_id,
                subject.membership_id
              ),
-           true <- member.user_id == changes.locked_identity.user_id,
+           true <- member.user_id == changes.locked_user.id,
            true <-
              names_identity_owner?(
                changes.locked_provider,
@@ -623,11 +626,11 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp lock_step_up_identity(repo, identity) do
+  defp lock_step_up_identity(repo, identity, user) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.provider_identifier_active()
     |> UserIdentity.Query.by_id(identity.id)
-    |> UserIdentity.Query.by_user_id(identity.user_id)
+    |> UserIdentity.Query.by_member_user_id(user.id)
     |> UserIdentity.Query.by_account_id(identity.account_id)
     |> UserIdentity.Query.by_provider_id(identity.provider_id)
     |> UserIdentity.Query.by_provider_identifier(identity.provider_identifier)
@@ -656,7 +659,7 @@ defmodule Emisar.SSO do
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_provider_id(provider_id)
-      |> UserIdentity.Query.by_user_id(current.actor.id)
+      |> UserIdentity.Query.by_member_user_id(current.actor.id)
       |> UserIdentity.Query.with_preloaded_provider()
       |> Authorizer.for_subject(current)
 
@@ -736,7 +739,7 @@ defmodule Emisar.SSO do
   removal eligibility for presentation. Unlinking rechecks policy under lock.
   """
   def list_self_service_identity_facts(
-        %Subject{actor: %Users.User{id: user_id}, account: %{id: account_id}} = subject
+        %Subject{actor: %Users.User{}, account: %{id: account_id}} = subject
       ) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -754,7 +757,6 @@ defmodule Emisar.SSO do
       identities =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.by_account_id(account_id)
-        |> UserIdentity.Query.by_user_id(user_id)
         |> UserIdentity.Query.by_membership_id(subject.membership_id)
         |> Repo.all()
         |> Map.new(&{&1.provider_id, &1})
@@ -794,14 +796,13 @@ defmodule Emisar.SSO do
   @doc "A provider's durable real-sign-in receipt and the acting admin's link state."
   def provider_sign_in_verification_facts(
         %IdentityProvider{id: provider_id},
-        %Subject{actor: %Users.User{id: user_id}} = subject
+        %Subject{actor: %Users.User{}} = subject
       ) do
     with {:ok, provider} <- fetch_provider_by_id(provider_id, subject) do
       identity =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.provider_identifier_active()
         |> UserIdentity.Query.by_provider_id(provider.id)
-        |> UserIdentity.Query.by_user_id(user_id)
         |> UserIdentity.Query.by_membership_id(subject.membership_id)
         |> Repo.peek()
 
@@ -832,7 +833,7 @@ defmodule Emisar.SSO do
              is_binary(redirect_uri) and is_binary(proof) and
              is_binary(actor_session_token_digest) do
     with {:ok, provider} <- fetch_identity_link_provider(provider_id, purpose, subject),
-         {:ok, user} <- Users.fetch_user_by_id(Subject.actor_id(subject)),
+         {:ok, user} <- Users.fetch_user_by_id(Subject.user_id(subject)),
          :ok <- Auth.verify_oidc_identity_step_up_proof(proof, provider_id, purpose, user),
          {:ok, begun} <-
            OIDC.begin_authorization(provider,
@@ -892,7 +893,7 @@ defmodule Emisar.SSO do
         identity_id,
         proof,
         actor_session_token_digest,
-        %Subject{actor: %Users.User{id: user_id}, account: %{id: account_id}} = subject
+        %Subject{actor: %Users.User{}, account: %{id: account_id}} = subject
       )
       when is_binary(identity_id) and is_binary(proof) and
              is_binary(actor_session_token_digest) do
@@ -902,7 +903,7 @@ defmodule Emisar.SSO do
              Authorizer.view_sso_posture_permission()
            ),
          %UserIdentity{provider_id: provider_id} <-
-           peek_scoped_user_identity(identity_id, account_id, user_id, subject.membership_id) do
+           peek_scoped_user_identity(identity_id, account_id, subject.membership_id) do
       unlink_identity_transaction(
         identity_id,
         provider_id,
@@ -992,7 +993,7 @@ defmodule Emisar.SSO do
 
   defp ensure_identity_link_stash(stashed, actor_session_token_digest, subject) do
     valid? =
-      Map.get(stashed, :actor_id) == Subject.actor_id(subject) and
+      Map.get(stashed, :actor_id) == Subject.user_id(subject) and
         Map.get(stashed, :actor_membership_id) == subject.membership_id and
         Map.get(stashed, :account_id) == subject.account.id and
         Map.get(stashed, :actor_session_token_digest) == actor_session_token_digest and
@@ -1122,29 +1123,31 @@ defmodule Emisar.SSO do
       |> UserIdentity.Query.lock_for_update()
       |> repo.peek()
 
+    # The person's identity for this connection, possibly still on a seat they
+    # were removed from; linking it moves it to the current seat.
     user_identity =
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.by_provider_id(provider.id)
-      |> UserIdentity.Query.by_user_id(member.user_id)
+      |> UserIdentity.Query.by_member_user_id(member.user_id)
       |> UserIdentity.Query.lock_for_update()
       |> repo.peek()
 
-    with :ok <- ensure_identity_link_target(identifier_identity, user_identity, member.user_id),
+    with :ok <- ensure_identity_link_target(identifier_identity, user_identity),
          :ok <- ensure_email_domain_allowed(provider, claims) do
       persist_self_verified_identity(repo, provider, member, user_identity, identifier, claims)
     end
   end
 
-  defp ensure_identity_link_target(%UserIdentity{user_id: user_id}, _current, user_id), do: :ok
+  defp ensure_identity_link_target(%UserIdentity{id: id}, %UserIdentity{id: id}), do: :ok
 
-  defp ensure_identity_link_target(%UserIdentity{}, _current, _user_id),
+  defp ensure_identity_link_target(%UserIdentity{}, _current),
     do: {:error, :identity_already_linked}
 
-  defp ensure_identity_link_target(nil, %UserIdentity{} = current, _user_id) do
+  defp ensure_identity_link_target(nil, %UserIdentity{} = current) do
     if active_identity?(current), do: {:error, :different_identity_already_linked}, else: :ok
   end
 
-  defp ensure_identity_link_target(nil, nil, _user_id), do: :ok
+  defp ensure_identity_link_target(nil, nil), do: :ok
 
   defp persist_self_verified_identity(repo, provider, member, nil, identifier, claims) do
     UserIdentity.Changeset.create(provider.account_id, provider.id, member, %{
@@ -1184,12 +1187,11 @@ defmodule Emisar.SSO do
 
   defp provider_verification_writes(_changes, :link), do: Multi.new()
 
-  defp peek_scoped_user_identity(identity_id, account_id, user_id, membership_id) do
+  defp peek_scoped_user_identity(identity_id, account_id, membership_id) do
     if Repo.valid_uuid?(identity_id) and Repo.valid_uuid?(membership_id) do
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.by_id(identity_id)
       |> UserIdentity.Query.by_account_id(account_id)
-      |> UserIdentity.Query.by_user_id(user_id)
       |> UserIdentity.Query.by_membership_id(membership_id)
       |> Repo.peek()
     end
@@ -1211,9 +1213,8 @@ defmodule Emisar.SSO do
       |> Multi.run(:actor, fn repo, %{account: account, provider: provider} ->
         unlink_identity_actor(repo, account, provider, proof, digest, subject)
       end)
-      |> Multi.run(:identity, fn repo,
-                                 %{actor: %{user: user, membership: member}, provider: provider} ->
-        lock_unlink_identity(repo, identity_id, provider, user, member)
+      |> Multi.run(:identity, fn repo, %{actor: %{membership: member}, provider: provider} ->
+        lock_unlink_identity(repo, identity_id, provider, member)
       end)
       |> Multi.update(:removed_identity, fn %{identity: identity} ->
         unlink_identity_changeset(identity)
@@ -1237,7 +1238,7 @@ defmodule Emisar.SSO do
 
   defp unlink_identity_actor(repo, account, provider, proof, digest, subject) do
     stashed = %{
-      actor_id: Subject.actor_id(subject),
+      actor_id: Subject.user_id(subject),
       actor_membership_id: subject.membership_id,
       local_proof: proof,
       purpose: :unlink
@@ -1246,20 +1247,19 @@ defmodule Emisar.SSO do
     lock_identity_link_actor(repo, account, provider, stashed, digest, subject)
   end
 
-  defp lock_unlink_identity(repo, identity_id, provider, user, member) do
+  defp lock_unlink_identity(repo, identity_id, provider, member) do
     identity =
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_id(identity_id)
       |> UserIdentity.Query.by_account_id(provider.account_id)
       |> UserIdentity.Query.by_provider_id(provider.id)
-      |> UserIdentity.Query.by_user_id(user.id)
       |> UserIdentity.Query.by_membership_id(member.id)
       |> UserIdentity.Query.lock_for_update()
       |> repo.peek()
 
     with %UserIdentity{created_by: :user} = identity <- identity,
-         false <- removal_strands_required_sso?(identity, user) do
+         false <- removal_strands_required_sso?(identity) do
       {:ok, identity}
     else
       nil -> {:error, :not_found}
@@ -1268,16 +1268,14 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp removal_strands_required_sso?(identity, user) do
-    account_requires_sso?(identity.account_id) and
-      not another_usable_identity?(identity, user)
+  defp removal_strands_required_sso?(identity) do
+    account_requires_sso?(identity.account_id) and not another_usable_identity?(identity)
   end
 
-  defp another_usable_identity?(identity, user) do
+  defp another_usable_identity?(identity) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.provider_identifier_active()
     |> UserIdentity.Query.by_account_id(identity.account_id)
-    |> UserIdentity.Query.by_user_id(user.id)
     |> UserIdentity.Query.by_membership_id(identity.membership_id)
     |> UserIdentity.Query.excluding_provider_id(identity.provider_id)
     |> UserIdentity.Query.with_enabled_provider()
@@ -2172,7 +2170,6 @@ defmodule Emisar.SSO do
            ) do
       {:ok,
        Map.merge(begun, %{
-         actor_id: Subject.actor_id(subject),
          account_id: subject.account.id,
          actor_membership_id: subject.membership_id,
          actor_session_token_digest: actor_session_token_digest,
@@ -2242,12 +2239,12 @@ defmodule Emisar.SSO do
           namespace: namespace,
           auth_time: auth_time
         } = reauthentication,
-        actor_id,
+        membership_id,
         account_id
       )
       when is_binary(provider_id) and is_binary(identity_id) and
              is_binary(provider_identifier) and is_tuple(namespace) and is_integer(auth_time) and
-             is_binary(actor_id) and is_binary(account_id) do
+             is_binary(membership_id) and is_binary(account_id) do
     provider_query =
       IdentityProvider.Query.not_deleted()
       |> IdentityProvider.Query.by_account_id(account_id)
@@ -2264,7 +2261,7 @@ defmodule Emisar.SSO do
            lock_member_mfa_reset_identity(
              repo,
              identity_id,
-             actor_id,
+             membership_id,
              account_id,
              provider_id,
              provider_identifier
@@ -2278,14 +2275,14 @@ defmodule Emisar.SSO do
   def ensure_member_mfa_reset_reauthentication_current(
         _repo,
         _reauthentication,
-        _actor_id,
+        _membership_id,
         _account_id
       ),
       do: {:error, :mfa_reset_proof_stale}
 
   defp fetch_member_mfa_reset_identity(
          %Subject{
-           actor: %Users.User{id: actor_id},
+           actor: %Users.User{},
            account: %Accounts.Account{id: account_id},
            auth_method: :sso,
            user_identity_id: identity_id
@@ -2298,7 +2295,7 @@ defmodule Emisar.SSO do
              Authorizer.view_sso_posture_permission()
            ),
          %UserIdentity{provider: %IdentityProvider{} = provider} = identity <-
-           peek_member_mfa_reset_identity(identity_id, actor_id, account_id, subject),
+           peek_member_mfa_reset_identity(identity_id, account_id, subject),
          true <- provider.enabled and provider.satisfies_mfa,
          true <- Billing.sso_available?(subject.account) do
       {:ok, {identity, provider}}
@@ -2310,11 +2307,11 @@ defmodule Emisar.SSO do
   defp fetch_member_mfa_reset_identity(%Subject{}),
     do: {:error, :mfa_reset_reauthentication_unavailable}
 
-  defp peek_member_mfa_reset_identity(identity_id, actor_id, account_id, subject) do
+  defp peek_member_mfa_reset_identity(identity_id, account_id, subject) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.provider_identifier_active()
     |> UserIdentity.Query.by_id(identity_id)
-    |> UserIdentity.Query.by_user_id(actor_id)
+    |> UserIdentity.Query.by_membership_id(subject.membership_id)
     |> UserIdentity.Query.by_account_id(account_id)
     |> UserIdentity.Query.with_preloaded_provider()
     |> Authorizer.for_subject(subject)
@@ -2324,7 +2321,7 @@ defmodule Emisar.SSO do
   defp lock_member_mfa_reset_identity(
          repo,
          identity_id,
-         actor_id,
+         membership_id,
          account_id,
          provider_id,
          provider_identifier
@@ -2332,7 +2329,7 @@ defmodule Emisar.SSO do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.provider_identifier_active()
     |> UserIdentity.Query.by_id(identity_id)
-    |> UserIdentity.Query.by_user_id(actor_id)
+    |> UserIdentity.Query.by_membership_id(membership_id)
     |> UserIdentity.Query.by_account_id(account_id)
     |> UserIdentity.Query.by_provider_id(provider_id)
     |> UserIdentity.Query.by_provider_identifier(provider_identifier)
@@ -2341,8 +2338,7 @@ defmodule Emisar.SSO do
   end
 
   defp ensure_member_mfa_reset_stash(stashed, actor_session_token_digest, subject) do
-    if Map.get(stashed, :actor_id) == Subject.actor_id(subject) and
-         Map.get(stashed, :account_id) == subject.account.id and
+    if Map.get(stashed, :account_id) == subject.account.id and
          Map.get(stashed, :actor_membership_id) == subject.membership_id and
          Map.get(stashed, :actor_session_token_digest) == actor_session_token_digest and
          is_integer(Map.get(stashed, :started_at)) and
@@ -2397,7 +2393,7 @@ defmodule Emisar.SSO do
       ensure_member_mfa_reset_reauthentication_current(
         repo,
         reauthentication,
-        Subject.actor_id(subject),
+        subject.membership_id,
         subject.account.id
       )
     end)
@@ -2515,14 +2511,16 @@ defmodule Emisar.SSO do
 
   defp verified_auth_writes(provider, identifier, claims) do
     Multi.new()
-    # The first read only tells us which user row to lock. Membership activation
-    # already holds that user before retiring admin-approved identities, so the
-    # callback must take the same user -> identity order. The account and provider
-    # locks above serialize same-account rebinds while this hint is consumed.
+    # The first read only tells us which user row to lock: the one linked to the
+    # identity's seat. Membership activation already holds that user before
+    # retiring admin-approved identities, so the callback must take the same
+    # user -> identity order. The account and provider locks above serialize
+    # same-account rebinds while this hint is consumed.
     |> Multi.run(:identity_hint, fn repo, _changes ->
       hint =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
+        |> UserIdentity.Query.with_preloaded_membership()
         |> repo.peek()
 
       {:ok, hint}
@@ -2539,9 +2537,9 @@ defmodule Emisar.SSO do
   defp existing_identity_auth_writes(provider, identifier, identity_hint, claims) do
     Multi.new()
     |> Multi.run(:locked_user, fn repo, _changes ->
-      Users.fetch_and_lock_user_by_id(identity_hint.user_id, repo)
+      lock_seat_user(repo, identity_hint)
     end)
-    |> Multi.run(:resolved_identity, fn repo, %{locked_user: locked_user} ->
+    |> Multi.run(:resolved_identity, fn repo, _changes ->
       current =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
@@ -2549,7 +2547,8 @@ defmodule Emisar.SSO do
         |> repo.peek()
 
       case current do
-        %UserIdentity{user_id: user_id} = identity when user_id == locked_user.id ->
+        %UserIdentity{membership_id: seat_id} = identity
+        when seat_id == identity_hint.membership_id ->
           {:ok, identity}
 
         nil ->
@@ -2601,8 +2600,8 @@ defmodule Emisar.SSO do
              provider.account_id,
              identity.membership_id
            ) do
-        {:ok, member} when member.user_id == locked_user.id -> {:ok, member}
-        _ -> {:error, :membership_unavailable}
+        {:ok, member} -> {:ok, member}
+        {:error, :not_found} -> {:error, :membership_unavailable}
       end
     end)
     |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
@@ -2866,34 +2865,21 @@ defmodule Emisar.SSO do
   defp domains_equal?(a, b),
     do: String.downcase(String.trim(a)) == String.downcase(String.trim(b))
 
-  # Ensure the member has an active membership, reinstating or (re)creating one —
-  # the link-approval flow, where an admin explicitly grants access. Runs inside
-  # the approval's Multi, so a committed reinstate is TAGGED for the commit site
-  # to fire its broadcast after the transaction, never from within it.
-  defp ensure_active_membership_multi(%IdentityProvider{} = provider, user) do
-    case Accounts.peek_sync_membership(provider.account_id, user.id) do
-      %Accounts.Membership{disabled_at: nil} = membership ->
-        Multi.run(Multi.new(), :membership, fn _repo, _changes -> {:ok, membership} end)
+  # Ensure the matched member is active, reinstating it — the link-approval flow,
+  # where an admin explicitly grants access. Runs inside the approval's Multi, so
+  # a committed reinstate is TAGGED for the commit site to fire its broadcast
+  # after the transaction, never from within it.
+  defp ensure_active_membership_multi(
+         %IdentityProvider{},
+         %Accounts.Membership{disabled_at: nil} = membership
+       ),
+       do: Multi.run(Multi.new(), :membership, fn _repo, _changes -> {:ok, membership} end)
 
-      %Accounts.Membership{} = membership ->
-        Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :reinstate)
-        |> Multi.run(:membership, fn _repo, %{membership_transition: transition} ->
-          {:ok, transition.membership}
-        end)
-
-      nil ->
-        profile = Accounts.peek_membership_profile(provider.account_id, user.id)
-
-        Accounts.put_sso_membership(
-          Multi.new(),
-          provider.account_id,
-          user.id,
-          provider.default_role,
-          provider_runner_access(provider),
-          display_name: profile && profile.display_name,
-          contact_email: profile && profile.contact_email
-        )
-    end
+  defp ensure_active_membership_multi(%IdentityProvider{} = provider, membership) do
+    Accounts.put_sync_membership_lifecycle(Multi.new(), membership, provider, :reinstate)
+    |> Multi.run(:membership, fn _repo, %{membership_transition: transition} ->
+      {:ok, transition.membership}
+    end)
   end
 
   @doc """
@@ -2923,7 +2909,7 @@ defmodule Emisar.SSO do
         siblings =
           UserIdentity.Query.not_deleted()
           |> UserIdentity.Query.provider_identifier_active()
-          |> UserIdentity.Query.by_user_id(user_id)
+          |> UserIdentity.Query.by_member_user_id(user_id)
           |> UserIdentity.Query.by_active_provider_issuer(hint.provider.issuer)
           |> UserIdentity.Query.with_authorized_membership()
           |> repo.all()
@@ -2988,7 +2974,7 @@ defmodule Emisar.SSO do
         lock_sign_in_identity(repo, hint, user_id)
       end)
       |> Multi.run(:sso_membership, fn repo, %{sso_identity: identity} ->
-        lock_sign_in_member(repo, identity, user_id)
+        lock_sign_in_member(repo, identity)
       end)
       |> Multi.run(:sso_destinations, fn repo, changes ->
         {:ok, sign_in_destinations(repo, changes)}
@@ -3007,7 +2993,7 @@ defmodule Emisar.SSO do
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_id(identity_id)
-      |> UserIdentity.Query.by_user_id(user_id)
+      |> UserIdentity.Query.by_member_user_id(user_id)
       |> UserIdentity.Query.by_account_id(account_id)
       |> UserIdentity.Query.by_provider_identifier(identifier)
       |> UserIdentity.Query.with_preloaded_provider()
@@ -3023,7 +3009,7 @@ defmodule Emisar.SSO do
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_id(hint.id)
-      |> UserIdentity.Query.by_user_id(user_id)
+      |> UserIdentity.Query.by_member_user_id(user_id)
       |> UserIdentity.Query.by_account_id(hint.account_id)
       |> UserIdentity.Query.by_provider_id(hint.provider_id)
       |> UserIdentity.Query.by_provider_identifier(hint.provider_identifier)
@@ -3038,14 +3024,15 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp lock_sign_in_member(repo, identity, user_id) do
+  # The identity was locked through this person's seats, so its seat is theirs.
+  defp lock_sign_in_member(repo, identity) do
     case Accounts.fetch_and_lock_active_membership(
            repo,
            identity.account_id,
            identity.membership_id
          ) do
-      {:ok, member} when member.user_id == user_id -> {:ok, member}
-      _ -> {:error, :membership_unavailable}
+      {:ok, member} -> {:ok, member}
+      {:error, :not_found} -> {:error, :membership_unavailable}
     end
   end
 
@@ -3059,7 +3046,7 @@ defmodule Emisar.SSO do
            provider.issuer == changes.sso_provider.issuer &&
            changes.sso_entitlements[hint.account_id] do
         with {:ok, identity} <- lock_sign_in_identity(repo, hint, changes.sso_user.id),
-             {:ok, member} <- lock_sign_in_member(repo, identity, changes.sso_user.id) do
+             {:ok, member} <- lock_sign_in_member(repo, identity) do
           direct? = identity.id == changes.sso_identity.id
           mfa? = sign_in_destination_mfa?(provider, direct?, changes.sso_providers)
 
@@ -3997,7 +3984,7 @@ defmodule Emisar.SSO do
   #
   # A request with no match provisions a fresh user and escalates nothing.
   defp ensure_link_target_within_authority(
-         %LinkRequest{matched_user_id: nil},
+         %LinkRequest{matched_membership_id: nil},
          _provider,
          _approver_role,
          _repo
@@ -4010,7 +3997,8 @@ defmodule Emisar.SSO do
          approver_role,
          repo
        ) do
-    with {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
+    with %Accounts.Membership{user_id: user_id} <- peek_matched_membership(provider, request),
+         {:ok, user} <- Users.fetch_user_by_id(user_id),
          # LOCKED, because this decision has to still be true when the binding
          # commits. Re-reading inside the transaction was not enough on its own:
          # nothing stopped a concurrent promotion to owner, or a membership granted
@@ -4018,15 +4006,11 @@ defmodule Emisar.SSO do
          # IdP credential bound to someone they have no authority over.
          {:ok, memberships} <- Accounts.fetch_and_lock_active_memberships_for_user(user, repo) do
       elsewhere = Enum.reject(memberships, &(&1.account_id == provider.account_id))
-
-      matched_membership =
-        Accounts.peek_sync_membership_by_id(provider.account_id, request.matched_membership_id)
+      # Re-read under those locks: the decision judges the member's current row.
+      matched_membership = peek_matched_membership(provider, request)
 
       cond do
         not match?(%Accounts.Membership{}, matched_membership) ->
-          {:error, :matched_user_unavailable}
-
-        matched_membership.user_id != user.id ->
           {:error, :matched_user_unavailable}
 
         Accounts.membership_invitation_pending?(matched_membership) ->
@@ -4047,11 +4031,17 @@ defmodule Emisar.SSO do
         true ->
           :ok
       end
+    else
+      nil -> {:error, :matched_user_unavailable}
+      {:error, reason} -> {:error, reason}
     end
   end
 
+  defp peek_matched_membership(%IdentityProvider{} = provider, %LinkRequest{} = request),
+    do: Accounts.peek_sync_membership_by_id(provider.account_id, request.matched_membership_id)
+
   defp ensure_approval_runner_access_allowed(
-         %LinkRequest{matched_user_id: nil},
+         %LinkRequest{matched_membership_id: nil},
          access,
          subject
        ),
@@ -4127,10 +4117,10 @@ defmodule Emisar.SSO do
 
   defp account_link_requests_topic(account_id), do: "sso_link_requests:#{account_id}"
 
-  # No existing user matched → provision a fresh user (the original flow).
+  # No existing member matched → provision a fresh user (the original flow).
   defp approve_link_request_multi(
          %IdentityProvider{} = provider,
-         %LinkRequest{matched_user_id: nil} = request,
+         %LinkRequest{matched_membership_id: nil} = request,
          access,
          subject
        ) do
@@ -4172,12 +4162,12 @@ defmodule Emisar.SSO do
     end)
   end
 
-  # An existing account member matched → bind this IdP identity to THAT user (no
+  # An existing account member matched → bind this IdP identity to THAT member (no
   # new user, no email merge — the admin's approval is the gate). OIDC claims
   # bind only provider_identifier; a SCIM request also owns scim_external_id.
   # Keeping the directory column nil until the directory asserts it lets later
-  # retirement distinguish an OIDC-only link from a lifecycle row. The user's
-  # existing membership is left as-is (never downgraded, never granted owner).
+  # retirement distinguish an OIDC-only link from a lifecycle row. The member's
+  # existing role and access are left as-is (never downgraded, never granted owner).
   defp approve_link_request_multi(
          %IdentityProvider{} = provider,
          %LinkRequest{} = request,
@@ -4194,11 +4184,12 @@ defmodule Emisar.SSO do
     |> put_enabled_provider_lock(provider)
     |> Multi.merge(fn %{locked_provider: locked_provider} ->
       Multi.new()
-      |> Multi.run(:user, fn repo, _changes ->
+      |> Multi.run(:matched_member, fn repo, _changes ->
         fetch_matched_member(locked_provider, request, subject, repo)
       end)
-      |> Multi.merge(fn %{user: user} ->
-        ensure_active_membership_multi(locked_provider, user)
+      |> Multi.run(:user, fn _repo, %{matched_member: member} -> {:ok, member.user} end)
+      |> Multi.merge(fn %{matched_member: member} ->
+        ensure_active_membership_multi(locked_provider, member)
       end)
       |> Multi.run(:identity, fn repo, %{membership: member} ->
         link_identity(locked_provider, member, request, repo)
@@ -4211,7 +4202,7 @@ defmodule Emisar.SSO do
   end
 
   # Re-verify at approval time (the match was recorded at capture): the matched
-  # user must still exist AND still be a member of this account.
+  # member must still be live in this account, with its person.
   # Re-judge the target INSIDE the transaction, not just re-fetch them. The
   # authority check that runs before the approval reads state the approval then
   # acts on moments later: a concurrent promotion to owner, or a membership
@@ -4227,12 +4218,10 @@ defmodule Emisar.SSO do
     with :ok <- ensure_request_matches_current_namespace(provider, request),
          :ok <- ensure_matched_request_has_trusted_email(provider, request),
          {:ok, approver_role} <- ensure_approver_still_holds_authority(provider, subject, repo),
-         {:ok, user} <- Users.fetch_user_by_id(request.matched_user_id),
-         %Accounts.Membership{user_id: user_id} <-
-           Accounts.peek_sync_membership_by_id(provider.account_id, request.matched_membership_id),
-         true <- user_id == user.id,
-         :ok <- ensure_link_target_within_authority(request, provider, approver_role, repo) do
-      {:ok, user}
+         :ok <- ensure_link_target_within_authority(request, provider, approver_role, repo),
+         %Accounts.Membership{} = member <- peek_matched_membership(provider, request),
+         {:ok, user} <- Users.fetch_user_by_id(member.user_id) do
+      {:ok, %{member | user: user}}
     else
       {:error, reason} when is_atom(reason) -> {:error, reason}
       _ -> {:error, :matched_user_unavailable}
@@ -4298,7 +4287,7 @@ defmodule Emisar.SSO do
       when is_binary(user_id) and is_list(active_account_ids) do
     candidates =
       UserIdentity.Query.not_deleted()
-      |> UserIdentity.Query.by_user_id(user_id)
+      |> UserIdentity.Query.by_member_user_id(user_id)
       |> UserIdentity.Query.admin_approved_provider_identifiers()
 
     candidates =
@@ -4438,10 +4427,12 @@ defmodule Emisar.SSO do
     )
   end
 
+  # The person's identity for this connection, including one left on a seat they
+  # were removed from; approval moves it to the matched member's seat.
   defp peek_identity(%IdentityProvider{} = provider, user_id) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.by_provider_id(provider.id)
-    |> UserIdentity.Query.by_user_id(user_id)
+    |> UserIdentity.Query.by_member_user_id(user_id)
     |> Repo.peek()
   end
 

@@ -147,7 +147,6 @@ defmodule EmisarWeb.SSOController do
       stash =
         begun
         |> Map.take([
-          :actor_id,
           :actor_membership_id,
           :actor_session_token_digest,
           :account_id,

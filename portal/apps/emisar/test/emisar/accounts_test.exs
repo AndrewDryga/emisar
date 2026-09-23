@@ -2961,35 +2961,37 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "list_memberships_for_users/3" do
-    test "returns the given users' memberships, user preloaded" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+  describe "list_memberships_by_ids/3" do
+    test "returns the given live memberships, user preloaded" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       second = Fixtures.Memberships.create_membership(account_id: account.id)
+      ids = [subject.membership_id, second.id]
 
-      assert {:ok, memberships} =
-               Accounts.list_memberships_for_users(account, [owner.id, second.user_id], subject)
-
-      assert memberships |> Enum.map(& &1.user_id) |> Enum.sort() ==
-               Enum.sort([owner.id, second.user_id])
-
+      assert {:ok, memberships} = Accounts.list_memberships_by_ids(account, ids, subject)
+      assert memberships |> Enum.map(& &1.id) |> Enum.sort() == Enum.sort(ids)
       assert Enum.all?(memberships, &match?(%Emisar.Users.User{}, &1.user))
     end
 
-    test "ignores user_ids that aren't members of the account" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject()
-      stranger = Fixtures.Users.create_user()
+    test "ignores removed members and other accounts' members" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:ok, [membership]} =
-               Accounts.list_memberships_for_users(account, [owner.id, stranger.id], subject)
+      removed =
+        [account_id: account.id]
+        |> Fixtures.Memberships.create_membership()
+        |> Fixtures.Memberships.mark_membership_as_deleted()
 
-      assert membership.user_id == owner.id
+      foreign = Fixtures.Memberships.create_membership()
+      ids = [subject.membership_id, removed.id, foreign.id]
+
+      assert {:ok, [membership]} = Accounts.list_memberships_by_ids(account, ids, subject)
+      assert membership.id == subject.membership_id
     end
 
     test "a subject cannot read another account's memberships" do
       {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
-      {owner_b, account_b, _} = Fixtures.Subjects.owner_subject()
+      {_owner_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      assert Accounts.list_memberships_for_users(account_b, [owner_b.id], subject_a) ==
+      assert Accounts.list_memberships_by_ids(account_b, [subject_b.membership_id], subject_a) ==
                {:error, :unauthorized}
     end
   end
@@ -4193,8 +4195,8 @@ defmodule Emisar.AccountsTest do
       :ok = Accounts.subscribe_account_team(invited_account.id)
       assert {:ok, accepted} = Accounts.mark_invitation_accepted(invitation, token, user)
 
-      assert_receive {:list_changed, :team, "membership.invitation_accepted", user_id}
-      assert user_id == user.id
+      assert_receive {:list_changed, :team, "membership.invitation_accepted", membership_id}
+      assert membership_id == accepted.id
       assert Membership.authorizable?(accepted)
 
       # Acceptance changes the Member, never the authority of an older bearer.
@@ -5078,8 +5080,8 @@ defmodule Emisar.AccountsTest do
 
       # A team mutation publishes on the topic the subscriber just joined.
       assert {:ok, _} = Accounts.suspend_membership(target, owner_subject)
-      assert_receive {:list_changed, :team, "membership.suspended", user_id}, 500
-      assert user_id == target.user_id
+      assert_receive {:list_changed, :team, "membership.suspended", membership_id}, 500
+      assert membership_id == target.id
     end
 
     test "a subscriber to account A does not receive account B's broadcasts" do
@@ -5094,7 +5096,7 @@ defmodule Emisar.AccountsTest do
 
       # The mutation happens on B's topic — A's subscriber must hear nothing.
       assert {:ok, _} = Accounts.suspend_membership(target_b, owner_subject_b)
-      refute_receive {:list_changed, :team, _event, _user_id}
+      refute_receive {:list_changed, :team, _event, _membership_id}
     end
   end
 
@@ -5311,7 +5313,7 @@ defmodule Emisar.AccountsTest do
       assert Membership.disabled?(Repo.reload!(target))
       assert length(Repo.all(Emisar.Audit.Event)) == 1
       assert is_nil(Repo.reload!(surviving_key).revoked_at)
-      refute_receive {:list_changed, :team, "membership.suspended", _user_id}
+      refute_receive {:list_changed, :team, "membership.suspended", _membership_id}
     end
 
     test "an audit failure rolls back suspension without revoking credentials", %{
@@ -5521,8 +5523,8 @@ defmodule Emisar.AccountsTest do
       refute Membership.disabled?(reinstated)
       assert is_nil(Repo.reload!(target).disabled_at)
 
-      assert_receive {:list_changed, :team, "membership.reinstated", user_id}, 500
-      assert user_id == target.user_id
+      assert_receive {:list_changed, :team, "membership.reinstated", membership_id}, 500
+      assert membership_id == target.id
     end
 
     test "an owner of another account can't reinstate this member (cross-account)" do
@@ -5679,8 +5681,8 @@ defmodule Emisar.AccountsTest do
       assert Accounts.membership_suspended_effects(member, topics) == :ok
       assert_receive {:membership_activation_disconnect, ^topics}
 
-      member_user_id = member_user.id
-      assert_receive {:list_changed, :team, "membership.suspended", ^member_user_id}
+      member_id = member.id
+      assert_receive {:list_changed, :team, "membership.suspended", ^member_id}
       assert is_nil(Repo.reload!(key).revoked_at)
     end
   end
@@ -5852,8 +5854,8 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.membership_reinstated_effects(member) == :ok
 
-      member_user_id = member.user_id
-      assert_receive {:list_changed, :team, "membership.reinstated", ^member_user_id}
+      member_id = member.id
+      assert_receive {:list_changed, :team, "membership.reinstated", ^member_id}
     end
   end
 
@@ -5879,8 +5881,8 @@ defmodule Emisar.AccountsTest do
                commit_sync_lifecycle(member, provider, :suspend)
 
       assert Membership.disabled?(suspended)
-      member_user_id = member.user_id
-      assert_receive {:list_changed, :team, "membership.suspended", ^member_user_id}
+      member_id = member.id
+      assert_receive {:list_changed, :team, "membership.suspended", ^member_id}
       assert Repo.reload!(key).revoked_at
     end
   end
@@ -6024,12 +6026,12 @@ defmodule Emisar.AccountsTest do
                )
                |> Repo.commit_multi()
 
-      refute_receive {:list_changed, :team, "membership.role_changed", _user_id}
+      refute_receive {:list_changed, :team, "membership.role_changed", _membership_id}
       assert Accounts.after_sync_membership_authorization_committed(changes) == :ok
 
-      member_user_id = member.user_id
+      member_id = member.id
 
-      assert_receive {:list_changed, :team, "membership.role_changed", ^member_user_id}
+      assert_receive {:list_changed, :team, "membership.role_changed", ^member_id}
     end
   end
 
@@ -8522,8 +8524,8 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} = Accounts.suspend_membership(target, subject)
 
-      assert_receive {:list_changed, :team, "membership.suspended", user_id}, 500
-      assert user_id == target.user_id
+      assert_receive {:list_changed, :team, "membership.suspended", membership_id}, 500
+      assert membership_id == target.id
     end
 
     test "removing a member broadcasts {:list_changed, :team, …} on the account topic", %{
@@ -8535,8 +8537,8 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} = Accounts.delete_membership(target, subject)
 
-      assert_receive {:list_changed, :team, "membership.removed", user_id}, 500
-      assert user_id == target.user_id
+      assert_receive {:list_changed, :team, "membership.removed", membership_id}, 500
+      assert membership_id == target.id
     end
   end
 

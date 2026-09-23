@@ -282,7 +282,7 @@ defmodule Emisar.Admin do
          confirmed: not is_nil(membership.user.confirmed_at),
          mfa_enabled: not is_nil(membership.user.mfa_enabled_at),
          active_sessions: Query.user_session_count(membership.user_id) |> Repo.one(),
-         active_api_keys: Query.active_api_key_count(account.id, membership.user_id) |> Repo.one()
+         active_api_keys: Query.active_api_key_count(account.id, membership.id) |> Repo.one()
        }}
     end
   end

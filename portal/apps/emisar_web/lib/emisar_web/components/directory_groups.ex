@@ -148,8 +148,8 @@ defmodule EmisarWeb.DirectoryGroups do
     |> assign(:member_group_list, nil)
   end
 
-  def load_summaries(socket, user_ids, opts \\ []) do
-    case SSO.member_group_summaries(user_ids, socket.assigns.current_subject, opts) do
+  def load_summaries(socket, membership_ids, opts \\ []) do
+    case SSO.member_group_summaries(membership_ids, socket.assigns.current_subject, opts) do
       {:ok, summaries} ->
         socket
         |> assign(:member_group_summaries, summaries)
@@ -172,7 +172,7 @@ defmodule EmisarWeb.DirectoryGroups do
         socket
 
       list ->
-        case Map.get(socket.assigns.member_group_summaries, list.user_id) do
+        case Map.get(socket.assigns.member_group_summaries, list.membership_id) do
           %{count: count} when count > 0 -> load_member_groups(socket, list, list.page)
           _ -> assign(socket, :member_group_list, nil)
         end
@@ -181,16 +181,18 @@ defmodule EmisarWeb.DirectoryGroups do
 
   def toggle_member_groups(socket, params, opts \\ [])
 
-  def toggle_member_groups(socket, %{"user_id" => user_id}, opts) do
+  def toggle_member_groups(socket, %{"membership_id" => membership_id}, opts) do
     cond do
-      not Map.has_key?(socket.assigns.member_group_summaries, user_id) ->
+      not Map.has_key?(socket.assigns.member_group_summaries, membership_id) ->
         socket
 
-      socket.assigns.member_group_list && socket.assigns.member_group_list.user_id == user_id ->
+      socket.assigns.member_group_list &&
+          socket.assigns.member_group_list.membership_id == membership_id ->
         assign(socket, :member_group_list, nil)
 
       true ->
-        load_member_groups(socket, %{user_id: user_id, search: "", opts: opts, page: []}, [])
+        list = %{membership_id: membership_id, search: "", opts: opts, page: []}
+        load_member_groups(socket, list, [])
     end
   end
 
@@ -202,7 +204,7 @@ defmodule EmisarWeb.DirectoryGroups do
         socket
 
       list ->
-        if Map.has_key?(socket.assigns.member_group_summaries, list.user_id),
+        if Map.has_key?(socket.assigns.member_group_summaries, list.membership_id),
           do: load_member_groups(socket, %{list | search: String.slice(term, 0, 200)}, []),
           else: assign(socket, :member_group_list, nil)
     end
@@ -236,7 +238,7 @@ defmodule EmisarWeb.DirectoryGroups do
   def page_member_groups(socket, _params), do: socket
 
   defp load_member_groups(socket, list, page) do
-    if Map.has_key?(socket.assigns.member_group_summaries, list.user_id) do
+    if Map.has_key?(socket.assigns.member_group_summaries, list.membership_id) do
       do_load_member_groups(socket, list, page)
     else
       assign(socket, :member_group_list, nil)
@@ -247,7 +249,7 @@ defmodule EmisarWeb.DirectoryGroups do
     opts =
       Keyword.merge(list.opts, filter: [search: list.search], page: Keyword.put(page, :limit, 10))
 
-    case SSO.list_member_groups(list.user_id, socket.assigns.current_subject, opts) do
+    case SSO.list_member_groups(list.membership_id, socket.assigns.current_subject, opts) do
       {:ok, groups, metadata} ->
         assign(
           socket,
@@ -308,7 +310,7 @@ defmodule EmisarWeb.DirectoryGroups do
   end
 
   attr :id, :string, required: true
-  attr :user_id, :string, required: true
+  attr :membership_id, :string, required: true
   attr :summary, :any, default: nil
   attr :list, :any, default: nil
   attr :error?, :boolean, default: false
@@ -319,7 +321,11 @@ defmodule EmisarWeb.DirectoryGroups do
 
   def member_groups(assigns) do
     assigns =
-      assign(assigns, :expanded?, assigns.list != nil and assigns.list.user_id == assigns.user_id)
+      assign(
+        assigns,
+        :expanded?,
+        assigns.list != nil and assigns.list.membership_id == assigns.membership_id
+      )
 
     groups = if assigns.summary, do: assigns.summary.groups, else: []
 
@@ -352,7 +358,7 @@ defmodule EmisarWeb.DirectoryGroups do
             variant={:ghost}
             size={:sm}
             phx-click="toggle_member_groups"
-            phx-value-user_id={@user_id}
+            phx-value-membership_id={@membership_id}
             aria-expanded={to_string(@expanded?)}
             aria-controls={"#{@id}-list"}
           >

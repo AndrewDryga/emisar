@@ -23,7 +23,7 @@ defmodule Emisar.OAuth do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, ApiKeys, Audit, Crypto, PublicUrl, Repo, Users}
+  alias Emisar.{Accounts, ApiKeys, Audit, Crypto, PublicUrl, Repo}
   alias Emisar.Auth
   alias Emisar.Auth.Subject
   alias Emisar.OAuth.{AuthorizationCode, Client, ClientMetadataDocument, Jobs, Token}
@@ -215,13 +215,13 @@ defmodule Emisar.OAuth do
 
   `client` and `subject` are consent-screen SNAPSHOTS, never the authority: the
   request is validated against the locked client row, and the account,
-  membership, user, and role are re-read under row locks, so a role change, a
+  membership, and role are re-read under row locks, so a role change, a
   revoked seat, or an account security control that landed since the screen
   rendered blocks the mint before anything is written. Returns
-  `{:error, :unauthorized}` when the current role can't issue keys,
-  `{:error, :sso_required | :mfa_required}` when the account's controls aren't
-  satisfied, and `{:error, :not_found}` when the seat is gone or isn't the
-  operator's.
+  `{:error, :unauthorized}` when the current role can't issue keys or the seat
+  isn't the operator's, `{:error, :sso_required | :mfa_required}` when the
+  account's controls aren't satisfied, and `{:error, :not_found}` when the seat
+  is gone.
   """
   @spec issue_code(Client.t(), map(), Subject.t()) ::
           {:ok, String.t(), String.t()} | {:error, term()}
@@ -246,10 +246,11 @@ defmodule Emisar.OAuth do
         Accounts.fetch_and_lock_account(subject.account.id, repo: repo)
       end)
       |> Multi.run(:membership, fn repo, %{account: account} ->
-        fetch_and_lock_consenting_membership(account.id, subject, repo)
-      end)
-      |> Multi.run(:user, fn repo, %{membership: membership} ->
-        Users.fetch_and_lock_user_by_id(membership.user_id, repo)
+        Accounts.fetch_and_lock_membership(
+          account.id,
+          Subject.human_membership_id(subject),
+          repo: repo
+        )
       end)
       |> Multi.run(:subject, fn _repo, changes ->
         rebuild_consenting_subject(changes, subject)
@@ -282,27 +283,17 @@ defmodule Emisar.OAuth do
     |> repo.fetch(Client.Query, [])
   end
 
-  # The consenting operator's OWN seat under the locked account. The subject is a
-  # snapshot, so the membership it names must still be live AND still belong to
-  # that operator — a swapped `membership_id` must never mint a key on someone
-  # else's seat, and a gone seat is indistinguishable from one that never was.
-  defp fetch_and_lock_consenting_membership(account_id, %Subject{} = subject, repo) do
-    with {:ok, membership} <-
-           Accounts.fetch_and_lock_membership(account_id, subject.membership_id, repo: repo),
-         :ok <- check(membership.user_id == Subject.actor_id(subject), :not_found) do
-      {:ok, membership}
-    end
-  end
-
-  # Rebuild the caller from the locked rows, carrying this request's provenance
-  # (context + how the operator signed in) so the audit row stays accurate. The
-  # key-issue permission and the account's require_sso / require_mfa controls are
-  # then judged on the CURRENT role and settings, not the consent screen's.
+  # Rebuild the caller from its locked seat and account, carrying this request's
+  # provenance (context + how the operator signed in) so the audit row stays
+  # accurate. The key-issue permission re-reads the bearer's grant for that exact
+  # seat, so a swapped `membership_id` never mints a key on someone else's seat;
+  # it and the account's require_sso / require_mfa controls are then judged on the
+  # CURRENT role and settings, not the consent screen's.
   defp rebuild_consenting_subject(
-         %{user: user, account: account, membership: membership},
+         %{account: account, membership: membership},
          %Subject{} = subject
        ) do
-    fresh = Subject.rebuild(subject, %{membership | user: user}, account)
+    fresh = Subject.rebuild(subject, %{membership | user: subject.actor}, account)
 
     with :ok <- Accounts.ensure_account_compliant(account, fresh),
          :ok <- ensure_can_issue_backing_key(fresh) do

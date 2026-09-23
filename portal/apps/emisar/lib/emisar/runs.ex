@@ -110,65 +110,28 @@ defmodule Emisar.Runs do
   `preload: [:attribution]`.
 
   `who` is the accountable human this account knows — the requesting operator,
-  or an MCP run's API-key owner — named through the membership the run was
+  or an MCP run's API-key owner — named through the Member the run was
   dispatched under, so a directory rename stays account-local. It is `nil` when
   the attribution associations were not loaded (unknown is never guessed at) or
-  no human row survives. `via` is the secondary channel that adds signal: the
+  no member row survives. `via` is the secondary channel that adds signal: the
   API-key name (falling back to "LLM agent") for an MCP run, "runbook" /
   "schedule" for engine dispatch, and `nil` for a plain operator run, where
   "via portal" says nothing. Pure.
   """
   def run_who_via(%ActionRun{} = run), do: {run_who(run), run_via(run)}
 
-  # An unloaded requester is UNKNOWN, never a fall-through to the key owner: a
-  # run read without its attribution preloads must not be attributed to whoever
-  # minted a credential it happens to carry. Only an explicit `nil` requester
-  # means "no operator asked for this", which is when the key's owner IS the
-  # accountable human.
-  defp run_who(%ActionRun{requested_by: %Users.User{} = user} = run),
-    do: accountable_name(run, user, requester_membership(user))
-
-  defp run_who(%ActionRun{requested_by: nil, api_key: %ApiKeys.ApiKey{} = api_key} = run),
-    do: key_owner_name(run, api_key)
-
-  defp run_who(%ActionRun{}), do: nil
-
-  defp key_owner_name(
-         %ActionRun{} = run,
-         %ApiKeys.ApiKey{created_by: %Users.User{} = user} = api_key
-       ),
-       do: accountable_name(run, user, loaded_membership(api_key.created_by_membership))
-
-  defp key_owner_name(_run, %ApiKeys.ApiKey{}), do: nil
-
-  defp requester_membership(%Users.User{memberships: memberships}) when is_list(memberships),
-    do: memberships |> List.first() |> loaded_membership()
-
-  defp requester_membership(%Users.User{}), do: :unknown
-
-  defp loaded_membership(%Accounts.Membership{} = membership), do: membership
-  defp loaded_membership(nil), do: nil
-  defp loaded_membership(_not_loaded), do: :unknown
-
-  # The membership is the account-local naming authority, so it only names
-  # anyone once it is provably THIS run's, in THIS account, for THIS person.
-  # An absent or mismatched membership cannot disclose personal profile facts.
-  defp accountable_name(_run, _user, :unknown), do: nil
-
-  defp accountable_name(
-         %ActionRun{} = run,
-         %Users.User{} = user,
-         %Accounts.Membership{} = membership
-       ) do
+  # The initiating Member is the accountable human for an operator's run and
+  # for an MCP run alike — an MCP run's Member minted its key. An unloaded
+  # Member is UNKNOWN, never guessed at, and it names anyone only once it is
+  # provably THIS run's, in THIS account.
+  defp run_who(%ActionRun{initiating_membership: %Accounts.Membership{} = membership} = run) do
     if membership.id == run.initiating_membership_id and
-         membership.account_id == run.account_id and membership.user_id == user.id do
-      Accounts.member_display_name(membership)
-    else
-      nil
-    end
+         membership.account_id == run.account_id,
+       do: Accounts.member_display_name(membership),
+       else: nil
   end
 
-  defp accountable_name(_run, %Users.User{}, nil), do: nil
+  defp run_who(%ActionRun{}), do: nil
 
   defp run_via(%ActionRun{source: :mcp, api_key: %ApiKeys.ApiKey{name: name}})
        when is_binary(name) and name != "",
@@ -212,9 +175,9 @@ defmodule Emisar.Runs do
   end
 
   @doc """
-  `{:ok, [{user_id, name-or-email}]}` — the distinct operators who dispatched
-  runs in the account, for the runs page's Operator picker (revealed by
-  "Dispatched by"). `%Subject{}` needs `view_runs`.
+  `{:ok, [{membership_id, name-or-email}]}` — the distinct operators who
+  dispatched runs in the account, for the runs page's Operator picker (revealed
+  by "Dispatched by"). `%Subject{}` needs `view_runs`.
   """
   def list_run_operator_options(%Subject{} = subject) do
     with {:ok, subject} <-
@@ -765,7 +728,6 @@ defmodule Emisar.Runs do
     Enum.reduce(preloads, queryable, fn
       :runner, queryable -> ActionRun.Query.with_preloaded_runner(queryable)
       :api_key, queryable -> ActionRun.Query.with_preloaded_api_key(queryable)
-      :requested_by, queryable -> ActionRun.Query.with_preloaded_requested_by(queryable)
       :attribution, queryable -> ActionRun.Query.with_attribution(queryable)
     end)
   end
@@ -3121,16 +3083,15 @@ defmodule Emisar.Runs do
 
   @doc """
   Internal — current human cancellation authority inside the caller's account
-  transaction. Lock the actor's exact membership and user before target locks;
-  a stale role, suspended seat, or mismatched actor cannot cancel visible work.
+  transaction. Lock the actor's exact membership before target locks; a stale
+  role, suspended seat, or mismatched actor cannot cancel visible work.
   API clients hold no operator cancellation permission; they withdraw only
   their own undispatched runs through `cancel_mcp_run/3`.
   """
   def fetch_and_lock_cancellation_access(subject, opts \\ [])
 
   def fetch_and_lock_cancellation_access(
-        %Subject{account: %Accounts.Account{} = account, actor: %Users.User{id: user_id}} =
-          subject,
+        %Subject{account: %Accounts.Account{} = account, actor: %Users.User{}} = subject,
         opts
       ) do
     repo = Keyword.get(opts, :repo, Repo)
@@ -3138,10 +3099,12 @@ defmodule Emisar.Runs do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.cancel_run_permission()),
          {:ok, membership} <-
-           Accounts.fetch_and_lock_membership(account.id, subject.membership_id, repo: repo),
-         true <- membership.user_id == user_id,
-         {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
-         current_subject = Subject.rebuild(subject, %{membership | user: user}, account),
+           Accounts.fetch_and_lock_membership(
+             account.id,
+             Subject.human_membership_id(subject),
+             repo: repo
+           ),
+         current_subject = Subject.rebuild(subject, %{membership | user: subject.actor}, account),
          :ok <-
            Auth.Authorizer.ensure_has_permissions(
              current_subject,
@@ -4045,7 +4008,7 @@ defmodule Emisar.Runs do
 
   @doc """
   Internal — current dispatch authority under the caller's active-account lock.
-  Lock the exact member, user and credential before target rows. Original
+  Lock the exact member and credential before target rows. Original
   permission attenuation and authenticated credential identity remain binding.
   """
   def fetch_and_lock_dispatch_access(subject, opts \\ [])
@@ -4055,14 +4018,11 @@ defmodule Emisar.Runs do
 
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.dispatch_run_permission()),
-         {:ok, user_id} <- dispatch_user_id(subject),
-         true <- Repo.valid_uuid?(user_id) and Repo.valid_uuid?(subject.actor.id),
+         true <- dispatch_actor?(subject),
          {:ok, membership} <-
            Accounts.fetch_and_lock_membership(subject.account.id, subject.membership_id,
              repo: repo
            ),
-         true <- membership.user_id == user_id,
-         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
          :ok <- lock_dispatch_key(repo, subject),
          {:ok, _subject} <-
            Auth.fetch_current_subject(Authorizer.dispatch_run_permission(), subject) do
@@ -4074,12 +4034,14 @@ defmodule Emisar.Runs do
 
   def fetch_and_lock_dispatch_access(_subject, _opts), do: {:error, :unauthorized}
 
-  defp dispatch_user_id(%Subject{actor: %Users.User{id: id}}), do: {:ok, id}
+  # A person dispatches as their exact Member, and an MCP key as the Member that
+  # minted it (`subject.membership_id` either way). No other actor dispatches.
+  defp dispatch_actor?(%Subject{actor: %Users.User{}}), do: true
 
-  defp dispatch_user_id(%Subject{actor: %ApiKeys.ApiKey{kind: :mcp, created_by_id: id}}),
-    do: {:ok, id}
+  defp dispatch_actor?(%Subject{actor: %ApiKeys.ApiKey{kind: :mcp, id: id}}),
+    do: Repo.valid_uuid?(id)
 
-  defp dispatch_user_id(_subject), do: {:error, :unauthorized}
+  defp dispatch_actor?(_subject), do: false
 
   defp lock_dispatch_key(_repo, %Subject{actor: %Users.User{}}), do: :ok
 
@@ -4116,18 +4078,17 @@ defmodule Emisar.Runs do
       runner_id: attrs[:runner_id],
       pack_ref: attrs[:pack_ref],
       initiating_membership_id: attrs[:initiating_membership_id],
-      requested_by_id: attrs[:requested_by_id],
       api_key_id: attrs[:api_key_id]
     }
 
     with :ok <- ensure_run_initiator_authorized(repo, run), do: {:ok, :authorized}
   end
 
-  defp dispatcher_matches_attrs?(%Subject{actor: %Users.User{id: id}}, attrs),
-    do: Map.get(attrs, :requested_by_id) == id and is_nil(Map.get(attrs, :api_key_id))
+  defp dispatcher_matches_attrs?(%Subject{actor: %Users.User{}}, attrs),
+    do: is_nil(Map.get(attrs, :api_key_id))
 
   defp dispatcher_matches_attrs?(%Subject{actor: %ApiKeys.ApiKey{id: id}}, attrs),
-    do: Map.get(attrs, :api_key_id) == id and is_nil(Map.get(attrs, :requested_by_id))
+    do: Map.get(attrs, :api_key_id) == id
 
   defp dispatcher_matches_attrs?(_subject, _attrs), do: false
 
@@ -4152,8 +4113,7 @@ defmodule Emisar.Runs do
              run.account_id,
              run.initiating_membership_id
            ),
-         {:ok, user} <- Users.fetch_and_lock_user_by_id(membership.user_id, repo),
-         true <- initiating_identity_authorized?(repo, run, membership, user),
+         true <- initiating_member_authorized?(repo, run, membership),
          access = Accounts.runner_access_for_locked_membership(repo, membership),
          :ok <- ensure_dispatch_target_access(repo, run, access) do
       :ok
@@ -4162,19 +4122,17 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp initiating_identity_authorized?(_repo, %ActionRun{api_key_id: nil} = run, membership, user) do
-    run.requested_by_id == user.id and
-      MapSet.member?(
-        Auth.Permissions.for_role(Subject.effective_membership_role(membership)),
-        Authorizer.dispatch_run_permission()
-      )
+  defp initiating_member_authorized?(_repo, %ActionRun{api_key_id: nil}, membership) do
+    MapSet.member?(
+      Auth.Permissions.for_role(Subject.effective_membership_role(membership)),
+      Authorizer.dispatch_run_permission()
+    )
   end
 
-  defp initiating_identity_authorized?(repo, run, membership, user) do
+  defp initiating_member_authorized?(repo, run, membership) do
     with true <- ApiKeys.api_key_usable_in_account?(repo, run.api_key_id, run.account_id),
          %ApiKeys.ApiKey{kind: :mcp} = key <- ApiKeys.peek_api_key_by_id(run.api_key_id) do
-      key.account_id == run.account_id and key.created_by_membership_id == membership.id and
-        key.created_by_id == user.id and run.requested_by_id in [nil, user.id]
+      key.account_id == run.account_id and key.created_by_membership_id == membership.id
     else
       _ -> false
     end

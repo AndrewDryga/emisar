@@ -234,8 +234,8 @@ defmodule EmisarWeb.RunbookRunLive do
   def handle_info({:run_preflight, _stale_generation}, socket), do: {:noreply, socket}
 
   def handle_info(
-        {:list_changed, :team, "membership.runner_access_changed", user_id},
-        %{assigns: %{current_user: %{id: user_id}}} = socket
+        {:list_changed, :team, "membership.runner_access_changed", membership_id},
+        %{assigns: %{current_subject: %{membership_id: membership_id}}} = socket
       ) do
     # The shared membership hook has refreshed this exact identity and handles
     # read-authority loss before forwarding a same-role access change.

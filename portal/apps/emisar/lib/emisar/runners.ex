@@ -27,7 +27,6 @@ defmodule Emisar.Runners do
   alias Emisar.RequestContext
   alias Emisar.Runners.{Authorizer, ConnectionChange, EnrollmentKey, InactiveRetentionInput}
   alias Emisar.Runners.{Presence, Runner, Token}
-  alias Emisar.Users
   require Logger
 
   # 13 chars for "emkey-enroll-" + 16 random chars => 29.
@@ -1029,7 +1028,7 @@ defmodule Emisar.Runners do
     end
   end
 
-  # The account lock precedes the exact actor locks, then each caller locks its
+  # The account lock precedes the exact member lock, then each caller locks its
   # runner/key targets. Current scope rows are stable under the membership lock.
   # This is operator administration only, never a heartbeat/socket hot path.
   defp runner_administration_multi(subject, permission) do
@@ -1044,12 +1043,15 @@ defmodule Emisar.Runners do
 
   defp fetch_locked_runner_manager(
          repo,
-         %Subject{account: %{id: account_id}, actor: %Users.User{id: user_id}} = subject,
+         %Subject{account: %{id: account_id}} = subject,
          permission
        ) do
-    with {:ok, %Accounts.Membership{user_id: ^user_id}} <-
-           Accounts.fetch_and_lock_membership(account_id, subject.membership_id, repo: repo),
-         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+    with {:ok, _member} <-
+           Accounts.fetch_and_lock_membership(
+             account_id,
+             Subject.human_membership_id(subject),
+             repo: repo
+           ),
          {:ok, current} <- Auth.fetch_current_subject(permission, subject) do
       {:ok, %{subject: current, access: Accounts.runner_access_for_subject(current)}}
     else

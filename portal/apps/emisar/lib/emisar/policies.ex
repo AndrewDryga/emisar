@@ -28,7 +28,7 @@ defmodule Emisar.Policies do
       }
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Catalog, Repo, Runners, Users}
+  alias Emisar.{Accounts, Audit, Auth, Catalog, Repo, Runners}
   alias Emisar.Auth.Subject
   alias Emisar.Policies.{Authorizer, Glob, Policy, Target}
 
@@ -892,13 +892,13 @@ defmodule Emisar.Policies do
     ensure_policy_access(scope_type, Accounts.runner_access_for_subject(subject))
   end
 
-  defp fetch_and_lock_policy_access(repo, %Subject{actor: %Users.User{id: user_id}} = subject) do
+  defp fetch_and_lock_policy_access(repo, %Subject{account: %Accounts.Account{}} = subject) do
     with {:ok, membership} <-
-           Accounts.fetch_and_lock_membership(subject.account.id, subject.membership_id,
+           Accounts.fetch_and_lock_membership(
+             subject.account.id,
+             Subject.human_membership_id(subject),
              repo: repo
            ),
-         true <- membership.user_id == user_id,
-         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
          {:ok, current} <-
            Auth.fetch_current_subject(Authorizer.manage_policies_permission(), subject) do
       {:ok,

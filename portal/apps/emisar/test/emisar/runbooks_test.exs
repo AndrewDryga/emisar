@@ -1106,7 +1106,8 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, %{execution_id: execution_id}} =
                Runbooks.dispatch_runbook(runbook, "inspect fleet", owner)
 
-      Fixtures.Users.mark_user_as_deleted(user)
+      # Erasing the person hard-deletes their seats; the history keeps no name.
+      assert {:ok, _user} = Emisar.Users.delete_by_id(user.id)
 
       assert Runbooks.fetch_execution_result(execution_id, owner) == {:error, :unauthorized}
       assert {:ok, result} = Runbooks.fetch_execution_result(execution_id, reader)
@@ -1120,12 +1121,9 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "unloaded attribution stays unknown instead of impersonating a former member" do
-      user = Fixtures.Users.create_user(full_name: "Global Name")
-
       execution = %RunbookExecution{
-        requested_by: nil,
         api_key_id: Repo.generate_id(),
-        api_key: %Emisar.ApiKeys.ApiKey{name: "Claude Code", created_by: user}
+        api_key: %Emisar.ApiKeys.ApiKey{name: "Claude Code"}
       }
 
       assert Runbooks.execution_who_via(execution) == {nil, "Claude Code"}

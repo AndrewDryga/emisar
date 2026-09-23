@@ -1,6 +1,6 @@
 defmodule Emisar.Runbooks.RunbookExecution.Query do
   use Emisar, :query
-  alias Emisar.{Accounts, ApiKeys, Users}
+  alias Emisar.{Accounts, ApiKeys}
 
   def all,
     do: from(runbook_executions in Emisar.Runbooks.RunbookExecution, as: :runbook_executions)
@@ -65,27 +65,16 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
 
   @doc """
   Everything `Emisar.Runbooks.execution_who_via/1` reads, joined explicitly and
-  idempotently: the requesting user, the API key with its creator, and the
-  membership the execution was dispatched under.
+  idempotently: the API key and the membership the execution was dispatched
+  under.
 
-  The key and the membership are scoped to the execution's own account, and the
-  membership must both be the recorded `initiating_membership_id` and belong to
-  the accountable human (requester or key creator). A plain association preload
-  cannot express that, and would happily materialize a membership from a
-  different account for the projection to name someone by.
+  Both are scoped to the execution's own account, and the membership must be the
+  recorded `initiating_membership_id` — a removed seat included, as history. A
+  plain association preload cannot express that, and would happily materialize a
+  membership from a different account for the projection to name someone by.
   """
   def with_attribution(queryable \\ all()) do
     queryable
-    |> with_named_binding(:requested_by, fn queryable, binding ->
-      join(
-        queryable,
-        :left,
-        [runbook_executions: r],
-        requested_by in ^Users.User.Query.not_deleted(),
-        on: r.requested_by_id == requested_by.id,
-        as: ^binding
-      )
-    end)
     |> with_named_binding(:api_key, fn queryable, binding ->
       join(
         queryable,
@@ -96,39 +85,21 @@ defmodule Emisar.Runbooks.RunbookExecution.Query do
         as: ^binding
       )
     end)
-    |> with_named_binding(:api_key_created_by, fn queryable, binding ->
-      join(
-        queryable,
-        :left,
-        [api_key: api_key],
-        created_by in ^Users.User.Query.not_deleted(),
-        on: api_key.created_by_id == created_by.id,
-        as: ^binding
-      )
-    end)
     |> with_named_binding(:initiating_membership, fn queryable, binding ->
       join(
         queryable,
         :left,
-        [runbook_executions: r, requested_by: requested_by, api_key_created_by: created_by],
+        [runbook_executions: r],
         membership in ^Accounts.Membership.Query.all(),
         on:
           membership.id == r.initiating_membership_id and
-            membership.account_id == r.account_id and
-            (membership.user_id == requested_by.id or membership.user_id == created_by.id),
+            membership.account_id == r.account_id,
         as: ^binding
       )
     end)
-    |> preload(
-      [
-        requested_by: requested_by,
-        api_key: api_key,
-        api_key_created_by: created_by,
-        initiating_membership: membership
-      ],
-      requested_by: requested_by,
+    |> preload([api_key: api_key, initiating_membership: membership],
       initiating_membership: membership,
-      api_key: {api_key, created_by: created_by}
+      api_key: api_key
     )
   end
 

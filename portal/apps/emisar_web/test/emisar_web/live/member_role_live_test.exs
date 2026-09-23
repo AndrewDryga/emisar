@@ -82,8 +82,8 @@ defmodule EmisarWeb.MemberRoleLiveTest do
     assert_redirect(view, ~p"/app/#{account}/settings/team")
     assert Repo.reload!(target).role == :admin
     assert Accounts.runner_access_for_membership(account.id, target.id) == RunnerAccess.none()
-    user_id = target.user_id
-    assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+    membership_id = target.id
+    assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
   end
 
   test "malformed selection values do not crash the editor or change the Owner", %{conn: conn} do
@@ -178,8 +178,8 @@ defmodule EmisarWeb.MemberRoleLiveTest do
     assert_redirect(view, ~p"/app/#{account}/settings/team")
     assert Repo.reload!(target).directory_authorization_pending_version == 0
     assert Accounts.runner_access_for_membership(account.id, target.id) == RunnerAccess.none()
-    user_id = target.user_id
-    assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+    membership_id = target.id
+    assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
   end
 
   test "Admins cannot open an Owner demotion", %{conn: conn} do

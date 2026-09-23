@@ -66,12 +66,11 @@ defmodule Emisar.SSOGroupsTest do
     %{identity: identity, membership: membership}
   end
 
-  defp role_of(account_id, user_id),
-    do: Fixtures.Memberships.fetch_membership(account_id, user_id).role
+  defp role_of(identity), do: Fixtures.SSO.identity_membership(identity).role
 
-  defp access_of(account_id, user_id) do
-    membership = Fixtures.Memberships.fetch_membership(account_id, user_id)
-    Accounts.runner_access_for_membership(account_id, membership.id)
+  defp access_of(identity) do
+    membership = Fixtures.SSO.identity_membership(identity)
+    Accounts.runner_access_for_membership(membership.account_id, membership.id)
   end
 
   defp synced_access_audit_count(account_id, membership_id) do
@@ -134,7 +133,7 @@ defmodule Emisar.SSOGroupsTest do
     end
 
     test "is listed, is found by a displayName filter, and keeps its name when members arrive",
-         %{provider: provider, account: account} do
+         %{provider: provider} do
       assert {:ok, %{external_group_id: "grp-empty"}} =
                SSO.scim_upsert_group(provider, %{
                  external_id: "grp-empty",
@@ -165,7 +164,7 @@ defmodule Emisar.SSOGroupsTest do
                SSO.scim_list_groups(provider)
 
       assert members == [identity.id]
-      assert role_of(account.id, identity.user_id) == :viewer
+      assert role_of(identity) == :viewer
     end
 
     test "keeps its name after its last member leaves", %{provider: provider} do
@@ -197,11 +196,10 @@ defmodule Emisar.SSOGroupsTest do
 
     test "scim_upsert_group sets a member's role to the mapped role", %{
       provider: provider,
-      subject: subject,
-      account: account
+      subject: subject
     } do
       %{identity: identity} = provision(provider, "okta|u1")
-      assert role_of(account.id, identity.user_id) == :viewer
+      assert role_of(identity) == :viewer
 
       {:ok, _} =
         create_group_mapping(
@@ -218,18 +216,17 @@ defmodule Emisar.SSOGroupsTest do
                })
 
       assert member_id == identity.id
-      assert role_of(account.id, identity.user_id) == :operator
+      assert role_of(identity) == :operator
     end
 
     test "a group push recomputes the role for ALL its members (batched bulk path)", %{
       provider: provider,
-      subject: subject,
-      account: account
+      subject: subject
     } do
       %{identity: id1} = provision(provider, "okta|u1")
       %{identity: id2} = provision(provider, "okta|u2")
-      assert role_of(account.id, id1.user_id) == :viewer
-      assert role_of(account.id, id2.user_id) == :viewer
+      assert role_of(id1) == :viewer
+      assert role_of(id2) == :viewer
 
       {:ok, _} =
         create_group_mapping(
@@ -247,14 +244,13 @@ defmodule Emisar.SSOGroupsTest do
 
       assert Enum.sort(member_ids) == Enum.sort([id1.id, id2.id])
       # Both members recomputed to :operator in one batched pass (the N+1 fix).
-      assert role_of(account.id, id1.user_id) == :operator
-      assert role_of(account.id, id2.user_id) == :operator
+      assert role_of(id1) == :operator
+      assert role_of(id2) == :operator
     end
 
     test "a member in two mapped groups gets the HIGHEST (admin > operator > viewer)", %{
       provider: provider,
-      subject: subject,
-      account: account
+      subject: subject
     } do
       %{identity: identity} = provision(provider, "okta|multi")
 
@@ -294,17 +290,17 @@ defmodule Emisar.SSOGroupsTest do
           member_ids: [identity.id]
         })
 
-      assert role_of(account.id, identity.user_id) == :admin
+      assert role_of(identity) == :admin
 
       # Drop the admin group → falls back to the next-highest (:operator).
       {:ok, _} =
         SSO.scim_upsert_group(provider, %{external_id: "grp-adm", member_ids: []})
 
-      assert role_of(account.id, identity.user_id) == :operator
+      assert role_of(identity) == :operator
     end
 
     test "removing a member from their only mapped group resets them to the provider default_role (#3)",
-         %{provider: provider, subject: subject, account: account} do
+         %{provider: provider, subject: subject} do
       %{identity: identity} = provision(provider, "okta|patch")
 
       {:ok, _} =
@@ -316,7 +312,7 @@ defmodule Emisar.SSOGroupsTest do
           member_ids: [identity.id]
         })
 
-      assert role_of(account.id, identity.user_id) == :admin
+      assert role_of(identity) == :admin
 
       # Patch the member OUT of their only mapped group. With no mapped group
       # left, sync demotes them to the provider's default_role (least-privilege
@@ -328,13 +324,12 @@ defmodule Emisar.SSOGroupsTest do
                  member_ops([], [identity.id])
                )
 
-      assert role_of(account.id, identity.user_id) == :viewer
+      assert role_of(identity) == :viewer
     end
 
     test "an unknown member resource id in a group is ignored (not yet provisioned)", %{
       provider: provider,
-      subject: subject,
-      account: account
+      subject: subject
     } do
       %{identity: identity} = provision(provider, "okta|known")
 
@@ -350,7 +345,7 @@ defmodule Emisar.SSOGroupsTest do
                })
 
       assert member_id == identity.id
-      assert role_of(account.id, identity.user_id) == :admin
+      assert role_of(identity) == :admin
     end
 
     test "rejects overlong group and member identifiers before syncing", %{provider: provider} do
@@ -408,7 +403,7 @@ defmodule Emisar.SSOGroupsTest do
       # for that identity and refuse with :not_found.
       Fixtures.Memberships.mark_membership_as_deleted(gone_membership)
 
-      refute Accounts.peek_sync_membership(account.id, gone_identity.user_id)
+      refute Accounts.peek_sync_membership_by_id(account.id, gone_identity.membership_id)
 
       # The push lands both members into the mapped group. The recompute for the
       # provisioned member succeeds; the one for the membership-less identity is
@@ -422,7 +417,7 @@ defmodule Emisar.SSOGroupsTest do
       assert Enum.sort(member_ids) == Enum.sort([kept_identity.id, gone_identity.id])
       # The healthy member's role was still recomputed — the failed one didn't
       # abort the batch.
-      assert role_of(account.id, kept_identity.user_id) == :admin
+      assert role_of(kept_identity) == :admin
     end
   end
 
@@ -477,14 +472,14 @@ defmodule Emisar.SSOGroupsTest do
           member_ids: [identity.id]
         })
 
-      assert role_of(provider.account_id, identity.user_id) == :admin
+      assert role_of(identity) == :admin
 
       assert {:ok, _} = SSO.scim_delete_group(provider, group.id)
 
       # Gone means gone — deleting used to empty the members and leave the row,
       # so the very next GET still answered 200.
       assert SSO.scim_fetch_group(provider, group.id) == {:error, :not_found}
-      assert role_of(provider.account_id, identity.user_id) == :viewer
+      assert role_of(identity) == :viewer
     end
 
     test "a group this directory never pushed is not found", %{provider: provider} do
@@ -509,7 +504,9 @@ defmodule Emisar.SSOGroupsTest do
   test "SCIM deletion retires its local grants while preserving bearers and other workspaces" do
     %{provider: provider, account: account} = scim_provider()
     %{identity: identity} = provision(provider, "okta|sessions")
-    {:ok, user} = Emisar.Users.fetch_user_by_id(identity.user_id)
+
+    {:ok, user} =
+      Emisar.Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
 
     mine =
       Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
@@ -561,7 +558,7 @@ defmodule Emisar.SSOGroupsTest do
     end
 
     test "the exact resource grants role and runner access; rename keeps it, delete/recreate does not",
-         %{provider: provider, subject: subject, account: account} do
+         %{provider: provider, subject: subject} do
       %{identity: selected} = provision(provider, "okta|selected")
       %{identity: same_name} = provision(provider, "okta|same-name")
 
@@ -597,21 +594,21 @@ defmodule Emisar.SSOGroupsTest do
 
       assert role_mapping.directory_group_id == selected_group.id
       assert access_mapping.directory_group_id == selected_group.id
-      assert role_of(account.id, selected.user_id) == :admin
-      assert access_of(account.id, selected.user_id) == Accounts.RunnerAccess.all()
-      assert role_of(account.id, same_name.user_id) == :viewer
-      assert access_of(account.id, same_name.user_id) == Accounts.RunnerAccess.none()
+      assert role_of(selected) == :admin
+      assert access_of(selected) == Accounts.RunnerAccess.all()
+      assert role_of(same_name) == :viewer
+      assert access_of(same_name) == Accounts.RunnerAccess.none()
 
       assert {:ok, renamed} =
                SSO.scim_patch_group(provider, selected_group.id, [rename_op("Renamed Admins")])
 
       assert renamed.id == selected_group.id
-      assert role_of(account.id, selected.user_id) == :admin
-      assert access_of(account.id, selected.user_id) == Accounts.RunnerAccess.all()
+      assert role_of(selected) == :admin
+      assert access_of(selected) == Accounts.RunnerAccess.all()
 
       assert {:ok, _deleted_group} = SSO.scim_delete_group(provider, selected_group.id)
-      assert role_of(account.id, selected.user_id) == :viewer
-      assert access_of(account.id, selected.user_id) == Accounts.RunnerAccess.none()
+      assert role_of(selected) == :viewer
+      assert access_of(selected) == Accounts.RunnerAccess.none()
 
       assert {:ok, recreated} =
                SSO.scim_upsert_group(provider, %{
@@ -620,8 +617,8 @@ defmodule Emisar.SSOGroupsTest do
                })
 
       refute recreated.id == selected_group.id
-      assert role_of(account.id, selected.user_id) == :viewer
-      assert access_of(account.id, selected.user_id) == Accounts.RunnerAccess.none()
+      assert role_of(selected) == :viewer
+      assert access_of(selected) == Accounts.RunnerAccess.none()
 
       # Dormant mappings remain operator-owned config and can still be removed
       # after the directory resource has gone away.
@@ -672,11 +669,10 @@ defmodule Emisar.SSOGroupsTest do
 
     test "unions mapped groups and revokes access on group removal and mapping deletion", %{
       provider: provider,
-      subject: subject,
-      account: account
+      subject: subject
     } do
       %{identity: identity} = provision(provider, "okta|runner-union")
-      assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.none()
+      assert access_of(identity) == Accounts.RunnerAccess.none()
 
       {:ok, db_mapping} =
         create_group_runner_access_mapping(
@@ -708,7 +704,7 @@ defmodule Emisar.SSOGroupsTest do
           })
       end
 
-      assert access_of(account.id, identity.user_id) ==
+      assert access_of(identity) ==
                %Accounts.RunnerAccess{
                  mode: :restricted,
                  groups: ["app", "db"],
@@ -721,19 +717,18 @@ defmodule Emisar.SSOGroupsTest do
           member_ids: []
         })
 
-      assert access_of(account.id, identity.user_id) ==
+      assert access_of(identity) ==
                %Accounts.RunnerAccess{mode: :restricted, groups: ["app"], runner_ids: []}
 
       assert {:ok, _deleted} = SSO.delete_group_runner_access_mapping(app_mapping, subject)
-      assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.none()
+      assert access_of(identity) == Accounts.RunnerAccess.none()
 
       assert {:ok, _deleted} = SSO.delete_group_runner_access_mapping(db_mapping, subject)
     end
 
     test "all dominates restricted grants and deletion reveals the remaining union", %{
       provider: provider,
-      subject: subject,
-      account: account
+      subject: subject
     } do
       %{identity: identity} = provision(provider, "okta|runner-all")
 
@@ -763,18 +758,17 @@ defmodule Emisar.SSOGroupsTest do
           })
       end
 
-      assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.all()
+      assert access_of(identity) == Accounts.RunnerAccess.all()
 
       assert {:ok, _deleted} = SSO.delete_group_runner_access_mapping(all_mapping, subject)
 
-      assert access_of(account.id, identity.user_id) ==
+      assert access_of(identity) ==
                %Accounts.RunnerAccess{mode: :restricted, groups: ["db"], runner_ids: []}
     end
 
     test "mapping changes reconcile a deactivated member before reactivation", %{
       provider: provider,
-      subject: subject,
-      account: account
+      subject: subject
     } do
       %{identity: identity} = provision(provider, "okta|runner-reactivate")
 
@@ -812,7 +806,7 @@ defmodule Emisar.SSOGroupsTest do
                  active: true
                })
 
-      assert access_of(account.id, identity.user_id) ==
+      assert access_of(identity) ==
                %Accounts.RunnerAccess{mode: :restricted, groups: ["app"], runner_ids: []}
     end
 
@@ -843,7 +837,7 @@ defmodule Emisar.SSOGroupsTest do
                  member_ids: [identity.id]
                })
 
-      assert access_of(account.id, identity.user_id) ==
+      assert access_of(identity) ==
                %Accounts.RunnerAccess{
                  mode: :restricted,
                  groups: [],
@@ -867,7 +861,7 @@ defmodule Emisar.SSOGroupsTest do
 
       pending = Repo.reload!(membership)
       assert is_integer(pending.directory_authorization_pending_version)
-      assert access_of(account.id, identity.user_id) == Accounts.RunnerAccess.none()
+      assert access_of(identity) == Accounts.RunnerAccess.none()
 
       assert Accounts.sync_set_membership_authorization(
                pending,
@@ -889,7 +883,7 @@ defmodule Emisar.SSOGroupsTest do
       assert reconciled.role == :viewer
       assert is_nil(reconciled.directory_authorization_pending_version)
 
-      assert access_of(account.id, identity.user_id) ==
+      assert access_of(identity) ==
                %Accounts.RunnerAccess{
                  mode: :restricted,
                  groups: ["baseline"],
@@ -953,11 +947,11 @@ defmodule Emisar.SSOGroupsTest do
                )
 
       healthy_membership =
-        Fixtures.Memberships.fetch_membership(account.id, healthy_identity.user_id)
+        Fixtures.SSO.identity_membership(healthy_identity)
 
       assert is_nil(healthy_membership.directory_authorization_pending_version)
 
-      assert access_of(account.id, healthy_identity.user_id) ==
+      assert access_of(healthy_identity) ==
                %Accounts.RunnerAccess{
                  mode: :restricted,
                  groups: ["baseline"],
@@ -966,7 +960,7 @@ defmodule Emisar.SSOGroupsTest do
 
       blocked = Repo.reload!(blocked_membership)
       assert is_integer(blocked.directory_authorization_pending_version)
-      assert access_of(account.id, blocked_identity.user_id) == Accounts.RunnerAccess.none()
+      assert access_of(blocked_identity) == Accounts.RunnerAccess.none()
 
       deleted_runner
       |> Ecto.Changeset.change(deleted_at: nil)
@@ -975,7 +969,7 @@ defmodule Emisar.SSOGroupsTest do
       assert SSO.reconcile_pending_authorizations() == :ok
       assert is_nil(Repo.reload!(blocked_membership).directory_authorization_pending_version)
 
-      assert access_of(account.id, blocked_identity.user_id) ==
+      assert access_of(blocked_identity) ==
                %Accounts.RunnerAccess{
                  mode: :restricted,
                  groups: ["baseline"],
@@ -991,7 +985,7 @@ defmodule Emisar.SSOGroupsTest do
       scim_provider()
     end
 
-    test "the synced write refuses :owner", %{provider: provider, account: account} do
+    test "the synced write refuses :owner", %{provider: provider} do
       %{membership: membership} = provision(provider, "okta|noowner")
 
       assert Accounts.sync_set_membership_authorization(
@@ -1002,13 +996,12 @@ defmodule Emisar.SSOGroupsTest do
              ) == {:error, :owner_not_assignable}
 
       # The membership keeps its provisioned role — no escalation slipped through.
-      assert role_of(account.id, membership.user_id) == :viewer
+      assert Repo.reload!(membership).role == :viewer
     end
 
     test "group recompute never re-roles a human owner (#3 — owners out of sync scope)", %{
       provider: provider,
-      subject: subject,
-      account: account
+      subject: subject
     } do
       %{identity: identity, membership: membership} = provision(provider, "okta|ownerskip")
 
@@ -1026,14 +1019,14 @@ defmodule Emisar.SSOGroupsTest do
 
       # A mapped :admin group would otherwise demote owner→admin, but sync never
       # re-roles an owner — recompute leaves them untouched.
-      assert role_of(account.id, membership.user_id) == :owner
+      assert Repo.reload!(membership).role == :owner
 
       assert {:ok, %Accounts.Membership{role: :owner}} =
                SSO.recompute_role_for_identity(provider, Repo.reload!(identity))
     end
 
     test "recompute_role_for_identity resets an elevated member in no mapped group to default_role",
-         %{provider: provider, subject: subject, account: account} do
+         %{provider: provider, subject: subject} do
       %{identity: identity} = provision(provider, "okta|demote")
 
       {:ok, _} =
@@ -1045,7 +1038,7 @@ defmodule Emisar.SSOGroupsTest do
           member_ids: [identity.id]
         })
 
-      assert role_of(account.id, identity.user_id) == :admin
+      assert role_of(identity) == :admin
 
       # Drop the only mapping → the identity belongs to no mapped group. The
       # direct recompute entry point demotes them to the provider default_role
@@ -1060,7 +1053,7 @@ defmodule Emisar.SSOGroupsTest do
       assert {:ok, %Accounts.Membership{role: :viewer}} =
                SSO.recompute_role_for_identity(provider, Repo.reload!(identity))
 
-      assert role_of(account.id, identity.user_id) == :viewer
+      assert role_of(identity) == :viewer
     end
   end
 
@@ -1472,7 +1465,7 @@ defmodule Emisar.SSOGroupsTest do
       assert {:ok, access_mapping} =
                SSO.create_group_runner_access_mapping(provider, access_attrs, subject)
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, identity.user_id)
+      membership = Fixtures.SSO.identity_membership(identity)
       Accounts.subscribe_account_team(account.id)
       version = Repo.reload!(provider).authorization_version
 
@@ -1493,15 +1486,14 @@ defmodule Emisar.SSOGroupsTest do
                SSO.update_group_mapping(role_mapping, %{role: :admin}, subject)
 
       assert Repo.reload!(provider).authorization_version > version
-      assert role_of(account.id, identity.user_id) == :admin
-      user_id = identity.user_id
-      assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+      assert role_of(identity) == :admin
+      membership_id = membership.id
+      assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
     end
 
     test "create, update, and delete immediately apply the group's current role", %{
       provider: provider,
-      subject: subject,
-      account: account
+      subject: subject
     } do
       %{identity: identity} = provision(provider, "okta|existing-group-member")
 
@@ -1512,7 +1504,7 @@ defmodule Emisar.SSOGroupsTest do
                })
 
       assert member_id == identity.id
-      assert role_of(account.id, identity.user_id) == :viewer
+      assert role_of(identity) == :viewer
 
       assert {:ok, mapping} =
                create_group_mapping(
@@ -1521,13 +1513,13 @@ defmodule Emisar.SSOGroupsTest do
                  subject
                )
 
-      assert role_of(account.id, identity.user_id) == :admin
+      assert role_of(identity) == :admin
 
       assert {:ok, _mapping} = SSO.update_group_mapping(mapping, %{role: :operator}, subject)
-      assert role_of(account.id, identity.user_id) == :operator
+      assert role_of(identity) == :operator
 
       assert {:ok, _mapping} = SSO.delete_group_mapping(mapping, subject)
-      assert role_of(account.id, identity.user_id) == :viewer
+      assert role_of(identity) == :viewer
     end
   end
 

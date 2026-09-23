@@ -57,8 +57,8 @@ defmodule Emisar.AccountsOwnerAccessTest do
     assert Accounts.runner_access_for_subject(old_subject) == RunnerAccess.all()
     assert old_subject.role == :api_client
     assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(session)
-    user_id = target.user_id
-    assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+    membership_id = target.id
+    assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
   end
 
   test "promotion does not restore previously revoked credentials" do
@@ -97,8 +97,8 @@ defmodule Emisar.AccountsOwnerAccessTest do
     assert Accounts.runner_access_for_subject(Auth.Subject.for_api_key(key, account)) ==
              RunnerAccess.all()
 
-    user_id = target.user_id
-    assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+    membership_id = target.id
+    assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
   end
 
   test "Owner access cannot be edited and the target account remains authoritative" do
@@ -189,8 +189,8 @@ defmodule Emisar.AccountsOwnerAccessTest do
     assert Fixtures.Memberships.list_runner_scopes(demoted) == [{:runner, runner.id}]
     assert Repo.reload!(key).revoked_at
     assert Repo.reload!(grant).status == :denied
-    user_id = target.user_id
-    assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+    membership_id = target.id
+    assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
   end
 
   test "a foreign runner in the demotion grant rolls back role and credential changes" do
@@ -269,8 +269,8 @@ defmodule Emisar.AccountsOwnerAccessTest do
       assert Fixtures.Memberships.list_runner_scopes(pending) ==
                RunnerAccess.scope_tuples(RunnerAccess.none())
 
-      user_id = target.user_id
-      assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+      membership_id = target.id
+      assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
 
       assert SSO.reconcile_pending_authorizations() == :ok
       assert Repo.reload!(target).role == :operator
@@ -339,7 +339,7 @@ defmodule Emisar.AccountsOwnerAccessTest do
     assert updated.role == :owner
     assert Accounts.runner_access_for_membership(account.id, owner.id) == RunnerAccess.all()
     assert is_nil(Repo.reload!(key).revoked_at)
-    user_id = owner.user_id
-    assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+    membership_id = owner.id
+    assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
   end
 end

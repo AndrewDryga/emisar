@@ -216,10 +216,10 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
-  # The users provisioned through this connection, each paired with its account
-  # membership (nil if the person was fully removed but the identity lingers) — so
-  # the "Synced members" card can show state and act on the membership. Two reads
-  # (SSO identities + Accounts memberships), zipped by user id; either failing
+  # The members provisioned through this connection, each paired with its live
+  # account membership (nil once removed while the identity lingers) — so the
+  # "Synced members" card can show state and act on the membership. Two reads
+  # (SSO identities + Accounts memberships), zipped by membership id; either failing
   # keeps uncertainty explicit instead of asserting that nobody was provisioned.
   defp load_synced_members(socket, provider, params) do
     subject = socket.assigns.current_subject
@@ -237,9 +237,13 @@ defmodule EmisarWeb.SSOSettingsLive do
     socket = DirectoryGroups.load_filter(socket, group_id, provider_id: provider.id)
 
     with {:ok, identities, metadata} <- SSO.list_synced_users(provider, subject, opts),
-         user_ids = Enum.map(identities, & &1.user_id),
+         membership_ids = Enum.map(identities, & &1.membership_id),
          {:ok, memberships} <-
-           Accounts.list_memberships_for_users(socket.assigns.current_account, user_ids, subject) do
+           Accounts.list_memberships_by_ids(
+             socket.assigns.current_account,
+             membership_ids,
+             subject
+           ) do
       membership_by_id = Map.new(memberships, &{&1.id, &1})
 
       members =
@@ -262,7 +266,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:synced_members, members)
       |> assign(:synced_member_metadata, metadata)
       |> assign(:synced_members_load_error?, false)
-      |> DirectoryGroups.load_summaries(user_ids, provider_id: provider.id)
+      |> DirectoryGroups.load_summaries(membership_ids, provider_id: provider.id)
     else
       _ ->
         socket
@@ -2078,7 +2082,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 load_error?={@synced_members_load_error?}
                 member_role_options={@member_role_options}
                 can_configure_directory_sync?={@can_configure_directory_sync?}
-                current_user_id={@current_user.id}
+                current_membership_id={@current_membership.id}
                 scim_enabled={@provider.scim_enabled}
                 group_summaries={@member_group_summaries}
                 member_group_list={@member_group_list}

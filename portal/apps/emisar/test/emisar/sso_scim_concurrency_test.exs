@@ -132,8 +132,8 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
               refute_receive {:audit_event, %Emisar.Audit.Event{actor_kind: "directory_sync"}},
                              100
 
-              refute_receive {:list_changed, :team, "membership.reinstated", _user_id}, 100
-              refute_receive {:list_changed, :team, "membership.suspended", _user_id}, 100
+              refute_receive {:list_changed, :team, "membership.reinstated", _membership_id}, 100
+              refute_receive {:list_changed, :team, "membership.suspended", _membership_id}, 100
             after
               stop_tasks([contender])
             end
@@ -283,7 +283,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
       {_raw, api_key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: context.account.id,
-          created_by_id: identity.user_id
+          created_by_id: Fixtures.SSO.identity_membership(identity).user_id
         )
 
       assert is_nil(Repo.reload!(api_key).revoked_at)
@@ -758,7 +758,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
   defp existing_snapshot(identity, membership) do
     current_identity = Repo.reload!(identity)
     current_membership = Repo.reload!(membership)
-    {:ok, user} = Users.fetch_user_by_id(identity.user_id)
+    {:ok, user} = Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
 
     %{
       identity: {current_identity.scim_external_id, current_identity.scim_active},

@@ -25,8 +25,8 @@ defmodule Emisar.SSO.Provisioning do
   end
 
   # Capture (or refresh) a pending link request. When the email matches an
-  # EXISTING account member, the request records them (`matched_user_id`) so an
-  # admin can link the IdP identity to that user instead of failing/duplicating
+  # EXISTING account member, the request records them (`matched_membership_id`) so
+  # an admin can link the IdP identity to that member instead of failing/duplicating
   # — never an auto-merge (C1): the admin's approval is still the gate. The
   # display email is the raw value (helps the admin recognize who's asking); the
   # binding on approval uses the captured id, not the email.
@@ -80,7 +80,6 @@ defmodule Emisar.SSO.Provisioning do
       email: email,
       full_name: full_name,
       claims: claims,
-      matched_user_id: member && member.user_id,
       matched_membership_id: member && member.id
     }
 
@@ -97,7 +96,6 @@ defmodule Emisar.SSO.Provisioning do
            :email,
            :full_name,
            :claims,
-           :matched_user_id,
            :matched_membership_id,
            :source,
            :namespace_fingerprint,
@@ -169,6 +167,14 @@ defmodule Emisar.SSO.Provisioning do
   end
 
   def matched_member(_provider, _email), do: nil
+
+  # The personal login linked to an identity's preloaded seat, locked. Callers
+  # take it before the identity, in membership activation's User -> identity order.
+  def lock_seat_user(repo, %UserIdentity{membership: %Accounts.Membership{user_id: user_id}})
+      when is_binary(user_id),
+      do: Users.fetch_and_lock_user_by_id(user_id, repo)
+
+  def lock_seat_user(_repo, %UserIdentity{}), do: {:error, :not_found}
 
   def put_active_account_lock(multi, account_id) do
     Multi.run(multi, :active_account, fn repo, _changes ->

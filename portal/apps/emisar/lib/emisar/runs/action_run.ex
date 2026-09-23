@@ -170,6 +170,12 @@ defmodule Emisar.Runs.ActionRun do
       define_field: false,
       where: [deleted_at: nil]
 
+    # The accountable Member, reusing the field above. Loaded only by
+    # `ActionRun.Query.with_attribution/1`, which keeps removed seats as history.
+    belongs_to :initiating_membership, Emisar.Accounts.Membership,
+      foreign_key: :initiating_membership_id,
+      define_field: false
+
     has_many :events, Emisar.Runs.RunEvent, foreign_key: :run_id
 
     timestamps()

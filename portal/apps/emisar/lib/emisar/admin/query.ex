@@ -269,10 +269,10 @@ defmodule Emisar.Admin.Query do
   def active_api_key_count(account_id),
     do: account_id |> active_api_keys() |> select([api_keys: k], count(k.id))
 
-  def active_api_key_count(account_id, user_id) do
+  def active_api_key_count(account_id, membership_id) do
     account_id
     |> active_api_keys()
-    |> where([api_keys: k], k.created_by_id == ^user_id)
+    |> where([api_keys: k], k.created_by_membership_id == ^membership_id)
     |> select([api_keys: k], count(k.id))
   end
 

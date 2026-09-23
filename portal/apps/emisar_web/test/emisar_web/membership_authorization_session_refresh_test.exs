@@ -108,7 +108,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
       topic: topic
     } do
       _runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
-      user_id = membership.user_id
+      membership_id = membership.id
       {:ok, restricted} = RunnerAccess.restricted(["database"], [])
 
       assert {:ok, narrowed} =
@@ -118,7 +118,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
                  owner_subject
                )
 
-      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^user_id}
+      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^membership_id}
       refute_receive {:list_changed, :team, _, _}, 100
       refute_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 100
 
@@ -129,7 +129,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
                  owner_subject
                )
 
-      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^user_id}
+      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^membership_id}
       refute_receive {:list_changed, :team, _, _}, 100
       refute_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 100
     end
@@ -144,7 +144,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
         Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
 
       {:ok, restricted} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
-      user_id = membership.user_id
+      membership_id = membership.id
 
       assert {:ok, narrowed} =
                Accounts.update_membership_runner_access(
@@ -153,7 +153,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
                  owner_subject
                )
 
-      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^user_id}
+      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^membership_id}
       refute_receive {:list_changed, :team, _, _}, 100
       refute_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 100
 
@@ -164,7 +164,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
                  owner_subject
                )
 
-      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^user_id}
+      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^membership_id}
       refute_receive {:list_changed, :team, _, _}, 100
       refute_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 100
     end
@@ -224,7 +224,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
       other_topic: other_topic
     } do
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      user_id = membership.user_id
+      membership_id = membership.id
 
       assert {:ok, updated} =
                Accounts.sync_set_membership_authorization(
@@ -234,7 +234,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
                  provider
                )
 
-      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^user_id}
+      assert_receive {:list_changed, :team, "membership.runner_access_changed", ^membership_id}
       refute_receive {:list_changed, :team, _, _}, 100
       refute_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 100
 
@@ -252,7 +252,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
                  provider
                )
 
-      assert_receive {:list_changed, :team, "membership.role_changed", ^user_id}
+      assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
       assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
       refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
     end

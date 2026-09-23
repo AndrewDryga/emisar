@@ -33,7 +33,7 @@ defmodule Emisar.Approvals do
   alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.Approvals.{Authorizer, Decision, DecisionInput, Grant, GrantLifetimeInput, Request}
-  alias Emisar.{Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs, Users}
+  alias Emisar.{Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs}
   alias Emisar.Auth.Subject
   alias Emisar.EncodedText
   alias Emisar.SafeText
@@ -1617,18 +1617,20 @@ defmodule Emisar.Approvals do
 
   defp normalize_override_reason(_reason), do: {:error, :override_reason_required}
 
-  # The account lock precedes this helper. Revalidate the exact human actor
-  # after its membership and user locks, preserving the caller's attenuated
-  # permissions. Access rows are changed under that same membership lock.
+  # The account lock precedes this helper. Revalidate the exact human Member
+  # under its lock, preserving the caller's attenuated permissions. Access rows
+  # are changed under that same membership lock.
   defp fetch_locked_actor_access(
          repo,
-         %Subject{actor: %Users.User{id: user_id}, account: account} = subject,
+         %Subject{account: %Accounts.Account{}} = subject,
          permission
        ) do
     with {:ok, membership} <-
-           Accounts.fetch_and_lock_membership(account.id, subject.membership_id, repo: repo),
-         true <- membership.user_id == user_id,
-         {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
+           Accounts.fetch_and_lock_membership(
+             subject.account.id,
+             Subject.human_membership_id(subject),
+             repo: repo
+           ),
          {:ok, _current} <- Auth.fetch_current_subject(permission, subject) do
       {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
     else

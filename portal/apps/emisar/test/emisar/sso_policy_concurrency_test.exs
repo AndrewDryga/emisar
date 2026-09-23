@@ -1139,7 +1139,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
           send(updater.pid, :commit)
           assert {:ok, %User{}} = Task.await(updater, 30_000)
 
-          assert {:pending, %LinkRequest{matched_user_id: nil, email: email}} =
+          assert {:pending, %LinkRequest{matched_membership_id: nil, email: email}} =
                    Task.await(callback, 30_000)
 
           assert email == claims["email"]
@@ -1218,7 +1218,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
             "email" => context.user.email,
             "email_verified" => true
           },
-          matched_user_id: context.user.id
+          matched_membership_id: context.subject.membership_id
         )
 
       parent = self()
@@ -1602,7 +1602,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
         "email" => context.user.email,
         "email_verified" => true
       },
-      matched_user_id: context.user.id
+      matched_membership_id: context.subject.membership_id
     )
   end
 

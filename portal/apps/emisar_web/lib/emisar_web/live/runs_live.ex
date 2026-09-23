@@ -145,7 +145,7 @@ defmodule EmisarWeb.RunsLive do
   # Which "who exactly" child each Dispatched-by kind reveals.
   @dispatcher_children %{
     "mcp" => :api_key_id,
-    "operator" => :requested_by_id,
+    "operator" => :initiating_membership_id,
     "runbook" => :runbook_id
   }
 
@@ -156,7 +156,8 @@ defmodule EmisarWeb.RunsLive do
   # children drop out of the list entirely.
   defp resolve_dispatcher_children(filters, params, subject) do
     Enum.flat_map(filters, fn
-      %{name: name} = filter when name in [:api_key_id, :requested_by_id, :runbook_id] ->
+      %{name: name} = filter
+      when name in [:api_key_id, :initiating_membership_id, :runbook_id] ->
         if dispatcher_child_visible?(name, params),
           do: [%{filter | values: dispatcher_child_options(name, subject)}],
           else: []
@@ -178,7 +179,7 @@ defmodule EmisarWeb.RunsLive do
     sorted_options(ApiKeys.list_key_options(subject))
   end
 
-  defp dispatcher_child_options(:requested_by_id, subject) do
+  defp dispatcher_child_options(:initiating_membership_id, subject) do
     sorted_options(Runs.list_run_operator_options(subject))
   end
 

@@ -179,21 +179,25 @@ defmodule Emisar.SSOMembershipBindingTest do
     member: member,
     subject: subject,
     account: account,
-    user: user,
     provider: provider
   } do
     replacement = replace_member(member, subject)
     refute SSO.member_profile_directory_managed?(account.id, replacement.id)
-    assert SSO.member_directory_facts([user.id], subject) == {:ok, %{}}
+    assert SSO.member_directory_facts([replacement.id], subject) == {:ok, %{}}
 
-    assert ExUnit.CaptureLog.capture_log(fn ->
-             assert {:ok, _provider} =
-                      SSO.update_provider(
-                        provider,
-                        %{default_role: :admin},
-                        subject
-                      )
-           end) == ""
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert {:ok, _provider} =
+                 SSO.update_provider(
+                   provider,
+                   %{default_role: :admin},
+                   subject
+                 )
+      end)
+
+    # The capture also collects other async tests' lines; a skipped recompute
+    # names this connection.
+    refute log =~ provider.id
 
     unchanged = Repo.reload!(replacement)
     assert unchanged.role == replacement.role

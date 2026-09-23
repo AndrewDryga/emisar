@@ -173,12 +173,18 @@ defmodule EmisarWeb.RunDetailLive do
 
   def handle_info({:run_updated, run}, socket) do
     # The broadcast carries a preload-less run; keep the associations loaded at
-    # mount (:runner, :api_key, :requested_by) so "Dispatched by" and the runner
-    # label don't degrade to "—"/"AI agent" on the first live status flip. The
-    # run's own columns (status, policy, timing, progress counts) come from the
-    # fresh struct — only the immutable dispatch-time associations are carried.
+    # mount (:runner, :api_key, :initiating_membership) so "Dispatched by" and the
+    # runner label don't degrade to "—"/"AI agent" on the first live status flip.
+    # The run's own columns (status, policy, timing, progress counts) come from
+    # the fresh struct — only the immutable dispatch-time associations are carried.
     old = socket.assigns.run
-    run = %{run | runner: old.runner, api_key: old.api_key, requested_by: old.requested_by}
+
+    run = %{
+      run
+      | runner: old.runner,
+        api_key: old.api_key,
+        initiating_membership: old.initiating_membership
+    }
 
     # If status flips to/from pending_approval, refresh the review so the
     # banner and the ledger update without a page reload.
@@ -218,8 +224,8 @@ defmodule EmisarWeb.RunDetailLive do
   end
 
   def handle_info(
-        {:list_changed, :team, "membership.runner_access_changed", user_id},
-        %{assigns: %{current_user: %{id: user_id}}} = socket
+        {:list_changed, :team, "membership.runner_access_changed", membership_id},
+        %{assigns: %{current_subject: %{membership_id: membership_id}}} = socket
       ) do
     {:noreply, refresh_action_access(socket)}
   end

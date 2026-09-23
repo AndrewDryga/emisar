@@ -160,13 +160,14 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     {:ok, web_only} = Accounts.RunnerAccess.restricted(["web"], [])
 
-    account.id
-    |> Fixtures.Memberships.fetch_membership(user.id)
-    |> Fixtures.Memberships.force_runner_access(web_only)
+    membership =
+      account.id
+      |> Fixtures.Memberships.fetch_membership(user.id)
+      |> Fixtures.Memberships.force_runner_access(web_only)
 
     send(
       lv.pid,
-      {:list_changed, :team, "membership.runner_access_changed", user.id}
+      {:list_changed, :team, "membership.runner_access_changed", membership.id}
     )
 
     html = render(lv)

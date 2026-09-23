@@ -409,7 +409,6 @@ defmodule EmisarWeb.SSOControllerTest do
       assert redirected_to(conn) == "https://idp.test/auth"
 
       stash = get_session(conn, @member_mfa_reset_stash_key)
-      assert stash.actor_id == reset.actor.id
       assert stash.actor_membership_id == reset.actor_membership.id
       assert stash.account_id == reset.account.id
       assert stash.identity_id == reset.identity.id
@@ -786,7 +785,7 @@ defmodule EmisarWeb.SSOControllerTest do
       identity =
         Emisar.SSO.UserIdentity.Query.not_deleted()
         |> Emisar.SSO.UserIdentity.Query.by_provider_id(link.provider.id)
-        |> Emisar.SSO.UserIdentity.Query.by_user_id(link.user.id)
+        |> Emisar.SSO.UserIdentity.Query.by_member_user_id(link.user.id)
         |> Repo.one!()
 
       assert identity.provider_identifier == "workforce|linked-user"

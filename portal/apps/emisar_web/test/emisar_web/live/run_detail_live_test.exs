@@ -1133,7 +1133,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     output_state = :sys.get_state(lv.pid).socket.assigns.output_state
 
     Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
-    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
     assert render(lv) =~ "Cancelling requires action access"
     assert render(lv) =~ "Output remains readable"
     assert has_element?(lv, "#cancel-run-confirm[disabled]")
@@ -1143,7 +1143,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert Repo.reload!(run).status == :running
 
     Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
-    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
     render(lv)
     assert has_element?(lv, "#cancel-run-confirm:not([disabled])")
   end

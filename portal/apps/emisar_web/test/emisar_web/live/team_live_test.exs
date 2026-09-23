@@ -21,8 +21,8 @@ defmodule EmisarWeb.TeamLiveTest do
     assert Emisar.Accounts.subscribe_account_team(account.id) == :ok
   end
 
-  defp assert_team_broadcast(lv, event, user_id) do
-    assert_receive {:list_changed, :team, ^event, ^user_id}
+  defp assert_team_broadcast(lv, event, membership_id) do
+    assert_receive {:list_changed, :team, ^event, ^membership_id}
     render(lv)
   end
 
@@ -521,7 +521,7 @@ defmodule EmisarWeb.TeamLiveTest do
           provider: provider,
           email: member.email,
           full_name: member.full_name,
-          matched_user_id: member.id,
+          matched_membership_id: membership.id,
           claims: %{
             "email" => member.email,
             "email_verified" => true,
@@ -579,7 +579,7 @@ defmodule EmisarWeb.TeamLiveTest do
         Fixtures.SSO.create_link_request(
           provider: provider,
           email: member.email,
-          matched_user_id: member.id,
+          matched_membership_id: invitation.id,
           claims: %{"email" => member.email, "email_verified" => true}
         )
 
@@ -750,7 +750,7 @@ defmodule EmisarWeb.TeamLiveTest do
                  :oidc
                )
 
-      assert is_nil(request.matched_user_id)
+      assert is_nil(request.matched_membership_id)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       assert html =~ member.email
@@ -2321,7 +2321,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "Invitation resent to #{email}."
       assert Emisar.Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
-      assert_team_broadcast(lv, "membership.invitation_resent", membership.user_id)
+      assert_team_broadcast(lv, "membership.invitation_resent", membership.id)
 
       assert_email_sent(fn sent ->
         sent.to == [{"", email}] and
@@ -2521,7 +2521,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "Role updated."
       assert Emisar.Repo.reload!(membership).role == :operator
-      assert_team_broadcast(lv, "membership.role_changed", membership.user_id)
+      assert_team_broadcast(lv, "membership.role_changed", membership.id)
     end
 
     test "promoting a member whose access is wider than yours names the remedy", %{
@@ -2624,7 +2624,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert has_element?(lv, "#member-suspended-#{membership.id}", "access suspended")
 
-      assert_team_broadcast(lv, "membership.suspended", membership.user_id)
+      assert_team_broadcast(lv, "membership.suspended", membership.id)
 
       assert has_element?(lv, "##{"change-role-#{membership.id}-operator"}")
 
@@ -2634,7 +2634,7 @@ defmodule EmisarWeb.TeamLiveTest do
              }) =~ "Role updated."
 
       assert Emisar.Repo.reload!(membership).role == :operator
-      assert_team_broadcast(lv, "membership.role_changed", membership.user_id)
+      assert_team_broadcast(lv, "membership.role_changed", membership.id)
     end
 
     test "suspend then reinstate round-trips", %{
@@ -2655,13 +2655,13 @@ defmodule EmisarWeb.TeamLiveTest do
                "Access suspended."
 
       assert Emisar.Repo.reload!(membership).disabled_at
-      assert_team_broadcast(lv, "membership.suspended", membership.user_id)
+      assert_team_broadcast(lv, "membership.suspended", membership.id)
 
       assert render_click(lv, "reinstate", %{"membership_id" => membership.id}) =~
                "Access restored."
 
       refute Emisar.Repo.reload!(membership).disabled_at
-      assert_team_broadcast(lv, "membership.reinstated", membership.user_id)
+      assert_team_broadcast(lv, "membership.reinstated", membership.id)
     end
 
     test "account cautions use separate status lines and clear independently", %{
@@ -2712,7 +2712,7 @@ defmodule EmisarWeb.TeamLiveTest do
                "#member-status-unconfirmed-#{membership.id} > .bg-amber-400"
              )
 
-      assert_team_broadcast(lv, "membership.suspended", membership.user_id)
+      assert_team_broadcast(lv, "membership.suspended", membership.id)
 
       render_click(lv, "reinstate", %{"membership_id" => membership.id})
       refute has_element?(lv, "#member-status-suspended-#{membership.id}")
@@ -2724,7 +2724,7 @@ defmodule EmisarWeb.TeamLiveTest do
                "#member-status-unconfirmed-#{membership.id} > .bg-amber-400"
              )
 
-      assert_team_broadcast(lv, "membership.reinstated", membership.user_id)
+      assert_team_broadcast(lv, "membership.reinstated", membership.id)
     end
 
     test "an ordinary roster reader sees the hold but not its author", %{
@@ -2768,7 +2768,7 @@ defmodule EmisarWeb.TeamLiveTest do
       subscribe_team(account)
       assert confirm_dialog(lv, dialog, "Remove member") =~ "Member removed."
       assert Emisar.Repo.reload!(membership).deleted_at
-      assert_team_broadcast(lv, "membership.removed", membership.user_id)
+      assert_team_broadcast(lv, "membership.removed", membership.id)
     end
 
     test "the remove dialog spells out that removal is permanent", %{

@@ -273,8 +273,8 @@ defmodule EmisarWeb.ApprovalDetailLive do
   end
 
   def handle_info(
-        {:list_changed, :team, "membership.runner_access_changed", user_id},
-        %{assigns: %{current_user: %{id: user_id}}} = socket
+        {:list_changed, :team, "membership.runner_access_changed", membership_id},
+        %{assigns: %{current_subject: %{membership_id: membership_id}}} = socket
       ),
       do: {:noreply, refetch_request(socket)}
 

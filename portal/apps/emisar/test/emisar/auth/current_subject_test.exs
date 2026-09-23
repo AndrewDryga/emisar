@@ -421,7 +421,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
       for mismatched <- [
             %{subject | account: foreign.account},
             %{subject | membership_id: foreign.membership_id},
-            %{subject | actor: %{key | created_by_id: foreign.actor.id}},
+            %{subject | actor: %{key | created_by_membership_id: foreign.membership_id}},
             %{subject | actor: %{key | kind: :audit_export}},
             %{subject | actor: %{key | credential_lineage_id: Repo.generate_id()}}
           ] do
