@@ -1804,11 +1804,16 @@ defmodule Emisar.Approvals do
   defp self?(%Subject{} = subject, %Request{requested_by_membership_id: rb}) when is_binary(rb),
     do: subject.membership_id == rb
 
-  # No resolvable requester (e.g. one erased with their account data) has no
-  # "self", so the self-approval gate is vacuous for it. That
-  # is not a bypass: min_approvals still requires N distinct approvers, and the
-  # ghost requester can't log in to approve. Failing closed here (block everyone)
-  # would instead strand such a request forever.
+  # During a rolling deploy the previous release still writes requests that name
+  # only their User; one person holds one live seat per account.
+  defp self?(%Subject{} = subject, %Request{requested_by_id: rb}) when is_binary(rb),
+    do: Subject.actor_id(subject) == rb
+
+  # No resolvable requester (one erased with their account data) has no "self",
+  # so the self-approval gate is vacuous for it. That is not a bypass:
+  # min_approvals still requires N distinct approvers, and the ghost requester
+  # can't log in to approve. Failing closed here (block everyone) would instead
+  # strand such a request forever.
   defp self?(_subject, _request), do: false
 
   # Re-gate pack trust before an approve: the pack could have drifted to

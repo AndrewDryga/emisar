@@ -4375,35 +4375,24 @@ defmodule Emisar.ApprovalsTest do
     end
 
     test "an erased requester is vacuously non-self; min_approvals still requires N distinct" do
-      account = Fixtures.Accounts.create_account()
-      runner = Fixtures.Runners.create_runner(account_id: account.id)
-      Fixtures.Catalog.create_action(runner: runner)
-      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-
-      {:ok, run} =
-        Runs.create_run(%{
-          account_id: account.id,
-          runner_id: runner.id,
-          action_id: "linux.uptime",
-          source: "operator",
-          requested_by_id: member.user_id,
-          initiating_membership_id: member.id,
-          args: %{},
-          pack_ref: Fixtures.Catalog.default_pack_ref(),
-          expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
-          status: :pending_approval
-        })
-
-      {:ok, request} =
-        Approvals.create_request(run, "x", min_approvals: 2, allow_self_approval: false)
-
-      request =
-        request |> Ecto.Changeset.change(requested_by_membership_id: nil) |> Repo.update!()
+      {account, _member, request} = gated_request_without_member_anchor()
+      request = request |> Ecto.Changeset.change(requested_by_id: nil) |> Repo.update!()
 
       assert {:ok, {%Request{status: :pending}, :pending}} =
                Approvals.approve_request(request, distinct_operator(account), "lgtm-1")
 
       assert approved_count(request.id) == 1
+    end
+
+    test "a request written during a rolling deploy names only its User, who still cannot self-approve" do
+      {account, member, request} = gated_request_without_member_anchor()
+      requester = Fixtures.Subjects.membership_subject(member)
+
+      assert Approvals.approve_request(request, requester, "self") ==
+               {:error, :self_approval_forbidden}
+
+      assert {:ok, {%Request{status: :pending}, :pending}} =
+               Approvals.approve_request(request, distinct_operator(account), "lgtm-1")
     end
 
     test "ABUSE: an MCP run (requested_by_id nil) attributes self to the api-key owner; the owner can't self-approve" do
@@ -6752,5 +6741,38 @@ defmodule Emisar.ApprovalsTest do
       source: "operator",
       args: %{}
     }
+  end
+
+  # A gated request whose Member anchor is absent, as the previous release
+  # writes it: only the legacy requested_by_id names the requester.
+  defp gated_request_without_member_anchor do
+    account = Fixtures.Accounts.create_account()
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    Fixtures.Catalog.create_action(runner: runner)
+    member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "operator",
+        requested_by_id: member.user_id,
+        initiating_membership_id: member.id,
+        args: %{},
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
+        status: :pending_approval
+      })
+
+    {:ok, request} =
+      Approvals.create_request(run, "x", min_approvals: 2, allow_self_approval: false)
+
+    request =
+      request
+      |> Ecto.Changeset.change(requested_by_membership_id: nil, requested_by_id: member.user_id)
+      |> Repo.update!()
+
+    {account, member, request}
   end
 end
