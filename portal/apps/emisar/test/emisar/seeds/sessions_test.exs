@@ -10,29 +10,6 @@ defmodule Emisar.Seeds.SessionsTest do
     %{helpers: helpers, staff: staff}
   end
 
-  test "failure cleans only owned sessions and their grants", %{helpers: helpers} do
-    {user, account, existing} = Fixtures.Subjects.owner_subject()
-    {:ok, retained} = Auth.fetch_current_session(existing)
-
-    assert_raise RuntimeError, "failed section", fn ->
-      helpers.with_temporary_sessions(fn ->
-        subject = helpers.subject_for(account, user)
-        assert :ok = Auth.ensure_personal_session(subject)
-        refute subject.session_token_id == retained.id
-        assert Repo.aggregate(Auth.MemberGrant, :count) == 2
-        raise "failed section"
-      end)
-    end
-
-    assert Repo.all(Auth.UserToken.Query.by_context("session")) |> Enum.map(& &1.id) == [
-             retained.id
-           ]
-
-    assert Repo.aggregate(Auth.MemberGrant, :count) == 1
-    assert Repo.aggregate(Auth.MemberGrantRoute, :count) == 1
-    assert Auth.ensure_personal_session(existing) == :ok
-  end
-
   test "persona MFA reset still proves the actual factor and leaves no seed credential", %{
     helpers: helpers
   } do

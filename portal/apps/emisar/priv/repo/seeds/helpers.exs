@@ -27,18 +27,14 @@ defmodule Emisar.Seeds.Helpers do
 
   @doc "Owns the synchronous seed's temporary credentials, including cleanup after a failed section."
   def with_temporary_sessions(fun) do
-    previous = Process.put(@session_ids_key, [])
+    Process.put(@session_ids_key, [])
 
     try do
       fun.()
     after
-      UserToken.Query.by_ids(Process.get(@session_ids_key))
+      UserToken.Query.by_ids(Process.delete(@session_ids_key))
       |> UserToken.Query.by_context("session")
       |> Repo.delete_all()
-
-      if is_nil(previous),
-        do: Process.delete(@session_ids_key),
-        else: Process.put(@session_ids_key, previous)
     end
   end
 
