@@ -569,12 +569,12 @@ defmodule Emisar.AuthTest do
 
       assert topic == Auth.live_socket_topic_for_session(sso)
       assert {:ok, _user, sso_session} = Auth.fetch_user_and_token_by_session_token(sso)
-      assert Auth.session_membership_ids(user.id, sso_session) == []
+      assert Auth.session_membership_ids(sso_session) == []
 
       assert {:ok, _user, personal_session} =
                Auth.fetch_user_and_token_by_session_token(magic_link)
 
-      assert [_member] = Auth.session_membership_ids(user.id, personal_session)
+      assert [_member] = Auth.session_membership_ids(personal_session)
     end
   end
 

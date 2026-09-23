@@ -165,7 +165,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "current security requirements deny held reads and writes but keep accurate step-up diagnosis" do
       for {setting, reason} <- [require_mfa: :mfa_required, require_sso: :sso_required] do
-        {user, account, held} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+        {_user, account, held} = Fixtures.Subjects.owner_subject(%{plan: "team"})
         Fixtures.SSO.create_identity_provider(account_id: account.id)
         updated = Fixtures.Accounts.set_account_settings(account, %{setting => true})
 
@@ -178,7 +178,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
         assert Auth.ensure_personal_session(held) == :ok
 
         assert {:ok, _member} =
-                 Accounts.fetch_membership_by_account_id_or_slug(user, account.id, held)
+                 Accounts.fetch_membership_by_account_id_or_slug(account.id, held)
       end
     end
 
@@ -222,7 +222,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
       end
     end
 
-    test "account, user and exact membership cannot be swapped independently" do
+    test "account, user, membership, bearer and grant cannot be swapped independently" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
       subject = Fixtures.Subjects.membership_subject(membership)
       foreign_membership = Fixtures.Memberships.create_membership(role: "admin")
@@ -231,7 +231,9 @@ defmodule Emisar.Auth.CurrentSubjectTest do
       for mismatched <- [
             %{subject | account: foreign.account},
             %{subject | actor: foreign.actor},
-            %{subject | membership_id: foreign.membership_id}
+            %{subject | membership_id: foreign.membership_id},
+            %{subject | session_token_id: foreign.session_token_id},
+            %{subject | member_grant_id: foreign.member_grant_id}
           ] do
         assert Auth.fetch_current_subject(@view, mismatched) == {:error, :unauthorized}
       end

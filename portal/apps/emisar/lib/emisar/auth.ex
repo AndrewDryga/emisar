@@ -245,8 +245,7 @@ defmodule Emisar.Auth do
   end
 
   @doc "Internal — exact live workspace Members proved by this bearer; missing evidence grants nothing."
-  def session_membership_ids(user_id, session) when is_binary(user_id),
-    do: SessionGrants.membership_ids(user_id, session)
+  def session_membership_ids(session), do: SessionGrants.membership_ids(session)
 
   @doc "Internal — current destination provenance for a boundary's already-resolved exact Member."
   def session_subject_options(%Accounts.Membership{} = member, session),

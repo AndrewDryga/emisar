@@ -36,7 +36,7 @@ defmodule Emisar.Fixtures.Subjects do
 
     session = opts[:session] || session_for(user, opts)
     auth_opts = Emisar.Auth.session_subject_options(membership, session)
-    Subject.for_user(user, account, membership, context, auth_opts)
+    Subject.for_member(%{membership | user: user}, account, context, auth_opts)
   end
 
   defp session_for(user, opts) do
@@ -49,10 +49,10 @@ defmodule Emisar.Fixtures.Subjects do
 
   @doc "Builds a `%Subject{}` for an existing membership — loads its user and account, carrying the membership's own role and id."
   def membership_subject(%Membership{} = membership) do
-    %{user: user, account: account} = Repo.preload(membership, [:user, :account])
+    %{user: user, account: account} = membership = Repo.preload(membership, [:user, :account])
     session = session_for(user, [])
     auth_opts = Emisar.Auth.session_subject_options(membership, session)
-    Subject.for_user(user, account, membership, %RequestContext{}, auth_opts)
+    Subject.for_member(membership, account, %RequestContext{}, auth_opts)
   end
 
   @doc """

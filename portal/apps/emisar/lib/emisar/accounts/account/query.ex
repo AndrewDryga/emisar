@@ -114,12 +114,12 @@ defmodule Emisar.Accounts.Account.Query do
   end
 
   @doc """
-  Restrict to accounts the given user is a member of — joins through
-  membership on `membership.user_id` and includes only memberships that
-  currently grant authority. Used by the account picker, so suspended,
-  tombstoned, and unresolved invited seats do not surface a tenant.
+  Restrict to the accounts of these exact memberships — joins through
+  membership and includes only memberships that currently grant authority.
+  Used by the account picker, so suspended, tombstoned, and unresolved invited
+  seats do not surface a tenant.
   """
-  def by_membership_user_id(queryable, user_id) do
+  def by_authorized_membership_ids(queryable, membership_ids) do
     authorized_memberships = Emisar.Accounts.Membership.Query.authorized()
 
     queryable
@@ -127,11 +127,8 @@ defmodule Emisar.Accounts.Account.Query do
       on: m.account_id == a.id,
       as: :memberships
     )
-    |> where([memberships: m], m.user_id == ^user_id)
+    |> where([memberships: m], m.id in ^membership_ids)
   end
-
-  def by_membership_ids(queryable, membership_ids),
-    do: where(queryable, [memberships: m], m.id in ^membership_ids)
 
   # -- Pagination ------------------------------------------------------
 

@@ -106,7 +106,7 @@ defmodule Emisar.Auth.SessionGrants do
   # Moves every donor grant to the replacement and returns only the destinations
   # this SSO proof refreshed; the other moved grants keep their original proof.
   def transfer_for_sso_step_up(repo, donor, replacement, destinations) do
-    eligible_members = MapSet.new(membership_ids(donor.user_id, donor))
+    eligible_members = MapSet.new(membership_ids(donor))
     proved_at = replacement.inserted_at
     expires_at = UserToken.Query.session_expires_at(proved_at)
 
@@ -134,26 +134,28 @@ defmodule Emisar.Auth.SessionGrants do
     end)
   end
 
-  def membership_ids(user_id, session) do
+  def membership_ids(session) do
     case session_id(session) do
       nil ->
         []
 
       token_id ->
         token_id
-        |> current_routes(user_id)
+        |> current_routes()
         |> MemberGrantRoute.Query.select_membership_ids()
         |> Repo.all()
     end
   end
 
   def subject_options(%Accounts.Membership{} = member, session) do
-    case fetch_route(member.user_id, member.account_id, member.id, session) do
+    case fetch_route(member.account_id, member.id, session) do
       {:ok, route, idp_mfa?} -> options(route, idp_mfa?)
       {:error, :unauthorized} -> []
     end
   end
 
+  # The grant alone resolves authority; the held actor must still be the
+  # granted Member's User, so a Subject cannot be re-pointed at another person.
   def fetch_subject(
         %Subject{
           actor: %Users.User{id: user_id},
@@ -162,18 +164,11 @@ defmodule Emisar.Auth.SessionGrants do
           member_grant_id: grant_id
         } = subject
       ) do
-    with true <- Repo.valid_uuid?(grant_id),
-         {:ok, route, idp_mfa?} <- fetch_route(user_id, account_id, member_id, subject) do
-      member = route.membership
-
+    with true <- Enum.all?([user_id, grant_id], &Repo.valid_uuid?/1),
+         {:ok, route, idp_mfa?} <- fetch_route(account_id, member_id, subject),
+         %Accounts.Membership{user: %Users.User{id: ^user_id}} = member <- route.membership do
       fresh =
-        Subject.for_user(
-          member.user,
-          member.account,
-          member,
-          subject.context,
-          options(route, idp_mfa?)
-        )
+        Subject.for_member(member, member.account, subject.context, options(route, idp_mfa?))
 
       {:ok, %{fresh | permissions: MapSet.intersection(subject.permissions, fresh.permissions)}}
     else
@@ -213,11 +208,11 @@ defmodule Emisar.Auth.SessionGrants do
     end
   end
 
-  defp fetch_route(user_id, account_id, member_id, session) do
+  defp fetch_route(account_id, member_id, session) do
     with token_id when is_binary(token_id) <- session_id(session),
-         true <- Enum.all?([user_id, account_id, member_id], &Repo.valid_uuid?/1) do
+         true <- Enum.all?([account_id, member_id], &Repo.valid_uuid?/1) do
       token_id
-      |> current_routes(user_id)
+      |> current_routes()
       |> MemberGrantRoute.Query.by_account_id(account_id)
       |> MemberGrantRoute.Query.by_membership_id(member_id)
       |> scope_grant(session)
@@ -268,9 +263,8 @@ defmodule Emisar.Auth.SessionGrants do
     ]
   end
 
-  def current_routes(token_id, user_id) do
+  defp current_routes(token_id) do
     MemberGrantRoute.Query.by_token_id(token_id)
-    |> MemberGrantRoute.Query.by_token_user_id(user_id)
     |> MemberGrantRoute.Query.current()
   end
 

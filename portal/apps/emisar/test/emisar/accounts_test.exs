@@ -1149,11 +1149,11 @@ defmodule Emisar.AccountsTest do
       assert member_id == member.id
 
       assert {:ok, %Membership{}} =
-               Accounts.fetch_membership_by_account_id_or_slug(member, other_account.id, session)
+               Accounts.fetch_membership_by_account_id_or_slug(other_account.id, session)
 
       # ...but the disabled account itself is gone on the next navigation, which
       # re-resolves the membership from the URL.
-      assert Accounts.fetch_membership_by_account_id_or_slug(member, account.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
 
       assert {:ok, %User{id: outsider_id}, _session} =
@@ -1244,8 +1244,8 @@ defmodule Emisar.AccountsTest do
       {_other_user, theirs, _their_subject} = Fixtures.Subjects.owner_subject()
 
       # This read is the documented cross-account exception — it deliberately
-      # skips `for_subject/2` — so its isolation runs on the ACTOR, and the
-      # subject's own account is not what narrows it.
+      # skips `for_subject/2` — so its isolation runs on the bearer's grants, and
+      # the subject's own account is not what narrows it.
       subject = %{Fixtures.Subjects.subject_for(user, mine) | account: theirs}
 
       assert {:ok, accounts, _meta} = Accounts.list_accounts_for_user(subject)
@@ -1487,7 +1487,6 @@ defmodule Emisar.AccountsTest do
     end
 
     test "derives the slug and immediately grants this memberless browser its owner seat", %{
-      user: user,
       session: session,
       subject: subject
     } do
@@ -1502,10 +1501,10 @@ defmodule Emisar.AccountsTest do
       assert membership.account_id == account.id
 
       assert {:ok, current} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, account.id, session)
+               Accounts.fetch_membership_by_account_id_or_slug(account.id, session)
 
       assert current.id == membership.id
-      assert Auth.session_membership_ids(user.id, session) == [membership.id]
+      assert Auth.session_membership_ids(session) == [membership.id]
     end
 
     test "reports a rejected derived slug on :name, the only field the form has", %{
@@ -3566,7 +3565,7 @@ defmodule Emisar.AccountsTest do
       assert Repo.reload!(identity).deleted_at
       assert {:ok, _user, token} = Auth.fetch_user_and_token_by_session_token(session)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, token) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, token) ==
                {:error, :not_found}
     end
   end
@@ -3898,7 +3897,6 @@ defmodule Emisar.AccountsTest do
 
       # The older browser cannot gain a later destination. A new SSO proof can.
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               user,
                sibling_account.id,
                sso_session
              ) ==
@@ -3924,7 +3922,6 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, %Membership{account_id: resolved}} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  sibling_account.id,
                  sso_session
                )
@@ -3935,14 +3932,12 @@ defmodule Emisar.AccountsTest do
       assert Accounts.switch_account(other_account.id, sso_subject) == {:error, :not_found}
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               user,
                foreign_idp_account.id,
                sso_session
              ) == {:error, :not_found}
     end
 
     test "the slug and session resolvers reach the other workspace by magic link only", %{
-      user: user,
       provider_account: provider_account,
       other_account: other_account,
       sso_session: sso_session,
@@ -3950,16 +3945,14 @@ defmodule Emisar.AccountsTest do
     } do
       assert {:ok, %Membership{role: :owner}} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  other_account.id,
                  magic_session
                )
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, other_account.id, sso_session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(other_account.id, sso_session) ==
                {:error, :not_found}
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               user,
                other_account.slug,
                sso_session
              ) ==
@@ -3967,7 +3960,6 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, %Membership{account_id: provider_id}} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  provider_account.id,
                  sso_session
                )
@@ -3977,15 +3969,15 @@ defmodule Emisar.AccountsTest do
       # Bare /app: the newest membership is the other workspace, but the SSO
       # session's fallback stays inside the provider's account.
       assert {:ok, %Membership{account_id: ^provider_id}} =
-               Accounts.fetch_membership_for_session(user, nil, sso_session)
+               Accounts.fetch_membership_for_session(nil, sso_session)
 
       assert {:ok, %Membership{account_id: ^provider_id}} =
-               Accounts.fetch_membership_for_session(user, other_account.id, sso_session)
+               Accounts.fetch_membership_for_session(other_account.id, sso_session)
 
       other_id = other_account.id
 
       assert {:ok, %Membership{account_id: ^other_id}} =
-               Accounts.fetch_membership_for_session(user, nil, magic_session)
+               Accounts.fetch_membership_for_session(nil, magic_session)
     end
 
     test "the switcher lists, and the switch reaches, only the provider's account", %{
@@ -4019,7 +4011,6 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an SSO session whose identity was retired reaches nothing", %{
-      user: user,
       identity: identity,
       provider_account: provider_account,
       sso_session: sso_session
@@ -4027,17 +4018,16 @@ defmodule Emisar.AccountsTest do
       identity |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               user,
                provider_account.id,
                sso_session
              ) ==
                {:error, :not_found}
 
-      assert Accounts.fetch_membership_for_session(user, nil, sso_session) == {:error, :not_found}
+      assert Accounts.fetch_membership_for_session(nil, sso_session) == {:error, :not_found}
     end
   end
 
-  describe "fetch_membership_for_session/3" do
+  describe "fetch_membership_for_session/2" do
     setup do
       user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
@@ -4061,7 +4051,7 @@ defmodule Emisar.AccountsTest do
       session = personal_session(user)
 
       assert {:ok, %Membership{id: id}} =
-               Accounts.fetch_membership_for_session(user, nil, session)
+               Accounts.fetch_membership_for_session(nil, session)
 
       assert id == second_membership.id
     end
@@ -4078,7 +4068,7 @@ defmodule Emisar.AccountsTest do
       session = personal_session(user)
 
       assert {:ok, %Membership{id: id, account: %Account{} = account}} =
-               Accounts.fetch_membership_for_session(user, first_account.id, session)
+               Accounts.fetch_membership_for_session(first_account.id, session)
 
       assert id == first_membership.id
       assert account.id == first_account.id
@@ -4091,7 +4081,7 @@ defmodule Emisar.AccountsTest do
       session = personal_session(user)
 
       assert {:ok, %Membership{account_id: returned_account_id}} =
-               Accounts.fetch_membership_for_session(user, Ecto.UUID.generate(), session)
+               Accounts.fetch_membership_for_session(Ecto.UUID.generate(), session)
 
       assert returned_account_id == first_account.id
     end
@@ -4115,7 +4105,7 @@ defmodule Emisar.AccountsTest do
       assert {:ok, _} = Accounts.suspend_membership(second_membership, owner_subject)
 
       assert {:ok, %Membership{account_id: returned_account_id}} =
-               Accounts.fetch_membership_for_session(user, second_account.id, session)
+               Accounts.fetch_membership_for_session(second_account.id, session)
 
       refute returned_account_id == second_account.id
     end
@@ -4123,14 +4113,14 @@ defmodule Emisar.AccountsTest do
     test "returns :not_found for a user with no memberships" do
       user = Fixtures.Users.create_user()
 
-      assert Accounts.fetch_membership_for_session(user, nil, personal_session(user)) ==
+      assert Accounts.fetch_membership_for_session(nil, personal_session(user)) ==
                {:error, :not_found}
     end
 
     test "missing browser proof cannot borrow the user's memberships" do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject()
+      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
 
-      assert Accounts.fetch_membership_for_session(user, account.id, nil) ==
+      assert Accounts.fetch_membership_for_session(account.id, nil) ==
                {:error, :not_found}
     end
   end
@@ -4184,11 +4174,11 @@ defmodule Emisar.AccountsTest do
                RunnerAccess.none()
 
       assert {:ok, %Membership{id: current_id}} =
-               Accounts.fetch_membership_for_session(user, invited_account.id, session)
+               Accounts.fetch_membership_for_session(invited_account.id, session)
 
       assert current_id == current_membership.id
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, invited_account.slug, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(invited_account.slug, session) ==
                {:error, :not_found}
 
       assert Accounts.fetch_post_auth_membership(user, invited_account.id) ==
@@ -4219,13 +4209,12 @@ defmodule Emisar.AccountsTest do
       current_subject = Fixtures.Subjects.subject_for(user, current_account, session: session)
 
       assert {:ok, %Membership{id: accepted_id}} =
-               Accounts.fetch_membership_for_session(user, invited_account.id, session)
+               Accounts.fetch_membership_for_session(invited_account.id, session)
 
       assert accepted_id == accepted.id
 
       assert {:ok, %Membership{id: ^accepted_id}} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  invited_account.slug,
                  session
                )
@@ -4247,7 +4236,7 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "fetch_membership_by_account_id_or_slug/3" do
+  describe "fetch_membership_by_account_id_or_slug/2" do
     test "resolves the user's membership by the account slug" do
       user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
@@ -4257,7 +4246,6 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, %Membership{id: id, account: %Account{} = resolved, user: %User{}}} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  account.slug,
                  personal_session(user)
                )
@@ -4275,7 +4263,6 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, %Membership{id: id}} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  account.id,
                  personal_session(user)
                )
@@ -4293,10 +4280,10 @@ defmodule Emisar.AccountsTest do
 
       # The account exists, but the outsider isn't a member: SAME :not_found as
       # a slug no account has — so a URL never confirms a tenant exists (404, not 403).
-      assert Accounts.fetch_membership_by_account_id_or_slug(outsider, account.slug, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account.slug, session) ==
                {:error, :not_found}
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(outsider, "no-such-team", session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug("no-such-team", session) ==
                {:error, :not_found}
     end
 
@@ -4313,10 +4300,10 @@ defmodule Emisar.AccountsTest do
 
       session = personal_session(user)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, account_b.slug, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account_b.slug, session) ==
                {:error, :not_found}
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, account_b.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account_b.id, session) ==
                {:error, :not_found}
     end
 
@@ -4335,7 +4322,7 @@ defmodule Emisar.AccountsTest do
       session = personal_session(user)
       assert {:ok, _} = Accounts.suspend_membership(membership, owner_subject)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, account.slug, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account.slug, session) ==
                {:error, :not_found}
     end
   end
@@ -4623,7 +4610,7 @@ defmodule Emisar.AccountsTest do
       membership |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
 
       assert Accounts.has_membership_history?(user)
-      assert Auth.session_membership_ids(user.id, personal_session(user)) == []
+      assert Auth.session_membership_ids(personal_session(user)) == []
     end
   end
 
@@ -5419,7 +5406,7 @@ defmodule Emisar.AccountsTest do
                Accounts.suspend_membership(pending_owner, owner_subject)
     end
 
-    test "suspended membership is excluded from fetch_membership_for_session/3", %{
+    test "suspended membership is excluded from fetch_membership_for_session/2", %{
       target: target,
       owner_subject: owner_subject
     } do
@@ -5427,11 +5414,11 @@ defmodule Emisar.AccountsTest do
       session = personal_session(target_user)
 
       assert {:ok, %Membership{}} =
-               Accounts.fetch_membership_for_session(target_user, nil, session)
+               Accounts.fetch_membership_for_session(nil, session)
 
       assert {:ok, _} = Accounts.suspend_membership(target, owner_subject)
 
-      assert Accounts.fetch_membership_for_session(target_user, nil, session) ==
+      assert Accounts.fetch_membership_for_session(nil, session) ==
                {:error, :not_found}
 
       assert Repo.reload!(target).disabled_at
@@ -6972,7 +6959,7 @@ defmodule Emisar.AccountsTest do
       assert Accounts.end_all_sessions_for(membership, subject) == :ok
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(target, account.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
     end
 
@@ -7091,7 +7078,7 @@ defmodule Emisar.AccountsTest do
       # not_deleted() read treats the member as gone.
       assert removed.deleted_at
 
-      assert Accounts.fetch_membership_for_session(target_user, account.id, session) ==
+      assert Accounts.fetch_membership_for_session(account.id, session) ==
                {:error, :not_found}
     end
 
@@ -7225,7 +7212,7 @@ defmodule Emisar.AccountsTest do
                Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
 
       # …but it no longer resolves this account, which is what ending access means.
-      assert Accounts.fetch_membership_for_session(member, account.id, session) ==
+      assert Accounts.fetch_membership_for_session(account.id, session) ==
                {:error, :not_found}
     end
 

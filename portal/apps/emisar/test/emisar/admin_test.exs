@@ -403,7 +403,7 @@ defmodule Emisar.AdminTest do
       assert {:ok, _user, session} =
                Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
 
-      assert Emisar.Accounts.fetch_membership_by_account_id_or_slug(member, account.id, session) ==
+      assert Emisar.Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
 
       assert {:ok, _} =

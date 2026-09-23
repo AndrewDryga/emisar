@@ -167,7 +167,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert Enum.all?(old_routes, &(&1 in routes(replacement)))
 
       assert {:ok, _member} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, sibling.id, replacement)
+               Accounts.fetch_membership_by_account_id_or_slug(sibling.id, replacement)
 
       current = Fixtures.Subjects.subject_for(user, context.account, session: replacement)
       assert Accounts.ensure_account_compliant(context.account, current) == :ok
@@ -434,16 +434,15 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert {:ok, _user, replacement} = Auth.fetch_user_and_token_by_session_token(result.token)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               context.user,
                sibling.id,
                replacement
              ) ==
                {:error, :not_found}
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(context.user, later.id, replacement) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(later.id, replacement) ==
                {:error, :not_found}
 
-      assert Auth.session_membership_ids(context.user.id, replacement) == [context.member.id]
+      assert Auth.session_membership_ids(replacement) == [context.member.id]
     end
 
     test "dormant disabled-workspace proof transfers unchanged and can recover",
@@ -459,7 +458,6 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert Enum.all?(originals, &(&1 in routes(replacement)))
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               context.user,
                sibling.id,
                replacement
              ) ==
@@ -473,7 +471,6 @@ defmodule Emisar.SSOSessionStepUpTest do
 
       assert {:ok, _} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 context.user,
                  sibling.id,
                  replacement
                )
@@ -528,7 +525,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert Auth.ensure_personal_session(current) == {:error, :unauthorized}
       refute current.mfa
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, sibling.id, replacement) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(sibling.id, replacement) ==
                {:error, :not_found}
     end
 
@@ -567,7 +564,6 @@ defmodule Emisar.SSOSessionStepUpTest do
       {:ok, _user, replacement} = Auth.fetch_user_and_token_by_session_token(result.token)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               context.user,
                sibling.id,
                replacement
              ) ==

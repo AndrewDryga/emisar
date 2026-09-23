@@ -310,7 +310,7 @@ defmodule EmisarWeb.UserAuth do
     account_ref = conn.path_params["account_id_or_slug"]
     session_account_id = get_session(conn, :current_account_id)
 
-    case resolve_membership_for_request(conn, user, account_ref, session_account_id) do
+    case resolve_membership_for_request(conn, account_ref, session_account_id) do
       {:error, :not_found} when not is_nil(account_ref) ->
         # A slugged route whose ref isn't a (non-suspended) membership the user
         # holds: 404, never a redirect — indistinguishable from a nonexistent
@@ -342,10 +342,9 @@ defmodule EmisarWeb.UserAuth do
         |> assign(:current_membership, membership)
         |> assign(
           :current_subject,
-          Subject.for_user(
-            user,
-            membership.account,
+          Subject.for_member(
             membership,
+            membership.account,
             context,
             auth_opts(conn.assigns, membership)
           )
@@ -355,16 +354,12 @@ defmodule EmisarWeb.UserAuth do
 
   # Slugged tenant route → resolve+authorize from the URL ref (id-or-slug);
   # bare /app + the unslugged /app routes (switch, mfa_setup) → the session hint.
-  defp resolve_membership_for_request(conn, user, nil, session_account_id) do
-    Accounts.fetch_membership_for_session(user, session_account_id, conn.assigns[:current_auth])
+  defp resolve_membership_for_request(conn, nil, session_account_id) do
+    Accounts.fetch_membership_for_session(session_account_id, conn.assigns[:current_auth])
   end
 
-  defp resolve_membership_for_request(conn, user, account_ref, _session_account_id) do
-    Accounts.fetch_membership_by_account_id_or_slug(
-      user,
-      account_ref,
-      conn.assigns[:current_auth]
-    )
+  defp resolve_membership_for_request(conn, account_ref, _session_account_id) do
+    Accounts.fetch_membership_by_account_id_or_slug(account_ref, conn.assigns[:current_auth])
   end
 
   @doc """
@@ -372,27 +367,23 @@ defmodule EmisarWeb.UserAuth do
   (id or slug), independent of the session's current account. The OAuth consent
   screen lets the operator pick which account an MCP client is granted, so the
   grant must be authorized against the CHOSEN account's membership — never the
-  session default the form rode in on. Resolves only the user's own
-  non-suspended memberships; anything else is `{:error, :not_found}`,
+  session default the form rode in on. Resolves only non-suspended Members this
+  session holds a live grant for; anything else is `{:error, :not_found}`,
   indistinguishable from a nonexistent tenant. Carries the same request context
   and session auth provenance as `assign_current_account/1`.
   """
   def subject_for_account(conn, account_ref) do
-    user = conn.assigns.current_user
-
     with {:ok, membership} <-
            Accounts.fetch_membership_by_account_id_or_slug(
-             user,
              account_ref,
              conn.assigns[:current_auth]
            ) do
       context = RequestContext.from_conn(conn)
 
       {:ok,
-       Subject.for_user(
-         user,
-         membership.account,
+       Subject.for_member(
          membership,
+         membership.account,
          context,
          auth_opts(conn.assigns, membership)
        )}
@@ -583,21 +574,16 @@ defmodule EmisarWeb.UserAuth do
   # A ref the user has no (non-suspended) membership for raises NotFoundError →
   # 404, never a redirect/leak (indistinguishable from a nonexistent tenant).
   def on_mount(:ensure_account_slug, %{"account_id_or_slug" => account_ref}, _session, socket) do
-    user = socket.assigns.current_user
-
     with {:ok, membership} <-
            Accounts.fetch_membership_by_account_id_or_slug(
-             user,
              account_ref,
              socket.assigns[:current_auth]
            ),
-         {:ok, membership} <-
-           subscribe_and_refetch_account(socket, user, account_ref, membership) do
+         {:ok, membership} <- subscribe_and_refetch_account(socket, account_ref, membership) do
       subject =
-        Subject.for_user(
-          user,
-          membership.account,
+        Subject.for_member(
           membership,
+          membership.account,
           RequestContext.from_socket(socket),
           auth_opts(socket.assigns, membership)
         )
@@ -773,16 +759,12 @@ defmodule EmisarWeb.UserAuth do
   defp enforce_mfa_requirement(socket),
     do: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}
 
-  defp subscribe_and_refetch_account(socket, user, account_ref, membership) do
+  defp subscribe_and_refetch_account(socket, account_ref, membership) do
     if Phoenix.LiveView.connected?(socket) do
       :ok = Accounts.subscribe_account_lifecycle(membership.account_id)
       :ok = Accounts.subscribe_account_team(membership.account_id)
 
-      Accounts.fetch_membership_by_account_id_or_slug(
-        user,
-        account_ref,
-        socket.assigns[:current_auth]
-      )
+      Accounts.fetch_membership_by_account_id_or_slug(account_ref, socket.assigns[:current_auth])
     else
       {:ok, membership}
     end
@@ -806,11 +788,7 @@ defmodule EmisarWeb.UserAuth do
          } = socket
        ) do
     with {:ok, membership} <-
-           Accounts.fetch_membership_by_account_id_or_slug(
-             subject.actor,
-             subject.account.id,
-             subject
-           ),
+           Accounts.fetch_membership_by_account_id_or_slug(subject.account.id, subject),
          true <- membership.id == subject.membership_id,
          true <- is_nil(membership.directory_authorization_pending_version),
          true <- is_nil(previous_membership.directory_authorization_pending_version),
@@ -1121,9 +1099,8 @@ defmodule EmisarWeb.UserAuth do
         nil ->
           {nil, nil, nil, []}
 
-        user ->
+        _user ->
           case Accounts.fetch_membership_for_session(
-                 user,
                  requested_id,
                  socket.assigns[:current_auth]
                ) do
@@ -1132,10 +1109,9 @@ defmodule EmisarWeb.UserAuth do
 
             {:ok, membership} ->
               subject =
-                Subject.for_user(
-                  user,
-                  membership.account,
+                Subject.for_member(
                   membership,
+                  membership.account,
                   RequestContext.from_socket(socket),
                   auth_opts(socket.assigns, membership)
                 )
@@ -1151,7 +1127,7 @@ defmodule EmisarWeb.UserAuth do
     |> Phoenix.Component.assign_new(:switchable_accounts, fn -> switchable end)
   end
 
-  # All non-suspended accounts the subject's user can mount. Used by the
+  # All non-suspended accounts the subject's session can mount. Used by the
   # sidebar account switcher; cheap (one indexed lookup) so it's fine to
   # fetch on every LV mount — `count: false` because the switcher renders the
   # rows, never a total, and the default aggregate would double the cost.

@@ -345,8 +345,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
   end
 
   defp assert_local_retirement(context) do
-    %{topic: topic, other_topic: other_topic, member: user, account: account, sibling: sibling} =
-      context
+    %{topic: topic, other_topic: other_topic, account: account, sibling: sibling} = context
 
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
     refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
@@ -356,9 +355,9 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
 
       assert {:ok, _member} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, sibling.id, session)
+               Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
     end
   end

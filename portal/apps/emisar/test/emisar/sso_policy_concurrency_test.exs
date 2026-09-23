@@ -88,7 +88,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                     assert {:ok, _, donor} =
                              Auth.fetch_user_and_token_by_session_token(context.raw)
 
-                    assert Auth.session_membership_ids(context.user.id, donor) == [
+                    assert Auth.session_membership_ids(donor) == [
                              context.sibling_member.id
                            ]
 
@@ -101,7 +101,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                     assert {:ok, _, replacement} =
                              Auth.fetch_user_and_token_by_session_token(result.token)
 
-                    assert Auth.session_membership_ids(context.user.id, replacement) == [
+                    assert Auth.session_membership_ids(replacement) == [
                              context.origin_member.id
                            ]
 
@@ -162,7 +162,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               assert Auth.fetch_user_and_token_by_session_token(context.raw) ==
                        {:error, :not_found}
 
-              assert Auth.session_membership_ids(context.user.id, replacement) == [
+              assert Auth.session_membership_ids(replacement) == [
                        context.origin_member.id
                      ]
 
@@ -541,7 +541,6 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
             assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
 
             assert Accounts.fetch_membership_by_account_id_or_slug(
-                     context.user,
                      context.account.id,
                      session
                    ) ==
@@ -640,7 +639,6 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                        Auth.fetch_user_and_token_by_session_token(old_session)
 
               assert Accounts.fetch_membership_by_account_id_or_slug(
-                       context.user,
                        context.account.id,
                        session
                      ) == {:error, :not_found}
@@ -920,7 +918,6 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                        Auth.fetch_user_and_token_by_session_token(minted_session)
 
               assert Accounts.fetch_membership_by_account_id_or_slug(
-                       context.user,
                        context.account.id,
                        session
                      ) ==
@@ -1080,7 +1077,6 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                        Auth.fetch_user_and_token_by_session_token(old_session)
 
               assert Accounts.fetch_membership_by_account_id_or_slug(
-                       context.user,
                        context.account.id,
                        session
                      ) == {:error, :not_found}

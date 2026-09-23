@@ -465,33 +465,29 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Accounts the subject's user is currently authorized to enter, name-ordered.
+  Accounts the subject's session is currently authorized to enter, name-ordered.
   Suspended, removed, and unresolved invited seats are excluded. Returns
   `{:ok, [account], %Paginator.Metadata{}}`. Drives the account picker.
 
-  Deliberately **cross-account**: it lists every tenant the user belongs
-  to, so it scopes by the subject's own actor id rather than running
+  Deliberately **cross-account**: it lists every tenant this bearer holds a
+  live grant for, so it scopes by the subject's session rather than running
   `Authorizer.for_subject/2` (which would narrow to a single account).
-  The subject's user is the only authorization that applies — you can
-  only ever list your own memberships.
+  The bearer's own grants are the only authorization that applies — a
+  session only ever lists the accounts of the Members it proved.
   """
-  def list_accounts_for_user(%Subject{actor: %Users.User{id: user_id}} = subject, opts \\ []) do
+  def list_accounts_for_user(%Subject{} = subject, opts \\ []) do
     Account.Query.active()
-    |> Account.Query.by_membership_user_id(user_id)
-    |> scope_accounts_to_session(session_account_scope(user_id, subject))
+    |> Account.Query.by_authorized_membership_ids(session_account_scope(subject))
     |> Account.Query.ordered_by_name()
     |> Repo.list(Account.Query, opts)
   end
 
   # Memberships and links created after proof never widen an existing bearer.
   # In particular, nil is not a browser authorization bypass for API keys.
-  defp session_account_scope(user_id, session), do: Auth.session_membership_ids(user_id, session)
+  defp session_account_scope(session), do: Auth.session_membership_ids(session)
 
   defp scope_memberships_to_session(queryable, membership_ids),
     do: Membership.Query.by_ids(queryable, membership_ids)
-
-  defp scope_accounts_to_session(queryable, membership_ids),
-    do: Account.Query.by_membership_ids(queryable, membership_ids)
 
   @doc "Internal — an API key authenticates its exact creator Member independently of browser grants."
   def fetch_api_key_membership(%Emisar.ApiKeys.ApiKey{} = key) do
@@ -2065,7 +2061,7 @@ defmodule Emisar.Accounts do
   # every staff invite and every support-run promotion. It is not delegating its
   # own reach; it is acting as the platform, and its authority is
   # `Emisar.Admin.ensure_staff/1` plus the staff audit trail, not a tenant scope.
-  # BOTH nils are the guard: `Subject.for_user/5` always carries an actor AND a
+  # BOTH nils are the guard: `Subject.for_member/4` always carries an actor AND a
   # membership, so no ordinary member can ever take this clause. One spelling
   # here covers every caller of the cap — invitations, access edits, role
   # promotions, and SSO — rather than a carve-out repeated at each.
@@ -2345,26 +2341,25 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal — pre-auth: called by the web session boundary (`UserAuth`) to build
-  `current_account`/`current_user` before there's a Subject to authorize with.
-  Resolves the membership to mount as the user's active tenant for this request:
-  if `account_id` is given and the user has an authorized membership on that
-  (non-deleted) account, return it; otherwise fall back to the most
-  recently-joined authorized membership — the default for first sign-in or after
-  a stale session value is cleared. Unresolved invitations grant no access.
-  `session` is the `%Auth.UserToken{}` behind the request (or nil): an `:sso`
-  session resolves only inside its provider's account. Returns
-  `{:ok, membership} | {:error, :not_found}`.
+  `current_account`/`current_membership` before there's a Subject to authorize
+  with. Resolves the Member to mount as the session's active tenant for this
+  request: if `account_id` is given and the session holds a live grant for an
+  authorized Member on that (non-deleted) account, return it; otherwise fall back
+  to the most recently-joined granted Member — the default for first sign-in or
+  after a stale session value is cleared. Unresolved invitations grant no access.
+  `session` is the `%Auth.UserToken{}` behind the request (or nil): only its
+  persisted grants resolve, so an `:sso` session resolves only inside the
+  accounts its proof reached. Returns `{:ok, membership} | {:error, :not_found}`.
   """
-  def fetch_membership_for_session(%Users.User{id: user_id}, account_id, session) do
-    scope = session_account_scope(user_id, session)
+  def fetch_membership_for_session(account_id, session) do
+    scope = session_account_scope(session)
 
-    case maybe_fetch_session_membership(user_id, account_id, scope) do
+    case maybe_fetch_session_membership(account_id, scope) do
       {:ok, membership} ->
         {:ok, membership}
 
       {:error, :not_found} ->
         Membership.Query.authorized()
-        |> Membership.Query.by_user_id(user_id)
         |> scope_memberships_to_session(scope)
         |> Membership.Query.with_preloaded_account()
         |> Membership.Query.with_preloaded_user()
@@ -2373,10 +2368,10 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp maybe_fetch_session_membership(user_id, account_id, scope) do
+  defp maybe_fetch_session_membership(account_id, scope) do
     if Repo.valid_uuid?(account_id) do
       Membership.Query.authorized()
-      |> Membership.Query.by_account_and_user(account_id, user_id)
+      |> Membership.Query.by_account_id(account_id)
       |> scope_memberships_to_session(scope)
       |> Membership.Query.with_preloaded_account()
       |> Membership.Query.with_preloaded_user()
@@ -2391,25 +2386,21 @@ defmodule Emisar.Accounts do
   (`UserAuth.on_mount(:ensure_account_slug)`) on every authenticated mount; the
   slug IS the cross-account authz input, re-resolved here (not trusted from the
   session), so no `%Subject{}` exists yet. Resolves the membership for an
-  `/app/:account_id_or_slug` segment, scoped to the user's OWN memberships. The
-  segment is a UUID (API / SSO / temporary redirects) or the slug (the canonical
-  UI form). A non-member or unknown ref both return `{:error, :not_found}` —
-  indistinguishable, so a slugged URL never confirms a tenant exists (404, never
-  403). Suspended (`disabled_at`) members, unresolved invitations, and
-  soft-deleted accounts/users are excluded. `session` is the `%Auth.UserToken{}`
-  or `%Subject{}` behind the request. Only its persisted, live proof for the exact
-  membership permits resolution; nil or missing proof returns `:not_found`.
-  API keys use `fetch_api_key_membership/1` with their exact creator membership.
+  `/app/:account_id_or_slug` segment, scoped to the Members this session holds a
+  live grant for. The segment is a UUID (API / SSO / temporary redirects) or the
+  slug (the canonical UI form). A non-member or unknown ref both return
+  `{:error, :not_found}` — indistinguishable, so a slugged URL never confirms a
+  tenant exists (404, never 403). Suspended (`disabled_at`) members, unresolved
+  invitations, and soft-deleted accounts/users are excluded. `session` is the
+  `%Auth.UserToken{}` or `%Subject{}` behind the request. Only its persisted, live
+  proof for the exact membership permits resolution; nil or missing proof returns
+  `:not_found`. API keys use `fetch_api_key_membership/1` with their exact creator
+  membership.
   """
-  def fetch_membership_by_account_id_or_slug(
-        %Users.User{id: user_id},
-        account_id_or_slug,
-        session
-      ) do
+  def fetch_membership_by_account_id_or_slug(account_id_or_slug, session) do
     Membership.Query.authorized()
-    |> Membership.Query.by_user_id(user_id)
     |> scope_to_account_ref(account_id_or_slug)
-    |> scope_memberships_to_session(session_account_scope(user_id, session))
+    |> scope_memberships_to_session(session_account_scope(session))
     |> Membership.Query.with_preloaded_account()
     |> Membership.Query.with_preloaded_user()
     |> Repo.fetch(Membership.Query)
@@ -2455,22 +2446,22 @@ defmodule Emisar.Accounts do
   `view_own_account_permission`. Returns `{:ok, membership}` — the freshly
   validated target membership with `:account` and `:user` preloaded, which the
   web boundary pins in the session and redirects to — or `{:error, :not_found}`
-  when the id is malformed, names an account the subject's user has no live
-  membership on, or that membership/account/user is suspended or deleted (all
+  when the id is malformed, names an account the subject's session holds no live
+  grant for, or that membership/account/user is suspended or deleted (all
   indistinguishable, so a switch never confirms a tenant exists).
 
   The `session.account_switched` audit row is written in the same transaction as
   the locked membership read, so a switch that fails validation leaves no trace
   of having succeeded.
   """
-  def switch_account(account_id, %Subject{actor: %Users.User{id: user_id}} = subject) do
+  def switch_account(account_id, %Subject{} = subject) do
     with {:ok, current} <-
            Auth.Authorizer.fetch_addressable_subject(
              subject,
              Authorizer.view_own_account_permission()
            ) do
       if Repo.valid_uuid?(account_id),
-        do: commit_account_switch(account_id, user_id, current),
+        do: commit_account_switch(account_id, current),
         else: {:error, :not_found}
     end
   end
@@ -2478,17 +2469,18 @@ defmodule Emisar.Accounts do
   # Deliberately CROSS-account, so no `Authorizer.for_subject/2`: the subject
   # still carries the tenant the operator is LEAVING, which would scope this
   # lookup to the old account and reject every valid switch. Scoping by the
-  # requested account id AND the subject's own actor id is the authorization —
-  # you can only ever switch into your own membership (the same documented IL-4
-  # exception as `list_accounts_for_user/2`). The row lock orders the switch
-  # against concurrent suspension/removal: an earlier revocation makes this
-  # `:not_found`; a later revocation waits until the audited switch commits.
-  defp commit_account_switch(account_id, user_id, %Subject{} = subject) do
+  # requested account id AND the subject's own session grants is the
+  # authorization — a bearer can only ever switch into a Member it proved (the
+  # same documented IL-4 exception as `list_accounts_for_user/2`). The row lock
+  # orders the switch against concurrent suspension/removal: an earlier
+  # revocation makes this `:not_found`; a later revocation waits until the
+  # audited switch commits.
+  defp commit_account_switch(account_id, %Subject{} = subject) do
     Multi.new()
     |> Multi.run(:membership, fn repo, _changes ->
       Membership.Query.authorized()
-      |> Membership.Query.by_account_and_user(account_id, user_id)
-      |> scope_memberships_to_session(session_account_scope(user_id, subject))
+      |> Membership.Query.by_account_id(account_id)
+      |> scope_memberships_to_session(session_account_scope(subject))
       |> Membership.Query.with_preloaded_account()
       |> Membership.Query.with_preloaded_user()
       |> Membership.Query.lock_for_update()
@@ -3745,7 +3737,7 @@ defmodule Emisar.Accounts do
   defp ensure_member_mfa_reset_actor(%Membership{}), do: {:error, :unauthorized}
 
   defp current_member_mfa_reset_subject(subject, account, actor_membership) do
-    Subject.rebuild(subject, subject.actor, account, actor_membership)
+    Subject.rebuild(subject, %{actor_membership | user: subject.actor}, account)
   end
 
   defp ensure_member_mfa_reset_target(%Membership{} = membership) do

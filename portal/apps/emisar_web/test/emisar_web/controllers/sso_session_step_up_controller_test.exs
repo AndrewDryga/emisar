@@ -124,7 +124,7 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     assert replacement.personal_expires_at == donor.personal_expires_at
 
     assert {:ok, _} =
-             Accounts.fetch_membership_by_account_id_or_slug(user, sibling.id, replacement)
+             Accounts.fetch_membership_by_account_id_or_slug(sibling.id, replacement)
 
     assert Auth.fetch_user_and_token_by_session_token(raw) == {:error, :not_found}
     assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(other)

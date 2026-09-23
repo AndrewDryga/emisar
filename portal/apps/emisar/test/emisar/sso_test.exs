@@ -3039,7 +3039,6 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, %Accounts.Membership{role: :owner}} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  own_account.id,
                  magic_session
                )
@@ -3064,14 +3063,12 @@ defmodule Emisar.SSOTest do
       assert sso_session.user_identity_id == identity.id
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               session_user,
                own_account.id,
                sso_session
              ) ==
                {:error, :not_found}
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               session_user,
                own_account.slug,
                sso_session
              ) ==
@@ -3080,7 +3077,7 @@ defmodule Emisar.SSOTest do
       attacker_id = attacker_account.id
 
       assert {:ok, %Accounts.Membership{account_id: ^attacker_id}} =
-               Accounts.fetch_membership_for_session(session_user, nil, sso_session)
+               Accounts.fetch_membership_for_session(nil, sso_session)
 
       sso_subject =
         Fixtures.Subjects.subject_for(session_user, attacker_account,
@@ -3560,7 +3557,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
       assert Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all() == []
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, provider.account_id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, session) ==
                {:error, :not_found}
     end
 
@@ -3586,7 +3583,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
       assert Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all() == []
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, provider.account_id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, session) ==
                {:error, :not_found}
     end
 
@@ -3634,7 +3631,7 @@ defmodule Emisar.SSOTest do
       refute downgraded.satisfies_mfa
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(provider_token)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
 
       assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(other_token)
@@ -4704,14 +4701,13 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, _user, sso_token} = Auth.fetch_user_and_token_by_session_token(sso_session)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, provider.account_id, sso_token) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, sso_token) ==
                {:error, :not_found}
 
       assert {:ok, _user, personal_token} =
                Auth.fetch_user_and_token_by_session_token(magic_link_session)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               user,
                provider.account_id,
                personal_token
              ) ==
@@ -4719,7 +4715,6 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, _member} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  other_account.id,
                  personal_token
                )
@@ -5184,7 +5179,7 @@ defmodule Emisar.SSOTest do
       refute_receive {:scim_delete_disconnect, [^expected_topic], _in_transaction?}
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(sso_session)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, provider.account_id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, session) ==
                {:error, :not_found}
 
       assert {:ok, ^user, _token} =
@@ -8428,7 +8423,7 @@ defmodule Emisar.SSOTest do
 
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(rebound_session)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(member, provider.account_id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, session) ==
                {:error, :not_found}
 
       assert {:ok, fetched_member, _session} =
@@ -8971,7 +8966,7 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(admin_approved).deleted_at
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(approved_session)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
 
       assert {:ok, ^user, _session} =

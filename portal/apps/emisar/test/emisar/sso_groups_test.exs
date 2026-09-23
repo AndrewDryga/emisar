@@ -533,17 +533,16 @@ defmodule Emisar.SSOGroupsTest do
     assert {:ok, _deleted} = SSO.scim_delete_user(provider, identity.id)
 
     assert {:ok, _user, local_session} = Auth.fetch_user_and_token_by_session_token(mine)
-    assert Auth.session_membership_ids(user.id, local_session) == []
+    assert Auth.session_membership_ids(local_session) == []
     assert {:ok, _user, other_session} = Auth.fetch_user_and_token_by_session_token(theirs)
 
     assert {:ok, _member} =
              Accounts.fetch_membership_by_account_id_or_slug(
-               user,
                other_account.id,
                other_session
              )
 
-    assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, local_session) ==
+    assert Accounts.fetch_membership_by_account_id_or_slug(account.id, local_session) ==
              {:error, :not_found}
   end
 

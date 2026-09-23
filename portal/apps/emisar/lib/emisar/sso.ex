@@ -1104,7 +1104,7 @@ defmodule Emisar.SSO do
   end
 
   defp current_identity_link_subject(subject, user, account, membership) do
-    Subject.rebuild(subject, user, account, membership)
+    Subject.rebuild(subject, %{membership | user: user}, account)
   end
 
   defp ensure_identity_link_purpose_authorized(subject, :verify_provider),

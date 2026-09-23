@@ -75,17 +75,17 @@ defmodule Emisar.Auth.Subject do
             member_grant_id: nil
 
   @doc """
-  Build a subject from a `%Users.User{}` + their `%Accounts.Membership{}`.
-  `opts` carry session provenance — `:auth_method` (how this session was
-  authenticated), `:mfa` (was a second factor verified),
+  Build a subject for a workspace `%Accounts.Membership{}` acting in `account`.
+  The actor is the Member's personal `%Users.User{}`, preloaded on
+  `membership.user`. `opts` carry session provenance — `:auth_method` (how this
+  session was authenticated), `:mfa` (was a second factor verified),
   `:mfa_enrollment_verified_at` (which local enrollment this session proved), and
   `:user_identity_id` (the SSO identity behind it) — threaded from the
   session row so every audit row records it.
   """
-  def for_user(
-        %Users.User{} = user,
+  def for_member(
+        %Accounts.Membership{user: %Users.User{} = user} = membership,
         %Accounts.Account{} = account,
-        %Accounts.Membership{} = membership,
         context \\ %RequestContext{},
         opts \\ []
       ) do
@@ -107,8 +107,8 @@ defmodule Emisar.Auth.Subject do
     }
   end
 
-  @doc "Rebuild locked actor/Member facts without dropping bearer identity or widening permissions."
-  def rebuild(%__MODULE__{} = subject, user, account, membership) do
+  @doc "Rebuild locked Member/account facts without dropping bearer identity or widening permissions."
+  def rebuild(%__MODULE__{} = subject, membership, account) do
     opts =
       subject
       |> Map.take([
@@ -121,7 +121,7 @@ defmodule Emisar.Auth.Subject do
       ])
       |> Map.to_list()
 
-    fresh = for_user(user, account, membership, subject.context, opts)
+    fresh = for_member(membership, account, subject.context, opts)
     %{fresh | permissions: MapSet.intersection(subject.permissions, fresh.permissions)}
   end
 

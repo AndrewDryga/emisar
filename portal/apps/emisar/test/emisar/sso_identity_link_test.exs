@@ -765,7 +765,6 @@ defmodule Emisar.SSOIdentityLinkTest do
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(provider_session)
 
       assert Emisar.Accounts.fetch_membership_by_account_id_or_slug(
-               context.user,
                context.account.id,
                session
              ) ==

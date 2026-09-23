@@ -34,7 +34,7 @@ defmodule Emisar.Auth.SubjectTest do
     end
   end
 
-  describe "for_user/4" do
+  describe "for_member/4" do
     setup do
       user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
@@ -42,9 +42,9 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test "owner gets the full owner-role permission set", %{user: user, account: account} do
-      membership = %Membership{role: :owner, user_id: user.id, account_id: account.id}
+      membership = %Membership{role: :owner, user_id: user.id, user: user, account_id: account.id}
 
-      subject = Subject.for_user(user, account, membership)
+      subject = Subject.for_member(membership, account)
 
       assert subject.role == :owner
       assert subject.actor == user
@@ -58,19 +58,10 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test "viewer holds strictly fewer permissions than admin", %{user: user, account: account} do
-      viewer_subj =
-        Subject.for_user(user, account, %Membership{
-          role: :viewer,
-          user_id: user.id,
-          account_id: account.id
-        })
-
-      admin_subj =
-        Subject.for_user(user, account, %Membership{
-          role: :admin,
-          user_id: user.id,
-          account_id: account.id
-        })
+      viewer = %Membership{role: :viewer, user_id: user.id, user: user, account_id: account.id}
+      admin = %Membership{role: :admin, user_id: user.id, user: user, account_id: account.id}
+      viewer_subj = Subject.for_member(viewer, account)
+      admin_subj = Subject.for_member(admin, account)
 
       # Admin is a strict superset of viewer.
       assert MapSet.subset?(viewer_subj.permissions, admin_subj.permissions)
@@ -81,21 +72,24 @@ defmodule Emisar.Auth.SubjectTest do
       user: user,
       account: account
     } do
-      pending_admin =
-        Subject.for_user(user, account, %Membership{
-          role: :admin,
-          user_id: user.id,
-          account_id: account.id,
-          directory_authorization_pending_version: 3
-        })
+      admin = %Membership{
+        role: :admin,
+        user_id: user.id,
+        user: user,
+        account_id: account.id,
+        directory_authorization_pending_version: 3
+      }
 
-      pending_owner =
-        Subject.for_user(user, account, %Membership{
-          role: :owner,
-          user_id: user.id,
-          account_id: account.id,
-          directory_authorization_pending_version: 3
-        })
+      owner = %Membership{
+        role: :owner,
+        user_id: user.id,
+        user: user,
+        account_id: account.id,
+        directory_authorization_pending_version: 3
+      }
+
+      pending_admin = Subject.for_member(admin, account)
+      pending_owner = Subject.for_member(owner, account)
 
       assert pending_admin.role == :viewer
       assert pending_admin.permissions == Emisar.Auth.Permissions.for_role(:viewer)
@@ -107,13 +101,15 @@ defmodule Emisar.Auth.SubjectTest do
       user: user,
       account: account
     } do
-      pending =
-        Subject.for_user(user, account, %Membership{
-          role: :owner,
-          user_id: user.id,
-          account_id: account.id,
-          invitation_token_digest: "pending-digest"
-        })
+      invited = %Membership{
+        role: :owner,
+        user_id: user.id,
+        user: user,
+        account_id: account.id,
+        invitation_token_digest: "pending-digest"
+      }
+
+      pending = Subject.for_member(invited, account)
 
       assert pending.role == nil
       assert pending.permissions == MapSet.new()
@@ -123,12 +119,9 @@ defmodule Emisar.Auth.SubjectTest do
       user: user,
       account: account
     } do
-      direct =
-        Subject.for_user(user, account, %Membership{
-          role: :admin,
-          user_id: user.id,
-          account_id: account.id
-        })
+      membership = %Membership{role: :admin, user_id: user.id, user: user, account_id: account.id}
+
+      direct = Subject.for_member(membership, account)
 
       assert direct.role == :admin
       assert direct.permissions == Emisar.Auth.Permissions.for_role(:admin)
@@ -223,6 +216,43 @@ defmodule Emisar.Auth.SubjectTest do
 
       assert Emisar.Auth.Authorizer.ensure_has_permissions(admin, perms) ==
                {:error, :unauthorized}
+    end
+
+    test "an actor the gate cannot re-check is refused despite its permissions", %{
+      account: account,
+      user: user
+    } do
+      owner = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      unknown = %{owner | actor: %Membership{id: owner.membership_id}}
+
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(
+               unknown,
+               Emisar.Runners.Authorizer.view_runners_permission()
+             ) == {:error, :unauthorized}
+
+      assert Emisar.Runners.list_runners_for_account(unknown) == {:error, :unauthorized}
+    end
+
+    test "API key and actorless support subjects keep their own authority", %{
+      account: account,
+      user: user
+    } do
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      support =
+        Fixtures.Subjects.build_subject(
+          account: account,
+          role: :owner,
+          permissions: Emisar.Auth.Permissions.for_role(:owner)
+        )
+
+      for subject <- [Subject.for_api_key(key, account), support] do
+        assert Emisar.Auth.Authorizer.ensure_has_permissions(
+                 subject,
+                 Emisar.Runners.Authorizer.view_runners_permission()
+               ) == :ok
+      end
     end
   end
 

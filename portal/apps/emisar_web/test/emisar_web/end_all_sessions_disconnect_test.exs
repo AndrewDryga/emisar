@@ -57,14 +57,13 @@ defmodule EmisarWeb.EndAllSessionsDisconnectTest do
     assert Accounts.end_all_sessions_for(membership, owner_subject) == :ok
 
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
-    assert {:ok, user, session} = Auth.fetch_user_and_token_by_session_token(token)
+    assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
 
-    assert Accounts.fetch_membership_by_account_id_or_slug(user, membership.account_id, session) ==
+    assert Accounts.fetch_membership_by_account_id_or_slug(membership.account_id, session) ==
              {:error, :not_found}
 
     assert {:ok, survivor} =
              Accounts.fetch_membership_by_account_id_or_slug(
-               user,
                sibling_member.account_id,
                session
              )

@@ -88,6 +88,15 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       assert_error_sent 404, fn -> get(conn, ~p"/app/#{other}/audit/#{Ecto.UUID.generate()}") end
     end
 
+    test "a member's slug 404s until this browser holds a grant for it", %{conn: conn} do
+      {conn, user, _account} = register_and_log_in(conn)
+      later = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: later.id, user_id: user.id)
+
+      assert_error_sent 404, fn -> get(conn, ~p"/app/#{later}/runners") end
+      assert {:ok, _lv, _html} = conn |> log_in_user(user) |> live(~p"/app/#{later}/runners")
+    end
+
     test "a signed-out mount of a slug LV redirects to sign-in BEFORE slug resolution", %{
       conn: conn
     } do
@@ -238,7 +247,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       assert redirected_to(conn) == ~p"/session/recover"
       assert get_session(conn, :user_token) == token
       assert {:ok, _user, session} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
-      assert Emisar.Auth.session_membership_ids(user.id, session) == []
+      assert Emisar.Auth.session_membership_ids(session) == []
 
       assert conn |> recycle() |> get(~p"/session/recover") |> html_response(200) =~
                "Sign out and sign in again"

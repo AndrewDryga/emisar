@@ -120,9 +120,9 @@ defmodule Emisar.Seeds.Helpers do
   @doc "The subject a standing member acts as inside the account."
   def subject_for(%Account{} = account, %User{} = member) do
     session = temporary_session(member)
-    {:ok, membership} = Accounts.fetch_membership_for_session(member, account.id, session)
+    {:ok, membership} = Accounts.fetch_membership_for_session(account.id, session)
     options = Auth.session_subject_options(membership, session)
-    Subject.for_user(member, account, membership, %RequestContext{}, options)
+    Subject.for_member(membership, account, %RequestContext{}, options)
   end
 
   # Only the local seeder uses fabricated proof. Production sign-in owns its

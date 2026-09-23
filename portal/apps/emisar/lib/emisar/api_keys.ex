@@ -778,7 +778,7 @@ defmodule Emisar.ApiKeys do
              Accounts.fetch_and_lock_membership(account.id, membership_id, repo: repo),
            true <- membership.user_id == user_id,
            {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo) do
-        {:ok, Subject.rebuild(subject, user, account, membership)}
+        {:ok, Subject.rebuild(subject, %{membership | user: user}, account)}
       else
         false -> {:error, :not_found}
         {:error, reason} -> {:error, reason}

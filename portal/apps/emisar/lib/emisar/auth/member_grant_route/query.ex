@@ -38,12 +38,6 @@ defmodule Emisar.Auth.MemberGrantRoute.Query do
     |> where([member_grants: g], g.user_token_id == ^token_id)
   end
 
-  def by_token_user_id(queryable, user_id) do
-    queryable
-    |> with_joined_token()
-    |> where([grant_token: t], t.user_id == ^user_id)
-  end
-
   # Every predicate judges the presented token and its frozen destination in
   # one snapshot. No origin identity or current membership discovery can widen
   # this set, and an expired/deleted bearer cannot keep a held Subject alive.
@@ -62,10 +56,6 @@ defmodule Emisar.Auth.MemberGrantRoute.Query do
     |> join(:inner, [route_member: m], account in ^Accounts.Account.Query.active(),
       as: :route_account,
       on: account.id == m.account_id
-    )
-    |> join(:inner, [grant_token: t], user in ^Users.User.Query.not_deleted(),
-      as: :route_user,
-      on: user.id == t.user_id
     )
     |> join(:left, [grant_routes: r], identity in ^SSO.UserIdentity.Query.not_deleted(),
       as: :route_identity,
@@ -87,9 +77,14 @@ defmodule Emisar.Auth.MemberGrantRoute.Query do
     )
   end
 
+  # The Member's User is the Subject's actor, not part of the route's validity.
   def with_preloaded_authority(queryable) do
-    preload(
-      queryable,
+    queryable
+    |> join(:left, [route_member: m], user in ^Users.User.Query.not_deleted(),
+      as: :route_user,
+      on: user.id == m.user_id
+    )
+    |> preload(
       [
         member_grants: g,
         grant_token: t,

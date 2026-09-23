@@ -18,7 +18,6 @@ defmodule Emisar.Auth.CurrentSubject do
          %ApiKeys.ApiKey{account_id: ^account_id, created_by_membership_id: ^membership_id} = key <-
            ApiKeys.peek_api_key_by_id(key_id),
          true <- key_binding(key) == key_binding(snapshot_key),
-         true <- Repo.valid_uuid?(key.created_by_id),
          {:ok, %Accounts.Membership{id: ^membership_id} = membership} <-
            Accounts.fetch_api_key_membership(key) do
       {:ok, refreshed(subject, membership.account, key, :api_client)}

@@ -56,11 +56,11 @@ defmodule EmisarWeb.SSOMFADowngradeDisconnectTest do
     assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(provider_token)
     assert Auth.fetch_current_subject([], held) == {:error, :unauthorized}
 
-    assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, session) ==
+    assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
              {:error, :not_found}
 
     assert {:ok, _sibling_member} =
-             Accounts.fetch_membership_by_account_id_or_slug(user, sibling.id, session)
+             Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session)
 
     assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(magic_token)
 

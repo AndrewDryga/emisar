@@ -23,12 +23,12 @@ defmodule Emisar.AuthMemberGrantsTest do
       {_raw, session} = personal_session(user)
 
       assert {:ok, _member} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, original_account.id, session)
+               Accounts.fetch_membership_by_account_id_or_slug(original_account.id, session)
 
       later_account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: later_account.id, user_id: user.id)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, later_account.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(later_account.id, session) ==
                {:error, :not_found}
 
       assert Auth.session_grant_account_ids(session.id) == [original_account.id]
@@ -38,7 +38,7 @@ defmodule Emisar.AuthMemberGrantsTest do
     end
   end
 
-  describe "session_membership_ids/2" do
+  describe "session_membership_ids/1" do
     test "freezes both existing personal destinations and rejects absent or foreign proof" do
       {user, account, _subject} = Fixtures.Subjects.owner_subject()
       sibling = Fixtures.Accounts.create_account()
@@ -48,16 +48,21 @@ defmodule Emisar.AuthMemberGrantsTest do
 
       original_member = Fixtures.Memberships.fetch_membership(account.id, user.id)
       outsider = Fixtures.Users.create_user()
-      {raw, session} = personal_session(user)
 
-      assert Enum.sort(Auth.session_membership_ids(user.id, session)) ==
+      outsider_member =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: outsider.id)
+
+      {raw, session} = personal_session(user)
+      {_outsider_raw, outsider_session} = personal_session(outsider)
+
+      assert Enum.sort(Auth.session_membership_ids(session)) ==
                Enum.sort([original_member.id, sibling_member.id])
 
-      assert Auth.session_membership_ids(user.id, nil) == []
-      assert Auth.session_membership_ids(outsider.id, session) == []
+      assert Auth.session_membership_ids(outsider_session) == [outsider_member.id]
+      assert Auth.session_membership_ids(nil) == []
 
       assert :ok = Auth.complete_session_sign_out(raw)
-      assert Auth.session_membership_ids(user.id, session) == []
+      assert Auth.session_membership_ids(session) == []
     end
 
     test "a new same-issuer identity never expands an existing SSO bearer" do
@@ -92,7 +97,7 @@ defmodule Emisar.AuthMemberGrantsTest do
         user_id: user.id
       )
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, sibling.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session) ==
                {:error, :not_found}
     end
   end
@@ -283,7 +288,7 @@ defmodule Emisar.AuthMemberGrantsTest do
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
 
       assert {:ok, _member} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, destination.id, session)
+               Accounts.fetch_membership_by_account_id_or_slug(destination.id, session)
 
       refute Auth.session_subject_options(member, session)[:mfa]
     end
@@ -334,12 +339,11 @@ defmodule Emisar.AuthMemberGrantsTest do
 
       assert {:ok, _other_member} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  other_account.id,
                  live_session
                )
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, account.id, held_session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, held_session) ==
                {:error, :not_found}
     end
 
@@ -379,24 +383,23 @@ defmodule Emisar.AuthMemberGrantsTest do
       assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
 
       assert {:ok, _member} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, sibling.id, session)
+               Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session)
 
       assert {:ok, _suspended} = Accounts.suspend_membership(origin_member, owner_subject)
       assert {:ok, _user, remaining_session} = Auth.fetch_user_and_token_by_session_token(raw)
 
       assert {:ok, _member} =
                Accounts.fetch_membership_by_account_id_or_slug(
-                 user,
                  sibling.id,
                  remaining_session
                )
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, origin.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(origin.id, session) ==
                {:error, :not_found}
 
       assert {:ok, _active} = Accounts.reinstate_membership(origin_member, owner_subject)
 
-      assert Accounts.fetch_membership_by_account_id_or_slug(user, origin.id, session) ==
+      assert Accounts.fetch_membership_by_account_id_or_slug(origin.id, session) ==
                {:error, :not_found}
     end
   end
@@ -435,16 +438,16 @@ defmodule Emisar.AuthMemberGrantsTest do
     assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
 
     assert {:ok, _member} =
-             Accounts.fetch_membership_by_account_id_or_slug(user, sibling.id, session)
+             Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session)
 
-    assert Accounts.fetch_membership_by_account_id_or_slug(user, origin.id, session) ==
+    assert Accounts.fetch_membership_by_account_id_or_slug(origin.id, session) ==
              {:error, :not_found}
 
     owner_member = Fixtures.Memberships.fetch_membership(origin.id, owner.id)
     verified = Fixtures.SSO.verify_provider_sign_in(disabled, owner_member)
     assert {:ok, _enabled} = SSO.update_provider(verified, %{enabled: true}, owner_subject)
 
-    assert Accounts.fetch_membership_by_account_id_or_slug(user, origin.id, session) ==
+    assert Accounts.fetch_membership_by_account_id_or_slug(origin.id, session) ==
              {:error, :not_found}
   end
 end

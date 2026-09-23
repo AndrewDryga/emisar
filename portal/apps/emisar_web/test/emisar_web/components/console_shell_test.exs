@@ -31,12 +31,13 @@ defmodule EmisarWeb.Components.ConsoleShellTest do
         id: "01995e70-5a00-7000-8000-000000000004",
         account_id: current_account.id,
         user_id: user.id,
+        user: user,
         role: :owner
       }
 
       assigns = %{
         current_account: current_account,
-        current_subject: Subject.for_user(user, current_account, membership),
+        current_subject: Subject.for_member(membership, current_account),
         current_user: user,
         switchable_accounts: [current_account, other_account]
       }

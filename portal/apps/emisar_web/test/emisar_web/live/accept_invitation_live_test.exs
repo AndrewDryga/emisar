@@ -330,7 +330,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       for existing <- [raw, other_raw] do
         assert {:ok, _, session} = Auth.fetch_user_and_token_by_session_token(existing)
 
-        assert Accounts.fetch_membership_by_account_id_or_slug(invitee, account.id, session) ==
+        assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                  {:error, :not_found}
       end
 

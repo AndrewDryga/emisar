@@ -152,7 +152,7 @@ defmodule Emisar.Seeds.SmokeTest do
       {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
 
       assert {:ok, membership} =
-               Accounts.fetch_membership_by_account_id_or_slug(user, slug, session)
+               Accounts.fetch_membership_by_account_id_or_slug(slug, session)
 
       assert membership.account.slug == slug
     end

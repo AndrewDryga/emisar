@@ -3141,7 +3141,7 @@ defmodule Emisar.Runs do
            Accounts.fetch_and_lock_membership(account.id, subject.membership_id, repo: repo),
          true <- membership.user_id == user_id,
          {:ok, user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
-         current_subject = Subject.rebuild(subject, user, account, membership),
+         current_subject = Subject.rebuild(subject, %{membership | user: user}, account),
          :ok <-
            Auth.Authorizer.ensure_has_permissions(
              current_subject,

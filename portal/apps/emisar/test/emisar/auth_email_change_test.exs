@@ -46,11 +46,10 @@ defmodule Emisar.AuthEmailChangeTest do
                  %{display_name: "Mailbox Owner"}
                )
 
-      assert {:ok, retained_user, retained_token} =
+      assert {:ok, _retained_user, retained_token} =
                Auth.fetch_user_and_token_by_session_token(raw)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
-               retained_user,
                target.id,
                retained_token
              ) ==
