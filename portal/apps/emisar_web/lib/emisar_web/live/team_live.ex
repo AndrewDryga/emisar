@@ -58,7 +58,6 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:approval_pack_modes, %{})
      |> assign(:approval_pack_drafts, %{})
      |> assign(:approval_pack_errors, %{})
-     |> assign(:approval_reviews, %{})
      |> assign(:mfa_reset_target, nil)
      |> assign(:mfa_reset_mode, :totp)
      |> assign(:mfa_reset_error, nil)
@@ -468,25 +467,6 @@ defmodule EmisarWeb.TeamLive do
          )
          |> assign(:approval_scope_errors, errors)}
     end
-  end
-
-  # A retry can refresh the same request ID. Keep the open dialog and its
-  # eventual approval on the facts actually reviewed, even after a queue refresh.
-  def handle_event("review_request", %{"id" => id}, socket) do
-    Permissions.gated(
-      socket,
-      SSO.subject_can_configure_sso?(socket.assigns.current_subject),
-      fn socket ->
-        case Enum.find(socket.assigns.pending_requests, &(&1.request.id == id)) do
-          nil ->
-            {:noreply, socket}
-
-          facts ->
-            reviews = Map.put(socket.assigns.approval_reviews, id, facts)
-            {:noreply, assign(socket, :approval_reviews, reviews)}
-        end
-      end
-    )
   end
 
   def handle_event("approve_request", %{"id" => id}, socket) do
@@ -1889,10 +1869,6 @@ defmodule EmisarWeb.TeamLive do
       :approval_pack_errors,
       Map.new(access_by_id, fn {id, _} -> {id, nil} end)
     )
-    |> assign(
-      :approval_reviews,
-      Map.take(socket.assigns.approval_reviews, Map.keys(access_by_id))
-    )
   end
 
   # Seed only new requests and discard settled ones; broadcasts must not replace
@@ -1924,7 +1900,7 @@ defmodule EmisarWeb.TeamLive do
   # final click carries only the request id; a caller cannot smuggle a different
   # access grant around the reviewed controls in the approval event itself.
   defp approval_params(socket, id) do
-    case socket.assigns.approval_reviews[id] do
+    case Enum.find(socket.assigns.pending_requests, &(&1.request.id == id)) do
       %{request: %{matched_user_id: matched_user_id}} when not is_nil(matched_user_id) ->
         %{
           "runner_access_mode" => "none",
@@ -1944,11 +1920,11 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp do_approve_request(socket, id, params) do
-    case socket.assigns.approval_reviews[id] do
+    case find_pending_request(socket, id) do
       nil ->
         {:noreply, socket}
 
-      %{request: request} ->
+      request ->
         mode = Map.get(params, "runner_access_mode", "none")
 
         scope = List.wrap(params["scope"])
@@ -1975,14 +1951,7 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp approve_request_with_access(socket, request, access) do
-    reviewed_default_role = socket.assigns.approval_reviews[request.id].default_role
-
-    case SSO.approve_link_request(
-           request,
-           access,
-           reviewed_default_role,
-           socket.assigns.current_subject
-         ) do
+    case SSO.approve_link_request(request, access, socket.assigns.current_subject) do
       {:ok, _result} ->
         {:noreply,
          socket
@@ -2005,16 +1974,6 @@ defmodule EmisarWeb.TeamLive do
            :error,
            "This person must accept their emailed team invitation before you can approve the SSO identity."
          )}
-
-      {:error, :link_request_changed} ->
-        {:noreply,
-         socket
-         |> assign(:approval_reviews, Map.delete(socket.assigns.approval_reviews, request.id))
-         |> put_flash(
-           :error,
-           "This sign-in request changed. Review its updated details before approving."
-         )
-         |> assign_sso_state()}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, approval_error_message(reason))}
@@ -2380,10 +2339,7 @@ defmodule EmisarWeb.TeamLive do
                     size={:sm}
                     aria-haspopup="dialog"
                     aria-controls={"approve-request-dialog-#{request_facts.request.id}"}
-                    phx-click={
-                      JS.push("review_request", value: %{id: request_facts.request.id})
-                      |> open_confirm("approve-request-dialog-#{request_facts.request.id}")
-                    }
+                    phx-click={open_confirm("approve-request-dialog-#{request_facts.request.id}")}
                   >
                     {approval_action_label(request_facts)}
                   </.button>
@@ -2404,7 +2360,6 @@ defmodule EmisarWeb.TeamLive do
             </ul>
 
             <%= for request_facts <- @pending_requests do %>
-              <% request_facts = Map.get(@approval_reviews, request_facts.request.id, request_facts) %>
               <% request = request_facts.request %>
               <% approval_dialog_id = "approve-request-dialog-#{request.id}" %>
               <.confirm_dialog

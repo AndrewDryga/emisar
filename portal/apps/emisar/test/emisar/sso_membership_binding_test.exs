@@ -107,12 +107,7 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert repeated.id == request.id
 
     assert {:ok, %{identity: rebound}} =
-             SSO.approve_link_request(
-               request,
-               Accounts.RunnerAccess.none(),
-               context.provider.default_role,
-               context.subject
-             )
+             SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject)
 
     assert rebound.id == context.identity.id
     assert rebound.membership_id == context.member.id
@@ -138,12 +133,7 @@ defmodule Emisar.SSOMembershipBindingTest do
       user_id: context.member.user_id
     )
 
-    assert SSO.approve_link_request(
-             request,
-             Accounts.RunnerAccess.none(),
-             context.provider.default_role,
-             context.subject
-           ) ==
+    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject) ==
              {:error, :matched_user_unavailable}
 
     assert is_nil(Repo.reload!(context.identity).membership_id)
@@ -167,48 +157,6 @@ defmodule Emisar.SSOMembershipBindingTest do
     refute request.email == other.email
   end
 
-  test "a recaptured recovery cannot approve a different member than the reviewed request" do
-    context = ambiguous_oidc_member()
-
-    assert {:pending, reviewed} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    assert {:ok, _removed} = Accounts.delete_membership(context.member, context.subject)
-
-    replacement =
-      Fixtures.Memberships.create_membership(
-        account_id: context.provider.account_id,
-        user_id: context.member.user_id
-      )
-
-    assert {:pending, refreshed} =
-             SSO.complete_auth(context.provider, %{"claims" => context.claims}, %{})
-
-    assert refreshed.id == reviewed.id
-    assert refreshed.matched_membership_id == replacement.id
-
-    assert SSO.approve_link_request(
-             reviewed,
-             Accounts.RunnerAccess.none(),
-             context.provider.default_role,
-             context.subject
-           ) ==
-             {:error, :link_request_changed}
-
-    assert is_nil(Repo.reload!(context.identity).membership_id)
-    assert Repo.reload!(refreshed).matched_membership_id == replacement.id
-
-    assert {:ok, %{identity: restored}} =
-             SSO.approve_link_request(
-               refreshed,
-               Accounts.RunnerAccess.none(),
-               context.provider.default_role,
-               context.subject
-             )
-
-    assert restored.membership_id == replacement.id
-  end
-
   test "recovery keeps permission and cross-account approval denials" do
     context = ambiguous_oidc_member()
 
@@ -223,20 +171,10 @@ defmodule Emisar.SSOMembershipBindingTest do
     {_foreign_user, _foreign_account, foreign_subject} =
       Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
 
-    assert SSO.approve_link_request(
-             request,
-             Accounts.RunnerAccess.none(),
-             context.provider.default_role,
-             viewer
-           ) ==
+    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), viewer) ==
              {:error, :unauthorized}
 
-    assert SSO.approve_link_request(
-             request,
-             Accounts.RunnerAccess.none(),
-             context.provider.default_role,
-             foreign_subject
-           ) ==
+    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), foreign_subject) ==
              {:error, :not_found}
 
     assert is_nil(Repo.reload!(context.identity).membership_id)
@@ -250,12 +188,7 @@ defmodule Emisar.SSOMembershipBindingTest do
 
     assert {:ok, _suspended} = Accounts.suspend_membership(context.member, context.subject)
 
-    assert SSO.approve_link_request(
-             request,
-             Accounts.RunnerAccess.none(),
-             context.provider.default_role,
-             context.subject
-           ) ==
+    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject) ==
              {:error, :matched_user_unavailable}
 
     assert Repo.reload!(context.member).disabled_at
@@ -270,12 +203,7 @@ defmodule Emisar.SSOMembershipBindingTest do
 
     Fixtures.SSO.bind_identity_membership(context.identity, context.member)
 
-    assert SSO.approve_link_request(
-             request,
-             Accounts.RunnerAccess.none(),
-             context.provider.default_role,
-             context.subject
-           ) ==
+    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject) ==
              {:error, :matched_user_unavailable}
   end
 
@@ -409,12 +337,7 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert request.matched_membership_id == member.id
     replacement = replace_member(member, subject)
 
-    assert SSO.approve_link_request(
-             request,
-             Accounts.RunnerAccess.none(),
-             provider.default_role,
-             subject
-           ) ==
+    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), subject) ==
              {:error, :matched_user_unavailable}
 
     assert Repo.reload!(identity).membership_id == member.id
@@ -427,12 +350,7 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert fresh.matched_membership_id == replacement.id
 
     assert {:ok, %{identity: linked}} =
-             SSO.approve_link_request(
-               fresh,
-               Accounts.RunnerAccess.none(),
-               provider.default_role,
-               subject
-             )
+             SSO.approve_link_request(fresh, Accounts.RunnerAccess.none(), subject)
 
     assert linked.membership_id == replacement.id
     assert linked.id == identity.id

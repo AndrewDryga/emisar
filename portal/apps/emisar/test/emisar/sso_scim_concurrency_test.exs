@@ -507,12 +507,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
             unboxed_task(fn ->
               send(parent, {:approval_backend, backend_pid()})
 
-              SSO.approve_link_request(
-                request,
-                RunnerAccess.none(),
-                context.provider.default_role,
-                approver
-              )
+              SSO.approve_link_request(request, RunnerAccess.none(), approver)
             end)
 
           try do

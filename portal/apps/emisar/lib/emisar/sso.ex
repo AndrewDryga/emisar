@@ -3917,24 +3917,19 @@ defmodule Emisar.SSO do
   Approve a pending manual-link request: provision the captured identity at the
   provider's `default_role` and delete the request, atomically. `manage_sso` +
   Team or Enterprise; account-scoped. Binds the captured `sub` (never email — H1).
-  For a new member, the locked provider default must still match the reviewed
-  role. Existing-member links preserve that member's current role instead.
   `{:ok, %{user: user, identity: identity}}`.
   """
   def approve_link_request(
-        %LinkRequest{id: id} = reviewed,
+        %LinkRequest{id: id},
         %Accounts.RunnerAccess{} = access,
-        reviewed_default_role,
         %Subject{} = subject
       ) do
     with :ok <- ensure_can_configure_sso(subject),
          {:ok, request} <- fetch_link_request(id, subject),
-         :ok <- ensure_link_request_unchanged(request, reviewed),
          {:ok, provider} <- fetch_provider_for_request(request, subject),
          :ok <- ensure_link_target_within_authority(request, provider, subject.role, Repo),
          :ok <- ensure_approval_runner_access_allowed(request, access, subject) do
-      multi =
-        approve_link_request_multi(provider, request, access, reviewed_default_role, subject)
+      multi = approve_link_request_multi(provider, request, access, subject)
 
       case Repo.commit_multi(multi) do
         {:ok, %{user: user, identity: identity} = changes} ->
@@ -4052,8 +4047,6 @@ defmodule Emisar.SSO do
          {:ok, request} <- fetch_link_request(id, subject) do
       multi =
         Multi.new()
-        |> put_active_account_lock(request.account_id)
-        |> put_unchanged_link_request(request, subject)
         |> Multi.delete(:request, request)
         |> Multi.insert(:audit, Audit.Events.sso_link_request_dismissed(subject, request))
 
@@ -4121,7 +4114,6 @@ defmodule Emisar.SSO do
          %IdentityProvider{} = provider,
          %LinkRequest{matched_user_id: nil} = request,
          access,
-         reviewed_default_role,
          subject
        ) do
     # This branch creates a user, an identity, a membership and an audit row, and
@@ -4132,38 +4124,32 @@ defmodule Emisar.SSO do
     |> put_active_account_lock(provider.account_id)
     |> put_sso_entitlement(provider.account_id)
     |> put_enabled_provider_lock(provider)
-    |> put_unchanged_link_request(request, subject)
     |> Multi.merge(fn %{locked_provider: locked_provider} ->
-      cond do
-        locked_provider.scim_enabled ->
-          Multi.error(Multi.new(), :link_request, :scim_identity_unmatched)
-
-        locked_provider.default_role != reviewed_default_role ->
-          Multi.error(Multi.new(), :reviewed_role, :link_request_changed)
-
-        true ->
-          case ensure_request_matches_current_namespace(locked_provider, request) do
-            :ok ->
-              Multi.new()
-              |> Multi.run(:approver, fn repo, _changes ->
-                ensure_approver_still_holds_authority(locked_provider, subject, repo)
-              end)
-              |> Multi.append(
-                build_provision_writes(
-                  locked_provider,
-                  request.provider_identifier,
-                  request.claims,
-                  created_by: :admin,
-                  provisioned_via: :manual,
-                  runner_access: access,
-                  audit: &Audit.Events.sso_link_request_approved(subject, &1, locked_provider)
-                )
+      if locked_provider.scim_enabled do
+        Multi.error(Multi.new(), :link_request, :scim_identity_unmatched)
+      else
+        case ensure_request_matches_current_namespace(locked_provider, request) do
+          :ok ->
+            Multi.new()
+            |> Multi.run(:approver, fn repo, _changes ->
+              ensure_approver_still_holds_authority(locked_provider, subject, repo)
+            end)
+            |> Multi.append(
+              build_provision_writes(
+                locked_provider,
+                request.provider_identifier,
+                request.claims,
+                created_by: :admin,
+                provisioned_via: :manual,
+                runner_access: access,
+                audit: &Audit.Events.sso_link_request_approved(subject, &1, locked_provider)
               )
-              |> Multi.delete(:link_request, request)
+            )
+            |> Multi.delete(:link_request, request)
 
-            {:error, reason} ->
-              Multi.error(Multi.new(), :request_namespace, reason)
-          end
+          {:error, reason} ->
+            Multi.error(Multi.new(), :request_namespace, reason)
+        end
       end
     end)
   end
@@ -4178,7 +4164,6 @@ defmodule Emisar.SSO do
          %IdentityProvider{} = provider,
          %LinkRequest{} = request,
          _access,
-         _reviewed_default_role,
          %Subject{} = subject
        ) do
     Multi.new()
@@ -4189,7 +4174,6 @@ defmodule Emisar.SSO do
     # IdP credential onto an existing member through a closed door is exactly
     # what that revocation must stop (the fresh-user branch already does this).
     |> put_enabled_provider_lock(provider)
-    |> put_unchanged_link_request(request, subject)
     |> Multi.merge(fn %{locked_provider: locked_provider} ->
       Multi.new()
       |> Multi.run(:user, fn repo, _changes ->
@@ -4209,41 +4193,6 @@ defmodule Emisar.SSO do
       end)
       |> Multi.delete(:link_request, request)
     end)
-  end
-
-  # All request captures/approvals take the account fence. Refuse a request
-  # refreshed while this approval waited for it, rather than approving stale
-  # target or recovery provenance from the initial read.
-  defp put_unchanged_link_request(multi, request, subject) do
-    Multi.run(multi, :current_request, fn _repo, _changes ->
-      with {:ok, current} <- fetch_link_request(request.id, subject),
-           :ok <- ensure_link_request_unchanged(current, request) do
-        {:ok, current}
-      end
-    end)
-  end
-
-  # Repeated callbacks may change timestamps and association preload state
-  # without changing the decision. Every captured identity/target/proof field
-  # must still match what the approver reviewed.
-  defp ensure_link_request_unchanged(current, reviewed) do
-    fields = [
-      :account_id,
-      :provider_id,
-      :provider_identifier,
-      :namespace_fingerprint,
-      :source,
-      :matched_user_id,
-      :matched_membership_id,
-      :recovery_identity_id,
-      :email,
-      :full_name,
-      :claims
-    ]
-
-    if Map.take(current, fields) == Map.take(reviewed, fields),
-      do: :ok,
-      else: {:error, :link_request_changed}
   end
 
   defp approved_membership_multi(provider, user, %LinkRequest{recovery_identity_id: nil}),

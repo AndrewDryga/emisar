@@ -391,68 +391,6 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
     end)
   end
 
-  test "approval and dismissal serialize one request without a stale-delete crash" do
-    unboxed_sso(fn context ->
-      identity = Fixtures.SSO.clear_identity_membership(context.identity)
-      Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
-
-      assert {:pending, request} =
-               SSO.complete_auth(
-                 context.provider,
-                 %{"_claims" => %{"sub" => identity.provider_identifier}},
-                 %{}
-               )
-
-      parent = self()
-      blocker = identity_blocker(identity, parent)
-
-      try do
-        assert_receive {:identity_locked, blocker_backend}, 5_000
-
-        approval =
-          unboxed_task(fn ->
-            send(parent, {:approval_backend, backend_pid()})
-
-            SSO.approve_link_request(
-              request,
-              Accounts.RunnerAccess.none(),
-              context.provider.default_role,
-              context.subject
-            )
-          end)
-
-        try do
-          assert_receive {:approval_backend, approval_backend}, 5_000
-          await_blocked_by(approval_backend, blocker_backend)
-
-          dismissal =
-            unboxed_task(fn ->
-              send(parent, {:dismissal_backend, backend_pid()})
-              SSO.dismiss_link_request(request, context.subject)
-            end)
-
-          try do
-            assert_receive {:dismissal_backend, dismissal_backend}, 5_000
-            await_blocked_by(dismissal_backend, approval_backend)
-            send(blocker.pid, :release)
-            assert {:ok, _identity} = Task.await(blocker, 30_000)
-            assert {:ok, %{identity: restored}} = Task.await(approval, 30_000)
-            assert restored.id == identity.id
-            assert Task.await(dismissal, 30_000) == {:error, :not_found}
-            assert Repo.reload(request) == nil
-          after
-            stop_tasks([dismissal])
-          end
-        after
-          stop_tasks([approval])
-        end
-      after
-        send(blocker.pid, :release)
-        stop_tasks([blocker])
-      end
-    end)
-  end
-
   test "callback-first holds current provider policy through the identity write" do
     unboxed_sso(fn context ->
       parent = self()
@@ -1081,12 +1019,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
             unboxed_task(fn ->
               send(parent, {:approval_first_backend, backend_pid()})
 
-              SSO.approve_link_request(
-                request,
-                Accounts.RunnerAccess.none(),
-                context.provider.default_role,
-                context.subject
-              )
+              SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject)
             end)
 
           try do
@@ -1179,12 +1112,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               unboxed_task(fn ->
                 send(parent, {:activation_first_approval_backend, backend_pid()})
 
-                SSO.approve_link_request(
-                  request,
-                  Accounts.RunnerAccess.none(),
-                  context.provider.default_role,
-                  context.subject
-                )
+                SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject)
               end)
 
             try do
@@ -1311,12 +1239,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
           unboxed_task(fn ->
             send(parent, {:approval_backend, backend_pid()})
 
-            SSO.approve_link_request(
-              request,
-              Accounts.RunnerAccess.none(),
-              context.provider.default_role,
-              context.subject
-            )
+            SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject)
           end)
 
         try do
@@ -1365,12 +1288,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
           unboxed_task(fn ->
             send(parent, {:matched_approval_backend, backend_pid()})
 
-            SSO.approve_link_request(
-              request,
-              Accounts.RunnerAccess.none(),
-              context.provider.default_role,
-              context.subject
-            )
+            SSO.approve_link_request(request, Accounts.RunnerAccess.none(), context.subject)
           end)
 
         try do
