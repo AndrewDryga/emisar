@@ -34,7 +34,6 @@ defmodule Emisar.Accounts.Membership do
     # directory, team administrator or member edits only this account's copy.
     field :display_name, :string
     field :contact_email, :string
-    field :contact_generation, :integer, default: 0
     field :invitation_token_digest, :string, redact: true
     field :invitation_sent_to, :string
     field :invitation_email_changed_at, :utc_datetime_usec
