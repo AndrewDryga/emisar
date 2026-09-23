@@ -109,7 +109,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		cfg.Binary = cfg.Provider
 	}
 	if cfg.Model == "" && cfg.Provider == "claude" {
-		cfg.Model = "claude-sonnet-4-5"
+		cfg.Model = "claude-sonnet-5"
 	}
 
 	result, err := execute(cfg)

@@ -14,7 +14,7 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 	item := scenario{Prompt: "inspect the fleet", AllowedTools: []string{"list_runners", "run_action"}}
 	cfg := runConfig{
 		Provider: "claude", Binary: "claude", BridgeBinary: "/tmp/emisar-mcp",
-		Model: "claude-sonnet-4-5", BudgetUSD: "10",
+		Model: "claude-sonnet-5", BudgetUSD: "10",
 	}
 	// API-key CI and local keychain auth use the same isolated startup. The
 	// throwaway workspace has no project/local settings, and bypassing the
@@ -32,7 +32,7 @@ func TestClaudeInvocationPinsVerifiedFlags(t *testing.T) {
 				t.Fatal(err)
 			}
 			configPath := filepath.Join(workspace, "mcp-eval.json")
-			want := []string{"-p", "inspect the fleet", "--output-format", "json", "--model", "claude-sonnet-4-5"}
+			want := []string{"-p", "inspect the fleet", "--output-format", "json", "--model", "claude-sonnet-5"}
 			want = append(want,
 				"--setting-sources", "project,local",
 				"--strict-mcp-config",
