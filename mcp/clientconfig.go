@@ -673,17 +673,32 @@ func removeGrokPermission(path string) error {
 	}
 	entry := fmt.Sprintf("allow = [%q]", grokToolPermission)
 	lines := strings.Split(raw, "\n")
+	// Our exact entry leaves [permission] wherever it sits there; the header
+	// goes too only when nothing else is in the table. An operator's rules and
+	// comments must never become root keys or fields of the table above.
+	header, ours, others, inTable := -1, -1, false, false
+	for index, line := range lines {
+		text := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(text, "["): // the next table ends ours
+			inTable = text == "[permission]"
+			if inTable {
+				header = index
+			}
+		case !inTable:
+		case text == entry:
+			ours = index
+		case text != "":
+			others = true
+		}
+	}
+	dropHeader := ours >= 0 && !others
 	kept := make([]string, 0, len(lines))
-	for index := 0; index < len(lines); index++ {
-		trimmed := strings.TrimRight(lines[index], "\r")
-		// Only the table this bridge appended goes: our single entry directly
-		// under the header. An operator who added their own rules keeps it.
-		if strings.TrimSpace(trimmed) == "[permission]" && index+1 < len(lines) &&
-			strings.TrimSpace(strings.TrimRight(lines[index+1], "\r")) == entry {
-			index++
+	for index, line := range lines {
+		if index == ours || dropHeader && index == header {
 			continue
 		}
-		kept = append(kept, lines[index])
+		kept = append(kept, line)
 	}
 	edited := strings.Join(kept, "\n")
 	if strings.Contains(edited, grokToolPermission) {

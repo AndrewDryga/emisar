@@ -671,6 +671,72 @@ func TestGrokPermissionLeavesAnOperatorsOwnTable(t *testing.T) {
 	}
 }
 
+// An operator can add Grok's own rules to the [permission] table that
+// --auto-permit appended. Disconnecting then removes only our line, so their
+// rules never become root keys or fields of the table above.
+func TestGrokPermissionRemovalKeepsAnOperatorsRules(t *testing.T) {
+	ours := "allow = [\"" + grokToolPermission + "\"]"
+	for _, test := range []struct {
+		name, before, after string
+		wantErr             bool
+	}{
+		{
+			name:   "rules below ours",
+			before: "[permission]\n" + ours + "\ndeny = [\"Bash(rm *)\"]\nask = [\"Bash(git push *)\"]\n",
+			after:  "[permission]\ndeny = [\"Bash(rm *)\"]\nask = [\"Bash(git push *)\"]\n",
+		},
+		{
+			name:   "rules above ours",
+			before: "[permission]\ndeny = [\"Bash(rm *)\"]\n" + ours + "\n",
+			after:  "[permission]\ndeny = [\"Bash(rm *)\"]\n",
+		},
+		{
+			name:   "a comment",
+			before: "[permission]\n# reviewed by security\n" + ours + "\n",
+			after:  "[permission]\n# reviewed by security\n",
+		},
+		{
+			name:   "CRLF",
+			before: "[permission]\r\n" + ours + "\r\ndeny = [\"Bash(rm *)\"]\r\n",
+			after:  "[permission]\r\ndeny = [\"Bash(rm *)\"]\r\n",
+		},
+		{
+			name:   "an untouched table before another",
+			before: "[permission]\n" + ours + "\n\n[ui]\nscreen_mode = \"minimal\"\n",
+			after:  "\n[ui]\nscreen_mode = \"minimal\"\n",
+		},
+		{
+			name:    "an entry this bridge did not write",
+			before:  "[permission]\nallow = [\"" + grokToolPermission + "\", \"Bash(git *)\"]\n",
+			wantErr: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(test.before), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := removeGrokPermission(path)
+			want := test.after
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("expected a refusal to edit an entry this bridge did not write")
+				}
+				want = test.before
+			} else if err != nil {
+				t.Fatalf("remove: %v", err)
+			}
+			raw, err := readConfigFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if raw != want {
+				t.Errorf("config =\n%q\nwant\n%q", raw, want)
+			}
+		})
+	}
+}
+
 func TestClientKeyRejectsAnInvalidDelivery(t *testing.T) {
 	response := deviceTokenResponse{ClientKeys: map[string]string{
 		"cursor":         "not-a-key",
