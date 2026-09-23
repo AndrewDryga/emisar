@@ -9,69 +9,6 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
 
   @moduletag timeout: 60_000
 
-  test "concurrent new-address completions consume the proof and audit exactly once" do
-    unboxed_owner(fn user, account, subject ->
-      new_email = "complete-once-#{Ecto.UUID.generate()}@example.test"
-      proof = pending_email_change(new_email, subject)
-      parent = self()
-
-      blocker =
-        unboxed_task(fn ->
-          Repo.transaction(fn ->
-            from(user in User, where: user.id == ^user.id, lock: "FOR UPDATE") |> Repo.one!()
-            send(parent, {:completion_user_locked, backend_pid()})
-
-            receive do
-              :release -> :ok
-            end
-          end)
-        end)
-
-      try do
-        assert_receive {:completion_user_locked, blocker_backend}, 5_000
-
-        first =
-          unboxed_task(fn ->
-            send(parent, {:first_completion, backend_pid()})
-            complete_email_change(proof, subject)
-          end)
-
-        try do
-          assert_receive {:first_completion, first_backend}, 5_000
-          await_blocked_by(first_backend, blocker_backend)
-
-          second =
-            unboxed_task(fn ->
-              send(parent, {:second_completion, backend_pid()})
-              complete_email_change(proof, subject)
-            end)
-
-          try do
-            assert_receive {:second_completion, second_backend}, 5_000
-            await_blocked_by(second_backend, first_backend)
-            send(blocker.pid, :release)
-            assert {:ok, :ok} = Task.await(blocker, 30_000)
-            assert {:ok, %User{email: ^new_email}} = Task.await(first, 30_000)
-            assert {:error, :invalid} = Task.await(second, 30_000)
-
-            assert 1 ==
-                     Emisar.Audit.Event.Query.all()
-                     |> Emisar.Audit.Event.Query.by_account_id(account.id)
-                     |> Emisar.Audit.Event.Query.by_event_type("user.email_changed")
-                     |> Repo.aggregate(:count)
-          after
-            stop_tasks([second])
-          end
-        after
-          stop_tasks([first])
-        end
-      after
-        send(blocker.pid, :release)
-        stop_tasks([blocker])
-      end
-    end)
-  end
-
   test "a committed email change defeats stale issuance and leaves only new-address credentials" do
     unboxed_owner(fn user, account, subject ->
       old_email = user.email

@@ -119,25 +119,23 @@ defmodule Emisar.Auth.UserToken.Changeset do
     )
   end
 
-  @doc "Split-code proof of a new address, bound to the current-factor proof and live session."
-  def new_email(%Users.User{} = user, %UserToken{} = session, digest, new_email, attempts) do
+  @doc "Split-code proof of a new address, bound to the MFA enrollment that authorized it."
+  def new_email(%Users.User{} = user, digest, new_email, attempts) do
     change(%UserToken{},
       token: digest,
       context: "email_change_new",
       sent_to: new_email,
       user_id: user.id,
       remaining_attempts: attempts,
-      metadata: %{
-        "session_id" => session.id,
-        "email" => user.email,
-        "email_changed_at" => datetime_or_nil(user.email_changed_at),
-        "mfa_enabled_at" => datetime_or_nil(user.mfa_enabled_at)
-      }
+      metadata: new_email_metadata(user)
     )
   end
 
-  defp datetime_or_nil(nil), do: nil
-  defp datetime_or_nil(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  @doc "Metadata a pending new-address proof must still match: the authorizing MFA enrollment."
+  def new_email_metadata(%Users.User{mfa_enabled_at: nil}), do: %{"mfa_enabled_at" => nil}
+
+  def new_email_metadata(%Users.User{mfa_enabled_at: %DateTime{} = enabled_at}),
+    do: %{"mfa_enabled_at" => DateTime.to_iso8601(enabled_at)}
 
   @doc "Current-inbox proof for one explicit OIDC identity action."
   def oidc_identity_step_up(%Users.User{} = user, digest, provider_id, purpose, attempts)

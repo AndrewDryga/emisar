@@ -100,7 +100,6 @@ defmodule Emisar.AuthPersonalAuthorityTest do
       assert Auth.complete_email_change(proof.token_id, proof.nonce, code, digest, subject) ==
                {:error, :unauthorized}
 
-      assert Auth.cancel_email_change(proof.token_id, digest, subject) == {:error, :unauthorized}
       assert Repo.get!(UserToken, proof.token_id) == before
     end
 
@@ -133,7 +132,6 @@ defmodule Emisar.AuthPersonalAuthorityTest do
     assert Auth.complete_email_change(token.id, "nonce", "ABCDEF", digest, subject) ==
              {:error, :unauthorized}
 
-    assert Auth.cancel_email_change(token.id, digest, subject) == {:error, :unauthorized}
     assert Repo.get!(UserToken, token.id)
     refute_received {:email, _}
   end

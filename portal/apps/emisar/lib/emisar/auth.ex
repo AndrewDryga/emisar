@@ -1407,11 +1407,12 @@ defmodule Emisar.Auth do
   user's CURRENT row, verify `code` against it (TOTP for an MFA user, the emailed
   one-time code otherwise), then email a split code to the NEW address. The
   current address is unchanged until `complete_email_change/5` proves the new
-  mailbox in this same live personal session. Returns `{:ok, %{token_id: id,
-  nonce: nonce}}` only after mail delivery is accepted; the code never leaves
-  Auth except through the mailer. Suppression/failure leaves the old address usable.
-  Both stages are single-use and bounded; restarting requires fresh current-factor
-  proof. The TOTP and inbox branches retain their shared durable attempt budgets.
+  mailbox with this browser's nonce and a live personal session. Returns
+  `{:ok, %{token_id: id, nonce: nonce}}` only after mail delivery is accepted; the
+  code never leaves Auth except through the mailer. Suppression/failure leaves the
+  old address usable. Both stages are single-use and bounded; restarting requires
+  fresh current-factor proof. The TOTP and inbox branches retain their shared
+  durable attempt budgets.
   """
   def confirm_email_change(
         new_email,
@@ -1443,9 +1444,7 @@ defmodule Emisar.Auth do
     end
   end
 
-  def confirm_email_change(_, _, _, %Subject{} = subject) do
-    with :ok <- Subject.ensure_personal_user(subject), do: {:error, :invalid}
-  end
+  def confirm_email_change(_, _, _, %Subject{}), do: {:error, :unauthorized}
 
   defp email_change_factor(%Users.User{mfa_enabled_at: %DateTime{}}), do: :totp
   defp email_change_factor(%Users.User{}), do: :code
@@ -1465,7 +1464,7 @@ defmodule Emisar.Auth do
         verify_email_change_factor(repo, user, requested_email, factor)
       end)
       |> Multi.merge(fn
-        %{factor_outcome: {:ok, email, factor_user}, session: session} ->
+        %{factor_outcome: {:ok, email, factor_user}} ->
           Multi.new()
           |> Multi.run(:new_email, fn _repo, _changes ->
             validate_new_email(factor_user, email)
@@ -1475,13 +1474,7 @@ defmodule Emisar.Auth do
             |> UserToken.Query.by_contexts(["email_change", "email_change_new"])
           end)
           |> Multi.insert(:new_email_token, fn %{new_email: new_email} ->
-            UserToken.Changeset.new_email(
-              factor_user,
-              session,
-              digest,
-              new_email,
-              @email_change_attempts
-            )
+            UserToken.Changeset.new_email(factor_user, digest, new_email, @email_change_attempts)
           end)
 
         %{factor_outcome: {:error, _reason}} ->
@@ -1524,29 +1517,16 @@ defmodule Emisar.Auth do
       )
 
     case result do
-      {:ok, %{suppressed: true}} ->
-        delete_new_email_proof(token)
-        {:error, :delivery_suppressed}
-
-      {:ok, _sent} ->
-        {:ok, %{token_id: token.id, nonce: nonce, email: token.sent_to}}
-
-      {:error, reason} ->
-        delete_new_email_proof(token)
-        {:error, reason}
+      {:ok, %{suppressed: true}} -> {:error, :delivery_suppressed}
+      {:ok, _sent} -> {:ok, %{token_id: token.id, nonce: nonce, email: token.sent_to}}
+      {:error, reason} -> {:error, reason}
     end
-  end
-
-  defp delete_new_email_proof(token) do
-    UserToken.Query.by_id(token.id)
-    |> UserToken.Query.by_context("email_change_new")
-    |> Repo.delete_all()
   end
 
   @doc """
   Prove the new inbox from the requesting browser. Locks the user, authorizing
-  personal session and exact pending token; a revoked session or changed address/
-  MFA enrollment requires a fresh start. The stored target is authoritative.
+  personal session and exact pending token; a revoked session or changed MFA
+  enrollment requires a fresh start. The stored target is authoritative.
   Confirmation, address-generation advance, old-address token invalidation and
   audit commit together. Failed guesses commit their attempt decrement.
   """
@@ -1576,9 +1556,7 @@ defmodule Emisar.Auth do
     end
   end
 
-  def complete_email_change(_, _, _, _, %Subject{} = subject) do
-    with :ok <- Subject.ensure_personal_user(subject), do: {:error, :invalid}
-  end
+  def complete_email_change(_, _, _, _, %Subject{}), do: {:error, :unauthorized}
 
   defp finish_email_change(token_id, nonce, code, presented_digest, user, subject) do
     Multi.new()
@@ -1586,8 +1564,8 @@ defmodule Emisar.Auth do
     |> Multi.run(:session, fn repo, _changes ->
       fetch_and_lock_personal_session(presented_digest, subject, repo)
     end)
-    |> Multi.run(:proof_outcome, fn repo, %{user: user, session: session} ->
-      verify_new_email_proof(repo, token_id, nonce, code, user, session)
+    |> Multi.run(:proof_outcome, fn repo, %{user: user} ->
+      verify_new_email_proof(repo, token_id, nonce, code, user)
     end)
     |> Multi.merge(fn
       %{proof_outcome: {:ok, token}, user: user} ->
@@ -1617,7 +1595,7 @@ defmodule Emisar.Auth do
     end
   end
 
-  defp verify_new_email_proof(repo, token_id, nonce, code, user, session) do
+  defp verify_new_email_proof(repo, token_id, nonce, code, user) do
     token =
       UserToken.Query.by_id(token_id)
       |> UserToken.Query.by_user_id(user.id)
@@ -1628,7 +1606,7 @@ defmodule Emisar.Auth do
       |> repo.one()
 
     cond do
-      is_nil(token) or not current_new_email_proof?(token, user, session) ->
+      is_nil(token) or not current_new_email_proof?(token, user) ->
         {:ok, {:error, :invalid}}
 
       Crypto.secure_compare(Crypto.magic_link_digest(nonce, code), token.token) ->
@@ -1640,17 +1618,8 @@ defmodule Emisar.Auth do
     end
   end
 
-  defp current_new_email_proof?(token, user, session) do
-    token.metadata == %{
-      "session_id" => session.id,
-      "email" => user.email,
-      "email_changed_at" => datetime_or_nil(user.email_changed_at),
-      "mfa_enabled_at" => datetime_or_nil(user.mfa_enabled_at)
-    }
-  end
-
-  defp datetime_or_nil(nil), do: nil
-  defp datetime_or_nil(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp current_new_email_proof?(token, user),
+    do: token.metadata == UserToken.Changeset.new_email_metadata(user)
 
   defp fetch_and_lock_personal_session(digest, subject, repo) do
     with {:ok, session} <- fetch_and_lock_subject_session(digest, subject, repo),
@@ -1667,49 +1636,6 @@ defmodule Emisar.Auth do
   end
 
   defp ensure_personal_proof(%UserToken{}), do: {:error, :unauthorized}
-
-  @doc "Cancel this browser's exact pending new-address proof without changing its current email."
-  def cancel_email_change(
-        token_id,
-        presented_digest,
-        %Subject{actor: %Users.User{id: id}} = subject
-      )
-      when is_binary(presented_digest) do
-    with :ok <- Subject.ensure_personal_user(subject) do
-      case Ecto.UUID.cast(token_id) do
-        {:ok, token_id} ->
-          Multi.new()
-          |> Multi.run(:user, fn repo, _changes -> Users.fetch_and_lock_user_by_id(id, repo) end)
-          |> Multi.run(:session, fn repo, _changes ->
-            fetch_and_lock_personal_session(presented_digest, subject, repo)
-          end)
-          |> Multi.run(:cancelled, fn repo, %{user: user, session: session} ->
-            token =
-              UserToken.Query.by_id(token_id)
-              |> UserToken.Query.by_user_id(id)
-              |> UserToken.Query.by_context("email_change_new")
-              |> UserToken.Query.lock_for_update()
-              |> repo.one()
-
-            if token && current_new_email_proof?(token, user, session),
-              do: repo.delete(token),
-              else: {:ok, nil}
-          end)
-          |> Repo.commit_multi()
-          |> case do
-            {:ok, _changes} -> :ok
-            {:error, reason} -> {:error, reason}
-          end
-
-        :error ->
-          {:error, :invalid}
-      end
-    end
-  end
-
-  def cancel_email_change(_, _, %Subject{} = subject) do
-    with :ok <- Subject.ensure_personal_user(subject), do: {:error, :invalid}
-  end
 
   defp verify_email_change_factor(_repo, %Users.User{} = user, requested_email, {:mfa, otp}) do
     case Users.verify_and_consume_mfa(user.id, otp, []) do

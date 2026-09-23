@@ -336,8 +336,6 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("edit_email", _params, socket) do
-    cancel_pending_email_proof(socket)
-
     {:noreply,
      socket
      |> reset_email_step()
@@ -432,8 +430,6 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   def handle_event("cancel_email_change", _params, socket) do
-    cancel_pending_email_proof(socket)
-
     {:noreply,
      socket
      |> assign_email_form(socket.assigns.current_user)
@@ -1026,8 +1022,6 @@ defmodule EmisarWeb.ProfileLive do
   # re-reads it) — not `@mfa_facts`, which is a stale mount snapshot that could
   # downgrade the challenge — and issues the emailed code on the `:code` path.
   defp start_email_step_up(socket, user, new_email) do
-    cancel_pending_email_proof(socket)
-
     # A fresh challenge invalidates any rejection from a prior one — a stale
     # inline error under a brand-new code input would accuse the operator of a
     # mistake they haven't made yet.
@@ -1075,16 +1069,6 @@ defmodule EmisarWeb.ProfileLive do
         socket
         |> assign(:email_step, :edit)
         |> assign(:email_step_error, "Couldn't start the email change. Try again.")
-    end
-  end
-
-  defp cancel_pending_email_proof(socket) do
-    if proof = socket.assigns.new_email_proof do
-      Auth.cancel_email_change(
-        proof.token_id,
-        socket.assigns.current_auth.token,
-        socket.assigns.current_subject
-      )
     end
   end
 

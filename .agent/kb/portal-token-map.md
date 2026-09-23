@@ -26,7 +26,7 @@ them inline.
 | Runner enrollment key | `runner_enrollment_keys` | `emkey-enroll-` | `Emisar.Runners` | `create_enrollment_key/2` | `register_via_enrollment_key/3` claims a use inside its transaction (`peek_enrollment_key_by_secret/1` is a read-only inspector, not the gate) | `revoke_enrollment_key/2` |
 | Runner session token | `runner_tokens` | `rnrtok-` | `Emisar.Runners` | `mint_runner_token/3` | `verify_runner_token/1` | disable or delete the runner; a 90-day `expires_at` refused at verify, rotated by `refresh_runner_token/1` |
 | User session, magic-link, email-confirm | `auth_user_tokens` | binary (unprefixed) | `Emisar.Auth` | `complete_magic_link_sign_in/4`, `complete_sso_account_sign_in/4`, `complete_sso_session_step_up/4`, `request_magic_link/3`, `deliver_confirmation_instructions/1` | `fetch_user_and_token_by_session_token/1`, `verify_magic_link/4` | `complete_session_sign_out/2`, `delete_session_token/1`, `revoke_session/2`, `delete_all_session_tokens/1` |
-| New sign-in address proof (`email_change_new`) | `auth_user_tokens` | split browser nonce and emailed code | `Emisar.Auth` | `confirm_email_change/4` after current-inbox or TOTP proof | `complete_email_change/5` in the same live personal session | successful completion, `cancel_email_change/3`, replacement, or 15-minute expiry |
+| New sign-in address proof (`email_change_new`) | `auth_user_tokens` | split browser nonce and emailed code | `Emisar.Auth` | `confirm_email_change/4` after current-inbox or TOTP proof | `complete_email_change/5` with the browser nonce and a live personal session | successful completion, replacement, or 15-minute expiry |
 | Account invitation | `account_memberships.invitation_token_digest` | binary (unprefixed) | `Emisar.Accounts` | `invite_user_to_account/2`, `resend_account_invitation/2` | `fetch_invitation_by_token/2`; final acceptance rechecks the exact digest and invited address | acceptance, resend, membership removal, or seven-day expiry |
 
 ## Session authority is not another credential
@@ -58,11 +58,15 @@ membership owns the acceptance, rotation, address binding, and expiry as one
 lifecycle.
 
 A sign-in email change leaves the current address unchanged until the requesting
-browser proves the new mailbox. Its pending proof binds the exact personal
-session, current address generation and MFA enrollment. Refreshing the page loses
-the browser nonce and requires restarting; the old address remains usable.
+browser proves the new mailbox. Its pending proof binds the MFA enrollment that
+authorized it; completion also needs the browser nonce and a live personal session.
+Refreshing the page loses the nonce and requires restarting; the old address
+remains usable. An abandoned proof stays inert until replaced or expired.
 
 ## Changelog
+
+- 2026-09-23: new-address proof binds only the MFA enrollment and has no explicit
+  cancel; replacement and expiry retire an abandoned proof.
 
 - 2026-09-23: distinguished frozen Member grants and independent proof deadlines
   from bearer credentials, local revocation and whole-browser logout.

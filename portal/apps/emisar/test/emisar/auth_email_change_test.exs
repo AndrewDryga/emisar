@@ -103,7 +103,7 @@ defmodule Emisar.AuthEmailChangeTest do
       assert {:ok, _changed} = complete(proof, code, digest, subject)
     end
 
-    test "the same user in another session and another user cannot finish the request", %{
+    test "another session's digest and another user cannot finish the request", %{
       user: user,
       digest: digest,
       subject: subject
@@ -113,13 +113,6 @@ defmodule Emisar.AuthEmailChangeTest do
 
       assert {:error, :session_not_found} =
                complete(proof, code, Crypto.hash(second_raw), subject)
-
-      {:ok, _user, second_session} = Auth.fetch_user_and_token_by_session_token(second_raw)
-
-      second_subject =
-        Fixtures.Subjects.subject_for(user, subject.account, session: second_session)
-
-      assert {:error, :invalid} = complete(proof, code, Crypto.hash(second_raw), second_subject)
 
       {_other, _account, other_subject} = Fixtures.Subjects.owner_subject()
       {:ok, other_session} = Auth.fetch_current_session(other_subject)
@@ -264,19 +257,11 @@ defmodule Emisar.AuthEmailChangeTest do
                complete(next_proof, Fixtures.Auth.code_from_email(next_mail), digest, subject)
     end
 
-    test "an address-generation change cannot be hidden by restoring the old address", %{
+    test "suppressed or failed new-address delivery leaves the current address unchanged", %{
       user: user,
       digest: digest,
       subject: subject
     } do
-      {proof, code, _mail} = pending_change(digest, subject)
-      moved = Fixtures.Users.update_email(user, "intermediate@example.test")
-      Fixtures.Users.update_email(moved, user.email)
-      assert {:error, :invalid} = complete(proof, code, digest, subject)
-    end
-
-    test "suppressed or failed new-address delivery changes nothing and leaves no usable pending proof",
-         %{user: user, digest: digest, subject: subject} do
       {:ok, _} = Mail.suppress("bounced@example.test", :hard_bounce, "test bounce")
 
       for {address, expected} <- [
@@ -302,7 +287,6 @@ defmodule Emisar.AuthEmailChangeTest do
                ) == expected
 
         assert Repo.reload!(user).email == user.email
-        refute Repo.one(UserToken.Query.by_context("email_change_new"))
         refute_received {:email, _}
       end
     end
@@ -331,48 +315,14 @@ defmodule Emisar.AuthEmailChangeTest do
       assert Repo.get(UserToken, proof.token_id)
       assert {:ok, _changed} = complete(proof, code, digest, subject)
     end
-  end
 
-  describe "cancel_email_change/3" do
-    test "another browser's digest cannot issue or cancel this browser's proof", %{
-      user: user,
-      digest: digest,
-      subject: subject
-    } do
-      other_raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      other_digest = Crypto.hash(other_raw)
-      assert {:ok, :code} = Auth.begin_email_change("new@example.test", subject)
-      assert_received {:email, old_mail}
-      code = Fixtures.Auth.code_from_email(old_mail)
-
-      assert Auth.confirm_email_change("new@example.test", code, other_digest, subject) ==
-               {:error, :session_not_found}
-
-      refute Repo.exists?(UserToken.Query.by_context("email_change_new"))
-      assert {:ok, proof} = Auth.confirm_email_change("new@example.test", code, digest, subject)
-      assert_received {:email, _mail}
-
-      assert Auth.cancel_email_change(proof.token_id, other_digest, subject) ==
-               {:error, :session_not_found}
-
-      assert Repo.get(UserToken, proof.token_id)
-      assert :ok = Auth.cancel_email_change(proof.token_id, digest, subject)
-      refute Repo.get(UserToken, proof.token_id)
-    end
-
-    test "cancel and replacement consume only their pending request", %{
-      user: user,
-      digest: digest,
-      subject: subject
-    } do
+    test "a newer request replaces the pending proof", %{digest: digest, subject: subject} do
       {first, first_code, _mail} = pending_change(digest, subject, "first@example.test")
       {second, second_code, _mail} = pending_change(digest, subject, "second@example.test")
       assert {:error, :invalid} = complete(first, first_code, digest, subject)
-      assert :ok = Auth.cancel_email_change(first.token_id, digest, subject)
-      assert Repo.get(UserToken, second.token_id)
-      assert :ok = Auth.cancel_email_change(second.token_id, digest, subject)
-      assert {:error, :invalid} = complete(second, second_code, digest, subject)
-      assert Repo.reload!(user).email == user.email
+
+      assert {:ok, %{email: "second@example.test"}} =
+               complete(second, second_code, digest, subject)
     end
   end
 

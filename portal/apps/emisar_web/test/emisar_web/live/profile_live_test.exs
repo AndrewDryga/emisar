@@ -630,7 +630,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert updated.confirmed_at
     end
 
-    test "a wrong new-address code has usable restart guidance and cancellation discards it", %{
+    test "a wrong new-address code has usable restart guidance and cancel closes the step", %{
       conn: conn,
       user: user,
       account: account
@@ -656,9 +656,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "cancel and start the email change again"
       assert_push_event(lv, "code:reset", %{id: "new-email-code"})
       refute has_element?(lv, "#email_step_form button", "Resend code")
-      pending = Emisar.Repo.get_by!(Auth.UserToken, user_id: user.id, context: "email_change_new")
       render_hook(lv, "cancel_email_change", %{})
-      refute Emisar.Repo.get(Auth.UserToken, pending.id)
       assert Emisar.Repo.reload!(user).email == user.email
       refute has_element?(lv, "#email_step_form")
     end
