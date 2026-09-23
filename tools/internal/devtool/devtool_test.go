@@ -1203,6 +1203,10 @@ func (w panicOnWrite) Write(data []byte) (int, error) {
 // project down exactly once, and last.
 func TestRunPackTestCaseAlwaysTearsDownItsComposeProject(t *testing.T) {
 	const runnerImage = "emisar-runner-tools:abc123456789"
+	// The fake run logs itself before it blocks, so the cancel fires as soon as
+	// that line lands. This budget only bounds a run that never starts; a loaded
+	// -race gate can take seconds to spawn the fake `up` and `run`.
+	const runStartBudget = 30 * time.Second
 	baseCompose := filepath.Join("dev", "test-packs", "compose.yaml")
 	job := packTestJob{
 		InvocationID: "run-1",
@@ -1267,7 +1271,7 @@ func TestRunPackTestCaseAlwaysTearsDownItsComposeProject(t *testing.T) {
 				result := make(chan bool, 1)
 				interrupted = result
 				go func() {
-					deadline := time.NewTimer(time.Second)
+					deadline := time.NewTimer(runStartBudget)
 					defer deadline.Stop()
 					ticker := time.NewTicker(time.Millisecond)
 					defer ticker.Stop()
@@ -1299,7 +1303,9 @@ func TestRunPackTestCaseAlwaysTearsDownItsComposeProject(t *testing.T) {
 				err = app.runPackTestCase(ctx, baseCompose, runnerImage, job)
 			}()
 			if interrupted != nil && !<-interrupted {
-				t.Fatal("fake docker run did not start before cancellation")
+				data, _ := os.ReadFile(log)
+				t.Fatalf("fake docker run did not start within %s; runPackTestCase err = %v; commands logged:\n%s",
+					runStartBudget, err, data)
 			}
 			if test.panicOn == "" {
 				if test.wantErr == "" && err != nil {
