@@ -2,6 +2,11 @@ schema_version: 1
 id: ch.backups
 title: SELECT * FROM system.backups
 kind: exec
+# TIER DECISION (2026-09-23): stays low. error is ClickHouse's own BACKUP/RESTORE
+# text: paths, object keys, and definitions formatted with secrets hidden
+# (formatForErrorMessage); name likewise (toStringForLogging). BACKUP/RESTORE
+# parse no rows or queries, unlike the mutation/replication/distributed-send
+# exceptions rated medium in this pack.
 risk: low
 description: List BACKUP/RESTORE operations since the last server start with status and error. Non-persistent across restarts.
 side_effects: ["One SELECT.", "Read-only."]

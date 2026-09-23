@@ -3,7 +3,7 @@ id: ch.dictionaries
 title: SELECT * FROM system.dictionaries
 kind: exec
 risk: low
-description: List loaded dictionaries with status, element count, source.
+description: List loaded dictionaries with status, element count and source kind (http, ClickHouse, Executable…). The source's full text is not returned — an HTTP source URL can carry credentials or presigned signatures, and an Executable source its command line.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:
@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT database, name, status, element_count, source FROM system.dictionaries FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT database, name, status, element_count, splitByChar(':', source)[1] AS source_type FROM system.dictionaries FORMAT JSONEachRow\""
   timeout: 30s
 output:
   parser: text

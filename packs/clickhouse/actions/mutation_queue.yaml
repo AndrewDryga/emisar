@@ -3,7 +3,7 @@ id: ch.mutation_queue
 title: SELECT * FROM system.mutations
 kind: exec
 risk: low
-description: List in-progress + pending mutations (ALTER TABLE).
+description: List in-progress and pending mutations (ALTER TABLE … UPDATE/DELETE) with parts left and the latest failed part and time. The command comes back normalized, with literal values replaced by ?, so WHERE-clause values stay out; ch.stuck_mutations returns the full command and failure reason.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:
@@ -11,7 +11,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT database, table, mutation_id, command, create_time, is_done, parts_to_do, latest_failed_part, latest_fail_reason FROM system.mutations WHERE NOT is_done FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT database, table, mutation_id, normalizeQueryKeepNames(command) AS command_normalized, create_time, is_done, parts_to_do, latest_failed_part, latest_fail_time FROM system.mutations WHERE NOT is_done FORMAT JSONEachRow\""
   timeout: 30s
 output:
   parser: text

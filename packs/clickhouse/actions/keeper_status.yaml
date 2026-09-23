@@ -3,7 +3,7 @@ id: ch.keeper_status
 title: List a Keeper/ZooKeeper path (system.zookeeper)
 kind: exec
 risk: low
-description: List child nodes and metadata under a Keeper/ZooKeeper path. system.zookeeper requires a path filter, so the path arg is mandatory.
+description: List child nodes under a Keeper/ZooKeeper path with their metadata — child count, data size, create/modify time and version. Node values are not returned; they hold replicated mutation and DDL SQL and any other application's data. system.zookeeper requires a path filter, so the path arg is mandatory.
 side_effects: ["One SELECT.", "Read-only."]
 args:
   - name: path
@@ -17,7 +17,7 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT name, value, numChildren, ctime, mtime, version, czxid, mzxid FROM system.zookeeper WHERE path = '$ZKPATH' ORDER BY name LIMIT 500 FORMAT JSONEachRow\""
+      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT name, numChildren, dataLength, ctime, mtime, version, czxid, mzxid FROM system.zookeeper WHERE path = '$ZKPATH' ORDER BY name LIMIT 500 FORMAT JSONEachRow\""
   env:
     ZKPATH: "{{ args.path }}"
   timeout: 30s

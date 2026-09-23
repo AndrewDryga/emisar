@@ -2,8 +2,8 @@ schema_version: 1
 id: ch.replication_queue
 title: SELECT * FROM system.replication_queue
 kind: exec
-risk: low
-description: Show per-task replication queue — retries, postpones, last exception. Spot stuck fetches/merges (distinct from per-replica state).
+risk: medium
+description: Show per-task replication queue — retries, postpones, last exception. Spot stuck fetches/merges (distinct from per-replica state). Rated medium because the last exception is free text — a failed mutation's can quote row values — that no redaction list can enumerate.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:

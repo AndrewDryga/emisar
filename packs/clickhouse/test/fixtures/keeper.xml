@@ -1,0 +1,22 @@
+<!-- An embedded single-node Keeper, so ch.keeper_status has a tree to list.
+     allow_zookeeper_write only lets the fixture seed a canary node. -->
+<clickhouse>
+    <allow_zookeeper_write>1</allow_zookeeper_write>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>localhost</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+    <zookeeper>
+        <node>
+            <host>127.0.0.1</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>

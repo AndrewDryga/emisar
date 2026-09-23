@@ -41,6 +41,44 @@ cases:
   - action: ch.uptime
     expect:
       stdout_contains: ["version()", "uptime()"]
+  # Each seeds a canary where the old query read it raw: a Keeper node value,
+  # a mutation's WHERE literal, an error message quoting its input, and a
+  # dictionary's HTTP source URL (where presigned signatures that no redaction
+  # rule names would sit; ClickHouse's own endpoint only accepts settings).
+  - action: ch.keeper_status
+    args: {path: /packtest}
+    arrange:
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "INSERT INTO system.zookeeper (name, path, value) VALUES (''packtest-node'', ''/packtest'', ''packtest-canary-ch-keeper-value-8d41'')" && echo ch-keeper-seeded']
+        expect:
+          stdout_contains: [ch-keeper-seeded]
+        retry_for: 30s
+        retry_every: 1s
+    expect:
+      stdout_contains: ['"name":"packtest-node"', '"dataLength":36']
+      stdout_not_contains: [packtest-canary-ch-keeper-value-8d41]
+  - action: ch.mutation_queue
+    arrange:
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SYSTEM STOP MERGES default.packtest_events"']
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "ALTER TABLE default.packtest_events DELETE WHERE service = ''packtest-canary-ch-mutation-5c1e''"']
+    expect:
+      stdout_contains: ['"table":"packtest_events"', 'service = ?']
+      stdout_not_contains: [packtest-canary-ch-mutation-5c1e]
+  - action: ch.errors
+    arrange:
+      - argv: [/bin/sh, -c, '! clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT toUInt64(''packtest-canary-ch-error-2b7a'')" 2>/dev/null && echo ch-error-raised']
+        expect:
+          stdout_contains: [ch-error-raised]
+    expect:
+      stdout_contains: ['"name":"CANNOT_PARSE_TEXT"']
+      stdout_not_contains: [packtest-canary-ch-error-2b7a]
+  - action: ch.dictionaries
+    arrange:
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "CREATE USER dictsrc"']
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "CREATE DICTIONARY default.packtest_dict (id UInt64, v String) PRIMARY KEY id SOURCE(HTTP(URL ''http://127.0.0.1:8123/?user=dictsrc&log_comment=packtest-canary-ch-dict-9f3c&query=SELECT%201%20AS%20id,%20%27x%27%20AS%20v%20FORMAT%20TabSeparated'' FORMAT ''TabSeparated'')) LAYOUT(FLAT()) LIFETIME(0)"']
+      - argv: [/bin/sh, -c, 'clickhouse-client --host clickhouse --user "$CH_USER" --password "$CH_PASSWORD" --query "SYSTEM RELOAD DICTIONARY default.packtest_dict"']
+    expect:
+      stdout_contains: ['"name":"packtest_dict"', '"status":"LOADED"', '"source_type":"http"']
+      stdout_not_contains: [packtest-canary-ch-dict-9f3c]
   - action: ch.optimize_table
     args: {database: default, table: packtest_events}
     # stdout_contains matches a substring, so asserting "3" on a bare count also
