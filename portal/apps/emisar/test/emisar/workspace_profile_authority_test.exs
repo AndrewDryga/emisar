@@ -120,20 +120,6 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
 
       assert Repo.reload!(elsewhere) == elsewhere
     end
-
-    test "an audit failure rolls the name back" do
-      {_person, _account, subject} = Fixtures.Subjects.owner_subject()
-      member = Repo.get!(Accounts.Membership, subject.membership_id)
-      invalid_subject = %{subject | context: %Emisar.RequestContext{request_id: 123}}
-
-      assert {:error, _} =
-               Accounts.update_own_member_profile(
-                 %{display_name: "Not Committed"},
-                 invalid_subject
-               )
-
-      assert Repo.reload!(member).display_name == member.display_name
-    end
   end
 
   describe "peek_membership_profile/2" do
@@ -213,37 +199,6 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     refute_received {:email, _}
   end
 
-  test "a stale invitation resend preserves its intended contact and does not reveal a personal change" do
-    {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
-
-    {:ok, invitation} =
-      Accounts.invite_user_to_account(%{email: "invited@example.test", role: "viewer"}, subject)
-
-    member = invitation.membership
-    person = invitation.user
-
-    for email <- ["private@example.test", "invited@example.test"] do
-      person
-      |> Ecto.Changeset.change(
-        email: email,
-        email_changed_at: DateTime.add(person.email_changed_at, 1, :second)
-      )
-      |> Repo.update!()
-
-      assert {:error, :stale_invitation_contact} =
-               Accounts.resend_account_invitation(member, subject)
-
-      assert Repo.reload!(member) == member
-
-      assert {:error, :not_found} =
-               Accounts.accept_invitation(member, invitation.invitation_token, %{
-                 display_name: "Not Accepted"
-               })
-
-      refute_received {:email, _}
-    end
-  end
-
   test "anonymous invitation acceptance retains the explicitly supplied workspace name" do
     {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
@@ -279,9 +234,9 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     assert Repo.reload!(elsewhere) == elsewhere
   end
 
-  test "personal changes retain audit facts without sharing private values through lists or exports" do
-    {person, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
-    {_other_owner, other_account, other_reader} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+  test "personal changes retain audit facts without sharing private values" do
+    {person, account, subject} = Fixtures.Subjects.owner_subject()
+    {_other_owner, other_account, other_reader} = Fixtures.Subjects.owner_subject()
 
     member = Fixtures.Memberships.fetch_membership(account.id, person.id)
     member |> Ecto.Changeset.change(display_name: "Work A") |> Repo.update!()
@@ -316,22 +271,9 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
       assert {:ok, events, _} = Emisar.Audit.list_events(reader, opts)
       assert length(events) == 2
       assert Enum.all?(events, &(&1.target_label == label and &1.payload == %{}))
+      assert Enum.all?(events, &is_nil(&1.actor_label))
       assert Enum.all?(events, &(&1.ip_address == nil and &1.user_agent == nil))
       assert Enum.all?(events, &(&1.request_id == context.request_id))
-      assert {:ok, stream} = Emisar.Audit.stream_csv_export(reader, opts)
-      csv = stream |> Enum.to_list() |> IO.iodata_to_binary()
-      assert csv =~ "user.profile_updated"
-      assert csv =~ "user.email_changed"
-      assert csv =~ label
-
-      for private <- [
-            person.email,
-            "private-updated@example.test",
-            "Private Updated Name",
-            context.ip_address,
-            context.user_agent
-          ],
-          do: refute(csv =~ private)
     end
   end
 

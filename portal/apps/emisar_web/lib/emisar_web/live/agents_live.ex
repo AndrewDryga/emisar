@@ -848,9 +848,6 @@ defmodule EmisarWeb.AgentsLive do
     {Accounts.member_display_name(member) || fallback, key.created_by_membership_id}
   end
 
-  defp owner_group({%{created_by_membership_id: id}, _facts}) when is_binary(id),
-    do: {"Former member", id}
-
   defp owner_group({_key, _facts}), do: {"Auto-minted", nil}
 
   # Pre-sort by owner so each `group_by={&owner_group/1}` cluster is one

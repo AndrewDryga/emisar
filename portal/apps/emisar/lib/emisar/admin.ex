@@ -564,13 +564,7 @@ defmodule Emisar.Admin do
         do: Query.membership_by_id(account_id, ref),
         else: Query.membership_by_email(account_id, String.trim(ref))
 
-    queryable = Accounts.Membership.Query.limit_to(queryable, 2)
-
-    case Repo.all(queryable) do
-      [membership] -> {:ok, membership}
-      [] -> {:error, :not_found}
-      _multiple -> {:error, :ambiguous_member_use_membership_id}
-    end
+    Repo.fetch(queryable, Accounts.Membership.Query)
   end
 
   # Platform support work has no user credential at this RPC boundary. The
