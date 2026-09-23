@@ -7,7 +7,7 @@ description: Take an atomic hard-link snapshot of SSTables. Cheap to take, expen
 side_effects:
   - Hard links created in each table's snapshots/<name>/ dir.
   - Disk usage grows as SSTables roll over (snapshot pins originals).
-  - Use clearsnapshot to delete.
+  - The snapshot stays on disk until cassandra.nodetool_clearsnapshot removes it.
 args:
   - name: tag
     type: string

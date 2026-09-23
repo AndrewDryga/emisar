@@ -3,7 +3,7 @@ id: cassandra.nodetool_setcompactionthroughput
 title: nodetool setcompactionthroughput <MB/s>
 kind: exec
 risk: medium
-description: 'Set max compaction throughput. 0 = unlimited (use carefully).'
+description: 'Set max compaction throughput. 0 = unlimited, so compaction can take disk I/O away from reads and writes.'
 side_effects:
   - In-flight + future compactions throttled to the new cap.
   - Lower values reduce IO pressure but grow SSTable count.

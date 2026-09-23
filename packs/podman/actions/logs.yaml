@@ -3,7 +3,7 @@ id: podman.logs
 title: podman logs <id> --tail <N>
 kind: exec
 risk: medium
-description: Tail container logs (last N lines).
+description: Tail container logs (last N lines). Raw application messages can contain personal or sensitive data that pattern redaction cannot fully detect.
 side_effects: ["One CLI call.", "Read-only."]
 args:
   - name: container

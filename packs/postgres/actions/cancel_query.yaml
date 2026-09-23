@@ -10,7 +10,7 @@ description: >
   aborts but the connection survives. Use to clear a stuck SELECT or a
   blocker surfaced by `postgres.locks`. If cancel doesn't take effect
   within seconds the backend is likely stuck in a kernel call — escalate
-  to `kill_idle` (terminate) only as a last resort.
+  to `postgres.terminate_backend` for that pid only as a last resort.
 
 side_effects:
   - The target backend's current query is cancelled with an ERROR.

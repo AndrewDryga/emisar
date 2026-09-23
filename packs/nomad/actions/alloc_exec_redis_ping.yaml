@@ -7,7 +7,7 @@ description: >
   Check whether the Redis inside one allocation's task is alive — runs the fixed
   command `redis-cli ping` via `nomad alloc exec` and returns PONG. This is for
   the incident where Redis is only reachable inside the alloc (no direct
-  REDIS_URL from the runner); use the redis pack's redis.ping when you can reach
+  REDIS_URL from the runner); use the redis pack's redis.info when you can reach
   it directly. The command is fixed — no freeform command, shell, host, port, or
   password is accepted, so it connects to the task's local redis-cli default
   (127.0.0.1:6379) and returns NOAUTH on a password-protected instance (itself a

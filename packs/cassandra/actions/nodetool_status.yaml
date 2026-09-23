@@ -8,8 +8,7 @@ risk: low
 description: >
   Run `nodetool status`. Read-only — does not change Cassandra state.
   Use this before suggesting repair, cleanup, decommission, replacement,
-  or topology changes. If any node is DN/UJ/UL/UM, do not recommend repair
-  until the failure mode is understood.
+  or topology changes.
 
 side_effects:
   - Starts a short-lived JMX connection to the local Cassandra node.

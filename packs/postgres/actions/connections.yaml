@@ -8,8 +8,8 @@ risk: low
 description: >
   Count pg_stat_activity rows grouped by state and application_name.
   Surfaces idle-in-transaction backends, connection storms, and
-  per-app traffic skew. Read-only. Pair with `postgres.kill_idle` if
-  the long-idle-in-transaction count is non-zero.
+  per-app traffic skew. Read-only. Counts are not filtered by age;
+  `postgres.idle_in_transaction` lists those backends with their idle time.
 
 side_effects:
   - One SELECT against pg_stat_activity.

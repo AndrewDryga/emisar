@@ -8,8 +8,7 @@ risk: low
 description: >
   Run `nodetool compactionstats`. Pending compactions in the
   dozens-to-hundreds indicate the node is behind. Triggering repair on a
-  node already behind on compactions usually makes things worse — wait for
-  the queue to drain before recommending repair.
+  node already behind on compactions usually makes things worse.
 
 side_effects:
   - Starts a short-lived JMX connection.

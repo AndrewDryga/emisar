@@ -9,7 +9,7 @@ description: >
   JSON. Use to answer "what is the real bandwidth between these two
   hosts?" — e.g. diagnosing slow replication, backups, or a suspect link.
   Set reverse=true to measure the download direction (server → runner).
-  The target MUST already be running an iperf3 server; the test generates
+  The target must already be running an iperf3 server; the test generates
   sustained traffic for `duration` seconds and can saturate a shared
   link, so cap it with `bitrate` and keep `duration` short on production
   paths.

@@ -10,8 +10,9 @@ description: >
   `idle in transaction` state longer than `older_than_seconds`. Frees up
   the locks they're holding. Application code on the killed connections
   will see "server closed the connection unexpectedly" and reconnect —
-  any in-flight transaction rolls back. Always check the count via
-  `postgres.connections` first. Do not run during normal traffic.
+  any in-flight transaction rolls back. Check the candidates first with
+  `postgres.idle_in_transaction`, which shows each backend's idle time.
+  Do not run during normal traffic.
 
 side_effects:
   - SIGTERMs every matching backend.

@@ -8,9 +8,8 @@ risk: low
 description: >
   Run `nodetool tpstats` for active/pending/blocked counts per pool.
   High pending or blocked counts on MutationStage, CompactionExecutor, or
-  ReadStage usually indicate ongoing pressure — investigate the cause
-  before recommending operations that add load (repair, large reads,
-  compaction tuning).
+  ReadStage usually indicate ongoing pressure, which operations that add
+  load (repair, large reads, compaction tuning) make worse.
 
 side_effects:
   - Starts a short-lived JMX connection.

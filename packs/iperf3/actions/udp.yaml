@@ -9,7 +9,7 @@ description: >
   `bitrate` and reports jitter (ms) and lost-packet percentage as JSON.
   Use to check a path for loss or jitter (VoIP, video, real-time links)
   or to probe how much a link drops at a given rate. Set reverse=true to
-  test the download direction (server → runner). The target MUST already
+  test the download direction (server → runner). The target must already
   be running an iperf3 server; generates sustained UDP traffic for
   `duration` seconds.
 side_effects:

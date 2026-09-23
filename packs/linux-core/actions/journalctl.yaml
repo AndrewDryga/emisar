@@ -9,7 +9,7 @@ description: >
   Read recent systemd journal entries for a named unit, filtered by
   priority and a time window. Use to triage service errors. Logs may
   reveal sensitive identifiers, IPs, hostnames, or PII; treat output as
-  confidential. Do not echo verbatim to end users without consideration.
+  confidential.
 
 side_effects:
   - Reads service logs which may contain operational secrets.

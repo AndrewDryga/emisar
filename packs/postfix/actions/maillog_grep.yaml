@@ -3,7 +3,7 @@ id: postfix.maillog_grep
 title: grep mail.log for queue-id / address
 kind: exec
 risk: medium
-description: List all mail-log entries matching a string.
+description: List up to 2,000 lines of /var/log/mail.log (or /var/log/maillog) that contain a literal string, such as a queue ID or address. Mail-log lines carry sender and recipient addresses and client hostnames.
 side_effects: ["One file read.", "Read-only."]
 args:
   - name: pattern

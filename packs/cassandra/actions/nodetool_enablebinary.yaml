@@ -5,11 +5,11 @@ kind: exec
 risk: critical
 description: >
   Start the native transport on this node so CQL clients can connect again —
-  the recovery from cassandra.nodetool_disablebinary. Confirm with
+  the recovery from cassandra.nodetool_disablebinary. Check that the node is
+  Up/Normal with cassandra.nodetool_status first, and confirm the result with
   cassandra.nodetool_service_status.
 side_effects:
   - Clients start connecting immediately, so a node that is not ready to serve reads takes traffic at once.
-  - Check the node is Up/Normal with cassandra.nodetool_status first.
 args: []
 execution:
   command: {binary: nodetool, argv: ["enablebinary"]}

@@ -9,7 +9,7 @@ description: >
   Send SIGHUP to the master process. Master parses the new config,
   spawns new workers, gracefully drains old workers. If the new config
   is invalid the master logs the error and keeps the old workers —
-  the request is non-fatal. ALWAYS run `nginx.test_config` first.
+  the request is non-fatal. Run `nginx.test_config` first to validate the new config.
 
 side_effects:
   - Master spawns new workers.
