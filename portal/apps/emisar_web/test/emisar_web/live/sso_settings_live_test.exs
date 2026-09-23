@@ -38,29 +38,16 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   end
 
   defp mark_sign_in_verified(provider, user) do
-    Fixtures.SSO.create_user_identity(%{
-      account_id: provider.account_id,
-      provider_id: provider.id,
-      user_id: user.id,
-      created_by: :user,
-      provisioned_via: :oidc_link
-    })
+    identity =
+      Fixtures.SSO.create_user_identity(%{
+        account_id: provider.account_id,
+        provider_id: provider.id,
+        user_id: user.id,
+        created_by: :user,
+        provisioned_via: :oidc_link
+      })
 
-    digest =
-      [
-        provider.kind,
-        provider.issuer,
-        provider.client_id,
-        provider.client_secret,
-        provider.identifier_claim,
-        provider.allowed_email_domain
-      ]
-      |> :erlang.term_to_binary()
-      |> Emisar.Crypto.hash()
-
-    provider
-    |> IdentityProvider.Changeset.verify_sign_in(user.id, digest)
-    |> Repo.update!()
+    Fixtures.SSO.verify_provider_sign_in(provider, %{id: identity.membership_id})
   end
 
   defp sync_numbered_groups(provider, count) do

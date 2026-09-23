@@ -14,6 +14,26 @@ defmodule Emisar.Auth.SubjectTest do
   alias Emisar.Runners.Runner
   alias Emisar.Users.User
 
+  describe "human_membership_id/1" do
+    test "uses the exact human seat, never a machine's owner or a system actor" do
+      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      assert Subject.human_membership_id(subject) == subject.membership_id
+
+      assert Subject.human_membership_id(%{
+               subject
+               | actor: %Membership{id: subject.membership_id}
+             }) == subject.membership_id
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+
+      machine = Subject.for_api_key(key, account)
+      assert machine.membership_id == subject.membership_id
+      assert is_nil(Subject.human_membership_id(machine))
+      assert is_nil(Subject.human_membership_id(%Subject{}))
+    end
+  end
+
   describe "for_user/4" do
     setup do
       user = Fixtures.Users.create_user()

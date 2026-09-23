@@ -743,9 +743,8 @@ defmodule Emisar.Accounts do
     # Workspace gets the v2 conservative default policy on creation.
     # Without this, `Policies.evaluate(nil, ...)` would default-deny
     # every dispatch — which is correct but unhelpful as a first run.
-    |> Multi.run(:policy, fn _repo, %{account: account} = changes ->
-      user = Map.fetch!(changes, user_key)
-      Emisar.Policies.seed_policy(account.id, user.id)
+    |> Multi.run(:policy, fn _repo, %{account: account, membership: membership} ->
+      Emisar.Policies.seed_policy(account.id, membership.id)
     end)
     |> Multi.insert(:account_created, fn %{account: account} = changes ->
       user = Map.fetch!(changes, user_key)
@@ -1298,7 +1297,12 @@ defmodule Emisar.Accounts do
     facts = %{
       # The digest is credential material behind the join link, and the raw
       # suspender id is manager-only provenance. The roster needs neither.
-      membership: %{membership | invitation_token_digest: nil, disabled_by_id: nil},
+      membership: %{
+        membership
+        | invitation_token_digest: nil,
+          disabled_by_id: nil,
+          disabled_by_membership_id: nil
+      },
       pending_invitation?: pending_invitation?,
       self_owner?: self_owner?,
       disabled?: disabled?,
@@ -1326,7 +1330,11 @@ defmodule Emisar.Accounts do
     }
 
     if manager? do
-      Map.put(facts, :suspended_by_label, Map.get(suspended_by_labels, membership.disabled_by_id))
+      Map.put(
+        facts,
+        :suspended_by_label,
+        Map.get(suspended_by_labels, membership.disabled_by_membership_id)
+      )
     else
       facts
     end
@@ -1346,8 +1354,8 @@ defmodule Emisar.Accounts do
 
   defp suspended_by_labels(memberships, account_id, true) do
     memberships
-    |> Enum.map(& &1.disabled_by_id)
-    |> user_labels_for_ids(account_id)
+    |> Enum.map(& &1.disabled_by_membership_id)
+    |> member_labels_for_ids(account_id)
   end
 
   defp suspended_by_labels(_memberships, _account_id, false), do: %{}
@@ -1680,30 +1688,6 @@ defmodule Emisar.Accounts do
   end
 
   def secondary_user_email(_user), do: nil
-
-  @doc """
-  Internal — label resolver for approval attribution: batch
-  `%{user_id => label}` for the supplied ids, each named the way THIS account
-  knows the person (directory name → nonblank full name → email). Takes ids and
-  an explicit already-authorized `account_id` rather than a `%Subject{}`; an id
-  belonging to no current member of the account resolves to no label, so a
-  mis-stamped or cross-account id can never surface a name.
-  """
-  def user_labels_for_ids(ids, account_id) when is_list(ids) and is_binary(account_id) do
-    ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
-
-    case ids do
-      [] ->
-        %{}
-
-      ids ->
-        Membership.Query.not_deleted()
-        |> Membership.Query.by_account_id(account_id)
-        |> Membership.Query.select_user_labels(ids)
-        |> Repo.all()
-        |> Map.new()
-    end
-  end
 
   @doc """
   Internal — exact account-owned Member labels for already-authorized historical
@@ -2992,12 +2976,15 @@ defmodule Emisar.Accounts do
       result =
         Multi.new()
         |> put_membership_account_lock(membership.account_id)
-        |> Multi.run(:target, fn repo, _changes ->
+        |> Multi.run(:current_subject, fn _repo, %{account: account} ->
+          fetch_current_team_subject(account, Authorizer.manage_team_permission(), subject)
+        end)
+        |> Multi.run(:target, fn repo, %{current_subject: current} ->
           loaded =
             Membership.Query.not_deleted()
             |> Membership.Query.by_id(membership.id)
             |> Membership.Query.lock_for_update()
-            |> Authorizer.for_subject(subject)
+            |> Authorizer.for_subject(current)
             |> repo.peek()
 
           case loaded do
@@ -3006,7 +2993,7 @@ defmodule Emisar.Accounts do
               # the lock — the caller's struct is a stale socket snapshot. A
               # retry is a no-op so it cannot replace the actor who placed the
               # live hold.
-              with :ok <- ensure_can_modify_membership(loaded_membership, subject),
+              with :ok <- ensure_can_modify_membership(loaded_membership, current),
                    :ok <- ensure_not_suspended(loaded_membership),
                    :ok <- ensure_not_last_active_owner(loaded_membership) do
                 {:ok, loaded_membership}
@@ -3016,11 +3003,11 @@ defmodule Emisar.Accounts do
               {:error, :not_found}
           end
         end)
-        |> Multi.update(:membership, fn %{target: loaded_membership} ->
-          Membership.Changeset.suspend(loaded_membership, Subject.user_id(subject))
+        |> Multi.update(:membership, fn %{target: loaded_membership, current_subject: current} ->
+          Membership.Changeset.suspend(loaded_membership, Subject.human_membership_id(current))
         end)
-        |> Multi.insert(:audit, fn %{membership: suspended} ->
-          Audit.Events.membership_suspended(subject, suspended)
+        |> Multi.insert(:audit, fn %{membership: suspended, current_subject: current} ->
+          Audit.Events.membership_suspended(current, suspended)
         end)
         |> Multi.run(:credential_revocation, fn repo, %{membership: suspended} ->
           revoke_membership_delegations(repo, suspended)
@@ -3675,6 +3662,20 @@ defmodule Emisar.Accounts do
     end)
   end
 
+  # Break-glass support is an explicit internal, actorless authority and may
+  # maintain a disabled account. Pin it to the locked account without making
+  # actorless Subjects valid browser sessions in Auth's current resolver.
+  defp fetch_current_team_subject(
+         %Account{id: account_id} = account,
+         permission,
+         %Subject{actor: nil, account: %{id: account_id}} = subject
+       ) do
+    Auth.Authorizer.fetch_authorized_subject(%{subject | account: account}, permission)
+  end
+
+  defp fetch_current_team_subject(%Account{}, permission, %Subject{} = subject),
+    do: Auth.fetch_current_subject(permission, subject)
+
   defp prepare_member_mfa_reset(%Membership{} = membership, %Subject{} = subject) do
     with :ok <- ensure_member_mfa_reset_subject(membership, subject) do
       Multi.new()
@@ -4251,13 +4252,21 @@ defmodule Emisar.Accounts do
       {token, token_digest} = Crypto.user_invite_token()
 
       Multi.new()
-      |> Multi.run(:invitation, fn repo, _changes ->
-        validate_invitation(repo, attrs, subject)
+      |> put_membership_account_lock(account_id)
+      |> Multi.run(:current_subject, fn _repo, %{account: account} ->
+        fetch_current_team_subject(account, Authorizer.invite_member_permission(), subject)
+      end)
+      |> Multi.run(:invitation, fn repo, %{current_subject: current} ->
+        validate_invitation(repo, attrs, current)
       end)
       |> Multi.run(:user, fn repo, %{invitation: invitation} ->
         Users.fetch_or_create_and_lock_user_by_email(invitation.email, repo)
       end)
-      |> Multi.insert(:membership, fn %{user: user, invitation: invitation} ->
+      |> Multi.insert(:membership, fn %{
+                                        user: user,
+                                        invitation: invitation,
+                                        current_subject: current
+                                      } ->
         Membership.Changeset.create(%{
           account_id: account_id,
           user_id: user.id,
@@ -4266,11 +4275,9 @@ defmodule Emisar.Accounts do
           runner_access_mode: invitation.runner_access.mode,
           pack_access_mode: invitation.runner_access.pack_mode,
           pack_scope_pack_ids: invitation.runner_access.pack_ids,
-          # `Subject.user_id/1`, not `subject.actor.id`: the break-glass support
-          # subject has no actor, and this is a `belongs_to :invited_by` on users
-          # — a platform-run invitation records no human inviter rather than
-          # crashing on nil (or hanging an API key's id off a users FK).
-          invited_by_id: Subject.user_id(subject),
+          # Support/system work has no human Member; an API key's owner is not
+          # the acting inviter either.
+          invited_by_membership_id: Subject.human_membership_id(current),
           invitation_token_digest: token_digest,
           invitation_sent_to: user.email,
           invitation_email_changed_at: user.email_changed_at
@@ -4279,8 +4286,8 @@ defmodule Emisar.Accounts do
       |> Multi.run(:runner_access, fn repo, %{membership: membership, invitation: invitation} ->
         replace_runner_access_rows(repo, membership.id, invitation.runner_access)
       end)
-      |> Multi.insert(:audit, fn %{user: user, invitation: invitation} ->
-        Audit.Events.user_invited(subject, user, invitation.role, invitation.runner_access)
+      |> Multi.insert(:audit, fn %{user: user, invitation: invitation, current_subject: current} ->
+        Audit.Events.user_invited(current, user, invitation.role, invitation.runner_access)
       end)
       |> Repo.commit_multi()
       |> case do

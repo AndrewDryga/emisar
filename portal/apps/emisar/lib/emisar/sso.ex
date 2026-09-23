@@ -723,6 +723,7 @@ defmodule Emisar.SSO do
         |> UserIdentity.Query.provider_identifier_active()
         |> UserIdentity.Query.by_provider_id(provider.id)
         |> UserIdentity.Query.by_user_id(user_id)
+        |> UserIdentity.Query.by_membership_id(subject.membership_id)
         |> Repo.peek()
 
       status = provider_sign_in_verification_status(provider)
@@ -731,7 +732,8 @@ defmodule Emisar.SSO do
        %{
          status: status,
          verified_at: provider.sign_in_verified_at,
-         verified_by_current_user?: provider.sign_in_verified_by_user_id == user_id,
+         verified_by_current_member?:
+           provider.sign_in_verified_by_membership_id == subject.membership_id,
          linked?: not is_nil(identity),
          identity_id: identity && identity.id
        }}
@@ -1126,7 +1128,7 @@ defmodule Emisar.SSO do
       :verified_provider,
       IdentityProvider.Changeset.verify_sign_in(
         provider,
-        current_subject.actor.id,
+        current_subject.membership_id,
         provider_sign_in_configuration_digest(provider)
       )
     )

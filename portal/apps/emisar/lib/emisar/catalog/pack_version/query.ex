@@ -191,7 +191,7 @@ defmodule Emisar.Catalog.PackVersion.Query do
   def lock_for_update(queryable),
     do: lock(queryable, "FOR NO KEY UPDATE")
 
-  @doc "The override's account-local display label; never load a personal profile."
+  @doc "The exact override author's local history, including tombstones, never a replacement seat."
   def with_retirement_override_label(queryable) do
     queryable
     |> with_named_binding(:retirement_override_member, fn queryable, binding ->
@@ -199,8 +199,11 @@ defmodule Emisar.Catalog.PackVersion.Query do
         queryable,
         :left,
         [packs: p],
-        member in subquery(Emisar.Accounts.Membership.Query.latest_profiles()),
-        on: p.retirement_overridden_by_id == member.user_id and p.account_id == member.account_id,
+        # Tombstones are display history only, not live authority.
+        member in ^Emisar.Accounts.Membership.Query.all(),
+        on:
+          p.retirement_overridden_by_membership_id == member.id and
+            p.account_id == member.account_id,
         as: ^binding
       )
     end)

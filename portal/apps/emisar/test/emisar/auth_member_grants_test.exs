@@ -440,7 +440,8 @@ defmodule Emisar.AuthMemberGrantsTest do
     assert Accounts.fetch_membership_by_account_id_or_slug(user, origin.id, session) ==
              {:error, :not_found}
 
-    verified = Fixtures.SSO.verify_provider_sign_in(disabled, owner)
+    owner_member = Fixtures.Memberships.fetch_membership(origin.id, owner.id)
+    verified = Fixtures.SSO.verify_provider_sign_in(disabled, owner_member)
     assert {:ok, _enabled} = SSO.update_provider(verified, %{enabled: true}, owner_subject)
 
     assert Accounts.fetch_membership_by_account_id_or_slug(user, origin.id, session) ==

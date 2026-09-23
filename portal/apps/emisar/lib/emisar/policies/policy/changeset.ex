@@ -30,11 +30,12 @@ defmodule Emisar.Policies.Policy.Changeset do
 
   def create(attrs) do
     %Policy{}
-    |> cast(attrs, [:account_id, :rules, :updated_by_id, :scope_type, :scope_value])
+    |> cast(attrs, [:account_id, :rules, :updated_by_membership_id, :scope_type, :scope_value])
     |> validate_required([:account_id, :rules])
     |> validate_scope()
     |> validate_rules()
     |> unique_constraint([:account_id, :scope_type, :scope_value])
+    |> foreign_key_constraint(:updated_by_membership_id)
   end
 
   # The account default carries an empty scope_value; a runner/group override

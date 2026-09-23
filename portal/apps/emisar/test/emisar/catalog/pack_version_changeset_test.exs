@@ -98,11 +98,13 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
 
   describe "override_retirement/2" do
     test "stamps the override timestamp + who on a pack-version struct" do
-      changeset = Changeset.override_retirement(%PackVersion{}, "user-123")
+      pack_version = %PackVersion{retirement_overridden_by_id: Ecto.UUID.generate()}
+      changeset = Changeset.override_retirement(pack_version, "member-123")
 
       assert changeset.valid?
       assert %DateTime{} = changeset.changes.retirement_overridden_at
-      assert changeset.changes.retirement_overridden_by_id == "user-123"
+      assert changeset.changes.retirement_overridden_by_membership_id == "member-123"
+      assert is_nil(changeset.changes.retirement_overridden_by_id)
     end
 
     # The trust-of-a-retired-version path (unreachable via the compiled baseline
@@ -128,20 +130,20 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
       changeset =
         %PackVersion{pending_hash: @valid_pack_hash, trust_state: :pending}
         |> Changeset.trust(manifest)
-        |> Changeset.override_retirement("user-9")
+        |> Changeset.override_retirement("member-9")
 
       assert changeset.valid?
       assert changeset.changes.hash == @valid_pack_hash
       assert changeset.changes.trust_state == :trusted
-      assert changeset.changes.retirement_overridden_by_id == "user-9"
+      assert changeset.changes.retirement_overridden_by_membership_id == "member-9"
       assert %DateTime{} = changeset.changes.retirement_overridden_at
     end
 
-    test "requires the overriding user id" do
+    test "requires the overriding Member id" do
       changeset = Changeset.override_retirement(%PackVersion{}, nil)
 
       refute changeset.valid?
-      assert "can't be blank" in errors_on(changeset).retirement_overridden_by_id
+      assert "can't be blank" in errors_on(changeset).retirement_overridden_by_membership_id
     end
   end
 
@@ -163,7 +165,8 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
         trust_state: :trusted,
         hash: "sha256:GOOD",
         retirement_overridden_at: DateTime.utc_now(),
-        retirement_overridden_by_id: Ecto.UUID.generate()
+        retirement_overridden_by_id: Ecto.UUID.generate(),
+        retirement_overridden_by_membership_id: Ecto.UUID.generate()
       }
 
       changeset = Changeset.revoke_trust(pack_version)
@@ -173,7 +176,8 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
       assert changeset.changes == %{
                trust_state: :rejected,
                retirement_overridden_at: nil,
-               retirement_overridden_by_id: nil
+               retirement_overridden_by_id: nil,
+               retirement_overridden_by_membership_id: nil
              }
     end
   end

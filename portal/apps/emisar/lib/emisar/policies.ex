@@ -597,13 +597,14 @@ defmodule Emisar.Policies do
       # Judge scope on the LOCKED, subject-scoped row, not the caller's struct:
       # a foreign policy scopes out to :not_found, and a member whose runner
       # access has since narrowed can no longer spend a row they still hold.
-      |> Multi.run(:loaded_policy, fn repo, %{access: access} ->
+      |> Multi.run(:loaded_policy, fn repo,
+                                      %{access: %{runner_access: access, subject: current}} ->
         query =
           Policy.Query.not_deleted()
           |> Policy.Query.scoped_overrides()
           |> Policy.Query.by_id(policy.id)
           |> Policy.Query.lock_for_update()
-          |> Authorizer.for_subject(subject)
+          |> Authorizer.for_subject(current)
 
         with {:ok, loaded_policy} <- repo.fetch(query, Policy.Query),
              :ok <- ensure_policy_access(loaded_policy.scope_type, access),
@@ -620,8 +621,8 @@ defmodule Emisar.Policies do
       |> Multi.update(:policy, fn %{loaded_policy: loaded_policy} ->
         Policy.Changeset.delete(loaded_policy)
       end)
-      |> Multi.insert(:audit, fn %{policy: deleted} ->
-        Audit.Events.policy_scope_deleted(subject, deleted)
+      |> Multi.insert(:audit, fn %{policy: deleted, access: %{subject: current}} ->
+        Audit.Events.policy_scope_deleted(current, deleted)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -668,7 +669,7 @@ defmodule Emisar.Policies do
          rules,
          scope_type,
          scope_value,
-         %Subject{account: %{id: account_id}, actor: %{id: user_id}} = subject
+         %Subject{account: %{id: account_id}} = subject
        ) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
@@ -677,31 +678,33 @@ defmodule Emisar.Policies do
            ),
          :ok <- ensure_policy_mutation_access(scope_type, subject),
          :ok <- ensure_policy_target_shape(scope_type, scope_value) do
-      changeset =
-        Policy.Changeset.create(%{
-          account_id: account_id,
-          updated_by_id: user_id,
-          rules: rules,
-          scope_type: scope_type,
-          scope_value: scope_value
-        })
-
       Multi.new()
       |> Multi.run(:active_account, fn repo, _changes ->
         Accounts.fetch_and_lock_account(account_id, repo: repo)
       end)
       |> Multi.run(:access, fn repo, _changes ->
-        with {:ok, access} <- fetch_and_lock_policy_access(repo, subject),
+        with {:ok, %{runner_access: access} = manager} <-
+               fetch_and_lock_policy_access(repo, subject),
              :ok <- ensure_policy_access(scope_type, access),
              :ok <-
                ensure_and_lock_policy_target(scope_type, scope_value, account_id, access, repo) do
-          {:ok, access}
+          {:ok, manager}
         end
       end)
       |> Multi.run(:before, fn repo, _changes ->
         {:ok, peek_scoped_policy(repo, account_id, scope_type, scope_value)}
       end)
-      |> Multi.insert(:policy, changeset,
+      |> Multi.insert(
+        :policy,
+        fn %{access: %{subject: current}} ->
+          Policy.Changeset.create(%{
+            account_id: account_id,
+            updated_by_membership_id: current.membership_id,
+            rules: rules,
+            scope_type: scope_type,
+            scope_value: scope_value
+          })
+        end,
         # The conflict target must repeat the partial index's predicate
         # or Postgres won't match the soft-delete-aware unique index.
         on_conflict: Policy.Query.rules_upsert_conflict(),
@@ -709,12 +712,12 @@ defmodule Emisar.Policies do
           {:unsafe_fragment, "(account_id, scope_type, scope_value) WHERE deleted_at IS NULL"},
         returning: true
       )
-      |> Multi.insert(:audit, fn %{before: before, policy: updated} ->
+      |> Multi.insert(:audit, fn %{before: before, policy: updated, access: %{subject: current}} ->
         # First-ever save of a scope has no before-row; a bare %Policy{}
         # carrying the scope makes the builder diff against the implicit
         # defaults (rules nil → default_rules).
         before = before || %Policy{scope_type: scope_type, scope_value: scope_value}
-        Audit.Events.policy_updated(subject, before, updated)
+        Audit.Events.policy_updated(current, before, updated)
       end)
       |> Repo.commit_multi()
       |> case do
@@ -821,8 +824,12 @@ defmodule Emisar.Policies do
   who can hit this path; the LV-facing save uses `save_rules/2` and
   goes through the Subject pipeline.
   """
-  def seed_policy(account_id, user_id, rules \\ @default_rules) do
-    Policy.Changeset.create(%{account_id: account_id, updated_by_id: user_id, rules: rules})
+  def seed_policy(account_id, membership_id, rules \\ @default_rules) do
+    Policy.Changeset.create(%{
+      account_id: account_id,
+      updated_by_membership_id: membership_id,
+      rules: rules
+    })
     |> Repo.insert(on_conflict: :nothing)
   end
 
@@ -892,9 +899,13 @@ defmodule Emisar.Policies do
            ),
          true <- membership.user_id == user_id,
          {:ok, _user} <- Users.fetch_and_lock_user_by_id(user_id, repo),
-         {:ok, _subject} <-
+         {:ok, current} <-
            Auth.fetch_current_subject(Authorizer.manage_policies_permission(), subject) do
-      {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
+      {:ok,
+       %{
+         runner_access: Accounts.runner_access_for_locked_membership(repo, membership),
+         subject: current
+       }}
     else
       _ -> {:error, :unauthorized}
     end

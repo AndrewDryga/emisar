@@ -39,16 +39,18 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     do: change(provider, deleted_at: DateTime.utc_now())
 
   @doc "Record a completed administrator sign-in against this exact configuration."
-  # No identity id in the receipt: a user holds exactly one live identity per
-  # provider (20260826), so (provider, verified_by_user_id) already names it,
-  # and the audit event records the act.
-  def verify_sign_in(%IdentityProvider{} = provider, user_id, configuration_digest)
-      when is_binary(user_id) and is_binary(configuration_digest) do
-    change(provider,
+  # The configuration digest is the operational proof; the Member is historical
+  # attribution, not a liveness prerequisite for using the verified provider.
+  def verify_sign_in(%IdentityProvider{} = provider, membership_id, configuration_digest)
+      when is_binary(membership_id) and is_binary(configuration_digest) do
+    provider
+    |> change(
       sign_in_verified_at: DateTime.utc_now(),
-      sign_in_verified_by_user_id: user_id,
+      sign_in_verified_by_user_id: nil,
+      sign_in_verified_by_membership_id: membership_id,
       sign_in_verified_configuration_digest: configuration_digest
     )
+    |> foreign_key_constraint(:sign_in_verified_by_membership_id)
   end
 
   def bump_authorization_version(%Ecto.Changeset{} = changeset, current_version) do

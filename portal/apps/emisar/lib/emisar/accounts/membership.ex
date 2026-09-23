@@ -47,6 +47,8 @@ defmodule Emisar.Accounts.Membership do
     belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :invited_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :disabled_by, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :invited_by_membership, Emisar.Accounts.Membership
+    belongs_to :disabled_by_membership, Emisar.Accounts.Membership
 
     timestamps()
   end

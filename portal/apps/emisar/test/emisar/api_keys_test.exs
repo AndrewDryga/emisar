@@ -1898,13 +1898,14 @@ defmodule Emisar.ApiKeysTest do
 
   describe "revoke_api_key/2" do
     test "marks revoked_at" do
-      {user, account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
-      assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_id: id}} =
+      assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_membership_id: id} = revoked} =
                ApiKeys.revoke_api_key(key, subject)
 
-      assert id == user.id
+      assert id == subject.membership_id
+      assert is_nil(revoked.revoked_by_id)
       assert Repo.reload!(key).revoked_at
     end
 
@@ -1942,7 +1943,8 @@ defmodule Emisar.ApiKeysTest do
       for key <- [source, pending, leaf, branch] do
         revoked = Repo.reload!(key)
         assert %DateTime{} = revoked.revoked_at
-        assert revoked.revoked_by_id == user.id
+        assert revoked.revoked_by_membership_id == subject.membership_id
+        assert is_nil(revoked.revoked_by_id)
       end
 
       for raw <- [source_raw, pending_raw, leaf_raw, branch_raw] do
@@ -1973,10 +1975,10 @@ defmodule Emisar.ApiKeysTest do
       operator_subject = member_subject(account, :operator)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude"}, operator_subject)
 
-      assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_id: revoked_by_id}} =
+      assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_membership_id: revoked_by_id}} =
                ApiKeys.revoke_api_key(key, operator_subject)
 
-      assert revoked_by_id == operator_subject.actor.id
+      assert revoked_by_id == operator_subject.membership_id
       assert Repo.reload!(key).revoked_at
     end
 
@@ -2053,24 +2055,58 @@ defmodule Emisar.ApiKeysTest do
       refute Repo.reload!(key_a).revoked_at
     end
 
-    # (context half) — revoking an already-revoked key
-    # succeeds again rather than erroring: the fetch_and_update re-reads the
-    # (still not_deleted) row and re-stamps revoked_at. The affordance is gated
-    # in the UI (the Revoke button only renders for non-revoked keys), but a
-    # double-fire (race / stale page) is a safe idempotent no-op, never a crash.
-    test "revoking an already-revoked key is idempotent (re-revoke succeeds)" do
+    test "a different admin retrying a stale key preserves the original revocation receipt" do
       {_user, account, subject} = owner_subject_pair()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      :ok = ApiKeys.subscribe_account_api_keys(account.id)
+      id = key.id
 
       assert {:ok, %ApiKey{revoked_at: %DateTime{} = first}} =
                ApiKeys.revoke_api_key(key, subject)
 
-      # Fire again on the now-revoked key — still {:ok, …}, still revoked.
-      assert {:ok, %ApiKey{revoked_at: %DateTime{} = second}} =
-               ApiKeys.revoke_api_key(Repo.reload!(key), subject)
+      assert_receive {:list_changed, :api_key, "api_key.revoked", ^id}
+      other_admin = member_subject(account, :admin)
 
-      assert DateTime.compare(second, first) in [:eq, :gt]
+      assert {:ok, %ApiKey{revoked_at: %DateTime{} = second} = again} =
+               ApiKeys.revoke_api_key(key, other_admin)
+
+      assert second == first
+      assert again.revoked_by_membership_id == subject.membership_id
+      assert is_nil(again.revoked_by_id)
       assert Repo.reload!(key).revoked_at
+      refute_receive {:list_changed, :api_key, "api_key.revoked", ^id}
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["api_key.revoked"]])
+
+      assert event.target_id == id
+    end
+
+    test "revoking a rotation-retired ancestor still contains its live successor" do
+      {_user, account, subject} = owner_subject_pair()
+      {:ok, _raw, source} = ApiKeys.create_key(%{name: "Source"}, subject)
+      {:ok, raw, successor} = ApiKeys.rotate_api_key(source, subject)
+      assert ApiKeys.peek_api_key_by_secret(raw)
+      retired = Repo.reload!(source)
+      assert %DateTime{} = retired.revoked_at
+      assert is_nil(retired.revoked_by_membership_id)
+      :ok = ApiKeys.subscribe_account_api_keys(account.id)
+
+      assert {:ok, revoked} = ApiKeys.revoke_api_key(source, subject)
+      assert revoked.revoked_at == retired.revoked_at
+      assert is_nil(revoked.revoked_by_membership_id)
+      assert Repo.reload!(successor).revoked_by_membership_id == subject.membership_id
+      refute ApiKeys.peek_api_key_by_secret(raw)
+      source_id = source.id
+      successor_id = successor.id
+      assert_receive {:list_changed, :api_key, "api_key.revoked", ^successor_id}
+      refute_receive {:list_changed, :api_key, "api_key.revoked", ^source_id}
+
+      assert {:ok, [event], _meta} =
+               Audit.list_events(subject, filter: [event_type: ["api_key.revoked"]])
+
+      assert event.target_id == successor.id
+      assert event.payload["cascade_source_id"] == source.id
     end
   end
 
@@ -2087,7 +2123,9 @@ defmodule Emisar.ApiKeysTest do
       assert ApiKeys.revoke_all_api_keys_for_member(membership_id, subject) == {:ok, 3}
 
       for key <- [laptop_key, desktop_key, successor] do
-        assert %DateTime{} = Repo.reload!(key).revoked_at
+        revoked = Repo.reload!(key)
+        assert %DateTime{} = revoked.revoked_at
+        assert revoked.revoked_by_membership_id == subject.membership_id
       end
 
       for raw <- [laptop_raw, desktop_raw, successor_raw] do
@@ -2425,6 +2463,17 @@ defmodule Emisar.ApiKeysTest do
       assert %ApiKey{id: ^id} = ApiKeys.peek_api_key_by_id(key.id)
     end
 
+    test "a successor's first use fails quietly when its account is disabled" do
+      {_user, account, subject} = owner_subject_pair()
+      {:ok, _raw, source} = ApiKeys.create_key(%{name: "Source"}, subject)
+      {:ok, raw, successor} = ApiKeys.rotate_api_key(source, subject)
+      Fixtures.Accounts.disable_account(account)
+
+      refute ApiKeys.peek_api_key_by_secret(raw)
+      assert is_nil(Repo.reload!(successor).last_used_at)
+      assert is_nil(Repo.reload!(source).revoked_at)
+    end
+
     test "resolves a reissued live key when a soft-deleted key shares its prefix" do
       {raw, stale} = Fixtures.ApiKeys.create_api_key()
 
@@ -2628,6 +2677,7 @@ defmodule Emisar.ApiKeysTest do
 
       assert first.revoked?
       assert %ApiKey{revoked_at: %DateTime{}, revoked_by_id: nil} = first.key
+      assert is_nil(first.key.revoked_by_membership_id)
 
       assert {:ok, %{oauth_backing_key_revocation: second}} =
                Ecto.Multi.new()

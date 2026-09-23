@@ -2145,7 +2145,8 @@ defmodule Emisar.CatalogTest do
     } do
       assert {:ok, overridden} = Catalog.override_pack_retirement(pack_version.id, subject)
       assert %DateTime{} = overridden.retirement_overridden_at
-      assert overridden.retirement_overridden_by_id == user.id
+      assert overridden.retirement_overridden_by_membership_id == subject.membership_id
+      assert is_nil(overridden.retirement_overridden_by_id)
       assert overridden.trust_state == :trusted
 
       {:ok, events, _} = Audit.list_events(subject)
@@ -2263,6 +2264,7 @@ defmodule Emisar.CatalogTest do
       assert revoked.hash == Fixtures.Catalog.pack_hash("sha256:OK")
       assert revoked.retirement_overridden_at == nil
       assert revoked.retirement_overridden_by_id == nil
+      assert revoked.retirement_overridden_by_membership_id == nil
 
       {:ok, events, _} = Audit.list_events(subject)
       audit = Enum.find(events, &(&1.event_type == "pack_trust_revoked"))
@@ -4387,7 +4389,11 @@ defmodule Emisar.CatalogTest do
       # A version trusted before the published retirement watermark advanced
       # has a complete manifest, but no deliberate retirement override.
       trusted
-      |> Ecto.Changeset.change(retirement_overridden_at: nil, retirement_overridden_by_id: nil)
+      |> Ecto.Changeset.change(
+        retirement_overridden_at: nil,
+        retirement_overridden_by_id: nil,
+        retirement_overridden_by_membership_id: nil
+      )
       |> Repo.update!()
 
       assert {:ok, [runner]} = Runners.list_all_runners_for_account(subject)
@@ -6546,8 +6552,53 @@ defmodule Emisar.CatalogTest do
       assert fact.display_state == "trusted"
       assert fact.retirement_remedy == :none
       assert %{actor_id: actor_id, actor_label: "Test User"} = fact.override
-      assert actor_id == subject.actor.id
+      assert actor_id == subject.membership_id
       assert %DateTime{} = fact.override.at
+    end
+
+    test "an override retains its exact former Member without making trust depend on them", %{
+      account: account,
+      subject: subject
+    } do
+      admin =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "admin",
+          display_name: "Former admin"
+        )
+
+      admin_subject = Fixtures.Subjects.membership_subject(admin)
+      pack_id = retired_pack_id()
+
+      version =
+        Fixtures.Catalog.create_trusted_pack_version(
+          account_id: account.id,
+          pack_id: pack_id,
+          version: "0.0.0"
+        )
+
+      assert {:ok, _} = Catalog.override_pack_retirement(version.id, admin_subject)
+      Fixtures.Memberships.mark_membership_as_deleted(admin)
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.user_id,
+        display_name: "Replacement seat"
+      )
+
+      assert {:ok, retained} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(retained, pack_id, "0.0.0")
+      assert fact.override.actor_id == admin.id
+      assert fact.override.actor_label == "Former admin"
+      refute fact.retirement_blocked?
+
+      Fixtures.Memberships.hard_delete_membership(admin)
+      assert {:ok, deleted} = Catalog.list_console_packs(%{}, subject)
+      fact = version_fact(deleted, pack_id, "0.0.0")
+      assert is_nil(fact.override.actor_id)
+      assert is_nil(fact.override.actor_label)
+      refute fact.retirement_blocked?
+      assert fact.display_state == "trusted"
     end
 
     test "the pack-level update nudge names the successor and its shipped hash", %{

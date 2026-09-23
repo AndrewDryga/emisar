@@ -103,7 +103,8 @@ defmodule Emisar.Policies.Policy.Query do
       update: [
         set: [
           rules: fragment("EXCLUDED.rules"),
-          updated_by_id: fragment("EXCLUDED.updated_by_id"),
+          updated_by_id: nil,
+          updated_by_membership_id: fragment("EXCLUDED.updated_by_membership_id"),
           updated_at: fragment("EXCLUDED.updated_at"),
           vsn:
             fragment(

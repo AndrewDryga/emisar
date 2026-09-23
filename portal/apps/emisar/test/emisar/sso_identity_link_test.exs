@@ -414,6 +414,39 @@ defmodule Emisar.SSOIdentityLinkTest do
       assert SSO.provider_sign_in_verification_facts(context.provider, other_subject) ==
                {:error, :not_found}
     end
+
+    test "a verifier's replacement seat inherits neither identity nor attribution, but the receipt remains valid",
+         %{account: account, provider: provider, user: user} = context do
+      _identity = link_identity(context)
+      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      provider = Fixtures.SSO.verify_provider_sign_in(provider, member)
+
+      provider =
+        provider |> IdentityProvider.Changeset.update(%{enabled: false}) |> Repo.update!()
+
+      Fixtures.Memberships.mark_membership_as_deleted(member)
+
+      replacement =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      subject = Fixtures.Subjects.membership_subject(replacement)
+
+      assert {:ok, %{status: :verified, linked?: false, verified_by_current_member?: false}} =
+               SSO.provider_sign_in_verification_facts(provider, subject)
+
+      Fixtures.Memberships.hard_delete_membership(member)
+      assert is_nil(Repo.reload!(provider).sign_in_verified_by_membership_id)
+
+      assert {:ok, %{status: :verified}} =
+               SSO.provider_sign_in_verification_facts(provider, subject)
+
+      assert {:ok, enabled} = SSO.update_provider(provider, %{enabled: true}, subject)
+      assert enabled.enabled
+    end
   end
 
   describe "begin_identity_link/6" do
@@ -532,6 +565,7 @@ defmodule Emisar.SSOIdentityLinkTest do
       disabled =
         context.provider
         |> IdentityProvider.Changeset.update(%{enabled: false})
+        |> Ecto.Changeset.change(sign_in_verified_by_user_id: context.user.id)
         |> Repo.update!()
 
       context = %{context | provider: disabled}
@@ -557,6 +591,10 @@ defmodule Emisar.SSOIdentityLinkTest do
 
       assert {:ok, %{status: :verified, linked?: true}} =
                SSO.provider_sign_in_verification_facts(disabled, context.subject)
+
+      verified = Repo.reload!(disabled)
+      assert verified.sign_in_verified_by_membership_id == context.subject.membership_id
+      assert is_nil(verified.sign_in_verified_by_user_id)
 
       assert {:ok, enabled} = SSO.update_provider(disabled, %{enabled: true}, context.subject)
       assert enabled.enabled

@@ -1013,14 +1013,20 @@ defmodule Emisar.PoliciesTest do
       assert created.scope_type == :runner
       assert created.scope_value == runner.id
       assert created.rules["defaults"]["low"] == "deny"
+      assert created.updated_by_membership_id == subject.membership_id
+      assert is_nil(created.updated_by_id)
 
       # A second save of the same scope is an upsert: same row, bumped vsn.
+      created |> Ecto.Changeset.change(updated_by_id: subject.actor.id) |> Repo.update!()
+
       assert {:ok, updated} =
                Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, subject)
 
       assert updated.id == created.id
       assert updated.vsn == created.vsn + 1
       assert updated.rules["defaults"]["low"] == "allow"
+      assert updated.updated_by_membership_id == subject.membership_id
+      assert is_nil(updated.updated_by_id)
     end
 
     test "rejects a blank scope_value for a runner/group scope" do
@@ -1311,9 +1317,10 @@ defmodule Emisar.PoliciesTest do
   describe "seed_policy/3" do
     test "inserts the account's default policy and is idempotent (on_conflict: nothing)" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      assert {:ok, %Policy{} = seeded} = Policies.seed_policy(account.id, user.id)
+      assert {:ok, %Policy{} = seeded} = Policies.seed_policy(account.id, member.id)
+      assert seeded.updated_by_membership_id == member.id
       assert seeded.account_id == account.id
       assert seeded.scope_type == :account
       # Seeds the conservative stock defaults.
@@ -1321,15 +1328,15 @@ defmodule Emisar.PoliciesTest do
       assert seeded.rules["defaults"]["critical"] == "deny"
 
       # A second seed for the same account is a no-op — still one live policy.
-      assert {:ok, _} = Policies.seed_policy(account.id, user.id)
+      assert {:ok, _} = Policies.seed_policy(account.id, member.id)
       assert Policies.peek_policy_for_account(account.id).id == seeded.id
     end
 
     test "accepts an explicit rules map for the bootstrap" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      assert {:ok, seeded} = Policies.seed_policy(account.id, user.id, allow_all_rules())
+      assert {:ok, seeded} = Policies.seed_policy(account.id, member.id, allow_all_rules())
       assert seeded.rules["defaults"]["critical"] == "allow"
     end
   end

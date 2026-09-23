@@ -2797,7 +2797,7 @@ defmodule Emisar.AccountsTest do
       assert is_nil(viewer_fact.membership.disabled_by_id)
     end
 
-    test "a former suspension author resolves to no manager-visible label", %{
+    test "a former suspension author retains exact local history after a rejoin", %{
       account: account,
       subject: subject
     } do
@@ -2815,11 +2815,19 @@ defmodule Emisar.AccountsTest do
       assert {:ok, _suspended} = Accounts.suspend_membership(target, admin_subject)
       Fixtures.Memberships.mark_membership_as_deleted(admin_membership)
 
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: admin.id,
+        role: "admin",
+        display_name: "Replacement Admin"
+      )
+
       assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
       target_fact = Enum.find(facts, &(&1.membership.id == target.id))
 
-      assert is_nil(target_fact.suspended_by_label)
+      assert target_fact.suspended_by_label == "Former Admin"
       assert is_nil(target_fact.membership.disabled_by_id)
+      assert is_nil(target_fact.membership.disabled_by_membership_id)
     end
 
     test "a subject from another account is refused even when filters are supplied", %{
@@ -3385,36 +3393,6 @@ defmodule Emisar.AccountsTest do
       assert Accounts.secondary_user_email(named) == "maya@example.com"
       assert Accounts.secondary_user_email(unnamed) == nil
       assert Accounts.secondary_user_email(%{}) == nil
-    end
-  end
-
-  describe "user_labels_for_ids/2" do
-    test "returns deduplicated account-local labels and skips non-members" do
-      account = Fixtures.Accounts.create_account()
-      other_account = Fixtures.Accounts.create_account()
-      named = Fixtures.Users.create_user(full_name: "Maya Chen")
-      unnamed = Fixtures.Users.create_user(full_name: nil)
-      outsider = Fixtures.Users.create_user(full_name: "Not A Member")
-
-      membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: named.id)
-
-      _other_membership =
-        Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: named.id)
-
-      _unnamed_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: unnamed.id)
-
-      _membership = Fixtures.Memberships.sync_display_name(membership, "Directory Maya")
-
-      ids = [named.id, unnamed.id, outsider.id, nil, named.id]
-
-      assert Accounts.user_labels_for_ids(ids, account.id) == %{
-               named.id => "Directory Maya",
-               unnamed.id => unnamed.email
-             }
-
-      assert Accounts.user_labels_for_ids([], account.id) == %{}
     end
   end
 
@@ -5147,19 +5125,20 @@ defmodule Emisar.AccountsTest do
     end
 
     test "owner can suspend an operator and reinstate", %{
-      owner: owner,
       target: target,
       owner_subject: owner_subject
     } do
       assert {:ok, suspended} = Accounts.suspend_membership(target, owner_subject)
       assert Membership.disabled?(suspended)
-      assert suspended.disabled_by_id == owner.id
-      assert Repo.reload!(target).disabled_by_id == owner.id
+      assert suspended.disabled_by_membership_id == owner_subject.membership_id
+      assert Repo.reload!(target).disabled_by_membership_id == owner_subject.membership_id
+      assert is_nil(suspended.disabled_by_id)
 
       assert {:ok, reinstated} = Accounts.reinstate_membership(suspended, owner_subject)
       refute Membership.disabled?(reinstated)
       assert is_nil(reinstated.disabled_by_id)
       assert is_nil(Repo.reload!(target).disabled_by_id)
+      assert is_nil(reinstated.disabled_by_membership_id)
     end
 
     test "break-glass support still suspends a member of a DISABLED account", %{
@@ -5173,6 +5152,7 @@ defmodule Emisar.AccountsTest do
       # deliberately admits a disabled account — the admin RPC reaches one.
       assert {:ok, suspended} = Accounts.suspend_membership(target, support)
       assert Membership.disabled?(suspended)
+      assert is_nil(suspended.disabled_by_membership_id)
     end
 
     test "suspending a member revokes the API keys they minted", %{
@@ -5329,6 +5309,7 @@ defmodule Emisar.AccountsTest do
       assert Accounts.count_memberships(account.id) == 2
       assert repeated.disabled_at == first.disabled_at
       assert repeated.disabled_by_id == first.disabled_by_id
+      assert repeated.disabled_by_membership_id == first.disabled_by_membership_id
       assert Membership.disabled?(Repo.reload!(target))
       assert length(Repo.all(Emisar.Audit.Event)) == 1
       assert is_nil(Repo.reload!(surviving_key).revoked_at)
@@ -5472,11 +5453,13 @@ defmodule Emisar.AccountsTest do
 
       assert directory_suspended.directory_suspended
       assert is_nil(directory_suspended.disabled_by_id)
+      assert is_nil(directory_suspended.disabled_by_membership_id)
 
       assert {:ok, unchanged} = Accounts.suspend_membership(directory_suspended, owner_subject)
       assert unchanged.disabled_at == directory_suspended.disabled_at
       assert unchanged.directory_suspended
       assert is_nil(unchanged.disabled_by_id)
+      assert is_nil(unchanged.disabled_by_membership_id)
       assert length(Repo.all(Emisar.Audit.Event)) == 1
     end
 
@@ -7392,6 +7375,8 @@ defmodule Emisar.AccountsTest do
 
       assert result.delivery == {:ok, :sent}
       assert %Membership{role: :operator} = result.membership
+      assert result.membership.invited_by_membership_id == subject.membership_id
+      assert is_nil(result.membership.invited_by_id)
       assert result.user.email == email
       refute Map.has_key?(result, :invitation_token)
 

@@ -98,6 +98,7 @@ defmodule Emisar.Seeds.Agents do
             expires_at: Helpers.days_out(30),
             revoked_at: nil,
             revoked_by_id: nil,
+            revoked_by_membership_id: nil,
             replaces_id: nil,
             rotated_to_id: nil
           )

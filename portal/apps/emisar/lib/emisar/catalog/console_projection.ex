@@ -241,7 +241,7 @@ defmodule Emisar.Catalog.ConsoleProjection do
   def override_attribution(%PackVersion{} = pack_version) do
     %{
       at: pack_version.retirement_overridden_at,
-      actor_id: pack_version.retirement_overridden_by_id,
+      actor_id: pack_version.retirement_overridden_by_membership_id,
       actor_label: pack_version.retirement_override_label
     }
   end

@@ -51,6 +51,7 @@ defmodule Emisar.ApiKeys.ApiKey do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :created_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :revoked_by, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :revoked_by_membership, Emisar.Accounts.Membership
     # Installed successor — non-nil marks this key superseded
     # and makes retries of the same client-prepared proposal idempotent.
     belongs_to :rotated_to, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]

@@ -1172,17 +1172,17 @@ defmodule Emisar.ApiKeys do
   """
   def revoke_api_key(%ApiKey{} = key, %Subject{} = subject) do
     with :ok <- ensure_can_manage_key(key, subject) do
-      by_user_id = Subject.actor_id(subject)
-
-      source_queryable =
-        ApiKey.Query.not_deleted()
-        |> ApiKey.Query.by_id(key.id)
-        |> ApiKey.Query.lock_for_update()
-        |> Authorizer.for_subject(subject)
-
       Multi.new()
-      |> Multi.run(:revocation, fn repo, _changes ->
-        revoke_key_chain(repo, source_queryable, subject, by_user_id)
+      |> put_active_account_lock(subject.account.id)
+      |> put_current_subject(subject)
+      |> Multi.run(:revocation, fn repo, %{current_subject: current} ->
+        source_queryable =
+          ApiKey.Query.not_deleted()
+          |> ApiKey.Query.by_id(key.id)
+          |> ApiKey.Query.lock_for_update()
+          |> Authorizer.for_subject(current)
+
+        revoke_key_chain(repo, source_queryable, current)
       end)
       |> Repo.commit_multi(
         after_commit: fn %{revocation: %{revoked: revoked}} ->
@@ -1208,11 +1208,13 @@ defmodule Emisar.ApiKeys do
   def revoke_all_api_keys_for_member(membership_id, %Subject{} = subject)
       when is_binary(membership_id) do
     with :ok <- ensure_can_revoke_member_keys(membership_id, subject) do
-      by_user_id = Subject.actor_id(subject)
-
       Multi.new()
-      |> Multi.run(:revocation, fn repo, _changes ->
-        revoke_member_key_chains(repo, membership_id, subject, by_user_id)
+      |> put_active_account_lock(subject.account.id)
+      |> put_current_subject(subject)
+      |> Multi.run(:revocation, fn repo, %{current_subject: current} ->
+        with :ok <- ensure_can_revoke_member_keys(membership_id, current) do
+          revoke_member_key_chains(repo, membership_id, current)
+        end
       end)
       |> Repo.commit_multi(
         after_commit: fn %{revocation: %{revoked: revoked}} ->
@@ -1226,7 +1228,7 @@ defmodule Emisar.ApiKeys do
     end
   end
 
-  defp revoke_member_key_chains(repo, membership_id, subject, by_user_id) do
+  defp revoke_member_key_chains(repo, membership_id, subject) do
     queryable =
       ApiKey.Query.not_deleted()
       |> ApiKey.Query.by_created_by_membership_id(membership_id)
@@ -1249,7 +1251,7 @@ defmodule Emisar.ApiKeys do
           |> ApiKey.Query.lock_for_update()
           |> Authorizer.for_subject(subject)
 
-        case revoke_key_chain(repo, source_queryable, subject, by_user_id) do
+        case revoke_key_chain(repo, source_queryable, subject) do
           {:ok, %{revoked: chain}} -> {:cont, {:ok, revoked ++ chain}}
           {:error, reason} -> {:halt, {:error, reason}}
         end
@@ -1280,14 +1282,19 @@ defmodule Emisar.ApiKeys do
   defp revoke_member_keys_permissions(_membership_id, %Subject{}),
     do: Authorizer.manage_api_keys_permission()
 
-  defp revoke_key_chain(repo, source_queryable, subject, by_user_id) do
+  defp revoke_key_chain(repo, source_queryable, subject) do
     with {:ok, source} <- repo.fetch(source_queryable, ApiKey.Query),
          :ok <- ensure_can_manage_key(source, subject),
          descendants = rotation_descendants(repo, source),
-         {:ok, revoked_source} <- revoke_and_audit(repo, source, subject, by_user_id, nil),
+         {:ok, revoked_source} <- revoke_and_audit(repo, source, subject, nil),
          {:ok, revoked_descendants} <-
-           revoke_descendants(repo, descendants, source, subject, by_user_id) do
-      {:ok, %{key: revoked_source, revoked: [revoked_source | revoked_descendants]}}
+           revoke_descendants(repo, descendants, source, subject) do
+      newly_revoked =
+        if source.revoked_at,
+          do: revoked_descendants,
+          else: [revoked_source | revoked_descendants]
+
+      {:ok, %{key: revoked_source, revoked: newly_revoked}}
     end
   end
 
@@ -1314,10 +1321,10 @@ defmodule Emisar.ApiKeys do
     rotation_descendants(repo, account_id, children, visited, children ++ descendants)
   end
 
-  defp revoke_descendants(repo, descendants, source, subject, by_user_id) do
+  defp revoke_descendants(repo, descendants, source, subject) do
     Enum.reduce_while(descendants, {:ok, []}, fn descendant, {:ok, revoked} ->
       if is_nil(descendant.deleted_at) and is_nil(descendant.revoked_at) do
-        case revoke_and_audit(repo, descendant, subject, by_user_id, source) do
+        case revoke_and_audit(repo, descendant, subject, source) do
           {:ok, key} -> {:cont, {:ok, [key | revoked]}}
           {:error, reason} -> {:halt, {:error, reason}}
         end
@@ -1331,13 +1338,19 @@ defmodule Emisar.ApiKeys do
     end
   end
 
-  defp revoke_and_audit(repo, key, subject, by_user_id, cascade_source) do
+  # Retrying a retired ancestor still contains its live descendants, but must
+  # not replace the original receipt or duplicate its audit/broadcast.
+  defp revoke_and_audit(_repo, %ApiKey{revoked_at: at} = key, _subject, _cascade_source)
+       when not is_nil(at), do: {:ok, key}
+
+  defp revoke_and_audit(repo, key, subject, cascade_source) do
     audit_changeset =
       if cascade_source,
         do: Audit.Events.api_key_revoked(subject, key, cascade_source),
         else: Audit.Events.api_key_revoked(subject, key)
 
-    with {:ok, revoked} <- repo.update(ApiKey.Changeset.revoke(key, by_user_id)),
+    with {:ok, revoked} <-
+           repo.update(ApiKey.Changeset.revoke(key, Subject.human_membership_id(subject))),
          {:ok, _event} <- repo.insert(audit_changeset) do
       {:ok, revoked}
     end
@@ -1392,18 +1405,32 @@ defmodule Emisar.ApiKeys do
       prefix = String.slice(raw, 0, prefix_size)
       hash = Crypto.hash(raw)
 
-      # `key_prefix` is unique only among live rows. The row lock makes this
-      # usability check serialize with explicit revocation: once revoke returns,
-      # no stale pre-revocation lookup can authenticate afterward.
+      # Discover routing without a row lock. First use of a successor retires
+      # ancestors, so it must take the same account-first fence as containment
+      # before locking ANY key. Otherwise first use (B -> A) and revocation
+      # (A -> B) can deadlock. Ordinary use needs only the credential row lock.
       queryable =
         ApiKey.Query.not_deleted()
         |> ApiKey.Query.by_key_prefix(prefix)
-        |> ApiKey.Query.lock_for_update()
 
       multi =
         Multi.new()
-        |> Multi.run(:candidate, fn repo, _changes ->
+        |> Multi.run(:snapshot, fn repo, _changes ->
           authenticate_candidate(repo, queryable, hash)
+        end)
+        |> Multi.run(:rotation_account, fn repo, %{snapshot: key} ->
+          lock_first_rotation_use(repo, key)
+        end)
+        |> Multi.run(:candidate, fn repo, %{snapshot: snapshot} ->
+          # A live prefix can be reused after deletion. Recheck the exact row,
+          # secret and usability after waiting; discovery granted no authority.
+          locked =
+            queryable
+            |> ApiKey.Query.by_id(snapshot.id)
+            |> ApiKey.Query.by_account_id(snapshot.account_id)
+            |> ApiKey.Query.lock_for_update()
+
+          authenticate_candidate(repo, locked, hash)
         end)
         |> Multi.run(:membership, fn repo, %{candidate: key} ->
           fetch_authorized_key_membership(repo, key)
@@ -1453,6 +1480,16 @@ defmodule Emisar.ApiKeys do
       _ -> {:error, :invalid}
     end
   end
+
+  defp lock_first_rotation_use(repo, %ApiKey{last_used_at: nil, replaces_id: replaced_id} = key)
+       when not is_nil(replaced_id) do
+    case Accounts.fetch_and_lock_account(key.account_id, repo: repo) do
+      {:ok, account} -> {:ok, account}
+      {:error, :not_found} -> {:error, :invalid}
+    end
+  end
+
+  defp lock_first_rotation_use(_repo, %ApiKey{}), do: {:ok, nil}
 
   # Skips the write while the stamp is fresh (see @usage_stamp_interval_seconds);
   # the row stays locked either way, so revocation still serializes with use.

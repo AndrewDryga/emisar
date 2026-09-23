@@ -66,7 +66,7 @@ defmodule Emisar.Fixtures.SSO do
   end
 
   @doc "Arranges the persisted result of a successful sign-in verification for this configuration."
-  def verify_provider_sign_in(%IdentityProvider{} = provider, user) do
+  def verify_provider_sign_in(%IdentityProvider{} = provider, membership) do
     digest =
       [
         provider.kind,
@@ -79,7 +79,7 @@ defmodule Emisar.Fixtures.SSO do
       |> :erlang.term_to_binary()
       |> Emisar.Crypto.hash()
 
-    provider |> IdentityProvider.Changeset.verify_sign_in(user.id, digest) |> Repo.update!()
+    provider |> IdentityProvider.Changeset.verify_sign_in(membership.id, digest) |> Repo.update!()
   end
 
   @doc "Soft-deletes a provider directly, for tests exercising a concurrently-removed connection."

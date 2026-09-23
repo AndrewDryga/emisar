@@ -46,6 +46,7 @@ defmodule Emisar.Catalog.PackVersion do
     # override that lets it dispatch again). Null means "no override".
     field :retirement_overridden_at, :utc_datetime_usec
     field :retirement_overridden_by_id, :binary_id
+    belongs_to :retirement_overridden_by_membership, Emisar.Accounts.Membership
     field :retirement_override_label, :string, virtual: true
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]

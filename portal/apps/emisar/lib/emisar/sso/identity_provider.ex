@@ -54,6 +54,7 @@ defmodule Emisar.SSO.IdentityProvider do
     # editing that configuration leaves the historical receipt visible but stale.
     field :sign_in_verified_at, :utc_datetime_usec
     field :sign_in_verified_by_user_id, Ecto.UUID
+    belongs_to :sign_in_verified_by_membership, Emisar.Accounts.Membership
     field :sign_in_verified_configuration_digest, :binary, redact: true
 
     field :scim_enabled, :boolean, default: false

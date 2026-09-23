@@ -132,9 +132,9 @@ defmodule Emisar.Seeds.DemoAccount do
     :ok
   end
 
-  defp seed_default_policy(%{account: account, user: user}) do
+  defp seed_default_policy(%{account: account, owner_subject: owner_subject}) do
     if Policies.peek_policy_for_account(account.id) == nil do
-      {:ok, _} = Policies.seed_policy(account.id, user.id)
+      {:ok, _} = Policies.seed_policy(account.id, owner_subject.membership_id)
       Helpers.say("✓ Seeded default policy")
     end
 

@@ -685,7 +685,7 @@ defmodule Emisar.Catalog do
                                        retired: retired,
                                        manager: manager
                                      } ->
-        actor_id = Subject.actor_id(manager.subject)
+        actor_id = manager.subject.membership_id
         repo.update(trust_changeset(pack_version, manifest, retired, actor_id))
       end)
       |> Multi.insert(:audit, fn %{before: pack_version, retired: retired, manager: manager} ->
@@ -799,7 +799,7 @@ defmodule Emisar.Catalog do
            Auth.fetch_current_subject(Authorizer.manage_catalog_permission(), subject) do
       pack_version_management_multi(pack_version_id, subject)
       |> Multi.run(:pack_version, fn repo, %{before: pack_version, manager: manager} ->
-        actor_id = Subject.actor_id(manager.subject)
+        actor_id = manager.subject.membership_id
 
         case override_retirement_changeset(pack_version, actor_id) do
           %Ecto.Changeset{} = changeset -> repo.update(changeset)

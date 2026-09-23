@@ -23,6 +23,9 @@ defmodule Emisar.Seeds.SmokeTest do
       creator = Accounts.peek_active_membership(key.account_id, key.created_by_membership_id)
       assert creator.role == :owner
       assert creator.contact_email == "demo@emisar.dev"
+      policy = Emisar.Policies.peek_policy_for_account(key.account_id)
+      assert policy.updated_by_membership_id == creator.id
+      assert is_nil(policy.updated_by_id)
     end
   end
 

@@ -196,6 +196,11 @@ defmodule Emisar.Auth.Subject do
   def user_id(%__MODULE__{actor: %Users.User{id: id}}), do: id
   def user_id(%__MODULE__{}), do: nil
 
+  @doc "The exact acting human Member, never an API key's owner or a system actor."
+  def human_membership_id(%__MODULE__{actor: %Users.User{}, membership_id: id}), do: id
+  def human_membership_id(%__MODULE__{actor: %Accounts.Membership{}, membership_id: id}), do: id
+  def human_membership_id(%__MODULE__{}), do: nil
+
   @doc """
   The acting API key's id, or `nil` when the actor isn't an API key (user /
   runner / system). Used for API-key attribution and credential-bound domain

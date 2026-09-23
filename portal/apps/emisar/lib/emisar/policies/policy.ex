@@ -29,6 +29,7 @@ defmodule Emisar.Policies.Policy do
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :updated_by, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :updated_by_membership, Emisar.Accounts.Membership
 
     timestamps()
   end

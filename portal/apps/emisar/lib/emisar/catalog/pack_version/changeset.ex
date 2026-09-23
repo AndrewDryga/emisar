@@ -72,13 +72,17 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
   changeset (composed onto `trust/2` when the version being trusted is
   retired), so both entry points write the same override in one changeset.
   """
-  def override_retirement(pack_version_or_changeset, overridden_by_id) do
+  def override_retirement(pack_version_or_changeset, overridden_by_membership_id) do
     pack_version_or_changeset
     |> change(%{
       retirement_overridden_at: DateTime.utc_now(),
-      retirement_overridden_by_id: overridden_by_id
+      retirement_overridden_by_id: nil,
+      retirement_overridden_by_membership_id: overridden_by_membership_id
     })
-    |> validate_required([:retirement_overridden_by_id])
+    |> validate_required([:retirement_overridden_by_membership_id])
+    |> foreign_key_constraint(:retirement_overridden_by_membership_id,
+      name: :catalog_pack_versions_override_member_fkey
+    )
   end
 
   @doc "Discard pending_hash; revert to the previously-trusted hash."
@@ -115,7 +119,8 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     |> change(%{
       trust_state: :rejected,
       retirement_overridden_at: nil,
-      retirement_overridden_by_id: nil
+      retirement_overridden_by_id: nil,
+      retirement_overridden_by_membership_id: nil
     })
   end
 

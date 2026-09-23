@@ -807,7 +807,7 @@ defmodule Emisar.AuthAuditTest do
           :policy,
           Emisar.Policies.Policy.Changeset.create(%{
             account_id: policy.account_id,
-            updated_by_id: subject.actor.id,
+            updated_by_membership_id: subject.membership_id,
             rules: new_rules
           }),
           on_conflict: Emisar.Policies.Policy.Query.rules_upsert_conflict(),
@@ -837,6 +837,8 @@ defmodule Emisar.AuthAuditTest do
       # Policy row should NOT have the new rules — also rolled back.
       {:ok, reloaded} = Emisar.Policies.fetch_policy(subject)
       assert reloaded.rules == policy.rules
+      assert reloaded.updated_by_membership_id == policy.updated_by_membership_id
+      assert reloaded.updated_by_id == policy.updated_by_id
     end
 
     defp audit_count(account, event_type) do

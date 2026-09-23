@@ -5,7 +5,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
   @create_fields ~w[account_id user_id role display_name contact_email directory_managed runner_access_mode runner_access_directory_managed
                     pack_access_mode pack_scope_pack_ids
                     directory_provider_id directory_authorization_pending_version
-                    invited_by_id invitation_token_digest invitation_sent_to
+                    invited_by_membership_id invitation_token_digest invitation_sent_to
                     invitation_email_changed_at invitation_accepted_at]a
   @update_fields ~w[role]a
 
@@ -15,6 +15,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> validate_required([:account_id, :user_id, :role])
     |> validate_profile()
     |> unique_constraint([:account_id, :user_id])
+    |> foreign_key_constraint(:invited_by_membership_id)
     |> put_access_the_role_carries()
   end
 
@@ -111,8 +112,14 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   def delete(%Membership{} = membership), do: change(membership, deleted_at: DateTime.utc_now())
 
-  def suspend(%Membership{} = membership, disabled_by_id) do
-    change(membership, disabled_at: DateTime.utc_now(), disabled_by_id: disabled_by_id)
+  def suspend(%Membership{} = membership, disabled_by_membership_id) do
+    membership
+    |> change(
+      disabled_at: DateTime.utc_now(),
+      disabled_by_id: nil,
+      disabled_by_membership_id: disabled_by_membership_id
+    )
+    |> foreign_key_constraint(:disabled_by_membership_id)
   end
 
   # Directory sync deactivated the member (SCIM active:false/DELETE) — mark the
@@ -146,6 +153,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
     change(membership,
       disabled_at: nil,
       disabled_by_id: nil,
+      disabled_by_membership_id: nil,
       directory_suspended: false
     )
   end

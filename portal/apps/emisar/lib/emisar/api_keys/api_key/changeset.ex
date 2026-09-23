@@ -134,7 +134,16 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
   def rotated(%ApiKey{} = key, successor_id),
     do: change(key, rotated_to_id: successor_id, rotation_requested_at: nil)
 
-  def revoke(%ApiKey{} = key, by_user_id) do
-    change(key, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
+  def revoke(%ApiKey{revoked_at: revoked_at} = key, _by_membership_id)
+      when not is_nil(revoked_at), do: change(key)
+
+  def revoke(%ApiKey{} = key, by_membership_id) do
+    key
+    |> change(
+      revoked_at: DateTime.utc_now(),
+      revoked_by_id: nil,
+      revoked_by_membership_id: by_membership_id
+    )
+    |> foreign_key_constraint(:revoked_by_membership_id)
   end
 end

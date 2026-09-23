@@ -77,7 +77,7 @@ defmodule Emisar.Fixtures.ApiKeys do
   end
 
   def mark_revoked(%ApiKeys.ApiKey{} = key),
-    do: key |> ApiKeys.ApiKey.Changeset.revoke(key.created_by_id) |> Repo.update!()
+    do: key |> ApiKeys.ApiKey.Changeset.revoke(key.created_by_membership_id) |> Repo.update!()
 
   def mark_deleted(%ApiKeys.ApiKey{} = key),
     do: key |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()

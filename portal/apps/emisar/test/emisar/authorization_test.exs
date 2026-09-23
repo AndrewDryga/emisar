@@ -392,10 +392,10 @@ defmodule Emisar.AuthorizationTest do
   # -- helpers --------------------------------------------------------
 
   defp seed_policy_for(account) do
-    user = Fixtures.Users.create_user()
+    member = Fixtures.Memberships.create_membership(account_id: account.id)
 
     {:ok, _} =
-      Emisar.Policies.seed_policy(account.id, user.id, %{
+      Emisar.Policies.seed_policy(account.id, member.id, %{
         "schema_version" => 2,
         "defaults" => %{
           "low" => "allow",

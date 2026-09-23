@@ -33,7 +33,7 @@ defmodule Emisar.Fixtures.Memberships do
       }
       |> Map.merge(
         Map.take(attrs, [
-          :invited_by_id,
+          :invited_by_membership_id,
           :invitation_token_digest,
           :invitation_sent_to,
           :invitation_email_changed_at,
