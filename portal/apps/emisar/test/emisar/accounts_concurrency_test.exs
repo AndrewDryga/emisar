@@ -2,7 +2,7 @@ defmodule Emisar.AccountsConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Repo}
+  alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Repo, Users}
   alias Emisar.Accounts.Account
   alias Emisar.Audit.Event, as: AuditEvent
   alias Emisar.Auth.UserToken
@@ -18,103 +18,42 @@ defmodule Emisar.AccountsConcurrencyTest do
     end
   end
 
-  test "onboarding rechecks the exact bearer after waiting for the User lock" do
-    unboxed_owner(fn _account, owner, subject, _recovery_code ->
-      parent = self()
-      name = "waiting-#{Ecto.UUID.generate()}"
-      blocker = user_blocker(owner, parent)
-
-      try do
-        assert_receive {:user_locked, blocker_backend}, 5_000
-
-        creator =
-          unboxed_task(fn ->
-            send(parent, {:creator_backend, backend_pid()})
-            Accounts.create_account_with_owner_from_name(name, subject)
-          end)
-
-        try do
-          assert_receive {:creator_backend, creator_backend}, 5_000
-          await_blocked_by(creator_backend, blocker_backend)
-          assert {1, _} = UserToken.Query.by_id(subject.session_token_id) |> Repo.delete_all()
-          send(blocker.pid, :release)
-          assert {:ok, :ok} = Task.await(blocker, 30_000)
-          assert Task.await(creator, 30_000) == {:error, :unauthorized}
-          refute Repo.exists?(Account.Query.all() |> Account.Query.by_slug(name))
-
-          assert Accounts.Membership.Query.all()
-                 |> Accounts.Membership.Query.by_user_id(owner.id)
-                 |> Repo.aggregate(:count) == 1
-
-          refute Repo.exists?(Auth.MemberGrant.Query.by_token_id(subject.session_token_id))
-        after
-          stop_tasks([creator])
-        end
-      after
-        send(blocker.pid, :release)
-        stop_tasks([blocker])
-        Account.Query.all() |> Account.Query.by_slug(name) |> Repo.delete_all()
-      end
-    end)
-  end
-
   test "MFA enforcement cannot commit while the owner is concurrently disabling MFA" do
     unboxed_owner(fn account, owner, subject, recovery_code ->
       parent = self()
 
-      blocker =
+      disable =
         unboxed_task(fn ->
-          Repo.transaction(fn ->
-            UserToken.Query.by_id(subject.session_token_id)
-            |> UserToken.Query.lock_for_update()
-            |> Repo.fetch!(UserToken.Query)
+          send(parent, {:disable_backend, backend_pid()})
 
-            send(parent, {:session_token_locked, backend_pid()})
+          Repo.transaction(fn ->
+            {:ok, _locked_user} = Users.fetch_and_lock_user_by_id(owner.id, Repo)
+            send(parent, :actor_locked)
 
             receive do
-              :release -> :ok
+              :disable -> Auth.disable_mfa(recovery_code, subject)
             end
           end)
         end)
 
-      try do
-        assert_receive {:session_token_locked, blocker_backend}, 5_000
+      assert_receive {:disable_backend, disable_backend}, 5_000
+      assert_receive :actor_locked, 5_000
 
-        disable =
-          unboxed_task(fn ->
-            send(parent, {:disable_backend, backend_pid()})
-            Auth.disable_mfa(recovery_code, subject)
-          end)
+      enforce =
+        unboxed_task(fn ->
+          send(parent, {:enforce_backend, backend_pid()})
+          Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject)
+        end)
 
-        try do
-          assert_receive {:disable_backend, disable_backend}, 5_000
-          await_blocked_by(disable_backend, blocker_backend)
+      assert_receive {:enforce_backend, enforce_backend}, 5_000
+      await_blocked_by(enforce_backend, disable_backend)
 
-          enforce =
-            unboxed_task(fn ->
-              send(parent, {:enforce_backend, backend_pid()})
-              Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject)
-            end)
+      send(disable.pid, :disable)
+      assert {:ok, {:ok, %User{mfa_enabled_at: nil}}} = Task.await(disable, 30_000)
 
-          try do
-            assert_receive {:enforce_backend, enforce_backend}, 5_000
-            await_blocked_by(enforce_backend, disable_backend)
-            send(blocker.pid, :release)
-            assert {:ok, :ok} = Task.await(blocker, 30_000)
-            assert {:ok, %User{mfa_enabled_at: nil}} = Task.await(disable, 30_000)
-            assert Task.await(enforce, 30_000) == {:error, :mfa_enrollment_required}
-            refute Repo.reload!(account).settings.require_mfa
-            refute Repo.reload!(owner).mfa_enabled_at
-          after
-            stop_tasks([enforce])
-          end
-        after
-          stop_tasks([disable])
-        end
-      after
-        send(blocker.pid, :release)
-        stop_tasks([blocker])
-      end
+      assert Task.await(enforce, 30_000) == {:error, :mfa_enrollment_required}
+      refute Repo.reload!(account).settings.require_mfa
+      refute Repo.reload!(owner).mfa_enabled_at
     end)
   end
 

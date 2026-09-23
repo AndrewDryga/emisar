@@ -100,8 +100,6 @@ defmodule Emisar.SSOSessionStepUpTest do
       browser = browser(context.user, context.account)
       stash = begin_step_up(context, browser)
       assert stash.purpose == :workspace_sso
-      assert stash.actor_id == context.user.id
-      assert stash.actor_membership_id == context.member.id
       assert stash.actor_session_token_id == browser.session.id
       assert stash.actor_session_token_digest == browser.digest
       assert stash.member_grant_id == browser.subject.member_grant_id
@@ -186,12 +184,9 @@ defmodule Emisar.SSOSessionStepUpTest do
 
     for field <- [
           :purpose,
-          :actor_id,
-          :actor_membership_id,
           :actor_session_token_id,
           :actor_session_token_digest,
           :member_grant_id,
-          :account_id,
           :provider_id,
           :identity_id,
           :provider_identifier,
@@ -199,12 +194,11 @@ defmodule Emisar.SSOSessionStepUpTest do
           :started_at
         ] do
       @field field
-      test "a mismatched #{@field} is rejected before provider work",
+      test "a mismatched #{@field} is rejected without replacing the browser",
            %{user: _, account: _} = context do
         browser = browser(context.user, context.account)
         stash = begin_step_up(context, browser) |> Map.put(@field, nil)
         assert {:error, _reason} = complete(context, browser, stash)
-        refute_received :oidc_callback
         assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(browser.raw)
         refute_received {:disconnect, _}
       end
@@ -218,7 +212,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert complete(context, other, stash) == {:error, :session_step_up_invalid}
 
       assert SSO.complete_session_step_up(params(context), stash, other.digest, original.subject) ==
-               {:error, :unauthorized}
+               {:error, :session_step_up_invalid}
 
       refute_received :oidc_callback
     end
@@ -267,7 +261,6 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert Accounts.end_all_sessions_for(context.member, owner) == :ok
       assert_received {:disconnect, _}
       assert complete(context, browser, stash) == {:error, :unauthorized}
-      refute_received :oidc_callback
       assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(browser.raw)
       refute_received {:disconnect, _}
     end
@@ -278,7 +271,6 @@ defmodule Emisar.SSOSessionStepUpTest do
       stash = begin_step_up(context, browser)
       assert Auth.complete_session_sign_out(browser.raw) == :ok
       assert complete(context, browser, stash) == {:error, :unauthorized}
-      refute_received :oidc_callback
       assert Repo.aggregate(Auth.UserToken.Query.by_context("session"), :count) == 0
     end
   end

@@ -118,7 +118,7 @@ defmodule Emisar.AuthAuditTest do
       assert [event] = events_of(account, "user.mfa_disabled")
       assert event.actor_id == enabled.id
       assert_receive {:audit_event, ^event}
-      assert_receive {:audit_event, %Audit.Event{event_type: "user.mfa_verified"}}
+      assert [_verified] = events_of(account, "user.mfa_verified")
     end
 
     test "verify_mfa_challenge with bad code audits user.mfa_failed", %{

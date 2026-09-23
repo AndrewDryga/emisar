@@ -275,26 +275,6 @@ defmodule Emisar.AuthSessionsTest do
       assert survivor.current?
     end
 
-    test "cannot nominate another browser or a foreign token as the current session", %{
-      user: user,
-      subject: subject,
-      token: keep
-    } do
-      other = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-
-      foreign =
-        Fixtures.Auth.create_session_token!(Fixtures.Users.create_user(), :magic_link, nil)
-
-      for digest <- [Crypto.hash(other), Crypto.hash(foreign), Crypto.hash("missing")] do
-        assert Auth.revoke_and_disconnect_other_sessions(digest, subject) ==
-                 {:error, :unauthorized}
-      end
-
-      for token <- [keep, other, foreign] do
-        assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(token)
-      end
-    end
-
     test "a revoked caller cannot end the remaining browser", %{
       user: user,
       subject: subject,

@@ -524,8 +524,6 @@ defmodule Emisar.SSO do
       {:ok,
        Map.merge(begun, %{
          purpose: :workspace_sso,
-         actor_id: current.actor.id,
-         actor_membership_id: current.membership_id,
          actor_session_token_id: session.id,
          actor_session_token_digest: session.token,
          member_grant_id: current.member_grant_id,
@@ -545,14 +543,12 @@ defmodule Emisar.SSO do
   @doc "Complete the bound SSO continuation; failure leaves its browser and all independent proof intact."
   def complete_session_step_up(params, stashed, digest, %Subject{} = subject)
       when is_map(params) and is_map(stashed) and is_binary(digest) do
-    with {:ok, current, session} <- session_step_up_actor(digest, subject),
-         :ok <- ensure_session_step_up_stash(stashed, current, session),
-         {:ok, identity, provider} <- session_step_up_identity(stashed.provider_id, current),
-         :ok <- ensure_session_step_up_identity(stashed, identity, provider),
+    with :ok <- ensure_session_step_up_stash(stashed, subject, digest),
+         {:ok, _identity, provider} <- session_step_up_identity(stashed.provider_id, subject),
          {:ok, %{identifier: identifier, claims: claims}} <-
            OIDC.verify_callback(provider, params, stashed),
          true <- identifier == stashed.provider_identifier do
-      Auth.complete_sso_session_step_up(stashed, claims, digest, current)
+      Auth.complete_sso_session_step_up(stashed, claims, digest, subject)
     else
       false -> {:error, :session_step_up_invalid}
       {:error, reason} -> {:error, reason}
@@ -598,18 +594,16 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp ensure_session_step_up_stash(stashed, current, session) do
+  # The bearer and grant fix the User, account and Member the stash was bound to.
+  defp ensure_session_step_up_stash(stashed, subject, digest) do
     now = System.system_time(:second)
     started_at = Map.get(stashed, :started_at)
 
     valid? =
       Map.get(stashed, :purpose) == :workspace_sso and
-        Map.get(stashed, :actor_id) == current.actor.id and
-        Map.get(stashed, :account_id) == current.account.id and
-        Map.get(stashed, :actor_membership_id) == current.membership_id and
-        Map.get(stashed, :member_grant_id) == current.member_grant_id and
-        Map.get(stashed, :actor_session_token_id) == session.id and
-        Map.get(stashed, :actor_session_token_digest) == session.token and
+        Map.get(stashed, :actor_session_token_id) == subject.session_token_id and
+        Map.get(stashed, :actor_session_token_digest) == digest and
+        Map.get(stashed, :member_grant_id) == subject.member_grant_id and
         is_integer(started_at) and started_at <= now and
         started_at >= now - @session_step_up_max_age_seconds and
         Repo.valid_uuid?(Map.get(stashed, :provider_id))
@@ -640,7 +634,7 @@ defmodule Emisar.SSO do
            :ok <- ensure_email_domain_allowed(changes.sso_provider, claims),
            {:ok, current, session} <-
              session_step_up_actor(stashed.actor_session_token_digest, subject),
-           :ok <- ensure_session_step_up_stash(stashed, current, session) do
+           :ok <- ensure_session_step_up_stash(stashed, current, session.token) do
         {:ok, current}
       else
         false -> {:error, :session_step_up_invalid}

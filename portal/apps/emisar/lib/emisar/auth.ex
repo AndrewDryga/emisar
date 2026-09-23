@@ -448,35 +448,28 @@ defmodule Emisar.Auth do
         %Subject{actor: %Users.User{} = user} = subject
       )
       when is_binary(keep_digest) do
-    with :ok <- Subject.ensure_personal_user(subject) do
-      sessions_query =
-        UserToken.Query.by_user_id(user.id)
-        |> UserToken.Query.by_context("session")
-        |> UserToken.Query.except_token_digest(keep_digest)
-        |> UserToken.Query.select_token_digests()
+    sessions_query =
+      UserToken.Query.by_user_id(user.id)
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.except_token_digest(keep_digest)
+      |> UserToken.Query.select_token_digests()
 
-      Multi.new()
-      |> put_personal_session(subject)
-      |> Multi.run(:kept_session, fn _repo, %{personal_session: session} ->
-        if current_session?(session.token, keep_digest),
-          do: {:ok, session.id},
-          else: {:error, :unauthorized}
-      end)
-      |> Multi.delete_all(:sessions, sessions_query)
-      |> Audit.Multi.log_for_user(:audit, user, "user.other_sessions_revoked",
-        extra: [context: subject.context],
-        user_fn: fn %{sessions: {count, _}} -> if count > 0, do: user end,
-        payload_fn: fn %{sessions: {count, _}} -> %{count: count} end
-      )
-      |> Repo.commit_multi()
-      |> case do
-        {:ok, %{sessions: {count, digests}}} ->
-          disconnect_live_sessions(Enum.map(digests, &live_socket_topic/1))
-          {:ok, count}
+    Multi.new()
+    |> put_personal_session(subject)
+    |> Multi.delete_all(:sessions, sessions_query)
+    |> Audit.Multi.log_for_user(:audit, user, "user.other_sessions_revoked",
+      extra: [context: subject.context],
+      user_fn: fn %{sessions: {count, _}} -> if count > 0, do: user end,
+      payload_fn: fn %{sessions: {count, _}} -> %{count: count} end
+    )
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{sessions: {count, digests}}} ->
+        disconnect_live_sessions(Enum.map(digests, &live_socket_topic/1))
+        {:ok, count}
 
-        {:error, reason} ->
-          {:error, reason}
-      end
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -2510,50 +2503,36 @@ defmodule Emisar.Auth do
   factor is rejected, {:error, :rate_limited} once the shared per-user MFA
   attempt window is exhausted, or the underlying update error.
   """
-  def disable_mfa(code, %Subject{actor: %Users.User{}} = subject)
+  def disable_mfa(code, %Subject{actor: %Users.User{id: id}} = subject)
       when is_binary(code) do
     code = String.trim(code)
 
-    with {:ok, %UserToken{user: user} = session} <- fetch_current_session(subject),
-         :ok <- throttle_mfa_challenge(user, subject.context) do
-      factor = current_mfa_factor(code)
+    with {:ok, %UserToken{user: user}} <- fetch_current_session(subject),
+         {:ok, _verified} <- verify_current_mfa_factor(user, code, subject.context) do
+      # Captured before the write and broadcast after it, the same order the
+      # sibling revocation paths use, so every "this credential changed, re-decide"
+      # site reads as one shape. The broadcast is a best-effort side effect on the
+      # way out rather than a transaction hook, which keeps this entry point safe
+      # to call from a caller that already holds a transaction.
+      socket_topics = capture_live_socket_topics(user)
 
-      Multi.new()
-      |> put_current_mfa_authority(subject, session)
-      |> Multi.run(:socket_topics, fn _repo, %{user: user} ->
-        {:ok, capture_live_socket_topics(user)}
-      end)
-      |> Multi.merge(fn %{user: user} ->
-        Users.put_mfa_disable(Multi.new(), user, factor, subject.context)
-      end)
-      |> Repo.commit_multi(after_commit: &disconnect_after_mfa_disable/1)
-      |> case do
-        {:ok, %{disabled_user: disabled_user}} ->
+      case Users.update_user_mfa(id, nil, nil, [],
+             audit: &Audit.user_changesets(&1, "user.mfa_disabled", context: subject.context)
+           ) do
+        {:ok, disabled_user} ->
+          disconnect_live_socket_topics(socket_topics)
           {:ok, disabled_user}
-
-        {:error, reason} when reason in [:invalid, :replay] ->
-          record_mfa_mutation_failure(user, factor, reason, subject.context)
 
         {:error, reason} ->
           {:error, reason}
       end
+    else
+      {:error, :invalid} -> {:error, :invalid_code}
+      {:error, reason} -> {:error, reason}
     end
   end
 
   def disable_mfa(_, %Subject{}), do: {:error, :invalid_code}
-
-  defp put_current_mfa_authority(multi, subject, session) do
-    multi
-    |> Multi.run(:user, fn repo, _changes ->
-      Users.fetch_and_lock_user_by_id(session.user_id, repo)
-    end)
-    |> Multi.run(:session, fn repo, _changes ->
-      fetch_and_lock_subject_session(session.token, subject, repo)
-    end)
-  end
-
-  defp disconnect_after_mfa_disable(%{socket_topics: topics}),
-    do: disconnect_live_socket_topics(topics)
 
   defp record_mfa_mutation_failure(user, factor, reason, context) do
     Audit.log_for_user(user, "user.mfa_failed",
@@ -2582,31 +2561,26 @@ defmodule Emisar.Auth do
   """
   def regenerate_mfa_recovery_codes(
         code,
-        %Subject{actor: %Users.User{}} = subject
+        %Subject{actor: %Users.User{id: id}} = subject
       )
       when is_binary(code) do
     code = String.trim(code)
 
-    with {:ok, %UserToken{user: user} = session} <- fetch_current_session(subject),
+    with {:ok, %UserToken{user: user}} <- fetch_current_session(subject),
          :ok <- ensure_mfa_enabled(user),
          :ok <- throttle_mfa_challenge(user, subject.context) do
       factor = current_mfa_factor(code)
       {plain_codes, digests} = generate_recovery_codes()
 
-      Multi.new()
-      |> put_current_mfa_authority(subject, session)
-      |> Multi.merge(fn %{user: user} ->
-        Users.put_mfa_recovery_code_regeneration(
-          Multi.new(),
-          user,
-          factor,
-          digests,
-          subject.context
-        )
-      end)
-      |> Repo.commit_multi()
+      id
+      |> Users.regenerate_user_mfa_recovery_codes(factor, digests,
+        audit:
+          &Audit.user_changesets(&1, "user.mfa_recovery_codes_regenerated",
+            context: subject.context
+          )
+      )
       |> case do
-        {:ok, %{regenerated_user: updated}} ->
+        {:ok, updated} ->
           {:ok, updated, plain_codes}
 
         {:error, reason} when reason in [:invalid, :replay] ->

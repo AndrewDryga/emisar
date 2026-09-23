@@ -248,83 +248,38 @@ defmodule Emisar.Users do
   end
 
   @doc """
-  Internal — compose factor verification, enrollment removal and audit into
-  Auth's transaction. Auth holds the current User and exact browser locks;
-  returning the audit rows through the outer Multi preserves commit-only delivery.
+  Internal — Auth: enable MFA (secret + enrolled-at + recovery digests)
+  or disable (nils), under the row lock. `opts[:audit]` supplies the
+  event changeset — MFA flips are credential-grade and always audited.
   """
-  def put_mfa_disable(%Multi{} = multi, %User{} = user, factor, %RequestContext{} = context) do
-    {event, payload} =
-      case factor do
-        {:totp, _otp} ->
-          {"user.mfa_verified", %{factor: "totp"}}
-
-        {:recovery_code, _digest} ->
-          {"user.mfa_recovery_code_used", %{remaining: length(user.mfa_recovery_codes) - 1}}
-      end
-
-    multi
-    |> Multi.run(:disabled_user, fn repo, _changes ->
-      apply_mfa_transition(repo, disable_mfa(user, factor))
-    end)
-    |> Audit.Multi.log_for_user(:mfa_factor_audit, user, event,
-      extra: [context: context, payload: payload]
-    )
-    |> Audit.Multi.log_for_user(:mfa_disabled_audit, nil, "user.mfa_disabled",
-      user_fn: & &1.disabled_user,
-      extra: [context: context]
+  def update_user_mfa(user_id, secret, enabled_at, recovery_code_digests, opts) do
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: &User.Changeset.mfa(&1, secret, enabled_at, recovery_code_digests),
+      audit: Keyword.fetch!(opts, :audit)
     )
   end
-
-  defp disable_mfa(%User{mfa_enabled_at: nil}, _factor), do: :invalid
-
-  defp disable_mfa(%User{mfa_secret: secret} = user, {:totp, otp})
-       when is_binary(secret) and is_binary(otp) do
-    verify_and_consume_totp(
-      user,
-      otp,
-      &DateTime.utc_now/0,
-      fn _at -> User.Changeset.mfa(user, nil, nil, []) end
-    )
-  end
-
-  defp disable_mfa(%User{} = user, {:recovery_code, digest}) when is_binary(digest) do
-    if Enum.any?(user.mfa_recovery_codes || [], &Crypto.secure_compare(&1, digest)),
-      do: User.Changeset.mfa(user, nil, nil, []),
-      else: :invalid
-  end
-
-  defp disable_mfa(%User{}, _factor), do: :invalid
 
   @doc """
-  Internal — compose factor verification, recovery-code replacement and audit
-  into Auth's transaction after it locks the current User and exact browser.
-  A TOTP proof also stamps its replay bucket; recovery proof uses the locked set.
-  The optional `opts[:clock]` test seam is invoked once under that lock;
-  production leaves it unset so Users owns the timestamp.
+  Internal — Auth: prove a current MFA factor and replace every recovery-code
+  digest in one locked user-row update. A TOTP proof also stamps its replay
+  bucket; a recovery-code proof is matched against the locked current set.
+  `opts[:audit]` commits only with the successful replacement. The optional
+  `opts[:clock]` test seam is invoked once under the row lock; production leaves
+  it unset so Users owns the timestamp.
   """
-  def put_mfa_recovery_code_regeneration(
-        %Multi{} = multi,
-        %User{} = user,
-        factor,
-        digests,
-        %RequestContext{} = context,
-        opts \\ []
-      )
+  def regenerate_user_mfa_recovery_codes(user_id, factor, digests, opts)
       when is_list(digests) and is_list(opts) do
     clock = Keyword.get(opts, :clock, &DateTime.utc_now/0)
 
-    multi
-    |> Multi.run(:regenerated_user, fn repo, _changes ->
-      apply_mfa_transition(repo, regenerate_mfa_recovery_codes(user, factor, digests, clock))
-    end)
-    |> Audit.Multi.log_for_user(:mfa_recovery_audit, nil, "user.mfa_recovery_codes_regenerated",
-      user_fn: & &1.regenerated_user,
-      extra: [context: context]
+    User.Query.not_deleted()
+    |> User.Query.by_id(user_id)
+    |> Repo.fetch_and_update(User.Query,
+      with: &regenerate_mfa_recovery_codes(&1, factor, digests, clock),
+      audit: Keyword.fetch!(opts, :audit)
     )
   end
-
-  defp apply_mfa_transition(repo, %Ecto.Changeset{} = changeset), do: repo.update(changeset)
-  defp apply_mfa_transition(_repo, reason), do: {:error, reason}
 
   defp regenerate_mfa_recovery_codes(%User{mfa_enabled_at: nil}, _factor, _digests, _clock),
     do: :mfa_not_enabled
@@ -421,8 +376,8 @@ defmodule Emisar.Users do
 
   defp mfa_verify_and_consume(%User{}, _otp, _clock), do: :invalid
 
-  # `clock` is invoked only here, while the caller holds the user row lock.
-  # That one instant judges the code, checks the prior bucket, and is
+  # `clock` is invoked only here, after `Repo.fetch_and_update/3` owns the user
+  # row lock. That one instant judges the code, checks the prior bucket, and is
   # persisted by the successful changeset; sampling any of those separately can
   # accept a next-bucket code while stamping the previous bucket.
   defp verify_and_consume_totp(loaded_user, otp, clock, on_valid) do

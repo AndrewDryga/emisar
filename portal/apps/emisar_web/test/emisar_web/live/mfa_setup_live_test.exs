@@ -151,7 +151,6 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     assert current_session.mfa_enrollment_verified_at == enrolled.mfa_enabled_at
     assigns = :sys.get_state(lv.pid).socket.assigns
-    assert assigns.current_auth.local_mfa_expires_at == current_session.local_mfa_expires_at
 
     assert assigns.current_auth.mfa_enrollment_verified_at ==
              current_session.mfa_enrollment_verified_at

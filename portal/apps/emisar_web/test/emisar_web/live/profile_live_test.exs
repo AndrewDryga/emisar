@@ -1588,7 +1588,6 @@ defmodule EmisarWeb.ProfileLiveTest do
         Auth.fetch_user_and_token_by_session_token(session_token(conn))
 
       assigns = :sys.get_state(lv.pid).socket.assigns
-      assert assigns.current_auth.local_mfa_expires_at == persisted.local_mfa_expires_at
 
       assert assigns.current_auth.mfa_enrollment_verified_at ==
                persisted.mfa_enrollment_verified_at

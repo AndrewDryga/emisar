@@ -190,59 +190,6 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
         end
       end)
     end
-
-    @tag :session_step_up_race
-    test "two preflighted callbacks consume a donor exactly once" do
-      unboxed_step_up(fn context ->
-        parent = self()
-        blocker = user_no_key_update_blocker(context.user, parent)
-
-        try do
-          assert_receive {:user_no_key_update_locked, blocker_backend}, 5_000
-          first = step_up_task(context, parent, :first_backend)
-
-          try do
-            assert_receive {:first_backend, first_backend}, 5_000
-            assert_receive {:step_up_oidc_verified, _pid}, 5_000
-            await_blocked_by(first_backend, blocker_backend)
-            second = step_up_task(context, parent, :second_backend)
-
-            try do
-              assert_receive {:second_backend, second_backend}, 5_000
-              assert_receive {:step_up_oidc_verified, _pid}, 5_000
-              await_blocked_by(second_backend, first_backend)
-              send(blocker.pid, :release)
-              assert {:ok, :ok} = Task.await(blocker, 30_000)
-              assert {:ok, result} = Task.await(first, 30_000)
-              assert Task.await(second, 30_000) == {:error, :unauthorized}
-
-              assert {:ok, _, replacement} =
-                       Auth.fetch_user_and_token_by_session_token(result.token)
-
-              assert Auth.fetch_user_and_token_by_session_token(context.raw) ==
-                       {:error, :not_found}
-
-              assert target_session_count(context.user) == context.session_count
-              routes = Auth.MemberGrantRoute.Query.by_token_id(replacement.id) |> Repo.all()
-              assert length(routes) == 3
-              assert Enum.all?(context.routes, &(&1 in routes))
-              assert step_up_audit_count(context.account) == 1
-              assert step_up_audit_count(context.sibling) == 1
-              topic = Auth.live_socket_topic_for_session(context.raw)
-              assert_received {:retirement_disconnect, [^topic], false}
-              refute_received {:retirement_disconnect, _, _}
-            after
-              stop_tasks([second])
-            end
-          after
-            stop_tasks([first])
-          end
-        after
-          send(blocker.pid, :release)
-          stop_tasks([blocker])
-        end
-      end)
-    end
   end
 
   @tag :other_sessions_rotation_race

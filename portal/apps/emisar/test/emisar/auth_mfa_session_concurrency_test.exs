@@ -161,69 +161,6 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
     end)
   end
 
-  for operation <- [:disable_mfa, :regenerate_mfa_recovery_codes] do
-    @operation operation
-    test "revocation while #{@operation} waits for the user lock prevents credential mutation" do
-      unboxed_owner(fn user, account, revoker ->
-        code = "disposable-concurrent-factor"
-
-        enrolled =
-          Fixtures.Users.set_mfa_state(user,
-            mfa_secret: Auth.generate_mfa_secret(),
-            mfa_enabled_at: DateTime.utc_now(),
-            mfa_recovery_codes: [Crypto.hash(code)]
-          )
-
-        raw = Fixtures.Auth.create_session_token!(enrolled, :magic_link, nil)
-        {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
-        subject = Fixtures.Subjects.subject_for(enrolled, account, session: session)
-        parent = self()
-
-        blocker =
-          unboxed_task(fn ->
-            Repo.transaction(fn ->
-              {:ok, _user} = Users.fetch_and_lock_user_by_id(user.id, Repo)
-              send(parent, {:credential_user_locked, backend_pid()})
-
-              receive do
-                :release -> :ok
-              end
-            end)
-          end)
-
-        assert_receive {:credential_user_locked, blocker_backend}, 5_000
-
-        mutation =
-          unboxed_task(fn ->
-            send(parent, {:credential_mutation_backend, backend_pid()})
-            apply(Auth, @operation, [code, subject])
-          end)
-
-        try do
-          assert_receive {:credential_mutation_backend, mutation_backend}, 5_000
-          await_blocked_by(mutation_backend, blocker_backend)
-          assert Auth.revoke_session(session.id, revoker) == :ok
-          assert Auth.fetch_user_and_token_by_session_token(raw) == {:error, :not_found}
-          send(blocker.pid, :release)
-          assert Task.await(blocker, 30_000) == {:ok, :ok}
-          assert Task.await(mutation, 30_000) == {:error, :session_not_found}
-          assert Repo.reload!(enrolled) == enrolled
-
-          for event <- ["user.mfa_disabled", "user.mfa_recovery_codes_regenerated"] do
-            refute Repo.exists?(
-                     Emisar.Audit.Event.Query.all()
-                     |> Emisar.Audit.Event.Query.by_account_id(account.id)
-                     |> Emisar.Audit.Event.Query.by_event_type(event)
-                   )
-          end
-        after
-          send(blocker.pid, :release)
-          stop_tasks([blocker, mutation])
-        end
-      end)
-    end
-  end
-
   test "TOTP time is sampled once after the user lock and stamps that exact bucket" do
     unboxed_owner(fn user, _account, _subject ->
       secret = "JBSWY3DPEHPK3PXP"

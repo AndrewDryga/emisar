@@ -320,25 +320,25 @@ defmodule EmisarWeb.MfaSetupLive do
     if is_nil(secret) do
       {:noreply, put_flash(socket, :error, "Still preparing — try again in a second.")}
     else
-      with {:ok, updated, recovery_codes} <-
-             Auth.enable_mfa(
-               secret,
-               otp,
-               socket.assigns.mfa_enrollment_proof,
-               socket.assigns.current_auth.token,
-               socket.assigns.current_subject
-             ),
-           {:ok, socket} <- MfaEnrollment.assign_current_proof(socket, updated) do
-        {:noreply,
-         socket
-         |> assign(:mfa_recovery_codes, recovery_codes)
-         |> assign(:codes_saved?, false)
-         |> MfaEnrollment.reset()
-         |> assign(:mfa_start_error, nil)
-         |> assign(:codes_saved?, false)
-         |> assign_mfa_enrollment_email_form()
-         |> assign_mfa_form()}
-      else
+      case Auth.enable_mfa(
+             secret,
+             otp,
+             socket.assigns.mfa_enrollment_proof,
+             socket.assigns.current_auth.token,
+             socket.assigns.current_subject
+           ) do
+        {:ok, updated, recovery_codes} ->
+          {:noreply,
+           socket
+           |> MfaEnrollment.assign_current_proof(updated)
+           |> assign(:mfa_recovery_codes, recovery_codes)
+           |> assign(:codes_saved?, false)
+           |> MfaEnrollment.reset()
+           |> assign(:mfa_start_error, nil)
+           |> assign(:codes_saved?, false)
+           |> assign_mfa_enrollment_email_form()
+           |> assign_mfa_form()}
+
         {:error, :invalid_otp} ->
           {:noreply,
            socket
@@ -355,7 +355,7 @@ defmodule EmisarWeb.MfaSetupLive do
            |> assign_mfa_form()
            |> assign(:mfa_start_error, MfaErrors.message(:mfa_enrollment_proof_stale))}
 
-        {:error, reason} when reason in [:mfa_already_enabled, :mfa_proof_stale] ->
+        {:error, :mfa_already_enabled} ->
           {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
 
         {:error, reason} when reason in [:unauthorized, :session_not_found] ->

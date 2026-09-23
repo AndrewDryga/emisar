@@ -682,29 +682,29 @@ defmodule EmisarWeb.ProfileLive do
     if is_nil(secret) do
       {:noreply, put_flash(socket, :error, "Start MFA setup again.")}
     else
-      with {:ok, updated, recovery_codes} <-
-             Auth.enable_mfa(
-               secret,
-               otp,
-               socket.assigns.mfa_enrollment_proof,
-               socket.assigns.current_auth.token,
-               socket.assigns.current_subject
-             ),
-           {:ok, socket} <- MfaEnrollment.assign_current_proof(socket, updated) do
-        {:noreply,
-         socket
-         |> put_flash(
-           :info,
-           "MFA enabled. Copy your recovery codes below — they'll only be shown once."
-         )
-         |> assign_mfa_facts(updated)
-         |> assign(:mfa_recovery_codes, recovery_codes)
-         |> assign(:codes_saved?, false)
-         |> MfaEnrollment.reset()
-         |> assign(:mfa_enrollment_step, :recovery)
-         |> assign_mfa_enrollment_email_form()
-         |> assign_mfa_form()}
-      else
+      case Auth.enable_mfa(
+             secret,
+             otp,
+             socket.assigns.mfa_enrollment_proof,
+             socket.assigns.current_auth.token,
+             socket.assigns.current_subject
+           ) do
+        {:ok, updated, recovery_codes} ->
+          {:noreply,
+           socket
+           |> put_flash(
+             :info,
+             "MFA enabled. Copy your recovery codes below — they'll only be shown once."
+           )
+           |> MfaEnrollment.assign_current_proof(updated)
+           |> assign_mfa_facts(updated)
+           |> assign(:mfa_recovery_codes, recovery_codes)
+           |> assign(:codes_saved?, false)
+           |> MfaEnrollment.reset()
+           |> assign(:mfa_enrollment_step, :recovery)
+           |> assign_mfa_enrollment_email_form()
+           |> assign_mfa_form()}
+
         {:error, :invalid_otp} ->
           {:noreply,
            socket
@@ -722,7 +722,7 @@ defmodule EmisarWeb.ProfileLive do
         {:error, reason} when reason in [:unauthorized, :session_not_found] ->
           {:noreply, UserAuth.reauthenticate(socket)}
 
-        {:error, reason} when reason in [:mfa_already_enabled, :mfa_proof_stale] ->
+        {:error, :mfa_already_enabled} ->
           {:noreply, refresh_after_mfa_enabled(socket)}
 
         {:error, _changeset} ->
@@ -800,7 +800,7 @@ defmodule EmisarWeb.ProfileLive do
 
   defp submit_disable_mfa(socket, code) do
     case Auth.disable_mfa(code, socket.assigns.current_subject) do
-      {:error, reason} when reason in [:unauthorized, :session_not_found] ->
+      {:error, :unauthorized} ->
         {:noreply, UserAuth.reauthenticate(socket)}
 
       {:ok, updated} ->
@@ -845,7 +845,7 @@ defmodule EmisarWeb.ProfileLive do
 
   defp submit_recovery_code_regeneration(socket, code) do
     case Auth.regenerate_mfa_recovery_codes(code, socket.assigns.current_subject) do
-      {:error, reason} when reason in [:unauthorized, :session_not_found] ->
+      {:error, :unauthorized} ->
         {:noreply, UserAuth.reauthenticate(socket)}
 
       {:ok, updated, codes} ->

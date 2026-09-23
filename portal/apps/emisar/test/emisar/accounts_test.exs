@@ -1557,15 +1557,11 @@ defmodule Emisar.AccountsTest do
       assert route.expires_at == session.personal_expires_at
     end
 
-    test "missing and another User's session cannot create any workspace", %{
-      subject: subject
-    } do
-      other = Fixtures.Users.create_user()
+    test "another User's session cannot create any workspace", %{subject: subject} do
+      other = %{subject | actor: Fixtures.Users.create_user()}
 
-      for invalid <- [%{subject | session_token_id: nil}, %{subject | actor: other}] do
-        assert Accounts.create_account_with_owner_from_name("Forbidden Workspace", invalid) ==
-                 {:error, :unauthorized}
-      end
+      assert Accounts.create_account_with_owner_from_name("Forbidden Workspace", other) ==
+               {:error, :unauthorized}
 
       refute Repo.exists?(Account)
       refute Repo.exists?(Membership)

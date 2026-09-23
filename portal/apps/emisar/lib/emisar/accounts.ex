@@ -671,24 +671,22 @@ defmodule Emisar.Accounts do
   `{:ok, account} | {:error, %Ecto.Changeset{} | reason}`.
   """
   def create_account_with_owner_from_name(name, %Subject{} = subject) do
-    with :ok <- Subject.ensure_personal_user(subject) do
-      attrs = %{name: name, slug: suggest_unique_slug(name)}
+    attrs = %{name: name, slug: suggest_unique_slug(name)}
 
-      Multi.new()
-      |> Auth.put_personal_session(subject)
-      |> put_account_with_owner(attrs)
-      |> Auth.put_created_membership_grant()
-      |> Repo.commit_multi(after_commit: &after_membership_activation_committed/1)
-      |> case do
-        {:ok, %{account: account}} ->
-          {:ok, account}
+    Multi.new()
+    |> Auth.put_personal_session(subject)
+    |> put_account_with_owner(attrs)
+    |> Auth.put_created_membership_grant()
+    |> Repo.commit_multi(after_commit: &after_membership_activation_committed/1)
+    |> case do
+      {:ok, %{account: account}} ->
+        {:ok, account}
 
-        {:error, {:account, %Ecto.Changeset{} = changeset}} ->
-          {:error, surface_slug_error_on_name(changeset)}
+      {:error, {:account, %Ecto.Changeset{} = changeset}} ->
+        {:error, surface_slug_error_on_name(changeset)}
 
-        {:error, reason} ->
-          {:error, reason}
-      end
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
