@@ -226,14 +226,14 @@ end
 defmodule Emisar.Widgets.Authorizer do
   @moduledoc "Authorization for widgets."
   # attaches @behaviour, imports build/2 + Subject
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
 
   alias Emisar.Widgets.Widget
 
   def manage_widgets_permission, do: build(Widget, :manage)
   def view_widgets_permission, do: build(Widget, :view)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [manage_widgets_permission(), view_widgets_permission()]
 
@@ -243,7 +243,7 @@ defmodule Emisar.Widgets.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Widget.Query.by_account_id(queryable, account_id)
 
@@ -257,7 +257,8 @@ end
 - **Authorize by permission, not role name.** A context must never branch on `subject.role` to gate an action (`subject.role != :owner` is a smell) — add a permission (e.g. `manage_owners_permission`, held by owners only) and check `Auth.Authorizer.has_permission?/2`. Comparing a *data* role value (`target.role == :owner`) is fine; gating the *actor's* capability by role name is not.
 - `for_subject/2` is the **row-scoping** authorizer — it composes onto whatever query the context built. Use the Query module helpers; do not write raw `where` here. Keep the account-scoped clause (plus any actor-specific clause, e.g. the runner-only scoping in `Runs.Authorizer`), and the `_` fallback **fails closed**: it returns the schema's `Query.none(queryable)` (a binding-free `where(queryable, false)` helper), never the unscoped queryable. The fallback is unreachable for authenticated callers — every `Subject` constructor requires an account — so this is pure defense-in-depth: a future path that skips the permission gate leaks nothing. **Credo-enforced** (`Emisar.Checks.AuthorizerFallbackFailClosed`).
 - **Background/system-side reads take an explicit `account_id`, not a forged subject.** There is no `:system` god-subject. A read with no user in scope (a recurrent job, the approval fan-out, a dispatch-payload enrichment) is a named internal function that scopes via `Schema.Query.by_account_id/2` directly — e.g. `Accounts.list_account_memberships/2` and `Catalog.fetch_action_for_account/3`. This is the IL-1.4 internal-helper pattern; it's why removing `:system` couldn't reintroduce the cross-account fan-out leak.
-- `Emisar.Auth.Authorizer.permissions_for/1` unions every per-context Authorizer's role list — that union builds the `%Subject{}.permissions` MapSet.
+- `Emisar.Auth.Permissions.for_role/1` unions every per-context Authorizer's role list — that union builds the `%Subject{}.permissions` MapSet.
+- Authorizers `use Emisar.Auth.ContextAuthorizer`, never `Emisar.Auth.Authorizer`. Every authorizer compiles against the module it `use`s, so that module must not reach any context at runtime. `Emisar.Auth.Authorizer` is the live gate that re-reads session authority; importing it from an authorizer closes a compile cycle that `mix xref.cycles` rejects.
 
 ### 6. Web layer
 

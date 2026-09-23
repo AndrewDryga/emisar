@@ -4,7 +4,7 @@ defmodule Emisar.Accounts.Authorizer do
   only one that can modify ownership; admins can manage team but not
   promote anyone past their own level.
   """
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.Accounts.{Account, Membership}
 
   # -- Catalogue -------------------------------------------------------
@@ -19,7 +19,7 @@ defmodule Emisar.Accounts.Authorizer do
   # Held by owners and admins — required to flip account-wide security knobs.
   def manage_security_settings_permission, do: build(Account, :manage_security)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(:owner),
     do: [
       manage_own_account_permission(),
@@ -54,7 +54,7 @@ defmodule Emisar.Accounts.Authorizer do
 
   # -- Subject scoping -------------------------------------------------
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %Account{id: account_id}}) do
     case query_source(queryable) do
       :accounts -> Account.Query.by_id(queryable, account_id)

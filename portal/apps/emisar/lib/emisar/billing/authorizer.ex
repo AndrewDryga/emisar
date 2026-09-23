@@ -1,6 +1,6 @@
 defmodule Emisar.Billing.Authorizer do
   @moduledoc "Authorization for the billing surface."
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.Billing.Subscription
 
   def manage_billing_permission, do: build(Subscription, :manage)
@@ -15,7 +15,7 @@ defmodule Emisar.Billing.Authorizer do
   # An admin runs the account, so they run its money too — founder's call. The
   # finance seat holds the same billing grants and nothing else, which is now its
   # entire point: a least-privilege alternative to handing out admin.
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin, :billing_manager],
     do: [manage_billing_permission(), view_invoices_permission(), view_billing_permission()]
 
@@ -26,7 +26,7 @@ defmodule Emisar.Billing.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Subscription.Query.by_account_id(queryable, account_id)
 

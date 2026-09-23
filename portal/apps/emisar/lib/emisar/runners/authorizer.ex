@@ -6,7 +6,7 @@ defmodule Emisar.Runners.Authorizer do
     * `manage_*` gates mutations and admin-only listings.
     * `view_runners_permission` gates read-only operator/viewer surfaces.
   """
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.Runners.{EnrollmentKey, Runner, Token}
 
   # -- Catalogue -------------------------------------------------------
@@ -16,7 +16,7 @@ defmodule Emisar.Runners.Authorizer do
   def issue_install_key_permission, do: build(EnrollmentKey, :issue_install)
   def manage_enrollment_keys_permission, do: build(EnrollmentKey, :manage)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [
       manage_runners_permission(),
@@ -38,7 +38,7 @@ defmodule Emisar.Runners.Authorizer do
 
   # -- Subject scoping -------------------------------------------------
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}) do
     case query_source(queryable) do
       :runners -> Runner.Query.by_account_id(queryable, account_id)

@@ -1,6 +1,6 @@
 defmodule Emisar.Catalog.Authorizer do
   @moduledoc "Authorization for the action / pack catalogue."
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.Catalog.{PackVersion, RunnerAction}
 
   def view_catalog_permission, do: build(RunnerAction, :view)
@@ -10,7 +10,7 @@ defmodule Emisar.Catalog.Authorizer do
   # to silently flip a tampered pack into a trusted state.
   def manage_catalog_permission, do: build(PackVersion, :manage)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [view_catalog_permission(), manage_catalog_permission()]
 
@@ -22,7 +22,7 @@ defmodule Emisar.Catalog.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}) do
     case query_source(queryable) do
       :catalog_runner_actions -> RunnerAction.Query.by_account_id(queryable, account_id)

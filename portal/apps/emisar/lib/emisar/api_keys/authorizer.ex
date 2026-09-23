@@ -1,13 +1,13 @@
 defmodule Emisar.ApiKeys.Authorizer do
   @moduledoc "Authorization for API keys (LLM / programmatic access)."
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.ApiKeys.ApiKey
 
   def manage_api_keys_permission, do: build(ApiKey, :manage)
   def view_api_keys_permission, do: build(ApiKey, :view)
   def issue_quick_key_permission, do: build(ApiKey, :issue_quick)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [manage_api_keys_permission(), view_api_keys_permission(), issue_quick_key_permission()]
 
@@ -19,7 +19,7 @@ defmodule Emisar.ApiKeys.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: ApiKey.Query.by_account_id(queryable, account_id)
 

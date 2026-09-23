@@ -1,6 +1,6 @@
 defmodule Emisar.Approvals.Authorizer do
   @moduledoc "Authorization for approval requests + standing grants."
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.Approvals.{Decision, Grant, Request}
 
   def decide_approval_permission, do: build(Request, :decide)
@@ -8,7 +8,7 @@ defmodule Emisar.Approvals.Authorizer do
   def view_approvals_permission, do: build(Request, :view)
   def manage_grants_permission, do: build(Grant, :manage)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [
       decide_approval_permission(),
@@ -27,7 +27,7 @@ defmodule Emisar.Approvals.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}) do
     case query_source(queryable) do
       :approval_requests -> Request.Query.by_account_id(queryable, account_id)

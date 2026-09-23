@@ -1,6 +1,6 @@
 defmodule Emisar.Runbooks.Authorizer do
   @moduledoc "Authorization for cloud runbooks."
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.Runbooks.{Runbook, RunbookExecution}
 
   # Lifecycle — deleting a runbook. Owners and admins only: a delete ends the
@@ -17,7 +17,7 @@ defmodule Emisar.Runbooks.Authorizer do
   def draft_runbooks_permission, do: build(Runbook, :draft)
   def view_runbooks_permission, do: build(Runbook, :view)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [
       manage_runbooks_permission(),
@@ -42,7 +42,7 @@ defmodule Emisar.Runbooks.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}) do
     case query_source(queryable) do
       :runbooks -> Runbook.Query.by_account_id(queryable, account_id)

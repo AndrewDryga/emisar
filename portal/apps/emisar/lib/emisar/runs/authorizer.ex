@@ -13,7 +13,7 @@ defmodule Emisar.Runs.Authorizer do
   runner socket process; they don't subject-flow so there's no dedicated
   permission for them.
   """
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.Runs.ActionRun
 
   def dispatch_run_permission, do: build(ActionRun, :dispatch)
@@ -21,7 +21,7 @@ defmodule Emisar.Runs.Authorizer do
   def cancel_own_run_permission, do: build(ActionRun, :cancel_own)
   def view_runs_permission, do: build(ActionRun, :view)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [
       dispatch_run_permission(),
@@ -40,7 +40,7 @@ defmodule Emisar.Runs.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: ActionRun.Query.by_account_id(queryable, account_id)
 

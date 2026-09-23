@@ -1,6 +1,6 @@
 defmodule Emisar.Audit.Authorizer do
   @moduledoc "Authorization for the audit log."
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.Audit.Event
 
   def view_audit_permission, do: build(Event, :view)
@@ -12,7 +12,7 @@ defmodule Emisar.Audit.Authorizer do
   # or an owner could no longer grant a role holding a permission they lack.
   def view_billing_audit_permission, do: build(Event, :view_billing)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin, :operator, :viewer],
     do: [view_audit_permission(), view_billing_audit_permission()]
 
@@ -44,7 +44,7 @@ defmodule Emisar.Audit.Authorizer do
       else: Event.Query.billing_event_types()
   end
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(%Ecto.Query{aliases: %{audit_identity_options: _}} = queryable, %Subject{
         account: %{id: account_id}
       }),

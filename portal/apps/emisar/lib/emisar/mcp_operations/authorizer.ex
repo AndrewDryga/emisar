@@ -1,12 +1,12 @@
 defmodule Emisar.MCPOperations.Authorizer do
   @moduledoc "Authorization for bridge mutation identity and recovery."
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.MCPOperations.Operation
 
   def view_operations_permission, do: build(Operation, :view)
   def reserve_operations_permission, do: build(Operation, :reserve)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(:api_client),
     do: [view_operations_permission(), reserve_operations_permission()]
 
@@ -24,7 +24,7 @@ defmodule Emisar.MCPOperations.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}),
     do: Operation.Query.by_account_id(queryable, account_id)
 

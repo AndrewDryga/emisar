@@ -1,12 +1,12 @@
 defmodule Emisar.Policies.Authorizer do
   @moduledoc "Authorization for policy bundles."
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.Policies.Policy
 
   def manage_policies_permission, do: build(Policy, :manage)
   def view_policies_permission, do: build(Policy, :view)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [manage_policies_permission(), view_policies_permission()]
 
@@ -17,7 +17,7 @@ defmodule Emisar.Policies.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(%Ecto.Query{aliases: %{policy_targets: _}} = queryable, %Subject{
         account: %{id: account_id}
       }),

@@ -1,6 +1,6 @@
 defmodule Emisar.SSO.Authorizer do
   @moduledoc "Authorization for SSO identity-provider configuration + identity bindings."
-  use Emisar.Auth.Authorizer
+  use Emisar.Auth.ContextAuthorizer
   alias Emisar.SSO.DirectoryGroup
   alias Emisar.SSO.DirectoryGroupMember
   alias Emisar.SSO.GroupRoleMapping
@@ -15,7 +15,7 @@ defmodule Emisar.SSO.Authorizer do
   # the account's stance without being handed the connections themselves.
   def view_sso_posture_permission, do: build(IdentityProvider, :view_posture)
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def list_permissions_for_role(role) when role in [:owner, :admin],
     do: [manage_sso_permission(), view_sso_posture_permission()]
 
@@ -24,7 +24,7 @@ defmodule Emisar.SSO.Authorizer do
 
   def list_permissions_for_role(_), do: []
 
-  @impl Emisar.Auth.Authorizer
+  @impl Emisar.Auth.ContextAuthorizer
   def for_subject(queryable, %Subject{account: %{id: account_id}}) do
     case query_source(queryable) do
       :sso_identity_providers ->
