@@ -2459,7 +2459,7 @@ defmodule Emisar.AuditTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_id: subject.actor.id,
+          created_by_membership_id: subject.membership_id,
           title: "deploy-book",
           name: "deploy-book",
           slug: "deploy-book"

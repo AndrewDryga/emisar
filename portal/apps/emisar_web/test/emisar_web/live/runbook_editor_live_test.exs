@@ -1667,7 +1667,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1712,7 +1712,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       published =
         [
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1783,7 +1783,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1815,7 +1815,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       published =
         [
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1867,7 +1867,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       published =
         [
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1898,7 +1898,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       published =
         [
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: live_definition
@@ -1933,7 +1933,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -2245,7 +2245,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           definition: definition
         )
 
@@ -2343,7 +2343,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(draft)
@@ -2500,7 +2500,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         [
           account_id: account.id,
-          created_by_id: owner.id,
+          created_by_membership_id:
+            Fixtures.Memberships.fetch_membership(account.id, owner.id).id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft(inputs: [input]))

@@ -411,7 +411,7 @@ defmodule Emisar.Runbooks do
              {:one_of,
               [Authorizer.author_runbooks_permission(), Authorizer.draft_runbooks_permission()]}
            ),
-         changeset = Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs),
+         changeset = Runbook.Changeset.create(account.id, subject.membership_id, attrs),
          :ok <- ensure_authored_changeset_in_access(changeset, subject) do
       insert_runbook(changeset, subject)
     end
@@ -438,7 +438,7 @@ defmodule Emisar.Runbooks do
            "description" => "",
            "draft_definition" => definition
          },
-         changeset = Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs),
+         changeset = Runbook.Changeset.create(account.id, subject.membership_id, attrs),
          :ok <- ensure_authored_changeset_in_access(changeset, subject) do
       insert_runbook(changeset, subject)
     end
@@ -531,7 +531,7 @@ defmodule Emisar.Runbooks do
                end)
                |> Multi.insert(:runbook, fn %{definition: definition} ->
                  attrs = mcp_draft_attrs(facts, definition, id)
-                 Runbook.Changeset.create(account.id, Subject.user_id(subject), attrs)
+                 Runbook.Changeset.create(account.id, subject.membership_id, attrs)
                end)
                |> Multi.insert(:audit, fn %{runbook: runbook} ->
                  Audit.Events.runbook_created(subject, runbook)
@@ -847,7 +847,7 @@ defmodule Emisar.Runbooks do
       description: loaded_runbook.description,
       definition: definition,
       definition_sha256: Definition.digest(definition),
-      published_by_id: Subject.user_id(subject)
+      published_by_membership_id: subject.membership_id
     })
   end
 

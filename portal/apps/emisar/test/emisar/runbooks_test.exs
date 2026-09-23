@@ -1241,6 +1241,7 @@ defmodule Emisar.RunbooksTest do
       attrs = runbook_attrs(title: "Database Health", slug: "")
 
       assert {:ok, runbook} = Runbooks.create_runbook(attrs, subject)
+      assert runbook.created_by_membership_id == subject.membership_id
       assert runbook.live_version == nil
       assert runbook.definition == nil
       assert runbook.slug == "database-health"
@@ -1271,6 +1272,22 @@ defmodule Emisar.RunbooksTest do
                Runbooks.publish_draft(runbook, subject)
 
       assert Repo.reload!(runbook).live_version == nil
+    end
+
+    test "client attribution cannot replace the authenticated Member or account" do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      foreign = Fixtures.Memberships.create_membership()
+
+      attrs =
+        runbook_attrs()
+        |> Map.put("account_id", foreign.account_id)
+        |> Map.put("created_by_membership_id", foreign.id)
+        |> Map.put("created_by_id", foreign.user_id)
+
+      assert {:ok, runbook} = Runbooks.create_runbook(attrs, subject)
+      assert runbook.account_id == account.id
+      assert runbook.created_by_membership_id == subject.membership_id
+      refute runbook.created_by_id
     end
 
     test "refuses a second runbook on a slug the account already uses" do
@@ -1330,6 +1347,7 @@ defmodule Emisar.RunbooksTest do
 
       assert runbook.account_id == account.id
       assert runbook.title == "Imported maintenance"
+      assert runbook.created_by_membership_id == subject.membership_id
       assert runbook.slug == "imported-maintenance"
       assert runbook.live_version == nil
       assert runbook.draft_definition == definition
@@ -1383,11 +1401,16 @@ defmodule Emisar.RunbooksTest do
 
       assert {:ok, :created, created} = Runbooks.create_or_replay_mcp_draft(facts, subject)
 
+      runbook = Repo.one!(Runbooks.Runbook)
+      assert runbook.created_by_membership_id == owner.membership_id
+      refute runbook.created_by_id
+
       assert_receive {:list_changed, :runbook, "runbook.created", created_id}
       assert created_id == created.resource_id
 
       assert {:ok, :replay, replayed} = Runbooks.create_or_replay_mcp_draft(facts, subject)
       assert replayed.id == created.id
+      assert Repo.reload!(runbook).created_by_membership_id == owner.membership_id
       refute_receive {:list_changed, :runbook, _, _}, 50
 
       changed = %{facts | title: "Renamed draft"}
@@ -1890,6 +1913,7 @@ defmodule Emisar.RunbooksTest do
 
       assert release = Repo.one(Runbooks.Release)
       assert release.runbook_id == published.id
+      assert release.published_by_membership_id == subject.membership_id
       assert release.version == 1
       assert release.definition == published.definition
       assert release.definition_sha256 == Runbooks.definition_digest(published.definition)
@@ -1902,6 +1926,35 @@ defmodule Emisar.RunbooksTest do
       assert published_event.target_id == published.id
       assert published_event.payload["version"] == 1
       assert published_event.payload["definition_sha256"] == release.definition_sha256
+    end
+
+    test "author and publisher remain exact Members after offboarding and rejoining" do
+      {user, account, author} = Fixtures.Subjects.owner_subject()
+      publisher = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      Fixtures.Policies.create_policy(account_id: account.id)
+      runner = trusted_runner(account, author)
+      runbook = create_runbook(author, definition: definition(runner.group))
+
+      assert {:ok, published} = Runbooks.publish_draft(runbook, publisher)
+      release = Repo.one!(Runbooks.Release)
+      assert release.published_by_membership_id == publisher.membership_id
+      refute release.published_by_id
+
+      retired =
+        account.id
+        |> Fixtures.Memberships.fetch_membership(user.id)
+        |> Fixtures.Memberships.mark_membership_as_deleted()
+
+      replacement =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+      refute replacement.id == retired.id
+
+      assert Repo.preload(published, :created_by_membership).created_by_membership.id ==
+               retired.id
+
+      assert Repo.preload(release, :published_by_membership).published_by_membership.id ==
+               publisher.membership_id
     end
 
     test "publishes more than 32 steps when the definition fits the safety envelope" do

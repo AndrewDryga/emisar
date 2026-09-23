@@ -104,8 +104,14 @@ defmodule Emisar.AccountsTest do
 
   describe "delete_by_id/1" do
     test "hard-deletes a tombstoned account and its owned records" do
-      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
-      runbook = Fixtures.Runbooks.create_runbook(account_id: account.id, created_by_id: owner.id)
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      runbook =
+        Fixtures.Runbooks.create_runbook(
+          account_id: account.id,
+          created_by_membership_id: subject.membership_id
+        )
+
       action_run = Fixtures.Runs.create_run(account_id: account.id)
       {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       account = Fixtures.Accounts.mark_account_as_deleted(account)

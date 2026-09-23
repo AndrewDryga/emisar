@@ -1,6 +1,41 @@
 defmodule Emisar.Seeds.SmokeTest do
   use Emisar.DataCase, async: false
-  alias Emisar.{Accounts, Auth, Fixtures, Repo, Users}
+  alias Emisar.{Accounts, Auth, Fixtures, Repo, Runbooks, Users}
+
+  test "reseed attributes a changed release to the seed owner without replacing its author" do
+    user = Fixtures.Users.create_user(email: "demo@emisar.dev")
+    account = Fixtures.Accounts.create_account(slug: "demo")
+
+    owner =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+    author = Fixtures.Memberships.create_membership(account_id: account.id)
+
+    runbook =
+      Fixtures.Runbooks.create_runbook(
+        account_id: account.id,
+        created_by_membership_id: author.id,
+        slug: "morning-edge-readiness"
+      )
+      |> Fixtures.Runbooks.publish_runbook()
+
+    ExUnit.CaptureIO.capture_io(fn ->
+      Code.eval_file(Application.app_dir(:emisar, "priv/repo/seeds.exs"))
+    end)
+
+    assert Repo.reload!(runbook).created_by_membership_id == author.id
+
+    releases =
+      Repo.all(Runbooks.Release)
+      |> Enum.filter(&(&1.runbook_id == runbook.id))
+      |> Enum.sort_by(& &1.version)
+
+    assert Enum.map(releases, & &1.published_by_membership_id) == [author.id, owner.id]
+  end
 
   test "reseed restores screenshot-account sign-in policy without changing staff or unrelated accounts" do
     seed = fn ->

@@ -129,7 +129,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
     [
       account_id: subject.account.id,
-      created_by_id: subject.actor.id,
+      created_by_membership_id: subject.membership_id,
       title: title,
       slug: Emisar.Slug.slugify(title),
       definition: definition
@@ -576,7 +576,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           title: "Half baked",
           slug: "half-baked"
         )

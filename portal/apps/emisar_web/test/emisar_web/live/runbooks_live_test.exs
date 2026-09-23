@@ -11,7 +11,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     runbook =
       Fixtures.Runbooks.create_runbook(
         account_id: account.id,
-        created_by_id: user.id,
+        created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         title: title,
         slug: String.downcase(String.replace(title, " ", "-"))
       )

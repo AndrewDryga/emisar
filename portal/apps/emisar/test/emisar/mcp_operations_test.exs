@@ -116,7 +116,7 @@ defmodule Emisar.MCPOperationsTest do
       changeset =
         Emisar.Runbooks.Runbook.Changeset.create(
           subject.account.id,
-          owner.actor.id,
+          owner.membership_id,
           runbook_attrs
         )
 

@@ -39,13 +39,13 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
   end
 
   @doc "Creates a runbook whose whole content is its first, never-published draft."
-  def create(account_id, user_id, attrs) do
+  def create(account_id, membership_id, attrs) do
     %Runbook{}
     |> cast_details(attrs, @create_fields)
     |> put_change(:account_id, account_id)
-    |> put_change(:created_by_id, user_id)
+    |> put_change(:created_by_membership_id, membership_id)
     |> cast(attrs, [:draft_definition])
-    |> validate_required([:draft_definition])
+    |> validate_required([:draft_definition, :created_by_membership_id])
     |> validate_draft_definition()
     |> changeset()
     # The MCP path supplies a deterministic `id` derived from the operation, and
@@ -53,6 +53,7 @@ defmodule Emisar.Runbooks.Runbook.Changeset do
     # re-derived id can collide with an existing PK. Map that to a tagged conflict
     # instead of an unhandled Ecto.ConstraintError (a 500 for a scheduled agent).
     |> unique_constraint(:id, name: :runbooks_pkey)
+    |> foreign_key_constraint(:created_by_membership_id)
   end
 
   @doc """

@@ -200,11 +200,13 @@ defmodule Emisar.Seeds.Runbooks do
     Map.merge(ctx, %{approval_runbook: approval_runbook, backlog_runbook: backlog_runbook})
   end
 
-  defp seed_live_runbook(%{account: account, user: user}, slug, attrs) do
+  defp seed_live_runbook(%{account: account, owner_membership: membership}, slug, attrs) do
     runbook =
       case Helpers.peek_account_runbook(account, slug) do
         nil ->
-          {:ok, created} = account.id |> Runbook.Changeset.create(user.id, attrs) |> Repo.insert()
+          {:ok, created} =
+            account.id |> Runbook.Changeset.create(membership.id, attrs) |> Repo.insert()
+
           created
 
         existing ->
@@ -218,14 +220,14 @@ defmodule Emisar.Seeds.Runbooks do
       {:ok, unchanged} = runbook |> Runbook.Changeset.discard_draft() |> Repo.update()
       unchanged
     else
-      publish_seeded_runbook(runbook)
+      publish_seeded_runbook(runbook, membership.id)
     end
   end
 
   # Publication is arranged at the changeset level: the demo runners these
   # runbooks target are seeded next, so the context's current-state publication
   # readiness cannot pass yet.
-  defp publish_seeded_runbook(%Runbook{} = runbook) do
+  defp publish_seeded_runbook(%Runbook{} = runbook, membership_id) do
     definition = runbook.draft_definition
     version = (runbook.live_version || 0) + 1
 
@@ -238,7 +240,7 @@ defmodule Emisar.Seeds.Runbooks do
         description: runbook.description,
         definition: definition,
         definition_sha256: Runbooks.definition_digest(definition),
-        published_by_id: runbook.created_by_id
+        published_by_membership_id: membership_id
       })
       |> Repo.insert()
 

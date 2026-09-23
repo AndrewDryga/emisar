@@ -50,16 +50,19 @@ defmodule Emisar.Fixtures.Runbooks do
   @doc """
   Persists a runbook carrying only its first draft — nothing live. Caller
   supplies `:account_id` (or the helper makes a fresh account) and may override
-  `:slug`/`:title`/`:description`/`:definition`/`:created_by_id`.
+  `:slug`/`:title`/`:description`/`:definition`/`:created_by_membership_id`.
   """
   def create_runbook(attrs \\ %{}) do
     attrs = Map.new(attrs)
     account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
-    created_by_id = attrs[:created_by_id] || Fixtures.Users.create_user().id
+
+    created_by_membership_id =
+      attrs[:created_by_membership_id] ||
+        Fixtures.Memberships.create_membership(account_id: account_id).id
 
     {:ok, runbook} =
       account_id
-      |> Runbook.Changeset.create(created_by_id, runbook_attrs(attrs))
+      |> Runbook.Changeset.create(created_by_membership_id, runbook_attrs(attrs))
       |> Repo.insert()
 
     runbook
@@ -84,7 +87,7 @@ defmodule Emisar.Fixtures.Runbooks do
         description: runbook.description,
         definition: definition,
         definition_sha256: Definition.digest(definition),
-        published_by_id: runbook.created_by_id
+        published_by_membership_id: runbook.created_by_membership_id
       })
       |> Repo.insert()
 

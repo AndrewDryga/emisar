@@ -3,7 +3,7 @@ defmodule Emisar.Runbooks.Release.Changeset do
   alias Emisar.Runbooks.Release
 
   @fields ~w[account_id runbook_id version title description definition definition_sha256
-             published_by_id]a
+             published_by_membership_id]a
 
   @doc "Mints release `version` of one runbook. The only transition — a release never changes."
   def create(attrs) do
@@ -15,10 +15,12 @@ defmodule Emisar.Runbooks.Release.Changeset do
       :version,
       :title,
       :definition,
-      :definition_sha256
+      :definition_sha256,
+      :published_by_membership_id
     ])
     |> validate_number(:version, greater_than: 0)
     |> validate_length(:definition_sha256, is: 64)
     |> unique_constraint([:runbook_id, :version])
+    |> foreign_key_constraint(:published_by_membership_id)
   end
 end

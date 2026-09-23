@@ -98,15 +98,14 @@ defmodule Emisar.Fixtures.Approvals do
   def create_execution_request(account, requested_by, attrs \\ %{}) do
     attrs = Map.new(attrs)
     executable? = Map.get(attrs, :executable?, false)
+    membership = Fixtures.Memberships.fetch_membership(account.id, requested_by.id)
 
     runbook =
       Fixtures.Runbooks.create_runbook(
         account_id: account.id,
-        created_by_id: requested_by.id,
+        created_by_membership_id: membership.id,
         title: attrs[:runbook_title] || "Database maintenance"
       )
-
-    membership = Fixtures.Memberships.fetch_membership(account.id, requested_by.id)
 
     stage_plan =
       attrs[:stage_plan] ||
