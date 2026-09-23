@@ -2506,19 +2506,19 @@ defmodule Emisar.SSO do
   defp existing_auth_writes(%IdentityProvider{} = provider, identity, user, claims) do
     if synthesized_oidc_identifier?(identity) do
       if claims_name_the_same_person?(provider, identity, user, claims) do
-        returning_auth_writes(provider, identity, user)
+        returning_auth_writes(provider, identity, user, claims)
       else
         pending_auth_writes(provider, identity.provider_identifier, claims)
       end
     else
-      returning_auth_writes(provider, identity, user)
+      returning_auth_writes(provider, identity, user, claims)
     end
   end
 
   # During a rolling deploy the previous release still inserts identities with
   # no Member. Bind such a row to the user's live seat, the backfill's rule; a
-  # bound identity never moves to another seat.
-  defp returning_auth_writes(provider, identity, locked_user) do
+  # bound identity never moves to another seat by itself.
+  defp returning_auth_writes(provider, identity, locked_user, claims) do
     Multi.new()
     |> Multi.run(:membership, fn repo, _changes ->
       case Accounts.fetch_and_lock_active_membership(
@@ -2527,21 +2527,51 @@ defmodule Emisar.SSO do
              identity.membership_id || live_seat_id(provider, locked_user)
            ) do
         {:ok, member} when member.user_id == locked_user.id -> {:ok, member}
-        _ -> {:error, :membership_unavailable}
+        _unavailable -> reinvited_or_unavailable(provider, identity, claims)
       end
     end)
-    |> Multi.update(:identity, fn %{membership: member} ->
-      identity
-      |> UserIdentity.Changeset.touch_last_seen()
-      |> UserIdentity.Changeset.bind_membership(member)
-    end)
-    |> Multi.run(:user, fn _repo, _changes ->
-      {:ok, locked_user}
-    end)
-    |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
-      {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
+    |> Multi.merge(fn
+      %{membership: :reinvited} ->
+        pending_auth_writes(provider, identity.provider_identifier, claims)
+
+      %{membership: member} ->
+        Multi.new()
+        |> Multi.update(
+          :identity,
+          identity
+          |> UserIdentity.Changeset.touch_last_seen()
+          |> UserIdentity.Changeset.bind_membership(member)
+        )
+        |> Multi.run(:user, fn _repo, _changes -> {:ok, locked_user} end)
+        |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
+          {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
+        end)
     end)
   end
+
+  # A removed seat never authorizes. When the verified email names this same
+  # person's new live seat here (they were invited back), the sign-in becomes
+  # the ordinary existing-member link request, and only an admin's approval
+  # moves the identity onto that seat (link_identity/4). Every other failure —
+  # a suspended seat, no verified email, someone else's seat, no seat here —
+  # stays refused.
+  defp reinvited_or_unavailable(
+         provider,
+         %UserIdentity{membership_id: bound_id, user_id: user_id},
+         claims
+       )
+       when is_binary(bound_id) do
+    case matched_member(provider, verified_email(provider, claims)) do
+      %Accounts.Membership{id: seat_id, user_id: ^user_id} when seat_id != bound_id ->
+        {:ok, :reinvited}
+
+      _unmatched ->
+        {:error, :membership_unavailable}
+    end
+  end
+
+  defp reinvited_or_unavailable(_provider, _identity, _claims),
+    do: {:error, :membership_unavailable}
 
   defp live_seat_id(provider, user) do
     case Accounts.peek_sync_membership(provider.account_id, user.id) do

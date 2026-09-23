@@ -1,6 +1,6 @@
 defmodule Emisar.SSOMembershipBindingTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Auth, Fixtures, Repo, RequestContext, SSO}
+  alias Emisar.{Accounts, Auth, Fixtures, Repo, RequestContext, SSO, Users}
   alias Emisar.SSO.SCIMUserUpdate
 
   defmodule VerifiedOIDC do
@@ -49,7 +49,27 @@ defmodule Emisar.SSOMembershipBindingTest do
     )
   end
 
-  test "ordinary OIDC proof cannot adopt a replacement membership", %{
+  defp oidc_member(account) do
+    provider = Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :keycloak)
+    user = Fixtures.Users.create_user()
+    member = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+
+    identity =
+      Fixtures.SSO.create_user_identity(%{
+        account_id: account.id,
+        provider_id: provider.id,
+        user_id: user.id,
+        membership: member
+      })
+
+    %{provider: provider, user: user, member: member, identity: identity}
+  end
+
+  defp verified_claims(identity, user) do
+    %{"sub" => identity.provider_identifier, "email" => user.email, "email_verified" => true}
+  end
+
+  test "OIDC proof for a replacement seat waits for an admin, whose approval binds it", %{
     member: member,
     subject: subject,
     identity: identity,
@@ -57,17 +77,114 @@ defmodule Emisar.SSOMembershipBindingTest do
     provider: provider
   } do
     replacement = replace_member(member, subject)
+    claims = verified_claims(identity, user)
 
-    claims = %{
-      "sub" => identity.provider_identifier,
-      "email" => user.email,
-      "email_verified" => true
-    }
-
-    assert {:error, :membership_unavailable} =
-             SSO.complete_auth(provider, %{"claims" => claims}, %{})
-
+    assert {:pending, request} = SSO.complete_auth(provider, %{"claims" => claims}, %{})
+    assert request.matched_membership_id == replacement.id
+    assert Repo.reload!(identity).membership_id == member.id
     assert Repo.reload!(replacement).display_name == "Replacement Member"
+
+    assert {:ok, %{identity: linked}} =
+             SSO.approve_link_request(request, Accounts.RunnerAccess.none(), subject)
+
+    assert linked.id == identity.id
+    assert linked.membership_id == replacement.id
+
+    assert {:ok, %{identity: signed_in}} = SSO.complete_auth(provider, %{"claims" => claims}, %{})
+    assert signed_in.membership_id == replacement.id
+  end
+
+  test "an OIDC member invited back is held until they accept, then approval binds the new seat",
+       %{account: account, subject: subject} do
+    %{provider: provider, user: user, member: member, identity: identity} = oidc_member(account)
+    assert {:ok, _removed} = Accounts.delete_membership(member, subject)
+    invitation_attrs = Fixtures.Accounts.invitation_attrs(email: user.email)
+
+    assert {:ok, %{membership: invitation, invitation_token: token}} =
+             Accounts.invite_user_to_account(invitation_attrs, subject)
+
+    claims = verified_claims(identity, user)
+    assert {:pending, request} = SSO.complete_auth(provider, %{"claims" => claims}, %{})
+    assert request.matched_membership_id == invitation.id
+
+    assert SSO.approve_link_request(request, Accounts.RunnerAccess.none(), subject) ==
+             {:error, :invitation_pending}
+
+    assert {:ok, _accepted} = Accounts.mark_invitation_accepted(invitation, token, user)
+
+    assert {:ok, %{identity: linked}} =
+             SSO.approve_link_request(request, Accounts.RunnerAccess.none(), subject)
+
+    assert linked.id == identity.id
+    assert linked.membership_id == invitation.id
+
+    assert {:ok, %{identity: signed_in}} = SSO.complete_auth(provider, %{"claims" => claims}, %{})
+    assert signed_in.membership_id == invitation.id
+  end
+
+  test "a removed member who was not invited back stays refused and is never re-provisioned", %{
+    account: account,
+    subject: subject
+  } do
+    %{provider: provider, user: user, member: member, identity: identity} = oidc_member(account)
+    assert {:ok, _removed} = Accounts.delete_membership(member, subject)
+    users_before = Repo.aggregate(Users.User, :count)
+    memberships_before = Repo.aggregate(Accounts.Membership, :count)
+    verified = verified_claims(identity, user)
+    unverified = Map.delete(verified, "email_verified")
+
+    assert SSO.complete_auth(provider, %{"claims" => verified}, %{}) ==
+             {:error, :membership_unavailable}
+
+    assert SSO.complete_auth(provider, %{"claims" => unverified}, %{}) ==
+             {:error, :membership_unavailable}
+
+    refute Repo.one(SSO.LinkRequest)
+    assert Repo.aggregate(Users.User, :count) == users_before
+    assert Repo.aggregate(Accounts.Membership, :count) == memberships_before
+    assert Repo.reload!(identity).membership_id == member.id
+  end
+
+  test "a returning member whose token has no verified email is refused, never held", %{
+    account: account,
+    subject: subject
+  } do
+    %{provider: provider, user: user, member: member, identity: identity} = oidc_member(account)
+    _replacement = replace_member(member, subject)
+    claims = Map.delete(verified_claims(identity, user), "email_verified")
+
+    assert SSO.complete_auth(provider, %{"claims" => claims}, %{}) ==
+             {:error, :membership_unavailable}
+
+    refute Repo.one(SSO.LinkRequest)
+    assert Repo.reload!(identity).membership_id == member.id
+  end
+
+  test "a live seat in another workspace never holds a sign-in here", %{
+    account: account,
+    subject: subject
+  } do
+    %{provider: provider, user: user, member: member, identity: identity} = oidc_member(account)
+    assert {:ok, _removed} = Accounts.delete_membership(member, subject)
+    other_account = Fixtures.Accounts.create_account()
+    Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
+
+    assert SSO.complete_auth(provider, %{"claims" => verified_claims(identity, user)}, %{}) ==
+             {:error, :membership_unavailable}
+
+    refute Repo.one(SSO.LinkRequest)
+    assert Repo.reload!(identity).membership_id == member.id
+  end
+
+  test "a suspended seat stays refused, never held", %{account: account} do
+    %{provider: provider, user: user, member: member, identity: identity} = oidc_member(account)
+    Fixtures.Memberships.suspend_membership(member)
+
+    assert SSO.complete_auth(provider, %{"claims" => verified_claims(identity, user)}, %{}) ==
+             {:error, :membership_unavailable}
+
+    refute Repo.one(SSO.LinkRequest)
+    assert Repo.reload!(identity).membership_id == member.id
   end
 
   test "an identity written without a Member during a rolling deploy binds to the live seat", %{
