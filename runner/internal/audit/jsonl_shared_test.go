@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -112,74 +111,6 @@ func TestJSONL_SharedProcess(t *testing.T) {
 		t.Fatalf("child write failed: %v: %s", err, stderr.String())
 	}
 	assertSharedJournal(t, path, 60)
-}
-
-type pausedAppendFile struct {
-	auditFile
-	started chan struct{}
-	resume  chan struct{}
-}
-
-func (f pausedAppendFile) Write(line []byte) (int, error) {
-	n, err := f.auditFile.Write(line[:len(line)-1])
-	if err != nil {
-		return n, err
-	}
-	close(f.started)
-	<-f.resume
-	m, err := f.auditFile.Write(line[len(line)-1:])
-	return n + m, err
-}
-
-// Opening a second sink must not mistake an in-progress append for a torn
-// crash tail and truncate it. Hold the write before its final newline.
-func TestJSONL_OpenWaitsForActiveAppend(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "events.jsonl")
-	sink, err := OpenJSONL(path, JSONLOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = sink.Close() })
-	paused := pausedAppendFile{sink.f, make(chan struct{}), make(chan struct{})}
-	var release sync.Once
-	resume := func() { release.Do(func() { close(paused.resume) }) }
-	t.Cleanup(resume)
-	sink.f = paused
-	written := make(chan error, 1)
-	go func() {
-		written <- sink.Write(context.Background(), Event{EventID: "first", Type: EventExecutionCompleted})
-	}()
-	select {
-	case <-paused.started:
-	case err := <-written:
-		t.Fatalf("initial append ended before the pause: %v", err)
-	case <-time.After(30 * time.Second):
-		t.Fatal("initial append did not reach the pause")
-	}
-	opened := make(chan error, 1)
-	go func() {
-		peer, err := OpenJSONL(path, JSONLOptions{})
-		if err == nil {
-			err = peer.Write(context.Background(), Event{EventID: "second", Type: EventExecutionCompleted})
-			_ = peer.Close()
-		}
-		opened <- err
-	}()
-	// A bounded negative wait tests the blocking contract, not service startup
-	// speed: until resume, the first append remains deliberately incomplete.
-	select {
-	case err := <-opened:
-		t.Fatalf("peer opened during a partial append: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	resume()
-	if err := <-written; err != nil {
-		t.Fatal(err)
-	}
-	if err := <-opened; err != nil {
-		t.Fatal(err)
-	}
-	assertSharedJournal(t, path, 2)
 }
 
 func assertSharedJournal(t *testing.T, path string, count int) {

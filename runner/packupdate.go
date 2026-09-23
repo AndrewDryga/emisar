@@ -402,21 +402,8 @@ func fetchPackIndex(ctx context.Context, registry string) (map[string]registryPa
 
 	out := make(map[string]registryPack, len(doc.Packs))
 	for _, p := range doc.Packs {
-		if p.Hash != "" && p.ContentHash != "" && !hashEqual(p.Hash, p.ContentHash) {
-			return nil, fmt.Errorf("pack index entry %q: conflicting content hashes", p.ID)
-		}
 		if p.Hash == "" {
 			p.Hash = p.ContentHash
-		}
-		if normalizeHash(p.Hash) == "" {
-			return nil, fmt.Errorf("pack index entry %q: missing content hash", p.ID)
-		}
-		if p.TarballURL != "" {
-			// A CDN may differ from the index host. The hash pins the bytes;
-			// existing fetch transport and archive limits still apply.
-			if err := config.CheckEndpointScheme(p.TarballURL, false); err != nil {
-				return nil, fmt.Errorf("pack index entry %q: tarball URL: %w", p.ID, err)
-			}
 		}
 		out[p.ID] = p
 	}

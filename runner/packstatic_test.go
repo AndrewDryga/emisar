@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -125,27 +123,5 @@ func TestStaticRegistryDiffReportsMissingTarball(t *testing.T) {
 	}
 	if out, err := runDiff(t, dest, registry); err == nil || !strings.Contains(err.Error(), "not found (404)") {
 		t.Fatalf("want download error, got %v\n%s", err, out)
-	}
-}
-
-func TestFetchPackIndexRejectsInvalidCatalogEntries(t *testing.T) {
-	for _, tc := range []struct {
-		name, entry, want string
-	}{
-		{"missing hash", `"tarball_url":"https://packs.example/redis.tgz"`, "missing content hash"},
-		{"conflicting hashes", `"hash":"sha256:aaa","content_hash":"sha256:bbb"`, "conflicting content hashes"},
-		{"local path", `"content_hash":"sha256:aaa","tarball_url":"/tmp/redis"`, "tarball URL"},
-		{"file scheme", `"content_hash":"sha256:aaa","tarball_url":"file:///tmp/redis"`, "tarball URL"},
-		{"insecure remote URL", `"content_hash":"sha256:aaa","tarball_url":"http://packs.example/redis.tgz"`, "tarball URL"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = fmt.Fprintf(w, `{"packs":[{"id":"redis","version":"0.4.0",%s}]}`, tc.entry)
-			}))
-			t.Cleanup(srv.Close)
-			if _, err := fetchPackIndex(context.Background(), srv.URL); err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("want %q, got %v", tc.want, err)
-			}
-		})
 	}
 }
