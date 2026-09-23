@@ -483,7 +483,12 @@ defmodule Emisar.SSO do
 
   @session_step_up_max_age_seconds 600
 
-  @doc "Existing linked providers this exact browser may use to prove its workspace SSO requirement."
+  @doc """
+  Existing linked providers this exact browser may use to prove its workspace
+  SSO requirement. A person holds one live seat per workspace, so an identity of
+  theirs on another seat is on a removed one: a member invited back continues
+  with it, and completing SSO moves it to the current seat.
+  """
   def list_session_step_up_providers(%Subject{actor: %Users.User{}} = subject) do
     with {:ok, current} <-
            Auth.Authorizer.fetch_addressable_subject(
@@ -494,7 +499,6 @@ defmodule Emisar.SSO do
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.provider_identifier_active()
         |> UserIdentity.Query.by_user_id(current.actor.id)
-        |> UserIdentity.Query.by_membership_id(current.membership_id)
         |> UserIdentity.Query.with_preloaded_provider()
         |> Authorizer.for_subject(current)
         |> Repo.all()
@@ -544,10 +548,11 @@ defmodule Emisar.SSO do
   def complete_session_step_up(params, stashed, digest, %Subject{} = subject)
       when is_map(params) and is_map(stashed) and is_binary(digest) do
     with :ok <- ensure_session_step_up_stash(stashed, subject, digest),
-         {:ok, _identity, provider} <- session_step_up_identity(stashed.provider_id, subject),
+         {:ok, identity, provider} <- session_step_up_identity(stashed.provider_id, subject),
          {:ok, %{identifier: identifier, claims: claims}} <-
            OIDC.verify_callback(provider, params, stashed),
-         true <- identifier == stashed.provider_identifier do
+         true <- identifier == stashed.provider_identifier,
+         :ok <- move_identity_to_current_seat(identity, provider, stashed, claims, subject) do
       Auth.complete_sso_session_step_up(stashed, claims, digest, subject)
     else
       false -> {:error, :session_step_up_invalid}
@@ -557,6 +562,78 @@ defmodule Emisar.SSO do
 
   def complete_session_step_up(_params, _stashed, _digest, %Subject{}),
     do: {:error, :session_step_up_invalid}
+
+  # A member removed and later invited back still has their identity on the
+  # removed seat. Accepting the invitation proved the mailbox and the provider
+  # has just proved the identity, so the identity moves to the current seat, in
+  # sign-in's lock order. The step-up then rechecks everything under its own locks.
+  defp move_identity_to_current_seat(
+         %UserIdentity{membership_id: seat_id},
+         _provider,
+         _stashed,
+         _claims,
+         %Subject{membership_id: seat_id}
+       ),
+       do: :ok
+
+  defp move_identity_to_current_seat(identity, provider, stashed, claims, subject) do
+    Multi.new()
+    |> put_active_account_lock(provider.account_id)
+    |> put_sso_entitlement(provider.account_id)
+    |> put_callback_provider_lock(provider, stashed.namespace, claims)
+    |> Multi.run(:locked_user, fn repo, _changes ->
+      Users.fetch_and_lock_user_by_id(identity.user_id, repo)
+    end)
+    |> Multi.run(:locked_identity, fn repo, _changes ->
+      case lock_step_up_identity(repo, identity) do
+        %UserIdentity{} = locked -> {:ok, locked}
+        nil -> {:error, :session_step_up_invalid}
+      end
+    end)
+    |> Multi.run(:current_seat, fn repo, changes ->
+      with {:ok, member} <-
+             Accounts.fetch_and_lock_active_membership(
+               repo,
+               provider.account_id,
+               subject.membership_id
+             ),
+           true <- member.user_id == changes.locked_identity.user_id,
+           true <-
+             names_identity_owner?(
+               changes.locked_provider,
+               changes.locked_identity,
+               subject,
+               claims
+             ) do
+        {:ok, member}
+      else
+        _ -> {:error, :session_step_up_invalid}
+      end
+    end)
+    |> Multi.update(:moved_identity, fn changes ->
+      UserIdentity.Changeset.bind_membership(changes.locked_identity, changes.current_seat)
+    end)
+    |> Multi.insert(:identity_audit, fn changes ->
+      Audit.Events.sso_identity_linked(subject, changes.current_seat, changes.locked_provider)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, _changes} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp lock_step_up_identity(repo, identity) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.provider_identifier_active()
+    |> UserIdentity.Query.by_id(identity.id)
+    |> UserIdentity.Query.by_user_id(identity.user_id)
+    |> UserIdentity.Query.by_account_id(identity.account_id)
+    |> UserIdentity.Query.by_provider_id(identity.provider_id)
+    |> UserIdentity.Query.by_provider_identifier(identity.provider_identifier)
+    |> UserIdentity.Query.lock_for_update()
+    |> repo.peek()
+  end
 
   defp session_step_up_actor(digest, %Subject{actor: %Users.User{}} = subject) do
     with {:ok, current} <-
@@ -580,7 +657,6 @@ defmodule Emisar.SSO do
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_provider_id(provider_id)
       |> UserIdentity.Query.by_user_id(current.actor.id)
-      |> UserIdentity.Query.by_membership_id(current.membership_id)
       |> UserIdentity.Query.with_preloaded_provider()
       |> Authorizer.for_subject(current)
 
@@ -2506,18 +2582,18 @@ defmodule Emisar.SSO do
   defp existing_auth_writes(%IdentityProvider{} = provider, identity, user, claims) do
     if synthesized_oidc_identifier?(identity) do
       if claims_name_the_same_person?(provider, identity, user, claims) do
-        returning_auth_writes(provider, identity, user, claims)
+        returning_auth_writes(provider, identity, user)
       else
         pending_auth_writes(provider, identity.provider_identifier, claims)
       end
     else
-      returning_auth_writes(provider, identity, user, claims)
+      returning_auth_writes(provider, identity, user)
     end
   end
 
   # An identity signs in only to the seat it is bound to; it never moves to
   # another seat by itself.
-  defp returning_auth_writes(provider, identity, locked_user, claims) do
+  defp returning_auth_writes(provider, identity, locked_user) do
     Multi.new()
     |> Multi.run(:membership, fn repo, _changes ->
       case Accounts.fetch_and_lock_active_membership(
@@ -2526,46 +2602,15 @@ defmodule Emisar.SSO do
              identity.membership_id
            ) do
         {:ok, member} when member.user_id == locked_user.id -> {:ok, member}
-        _unavailable -> reinvited_or_unavailable(provider, identity, claims)
+        _ -> {:error, :membership_unavailable}
       end
     end)
-    |> Multi.merge(fn
-      %{membership: :reinvited} ->
-        pending_auth_writes(provider, identity.provider_identifier, claims)
-
-      %{membership: _member} ->
-        Multi.new()
-        |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
-        |> Multi.run(:user, fn _repo, _changes -> {:ok, locked_user} end)
-        |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
-          {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
-        end)
+    |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
+    |> Multi.run(:user, fn _repo, _changes -> {:ok, locked_user} end)
+    |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
+      {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
     end)
   end
-
-  # A removed seat never authorizes. When the verified email names this same
-  # person's new live seat here (they were invited back), the sign-in becomes
-  # the ordinary existing-member link request, and only an admin's approval
-  # moves the identity onto that seat (link_identity/4). Every other failure —
-  # a suspended seat, no verified email, someone else's seat, no seat here —
-  # stays refused.
-  defp reinvited_or_unavailable(
-         provider,
-         %UserIdentity{membership_id: bound_id, user_id: user_id},
-         claims
-       )
-       when is_binary(bound_id) do
-    case matched_member(provider, verified_email(provider, claims)) do
-      %Accounts.Membership{id: seat_id, user_id: ^user_id} when seat_id != bound_id ->
-        {:ok, :reinvited}
-
-      _unmatched ->
-        {:error, :membership_unavailable}
-    end
-  end
-
-  defp reinvited_or_unavailable(_provider, _identity, _claims),
-    do: {:error, :membership_unavailable}
 
   defp synthesized_oidc_identifier?(%UserIdentity{provisioned_via: :scim} = identity),
     do: identity.provider_identifier == identity.scim_external_id

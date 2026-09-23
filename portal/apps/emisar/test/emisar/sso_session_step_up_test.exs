@@ -253,6 +253,48 @@ defmodule Emisar.SSOSessionStepUpTest do
       refute_received {:disconnect, _}
     end
 
+    test "a member invited back continues with SSO, which moves their identity to the new seat",
+         %{user: _, account: _, member: _, provider: _, identity: _} = context do
+      replacement = invite_back(context)
+      browser = browser(context.user, context.account, nil, replacement)
+      Fixtures.Accounts.set_account_settings(context.account, %{require_sso: true})
+
+      assert {:ok, [listed]} = SSO.list_session_step_up_providers(browser.subject)
+      assert listed.id == context.provider.id
+
+      stash = begin_step_up(context, browser)
+      :ok = Audit.subscribe_account_audit(context.account.id)
+
+      assert {:ok, result} = complete(context, browser, stash)
+      assert Repo.reload!(context.identity).membership_id == replacement.id
+      assert_receive {:audit_event, %Audit.Event{event_type: "sso.identity_linked"}}
+
+      assert {:ok, user, replacement_session} =
+               Auth.fetch_user_and_token_by_session_token(result.token)
+
+      current =
+        Fixtures.Subjects.subject_for(user, context.account,
+          session: replacement_session,
+          membership: replacement
+        )
+
+      assert Accounts.ensure_account_compliant(context.account, current) == :ok
+    end
+
+    test "a failed proof leaves an identity on the removed seat",
+         %{user: _, account: _, member: _, identity: _} = context do
+      replacement = invite_back(context)
+      browser = browser(context.user, context.account, nil, replacement)
+      stash = begin_step_up(context, browser)
+      wrong_person = %{"claims" => %{"sub" => "another-person"}}
+
+      assert SSO.complete_session_step_up(wrong_person, stash, browser.digest, browser.subject) ==
+               {:error, :session_step_up_invalid}
+
+      assert Repo.reload!(context.identity).membership_id == context.member.id
+      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(browser.raw)
+    end
+
     test "a SCIM-synthesized identifier needs a token naming the same person, as at sign-in",
          %{user: _, account: _} = context do
       identity =
@@ -614,10 +656,33 @@ defmodule Emisar.SSOSessionStepUpTest do
     end
   end
 
-  defp browser(user, account, mfa_at \\ nil) do
+  # An owner removes the member and invites the same person back: their SSO
+  # identity still names the removed seat.
+  defp invite_back(%{account: account, member: member, user: user}) do
+    owner =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: :owner
+      )
+
+    assert {:ok, _removed} =
+             Accounts.delete_membership(member, Fixtures.Subjects.membership_subject(owner))
+
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      user_id: user.id,
+      role: :viewer
+    )
+  end
+
+  defp browser(user, account, mfa_at \\ nil, membership \\ nil) do
     raw = Fixtures.Auth.create_session_token!(user, :magic_link, mfa_at)
     {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
-    subject = Fixtures.Subjects.subject_for(user, account, session: session)
+
+    subject =
+      Fixtures.Subjects.subject_for(user, account, session: session, membership: membership)
+
     %{raw: raw, digest: Crypto.hash(raw), session: session, subject: subject}
   end
 

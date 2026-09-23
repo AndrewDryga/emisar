@@ -671,7 +671,7 @@ defmodule EmisarWeb.SSOController do
   end
 
   defp callback_error_message(:membership_unavailable) do
-    "This single sign-on identity no longer has workspace access. Ask your team admin to restore or link your access."
+    "This single sign-on identity no longer has workspace access. If you were invited back, accept the emailed invitation first. Otherwise, ask your team admin."
   end
 
   defp callback_error_message(_other),

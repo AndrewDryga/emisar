@@ -26,7 +26,8 @@ defmodule Emisar.Fixtures.Subjects do
     context = opts[:context] || %RequestContext{}
 
     membership =
-      Fixtures.Memberships.fetch_membership(account.id, user.id) ||
+      opts[:membership] ||
+        Fixtures.Memberships.fetch_membership(account.id, user.id) ||
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: user.id,

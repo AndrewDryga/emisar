@@ -1006,79 +1006,7 @@ defmodule EmisarWeb.SSOControllerTest do
       assert auth.user_identity_id
     end
 
-    test "a member invited back is held for approval, then signs in under Require SSO", %{
-      conn: conn
-    } do
-      account = enterprise_account()
-      provider = provider_fixture(account)
-      Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
-      owner = Fixtures.Users.create_user()
-
-      owner_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
-
-      owner_identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: owner.id,
-          membership: owner_membership
-        )
-
-      admin =
-        Fixtures.Subjects.subject_for(owner, account,
-          auth_method: :sso,
-          user_identity_id: owner_identity.id
-        )
-
-      %{user: user, membership: member, identity: identity} =
-        Fixtures.SSO.create_directory_member(provider)
-
-      assert {:ok, _removed} = Emisar.Accounts.delete_membership(member, admin)
-
-      replacement =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      claims = %{
-        "sub" => identity.provider_identifier,
-        "email" => user.email,
-        "email_verified" => "true"
-      }
-
-      held =
-        conn
-        |> stash_callback(provider)
-        |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
-
-      assert redirected_to(held) == ~p"/sign_in/sso/pending"
-      refute get_session(held, :user_token)
-      request_id = get_session(held, :sso_pending_request)
-      assert {:ok, request} = Emisar.SSO.fetch_pending_link_request(request_id)
-      assert request.matched_membership_id == replacement.id
-      assert Repo.reload!(identity).membership_id == member.id
-
-      assert {:ok, _linked} =
-               Emisar.SSO.approve_link_request(
-                 request,
-                 Emisar.Accounts.RunnerAccess.none(),
-                 admin
-               )
-
-      signed_in =
-        build_conn()
-        |> stash_callback(provider)
-        |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
-
-      assert redirected_to(signed_in) == ~p"/app/#{account}"
-      assert Repo.reload!(identity).membership_id == replacement.id
-      assert {:ok, _lv, _html} = signed_in |> recycle() |> live(~p"/app/#{account}/runners")
-    end
-
-    test "a removed member who was not invited back is refused and told how to recover", %{
+    test "a removed identity cannot sign into a replacement seat and explains recovery", %{
       conn: conn
     } do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
@@ -1088,6 +1016,9 @@ defmodule EmisarWeb.SSOControllerTest do
         Fixtures.SSO.create_directory_member(provider)
 
       assert {:ok, _removed} = Emisar.Accounts.delete_membership(member, subject)
+
+      replacement =
+        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
 
       conn =
         conn
@@ -1101,11 +1032,14 @@ defmodule EmisarWeb.SSOControllerTest do
         })
 
       assert redirected_to(conn) == ~p"/sign_in"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "restore or link your access"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
+               "accept the emailed invitation first"
+
       refute get_session(conn, :user_token)
-      refute get_session(conn, :sso_pending_request)
       refute get_session(conn, @stash_key)
       assert Repo.reload!(identity).membership_id == member.id
+      refute Repo.reload!(replacement).disabled_at
     end
 
     test "account disable between begin and callback prevents JIT side effects", %{conn: conn} do
