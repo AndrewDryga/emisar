@@ -26,7 +26,6 @@ defmodule Emisar.Repo.Migrations.AddProofBoundMemberGrants do
     create unique_index(:auth_member_grants, [:user_token_id, :account_id])
     create unique_index(:auth_member_grants, [:id, :account_id, :membership_id])
     create index(:auth_member_grants, [:account_id, :membership_id])
-    create unique_index(:sso_user_identities, [:id, :account_id, :membership_id])
 
     execute """
             ALTER TABLE auth_member_grants ADD CONSTRAINT auth_member_grants_membership_fkey
@@ -41,7 +40,10 @@ defmodule Emisar.Repo.Migrations.AddProofBoundMemberGrants do
       add :account_id, :binary_id, null: false
       add :membership_id, :binary_id, null: false
       add :auth_method, :string, null: false
-      add :user_identity_id, :binary_id
+
+      add :user_identity_id,
+          references(:sso_user_identities, type: :binary_id, on_delete: :delete_all)
+
       add :issuer, :text
       add :provider_identifier, :text
       add :direct, :boolean, null: false
@@ -61,13 +63,6 @@ defmodule Emisar.Repo.Migrations.AddProofBoundMemberGrants do
             REFERENCES auth_member_grants (id, account_id, membership_id) ON DELETE CASCADE
             """,
             "ALTER TABLE auth_member_grant_routes DROP CONSTRAINT auth_member_grant_routes_grant_fkey"
-
-    execute """
-            ALTER TABLE auth_member_grant_routes ADD CONSTRAINT auth_member_grant_routes_identity_fkey
-            FOREIGN KEY (user_identity_id, account_id, membership_id)
-            REFERENCES sso_user_identities (id, account_id, membership_id) ON DELETE CASCADE
-            """,
-            "ALTER TABLE auth_member_grant_routes DROP CONSTRAINT auth_member_grant_routes_identity_fkey"
 
     create constraint(:auth_member_grant_routes, :auth_member_grant_routes_proof_check,
              check: """

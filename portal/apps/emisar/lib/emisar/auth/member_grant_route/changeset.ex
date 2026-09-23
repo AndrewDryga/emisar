@@ -30,7 +30,7 @@ defmodule Emisar.Auth.MemberGrantRoute.Changeset do
       expires_at: expires_at
     )
     |> foreign_key_constraint(:member_grant_id, name: :auth_member_grant_routes_grant_fkey)
-    |> foreign_key_constraint(:user_identity_id, name: :auth_member_grant_routes_identity_fkey)
+    |> foreign_key_constraint(:user_identity_id)
     |> check_constraint(:auth_method, name: :auth_member_grant_routes_proof_check)
   end
 end

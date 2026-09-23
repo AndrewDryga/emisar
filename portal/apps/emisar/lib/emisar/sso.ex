@@ -946,12 +946,8 @@ defmodule Emisar.SSO do
     |> Multi.run(:actor, fn repo, %{account: account, provider: locked_provider} ->
       lock_identity_link_actor(repo, account, locked_provider, stashed, digest, subject)
     end)
-    |> Multi.run(:identity_write, fn repo,
-                                     %{actor: %{membership: member}, provider: locked_provider} ->
+    |> Multi.run(:identity, fn repo, %{actor: %{membership: member}, provider: locked_provider} ->
       link_identity_to_actor(repo, locked_provider, member, identifier, claims)
-    end)
-    |> Multi.run(:identity, fn _repo, %{identity_write: %{identity: identity}} ->
-      {:ok, identity}
     end)
     |> Multi.insert(:identity_audit, fn %{
                                           actor: %{subject: current_subject, membership: member},
@@ -960,7 +956,7 @@ defmodule Emisar.SSO do
       Audit.Events.sso_identity_linked(current_subject, member, locked_provider)
     end)
     |> Multi.merge(&provider_verification_writes(&1, stashed.purpose))
-    |> Repo.commit_multi(after_commit: &disconnect_identity_write/1)
+    |> Repo.commit_multi()
     |> case do
       {:ok, %{identity: identity, provider: locked_provider}} ->
         {:ok, %{identity: identity, provider: locked_provider, purpose: stashed.purpose}}
@@ -1066,52 +1062,21 @@ defmodule Emisar.SSO do
   defp ensure_identity_link_target(nil, nil, _user_id), do: :ok
 
   defp persist_self_verified_identity(repo, provider, member, nil, identifier, claims) do
-    changeset =
-      UserIdentity.Changeset.create(provider.account_id, provider.id, member, %{
-        provider_identifier: identifier,
-        claims: claims,
-        created_by: :user,
-        provisioned_via: :oidc_link
-      })
-
-    with {:ok, identity} <- repo.insert(changeset),
-         do: {:ok, %{identity: identity, socket_topics: []}}
+    UserIdentity.Changeset.create(provider.account_id, provider.id, member, %{
+      provider_identifier: identifier,
+      claims: claims,
+      created_by: :user,
+      provisioned_via: :oidc_link
+    })
+    |> repo.insert()
   end
 
   defp persist_self_verified_identity(repo, _provider, member, identity, identifier, claims) do
     identity
     |> UserIdentity.Changeset.verify_by_user(identifier, claims)
     |> UserIdentity.Changeset.bind_membership(member)
-    |> update_identity_binding(repo)
+    |> repo.update()
   end
-
-  @doc "Internal — update a locked identity binding, retiring old proof before any referenced Member changes."
-  def update_identity_binding(%Ecto.Changeset{data: %UserIdentity{} = identity} = changeset, repo) do
-    authority_fields = [
-      :provider_identifier,
-      :membership_id,
-      :user_id,
-      :provider_identifier_retired_at,
-      :deleted_at
-    ]
-
-    with {:ok, effect} <-
-           retire_changed_identity_routes(identity, changeset, authority_fields, repo),
-         {:ok, updated} <- repo.update(changeset) do
-      {:ok, %{identity: updated, socket_topics: effect.socket_topics}}
-    end
-  end
-
-  defp retire_changed_identity_routes(identity, changeset, authority_fields, repo) do
-    if Enum.any?(authority_fields, &Map.has_key?(changeset.changes, &1)),
-      do: Auth.delete_identity_session_routes([identity.id], repo),
-      else: {:ok, %{socket_topics: []}}
-  end
-
-  defp disconnect_identity_write(%{identity_write: %{socket_topics: topics}}),
-    do: Auth.disconnect_live_socket_topics(topics)
-
-  defp disconnect_identity_write(_changes), do: :ok
 
   defp provider_verification_writes(changes, :verify_provider) do
     provider = changes.provider
@@ -3917,7 +3882,6 @@ defmodule Emisar.SSO do
       case Repo.commit_multi(multi) do
         {:ok, %{user: user, identity: identity} = changes} ->
           :ok = link_approval_membership_effects(changes)
-          :ok = disconnect_identity_write(changes)
           broadcast_link_request_approved(request)
           {:ok, %{user: user, identity: identity}}
 
@@ -4165,11 +4129,8 @@ defmodule Emisar.SSO do
       |> Multi.merge(fn %{user: user} ->
         ensure_active_membership_multi(locked_provider, user)
       end)
-      |> Multi.run(:identity_write, fn repo, %{membership: member} ->
+      |> Multi.run(:identity, fn repo, %{membership: member} ->
         link_identity(locked_provider, member, request, repo)
-      end)
-      |> Multi.run(:identity, fn _repo, %{identity_write: %{identity: identity}} ->
-        {:ok, identity}
       end)
       |> Multi.insert(:audit, fn %{membership: member} ->
         Audit.Events.sso_existing_user_linked(subject, member, locked_provider)
@@ -4369,7 +4330,7 @@ defmodule Emisar.SSO do
         identity
         |> rebind_changeset(request)
         |> UserIdentity.Changeset.bind_membership(member)
-        |> update_identity_binding(repo)
+        |> repo.update()
 
       nil ->
         # OIDC does not get to reserve the directory namespace. A SCIM request
@@ -4383,10 +4344,9 @@ defmodule Emisar.SSO do
           provisioned_via: :manual
         }
 
-        changeset = UserIdentity.Changeset.create(provider.account_id, provider.id, member, attrs)
-
-        with {:ok, identity} <- repo.insert(changeset),
-             do: {:ok, %{identity: identity, socket_topics: []}}
+        provider.account_id
+        |> UserIdentity.Changeset.create(provider.id, member, attrs)
+        |> repo.insert()
     end
   end
 
