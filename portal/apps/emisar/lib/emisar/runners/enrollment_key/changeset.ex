@@ -20,14 +20,15 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
   """
   def form(attrs \\ %{}), do: cast_operator_input(%EnrollmentKey{}, attrs)
 
-  def create(account_id, user_id, prefix, hash, attrs) do
+  def create(account_id, membership_id, prefix, hash, attrs) do
     %EnrollmentKey{}
     |> cast_operator_input(attrs)
     |> put_change(:account_id, account_id)
-    |> put_change(:created_by_id, user_id)
+    |> put_change(:created_by_membership_id, membership_id)
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
-    |> validate_required([:account_id])
+    |> validate_required([:account_id, :created_by_membership_id])
+    |> foreign_key_constraint(:created_by_membership_id)
   end
 
   # The one interpretation of operator-typed key attributes, so the create form
@@ -64,36 +65,40 @@ defmodule Emisar.Runners.EnrollmentKey.Changeset do
   `Emisar.Runners.create_enrollment_key/2` — a known raw value defeats the
   server-side randomization that makes enrollment keys credentials.
   """
-  def create_with_secret(account_id, user_id, raw, attrs)
+  def create_with_secret(account_id, membership_id, raw, attrs)
       when is_binary(raw) and byte_size(raw) >= @enrollment_key_prefix_size do
     prefix = String.slice(raw, 0, @enrollment_key_prefix_size)
-    create(account_id, user_id, prefix, Emisar.Crypto.hash(raw), attrs)
+    create(account_id, membership_id, prefix, Emisar.Crypto.hash(raw), attrs)
   end
 
-  def mint_install(account_id, user_id, prefix, hash, attrs \\ %{}) do
+  def mint_install(account_id, membership_id, prefix, hash, attrs \\ %{}) do
     now = DateTime.utc_now()
 
     %EnrollmentKey{}
     |> cast(attrs, [:description])
     |> put_default_value(:description, "Console install command")
     |> put_change(:account_id, account_id)
-    |> put_change(:created_by_id, user_id)
+    |> put_change(:created_by_membership_id, membership_id)
     |> put_change(:key_prefix, prefix)
     |> put_change(:key_hash, hash)
     |> put_change(:reusable, false)
     |> put_change(:auto_generated_at, now)
     |> put_change(:expires_at, DateTime.add(now, 24 * 3_600, :second))
-    |> validate_required([:account_id])
+    |> validate_required([:account_id, :created_by_membership_id])
+    |> foreign_key_constraint(:created_by_membership_id)
   end
 
   # Idempotent: re-revoking an already-revoked key is a no-op (no re-stamp), so
   # the lock-race path (caller passed a stale-active key) can't move revoked_at.
-  def revoke(%EnrollmentKey{revoked_at: revoked_at} = key, _by_user_id)
+  def revoke(%EnrollmentKey{revoked_at: revoked_at} = key, _by_membership_id)
       when not is_nil(revoked_at),
       do: change(key)
 
-  def revoke(%EnrollmentKey{} = key, by_user_id) do
-    change(key, revoked_at: DateTime.utc_now(), revoked_by_id: by_user_id)
+  def revoke(%EnrollmentKey{} = key, by_membership_id) do
+    key
+    |> change(revoked_at: DateTime.utc_now(), revoked_by_membership_id: by_membership_id)
+    |> validate_required([:revoked_by_membership_id])
+    |> foreign_key_constraint(:revoked_by_membership_id)
   end
 
   def delete(%EnrollmentKey{} = key) do

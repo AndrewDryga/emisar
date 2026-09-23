@@ -162,7 +162,7 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
     |> select([enrollment_keys: k], {k.id, field(k, ^field)})
   end
 
-  @doc "The creator's account-local display label; never load a personal profile."
+  @doc "The exact creator's local history, including tombstones; never a replacement seat."
   def with_created_by_label(queryable) do
     queryable
     |> with_named_binding(:created_by_member, fn queryable, binding ->
@@ -170,8 +170,9 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
         queryable,
         :left,
         [enrollment_keys: k],
-        member in subquery(Emisar.Accounts.Membership.Query.latest_profiles()),
-        on: k.created_by_id == member.user_id and k.account_id == member.account_id,
+        # Tombstones are display history only, not a source of live authority.
+        member in ^Emisar.Accounts.Membership.Query.all(),
+        on: k.created_by_membership_id == member.id and k.account_id == member.account_id,
         as: ^binding
       )
     end)

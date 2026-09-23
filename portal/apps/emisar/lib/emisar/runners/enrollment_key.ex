@@ -29,6 +29,8 @@ defmodule Emisar.Runners.EnrollmentKey do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :created_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :revoked_by, Emisar.Users.User, where: [deleted_at: nil]
+    belongs_to :created_by_membership, Emisar.Accounts.Membership
+    belongs_to :revoked_by_membership, Emisar.Accounts.Membership
 
     timestamps()
   end

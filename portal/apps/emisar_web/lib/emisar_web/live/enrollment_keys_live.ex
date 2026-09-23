@@ -498,7 +498,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
           >
             <%!-- Canvas rows; the per-row icon disc died with the island. --%>
             <:item :let={key}>
-              <.list_row padding="py-4">
+              <.list_row padding="py-4" meta_wrap>
                 <:title>
                   <span class="truncate font-medium text-zinc-100">
                     {key.description || "(no description)"}
@@ -525,7 +525,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
                   <% end %>
                 </:chips>
                 <:meta>
-                  <.meta_line class="text-[11px]">
+                  <.meta_line class="text-[11px]" wrap>
                     <:seg mono>{key.key_prefix}…</:seg>
                     <:seg><span class="tabular-nums">{key_usage(key)}</span></:seg>
                     <:seg>

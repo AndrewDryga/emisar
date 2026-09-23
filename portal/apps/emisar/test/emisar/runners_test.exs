@@ -3230,8 +3230,11 @@ defmodule Emisar.RunnersTest do
         )
 
       creator_subject = Fixtures.Subjects.membership_subject(member)
-      {:ok, _, manual} = Runners.create_enrollment_key(%{reusable: true}, creator_subject)
-      {:ok, _, install} = Runners.mint_install_key(creator_subject)
+
+      {:ok, manual_raw, manual} =
+        Runners.create_enrollment_key(%{reusable: true}, creator_subject)
+
+      {:ok, install_raw, install} = Runners.mint_install_key(creator_subject)
 
       Fixtures.Memberships.create_membership(
         user_id: creator.id,
@@ -3252,23 +3255,28 @@ defmodule Emisar.RunnersTest do
       assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])
       assert Enum.map(keys, & &1.created_by_label) == ["Workspace Operator", "Workspace Operator"]
 
-      # The User-era key has no exact membership anchor yet. Use just the latest
-      # local profile, never duplicate the key or fall back to private history.
-      rejoined =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: creator.id,
-          display_name: nil,
-          contact_email: nil
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: creator.id,
+        display_name: "Replacement Seat",
+        contact_email: "replacement@example.test"
+      )
 
       assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])
-      assert Enum.map(keys, & &1.created_by_label) == [nil, nil]
+      assert Enum.map(keys, & &1.created_by_label) == ["Workspace Operator", "Workspace Operator"]
 
-      Repo.delete!(rejoined)
-      Repo.delete!(Repo.reload!(member))
+      Fixtures.Memberships.hard_delete_membership(member)
       assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])
       assert Enum.map(keys, & &1.created_by_label) == [nil, nil]
+      assert Enum.all?(keys, &EnrollmentKey.usable?/1)
+
+      for raw <- [manual_raw, install_raw] do
+        assert {:ok, _runner, _token, _raw_token} =
+                 Runners.register_via_enrollment_key(raw, %{
+                   hostname: "after-creator-deletion",
+                   external_id: Ecto.UUID.generate()
+                 })
+      end
     end
 
     test "the status filter hides or shows revoked keys", %{subject: subject} do
@@ -3336,7 +3344,6 @@ defmodule Emisar.RunnersTest do
 
     test "returns a raw secret + persists the hash with a prefix", %{
       account: account,
-      user: user,
       subject: subject
     } do
       assert {:ok, raw, %EnrollmentKey{} = key} =
@@ -3344,7 +3351,8 @@ defmodule Emisar.RunnersTest do
 
       assert String.starts_with?(raw, "emkey-enroll-")
       assert key.account_id == account.id
-      assert key.created_by_id == user.id
+      assert key.created_by_membership_id == subject.membership_id
+      assert is_nil(key.created_by_id)
       assert is_binary(key.key_hash)
       assert key.description == "for dev"
     end
@@ -3364,6 +3372,26 @@ defmodule Emisar.RunnersTest do
       assert key.reusable
       assert key.max_uses == 5
       assert key.expires_at == ~U[2099-12-25 10:30:00.000000Z]
+    end
+
+    test "ignores caller-supplied creator and account attribution", %{subject: subject} do
+      foreign = Fixtures.Memberships.create_membership()
+
+      assert {:ok, _raw, key} =
+               Runners.create_enrollment_key(
+                 %{
+                   account_id: foreign.account_id,
+                   created_by_id: foreign.user_id,
+                   created_by_membership_id: foreign.id,
+                   revoked_by_membership_id: foreign.id
+                 },
+                 subject
+               )
+
+      assert key.account_id == subject.account.id
+      assert key.created_by_membership_id == subject.membership_id
+      assert is_nil(key.created_by_id)
+      assert is_nil(key.revoked_by_membership_id)
     end
 
     test "a single-use submission stores no max_uses", %{subject: subject} do
@@ -3686,6 +3714,8 @@ defmodule Emisar.RunnersTest do
       assert {:ok, raw, %EnrollmentKey{} = key} = Runners.mint_install_key(subject)
       assert String.starts_with?(raw, "emkey-enroll-")
       assert key.auto_generated_at != nil
+      assert key.created_by_membership_id == subject.membership_id
+      assert is_nil(key.created_by_id)
       assert is_nil(key.last_used_at)
       assert EnrollmentKey.auto_unused?(key)
     end
@@ -3764,21 +3794,29 @@ defmodule Emisar.RunnersTest do
     test "stamps revoked_at; the key no longer resolves for registration", %{subject: subject} do
       {:ok, raw, key} = Runners.create_enrollment_key(%{reusable: true}, subject)
 
-      assert {:ok, %EnrollmentKey{revoked_at: %DateTime{}}} =
+      assert {:ok, %EnrollmentKey{revoked_at: %DateTime{}} = revoked} =
                Runners.revoke_enrollment_key(key, subject)
 
+      assert revoked.revoked_by_membership_id == subject.membership_id
+      assert is_nil(revoked.revoked_by_id)
       refute Runners.peek_enrollment_key_by_secret(raw)
     end
 
     test "revoking an already-revoked key is an idempotent no-op (preserves revoked_at)", %{
+      account: account,
       subject: subject
     } do
       {:ok, _raw, key} = Runners.create_enrollment_key(%{reusable: true}, subject)
       {:ok, revoked} = Runners.revoke_enrollment_key(key, subject)
 
-      # A second revoke returns the key without re-stamping a fresh timestamp.
-      assert {:ok, %EnrollmentKey{} = again} = Runners.revoke_enrollment_key(revoked, subject)
+      other_subject =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Subjects.membership_subject()
+
+      # A different authorized member retrying a stale key cannot take credit.
+      assert {:ok, %EnrollmentKey{} = again} = Runners.revoke_enrollment_key(key, other_subject)
       assert again.revoked_at == revoked.revoked_at
+      assert again.revoked_by_membership_id == subject.membership_id
     end
 
     test "a viewer (no manage_enrollment_keys) is refused", %{account: account, subject: owner} do
@@ -3871,11 +3909,11 @@ defmodule Emisar.RunnersTest do
 
     test "round-trips a fixed seed-bootstrap raw secret" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
       raw = "emkey-enroll-dev-fixed-bootstrap-DO-NOT-USE-IN-PROD"
 
       key =
-        Fixtures.Runners.create_enrollment_key_with_secret(raw, account.id, user.id, %{
+        Fixtures.Runners.create_enrollment_key_with_secret(raw, account.id, member.id, %{
           reusable: true
         })
 
@@ -4319,7 +4357,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4345,7 +4383,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4373,7 +4411,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4402,7 +4440,7 @@ defmodule Emisar.RunnersTest do
       {raw, key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: false
         )
 
@@ -4438,7 +4476,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: false
         )
 
@@ -4460,7 +4498,7 @@ defmodule Emisar.RunnersTest do
       {raw, key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: false
         )
 
@@ -4480,7 +4518,7 @@ defmodule Emisar.RunnersTest do
       {raw, key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: false
         )
 
@@ -4501,7 +4539,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4528,7 +4566,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4555,7 +4593,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4582,7 +4620,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4614,7 +4652,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4642,7 +4680,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4669,7 +4707,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4688,7 +4726,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4722,7 +4760,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 
@@ -4757,7 +4795,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: false
         )
 
@@ -4878,7 +4916,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           reusable: true
         )
 

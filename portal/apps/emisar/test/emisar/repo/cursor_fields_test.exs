@@ -111,12 +111,12 @@ defmodule Emisar.Repo.CursorFieldsTest do
     {_raw, named_key} =
       Fixtures.Runners.create_enrollment_key(
         account_id: account.id,
-        created_by_id: unnamed.id,
+        user_id: unnamed.id,
         description: "Current key"
       )
 
     {_raw, unnamed_key} =
-      Fixtures.Runners.create_enrollment_key(account_id: account.id, created_by_id: unnamed.id)
+      Fixtures.Runners.create_enrollment_key(account_id: account.id, user_id: unnamed.id)
 
     assert unnamed_key.description == nil
     identity_event(account, "enrollment_key", named_key.id, nil)

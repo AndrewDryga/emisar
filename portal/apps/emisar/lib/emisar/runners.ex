@@ -2269,15 +2269,19 @@ defmodule Emisar.Runners do
            Auth.fetch_current_subject(Authorizer.manage_enrollment_keys_permission(), subject),
          :ok <- ensure_full_runner_access(subject) do
       account_id = account.id
-      user_id = Subject.actor_id(subject)
       {raw, prefix, hash} = Crypto.mint("emkey-enroll-", @enrollment_key_prefix_size)
 
       runner_administration_multi(subject, Authorizer.manage_enrollment_keys_permission())
       |> require_full_runner_access()
-      |> Multi.insert(
-        :key,
-        EnrollmentKey.Changeset.create(account_id, user_id, prefix, hash, attrs)
-      )
+      |> Multi.insert(:key, fn %{manager: manager} ->
+        EnrollmentKey.Changeset.create(
+          account_id,
+          manager.subject.membership_id,
+          prefix,
+          hash,
+          attrs
+        )
+      end)
       |> Multi.insert(:audit, fn %{key: key, manager: manager} ->
         Audit.Events.enrollment_key_created(manager.subject, key)
       end)
@@ -2501,7 +2505,6 @@ defmodule Emisar.Runners do
            Auth.fetch_current_subject(Authorizer.issue_install_key_permission(), subject),
          :ok <- ensure_full_runner_access(subject) do
       account_id = account.id
-      user_id = Subject.actor_id(subject)
       cap = opts[:ring_cap] || @install_ring_cap
       grace_s = opts[:eviction_grace_seconds] || @install_eviction_grace_seconds
 
@@ -2512,10 +2515,15 @@ defmodule Emisar.Runners do
       # Insert first, then evict — so the account never momentarily has
       # zero auto-unused keys (which would race against concurrent
       # console mounts).
-      |> Multi.insert(
-        :key,
-        EnrollmentKey.Changeset.mint_install(account_id, user_id, prefix, hash, %{})
-      )
+      |> Multi.insert(:key, fn %{manager: manager} ->
+        EnrollmentKey.Changeset.mint_install(
+          account_id,
+          manager.subject.membership_id,
+          prefix,
+          hash,
+          %{}
+        )
+      end)
       |> Multi.run(:evicted, fn _repo, %{key: key} ->
         {:ok, evict_install_ring_overflow(account_id, cap, grace_s, key.auto_generated_at)}
       end)
@@ -2589,7 +2597,7 @@ defmodule Emisar.Runners do
           {:ok, locked}
         else
           locked
-          |> EnrollmentKey.Changeset.revoke(Subject.actor_id(manager.subject))
+          |> EnrollmentKey.Changeset.revoke(manager.subject.membership_id)
           |> repo.update()
         end
       end)

@@ -12,16 +12,24 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     creator =
       Fixtures.Users.create_user(full_name: "Private Person", email: "private@example.test")
 
+    member =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: creator.id,
+        role: "admin",
+        display_name: "Workspace Operator",
+        contact_email: "work@example.test"
+      )
+
+    Fixtures.Runners.create_enrollment_key(membership: member)
+    Fixtures.Runners.create_install_key(membership: member)
+    Fixtures.Memberships.mark_membership_as_deleted(member)
+
     Fixtures.Memberships.create_membership(
       account_id: account.id,
       user_id: creator.id,
-      role: "admin",
-      display_name: "Workspace Operator",
-      contact_email: "work@example.test"
+      display_name: "Replacement Seat"
     )
-
-    Fixtures.Runners.create_enrollment_key(account_id: account.id, created_by_id: creator.id)
-    Fixtures.Runners.create_install_key(account_id: account.id, created_by_id: creator.id)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
 
@@ -34,6 +42,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     refute html =~ "Private Person"
     refute html =~ creator.email
+    refute html =~ "Replacement Seat"
   end
 
   test "hides revoked keys by default; the All option shows them", %{conn: conn} do
@@ -107,7 +116,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     {conn, user, account} = register_and_log_in(conn)
 
     {_, console} =
-      Fixtures.Runners.create_install_key(account_id: account.id, created_by_id: user.id)
+      Fixtures.Runners.create_install_key(account_id: account.id, user_id: user.id)
 
     Fixtures.Runners.create_enrollment_key(
       account_id: account.id,
@@ -218,14 +227,14 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     Fixtures.Runners.create_enrollment_key(
       account_id: account.id,
-      created_by_id: user.id,
+      user_id: user.id,
       expires_at: future
     )
 
     {_, capped} =
       Fixtures.Runners.create_enrollment_key(
         account_id: account.id,
-        created_by_id: user.id,
+        user_id: user.id,
         reusable: true,
         max_uses: 5
       )
@@ -235,7 +244,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     {_, unlimited} =
       Fixtures.Runners.create_enrollment_key(
         account_id: account.id,
-        created_by_id: user.id,
+        user_id: user.id,
         reusable: true
       )
 

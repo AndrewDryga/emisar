@@ -2501,7 +2501,7 @@ defmodule Emisar.AuditTest do
       {_raw, enrollment_key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          created_by_id: user.id,
+          user_id: user.id,
           description: "enroll-prod"
         )
 

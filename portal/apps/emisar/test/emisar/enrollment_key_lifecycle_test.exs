@@ -180,7 +180,7 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
     {_, used} =
       Fixtures.Runners.create_install_key(
         account_id: account.id,
-        created_by_id: user.id,
+        user_id: user.id,
         auto_generated_at: past,
         last_used_at: past,
         uses_count: 1

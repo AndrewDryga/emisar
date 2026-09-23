@@ -1,6 +1,30 @@
 defmodule Emisar.Seeds.SmokeTest do
   use Emisar.DataCase, async: false
-  alias Emisar.{Accounts, Approvals, Auth, Fixtures, Repo, Runbooks, Users}
+  alias Emisar.{Accounts, Approvals, Auth, Fixtures, Repo, Runbooks, Runners, Users}
+
+  test "the fixed development enrollment secret belongs to the exact seed owner" do
+    variable = "EMISAR_DEV_FIXED_ENROLLMENT_KEY"
+    original = System.get_env(variable)
+    raw = "emkey-enroll-test-fixed-bootstrap-DO-NOT-USE-IN-PROD"
+    System.put_env(variable, raw)
+
+    on_exit(fn ->
+      if original, do: System.put_env(variable, original), else: System.delete_env(variable)
+    end)
+
+    for _ <- 1..2 do
+      ExUnit.CaptureIO.capture_io(fn ->
+        Code.eval_file(Application.app_dir(:emisar, "priv/repo/seeds.exs"))
+      end)
+
+      key = Runners.peek_enrollment_key_by_secret(raw)
+      assert key.reusable
+      assert is_nil(key.created_by_id)
+      creator = Accounts.peek_active_membership(key.account_id, key.created_by_membership_id)
+      assert creator.role == :owner
+      assert creator.contact_email == "demo@emisar.dev"
+    end
+  end
 
   test "reseed attributes a changed release to the seed owner without replacing its author" do
     user = Fixtures.Users.create_user(email: "demo@emisar.dev")
@@ -119,6 +143,15 @@ defmodule Emisar.Seeds.SmokeTest do
         issuer = Accounts.peek_active_membership(grant.account_id, grant.granted_by_membership_id)
         assert issuer.role == :owner
         assert grant.granted_by_id == nil
+      end
+
+      keys = Repo.all(Runners.EnrollmentKey)
+      assert keys != []
+
+      for key <- keys do
+        creator = Accounts.peek_active_membership(key.account_id, key.created_by_membership_id)
+        assert creator.role == :owner
+        assert is_nil(key.created_by_id)
       end
 
       for {email, name} <- [

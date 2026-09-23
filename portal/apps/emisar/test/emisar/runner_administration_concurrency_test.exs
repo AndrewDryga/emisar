@@ -181,7 +181,7 @@ defmodule Emisar.RunnerAdministrationConcurrencyTest do
       runner = Fixtures.Runners.set_connection_credential(runner, token)
 
       {_raw, key} =
-        Fixtures.Runners.create_enrollment_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.Runners.create_enrollment_key(account_id: account.id, user_id: user.id)
 
       Fixtures.Accounts.force_runner_inactive_retention_hours(account, 24)
 

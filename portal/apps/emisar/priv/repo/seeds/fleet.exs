@@ -382,17 +382,22 @@ defmodule Emisar.Seeds.Fleet do
   # -- Bootstrap enrollment key ------------------------------------------
 
   @doc "Seeds the account's first enrollment key and prints how to bootstrap a runner with it."
-  def seed_enrollment_key(%{account: account, user: user, owner_subject: owner_subject}) do
+  def seed_enrollment_key(%{account: account, owner_subject: owner_subject}) do
     case Runners.list_enrollment_keys(owner_subject) do
       {:ok, [], _} ->
         case System.get_env("EMISAR_DEV_FIXED_ENROLLMENT_KEY") do
           fixed when is_binary(fixed) and byte_size(fixed) >= 29 ->
             {:ok, _key} =
-              Runners.EnrollmentKey.Changeset.create_with_secret(account.id, user.id, fixed, %{
-                description: "Dev fixed enrollment key (docker-compose)",
-                group: "dev-docker",
-                reusable: true
-              })
+              Runners.EnrollmentKey.Changeset.create_with_secret(
+                account.id,
+                owner_subject.membership_id,
+                fixed,
+                %{
+                  description: "Dev fixed enrollment key (docker-compose)",
+                  group: "dev-docker",
+                  reusable: true
+                }
+              )
               |> Repo.insert()
 
             Helpers.say("✓ Seeded dev fixed enrollment key", IO.ANSI.green())

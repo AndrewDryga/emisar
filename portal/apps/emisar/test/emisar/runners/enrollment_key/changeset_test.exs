@@ -1,5 +1,6 @@
 defmodule Emisar.Runners.EnrollmentKey.ChangesetTest do
   use Emisar.DataCase, async: true
+  alias Emisar.Fixtures
   alias Emisar.Runners.EnrollmentKey
 
   describe "form/1" do
@@ -96,7 +97,7 @@ defmodule Emisar.Runners.EnrollmentKey.ChangesetTest do
   describe "create/5" do
     test "casts the browser's params exactly as form/1 does" do
       account_id = Ecto.UUID.generate()
-      user_id = Ecto.UUID.generate()
+      membership_id = Ecto.UUID.generate()
 
       params = %{
         "description" => "  ",
@@ -106,7 +107,13 @@ defmodule Emisar.Runners.EnrollmentKey.ChangesetTest do
       }
 
       changeset =
-        EnrollmentKey.Changeset.create(account_id, user_id, "emkey-enroll-test", <<0>>, params)
+        EnrollmentKey.Changeset.create(
+          account_id,
+          membership_id,
+          "emkey-enroll-test",
+          <<0>>,
+          params
+        )
 
       assert changeset.valid?
 
@@ -115,7 +122,7 @@ defmodule Emisar.Runners.EnrollmentKey.ChangesetTest do
                max_uses: 5,
                expires_at: ~U[2099-12-25 10:30:00.000000Z],
                account_id: account_id,
-               created_by_id: user_id,
+               created_by_membership_id: membership_id,
                key_prefix: "emkey-enroll-test",
                key_hash: <<0>>
              }
@@ -162,6 +169,44 @@ defmodule Emisar.Runners.EnrollmentKey.ChangesetTest do
         )
 
       assert "can't be blank" in errors_on(changeset).account_id
+    end
+
+    test "requires an exact creator for manual and install keys" do
+      account_id = Ecto.UUID.generate()
+
+      for changeset <- [
+            EnrollmentKey.Changeset.create(account_id, nil, "test", <<0>>, %{}),
+            EnrollmentKey.Changeset.mint_install(account_id, nil, "test", <<0>>)
+          ] do
+        assert "can't be blank" in errors_on(changeset).created_by_membership_id
+      end
+    end
+
+    test "rejects a creator in another account" do
+      member = Fixtures.Memberships.create_membership()
+      other = Fixtures.Accounts.create_account()
+
+      assert {:error, changeset} =
+               EnrollmentKey.Changeset.create(other.id, member.id, "test", <<0>>, %{})
+               |> Repo.insert()
+
+      assert "does not exist" in errors_on(changeset).created_by_membership_id
+    end
+  end
+
+  describe "revoke/2" do
+    test "requires a local revoker, without changing a key on failure" do
+      {_raw, key} = Fixtures.Runners.create_enrollment_key()
+      foreign = Fixtures.Memberships.create_membership()
+
+      assert {:error, changeset} = EnrollmentKey.Changeset.revoke(key, nil) |> Repo.update()
+      assert "can't be blank" in errors_on(changeset).revoked_by_membership_id
+
+      assert {:error, changeset} =
+               EnrollmentKey.Changeset.revoke(key, foreign.id) |> Repo.update()
+
+      assert "does not exist" in errors_on(changeset).revoked_by_membership_id
+      assert is_nil(Repo.reload!(key).revoked_at)
     end
   end
 end

@@ -97,25 +97,12 @@ defmodule Emisar.Fixtures.Runners do
   """
   def create_enrollment_key(attrs \\ %{}) do
     attrs = Map.new(attrs)
-    account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
-    user_id = attrs[:created_by_id] || Fixtures.Users.create_user().id
 
     create_attrs =
       attrs
       |> Map.take([:description, :group, :reusable, :max_uses, :expires_at])
 
-    # The minting subject must be a REAL member: creating a key needs
-    # unrestricted runner access, and that is read from the membership row, so a
-    # phantom membership would mint nothing.
-    membership =
-      Fixtures.Memberships.fetch_membership(account_id, user_id) ||
-        Fixtures.Memberships.create_membership(
-          account_id: account_id,
-          user_id: user_id,
-          role: "owner"
-        )
-
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = enrollment_creator(attrs) |> Fixtures.Subjects.membership_subject()
     {:ok, raw, key} = Runners.create_enrollment_key(create_attrs, subject)
     {raw, key}
   end
@@ -123,20 +110,24 @@ defmodule Emisar.Fixtures.Runners do
   @doc "Creates a console install key, with optional persisted lifecycle state for tests."
   def create_install_key(attrs \\ %{}) do
     attrs = Map.new(attrs)
-    account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
-    user_id = attrs[:created_by_id] || Fixtures.Users.create_user().id
-
-    membership =
-      Fixtures.Memberships.fetch_membership(account_id, user_id) ||
-        Fixtures.Memberships.create_membership(
-          account_id: account_id,
-          user_id: user_id,
-          role: "owner"
-        )
-
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = enrollment_creator(attrs) |> Fixtures.Subjects.membership_subject()
     {:ok, raw, key} = Runners.mint_install_key(subject)
     {raw, set_enrollment_key_state(key, attrs)}
+  end
+
+  # An explicit Member is exact; never resolve it through a replacement seat.
+  defp enrollment_creator(%{membership: membership}), do: membership
+
+  defp enrollment_creator(attrs) do
+    account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
+    user_id = attrs[:user_id] || Fixtures.Users.create_user().id
+
+    Fixtures.Memberships.fetch_membership(account_id, user_id) ||
+      Fixtures.Memberships.create_membership(
+        account_id: account_id,
+        user_id: user_id,
+        role: "owner"
+      )
   end
 
   @doc "Sets enrollment lifecycle state without exercising an unrelated registration or revocation."
@@ -161,9 +152,9 @@ defmodule Emisar.Fixtures.Runners do
   bootstrap shape (`EnrollmentKey.Changeset.create_with_secret/4`). Tests use
   it to exercise the secret→key round-trip with a known raw value.
   """
-  def create_enrollment_key_with_secret(raw, account_id, user_id, attrs \\ %{}) do
+  def create_enrollment_key_with_secret(raw, account_id, membership_id, attrs \\ %{}) do
     {:ok, key} =
-      Runners.EnrollmentKey.Changeset.create_with_secret(account_id, user_id, raw, attrs)
+      Runners.EnrollmentKey.Changeset.create_with_secret(account_id, membership_id, raw, attrs)
       |> Repo.insert()
 
     key
