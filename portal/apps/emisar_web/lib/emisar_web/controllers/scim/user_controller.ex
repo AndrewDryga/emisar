@@ -161,7 +161,7 @@ defmodule EmisarWeb.SCIM.UserController do
     end
   end
 
-  defp parse_filter(_filter), do: nil
+  defp parse_filter(_filter), do: :unsupported
 
   # The unquoted value may not contain whitespace, matching Groups. A single
   # permissive `"?([^"]*)"?` accepted both forms in one pass, but its value group

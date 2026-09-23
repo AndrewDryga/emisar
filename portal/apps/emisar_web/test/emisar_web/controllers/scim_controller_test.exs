@@ -1692,6 +1692,24 @@ defmodule EmisarWeb.SCIMControllerTest do
       end
     end
 
+    test "GET /Users declines a non-string filter instead of listing the directory",
+         %{conn: conn, token: token, provider: provider} do
+      {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "okta|1", email: "1@acme.test"})
+      {:ok, _} = SSO.scim_provision_user(provider, %{external_id: "okta|2", email: "2@acme.test"})
+
+      # Plug decodes a misencoded `filter[]=...` to a list and `filter[k]=v` to a
+      # map. Only an absent filter lists the directory.
+      for query <- ["filter[]=userName+eq+%221%40acme.test%22", "filter[userName]=x"] do
+        body =
+          conn
+          |> auth(token)
+          |> get("/scim/v2/Users?" <> query)
+          |> json_response(400)
+
+        assert body["scimType"] == "invalidFilter"
+      end
+    end
+
     test "GET /Users filter finds a user beyond the first page (the match runs in the query)",
          %{conn: conn, token: token, provider: provider} do
       # Provision the target first (so it's the oldest identity), then push it
