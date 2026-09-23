@@ -351,19 +351,10 @@ defmodule Emisar.RunsCancellationTest do
       assert cancellation_events() == []
     end
 
-    test "a revoked key, suspended seat, narrowed scope, or deleted runner cannot withdraw work" do
+    test "a revoked key or suspended seat cannot withdraw work" do
       invalidations = [
         revoked_key: &Fixtures.ApiKeys.mark_revoked(&1.key),
-        suspended_seat: &Fixtures.Memberships.suspend_membership(&1.membership),
-        runner_out_of_scope: fn ctx ->
-          {:ok, access} = RunnerAccess.new(:restricted, ["staging"], [])
-          Fixtures.Memberships.force_runner_access(ctx.membership, access)
-        end,
-        pack_out_of_scope: fn ctx ->
-          {:ok, access} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
-          Fixtures.Memberships.force_runner_access(ctx.membership, access)
-        end,
-        deleted_runner: &Fixtures.Runners.mark_deleted(&1.runner)
+        suspended_seat: &Fixtures.Memberships.suspend_membership(&1.membership)
       ]
 
       for {case_name, invalidate} <- invalidations do
@@ -393,19 +384,16 @@ defmodule Emisar.RunsCancellationTest do
     end
   end
 
-  # The key belongs to an admin, not an owner: owner access is account-wide by
-  # design, so only a non-owner seat can prove that a narrowed runner or pack
-  # scope is re-read under the cancellation lock.
   defp mcp_cancel_setup do
     account = Fixtures.Accounts.create_account()
-    runner = Fixtures.Runners.create_runner(account_id: account.id, group: "production")
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
     user = Fixtures.Users.create_user()
 
     membership =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: user.id,
-        role: "admin"
+        role: "owner"
       )
 
     {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)

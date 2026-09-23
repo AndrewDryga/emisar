@@ -35,9 +35,8 @@ defmodule EmisarWeb.MCP.Service do
            maybe_poll_to_terminal(conn, subject, runs, wait_ms, Cancellation.topic(conn)),
          {:ok, settled} <-
            Runs.list_runs_by_mcp_operation(hd(runs).mcp_operation_record_id, subject),
-         true <- same_run_set?(settled, runs),
-         {:ok, summaries} <- fixed_run_summaries(settled, subject, tail_scope: cursor_scope(conn)) do
-      {:ok, summaries}
+         true <- same_run_set?(settled, runs) do
+      {:ok, fixed_run_summaries(settled, subject, tail_scope: cursor_scope(conn))}
     else
       :cancelled -> {:error, :cancelled}
       false -> {:error, {:accepted, :operation_incomplete}}
@@ -120,23 +119,17 @@ defmodule EmisarWeb.MCP.Service do
     # One bounded tail query + one visibility check for the whole page — a
     # per-summary fetch here was a 4-queries-per-row N+1 on the two
     # fastest-growing tables.
-    with {:ok, events_by_run} <- run_events_by_id(runs, subject, summary_opts[:stream_cap]),
-         {:ok, reviews_by_run} <- run_reviews_by_id(runs, subject) do
-      Enum.reduce_while(runs, {:ok, []}, fn run, {:ok, summaries} ->
-        opts =
-          [events: Map.get(events_by_run, run.id, []), review: Map.get(reviews_by_run, run.id)] ++
-            summary_opts
+    events_by_run = run_events_by_id(runs, subject, summary_opts[:stream_cap])
+    reviews_by_run = run_reviews_by_id(runs, subject)
 
-        case fixed_run_summary(run, subject, opts) do
-          {:ok, summary} -> {:cont, {:ok, [summary | summaries]}}
-          {:error, _reason} = error -> {:halt, error}
-        end
-      end)
-      |> case do
-        {:ok, summaries} -> {:ok, Enum.reverse(summaries)}
-        error -> error
-      end
-    end
+    Enum.map(runs, fn run ->
+      fixed_run_summary(
+        run,
+        subject,
+        [events: Map.get(events_by_run, run.id, []), review: Map.get(reviews_by_run, run.id)] ++
+          summary_opts
+      )
+    end)
   end
 
   @doc """
@@ -154,70 +147,47 @@ defmodule EmisarWeb.MCP.Service do
     structured_output_cap = Keyword.get(opts, :structured_output_cap, 8_192)
     tail_scope = Keyword.get(opts, :tail_scope)
 
-    with {:ok, events} <- summary_events(run, subject, opts, stream_cap),
-         {:ok, review} <- summary_review(run, subject, opts),
-         {:ok, base} <- base_run_fields(run, subject, review) do
-      structured_output = structured_output_summary(run.structured_output, structured_output_cap)
-      base = Map.merge(base, structured_output)
-      build = &summary_at_cap(base, run, subject, events, structured_output, tail_scope, &1)
-
-      with {:ok, summary} <- build.(stream_cap) do
-        if fits_frame?(summary),
-          do: {:ok, summary},
-          else: fit_snapshot(build, 0, stream_cap, 0)
+    events =
+      case Keyword.fetch(opts, :events) do
+        {:ok, events} -> events
+        :error -> Map.get(run_events_by_id([run], subject, stream_cap), run.id, [])
       end
-    end
+
+    review =
+      case Keyword.fetch(opts, :review) do
+        {:ok, review} -> review
+        :error -> Map.get(run_reviews_by_id([run], subject), run.id)
+      end
+
+    structured_output = structured_output_summary(run.structured_output, structured_output_cap)
+
+    # The run's own fields and its review receipt cost one read apiece, so they
+    # are assembled once; only the output preview varies as the frame shrinks.
+    base =
+      run
+      |> base_run_fields(subject, review)
+      |> Map.merge(structured_output)
+
+    build = &summary_at_cap(base, run, subject, events, structured_output, tail_scope, &1)
+    summary = build.(stream_cap)
+
+    if fits_frame?(summary),
+      do: summary,
+      else: build.(largest_fitting(build, 0, stream_cap, 0))
   end
-
-  defp summary_events(run, subject, opts, stream_cap) do
-    case Keyword.fetch(opts, :events) do
-      {:ok, events} ->
-        {:ok, events}
-
-      :error ->
-        with {:ok, events} <- run_events_by_id([run], subject, stream_cap),
-             do: {:ok, Map.get(events, run.id, [])}
-    end
-  end
-
-  defp summary_review(run, subject, opts) do
-    case Keyword.fetch(opts, :review) do
-      {:ok, review} ->
-        {:ok, review}
-
-      :error ->
-        with {:ok, reviews} <- run_reviews_by_id([run], subject),
-             do: {:ok, Map.get(reviews, run.id)}
-    end
-  end
-
-  # A snapshot may need an authorized event count to offer a terminal drain.
-  # If that read fails while sizing the frame, discard the entire projection.
-  defp fit_snapshot(build, lo, hi, best) when lo <= hi do
-    mid = div(lo + hi, 2)
-
-    with {:ok, summary} <- build.(mid) do
-      if fits_frame?(summary),
-        do: fit_snapshot(build, mid + 1, hi, mid),
-        else: fit_snapshot(build, lo, mid - 1, best)
-    end
-  end
-
-  defp fit_snapshot(build, _lo, _hi, best), do: build.(best)
 
   defp summary_at_cap(base, run, subject, events, structured_output, tail_scope, stream_cap) do
     output_preview = run_output_preview(run, events, stream_cap)
 
-    with {:ok, {next, drain_vanished?}} <-
-           fixed_run_next(run, subject, structured_output, tail_scope, output_preview) do
-      {:ok,
-       base
-       |> Map.put(:next, next)
-       |> Map.merge(stream_summary(run, output_preview, :stdout))
-       |> Map.merge(stream_summary(run, output_preview, :stderr))
-       |> flag_output_gap(drain_vanished?)
-       |> drop_nil_values()}
-    end
+    {next, drain_vanished?} =
+      fixed_run_next(run, subject, structured_output, tail_scope, output_preview)
+
+    base
+    |> Map.put(:next, next)
+    |> Map.merge(stream_summary(run, output_preview, :stdout))
+    |> Map.merge(stream_summary(run, output_preview, :stderr))
+    |> flag_output_gap(drain_vanished?)
+    |> drop_nil_values()
   end
 
   @doc """
@@ -228,35 +198,34 @@ defmodule EmisarWeb.MCP.Service do
   """
   def fixed_run_tail(run, subject, {from_seq, offset, _remaining} = position, scope)
       when is_integer(from_seq) and is_integer(offset) and is_binary(scope) do
-    with {:ok, events, read_more?} <-
-           Runs.list_events_for_run_since(run.id, from_seq, @max_tail_read_bytes, subject),
-         {:ok, reviews} <- run_reviews_by_id([run], subject),
-         {:ok, base} <- base_run_fields(run, subject, Map.get(reviews, run.id)) do
-      {segments, gap?} = deliverable_segments(events, position)
-      structured_output = structured_output_summary(run.structured_output, 8_192)
+    {:ok, events, read_more?} =
+      Runs.list_events_for_run_since(run.id, from_seq, @max_tail_read_bytes, subject)
 
-      context = %{
-        run: run,
-        base: base,
-        scope: scope,
-        position: position,
-        segments: segments,
-        structured_output: structured_output,
-        read_more?: read_more?,
-        gap?: gap?
-      }
+    {segments, gap?} = deliverable_segments(events, position)
+    structured_output = structured_output_summary(run.structured_output, 8_192)
 
-      build = &tail_summary(context, &1)
-      total = Enum.reduce(segments, 0, &(byte_size(&1.text) + &2))
-      summary = build.(total)
+    context = %{
+      run: run,
+      subject: subject,
+      scope: scope,
+      position: position,
+      segments: segments,
+      structured_output: structured_output,
+      read_more?: read_more?,
+      gap?: gap?,
+      review: Map.get(run_reviews_by_id([run], subject), run.id)
+    }
 
-      # Measure the REAL assembled frame instead of estimating it. Continuation
-      # pages stay well below the transport ceiling because clients feed them to a
-      # model whose artifact/context budget is substantially smaller.
-      if fits_frame?(summary),
-        do: {:ok, summary},
-        else: {:ok, build.(tail_take(build, total))}
-    end
+    build = &tail_summary(context, &1)
+    total = Enum.reduce(segments, 0, &(byte_size(&1.text) + &2))
+    summary = build.(total)
+
+    # Measure the REAL assembled frame instead of estimating it. Continuation
+    # pages stay well below the transport ceiling because clients feed them to a
+    # model whose artifact/context budget is substantially smaller.
+    if fits_frame?(summary),
+      do: summary,
+      else: build.(tail_take(build, total))
   end
 
   # The largest model-page allowance — but when even an empty page overflows
@@ -304,7 +273,8 @@ defmodule EmisarWeb.MCP.Service do
     # events proves retention pruned rows mid-drain — end flagged, never clean.
     pruned? = not more? and Runs.terminal_status?(context.run.status) and remaining > 0
 
-    context.base
+    context.run
+    |> base_run_fields(context.subject, context.review)
     |> Map.put(:output, output)
     |> Map.put(:next, tail_next(context.run, more?, cursor))
     |> flag_output_gap(context.gap? or pruned?)
@@ -317,31 +287,28 @@ defmodule EmisarWeb.MCP.Service do
 
   defp base_run_fields(run, subject, review) do
     facts = Runs.run_outcome_facts(run)
+    {approval, approval_wait_until} = fixed_approval(run, subject, facts.approval_pending?)
 
-    with {:ok, {approval, approval_wait_until}} <-
-           fixed_approval(run, subject, facts.approval_pending?) do
-      {:ok,
-       %{
-         run_id: run.id,
-         operation_id: run.operation_id,
-         action_id: run.action_id,
-         pack_ref: run.pack_ref,
-         runner_ref: run.runner_ref,
-         runbook_execution_id: run.runbook_execution_id,
-         step_id: run.runbook_step_id,
-         status: to_string(facts.status),
-         created_at: run.inserted_at,
-         finished_at: run.finished_at,
-         exit_code: run.exit_code,
-         duration_ms: run.duration_ms,
-         output_complete: if(facts.output_complete == false, do: false),
-         local_audit_failed: if(facts.local_audit_failed?, do: true),
-         approval: approval,
-         review: fixed_review(review),
-         wait_until: approval_wait_until || facts.dispatch_deadline_at,
-         run_url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runs/#{run.id}"
-       }}
-    end
+    %{
+      run_id: run.id,
+      operation_id: run.operation_id,
+      action_id: run.action_id,
+      pack_ref: run.pack_ref,
+      runner_ref: run.runner_ref,
+      runbook_execution_id: run.runbook_execution_id,
+      step_id: run.runbook_step_id,
+      status: to_string(facts.status),
+      created_at: run.inserted_at,
+      finished_at: run.finished_at,
+      exit_code: run.exit_code,
+      duration_ms: run.duration_ms,
+      output_complete: if(facts.output_complete == false, do: false),
+      local_audit_failed: if(facts.local_audit_failed?, do: true),
+      approval: approval,
+      review: fixed_review(review),
+      wait_until: approval_wait_until || facts.dispatch_deadline_at,
+      run_url: "#{EmisarWeb.Endpoint.url()}/app/#{subject.account.slug}/runs/#{run.id}"
+    }
   end
 
   # The receipt of the human review this run stood through: what the approver
@@ -402,9 +369,15 @@ defmodule EmisarWeb.MCP.Service do
     |> drop_nil_values()
   end
 
-  # Authority can expire or be revoked between the run read and this projection.
-  defp run_reviews_by_id(runs, subject),
-    do: Approvals.project_reviews_for_visible_runs(runs, subject)
+  # The runs reached this render through the caller's own authorized read, so a
+  # refusal here is not a denial to report — it is an impossible state whose
+  # only honest rendering is no receipt at all.
+  defp run_reviews_by_id(runs, subject) do
+    case Approvals.project_reviews_for_visible_runs(runs, subject) do
+      {:ok, reviews} -> reviews
+      {:error, _reason} -> %{}
+    end
+  end
 
   defp drop_nil_values(map),
     do: map |> Enum.reject(fn {_key, value} -> is_nil(value) end) |> Map.new()
@@ -574,13 +547,12 @@ defmodule EmisarWeb.MCP.Service do
 
   defp fixed_approval(run, subject, true) do
     case Approvals.fetch_request_for_visible_run(run, subject) do
-      {:ok, request} -> {:ok, {approval_summary(request, subject), request.expires_at}}
-      {:error, :not_found} -> {:ok, {nil, nil}}
-      {:error, reason} -> {:error, reason}
+      {:ok, request} -> {approval_summary(request, subject), request.expires_at}
+      _ -> {nil, nil}
     end
   end
 
-  defp fixed_approval(_run, _subject, false), do: {:ok, {nil, nil}}
+  defp fixed_approval(_run, _subject, false), do: {nil, nil}
 
   @doc """
   The bounded `{request_id, url, expires_at}` approval object shared by run
@@ -602,12 +574,12 @@ defmodule EmisarWeb.MCP.Service do
          _tail_scope,
          _preview
        ),
-       do: {:ok, {%{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "0"}}, false}}
+       do: {%{tool: "wait_for_run", arguments: %{run_id: run_id, timeout: "0"}}, false}
 
   defp fixed_run_next(run, subject, _structured_output, tail_scope, preview) do
     cond do
       not Runs.terminal_status?(run.status) ->
-        {:ok, {live_snapshot_next(run.id, tail_scope), false}}
+        {live_snapshot_next(run.id, tail_scope), false}
 
       # A finished run whose preview left persisted output unshown is still
       # drainable — hand back a start cursor so the caller can stream the rest
@@ -616,7 +588,7 @@ defmodule EmisarWeb.MCP.Service do
         terminal_drain_next(run, subject, tail_scope)
 
       true ->
-        {:ok, {nil, false}}
+        {nil, false}
     end
   end
 
@@ -631,14 +603,11 @@ defmodule EmisarWeb.MCP.Service do
   # while this very response shows preview content — mint nothing and mark the
   # output incomplete instead.
   defp terminal_drain_next(run, subject, scope) do
-    with {:ok, drainable} <- Runs.count_progress_events_for_run(run.id, subject) do
-      if drainable > 0 do
-        {:ok,
-         {wait_next(run.id, OutputCursor.encode(scope, run.id, 0, 0, drainable), "0"), false}}
-      else
-        {:ok, {nil, true}}
-      end
-    end
+    {:ok, drainable} = Runs.count_progress_events_for_run(run.id, subject)
+
+    if drainable > 0,
+      do: {wait_next(run.id, OutputCursor.encode(scope, run.id, 0, 0, drainable), "0"), false},
+      else: {nil, true}
   end
 
   # A live cursor asserts no owed-event minimum (remaining 0): retention only
@@ -783,12 +752,15 @@ defmodule EmisarWeb.MCP.Service do
   # narrowed underneath the caller mid-render fails closed exactly as the old
   # per-run fetch did.
   defp run_events_by_id(runs, subject, stream_cap) do
-    Runs.list_recent_events_for_runs(
-      Enum.map(runs, & &1.id),
-      @max_output_events + 1,
-      subject,
-      max_chunk_bytes: stream_cap
-    )
+    {:ok, events_by_run} =
+      Runs.list_recent_events_for_runs(
+        Enum.map(runs, & &1.id),
+        @max_output_events + 1,
+        subject,
+        max_chunk_bytes: stream_cap
+      )
+
+    events_by_run
   end
 
   defp run_output_preview(run, events, stream_cap) do

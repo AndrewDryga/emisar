@@ -6,7 +6,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   Operation lookup is credential-lineage scoped. Run reads retain the product's
   account/user scope, but expose only rows with the complete fixed MCP contract.
   Cancellation reaches only runs the calling lineage created; Runs owns the
-  locked authority, the status rule, the approval-request close, and the audit.
+  authority re-check, the status rule, the approval-request close, and the audit.
   """
 
   alias Emisar.{MCPOperations, Runbooks, Runs}
@@ -206,9 +206,9 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     scope = Service.cursor_scope(conn)
 
     with {:ok, position} <- resolve_output_cursor(target, scope, run_id),
-         {:ok, initial} <- Runs.fetch_mcp_run_by_id(run_id, subject),
-         {:ok, rendered} <- render_action_run(initial, subject, position, scope) do
+         {:ok, initial} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
       render = &render_action_run(&1, subject, position, scope)
+      rendered = render.(initial)
 
       cond do
         timeout_ms == 0 or Runs.terminal_status?(initial.status) ->
@@ -275,10 +275,10 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          {:ok, current} <- Runs.fetch_mcp_run_by_id(run_id, subject) do
       cond do
         Runs.terminal_status?(current.status) or run_token(current) != initial_token ->
-          with {:ok, rendered} <- render.(current), do: {:ok, %{run: rendered}}
+          {:ok, %{run: render.(current)}}
 
         System.monotonic_time(:millisecond) >= deadline ->
-          with {:ok, rendered} <- render.(current), do: {:ok, %{run: rendered}}
+          {:ok, %{run: render.(current)}}
 
         true ->
           case wait_for_change(deadline, cancellation_topic, wake_seq) do
@@ -399,8 +399,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
     subject = conn.assigns.current_subject
 
     with {:ok, runs, metadata} <-
-           Runs.list_recent_mcp_runs(Map.from_struct(input), subject, page_opts),
-         {:ok, summaries} <- Service.fixed_run_summaries(runs, subject, tail_scope: scope) do
+           Runs.list_recent_mcp_runs(Map.from_struct(input), subject, page_opts) do
       next_cursor =
         if metadata.next_page_cursor do
           CatalogCursor.encode(
@@ -413,7 +412,7 @@ defmodule EmisarWeb.MCP.RecoveryTools do
 
       payload = %{
         ok: true,
-        runs: summaries,
+        runs: Service.fixed_run_summaries(runs, subject, tail_scope: scope),
         next_cursor: next_cursor
       }
 
@@ -480,11 +479,11 @@ defmodule EmisarWeb.MCP.RecoveryTools do
   defp cancel_run(conn, args) do
     subject = conn.assigns.current_subject
 
-    with {:ok, run} <- Runs.cancel_mcp_run(args["run_id"], subject, args["reason"]),
-         {:ok, summary} <-
-           Service.fixed_run_summary(run, subject, tail_scope: Service.cursor_scope(conn)) do
-      {:ok, %{ok: true, run: summary}}
-    else
+    case Runs.cancel_mcp_run(args["run_id"], subject, args["reason"]) do
+      {:ok, run} ->
+        summary = Service.fixed_run_summary(run, subject, tail_scope: Service.cursor_scope(conn))
+        {:ok, %{ok: true, run: summary}}
+
       {:error, :not_found} ->
         {:error, error("run_not_found", "No run created by this credential lineage has that id.")}
 
@@ -496,13 +495,6 @@ defmodule EmisarWeb.MCP.RecoveryTools do
          error(
            "run_not_cancellable",
            "The run already reached a runner. Only an operator can stop it from the console."
-         )}
-
-      {:error, :response_too_large} ->
-        {:error,
-         error(
-           "response_too_large",
-           "The run was cancelled, but its summary exceeds the MCP response limit."
          )}
     end
   end

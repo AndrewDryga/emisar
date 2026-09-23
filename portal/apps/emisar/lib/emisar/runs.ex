@@ -3011,10 +3011,18 @@ defmodule Emisar.Runs do
       fetch_and_lock_cancellation_access(subject, repo: repo)
     end)
     |> request_run_cancellation_in_multi(run, reason)
+    |> commit_run_cancellation(run, subject, reason)
+  end
+
+  # Every cancellation records the request, closes the approval request of a run
+  # it stopped, and fans out to the runner, run, and approval topics only after
+  # the commit.
+  defp commit_run_cancellation(multi, %ActionRun{id: run_id}, subject, reason) do
+    multi
     |> add_cancel_requested_audit(subject, reason)
     |> Multi.merge(fn
       %{run_cancel: {outcome, _run}} when outcome in [:cancelled, :cancelling, :retry] ->
-        Emisar.Approvals.cancel_request_for_run_in_multi(Multi.new(), run.id)
+        Approvals.cancel_request_for_run_in_multi(Multi.new(), run_id)
 
       _changes ->
         Multi.run(Multi.new(), :request_cancel, fn _repo, _changes -> {:ok, :none} end)
@@ -3023,7 +3031,7 @@ defmodule Emisar.Runs do
       after_commit: fn changes ->
         deliver_cancel_to_runner(changes.run_cancel)
         broadcast_cancellation(changes.run_cancel)
-        Emisar.Approvals.broadcast_request_cancelled(changes.request_cancel)
+        Approvals.broadcast_request_cancelled(changes.request_cancel)
       end
     )
     |> cancellation_request_result()
@@ -3033,23 +3041,24 @@ defmodule Emisar.Runs do
   Cancels one of the calling key's own runs while it is still undispatched
   (`:pending` or `:pending_approval`) and closes its pending approval request in
   the same transaction. Requires the machine-only cancel-own-run permission on
-  an `%ApiKeys.ApiKey{}` subject; the account, creator membership, key, and
-  frozen target are re-locked and re-authorized before the write. A run the
-  lineage did not create is `:not_found`; one already delivered to a runner is
-  `:run_already_dispatched` and stays the console's to stop. Returns
-  `{:ok, run}` with the current row (an already-terminal run is a no-op) or
-  `{:error, :not_found | :unauthorized | :run_already_dispatched}`.
+  an `%ApiKeys.ApiKey{}` subject whose key and creator membership are still
+  current. A run the lineage did not create is `:not_found`; one already
+  delivered to a runner is `:run_already_dispatched` and stays the console's to
+  stop. Returns `{:ok, run}` with the current row (an already-terminal run is a
+  no-op) or `{:error, :not_found | :unauthorized | :run_already_dispatched}`.
   """
   def cancel_mcp_run(run_id, subject, reason \\ nil)
 
   def cancel_mcp_run(run_id, %Subject{actor: %ApiKeys.ApiKey{}} = subject, reason) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.cancel_own_run_permission()
-           ),
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.cancel_own_run_permission(), subject),
          {:ok, run} <- fetch_own_mcp_run_by_id(run_id, subject) do
-      cancel_mcp_run_for_status(run, subject, reason)
+      reason = reason || "cancelled by the requesting agent"
+
+      Multi.new()
+      |> put_active_account_lock(run.account_id, :active_account)
+      |> cancel_run_in_multi(run.id, reason)
+      |> commit_run_cancellation(run, subject, reason)
     end
   end
 
@@ -3070,98 +3079,6 @@ defmodule Emisar.Runs do
       |> Repo.fetch(ActionRun.Query)
     else
       {:error, :not_found}
-    end
-  end
-
-  defp cancel_mcp_run_for_status(%ActionRun{} = run, subject, reason) do
-    reason = reason || "cancelled by the requesting agent"
-
-    Multi.new()
-    |> put_active_account_lock(run.account_id, :active_account)
-    |> Multi.run(:cancellation_access, fn repo, _changes ->
-      fetch_and_lock_mcp_cancellation_access(subject, repo)
-    end)
-    |> Multi.run(:run_cancel, fn repo, %{cancellation_access: access} ->
-      cancel_own_run_locked(repo, run, access, reason)
-    end)
-    |> Multi.run(:run_cancel_audit, fn
-      repo, %{run_cancel: {:cancelled, cancelled}} ->
-        repo.insert(Audit.run_event_changeset(cancelled))
-
-      _repo, %{run_cancel: _} ->
-        {:ok, nil}
-    end)
-    |> add_cancel_requested_audit(subject, reason)
-    |> Multi.merge(fn
-      %{run_cancel: {:cancelled, _run}} ->
-        Approvals.cancel_request_for_run_in_multi(Multi.new(), run.id)
-
-      _changes ->
-        Multi.run(Multi.new(), :request_cancel, fn _repo, _changes -> {:ok, :none} end)
-    end)
-    |> Repo.commit_multi(
-      after_commit: fn changes ->
-        broadcast_cancellation(changes.run_cancel)
-        :ok = Approvals.broadcast_request_cancelled(changes.request_cancel)
-      end
-    )
-    |> cancellation_request_result()
-  end
-
-  # The subject's membership and key are boundary snapshots. Re-lock both in the
-  # order key rotation takes (membership, then key) so a seat suspended or a key
-  # revoked since the request was authenticated cannot withdraw work, and read
-  # the member's runner access under that lock.
-  defp fetch_and_lock_mcp_cancellation_access(
-         %Subject{
-           account: %Accounts.Account{id: account_id},
-           actor: %ApiKeys.ApiKey{id: key_id},
-           membership_id: membership_id
-         } = subject,
-         repo
-       ) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.cancel_own_run_permission()
-           ),
-         {:ok, membership} <-
-           Accounts.fetch_and_lock_membership(account_id, membership_id, repo: repo),
-         true <- ApiKeys.api_key_usable_in_account?(repo, key_id, account_id) do
-      {:ok, Accounts.runner_access_for_locked_membership(repo, membership)}
-    else
-      _ -> {:error, :unauthorized}
-    end
-  end
-
-  # Undispatched work only: a run already delivered to a runner is the
-  # operator's to stop from the console. The row is re-read under lock so a
-  # dispatch or decision that landed since the scoped read wins.
-  defp cancel_own_run_locked(repo, %ActionRun{} = expected_run, access, reason) do
-    loaded_run =
-      ActionRun.Query.all()
-      |> ActionRun.Query.by_account_id(expected_run.account_id)
-      |> ActionRun.Query.by_id(expected_run.id)
-      |> ActionRun.Query.lock_for_update()
-      |> repo.one()
-
-    cond do
-      is_nil(loaded_run) ->
-        {:ok, :no_run}
-
-      ActionRun.terminal?(loaded_run.status) ->
-        {:ok, {:noop, loaded_run}}
-
-      loaded_run.status not in [:pending, :pending_approval] ->
-        {:error, :run_already_dispatched}
-
-      true ->
-        with :ok <-
-               ensure_cancellation_targets_authorized(loaded_run.account_id, [loaded_run], access,
-                 repo: repo
-               ) do
-          cancel_loaded_run(repo, loaded_run, reason)
-        end
     end
   end
 

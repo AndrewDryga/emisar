@@ -2707,33 +2707,6 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "create_or_replay_mcp_execution/2" do
-    test "revocation after a fresh commit preserves accepted execution identity" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      _policy = Fixtures.Policies.create_policy(account_id: account.id)
-      subject = api_client_subject(account, owner, "post-commit revocation")
-      runner = trusted_runner(account, owner)
-
-      runbook =
-        owner
-        |> create_runbook(definition: definition(runner.group))
-        |> Fixtures.Runbooks.publish_runbook()
-
-      assert_execution_revoked_after_commit(mcp_execution_facts(runbook), subject)
-      assert Repo.aggregate(RunbookExecution, :count) == 1
-      assert Repo.aggregate(MCPOperations.Operation, :count) == 1
-    end
-
-    test "revocation during replay preserves the original execution without another attempt" do
-      fixture = mcp_execution_fixture()
-      facts = mcp_execution_facts(fixture.runbook, operation_id: fixture.operation_id)
-      attempts = Repo.aggregate(Emisar.Runs.ActionRun, :count)
-
-      assert_execution_revoked_after_commit(facts, fixture.subject)
-      assert Repo.aggregate(RunbookExecution, :count) == 1
-      assert Repo.aggregate(MCPOperations.Operation, :count) == 1
-      assert Repo.aggregate(Emisar.Runs.ActionRun, :count) == attempts
-    end
-
     test "creates the durable execution once and replays it exactly" do
       fixture = mcp_execution_fixture()
       facts = mcp_execution_facts(fixture.runbook, operation_id: fixture.operation_id)
@@ -4135,39 +4108,6 @@ defmodule Emisar.RunbooksTest do
     Fixtures.Memberships.force_runner_access(membership, access)
     Fixtures.Subjects.membership_subject(membership)
   end
-
-  defp assert_execution_revoked_after_commit(facts, subject) do
-    handler = {__MODULE__, make_ref()}
-
-    :telemetry.attach(handler, [:emisar, :repo, :query], &__MODULE__.revoke_after_commit/4, %{
-      owner: self(),
-      handler: handler,
-      key: subject.actor
-    })
-
-    try do
-      assert Runbooks.create_or_replay_mcp_execution(facts, subject) ==
-               {:error, {:accepted, :unauthorized}}
-
-      assert_received {^handler, :revoked_after_commit, {false, false}}
-    after
-      :telemetry.detach(handler)
-    end
-  end
-
-  def revoke_after_commit(_event, _measurements, %{query: "commit", result: {:ok, _}}, context) do
-    if self() == context.owner do
-      :telemetry.detach(context.handler)
-      phase = {Repo.in_transaction?(), Repo.checked_out?()}
-
-      if phase == {false, false} do
-        Fixtures.ApiKeys.mark_revoked(context.key)
-        send(context.owner, {context.handler, :revoked_after_commit, phase})
-      end
-    end
-  end
-
-  def revoke_after_commit(_event, _measurements, _metadata, _context), do: :ok
 
   defp mcp_execution_fixture do
     {_user, account, owner} = Fixtures.Subjects.owner_subject()

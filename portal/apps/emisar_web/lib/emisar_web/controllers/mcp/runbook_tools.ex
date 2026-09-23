@@ -422,32 +422,30 @@ defmodule EmisarWeb.MCP.RunbookTools do
   end
 
   defp project_execution(execution, runbook, projection, subject, opts) do
-    with {:ok, approval} <- execution_approval(execution, subject) do
-      output_scope = Keyword.get(opts, :output_scope)
+    approval = execution_approval(execution, subject)
+    output_scope = Keyword.get(opts, :output_scope)
 
-      [:full, :summary, :minimal]
-      |> Enum.reduce_while({:error, :response_too_large}, fn mode, _result ->
-        payload =
-          execution_projection(execution, runbook, projection, approval, mode, output_scope)
+    [:full, :summary, :minimal]
+    |> Enum.reduce_while({:error, :response_too_large}, fn mode, _result ->
+      payload =
+        execution_projection(execution, runbook, projection, approval, mode, output_scope)
 
-        if ResponseBudget.fits_payload?(%{ok: true, execution: payload}) do
-          {:halt, {:ok, payload}}
-        else
-          {:cont, {:error, :response_too_large}}
-        end
-      end)
-    end
+      if ResponseBudget.fits_payload?(%{ok: true, execution: payload}) do
+        {:halt, {:ok, payload}}
+      else
+        {:cont, {:error, :response_too_large}}
+      end
+    end)
   end
 
   defp execution_approval(%{status: :pending_approval} = execution, subject) do
     case Approvals.fetch_request_for_visible_runbook_execution(execution, subject) do
-      {:ok, request} -> {:ok, Service.approval_summary(request, subject)}
-      {:error, :not_found} -> {:ok, nil}
-      {:error, reason} -> {:error, reason}
+      {:ok, request} -> Service.approval_summary(request, subject)
+      _ -> nil
     end
   end
 
-  defp execution_approval(_execution, _subject), do: {:ok, nil}
+  defp execution_approval(_execution, _subject), do: nil
 
   defp execution_projection(execution, runbook, projection, approval, mode, output_scope) do
     %{

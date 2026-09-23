@@ -396,7 +396,7 @@ or failed.
 If the operation committed but its result cannot be observed, `run_action` and
 `execute_runbook` return `isError: true`, `ok: false`, `dispatch_started: true`,
 and `error.details.operation_id`. This covers authority expiring or being revoked
-during a wait or projection (`not_allowed`), unavailable committed resources
+before the tool re-reads the committed result (`not_allowed`), unavailable committed resources
 (`operation_incomplete`), and an oversized result (`response_too_large`). No
 now-inaccessible run data or output is returned. The error is not automatically
 retryable; its `error.next` is `get_operation` for that exact operation ID.
@@ -1583,10 +1583,9 @@ error when the operation ID was returned or recorded before a process loss.
 same `own` scope `recent_runs` uses, rotated successors included — while it is
 still `pending` or `pending_approval`. It takes the exact `run_id` and an
 optional one-sentence `reason` of at most 255 characters that is recorded as
-the run's cancellation reason. The run never reaches a runner: in one
-transaction the portal re-locks the account, the key's creator membership and
-the key itself, re-checks the frozen runner and pack against the member's
-current runner access, flips the run to `cancelled`, writes the
+the run's cancellation reason. The run never reaches a runner: after re-reading
+the key and its creator membership, the portal locks the account and the run in
+one transaction, flips the run to `cancelled`, writes the
 `run.cancel_requested` and `action_run.cancelled` audit rows, and flips the
 run's still-pending approval request to `cancelled` so a racing approve cannot
 release it. Approvers and the requester are notified after the commit, and the
@@ -1600,8 +1599,7 @@ delivered to a runner — `sent`, `running`, or `cancelling` — is refused with
 `run_not_cancellable` and stays the console operator's to stop; the API never
 sends a cancel to a runner on a model's behalf. A run another lineage or
 account created is `run_not_found`, indistinguishable from absence. A revoked
-key, an inactive or suspended creator membership, a deleted runner, or a target
-outside the member's current runner or pack scope is `not_allowed`, with no
+key or an inactive or suspended creator membership is `not_allowed`, with no
 side effect.
 
 ```json
