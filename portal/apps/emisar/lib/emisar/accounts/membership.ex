@@ -1,7 +1,9 @@
 defmodule Emisar.Accounts.Membership do
   @moduledoc """
-  Joins users to accounts with a role. A user can be in many accounts;
-  an account has many users.
+  A workspace Member: one seat in an account with a role. A Member may be
+  linked to a personal login (`user_id`), which can hold seats in many
+  accounts, or exist without one and sign in only through its workspace SSO
+  identity.
   """
   use Emisar, :schema
   alias Emisar.Auth

@@ -225,9 +225,10 @@ defmodule Emisar.AuthTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert {:ok, %User{id: id},
-              %UserToken{auth_method: :sso, mfa_verified_at: %DateTime{}} = stored} =
-               Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok,
+              %UserToken{user: %User{id: id}, auth_method: :sso, mfa_verified_at: %DateTime{}} =
+                stored} =
+               Auth.fetch_session_by_token(token)
 
       assert id == user.id
       # ip + user_agent ride in the token's `metadata` jsonb (string-keyed once persisted).
@@ -247,8 +248,8 @@ defmodule Emisar.AuthTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert {:ok, _user, %UserToken{} = stored} =
-               Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %UserToken{} = stored} =
+               Auth.fetch_session_by_token(token)
 
       refute stored.mfa_verified_at
       assert String.length(stored.metadata["user_agent"]) == 255
@@ -348,7 +349,7 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "fetch_user_and_token_by_session_token/1" do
+  describe "fetch_session_by_token/1" do
     setup do
       %{user: Fixtures.Users.create_user()}
     end
@@ -356,15 +357,15 @@ defmodule Emisar.AuthTest do
     test "resolves a live session to {:ok, user, token}", %{user: user} do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
-      assert {:ok, %User{id: id}, %UserToken{context: "session"}} =
-               Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %UserToken{user: %User{id: id}, context: "session"}} =
+               Auth.fetch_session_by_token(token)
 
       assert id == user.id
     end
 
     test "an unknown or non-binary token is :not_found, never a crash", %{user: _user} do
-      assert Auth.fetch_user_and_token_by_session_token("nope") == {:error, :not_found}
-      assert Auth.fetch_user_and_token_by_session_token("") == {:error, :not_found}
+      assert Auth.fetch_session_by_token("nope") == {:error, :not_found}
+      assert Auth.fetch_session_by_token("") == {:error, :not_found}
     end
 
     test "a session past its validity window no longer resolves", %{user: user} do
@@ -372,7 +373,7 @@ defmodule Emisar.AuthTest do
       # 61 days is past the 60-day session window.
       age_tokens(user.id, 61 * 24 * 60)
 
-      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(token) == {:error, :not_found}
     end
 
     test "a soft-deleted user's token reads as :not_found (preload scoped to live users)", %{
@@ -381,7 +382,7 @@ defmodule Emisar.AuthTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       Fixtures.Users.mark_user_as_deleted(user)
 
-      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(token) == {:error, :not_found}
     end
   end
 
@@ -437,7 +438,7 @@ defmodule Emisar.AuthTest do
       token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
       assert Auth.delete_session_token(token) == :ok
-      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(token) == {:error, :not_found}
     end
 
     test "deleting an unknown token is an idempotent :ok" do
@@ -461,7 +462,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.complete_session_sign_out(token, context) == :ok
 
-      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(token) == {:error, :not_found}
       assert [event] = events_of_type("user.signed_out")
       assert event.actor_id == subject.membership_id
       assert event.target_id == subject.membership_id
@@ -484,7 +485,7 @@ defmodule Emisar.AuthTest do
       assert {:error, changeset} = Auth.complete_session_sign_out(token, context)
       assert "is invalid" in errors_on(changeset).request_id
 
-      assert {:ok, %User{}, _token} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: %User{}}} = Auth.fetch_session_by_token(token)
       assert events_of_type("user.signed_out") == []
     end
 
@@ -507,8 +508,8 @@ defmodule Emisar.AuthTest do
 
       assert Auth.complete_session_sign_out(token) == :ok
 
-      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
-      assert {:ok, %User{}, _token} = Auth.fetch_user_and_token_by_session_token(other_token)
+      assert Auth.fetch_session_by_token(token) == {:error, :not_found}
+      assert {:ok, %{user: %User{}}} = Auth.fetch_session_by_token(other_token)
     end
   end
 
@@ -531,7 +532,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.delete_all_session_tokens(user) === {:ok, 1}
       # The other user's session is untouched.
-      assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(keep)
+      assert {:ok, %{user: %User{}}} = Auth.fetch_session_by_token(keep)
     end
   end
 
@@ -543,7 +544,7 @@ defmodule Emisar.AuthTest do
       assert Auth.delete_identity_session_routes([], Repo) ==
                {:ok, %{count: 0, socket_topics: []}}
 
-      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, _token} = Auth.fetch_session_by_token(token)
     end
 
     test "retires only the named identity routes and returns their exact topics without deleting bearers" do
@@ -568,11 +569,11 @@ defmodule Emisar.AuthTest do
                Auth.delete_identity_session_routes([identity.id], Repo)
 
       assert topic == Auth.live_socket_topic_for_session(sso)
-      assert {:ok, _user, sso_session} = Auth.fetch_user_and_token_by_session_token(sso)
+      assert {:ok, sso_session} = Auth.fetch_session_by_token(sso)
       assert Auth.session_membership_ids(sso_session) == []
 
-      assert {:ok, _user, personal_session} =
-               Auth.fetch_user_and_token_by_session_token(magic_link)
+      assert {:ok, personal_session} =
+               Auth.fetch_session_by_token(magic_link)
 
       assert [_member] = Auth.session_membership_ids(personal_session)
     end
@@ -608,7 +609,7 @@ defmodule Emisar.AuthTest do
       assert Auth.disconnect_live_socket_topics(captured) == :ok
       assert Auth.disconnect_live_socket_topics([]) == :ok
 
-      assert {:ok, %User{}, _} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: %User{}}} = Auth.fetch_session_by_token(token)
     end
 
     test "does not call a loaded handler whose application is not started" do
@@ -958,8 +959,9 @@ defmodule Emisar.AuthTest do
 
       assert signed_in.id == user.id
 
-      assert {:ok, %User{id: id}, %UserToken{auth_method: :magic_link, mfa_verified_at: nil}} =
-               Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok,
+              %UserToken{user: %User{id: id}, auth_method: :magic_link, mfa_verified_at: nil}} =
+               Auth.fetch_session_by_token(token)
 
       assert id == user.id
     end
@@ -998,8 +1000,8 @@ defmodule Emisar.AuthTest do
       assert account_id == account.id
       assert user_id == user.id
 
-      assert {:ok, %User{id: ^user_id}, %UserToken{}} =
-               Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %UserToken{user: %User{id: ^user_id}}} =
+               Auth.fetch_session_by_token(token)
     end
 
     test "a copied registration handoff becomes an ordinary sign-in after first completion" do
@@ -1127,8 +1129,8 @@ defmodule Emisar.AuthTest do
 
       assert landed.id == account.id
 
-      assert {:ok, _user, %UserToken{auth_method: :magic_link, mfa_verified_at: nil}} =
-               Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %UserToken{auth_method: :magic_link, mfa_verified_at: nil}} =
+               Auth.fetch_session_by_token(token)
     end
 
     test "a branded completion for a non-member still signs them in, without the target", %{
@@ -1145,7 +1147,7 @@ defmodule Emisar.AuthTest do
                  %RequestContext{}
                )
 
-      assert {:ok, _user, %UserToken{}} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %UserToken{}} = Auth.fetch_session_by_token(token)
     end
 
     test "an enrollment made since the link was issued still owes a second factor", %{
@@ -1300,9 +1302,13 @@ defmodule Emisar.AuthTest do
 
       assert signed_in.id == user.id
 
-      assert {:ok, %User{id: id},
-              %UserToken{auth_method: :magic_link, mfa_verified_at: %DateTime{}}} =
-               Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok,
+              %UserToken{
+                user: %User{id: id},
+                auth_method: :magic_link,
+                mfa_verified_at: %DateTime{}
+              }} =
+               Auth.fetch_session_by_token(token)
 
       assert id == user.id
     end
@@ -1322,8 +1328,8 @@ defmodule Emisar.AuthTest do
                  %RequestContext{}
                )
 
-      assert {:ok, _user, %UserToken{auth_method: :magic_link, mfa_verified_at: %DateTime{}}} =
-               Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %UserToken{auth_method: :magic_link, mfa_verified_at: %DateTime{}}} =
+               Auth.fetch_session_by_token(token)
     end
 
     test "a completed proof cannot be replayed into a second session", %{
@@ -1351,7 +1357,7 @@ defmodule Emisar.AuthTest do
                %RequestContext{}
              ) == {:error, :invalid_or_expired}
 
-      assert {:ok, _user, minted} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, minted} = Auth.fetch_session_by_token(token)
       assert session_rows() == Enum.sort_by([Repo.reload!(minted) | sessions_before], & &1.id)
     end
 
@@ -2107,7 +2113,7 @@ defmodule Emisar.AuthTest do
     setup do
       {user, account, _subject} = Fixtures.Subjects.owner_subject()
       session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(session_token)
+      {:ok, session} = Auth.fetch_session_by_token(session_token)
 
       %{
         user: user,
@@ -2271,7 +2277,7 @@ defmodule Emisar.AuthTest do
     setup do
       {user, account, _subject} = Fixtures.Subjects.owner_subject()
       session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(session_token)
+      {:ok, session} = Auth.fetch_session_by_token(session_token)
       subject = Fixtures.Subjects.subject_for(user, account, session: session)
 
       %{
@@ -2302,13 +2308,13 @@ defmodule Emisar.AuthTest do
       assert length(updated.mfa_recovery_codes) == 10
       refute Enum.any?(codes, &(&1 in updated.mfa_recovery_codes))
 
-      assert {:ok, ^updated, current_session} =
-               Auth.fetch_user_and_token_by_session_token(session_token)
+      assert {:ok, %{user: ^updated} = current_session} =
+               Auth.fetch_session_by_token(session_token)
 
       assert current_session.mfa_enrollment_verified_at == updated.mfa_enabled_at
 
-      assert {:ok, ^updated, sibling_session} =
-               Auth.fetch_user_and_token_by_session_token(sibling_token)
+      assert {:ok, %{user: ^updated} = sibling_session} =
+               Auth.fetch_session_by_token(sibling_token)
 
       assert sibling_session.mfa_enrollment_verified_at == nil
     end
@@ -2459,7 +2465,7 @@ defmodule Emisar.AuthTest do
       # sockets ARE dropped so each re-decides — proven end-to-end in
       # `EmisarWeb.MfaDisableDisconnectTest`, since the disconnect handler lives
       # in `emisar_web` and is a no-op in this `:emisar`-only test process.
-      assert {:ok, %User{}, _session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: %User{}}} = Auth.fetch_session_by_token(token)
     end
 
     test "rejects a wrong code and leaves MFA enabled", %{secret: secret, subject: subject} do
@@ -3044,7 +3050,7 @@ defmodule Emisar.AuthTest do
       secret = Auth.generate_mfa_secret()
       {enrolled, recovery_codes} = Fixtures.Users.enable_mfa!(secret, subject)
       session_token = Fixtures.Auth.create_session_token!(enrolled, :magic_link, nil)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(session_token)
+      {:ok, session} = Auth.fetch_session_by_token(session_token)
 
       %{
         account: account,
@@ -3085,14 +3091,14 @@ defmodule Emisar.AuthTest do
       assert {:ok, %UserToken{id: updated_id}} =
                Auth.complete_current_session_mfa(proof, Crypto.hash(session_token), subject)
 
-      assert {:ok, current_user, current_session} =
-               Auth.fetch_user_and_token_by_session_token(session_token)
+      assert {:ok, %{user: current_user} = current_session} =
+               Auth.fetch_session_by_token(session_token)
 
       assert current_session.id == updated_id
       assert current_session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
 
-      assert {:ok, sibling_user, sibling_session} =
-               Auth.fetch_user_and_token_by_session_token(sibling_token)
+      assert {:ok, %{user: sibling_user} = sibling_session} =
+               Auth.fetch_session_by_token(sibling_token)
 
       assert sibling_user.id == current_user.id
       assert sibling_session.mfa_enrollment_verified_at == nil
@@ -3125,7 +3131,7 @@ defmodule Emisar.AuthTest do
           user_identity_id: identity.id
         )
 
-      {:ok, _user, sso_session} = Auth.fetch_user_and_token_by_session_token(sso_token)
+      {:ok, sso_session} = Auth.fetch_session_by_token(sso_token)
       sso_subject = Fixtures.Subjects.subject_for(user, account, session: sso_session)
 
       assert {:ok, proof} =
@@ -3134,16 +3140,16 @@ defmodule Emisar.AuthTest do
       assert {:ok, _session} =
                Auth.complete_current_session_mfa(proof, Crypto.hash(sso_token), sso_subject)
 
-      assert {:ok, current_user, session} =
-               Auth.fetch_user_and_token_by_session_token(sso_token)
+      assert {:ok, %{user: current_user} = session} =
+               Auth.fetch_session_by_token(sso_token)
 
       assert session.auth_method == :sso
       assert session.user_identity_id == identity.id
       assert session.mfa_verified_at == idp_verified_at
       assert session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
 
-      assert {:ok, sibling_user, sibling_session} =
-               Auth.fetch_user_and_token_by_session_token(sibling_token)
+      assert {:ok, %{user: sibling_user} = sibling_session} =
+               Auth.fetch_session_by_token(sibling_token)
 
       assert sibling_user.id == current_user.id
       assert sibling_session.mfa_enrollment_verified_at == nil
@@ -3173,8 +3179,8 @@ defmodule Emisar.AuthTest do
       assert Auth.complete_current_session_mfa(proof, Crypto.hash(other_token), subject) ==
                {:error, :session_not_found}
 
-      assert {:ok, _user, session} =
-               Auth.fetch_user_and_token_by_session_token(session_token)
+      assert {:ok, session} =
+               Auth.fetch_session_by_token(session_token)
 
       assert session.mfa_enrollment_verified_at == nil
     end
@@ -3250,8 +3256,8 @@ defmodule Emisar.AuthTest do
                %{next_subject | actor: re_enrolled}
              ) == {:error, :mfa_proof_stale}
 
-      assert {:ok, _user, session} =
-               Auth.fetch_user_and_token_by_session_token(session_token)
+      assert {:ok, session} =
+               Auth.fetch_session_by_token(session_token)
 
       assert session.mfa_enrollment_verified_at == nil
     end

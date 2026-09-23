@@ -13,7 +13,7 @@ defmodule Emisar.AuthMemberGrantsTest do
     assert {:ok, _user, raw, :no_target, false} =
              Auth.complete_magic_link_sign_in(verified_user.id, id, nil, %RequestContext{})
 
-    assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, session} = Auth.fetch_session_by_token(raw)
     {raw, session}
   end
 
@@ -89,7 +89,7 @@ defmodule Emisar.AuthMemberGrantsTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
 
       Fixtures.SSO.create_user_identity(
         account_id: sibling.id,
@@ -140,7 +140,7 @@ defmodule Emisar.AuthMemberGrantsTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
       refute Auth.session_subject_options(original, session)[:mfa]
       options = Auth.session_subject_options(target, session)
       assert options[:mfa]
@@ -173,7 +173,7 @@ defmodule Emisar.AuthMemberGrantsTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
 
       assert {:ok, _provider} =
                SSO.update_provider(provider, %{satisfies_mfa: true}, owner_subject)
@@ -189,7 +189,7 @@ defmodule Emisar.AuthMemberGrantsTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert {:ok, _user, fresh} = Auth.fetch_user_and_token_by_session_token(fresh_raw)
+      assert {:ok, fresh} = Auth.fetch_session_by_token(fresh_raw)
       current = Fixtures.Subjects.subject_for(user, account, session: fresh)
       assert Accounts.ensure_account_compliant(account, current) == :ok
     end
@@ -228,7 +228,7 @@ defmodule Emisar.AuthMemberGrantsTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
       assert Auth.session_subject_options(member, session)[:mfa]
       assert {:ok, _disabled} = SSO.update_provider(direct, %{enabled: false}, owner_subject)
 
@@ -285,7 +285,7 @@ defmodule Emisar.AuthMemberGrantsTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
 
       assert {:ok, _member} =
                Accounts.fetch_membership_by_account_id_or_slug(destination.id, session)
@@ -335,7 +335,7 @@ defmodule Emisar.AuthMemberGrantsTest do
       {raw, held_session} = personal_session(user)
 
       assert :ok = Accounts.end_all_sessions_for(member, owner_subject)
-      assert {:ok, _user, live_session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, live_session} = Auth.fetch_session_by_token(raw)
 
       assert {:ok, _other_member} =
                Accounts.fetch_membership_by_account_id_or_slug(
@@ -380,13 +380,13 @@ defmodule Emisar.AuthMemberGrantsTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
 
       assert {:ok, _member} =
                Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session)
 
       assert {:ok, _suspended} = Accounts.suspend_membership(origin_member, owner_subject)
-      assert {:ok, _user, remaining_session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, remaining_session} = Auth.fetch_session_by_token(raw)
 
       assert {:ok, _member} =
                Accounts.fetch_membership_by_account_id_or_slug(
@@ -435,7 +435,7 @@ defmodule Emisar.AuthMemberGrantsTest do
              )
 
     assert {:ok, disabled} = SSO.update_provider(provider, %{enabled: false}, owner_subject)
-    assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, session} = Auth.fetch_session_by_token(raw)
 
     assert {:ok, _member} =
              Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session)

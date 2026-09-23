@@ -105,6 +105,36 @@ defmodule Emisar.Fixtures.Auth do
     token
   end
 
+  @doc """
+  Persists a member-only SSO session for a Member without a personal login and
+  returns the raw token. The row is the member-only session changeset; its one
+  frozen grant comes from the real sign-in authority for `identity`.
+  """
+  def create_member_session_token!(
+        %Accounts.Membership{user_id: nil} = membership,
+        %SSO.UserIdentity{} = identity,
+        metadata \\ %{}
+      ) do
+    {token, digest} = Crypto.session_token()
+
+    {:ok, _changes} =
+      Ecto.Multi.new()
+      |> SSO.put_sign_in_authority(membership, identity.account_id,
+        user_identity_id: identity.id,
+        provider_identifier: identity.provider_identifier
+      )
+      |> Ecto.Multi.insert(:session, fn %{sso_provider: provider} ->
+        mfa_verified_at = if provider.satisfies_mfa, do: DateTime.utc_now()
+        UserToken.Changeset.member_session(digest, metadata, mfa_verified_at, identity.id)
+      end)
+      |> Ecto.Multi.run(:fixture_grants, fn repo, changes ->
+        SessionGrants.insert_sso(repo, changes.session, changes.sso_destinations)
+      end)
+      |> Repo.commit_multi()
+
+    token
+  end
+
   # Consumers need the same frozen authority shape as a real sign-in. These
   # fixtures never make grantless tokens authoritative in production; deliberate
   # invalid/retired SSO origins keep a token with no workspace grants.

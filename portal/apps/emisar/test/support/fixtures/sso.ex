@@ -65,6 +65,11 @@ defmodule Emisar.Fixtures.SSO do
     provider |> Ecto.Changeset.change(enabled: false) |> Repo.update!()
   end
 
+  @doc "Retires an identity's provider identifier directly — the state an unlink leaves, minus its session sweeps."
+  def retire_identity(%UserIdentity{} = identity) do
+    identity |> UserIdentity.Changeset.retire_provider_identifier() |> Repo.update!()
+  end
+
   @doc "Arranges the persisted result of a successful sign-in verification for this configuration."
   def verify_provider_sign_in(%IdentityProvider{} = provider, membership) do
     digest =

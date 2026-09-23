@@ -90,7 +90,7 @@ defmodule Emisar.Seeds.SmokeTest do
 
     unrelated = Fixtures.Users.create_user()
     raw = Fixtures.Auth.create_session_token!(unrelated, :magic_link, nil)
-    {:ok, _user, retained} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, retained} = Auth.fetch_session_by_token(raw)
 
     for _ <- 1..2 do
       ExUnit.CaptureIO.capture_io(fn ->
@@ -149,7 +149,7 @@ defmodule Emisar.Seeds.SmokeTest do
         ] do
       assert {:ok, user} = Users.fetch_user_by_email(email)
       raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      {:ok, session} = Auth.fetch_session_by_token(raw)
 
       assert {:ok, membership} =
                Accounts.fetch_membership_by_account_id_or_slug(slug, session)

@@ -8,6 +8,8 @@ defmodule EmisarWeb.MfaSetupLive do
   Enrollment first requires an explicit current-inbox verification, then
   confirms a TOTP code, shows the recovery codes once, and continues to /app.
   Voluntary management (disable, regenerate codes) stays on the profile page.
+  A Member without a personal login has no local factor to set up; only its
+  identity provider can satisfy the requirement.
   """
   use EmisarWeb, :live_view
   alias Emisar.Auth
@@ -32,6 +34,13 @@ defmodule EmisarWeb.MfaSetupLive do
       :ok ->
         {:ok, push_navigate(socket, to: ~p"/app")}
     end
+  end
+
+  defp mount_required_mfa(socket, nil) do
+    {:ok,
+     socket
+     |> assign(:page_title, "Multi-factor authentication required")
+     |> assign(:mfa_mode, :no_personal_login)}
   end
 
   defp mount_required_mfa(socket, user) do
@@ -63,14 +72,20 @@ defmodule EmisarWeb.MfaSetupLive do
       <p class="mb-6 text-sm text-zinc-400">
         <span class="font-semibold text-zinc-200">{@current_account.name}</span>
         requires MFA.
-        <%= if @mfa_mode == :enrollment do %>
-          Set up an authenticator app to continue.
-        <% else %>
-          Enter an authenticator or recovery code to continue.
+        <%= case @mfa_mode do %>
+          <% :enrollment -> %>
+            Set up an authenticator app to continue.
+          <% :challenge -> %>
+            Enter an authenticator or recovery code to continue.
+          <% :no_personal_login -> %>
+            Your identity provider sign-in did not verify a second factor, and your membership
+            in this workspace has no personal login to add one. Ask a workspace administrator
+            to require MFA at your identity provider, then sign in again.
         <% end %>
       </p>
 
       <%= cond do %>
+        <% @mfa_mode == :no_personal_login -> %>
         <% @mfa_mode == :challenge -> %>
           <%= if @mfa_challenge_mode == :totp do %>
             <.simple_form for={%{}} phx-submit="verify_totp">
@@ -187,6 +202,10 @@ defmodule EmisarWeb.MfaSetupLive do
     </.auth_layout>
     """
   end
+
+  # A member-only session has nothing to enroll or verify here.
+  def handle_event(_event, _params, %{assigns: %{mfa_mode: :no_personal_login}} = socket),
+    do: {:noreply, socket}
 
   def handle_event("verify_totp", %{"otp" => otp}, socket),
     do: verify_current_session(socket, {:totp, otp})

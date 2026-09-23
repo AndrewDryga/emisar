@@ -60,7 +60,7 @@ defmodule Emisar.AuthAuditTest do
       secret = Auth.generate_mfa_secret()
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
       session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(session_token)
+      {:ok, session} = Auth.fetch_session_by_token(session_token)
       subject = Fixtures.Subjects.subject_for(user, account, session: session)
 
       %{
@@ -495,7 +495,7 @@ defmodule Emisar.AuthAuditTest do
       {user, account, _subject} = Fixtures.Subjects.owner_subject()
       _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _, session} = Auth.fetch_user_and_token_by_session_token(keep)
+      {:ok, session} = Auth.fetch_session_by_token(keep)
       subject = Fixtures.Subjects.subject_for(user, account, session: session)
       %{user: user, account: account, keep: keep, subject: subject}
     end
@@ -549,7 +549,7 @@ defmodule Emisar.AuthAuditTest do
     } do
       new = "renamed-#{System.unique_integer()}@example.test"
       raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      {:ok, session} = Auth.fetch_session_by_token(raw)
       subject = Fixtures.Subjects.subject_for(user, account, session: session)
       digest = Crypto.hash(raw)
 

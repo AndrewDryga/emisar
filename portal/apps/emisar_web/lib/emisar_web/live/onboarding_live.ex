@@ -17,7 +17,7 @@ defmodule EmisarWeb.OnboardingLive do
   # explanation. Send them to sign in instead of rendering a form that cannot
   # succeed.
   def mount(_params, session, socket) do
-    if socket.assigns[:current_user] do
+    if match?(%Auth.UserToken{}, socket.assigns[:current_auth]) do
       if Auth.personal_session?(socket.assigns.current_auth) do
         {billing_intent, billing_choice} = billing_choice(session["billing_intent"])
 

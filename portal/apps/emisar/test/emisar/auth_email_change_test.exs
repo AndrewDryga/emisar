@@ -6,7 +6,7 @@ defmodule Emisar.AuthEmailChangeTest do
   setup do
     {user, account, _subject} = Fixtures.Subjects.owner_subject()
     raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, session} = Auth.fetch_session_by_token(raw)
     subject = Fixtures.Subjects.subject_for(user, account, session: session)
 
     %{
@@ -46,8 +46,8 @@ defmodule Emisar.AuthEmailChangeTest do
                  %{display_name: "Mailbox Owner"}
                )
 
-      assert {:ok, _retained_user, retained_token} =
-               Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, retained_token} =
+               Auth.fetch_session_by_token(raw)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
                target.id,
@@ -139,7 +139,7 @@ defmodule Emisar.AuthEmailChangeTest do
       subject: subject
     } do
       sso_raw = Fixtures.Auth.create_session_token!(user, :sso, nil)
-      {:ok, _user, sso_session} = Auth.fetch_user_and_token_by_session_token(sso_raw)
+      {:ok, sso_session} = Auth.fetch_session_by_token(sso_raw)
       sso_subject = %{subject | session_token_id: sso_session.id}
       assert {:ok, :code} = Auth.begin_email_change("new@example.test", subject)
       assert_received {:email, mail}
@@ -184,7 +184,7 @@ defmodule Emisar.AuthEmailChangeTest do
       subject: subject
     } do
       {proof, code, _mail} = pending_change(digest, subject)
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
       assert {:error, :invalid} = complete(%{proof | token_id: session.id}, code, digest, subject)
 
       assert {:error, :invalid} =
@@ -298,7 +298,7 @@ defmodule Emisar.AuthEmailChangeTest do
       assert "has already been taken" in errors_on(changeset).email
       assert Repo.reload!(user).email == user.email
       assert Repo.get(UserToken, proof.token_id)
-      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, _session} = Auth.fetch_session_by_token(raw)
     end
 
     test "a final audit failure rolls back address, confirmation and token consumption", %{

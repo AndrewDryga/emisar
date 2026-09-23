@@ -49,6 +49,29 @@ defmodule Emisar.Fixtures.Memberships do
   end
 
   @doc """
+  Creates a workspace Member without a personal login (`user_id` nil) through
+  the create changeset. Caller supplies `:account_id` (or one is created).
+  """
+  def create_unlinked_membership(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
+    unique = Fixtures.Random.unique_int()
+
+    {:ok, membership} =
+      %{
+        account_id: account_id,
+        display_name: Map.get(attrs, :display_name, "Unlinked Member #{unique}"),
+        contact_email: Map.get(attrs, :contact_email, "unlinked-#{unique}@example.test"),
+        role: attrs[:role] || "operator",
+        runner_access_mode: attrs[:runner_access_mode] || "all"
+      }
+      |> Membership.Changeset.create()
+      |> Repo.insert()
+
+    membership
+  end
+
+  @doc """
   Test-only role override. Production code MUST go through
   `Accounts.update_membership_role/3` with a `%Subject{}`. This bypasses
   the last-owner / self-promotion / role-hierarchy guards, which exist

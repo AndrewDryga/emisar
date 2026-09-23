@@ -252,35 +252,67 @@ defmodule Emisar.Accounts.Membership.Query do
     |> preload([memberships: m, account: account], account: account)
   end
 
-  @doc "Inner-join the membership's (non-deleted) user, idempotently. See `with_joined_account/1`."
+  @doc """
+  Drop a Member whose linked personal login is deleted. A Member without a
+  personal login stays. Join-free, so it composes with a row lock.
+  """
+  def without_deleted_user(queryable) do
+    live_user =
+      Emisar.Users.User.Query.not_deleted()
+      |> where([users: u], u.id == parent_as(:memberships).user_id)
+
+    where(queryable, [memberships: m], is_nil(m.user_id) or exists(subquery(live_user)))
+  end
+
+  @doc """
+  Left-join the Member's live personal login, idempotently, to filter on its
+  columns. A Member without a personal login is kept with NULL user columns; a
+  Member whose linked login is deleted is dropped. Never lock this join:
+  PostgreSQL refuses to lock the nullable side of an outer join.
+  """
   def with_joined_user(queryable) do
     with_named_binding(queryable, :user, fn queryable, binding ->
-      join(
-        queryable,
-        :inner,
-        [memberships: m],
-        user in ^Emisar.Users.User.Query.not_deleted(),
+      queryable
+      |> join(:left, [memberships: m], user in ^Emisar.Users.User.Query.not_deleted(),
         on: m.user_id == user.id,
         as: ^binding
       )
+      |> where([memberships: m, user: u], is_nil(m.user_id) or not is_nil(u.id))
     end)
   end
 
-  @doc "Join (if needed) and preload the membership's user. See `with_joined_account/1`."
+  @doc """
+  Join (if needed) and preload the Member's live personal login, nil for a
+  Member without one. See `with_joined_user/1`; never lock this query.
+  """
   def with_preloaded_user(queryable) do
     queryable
     |> with_joined_user()
     |> preload([memberships: m, user: user], user: user)
   end
 
-  @doc "Restrict to memberships whose (non-deleted) user has completed MFA enrollment."
+  @doc """
+  Inner-join and preload the live personal login of a Member that always has
+  one, such as a pending invitation. Unlike `with_preloaded_user/1`, a locking
+  read may use it, and the lock also holds the login's row.
+  """
+  def with_preloaded_linked_user(queryable) do
+    queryable
+    |> join(:inner, [memberships: m], user in ^Emisar.Users.User.Query.not_deleted(),
+      on: m.user_id == user.id,
+      as: :linked_user
+    )
+    |> preload([linked_user: u], user: u)
+  end
+
+  @doc "Restrict to Members whose linked personal login has completed MFA enrollment."
   def with_mfa_enrolled(queryable) do
     queryable
     |> with_joined_user()
     |> where([user: u], not is_nil(u.mfa_enabled_at))
   end
 
-  @doc "Restrict to memberships whose (non-deleted) user has a confirmed email address."
+  @doc "Restrict to Members whose linked personal login has a confirmed email address."
   def with_confirmed_user_email(queryable) do
     queryable
     |> with_joined_user()
@@ -362,13 +394,14 @@ defmodule Emisar.Accounts.Membership.Query do
     end
   end
 
+  # A Member without a personal login has no personal email to confirm.
   defp status_or("active", acc) do
     dynamic(
       [memberships: m, user: u],
       ^acc or
         (is_nil(m.disabled_at) and
            not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)) and
-           not is_nil(u.confirmed_at))
+           (is_nil(m.user_id) or not is_nil(u.confirmed_at)))
     )
   end
 
@@ -386,7 +419,7 @@ defmodule Emisar.Accounts.Membership.Query do
     dynamic(
       [memberships: m, user: u],
       ^acc or
-        (is_nil(u.confirmed_at) and
+        (not is_nil(m.user_id) and is_nil(u.confirmed_at) and
            not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)))
     )
   end

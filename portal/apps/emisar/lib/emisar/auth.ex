@@ -75,6 +75,12 @@ defmodule Emisar.Auth do
   def fetch_current_subject(required_permissions, %Subject{actor: %Users.User{}} = subject),
     do: __MODULE__.Authorizer.fetch_authorized_subject(subject, required_permissions)
 
+  def fetch_current_subject(
+        required_permissions,
+        %Subject{actor: %Accounts.Membership{}} = subject
+      ),
+      do: __MODULE__.Authorizer.fetch_authorized_subject(subject, required_permissions)
+
   def fetch_current_subject(required_permissions, %Subject{} = subject) do
     with :ok <- __MODULE__.Authorizer.ensure_has_permissions(subject, required_permissions),
          {:ok, current_subject} <- __MODULE__.CurrentSubject.fetch(subject),
@@ -120,30 +126,28 @@ defmodule Emisar.Auth do
   Internal — SSO sign-in completion, the only remaining generic session minter
   and fixed to `:sso` provenance so no other flow can borrow it. Holds the
   active account and current identity-provider row locks while recording the
-  sign-in and inserting the user-global session credential, so account/provider
-  policy cannot change between the trust decision and the write. The sign-in is
+  sign-in and inserting the session credential, so account/provider policy
+  cannot change between the trust decision and the write. The sign-in is
   recorded once per granted workspace, as that workspace's Member; the personal
-  User row and every other workspace are left untouched. `opts` must
-  carry the callback's same-user, same-account `:user_identity_id` and exact
-  `:provider_identifier`; the locked provider is the sole authority for the
-  token's IdP MFA stamp. Returns `{:ok, token, mfa?}`
+  User row and every other workspace are left untouched.
+
+  `actor` is the callback's person: a linked Member's `%Users.User{}`, whose
+  user-global session also reaches that person's same-issuer seats, or a
+  `%Accounts.Membership{}` without a personal login, whose member-only session
+  reaches that one seat. `opts` must carry the callback's same-account
+  `:user_identity_id` and exact `:provider_identifier`; the locked provider is
+  the sole authority for the token's IdP MFA stamp. Returns `{:ok, token, mfa?}`
   (the raw cookie value plus the committed MFA outcome) or an error tuple.
   """
-  def complete_sso_account_sign_in(
-        %Users.User{} = user,
-        account_id,
-        %RequestContext{} = context,
-        opts \\ []
-      ) do
+  def complete_sso_account_sign_in(actor, account_id, %RequestContext{} = context, opts \\ []) do
     {token, digest} = Crypto.session_token()
     metadata = %{ip_address: context.ip_address, user_agent: context.user_agent}
 
     Multi.new()
-    |> SSO.put_sign_in_authority(user, account_id, opts)
-    |> Multi.insert(:token, fn %{sso_user: locked_user, sso_provider: provider} ->
-      mfa_verified_at = if provider.satisfies_mfa, do: DateTime.utc_now()
-
-      UserToken.Changeset.session(locked_user, digest, metadata, :sso, mfa_verified_at, opts)
+    |> SSO.put_sign_in_authority(actor, account_id, opts)
+    |> Multi.insert(:token, fn changes ->
+      mfa_verified_at = if changes.sso_provider.satisfies_mfa, do: DateTime.utc_now()
+      sso_session_changeset(changes, digest, metadata, mfa_verified_at, opts)
     end)
     |> Multi.run(:member_grants, fn repo, %{token: session, sso_destinations: destinations} ->
       SessionGrants.insert_sso(repo, session, destinations)
@@ -157,6 +161,19 @@ defmodule Emisar.Auth do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  # A member-only session names the exact identity it proved, never a personal login.
+  defp sso_session_changeset(
+         %{sso_user: nil, sso_identity: identity},
+         digest,
+         metadata,
+         mfa_verified_at,
+         _opts
+       ),
+       do: UserToken.Changeset.member_session(digest, metadata, mfa_verified_at, identity.id)
+
+  defp sso_session_changeset(%{sso_user: user}, digest, metadata, mfa_verified_at, opts),
+    do: UserToken.Changeset.session(user, digest, metadata, :sso, mfa_verified_at, opts)
 
   @doc "Internal — rotate one purpose-bound browser after SSO verifies the exact existing identity."
   def complete_sso_session_step_up(stashed, claims, presented_digest, %Subject{} = subject) do
@@ -225,21 +242,23 @@ defmodule Emisar.Auth do
 
   @doc """
   Internal — `EmisarWeb.UserAuth` resolves a request's session cookie to its
-  user; the session token IS the credential, so there's no Subject yet.
-  Returns `{:ok, user, token}` — the `%UserToken{}` rides alongside so the
-  boundary reads its provenance (`auth_method` / `mfa_verified_at` /
-  `user_identity_id`) off it and stamps the `%Subject{}`. The user is preloaded
-  scoped to live users, so a soft-deleted user's token resolves to
-  `{:error, :not_found}` — as do expired / unknown / non-binary tokens.
+  live session row; the session token IS the credential, so there's no Subject
+  yet. Returns `{:ok, %UserToken{}}` with its personal login preloaded as
+  `user`, which is nil for a member-only SSO session. The boundary reads the
+  session's provenance (`auth_method` / `mfa_verified_at` /
+  `user_identity_id`) off it and stamps the `%Subject{}`. A session whose
+  personal login is soft-deleted, and an expired or unknown token, return
+  `{:error, :not_found}`.
   """
-  def fetch_user_and_token_by_session_token(token) when is_binary(token) do
+  def fetch_session_by_token(token) when is_binary(token) do
     UserToken.Query.by_token_digest(Crypto.hash(token))
     |> UserToken.Query.by_context("session")
     |> UserToken.Query.not_expired("session")
     |> UserToken.Query.with_preloaded_user()
     |> Repo.one()
     |> case do
-      %UserToken{user: %Users.User{} = user} = token -> {:ok, user, token}
+      %UserToken{user: %Users.User{}} = session -> {:ok, session}
+      %UserToken{user_id: nil} = session -> {:ok, session}
       _ -> {:error, :not_found}
     end
   end
@@ -283,6 +302,11 @@ defmodule Emisar.Auth do
     end)
   end
 
+  def put_personal_session(%Multi{} = multi, %Subject{} = subject) do
+    {:error, reason} = Subject.personal_denial(subject)
+    Multi.error(multi, :personal_session, reason)
+  end
+
   @doc "Internal — grant only the newly created owner Member, retaining this browser's proof ages."
   def put_created_membership_grant(%Multi{} = multi) do
     Multi.run(multi, :member_grants, fn repo, %{personal_session: session, membership: member} ->
@@ -298,7 +322,7 @@ defmodule Emisar.Auth do
   def fetch_current_session(%Subject{actor: %Users.User{id: user_id}} = subject),
     do: SessionGrants.fetch_token(user_id, subject)
 
-  def fetch_current_session(%Subject{}), do: {:error, :unauthorized}
+  def fetch_current_session(%Subject{} = subject), do: Subject.personal_denial(subject)
 
   @doc "Internal — retire one Member's grants inside the account-fenced mutation, preserving every bearer."
   def delete_membership_session_grants(%Accounts.Membership{} = member, repo) do
@@ -488,7 +512,8 @@ defmodule Emisar.Auth do
     end
   end
 
-  def revoke_and_disconnect_other_sessions(_, %Subject{}), do: {:error, :unauthorized}
+  def revoke_and_disconnect_other_sessions(_, %Subject{} = subject),
+    do: Subject.personal_denial(subject)
 
   defp live_socket_topics_for_user(%Users.User{} = user) do
     UserToken.Query.by_user_id(user.id)
@@ -573,7 +598,8 @@ defmodule Emisar.Auth do
     end
   end
 
-  def list_sessions_for_user(_presented_digest, %Subject{}, _opts), do: {:error, :unauthorized}
+  def list_sessions_for_user(_presented_digest, %Subject{} = subject, _opts),
+    do: Subject.personal_denial(subject)
 
   defp presented_session_digest(digest) when is_binary(digest), do: digest
   defp presented_session_digest(_digest), do: nil
@@ -648,7 +674,7 @@ defmodule Emisar.Auth do
     end
   end
 
-  def revoke_session(_token_id, %Subject{}), do: {:error, :unauthorized}
+  def revoke_session(_token_id, %Subject{} = subject), do: Subject.personal_denial(subject)
 
   defp disconnect_revoked_session(%{revoked_session_topic: topic}),
     do: disconnect_live_sessions([topic])
@@ -1314,7 +1340,7 @@ defmodule Emisar.Auth do
     end
   end
 
-  def issue_email_change_code(_, %Subject{}), do: {:error, :unauthorized}
+  def issue_email_change_code(_, %Subject{} = subject), do: Subject.personal_denial(subject)
 
   defp do_issue_email_change_code(
          new_email,
@@ -1408,7 +1434,7 @@ defmodule Emisar.Auth do
     end
   end
 
-  def begin_email_change(_, %Subject{}), do: {:error, :unauthorized}
+  def begin_email_change(_, %Subject{} = subject), do: Subject.personal_denial(subject)
 
   @doc """
   Confirm the current factor for a self-service email change: re-derive it from the
@@ -1452,7 +1478,7 @@ defmodule Emisar.Auth do
     end
   end
 
-  def confirm_email_change(_, _, _, %Subject{}), do: {:error, :unauthorized}
+  def confirm_email_change(_, _, _, %Subject{} = subject), do: Subject.personal_denial(subject)
 
   defp email_change_factor(%Users.User{mfa_enabled_at: %DateTime{}}), do: :totp
   defp email_change_factor(%Users.User{}), do: :code
@@ -1564,7 +1590,8 @@ defmodule Emisar.Auth do
     end
   end
 
-  def complete_email_change(_, _, _, _, %Subject{}), do: {:error, :unauthorized}
+  def complete_email_change(_, _, _, _, %Subject{} = subject),
+    do: Subject.personal_denial(subject)
 
   defp finish_email_change(token_id, nonce, code, presented_digest, user, subject) do
     Multi.new()
@@ -1742,6 +1769,9 @@ defmodule Emisar.Auth do
     end
   end
 
+  def begin_oidc_identity_step_up(_provider_id, _provider_name, _purpose, %Subject{} = subject),
+    do: Subject.personal_denial(subject)
+
   @doc """
   Issue a replacement current-inbox code for an in-progress OIDC identity step-up.
   Returns `{:ok, :sent}`, `{:ok, :suppressed}` (the current address can't receive
@@ -1766,6 +1796,9 @@ defmodule Emisar.Auth do
         {:error, reason}
     end
   end
+
+  def resend_oidc_identity_step_up_code(_provider_id, _name, _purpose, %Subject{} = subject),
+    do: Subject.personal_denial(subject)
 
   defp issue_oidc_identity_step_up_code(user, provider_id, provider_name, purpose, subject) do
     with :ok <-
@@ -1849,6 +1882,9 @@ defmodule Emisar.Auth do
       {:ok, oidc_identity_step_up_proof(verified_user, provider_id, purpose)}
     end
   end
+
+  def confirm_oidc_identity_step_up(_provider_id, _purpose, _code, %Subject{} = subject),
+    do: Subject.personal_denial(subject)
 
   defp verify_oidc_identity_step_up_factor(
          %Users.User{mfa_enabled_at: %DateTime{}} = user,
@@ -2431,6 +2467,9 @@ defmodule Emisar.Auth do
     end
   end
 
+  def enable_mfa(_, _, _, _, %Subject{actor: %Accounts.Membership{}} = subject),
+    do: Subject.personal_denial(subject)
+
   def enable_mfa(_, _, _, _, %Subject{}), do: {:error, :mfa_enrollment_proof_stale}
 
   defp fetch_and_lock_subject_session(
@@ -2547,6 +2586,9 @@ defmodule Emisar.Auth do
     end
   end
 
+  def disable_mfa(_, %Subject{actor: %Accounts.Membership{}} = subject),
+    do: Subject.personal_denial(subject)
+
   def disable_mfa(_, %Subject{}), do: {:error, :invalid_code}
 
   defp record_mfa_mutation_failure(user, factor, reason, context) do
@@ -2606,6 +2648,9 @@ defmodule Emisar.Auth do
       end
     end
   end
+
+  def regenerate_mfa_recovery_codes(_, %Subject{actor: %Accounts.Membership{}} = subject),
+    do: Subject.personal_denial(subject)
 
   def regenerate_mfa_recovery_codes(_, %Subject{}), do: {:error, :invalid_code}
 
@@ -2981,6 +3026,9 @@ defmodule Emisar.Auth do
         {:error, :mfa_proof_stale}
     end
   end
+
+  def complete_current_session_mfa(_, _, %Subject{actor: %Accounts.Membership{}} = subject),
+    do: Subject.personal_denial(subject)
 
   def complete_current_session_mfa(_, _, %Subject{}), do: {:error, :mfa_proof_stale}
 

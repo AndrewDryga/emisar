@@ -258,7 +258,21 @@ defmodule Emisar.Admin.Query do
     |> limit(^limit)
   end
 
-  def user_session_count(user_id) do
+  # A linked Member's person may be signed in anywhere; a Member without a
+  # personal login has only its member-only sessions, each granted this seat.
+  def member_session_count(%Accounts.Membership{user_id: nil} = membership) do
+    from(token in Emisar.Auth.UserToken,
+      as: :user_tokens,
+      join: grant in Emisar.Auth.MemberGrant,
+      on: grant.user_token_id == token.id,
+      where:
+        is_nil(token.user_id) and token.context == "session" and
+          grant.account_id == ^membership.account_id and grant.membership_id == ^membership.id,
+      select: count(token.id)
+    )
+  end
+
+  def member_session_count(%Accounts.Membership{user_id: user_id}) do
     from(token in Emisar.Auth.UserToken,
       as: :user_tokens,
       where: token.user_id == ^user_id and token.context == "session",

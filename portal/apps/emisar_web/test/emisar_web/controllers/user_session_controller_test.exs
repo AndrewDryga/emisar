@@ -446,7 +446,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
 
       assert token = get_session(conn, :user_token)
-      assert {:ok, signed_in, _} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: signed_in}} = Auth.fetch_session_by_token(token)
       assert signed_in.id == user.id
     end
 
@@ -526,7 +526,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       conn = get(conn, ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
 
       assert token = get_session(conn, :user_token)
-      assert {:ok, signed_in, _} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: signed_in}} = Auth.fetch_session_by_token(token)
       assert signed_in.id == user.id
     end
 
@@ -772,7 +772,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
         |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
 
       assert token = get_session(conn, :user_token)
-      assert {:ok, signed_in, session_token} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: signed_in} = session_token} = Auth.fetch_session_by_token(token)
       assert signed_in.id == user.id
       # The proof time is stamped onto the token, so the factor claim reaches every
       # audit row bound to the enrollment it was taken against.
@@ -944,7 +944,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute Plug.Conn.get_session(conn, :user_token)
       # The token is actually killed server-side, not just dropped from the
       # session — a stolen copy can't be replayed.
-      assert Emisar.Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+      assert Emisar.Auth.fetch_session_by_token(token) == {:error, :not_found}
     end
 
     test "is a harmless redirect when no one is signed in", %{conn: conn} do

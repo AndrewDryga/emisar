@@ -298,7 +298,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
 
       assert html_response(conn, 200) =~ "Sign out and sign in again"
       assert get_session(conn, :user_token) == token
-      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, _session} = Auth.fetch_session_by_token(token)
     end
   end
 end

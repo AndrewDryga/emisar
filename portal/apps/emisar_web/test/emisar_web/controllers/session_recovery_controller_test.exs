@@ -36,7 +36,7 @@ defmodule EmisarWeb.SessionRecoveryControllerTest do
     refute html =~ account.name
     refute html =~ "Create your workspace"
     assert get_session(conn, :user_token) == raw
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, _session} = Auth.fetch_session_by_token(raw)
   end
 
   test "the recovery choice shows surviving proof, never late or revoked workspaces", %{
@@ -121,7 +121,7 @@ defmodule EmisarWeb.SessionRecoveryControllerTest do
     protected = shown |> recycle() |> put_private(:plug_skip_csrf_protection, false)
 
     assert_error_sent(403, fn -> post(protected, ~p"/session/recover", %{}) end)
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, _session} = Auth.fetch_session_by_token(raw)
 
     restarted =
       post(protected, ~p"/session/recover", %{
@@ -131,8 +131,8 @@ defmodule EmisarWeb.SessionRecoveryControllerTest do
 
     assert redirected_to(restarted) == ~p"/app/#{account}/sign_in"
     refute get_session(restarted, :user_token)
-    assert Auth.fetch_user_and_token_by_session_token(raw) == {:error, :not_found}
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(other)
+    assert Auth.fetch_session_by_token(raw) == {:error, :not_found}
+    assert {:ok, _session} = Auth.fetch_session_by_token(other)
     assert html_response(get(restarted, ~p"/app/#{account}/sign_in"), 200) =~ "Sign in to"
   end
 
@@ -188,8 +188,8 @@ defmodule EmisarWeb.SessionRecoveryControllerTest do
     member: member,
     owner: owner
   } do
-    {:ok, _user, session} =
-      Auth.fetch_user_and_token_by_session_token(get_session(conn, :user_token))
+    {:ok, session} =
+      Auth.fetch_session_by_token(get_session(conn, :user_token))
 
     subject = Fixtures.Subjects.subject_for(user, account, session: session)
     assert Accounts.end_all_sessions_for(member, owner) == :ok

@@ -36,6 +36,25 @@ defmodule Emisar.Auth.UserToken.Changeset do
     )
   end
 
+  @doc """
+  Member-only SSO session for a workspace Member without a personal login. It
+  proves one exact SSO identity and never carries personal or local-factor
+  proof; `mfa_verified_at` is the IdP assurance at authentication time.
+  """
+  def member_session(digest, metadata, mfa_verified_at, identity_id)
+      when is_binary(digest) and is_binary(identity_id) and
+             (is_nil(mfa_verified_at) or is_struct(mfa_verified_at, DateTime)) do
+    change(%UserToken{},
+      token: digest,
+      context: "session",
+      metadata: normalize_metadata(metadata),
+      auth_method: :sso,
+      mfa_verified_at: mfa_verified_at,
+      user_identity_id: identity_id
+    )
+    |> check_constraint(:user_id, name: :auth_user_tokens_member_only_session_check)
+  end
+
   @doc "Records that this exact live session proved the current local MFA enrollment."
   def local_mfa_verified(
         %UserToken{context: "session"} = token,

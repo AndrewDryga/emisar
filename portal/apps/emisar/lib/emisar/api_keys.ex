@@ -768,7 +768,8 @@ defmodule Emisar.ApiKeys do
   # it names and rebuilds its permissions before any key row is inserted or
   # locked, so a concurrent suspension, removal, or demotion either lands first
   # and refuses this request or lands second and revokes what this request made.
-  defp put_current_subject(multi, %Subject{actor: %Users.User{}} = subject) do
+  defp put_current_subject(multi, %Subject{actor: actor} = subject)
+       when is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership) do
     Multi.run(multi, :current_subject, fn repo, %{active_account: account} ->
       with {:ok, membership} <-
              Accounts.fetch_and_lock_membership(
@@ -776,7 +777,7 @@ defmodule Emisar.ApiKeys do
                Subject.human_membership_id(subject),
                repo: repo
              ) do
-        {:ok, Subject.rebuild(subject, %{membership | user: subject.actor}, account)}
+        {:ok, Subject.rebuild(subject, membership, account)}
       end
     end)
   end
@@ -941,9 +942,10 @@ defmodule Emisar.ApiKeys do
 
   defp manage_key_permissions(
          %ApiKey{created_by_membership_id: membership_id} = key,
-         %Subject{membership_id: membership_id, actor: %Users.User{}}
+         %Subject{membership_id: membership_id, actor: actor}
        )
-       when is_binary(membership_id),
+       when is_binary(membership_id) and
+              (is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership)),
        do: permissions_for_kind(key.kind)
 
   defp manage_key_permissions(%ApiKey{}, %Subject{}),
@@ -1263,9 +1265,10 @@ defmodule Emisar.ApiKeys do
 
   defp revoke_member_keys_permissions(
          membership_id,
-         %Subject{membership_id: membership_id, actor: %Users.User{}}
+         %Subject{membership_id: membership_id, actor: actor}
        )
-       when is_binary(membership_id),
+       when is_binary(membership_id) and
+              (is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership)),
        do: permissions_for_kind(:mcp)
 
   defp revoke_member_keys_permissions(_membership_id, %Subject{}),

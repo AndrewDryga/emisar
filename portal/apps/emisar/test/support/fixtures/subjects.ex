@@ -43,8 +43,20 @@ defmodule Emisar.Fixtures.Subjects do
     method = Keyword.get(opts, :auth_method, :magic_link)
     mfa_at = if opts[:mfa], do: DateTime.utc_now()
     raw = Fixtures.Auth.create_session_token!(user, method, mfa_at, %{}, opts)
-    {:ok, _user, token} = Emisar.Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, token} = Emisar.Auth.fetch_session_by_token(raw)
     token
+  end
+
+  @doc """
+  Builds the `%Subject{}` a member-only session gets: the Member without a
+  personal login is its own actor, bound to the session's exact grant.
+  """
+  def unlinked_member_subject(%Membership{user_id: nil} = membership, raw_token, opts \\ []) do
+    {:ok, session} = Emisar.Auth.fetch_session_by_token(raw_token)
+    membership = Repo.preload(membership, :account)
+    auth_opts = Emisar.Auth.session_subject_options(membership, session)
+    context = opts[:context] || %RequestContext{}
+    Subject.for_member(membership, membership.account, context, auth_opts)
   end
 
   @doc "Builds a `%Subject{}` for an existing membership — loads its user and account, carrying the membership's own role and id."

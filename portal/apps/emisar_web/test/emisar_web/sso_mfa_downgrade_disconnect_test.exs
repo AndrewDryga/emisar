@@ -40,7 +40,7 @@ defmodule EmisarWeb.SSOMFADowngradeDisconnectTest do
       )
 
     magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(provider_token)
+    {:ok, session} = Auth.fetch_session_by_token(provider_token)
     held = Fixtures.Subjects.subject_for(user, account, session: session)
     provider_topic = Auth.live_socket_topic_for_session(provider_token)
     magic_topic = Auth.live_socket_topic_for_session(magic_token)
@@ -53,7 +53,7 @@ defmodule EmisarWeb.SSOMFADowngradeDisconnectTest do
     refute downgraded.satisfies_mfa
     assert_receive %Phoenix.Socket.Broadcast{topic: ^provider_topic, event: "disconnect"}, 500
     refute_receive %Phoenix.Socket.Broadcast{topic: ^magic_topic, event: "disconnect"}, 100
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(provider_token)
+    assert {:ok, _session} = Auth.fetch_session_by_token(provider_token)
     assert Auth.fetch_current_subject([], held) == {:error, :unauthorized}
 
     assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
@@ -62,7 +62,7 @@ defmodule EmisarWeb.SSOMFADowngradeDisconnectTest do
     assert {:ok, _sibling_member} =
              Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session)
 
-    assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(magic_token)
+    assert {:ok, %{user: ^user}} = Auth.fetch_session_by_token(magic_token)
 
     assert {:ok, _restored_trust} =
              SSO.update_provider(downgraded, %{satisfies_mfa: true}, subject)

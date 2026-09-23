@@ -328,7 +328,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert html_response(get(accepted, ~p"/app/#{old_account}"), 200)
 
       for existing <- [raw, other_raw] do
-        assert {:ok, _, session} = Auth.fetch_user_and_token_by_session_token(existing)
+        assert {:ok, session} = Auth.fetch_session_by_token(existing)
 
         assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                  {:error, :not_found}
@@ -339,8 +339,8 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       restarted = post(accepted, ~p"/session/recover", %{_csrf_token: csrf})
       assert redirected_to(restarted) == ~p"/sign_in"
-      assert {:error, :not_found} = Auth.fetch_user_and_token_by_session_token(raw)
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(other_raw)
+      assert {:error, :not_found} = Auth.fetch_session_by_token(raw)
+      assert {:ok, _} = Auth.fetch_session_by_token(other_raw)
       fresh = restarted |> recycle() |> log_in_user(invitee)
       assert html_response(get(fresh, ~p"/app/#{account}"), 200)
       assert html_response(get(fresh, ~p"/app/#{old_account}"), 200)

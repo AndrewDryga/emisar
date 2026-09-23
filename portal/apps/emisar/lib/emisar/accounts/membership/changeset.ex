@@ -12,7 +12,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
   def create(attrs) do
     %Membership{}
     |> cast(attrs, @create_fields)
-    |> validate_required([:account_id, :user_id, :role])
+    |> validate_required([:account_id, :role])
     |> validate_profile()
     |> unique_constraint([:account_id, :user_id])
     |> foreign_key_constraint(:invited_by_membership_id)

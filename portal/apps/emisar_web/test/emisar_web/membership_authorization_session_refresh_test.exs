@@ -40,7 +40,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
     topic = Auth.live_socket_topic_for_session(token)
     EmisarWeb.Endpoint.subscribe(topic)
 
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
+    {:ok, session} = Auth.fetch_session_by_token(token)
     held = Fixtures.Subjects.subject_for(member, account, session: session)
     Accounts.subscribe_account_team(account.id)
 
@@ -72,7 +72,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
 
       assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
       refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
-      assert {:ok, %{id: member_id}, _session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: %{id: member_id}}} = Auth.fetch_session_by_token(token)
       assert member_id == member.id
     end
 
@@ -352,7 +352,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
     assert Auth.fetch_current_subject([], context.held) == {:error, :unauthorized}
 
     for raw <- [context.token, context.other_token] do
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
 
       assert {:ok, _member} =
                Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session)

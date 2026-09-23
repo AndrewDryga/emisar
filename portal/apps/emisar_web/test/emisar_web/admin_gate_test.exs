@@ -132,7 +132,7 @@ defmodule EmisarWeb.AdminGateTest do
           user_identity_id: identity.id
         )
 
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
+      {:ok, session} = Auth.fetch_session_by_token(token)
       subject = Fixtures.Subjects.subject_for(user, account, session: session)
       assert subject.mfa
       assert is_nil(session.mfa_enrollment_verified_at)
@@ -244,7 +244,7 @@ defmodule EmisarWeb.AdminGateTest do
       # Self-service disable deliberately keeps sessions alive, so this cookie is
       # still a valid credential — the ONLY thing standing between it and the
       # staff surface is its local proof naming the replaced enrollment.
-      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(session_token)
+      assert {:ok, _session} = Auth.fetch_session_by_token(session_token)
 
       conn = get(conn, "/ops/live")
 

@@ -9,7 +9,9 @@ defmodule Emisar.Auth.Subject do
 
     * `account` — the active `%Accounts.Account{}` (nil only for the
       rare actor-only case — a self-service edit that reads just `actor`)
-    * `actor` — `%Users.User{}`, `%ApiKey{}`, or `%Runner{}`
+    * `actor` — `%Users.User{}` for a Member linked to a personal login, the
+      `%Accounts.Membership{}` itself for a Member without one, `%ApiKey{}`,
+      or `%Runner{}`
     * `role` — atom role identifier (`:owner | :admin | :operator |
       :viewer | :api_client | :runner`)
     * `permissions` — `MapSet.t()` of `{module, action}` tuples; the
@@ -43,6 +45,7 @@ defmodule Emisar.Auth.Subject do
   @type auth_method :: :magic_link | :sso
   @type actor ::
           Emisar.Users.User.t()
+          | Emisar.Accounts.Membership.t()
           | Emisar.ApiKeys.ApiKey.t()
           | Emisar.Runners.Runner.t()
 
@@ -77,14 +80,15 @@ defmodule Emisar.Auth.Subject do
   @doc """
   Build a subject for a workspace `%Accounts.Membership{}` acting in `account`.
   The actor is the Member's personal `%Users.User{}`, preloaded on
-  `membership.user`. `opts` carry session provenance — `:auth_method` (how this
+  `membership.user`, or the Member itself when it has no personal login.
+  `opts` carry session provenance — `:auth_method` (how this
   session was authenticated), `:mfa` (was a second factor verified),
   `:mfa_enrollment_verified_at` (which local enrollment this session proved), and
   `:user_identity_id` (the SSO identity behind it) — threaded from the
   session row so every audit row records it.
   """
   def for_member(
-        %Accounts.Membership{user: %Users.User{} = user} = membership,
+        %Accounts.Membership{} = membership,
         %Accounts.Account{} = account,
         context \\ %RequestContext{},
         opts \\ []
@@ -93,7 +97,7 @@ defmodule Emisar.Auth.Subject do
 
     %__MODULE__{
       account: account,
-      actor: user,
+      actor: member_actor(membership),
       role: role,
       membership_id: membership.id,
       permissions: Emisar.Auth.Permissions.for_role(role),
@@ -107,22 +111,29 @@ defmodule Emisar.Auth.Subject do
     }
   end
 
-  @doc "Rebuild locked Member/account facts without dropping bearer identity or widening permissions."
-  def rebuild(%__MODULE__{} = subject, membership, account) do
-    opts =
-      subject
-      |> Map.take([
-        :auth_method,
-        :mfa,
-        :mfa_enrollment_verified_at,
-        :user_identity_id,
-        :session_token_id,
-        :member_grant_id
-      ])
-      |> Map.to_list()
+  # A linked Member must arrive with its personal login loaded.
+  defp member_actor(%Accounts.Membership{user_id: nil} = membership), do: membership
+  defp member_actor(%Accounts.Membership{user: %Users.User{} = user}), do: user
 
-    fresh = for_member(membership, account, subject.context, opts)
-    %{fresh | permissions: MapSet.intersection(subject.permissions, fresh.permissions)}
+  @doc """
+  Rebuild locked Member/account facts, keeping the bearer's actor and session
+  provenance and never widening permissions.
+  """
+  def rebuild(
+        %__MODULE__{} = subject,
+        %Accounts.Membership{} = membership,
+        %Accounts.Account{} = account
+      ) do
+    role = effective_membership_role(membership)
+    permissions = Emisar.Auth.Permissions.for_role(role)
+
+    %{
+      subject
+      | account: account,
+        role: role,
+        membership_id: membership.id,
+        permissions: MapSet.intersection(subject.permissions, permissions)
+    }
   end
 
   @doc "Build a subject for an API key call (MCP / programmatic)."
@@ -163,6 +174,16 @@ defmodule Emisar.Auth.Subject do
   # -- Helpers used by every context's `ensure_X_in_subject_account` -
 
   @doc """
+  The refusal a personal-login action gives any other actor:
+  `{:error, :personal_login_required}` for a Member without a personal login,
+  `{:error, :unauthorized}` otherwise.
+  """
+  def personal_denial(%__MODULE__{actor: %Accounts.Membership{}}),
+    do: {:error, :personal_login_required}
+
+  def personal_denial(%__MODULE__{}), do: {:error, :unauthorized}
+
+  @doc """
   Personal self-service requires the live bearer's independent first-party
   proof. Selecting a workspace's SSO route does not erase personal proof;
   workspace roles, IdP assertions and local factors do not manufacture it.
@@ -177,6 +198,7 @@ defmodule Emisar.Auth.Subject do
   records its creator's Member.
   """
   def actor_kind(%__MODULE__{actor: %Users.User{}}), do: "membership"
+  def actor_kind(%__MODULE__{actor: %Accounts.Membership{}}), do: "membership"
   def actor_kind(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{}}), do: "api_key"
   def actor_kind(%__MODULE__{actor: %Emisar.Runners.Runner{}}), do: "runner"
   # Defensive fallback: an actor-less subject (anonymous bootstrap) is a system
@@ -190,10 +212,10 @@ defmodule Emisar.Auth.Subject do
   def actor_id(%__MODULE__{}), do: nil
 
   @doc """
-  The acting USER's id, or `nil` when the actor isn't a user (API key /
-  runner / system). Use this — not `actor_id/1` — for a `belongs_to :user`
-  attribution column: an API-key actor's `actor_id` is the key id, which
-  would violate a users FK.
+  The acting personal login's id, or `nil` when the actor isn't one (a Member
+  without a personal login, API key, runner or system). Use this — not
+  `actor_id/1` — for a `belongs_to :user` attribution column: an API-key
+  actor's `actor_id` is the key id, which would violate a users FK.
   """
   def user_id(%__MODULE__{actor: %Users.User{id: id}}), do: id
   def user_id(%__MODULE__{}), do: nil

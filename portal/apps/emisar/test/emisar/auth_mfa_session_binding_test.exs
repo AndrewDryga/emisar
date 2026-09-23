@@ -4,7 +4,7 @@ defmodule Emisar.AuthMfaSessionBindingTest do
 
   defp browser_session(user, account) do
     raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, _user, token} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, token} = Auth.fetch_session_by_token(raw)
     {raw, token, Fixtures.Subjects.subject_for(user, account, session: token)}
   end
 

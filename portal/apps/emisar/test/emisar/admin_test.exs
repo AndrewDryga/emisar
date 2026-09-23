@@ -364,6 +364,29 @@ defmodule Emisar.AdminTest do
       assert {:ok, _account} = Emisar.Accounts.fetch_account_by_id(account.id)
     end
 
+    test "diagnoses a Member without a personal login from its member-only sessions" do
+      account = Fixtures.Accounts.create_account(plan: "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      membership = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: membership
+        )
+
+      Fixtures.Auth.create_member_session_token!(membership, identity)
+      args = ["account=#{account.slug}", "member=#{membership.id}"]
+
+      assert {:ok, diagnosis} = Admin.execute("emisar.admin.access.diagnose", args)
+      assert diagnosis.member.id == membership.id
+      assert diagnosis.member.user_id == nil
+      refute diagnosis.confirmed
+      refute diagnosis.mfa_enabled
+      assert diagnosis.active_sessions == 1
+    end
+
     test "runs the member support verbs with a platform subject" do
       account = Fixtures.Accounts.create_account()
       member = Fixtures.Users.create_user()
@@ -400,8 +423,8 @@ defmodule Emisar.AdminTest do
       assert {:ok, _} = Admin.execute("emisar.admin.member.reinstate", args)
       assert {:ok, _} = Admin.execute("emisar.admin.sessions.revoke", args)
 
-      assert {:ok, _user, session} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
+      assert {:ok, session} =
+               Emisar.Auth.fetch_session_by_token(session_token)
 
       assert Emisar.Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}

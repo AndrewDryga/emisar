@@ -293,7 +293,7 @@ defmodule Emisar.OAuth do
          %{account: account, membership: membership},
          %Subject{} = subject
        ) do
-    fresh = Subject.rebuild(subject, %{membership | user: subject.actor}, account)
+    fresh = Subject.rebuild(subject, membership, account)
 
     with :ok <- Accounts.ensure_account_compliant(account, fresh),
          :ok <- ensure_can_issue_backing_key(fresh) do

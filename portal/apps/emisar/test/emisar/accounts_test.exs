@@ -1143,8 +1143,8 @@ defmodule Emisar.AccountsTest do
       # The member stays signed in, and keeps the account that was NOT disabled —
       # a session token is per-user, so revoking it here would sign them out of
       # every tenant they belong to.
-      assert {:ok, %User{id: member_id}, session} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(member_token)
+      assert {:ok, %{user: %User{id: member_id}} = session} =
+               Emisar.Auth.fetch_session_by_token(member_token)
 
       assert member_id == member.id
 
@@ -1156,8 +1156,8 @@ defmodule Emisar.AccountsTest do
       assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
 
-      assert {:ok, %User{id: outsider_id}, _session} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(outsider_token)
+      assert {:ok, %{user: %User{id: outsider_id}}} =
+               Emisar.Auth.fetch_session_by_token(outsider_token)
 
       assert outsider_id == outsider.id
     end
@@ -1476,7 +1476,7 @@ defmodule Emisar.AccountsTest do
     setup do
       user = Fixtures.Users.create_user()
       raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      {:ok, session} = Auth.fetch_session_by_token(raw)
 
       %{
         user: user,
@@ -1539,7 +1539,7 @@ defmodule Emisar.AccountsTest do
       sibling = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: user.id)
       other_raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, other_session} = Auth.fetch_user_and_token_by_session_token(other_raw)
+      {:ok, other_session} = Auth.fetch_session_by_token(other_raw)
 
       assert {:ok, created} =
                Accounts.create_account_with_owner_from_name("Personal Workspace", subject)
@@ -2500,6 +2500,7 @@ defmodule Emisar.AccountsTest do
       subject: subject
     } do
       active = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      unlinked = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
 
       pending_user = Fixtures.Users.create_user(confirmed?: false)
 
@@ -2535,7 +2536,7 @@ defmodule Emisar.AccountsTest do
         |> Fixtures.Memberships.suspend_membership()
 
       assert filtered_membership_ids(account, subject, status: ["active"]) ==
-               MapSet.new([owner_membership.id, active.id])
+               MapSet.new([owner_membership.id, active.id, unlinked.id])
 
       assert filtered_membership_ids(account, subject, status: ["pending_invitation"]) ==
                MapSet.new([pending.id, suspended_pending.id])
@@ -3565,7 +3566,7 @@ defmodule Emisar.AccountsTest do
 
       assert topic == Auth.live_socket_topic_for_session(session)
       assert Repo.reload!(identity).deleted_at
-      assert {:ok, _user, token} = Auth.fetch_user_and_token_by_session_token(session)
+      assert {:ok, token} = Auth.fetch_session_by_token(session)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(account.id, token) ==
                {:error, :not_found}
@@ -3868,9 +3869,9 @@ defmodule Emisar.AccountsTest do
       sso_token =
         Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
 
-      {:ok, _user, sso_session} = Auth.fetch_user_and_token_by_session_token(sso_token)
+      {:ok, sso_session} = Auth.fetch_session_by_token(sso_token)
       magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, magic_session} = Auth.fetch_user_and_token_by_session_token(magic_token)
+      {:ok, magic_session} = Auth.fetch_session_by_token(magic_token)
 
       %{
         user: user,
@@ -6260,8 +6261,8 @@ defmodule Emisar.AccountsTest do
       assert is_nil(updated.mfa_enabled_at)
       assert is_nil(updated.mfa_secret)
       assert updated.mfa_recovery_codes == []
-      assert Auth.fetch_user_and_token_by_session_token(session_a) == {:error, :not_found}
-      assert Auth.fetch_user_and_token_by_session_token(session_b) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(session_a) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(session_b) == {:error, :not_found}
 
       expected_topics =
         Enum.sort([
@@ -6378,8 +6379,8 @@ defmodule Emisar.AccountsTest do
 
         refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
 
-        assert {:ok, _target, _session} =
-                 Auth.fetch_user_and_token_by_session_token(target_session)
+        assert {:ok, _session} =
+                 Auth.fetch_session_by_token(target_session)
       end
 
       refute Repo.exists?(
@@ -6593,7 +6594,7 @@ defmodule Emisar.AccountsTest do
       assert pending_membership.invitation_token_digest
       actor_session = Fixtures.Auth.create_session_token!(actor, :magic_link, nil)
       actor_session_digest = Crypto.hash(actor_session)
-      {:ok, _actor, actor_token} = Auth.fetch_user_and_token_by_session_token(actor_session)
+      {:ok, actor_token} = Auth.fetch_session_by_token(actor_session)
 
       pending_subject = %{
         Fixtures.Subjects.subject_for(actor, account)
@@ -6656,8 +6657,8 @@ defmodule Emisar.AccountsTest do
              ) == {:error, :unauthorized}
 
       refute is_nil(Repo.reload!(target_user).mfa_enabled_at)
-      assert {:ok, _target, _token} = Auth.fetch_user_and_token_by_session_token(target_session)
-      assert {:ok, _actor, _token} = Auth.fetch_user_and_token_by_session_token(actor_session)
+      assert {:ok, _token} = Auth.fetch_session_by_token(target_session)
+      assert {:ok, _token} = Auth.fetch_session_by_token(actor_session)
 
       refute Repo.exists?(
                AuditEvent.Query.all()
@@ -6690,7 +6691,7 @@ defmodule Emisar.AccountsTest do
                )
 
       refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
-      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(session)
+      assert {:ok, _token} = Auth.fetch_session_by_token(session)
       refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
 
       assert {:ok, %User{}} =
@@ -6733,8 +6734,8 @@ defmodule Emisar.AccountsTest do
       assert Accounts.reset_member_mfa_for_support(reset.target_membership, support) ==
                {:error, :mfa_not_enabled}
 
-      assert {:ok, _target, _session} =
-               Auth.fetch_user_and_token_by_session_token(target_session)
+      assert {:ok, _session} =
+               Auth.fetch_session_by_token(target_session)
 
       refute Repo.exists?(
                AuditEvent.Query.all()
@@ -6956,10 +6957,10 @@ defmodule Emisar.AccountsTest do
       subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
       token = Fixtures.Auth.create_session_token!(target, :magic_link, nil)
-      assert {:ok, %User{}, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: %User{}}} = Emisar.Auth.fetch_session_by_token(token)
 
       assert Accounts.end_all_sessions_for(membership, subject) == :ok
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, session} = Auth.fetch_session_by_token(token)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
@@ -7047,7 +7048,7 @@ defmodule Emisar.AccountsTest do
       forged = %{foreign_membership | account_id: account.id}
 
       assert Accounts.end_all_sessions_for(forged, subject) == {:error, :not_found}
-      assert {:ok, %User{}, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: %User{}}} = Emisar.Auth.fetch_session_by_token(token)
     end
   end
 
@@ -7202,16 +7203,16 @@ defmodule Emisar.AccountsTest do
 
       session_token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
 
-      assert {:ok, %User{}, session} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
+      assert {:ok, %{user: %User{}} = session} =
+               Emisar.Auth.fetch_session_by_token(session_token)
 
       assert {:ok, _} = Accounts.delete_membership(membership, subject)
 
       # A session token is a user-level login, not an account credential — the
       # person may belong to other workspaces, and this account has no authority
       # over those. It survives…
-      assert {:ok, %User{}, _token} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
+      assert {:ok, %{user: %User{}}} =
+               Emisar.Auth.fetch_session_by_token(session_token)
 
       # …but it no longer resolves this account, which is what ending access means.
       assert Accounts.fetch_membership_for_session(account.id, session) ==
@@ -8484,7 +8485,7 @@ defmodule Emisar.AccountsTest do
       token = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
 
       assert Accounts.refresh_directory_authorization_sessions(membership) == :ok
-      assert {:ok, %User{}, _session} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: %User{}}} = Emisar.Auth.fetch_session_by_token(token)
     end
   end
 
@@ -8565,7 +8566,7 @@ defmodule Emisar.AccountsTest do
 
   defp personal_session(user) do
     raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, session} = Auth.fetch_session_by_token(raw)
     session
   end
 

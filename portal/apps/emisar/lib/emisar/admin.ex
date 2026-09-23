@@ -279,9 +279,9 @@ defmodule Emisar.Admin do
        %{
          account: account_result(account),
          member: membership_result(membership),
-         confirmed: not is_nil(membership.user.confirmed_at),
-         mfa_enabled: not is_nil(membership.user.mfa_enabled_at),
-         active_sessions: Query.user_session_count(membership.user_id) |> Repo.one(),
+         confirmed: personal_login_fact?(membership.user, :confirmed_at),
+         mfa_enabled: personal_login_fact?(membership.user, :mfa_enabled_at),
+         active_sessions: membership |> Query.member_session_count() |> Repo.one(),
          active_api_keys: Query.active_api_key_count(account.id, membership.id) |> Repo.one()
        }}
     end
@@ -601,6 +601,10 @@ defmodule Emisar.Admin do
   end
 
   defp inviter, do: %{full_name: "Emisar Support", email: "support@emisar.dev"}
+
+  # A Member without a personal login has no personal email or local factor.
+  defp personal_login_fact?(%Users.User{} = user, field), do: not is_nil(Map.fetch!(user, field))
+  defp personal_login_fact?(nil, _field), do: false
 
   defp analytics_executive(args) do
     since = since(args)

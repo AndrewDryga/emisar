@@ -132,7 +132,7 @@ defmodule Emisar.Fixtures.Users do
       end
 
     try do
-      {:ok, user, session} = Emisar.Auth.fetch_user_and_token_by_session_token(session_token)
+      {:ok, %{user: user} = session} = Emisar.Auth.fetch_session_by_token(session_token)
 
       subject =
         Fixtures.Subjects.subject_for(user, subject.account,

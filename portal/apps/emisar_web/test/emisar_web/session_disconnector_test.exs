@@ -33,6 +33,6 @@ defmodule EmisarWeb.SessionDisconnectorTest do
 
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect", payload: %{}}
 
-    assert {:ok, _user, _auth} = Auth.fetch_user_and_token_by_session_token(token)
+    assert {:ok, _auth} = Auth.fetch_session_by_token(token)
   end
 end

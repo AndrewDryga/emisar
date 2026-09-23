@@ -42,7 +42,9 @@ defmodule Emisar.Auth.MemberGrantRoute.Query do
   # one snapshot. No origin identity or current membership discovery can widen
   # this set, and an expired/deleted bearer cannot keep a held Subject alive.
   # An SSO route's identity must still be bound to the route's Member, which in
-  # turn must still belong to the bearer's person.
+  # turn must still belong to the bearer's person. A member-only bearer has no
+  # personal login and reaches only a Member without one; NULL never equals a
+  # linked login, and linking a Member ends its member-only bearer's authority.
   def current(queryable \\ all()) do
     live_tokens =
       Auth.UserToken.Query.by_context("session")
@@ -69,7 +71,8 @@ defmodule Emisar.Auth.MemberGrantRoute.Query do
     )
     |> where(
       [grant_routes: r, grant_token: t, route_member: m, route_identity: i, route_provider: p],
-      r.expires_at > from_now(0, "second") and m.user_id == t.user_id and
+      r.expires_at > from_now(0, "second") and
+        fragment("? IS NOT DISTINCT FROM ?", m.user_id, t.user_id) and
         ((r.auth_method == :magic_link and t.personal_expires_at > from_now(0, "second")) or
            (r.auth_method == :sso and i.account_id == r.account_id and
               i.membership_id == r.membership_id and

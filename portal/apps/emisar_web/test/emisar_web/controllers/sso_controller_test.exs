@@ -420,8 +420,8 @@ defmodule EmisarWeb.SSOControllerTest do
       assert is_integer(stash.started_at)
       refute get_session(conn, @stash_key)
 
-      assert {:ok, %Emisar.Users.User{id: actor_id}, _session} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(reset.session_token)
+      assert {:ok, %{user: %Emisar.Users.User{id: actor_id}}} =
+               Emisar.Auth.fetch_session_by_token(reset.session_token)
 
       assert actor_id == reset.actor.id
     end
@@ -486,8 +486,8 @@ defmodule EmisarWeb.SSOControllerTest do
       assert get_session(completed, :user_token) == reset.session_token
       assert is_nil(Repo.reload!(reset.target).mfa_enabled_at)
 
-      assert {:ok, %Emisar.Users.User{id: actor_id}, actor_session} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(reset.session_token)
+      assert {:ok, %{user: %Emisar.Users.User{id: actor_id}} = actor_session} =
+               Emisar.Auth.fetch_session_by_token(reset.session_token)
 
       assert actor_id == reset.actor.id
       assert actor_session.auth_method == :sso
@@ -542,8 +542,8 @@ defmodule EmisarWeb.SSOControllerTest do
         assert Repo.aggregate(Emisar.SSO.UserIdentity, :count) == identities_before
         assert Repo.aggregate(Emisar.SSO.LinkRequest, :count) == links_before
 
-        assert {:ok, %Emisar.Users.User{}, _session} =
-                 Emisar.Auth.fetch_user_and_token_by_session_token(reset.session_token)
+        assert {:ok, %{user: %Emisar.Users.User{}}} =
+                 Emisar.Auth.fetch_session_by_token(reset.session_token)
       end
     end
 
@@ -580,8 +580,8 @@ defmodule EmisarWeb.SSOControllerTest do
       assert redirected_to(completed) == ~p"/app/#{reset.account.id}/settings/team"
       assert Repo.reload!(reset.target).mfa_enabled_at == new_epoch
 
-      assert {:ok, _target, _session} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(target_session)
+      assert {:ok, _session} =
+               Emisar.Auth.fetch_session_by_token(target_session)
     end
 
     test "a revoked actor session takes the controlled failure path", %{conn: conn} do
@@ -776,8 +776,8 @@ defmodule EmisarWeb.SSOControllerTest do
       refute get_session(completed, @identity_link_stash_key)
       assert get_session(completed, :user_token) == link.session_token
 
-      assert {:ok, _user, %Auth.UserToken{auth_method: :magic_link, user_identity_id: nil}} =
-               Auth.fetch_user_and_token_by_session_token(link.session_token)
+      assert {:ok, %Auth.UserToken{auth_method: :magic_link, user_identity_id: nil}} =
+               Auth.fetch_session_by_token(link.session_token)
 
       assert Auth.UserToken.Query.by_user_id(link.user.id) |> Repo.aggregate(:count) ==
                token_count_before
@@ -966,8 +966,8 @@ defmodule EmisarWeb.SSOControllerTest do
       refute get_session(conn, @stash_key)
       assert Emisar.Users.fetch_user_by_email("replacement@example.test") == {:error, :not_found}
 
-      assert {:ok, %Emisar.Users.User{id: actor_id}, _auth} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(actor_token)
+      assert {:ok, %{user: %Emisar.Users.User{id: actor_id}}} =
+               Emisar.Auth.fetch_session_by_token(actor_token)
 
       assert actor_id == actor.id
     end
@@ -999,7 +999,7 @@ defmodule EmisarWeb.SSOControllerTest do
       assert token
       refute get_session(conn, @stash_key)
 
-      assert {:ok, user, auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: user} = auth} = Emisar.Auth.fetch_session_by_token(token)
       assert user.email == "cb@acme.test"
       assert auth.auth_method == :sso
       assert auth.user_identity_id
@@ -1131,7 +1131,7 @@ defmodule EmisarWeb.SSOControllerTest do
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
       token = get_session(conn, :user_token)
-      {:ok, user, _auth} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      {:ok, %{user: user}} = Emisar.Auth.fetch_session_by_token(token)
       member = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       [event] =
@@ -1162,8 +1162,8 @@ defmodule EmisarWeb.SSOControllerTest do
 
       token = get_session(logged_in, :user_token)
 
-      assert {:ok, _user, %Emisar.Auth.UserToken{mfa_verified_at: %DateTime{}}} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %Emisar.Auth.UserToken{mfa_verified_at: %DateTime{}}} =
+               Emisar.Auth.fetch_session_by_token(token)
 
       # Follow both redirects into the protected account dashboard. Merely
       # reaching `/app` does not exercise the account compliance hook.

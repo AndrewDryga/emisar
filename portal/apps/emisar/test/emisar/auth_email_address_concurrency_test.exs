@@ -281,8 +281,8 @@ defmodule Emisar.AuthEmailAddressConcurrencyTest do
             assert {{:ok, %User{email: ^new_email, confirmed_at: %DateTime{}}}, []} =
                      Task.await(changer, 30_000)
 
-            assert {:ok, %User{id: ^user_id}, %UserToken{context: "session"}} =
-                     Auth.fetch_user_and_token_by_session_token(raw_session)
+            assert {:ok, %UserToken{user: %User{id: ^user_id}, context: "session"}} =
+                     Auth.fetch_session_by_token(raw_session)
 
             refute Repo.get(UserToken, factor_id)
 

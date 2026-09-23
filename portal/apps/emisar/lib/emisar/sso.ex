@@ -548,7 +548,7 @@ defmodule Emisar.SSO do
     do: {:error, :unauthorized}
 
   @doc "Complete the bound SSO continuation; failure leaves its browser and all independent proof intact."
-  def complete_session_step_up(params, stashed, digest, %Subject{} = subject)
+  def complete_session_step_up(params, stashed, digest, %Subject{actor: %Users.User{}} = subject)
       when is_map(params) and is_map(stashed) and is_binary(digest) do
     with :ok <- ensure_session_step_up_stash(stashed, subject, digest),
          {:ok, identity, provider} <- session_step_up_identity(stashed.provider_id, subject),
@@ -796,8 +796,9 @@ defmodule Emisar.SSO do
   @doc "A provider's durable real-sign-in receipt and the acting admin's link state."
   def provider_sign_in_verification_facts(
         %IdentityProvider{id: provider_id},
-        %Subject{actor: %Users.User{}} = subject
-      ) do
+        %Subject{actor: actor} = subject
+      )
+      when is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership) do
     with {:ok, provider} <- fetch_provider_by_id(provider_id, subject) do
       identity =
         UserIdentity.Query.not_deleted()
@@ -860,7 +861,7 @@ defmodule Emisar.SSO do
         params,
         stashed,
         actor_session_token_digest,
-        %Subject{} = subject
+        %Subject{actor: %Users.User{}} = subject
       )
       when is_map(params) and is_map(stashed) and is_binary(actor_session_token_digest) do
     with :ok <- ensure_identity_link_stash(stashed, actor_session_token_digest, subject),
@@ -1086,7 +1087,7 @@ defmodule Emisar.SSO do
              stashed.actor_membership_id
            ),
          true <- membership.user_id == user.id,
-         current_subject = current_identity_link_subject(subject, user, account, membership),
+         current_subject = current_identity_link_subject(subject, account, membership),
          :ok <- ensure_identity_link_purpose_authorized(current_subject, stashed.purpose),
          :ok <-
            Auth.ensure_oidc_identity_step_up_current(
@@ -1104,9 +1105,8 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp current_identity_link_subject(subject, user, account, membership) do
-    Subject.rebuild(subject, %{membership | user: user}, account)
-  end
+  defp current_identity_link_subject(subject, account, membership),
+    do: Subject.rebuild(subject, membership, account)
 
   defp ensure_identity_link_purpose_authorized(subject, :verify_provider),
     do: ensure_can_configure_sso(subject)
@@ -2423,7 +2423,8 @@ defmodule Emisar.SSO do
   when the provider's `provisioner` is `:jit`, or is captured as a pending link
   request and returns `{:pending, request}` when it is `:manual` (the web layer
   parks the person on the pending-approval page). Returns
-  `{:ok, %{user, identity, provider}}` for the web layer to log in.
+  `{:ok, %{user, membership, identity, provider, created?}}` for the web layer to
+  log in; `user` is nil when the identity's Member has no personal login.
   """
   def complete_auth(%IdentityProvider{} = provider, params, stashed) do
     with {:ok, %{identifier: identifier, claims: claims}} <-
@@ -2537,7 +2538,7 @@ defmodule Emisar.SSO do
   defp existing_identity_auth_writes(provider, identifier, identity_hint, claims) do
     Multi.new()
     |> Multi.run(:locked_user, fn repo, _changes ->
-      lock_seat_user(repo, identity_hint)
+      lock_callback_seat_user(repo, identity_hint)
     end)
     |> Multi.run(:resolved_identity, fn repo, _changes ->
       current =
@@ -2566,6 +2567,15 @@ defmodule Emisar.SSO do
         unknown_identity_writes(provider, identifier, claims)
     end)
   end
+
+  # A seat without a personal login signs in as the Member itself.
+  defp lock_callback_seat_user(_repo, %UserIdentity{
+         membership: %Accounts.Membership{user_id: nil}
+       }),
+       do: {:ok, nil}
+
+  defp lock_callback_seat_user(repo, %UserIdentity{} = identity),
+    do: lock_seat_user(repo, identity)
 
   # An identity the DIRECTORY created holds an OIDC identifier nobody ever
   # asserted over OIDC: SCIM provisioning writes its `externalId` into both
@@ -2606,10 +2616,19 @@ defmodule Emisar.SSO do
     end)
     |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
     |> Multi.run(:user, fn _repo, _changes -> {:ok, locked_user} end)
-    |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
-      {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
+    |> Multi.run(:auth_result, fn _repo, changes ->
+      {:ok, {:ok, auth_result(changes, provider, false)}}
     end)
   end
+
+  defp auth_result(%{user: user, membership: member, identity: identity}, provider, created?),
+    do: %{
+      user: user,
+      membership: member,
+      identity: identity,
+      provider: provider,
+      created?: created?
+    }
 
   defp synthesized_oidc_identifier?(%UserIdentity{provisioned_via: :scim} = identity),
     do: identity.provider_identifier == identity.scim_external_id
@@ -2668,6 +2687,9 @@ defmodule Emisar.SSO do
       active_scim_membership?(provider, identity)
   end
 
+  # A Member without a personal login has no verified address to compare.
+  defp claims_name_the_same_person?(_provider, _identity, nil, _claims), do: false
+
   defp claims_name_the_same_person?(provider, _identity, user, claims) do
     with email when is_binary(email) <- verified_email(provider, claims),
          {:ok, email_owner} <- Users.fetch_user_by_email(email) do
@@ -2711,8 +2733,8 @@ defmodule Emisar.SSO do
          claims
        ) do
     build_provision_writes(provider, identifier, claims, [])
-    |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
-      {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: true}}}
+    |> Multi.run(:auth_result, fn _repo, changes ->
+      {:ok, {:ok, auth_result(changes, provider, true)}}
     end)
   end
 
@@ -2885,36 +2907,26 @@ defmodule Emisar.SSO do
   @doc """
   Internal — freeze the exact SSO destinations for Auth's sign-in transaction.
 
-  Discovering candidates grants nothing. All account, subscription and provider
-  fences precede the shared User lock; each identity and Member is then rechecked.
-  The origin and every independently qualified same-issuer destination remain
-  separate proofs, so later origin revocation cannot revoke a sibling's grant.
+  `actor` is a linked Member's `%Users.User{}` or a `%Accounts.Membership{}`
+  without a personal login. Discovering candidates grants nothing. All account,
+  subscription and provider fences precede the shared User lock; each identity
+  and Member is then rechecked. The origin and every independently qualified
+  same-issuer destination remain separate proofs, so later origin revocation
+  cannot revoke a sibling's grant. A Member without a personal login takes no
+  User lock and reaches only its own seat.
   """
-  def put_sign_in_authority(
-        %Multi{} = multi,
-        %Users.User{id: user_id},
-        account_id,
-        opts
-      )
-      when is_binary(user_id) and is_binary(account_id) and is_list(opts) do
+  def put_sign_in_authority(%Multi{} = multi, actor, account_id, opts)
+      when is_binary(account_id) and is_list(opts) do
     identity_id = Keyword.get(opts, :user_identity_id)
     identifier = Keyword.get(opts, :provider_identifier)
 
-    if Repo.valid_uuid?(identity_id) and is_binary(identifier) do
+    if sign_in_actor?(actor) and Repo.valid_uuid?(identity_id) and is_binary(identifier) do
       multi
       |> Multi.run(:sso_identity_hint, fn repo, _changes ->
-        sign_in_identity_hint(repo, user_id, account_id, identity_id, identifier)
+        sign_in_identity_hint(repo, actor, account_id, identity_id, identifier)
       end)
       |> Multi.run(:sso_candidates, fn repo, %{sso_identity_hint: hint} ->
-        siblings =
-          UserIdentity.Query.not_deleted()
-          |> UserIdentity.Query.provider_identifier_active()
-          |> UserIdentity.Query.by_member_user_id(user_id)
-          |> UserIdentity.Query.by_active_provider_issuer(hint.provider.issuer)
-          |> UserIdentity.Query.with_authorized_membership()
-          |> repo.all()
-
-        {:ok, Enum.uniq_by([hint | siblings], & &1.id)}
+        {:ok, Enum.uniq_by([hint | sign_in_siblings(repo, actor, hint)], & &1.id)}
       end)
       |> Multi.run(:sso_accounts, fn repo, %{sso_candidates: candidates} ->
         donor_accounts =
@@ -2964,36 +2976,61 @@ defmodule Emisar.SSO do
            do: {:ok, provider},
            else: {:error, :provider_disabled}
       end)
-      |> Multi.run(:sso_user, fn repo, _changes ->
-        case Users.fetch_and_lock_user_by_id(user_id, repo) do
-          {:ok, user} -> {:ok, user}
-          {:error, :not_found} -> {:error, :provider_disabled}
-        end
-      end)
+      |> Multi.run(:sso_user, fn repo, _changes -> lock_sign_in_user(repo, actor) end)
       |> Multi.run(:sso_identity, fn repo, %{sso_identity_hint: hint} ->
-        lock_sign_in_identity(repo, hint, user_id)
+        lock_sign_in_identity(repo, hint, actor)
       end)
       |> Multi.run(:sso_membership, fn repo, %{sso_identity: identity} ->
-        lock_sign_in_member(repo, identity)
+        lock_sign_in_member(repo, identity, actor)
       end)
       |> Multi.run(:sso_destinations, fn repo, changes ->
-        {:ok, sign_in_destinations(repo, changes)}
+        {:ok, sign_in_destinations(repo, actor, changes)}
       end)
     else
       Multi.error(multi, :sso_provider, :provider_disabled)
     end
   end
 
-  def put_sign_in_authority(%Multi{} = multi, _user, _account_id, _opts) do
+  def put_sign_in_authority(%Multi{} = multi, _actor, _account_id, _opts) do
     Multi.error(multi, :sso_provider, :provider_disabled)
   end
 
-  defp sign_in_identity_hint(repo, user_id, account_id, identity_id, identifier) do
+  defp sign_in_actor?(%Users.User{id: id}), do: Repo.valid_uuid?(id)
+  defp sign_in_actor?(%Accounts.Membership{id: id, user_id: nil}), do: Repo.valid_uuid?(id)
+  defp sign_in_actor?(_actor), do: false
+
+  defp by_sign_in_actor(queryable, %Users.User{id: user_id}),
+    do: UserIdentity.Query.by_member_user_id(queryable, user_id)
+
+  defp by_sign_in_actor(queryable, %Accounts.Membership{id: member_id}),
+    do: UserIdentity.Query.by_membership_id(queryable, member_id)
+
+  defp sign_in_siblings(repo, %Users.User{id: user_id}, hint) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.provider_identifier_active()
+    |> UserIdentity.Query.by_member_user_id(user_id)
+    |> UserIdentity.Query.by_active_provider_issuer(hint.provider.issuer)
+    |> UserIdentity.Query.with_authorized_membership()
+    |> repo.all()
+  end
+
+  defp sign_in_siblings(_repo, %Accounts.Membership{}, _hint), do: []
+
+  defp lock_sign_in_user(repo, %Users.User{id: user_id}) do
+    case Users.fetch_and_lock_user_by_id(user_id, repo) do
+      {:ok, user} -> {:ok, user}
+      {:error, :not_found} -> {:error, :provider_disabled}
+    end
+  end
+
+  defp lock_sign_in_user(_repo, %Accounts.Membership{}), do: {:ok, nil}
+
+  defp sign_in_identity_hint(repo, actor, account_id, identity_id, identifier) do
     queryable =
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_id(identity_id)
-      |> UserIdentity.Query.by_member_user_id(user_id)
+      |> by_sign_in_actor(actor)
       |> UserIdentity.Query.by_account_id(account_id)
       |> UserIdentity.Query.by_provider_identifier(identifier)
       |> UserIdentity.Query.with_preloaded_provider()
@@ -3004,12 +3041,12 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp lock_sign_in_identity(repo, hint, user_id) do
+  defp lock_sign_in_identity(repo, hint, actor) do
     queryable =
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_id(hint.id)
-      |> UserIdentity.Query.by_member_user_id(user_id)
+      |> by_sign_in_actor(actor)
       |> UserIdentity.Query.by_account_id(hint.account_id)
       |> UserIdentity.Query.by_provider_id(hint.provider_id)
       |> UserIdentity.Query.by_provider_identifier(hint.provider_identifier)
@@ -3024,19 +3061,30 @@ defmodule Emisar.SSO do
     end
   end
 
-  # The identity was locked through this person's seats, so its seat is theirs.
-  defp lock_sign_in_member(repo, identity) do
+  # The identity was locked through this actor's seats; the locked seat must
+  # still be the actor's, so a Member linked meanwhile takes no member-only session.
+  defp lock_sign_in_member(repo, identity, actor) do
     case Accounts.fetch_and_lock_active_membership(
            repo,
            identity.account_id,
            identity.membership_id
          ) do
-      {:ok, member} -> {:ok, member}
-      {:error, :not_found} -> {:error, :membership_unavailable}
+      {:ok, member} ->
+        if seat_of?(member, actor), do: {:ok, member}, else: {:error, :membership_unavailable}
+
+      {:error, :not_found} ->
+        {:error, :membership_unavailable}
     end
   end
 
-  defp sign_in_destinations(repo, changes) do
+  defp seat_of?(%Accounts.Membership{user_id: id}, %Users.User{id: id}), do: true
+
+  defp seat_of?(%Accounts.Membership{id: id, user_id: nil}, %Accounts.Membership{id: id}),
+    do: true
+
+  defp seat_of?(_member, _actor), do: false
+
+  defp sign_in_destinations(repo, actor, changes) do
     changes.sso_candidates
     |> Enum.sort_by(& &1.id)
     |> Enum.flat_map(fn hint ->
@@ -3045,8 +3093,8 @@ defmodule Emisar.SSO do
       if provider && provider.enabled &&
            provider.issuer == changes.sso_provider.issuer &&
            changes.sso_entitlements[hint.account_id] do
-        with {:ok, identity} <- lock_sign_in_identity(repo, hint, changes.sso_user.id),
-             {:ok, member} <- lock_sign_in_member(repo, identity) do
+        with {:ok, identity} <- lock_sign_in_identity(repo, hint, actor),
+             {:ok, member} <- lock_sign_in_member(repo, identity, actor) do
           direct? = identity.id == changes.sso_identity.id
           mfa? = sign_in_destination_mfa?(provider, direct?, changes.sso_providers)
 

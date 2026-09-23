@@ -16,6 +16,11 @@ defmodule EmisarWeb.ProfileLive do
   # step-up identically — the operator hit the same wall either way.
   @oidc_step_up_start_error "Couldn't start confirmation. Try again."
   @personal_sign_in_required "These controls require unexpired personal email-link proof in this browser. Workspace SSO alone does not provide it."
+  @no_personal_login "Your membership in this workspace has no personal login."
+
+  # A member-only session keeps only its workspace profile.
+  @workspace_profile_events ~w(edit_workspace_profile cancel_workspace_profile
+                               validate_workspace_profile save_workspace_profile)
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
@@ -65,15 +70,19 @@ defmodule EmisarWeb.ProfileLive do
   # IL-18: load lists only after connecting; static HTML shows loading, not an
   # empty result. Session pagination preserves its URL state.
   defp maybe_load_sessions(socket, params) do
-    if connected?(socket) do
-      socket
-      |> load_sessions(params)
-      |> load_oidc_identities()
-      |> load_workspace_profile()
-      |> assign_mfa_facts(socket.assigns.current_user)
-    else
-      assign(socket, :filter_params, params)
-    end
+    if connected?(socket),
+      do: load_profile(socket, params, socket.assigns.current_user),
+      else: assign(socket, :filter_params, params)
+  end
+
+  defp load_profile(socket, _params, nil), do: load_workspace_profile(socket)
+
+  defp load_profile(socket, params, user) do
+    socket
+    |> load_sessions(params)
+    |> load_oidc_identities()
+    |> load_workspace_profile()
+    |> assign_mfa_facts(user)
   end
 
   defp load_workspace_profile(socket) do
@@ -199,6 +208,11 @@ defmodule EmisarWeb.ProfileLive do
   defp session_sign_in_method(:magic_link), do: "Email link"
   defp session_sign_in_method(:sso), do: "Single sign-on"
   defp session_sign_in_method(nil), do: nil
+
+  def handle_event(event, _params, %{assigns: %{current_user: nil}} = socket)
+      when event not in @workspace_profile_events do
+    {:noreply, put_flash(socket, :error, @no_personal_login)}
+  end
 
   def handle_event(event, _params, %{assigns: %{personal_sign_in?: false}} = socket)
       when event in [
@@ -905,10 +919,14 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
+  defp assign_profile_form(socket, nil), do: assign(socket, :profile_form, nil)
+
   defp assign_profile_form(socket, user) do
     changeset = Users.change_user(user, %{"full_name" => user.full_name || ""})
     assign(socket, :profile_form, to_form(changeset, as: "profile"))
   end
+
+  defp assign_email_form(socket, nil), do: assign(socket, :email_form, nil)
 
   defp assign_email_form(socket, user) do
     changeset = Users.change_user(user, %{"email" => user.email || ""})
@@ -1242,7 +1260,18 @@ defmodule EmisarWeb.ProfileLive do
           </dl>
         </.section_with_note>
 
-        <.section_with_note id="personal-details">
+        <.section_with_note :if={is_nil(@current_user)} id="personal-login">
+          <:header>
+            <.section_header title="Personal login" />
+          </:header>
+          <p class="text-sm text-zinc-400">
+            Your membership in this workspace has no personal login. You sign in through
+            this workspace's single sign-on, so personal email, sessions and multi-factor
+            settings are not available here.
+          </p>
+        </.section_with_note>
+
+        <.section_with_note :if={@current_user} id="personal-details">
           <:header>
             <.section_header title="Personal details" />
           </:header>
@@ -1438,7 +1467,7 @@ defmodule EmisarWeb.ProfileLive do
           </dl>
         </.section_with_note>
 
-        <.section_with_note id="single-sign-on">
+        <.section_with_note :if={@current_user} id="single-sign-on">
           <:header>
             <.section_header title="Sign-in methods">
               <:subtitle>
@@ -1570,7 +1599,7 @@ defmodule EmisarWeb.ProfileLive do
           />
         </.section_with_note>
 
-        <.section_with_note id="multi-factor-authentication">
+        <.section_with_note :if={@current_user} id="multi-factor-authentication">
           <:header>
             <.section_header title="Multi-factor authentication">
               <:subtitle>Use an authenticator app for an extra check when you sign in.</:subtitle>
@@ -1770,7 +1799,7 @@ defmodule EmisarWeb.ProfileLive do
           <% end %>
         </.section_with_note>
 
-        <.section_with_note id="sessions">
+        <.section_with_note :if={@current_user} id="sessions">
           <:header>
             <.section_header title="Active sessions">
               <:subtitle>

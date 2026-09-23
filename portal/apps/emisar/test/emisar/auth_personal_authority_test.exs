@@ -6,7 +6,7 @@ defmodule Emisar.AuthPersonalAuthorityTest do
   setup do
     {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
     raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, _, token} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, token} = Auth.fetch_session_by_token(raw)
 
     %{
       user: user,
@@ -37,7 +37,7 @@ defmodule Emisar.AuthPersonalAuthorityTest do
 
   defp nonpersonal_subject(personal, nil) do
     raw = Fixtures.Auth.create_session_token!(personal.actor, nil, nil)
-    {:ok, _user, token} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, token} = Auth.fetch_session_by_token(raw)
     %{personal | session_token_id: token.id, member_grant_id: nil, auth_method: nil, mfa: true}
   end
 
@@ -68,7 +68,7 @@ defmodule Emisar.AuthPersonalAuthorityTest do
       assert Auth.confirm_email_change("other@example.test", "123456", digest, subject) ==
                {:error, :unauthorized}
 
-      assert {:ok, ^user, _} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, %{user: ^user}} = Auth.fetch_session_by_token(raw)
       assert Repo.reload!(user).full_name == user.full_name
       assert Repo.aggregate(Auth.SecurityAttemptWindow, :count) == 0
       refute_received {:email, _}
@@ -150,13 +150,13 @@ defmodule Emisar.AuthPersonalAuthorityTest do
       })
 
     raw = Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
-    {:ok, _user, sso_session} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, sso_session} = Auth.fetch_session_by_token(raw)
     subject = Fixtures.Subjects.subject_for(user, account, session: sso_session)
     Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
     secret = Auth.generate_mfa_secret()
     {enrolled, codes} = Fixtures.Users.enable_mfa!(secret, subject, session_token: raw)
     assert codes != []
-    assert {:ok, _, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, session} = Auth.fetch_session_by_token(raw)
     assert session.auth_method == :sso
     assert Auth.session_mfa_enrollment_verified_at(enrolled, session) == enrolled.mfa_enabled_at
 

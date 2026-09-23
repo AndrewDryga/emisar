@@ -197,7 +197,7 @@ defmodule Emisar.SSOTest do
         provider_identifier: identity.provider_identifier
       )
 
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, session} = Auth.fetch_session_by_token(raw)
     {raw, session}
   end
 
@@ -2596,8 +2596,8 @@ defmodule Emisar.SSOTest do
       assert reauthentication.provider_id == reset.provider.id
       assert Repo.reload!(reset.identity).last_seen_at == before_identity.last_seen_at
 
-      assert {:ok, %Emisar.Users.User{id: actor_id}, _token} =
-               Auth.fetch_user_and_token_by_session_token(reset.actor_session_token)
+      assert {:ok, %{user: %Emisar.Users.User{id: actor_id}}} =
+               Auth.fetch_session_by_token(reset.actor_session_token)
 
       assert actor_id == reset.actor.id
     end
@@ -2676,8 +2676,8 @@ defmodule Emisar.SSOTest do
 
       assert Repo.reload!(rebound).last_seen_at == reset.identity.last_seen_at
 
-      assert {:ok, %Emisar.Users.User{id: actor_id}, _token} =
-               Auth.fetch_user_and_token_by_session_token(reset.actor_session_token)
+      assert {:ok, %{user: %Emisar.Users.User{id: actor_id}}} =
+               Auth.fetch_session_by_token(reset.actor_session_token)
 
       assert actor_id == reset.actor.id
     end
@@ -2818,6 +2818,62 @@ defmodule Emisar.SSOTest do
                SSO.complete_auth(provider, callback(claims), %{})
 
       assert first.id == second.id
+    end
+
+    test "an identity on a Member without a personal login resolves to that Member alone" do
+      {_user, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account)
+      membership = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: membership,
+          provider_identifier: "okta|unlinked"
+        )
+
+      claims = %{
+        "sub" => "okta|unlinked",
+        "email" => "unlinked@acme.test",
+        "email_verified" => true
+      }
+
+      membership_id = membership.id
+      identity_id = identity.id
+
+      assert {:ok,
+              %{
+                user: nil,
+                membership: %Accounts.Membership{id: ^membership_id},
+                identity: %UserIdentity{id: ^identity_id},
+                created?: false
+              }} = SSO.complete_auth(provider, callback(claims), %{})
+    end
+
+    test "a directory identifier on a Member without a personal login is parked, not matched by email" do
+      {_user, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account, %{kind: :keycloak})
+      membership = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: provider.id,
+        membership: membership,
+        provider_identifier: "scim-unlinked",
+        scim_external_id: "scim-unlinked",
+        provisioned_via: :scim,
+        scim_active: true
+      )
+
+      claims = %{
+        "sub" => "scim-unlinked",
+        "email" => "someone@acme.test",
+        "email_verified" => true
+      }
+
+      assert {:pending, %LinkRequest{provider_identifier: "scim-unlinked"}} =
+               SSO.complete_auth(provider, callback(claims), %{})
     end
 
     test "a no-email IdP JIT-provisions a user with nil email (identified by sub)" do
@@ -3035,7 +3091,7 @@ defmodule Emisar.SSOTest do
         Accounts.create_account_with_owner(%{name: "Victim Corp", slug: "victim-corp"}, user)
 
       magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, magic_session} = Auth.fetch_user_and_token_by_session_token(magic_token)
+      {:ok, magic_session} = Auth.fetch_session_by_token(magic_token)
 
       assert {:ok, %Accounts.Membership{role: :owner}} =
                Accounts.fetch_membership_by_account_id_or_slug(
@@ -3058,7 +3114,7 @@ defmodule Emisar.SSOTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      {:ok, session_user, sso_session} = Auth.fetch_user_and_token_by_session_token(sso_token)
+      {:ok, %{user: session_user} = sso_session} = Auth.fetch_session_by_token(sso_token)
       assert sso_session.auth_method == :sso
       assert sso_session.user_identity_id == identity.id
 
@@ -3556,7 +3612,7 @@ defmodule Emisar.SSOTest do
       refute_received {^marker, false}
       assert_received {:scim_delete_disconnect, [^expected_topic], false}
 
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, session} = Auth.fetch_session_by_token(token)
       assert Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all() == []
 
       assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, session) ==
@@ -3584,7 +3640,7 @@ defmodule Emisar.SSOTest do
       refute_received {^marker, false}
       assert_received {:scim_delete_disconnect, [^expected_topic], false}
 
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, session} = Auth.fetch_session_by_token(token)
       assert Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all() == []
 
       assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, session) ==
@@ -3635,13 +3691,13 @@ defmodule Emisar.SSOTest do
       refute_received {^marker, false}
       assert_received {:scim_delete_disconnect, [^expected_topic], false}
       refute downgraded.satisfies_mfa
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(provider_token)
+      assert {:ok, session} = Auth.fetch_session_by_token(provider_token)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
 
-      assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(other_token)
-      assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(magic_token)
+      assert {:ok, %{user: ^user}} = Auth.fetch_session_by_token(other_token)
+      assert {:ok, %{user: ^user}} = Auth.fetch_session_by_token(magic_token)
     end
 
     test "unchanged or increasing MFA trust does not revoke a provider session", %{
@@ -3665,7 +3721,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, _still_true} =
                SSO.update_provider(now_true, %{satisfies_mfa: true}, subject)
 
-      assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: ^user}} = Auth.fetch_session_by_token(token)
     end
   end
 
@@ -4712,13 +4768,13 @@ defmodule Emisar.SSOTest do
                  %SCIMUserUpdate{active: false}
                )
 
-      assert {:ok, _user, sso_token} = Auth.fetch_user_and_token_by_session_token(sso_session)
+      assert {:ok, sso_token} = Auth.fetch_session_by_token(sso_session)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, sso_token) ==
                {:error, :not_found}
 
-      assert {:ok, _user, personal_token} =
-               Auth.fetch_user_and_token_by_session_token(magic_link_session)
+      assert {:ok, personal_token} =
+               Auth.fetch_session_by_token(magic_link_session)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
                provider.account_id,
@@ -5190,13 +5246,13 @@ defmodule Emisar.SSOTest do
       assert retired.scim_deleted_at
 
       refute_receive {:scim_delete_disconnect, [^expected_topic], _in_transaction?}
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(sso_session)
+      assert {:ok, session} = Auth.fetch_session_by_token(sso_session)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, session) ==
                {:error, :not_found}
 
-      assert {:ok, ^user, _token} =
-               Auth.fetch_user_and_token_by_session_token(unrelated_session)
+      assert {:ok, %{user: ^user}} =
+               Auth.fetch_session_by_token(unrelated_session)
 
       assert {:ok, %{identity: revived}} =
                SSO.scim_provision_user(
@@ -8421,13 +8477,13 @@ defmodule Emisar.SSOTest do
       assert retired.scim_external_id == "directory-external-123"
       assert retired.scim_active
 
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(rebound_session)
+      assert {:ok, session} = Auth.fetch_session_by_token(rebound_session)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(provider.account_id, session) ==
                {:error, :not_found}
 
-      assert {:ok, fetched_member, _session} =
-               Auth.fetch_user_and_token_by_session_token(unrelated_session)
+      assert {:ok, %{user: fetched_member}} =
+               Auth.fetch_session_by_token(unrelated_session)
 
       assert fetched_member.id == member.id
 
@@ -8965,13 +9021,13 @@ defmodule Emisar.SSOTest do
 
       assert topic == Auth.live_socket_topic_for_session(approved_session)
       assert Repo.reload!(admin_approved).deleted_at
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(approved_session)
+      assert {:ok, session} = Auth.fetch_session_by_token(approved_session)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
                {:error, :not_found}
 
-      assert {:ok, ^user, _session} =
-               Auth.fetch_user_and_token_by_session_token(unrelated_session)
+      assert {:ok, %{user: ^user}} =
+               Auth.fetch_session_by_token(unrelated_session)
     end
 
     test "preserves a rebound directory row while retiring its OIDC authority" do

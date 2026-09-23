@@ -10,7 +10,7 @@ defmodule EmisarWeb.ActivateLive do
   secret.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, ApiKeys, Throttle}
+  alias Emisar.{Accounts, ApiKeys, Throttle, Users}
   alias EmisarWeb.{MfaErrors, Permissions}
 
   def mount(_params, _session, socket) do
@@ -118,9 +118,7 @@ defmodule EmisarWeb.ActivateLive do
     # credential-shaped lookup. Guessing was never practical (30^8 over a
     # 15-minute TTL); the point is that the control the comment relies on now
     # actually covers the paths that reach the lookup.
-    user_id = socket.assigns.current_user.id
-
-    if Throttle.check("device_code_lookup", user_id, 20, 900_000) != :ok do
+    if Throttle.check("device_code_lookup", lookup_budget_key(socket), 20, 900_000) != :ok do
       assign(socket,
         grant: nil,
         lookup_error: MfaErrors.message(:rate_limited)
@@ -129,6 +127,13 @@ defmodule EmisarWeb.ActivateLive do
       do_lookup(socket, code)
     end
   end
+
+  # One budget per person: the personal login when there is one, otherwise the
+  # Member, which is the whole identity of a member-only session.
+  defp lookup_budget_key(%{assigns: %{current_user: %Users.User{id: user_id}}}),
+    do: user_id
+
+  defp lookup_budget_key(%{assigns: %{current_subject: subject}}), do: subject.membership_id
 
   defp do_lookup(socket, code) do
     case ApiKeys.fetch_pending_device_grant_by_user_code(code, socket.assigns.current_subject) do
@@ -335,7 +340,7 @@ defmodule EmisarWeb.ActivateLive do
           </div>
       <% end %>
 
-      <:footer>
+      <:footer :if={@current_user}>
         Signed in as <span class="text-zinc-400">{@current_user.email}</span>
       </:footer>
     </.auth_card>

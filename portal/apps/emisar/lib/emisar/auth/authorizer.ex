@@ -12,7 +12,7 @@ defmodule Emisar.Auth.Authorizer do
   depend on at compile time. This module re-reads session authority at
   runtime, so no authorizer may `use` or import it.
   """
-  alias Emisar.{ApiKeys, Runners, Users}
+  alias Emisar.{Accounts, ApiKeys, Runners, Users}
   alias Emisar.Auth.{ContextAuthorizer, SessionGrants, Subject}
 
   defdelegate build(module, action), to: ContextAuthorizer
@@ -55,10 +55,14 @@ defmodule Emisar.Auth.Authorizer do
   # Never lock here: contexts also call this gate while holding their own
   # resource locks. Mutation-specific fences own serialization; this read closes
   # held-Subject/reconnect access after a bearer, grant or Member is revoked.
-  # A person is re-read through the bearer's grant. API keys and runners are
-  # re-authenticated by their own boundary, and the actorless support subject
-  # has no bearer. Any other actor is refused, never treated as one of these.
+  # A person, linked to a personal login or not, is re-read through the bearer's
+  # grant. API keys and runners are re-authenticated by their own boundary, and
+  # the actorless support subject has no bearer. Any other actor is refused,
+  # never treated as one of these.
   defp current_authority(%Subject{actor: %Users.User{}} = subject),
+    do: SessionGrants.fetch_subject(subject)
+
+  defp current_authority(%Subject{actor: %Accounts.Membership{}} = subject),
     do: SessionGrants.fetch_subject(subject)
 
   defp current_authority(%Subject{actor: %ApiKeys.ApiKey{}} = subject), do: {:ok, subject}
@@ -67,7 +71,10 @@ defmodule Emisar.Auth.Authorizer do
   defp current_authority(%Subject{}), do: {:error, :unauthorized}
 
   defp ensure_session_compliant(%Subject{actor: %Users.User{}} = subject),
-    do: Emisar.Accounts.account_compliance_for_session(subject.account, subject)
+    do: Accounts.account_compliance_for_session(subject.account, subject)
+
+  defp ensure_session_compliant(%Subject{actor: %Accounts.Membership{}} = subject),
+    do: Accounts.account_compliance_for_session(subject.account, subject)
 
   defp ensure_session_compliant(%Subject{actor: %ApiKeys.ApiKey{}}), do: :ok
   defp ensure_session_compliant(%Subject{actor: %Runners.Runner{}}), do: :ok

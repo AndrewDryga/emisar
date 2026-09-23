@@ -13,7 +13,7 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
       secret = Auth.generate_mfa_secret()
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
       session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(session_token)
+      {:ok, session} = Auth.fetch_session_by_token(session_token)
       subject = Fixtures.Subjects.subject_for(user, account, session: session)
       peer_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
       parent = self()
@@ -64,8 +64,8 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
                  |> Emisar.Audit.Event.Query.by_event_type("user.mfa_enabled")
                )
 
-        assert {:ok, _user, peer_session} =
-                 Auth.fetch_user_and_token_by_session_token(peer_token)
+        assert {:ok, peer_session} =
+                 Auth.fetch_session_by_token(peer_token)
 
         assert peer_session.mfa_enrollment_verified_at == nil
       after
@@ -88,7 +88,7 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
 
       subjects =
         Map.new(tokens, fn {label, raw} ->
-          {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+          {:ok, session} = Auth.fetch_session_by_token(raw)
           {label, Fixtures.Subjects.subject_for(user, account, session: session)}
         end)
 
@@ -145,13 +145,13 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
         assert [{loser, {:error, :mfa_already_enabled}}] =
                  Enum.reject(results, fn {label, _result} -> label == winner end)
 
-        assert {:ok, ^enrolled, winner_session} =
-                 Auth.fetch_user_and_token_by_session_token(tokens[winner])
+        assert {:ok, %{user: ^enrolled} = winner_session} =
+                 Auth.fetch_session_by_token(tokens[winner])
 
         assert winner_session.mfa_enrollment_verified_at == enrolled.mfa_enabled_at
 
-        assert {:ok, ^enrolled, loser_session} =
-                 Auth.fetch_user_and_token_by_session_token(tokens[loser])
+        assert {:ok, %{user: ^enrolled} = loser_session} =
+                 Auth.fetch_session_by_token(tokens[loser])
 
         assert loser_session.mfa_enrollment_verified_at == nil
       after

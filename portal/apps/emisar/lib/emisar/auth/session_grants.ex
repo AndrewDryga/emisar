@@ -155,18 +155,20 @@ defmodule Emisar.Auth.SessionGrants do
   end
 
   # The grant alone resolves authority; the held actor must still be the
-  # granted Member's User, so a Subject cannot be re-pointed at another person.
+  # granted Member's person, so a Subject cannot be re-pointed at another
+  # person or borrow a Member it does not hold.
   def fetch_subject(
         %Subject{
-          actor: %Users.User{id: user_id},
+          actor: actor,
           account: %Accounts.Account{id: account_id},
           membership_id: member_id,
           member_grant_id: grant_id
         } = subject
       ) do
-    with true <- Enum.all?([user_id, grant_id], &Repo.valid_uuid?/1),
+    with true <- Enum.all?([grant_actor_id(actor), grant_id], &Repo.valid_uuid?/1),
          {:ok, route, idp_mfa?} <- fetch_route(account_id, member_id, subject),
-         %Accounts.Membership{user: %Users.User{id: ^user_id}} = member <- route.membership do
+         %Accounts.Membership{} = member <- route.membership,
+         true <- holds_member?(actor, member) do
       fresh =
         Subject.for_member(member, member.account, subject.context, options(route, idp_mfa?))
 
@@ -178,6 +180,25 @@ defmodule Emisar.Auth.SessionGrants do
 
   def fetch_subject(%Subject{}), do: {:error, :unauthorized}
 
+  # Only a person holds a session grant: a linked Member's personal login, or a
+  # Member without one acting as itself.
+  defp grant_actor_id(%Users.User{id: id}), do: id
+  defp grant_actor_id(%Accounts.Membership{id: id, user_id: nil}), do: id
+  defp grant_actor_id(_actor), do: nil
+
+  # A linked Member acts as its live personal login; a Member without one is
+  # its own actor. Two absent logins never read as the same person.
+  defp holds_member?(%Users.User{id: id}, %Accounts.Membership{user: %Users.User{id: id}}),
+    do: true
+
+  defp holds_member?(
+         %Accounts.Membership{id: id, user_id: nil},
+         %Accounts.Membership{id: id, user_id: nil}
+       ),
+       do: true
+
+  defp holds_member?(_actor, _member), do: false
+
   def ensure_personal_session(%Subject{actor: %Users.User{id: user_id}} = subject) do
     with {:ok, token} <- fetch_token(user_id, subject),
          %DateTime{} <- token.personal_proved_at,
@@ -188,7 +209,7 @@ defmodule Emisar.Auth.SessionGrants do
     end
   end
 
-  def ensure_personal_session(%Subject{}), do: {:error, :unauthorized}
+  def ensure_personal_session(%Subject{} = subject), do: Subject.personal_denial(subject)
 
   def fetch_token(user_id, session) do
     with token_id when is_binary(token_id) <- session_id(session),

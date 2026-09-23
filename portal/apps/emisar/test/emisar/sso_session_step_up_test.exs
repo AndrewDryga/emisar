@@ -112,7 +112,7 @@ defmodule Emisar.SSOSessionStepUpTest do
                {context.provider.issuer, context.provider.client_id,
                 context.provider.identifier_claim}
 
-      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(browser.raw)
+      assert {:ok, _session} = Auth.fetch_session_by_token(browser.raw)
     end
 
     test "denies missing permission and another workspace's provider before provider work",
@@ -151,15 +151,15 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert_received {:oidc_begin, options}
       refute Keyword.has_key?(options, :url_extension)
 
-      assert Auth.fetch_user_and_token_by_session_token(browser.raw) ==
-               {:ok, user, browser.session}
+      assert Auth.fetch_session_by_token(browser.raw) == {:ok, browser.session}
+      assert browser.session.user.id == user.id
 
       :ok = Audit.subscribe_account_audit(context.account.id)
 
       assert {:ok, result} = complete(context, browser, stash)
-      assert {:ok, _user, replacement} = Auth.fetch_user_and_token_by_session_token(result.token)
-      assert Auth.fetch_user_and_token_by_session_token(browser.raw) == {:error, :not_found}
-      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(other.raw)
+      assert {:ok, replacement} = Auth.fetch_session_by_token(result.token)
+      assert Auth.fetch_session_by_token(browser.raw) == {:error, :not_found}
+      assert {:ok, _session} = Auth.fetch_session_by_token(other.raw)
       assert replacement.personal_proved_at == browser.session.personal_proved_at
       assert replacement.personal_expires_at == browser.session.personal_expires_at
       assert replacement.mfa_enrollment_verified_at == browser.session.mfa_enrollment_verified_at
@@ -206,7 +206,7 @@ defmodule Emisar.SSOSessionStepUpTest do
         browser = browser(context.user, context.account)
         stash = begin_step_up(context, browser) |> Map.put(@field, nil)
         assert {:error, _reason} = complete(context, browser, stash)
-        assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(browser.raw)
+        assert {:ok, _session} = Auth.fetch_session_by_token(browser.raw)
         refute_received {:disconnect, _}
       end
     end
@@ -254,7 +254,7 @@ defmodule Emisar.SSOSessionStepUpTest do
                {:error, :session_step_up_invalid}
 
       assert routes(browser.session) == originals
-      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(browser.raw)
+      assert {:ok, _session} = Auth.fetch_session_by_token(browser.raw)
       assert Repo.aggregate(SSO.UserIdentity, :count) == 1
       assert Repo.aggregate(SSO.LinkRequest, :count) == 0
       refute_received {:disconnect, _}
@@ -276,8 +276,8 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert Repo.reload!(context.identity).membership_id == replacement.id
       assert_receive {:audit_event, %Audit.Event{event_type: "sso.identity_linked"}}
 
-      assert {:ok, user, replacement_session} =
-               Auth.fetch_user_and_token_by_session_token(result.token)
+      assert {:ok, %{user: user} = replacement_session} =
+               Auth.fetch_session_by_token(result.token)
 
       current =
         Fixtures.Subjects.subject_for(user, context.account,
@@ -299,7 +299,7 @@ defmodule Emisar.SSOSessionStepUpTest do
                {:error, :session_step_up_invalid}
 
       assert Repo.reload!(context.identity).membership_id == context.member.id
-      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(browser.raw)
+      assert {:ok, _session} = Auth.fetch_session_by_token(browser.raw)
     end
 
     test "a SCIM-synthesized identifier needs a token naming the same person, as at sign-in",
@@ -340,7 +340,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert Accounts.end_all_sessions_for(context.member, owner) == :ok
       assert_received {:disconnect, _}
       assert complete(context, browser, stash) == {:error, :unauthorized}
-      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(browser.raw)
+      assert {:ok, _session} = Auth.fetch_session_by_token(browser.raw)
       refute_received {:disconnect, _}
     end
 
@@ -360,7 +360,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       donor = browser(user, account)
       stash = begin_step_up(context, donor)
       assert {:ok, result} = complete(context, donor, stash)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(result.token)
+      {:ok, session} = Auth.fetch_session_by_token(result.token)
       current = Fixtures.Subjects.subject_for(user, account, session: session)
       digest = Crypto.hash(result.token)
       email = "rotated-#{Ecto.UUID.generate()}@example.test"
@@ -431,7 +431,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       )
 
       assert {:ok, result} = complete(context, browser, stash)
-      assert {:ok, _user, replacement} = Auth.fetch_user_and_token_by_session_token(result.token)
+      assert {:ok, replacement} = Auth.fetch_session_by_token(result.token)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
                sibling.id,
@@ -454,7 +454,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       Fixtures.Accounts.disable_account(sibling)
       stash = begin_step_up(context, browser)
       assert {:ok, result} = complete(context, browser, stash)
-      assert {:ok, _user, replacement} = Auth.fetch_user_and_token_by_session_token(result.token)
+      assert {:ok, replacement} = Auth.fetch_session_by_token(result.token)
       assert Enum.all?(originals, &(&1 in routes(replacement)))
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
@@ -490,7 +490,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       :ok = Audit.subscribe_account_audit(context.account.id)
       assert {:error, changeset} = complete(context, bad, stash)
       assert "is invalid" in errors_on(changeset).request_id
-      assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(browser.raw)
+      assert {:ok, _session} = Auth.fetch_session_by_token(browser.raw)
       assert routes(browser.session) == originals
       assert Repo.aggregate(Auth.UserToken.Query.by_context("session"), :count) == 1
       refute_received {:disconnect, _}
@@ -507,7 +507,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       browser = browser(user, context.account, DateTime.utc_now())
       assert {:ok, result} = complete(context, browser, begin_step_up(context, browser))
       Fixtures.Auth.expire_session_independent_proofs!(result.token)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(result.token)
+      {:ok, session} = Auth.fetch_session_by_token(result.token)
       subject = Fixtures.Subjects.subject_for(user, context.account, session: session)
 
       donor = %{
@@ -518,7 +518,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       }
 
       assert {:ok, next} = complete(context, donor, begin_step_up(context, donor))
-      {:ok, _user, replacement} = Auth.fetch_user_and_token_by_session_token(next.token)
+      {:ok, replacement} = Auth.fetch_session_by_token(next.token)
       current = Fixtures.Subjects.subject_for(user, context.account, session: replacement)
       assert replacement.personal_expires_at == session.personal_expires_at
       assert replacement.local_mfa_expires_at == session.local_mfa_expires_at
@@ -553,7 +553,7 @@ defmodule Emisar.SSOSessionStepUpTest do
           provider_identifier: context.identity.provider_identifier
         )
 
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      {:ok, session} = Auth.fetch_session_by_token(raw)
       subject = Fixtures.Subjects.subject_for(context.user, context.account, session: session)
       browser = %{raw: raw, digest: Crypto.hash(raw), session: session, subject: subject}
       stash = begin_step_up(context, browser)
@@ -561,7 +561,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert {:ok, _provider} = SSO.update_provider(provider, %{satisfies_mfa: false}, owner)
 
       assert {:ok, result} = complete(context, browser, stash)
-      {:ok, _user, replacement} = Auth.fetch_user_and_token_by_session_token(result.token)
+      {:ok, replacement} = Auth.fetch_session_by_token(result.token)
 
       assert Accounts.fetch_membership_by_account_id_or_slug(
                sibling.id,
@@ -583,7 +583,7 @@ defmodule Emisar.SSOSessionStepUpTest do
          %{user: user, account: account} = context do
       donor = browser(user, account)
       assert {:ok, result} = complete(context, donor, begin_step_up(context, donor))
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(result.token)
+      {:ok, session} = Auth.fetch_session_by_token(result.token)
       subject = Fixtures.Subjects.subject_for(user, account, session: session)
 
       updated =
@@ -612,7 +612,7 @@ defmodule Emisar.SSOSessionStepUpTest do
       donor = browser(user, account)
       assert {:ok, result} = complete(context, donor, begin_step_up(context, donor))
       assert_received {:disconnect, _}
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(result.token)
+      {:ok, session} = Auth.fetch_session_by_token(result.token)
       subject = Fixtures.Subjects.subject_for(user, account, session: session)
       target = Fixtures.Accounts.create_account()
       before_routes = routes(session)
@@ -681,7 +681,7 @@ defmodule Emisar.SSOSessionStepUpTest do
 
   defp browser(user, account, mfa_at \\ nil, membership \\ nil) do
     raw = Fixtures.Auth.create_session_token!(user, :magic_link, mfa_at)
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, session} = Auth.fetch_session_by_token(raw)
 
     subject =
       Fixtures.Subjects.subject_for(user, account, session: session, membership: membership)

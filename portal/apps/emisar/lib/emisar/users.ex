@@ -206,7 +206,7 @@ defmodule Emisar.Users do
     end
   end
 
-  def update_user_profile(_attrs, %Subject{}), do: {:error, :unauthorized}
+  def update_user_profile(_attrs, %Subject{} = subject), do: Subject.personal_denial(subject)
 
   # Workspace copies retain the security event and correlation ID, not private
   # profile values or the browser/IP used to edit the personal account.

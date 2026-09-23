@@ -994,6 +994,18 @@ defmodule Emisar.Accounts do
     end
   end
 
+  # A Member without a personal login has no local factor; enforcement will
+  # judge its current IdP proof, so that proof must hold now.
+  defp ensure_actor_enrolled_through_commit(%Subject{actor: %Membership{}} = subject) do
+    case Auth.Authorizer.fetch_authorized_subject(
+           subject,
+           Authorizer.manage_security_settings_permission()
+         ) do
+      {:ok, %Subject{mfa: true}} -> :ok
+      _ -> {:error, :mfa_enrollment_required}
+    end
+  end
+
   defp ensure_actor_enrolled_through_commit(%Subject{}), do: {:error, :mfa_enrollment_required}
 
   # Requiring SSO with no enabled connection locks EVERYONE out, owners included.
@@ -1341,8 +1353,11 @@ defmodule Emisar.Accounts do
   # workspace — a disabled or still-pending one counts, the same tenancy test
   # `sole_tenancy?/3` applies one row at a time.
   defp users_with_other_tenancies(memberships, account_id) do
+    user_ids =
+      for %Membership{user_id: user_id} when is_binary(user_id) <- memberships, do: user_id
+
     Membership.Query.not_deleted()
-    |> Membership.Query.by_user_ids(Enum.map(memberships, & &1.user_id))
+    |> Membership.Query.by_user_ids(user_ids)
     |> Membership.Query.excluding_account_id(account_id)
     |> Membership.Query.select_user_ids()
     |> Repo.all()
@@ -1537,13 +1552,16 @@ defmodule Emisar.Accounts do
   end
 
   # The subject's actor is a socket snapshot that can be hours old, so the
-  # enrollment question is answered from the user's current row.
+  # enrollment question is answered from the user's current row. A Member
+  # without a personal login can only satisfy enforcement through its IdP.
   defp actor_mfa_enrolled?(%Subject{actor: %Users.User{id: user_id}}) do
     case Users.fetch_user_by_id(user_id) do
       {:ok, %Users.User{mfa_enabled_at: %DateTime{}}} -> true
       _ -> false
     end
   end
+
+  defp actor_mfa_enrolled?(%Subject{actor: %Membership{}, mfa: mfa}), do: mfa == true
 
   defp actor_mfa_enrolled?(%Subject{}), do: false
 
@@ -1722,9 +1740,16 @@ defmodule Emisar.Accounts do
   they have no active membership in another account. After a direct create,
   invitation acceptance, or real reinstate, the same predicate is re-evaluated
   against the activated account; a pending or suspended seat is not access and
-  does not retire anything until it becomes active. The DB-only retirement
-  result carries exact socket topics to the outer commit.
+  does not retire anything until it becomes active. A Member without a
+  personal login has no other membership and retires nothing. The DB-only
+  retirement result carries exact socket topics to the outer commit.
   """
+  def put_membership_activation_consequence(%Multi{} = multi, %Membership{user_id: nil}) do
+    Multi.run(multi, :retired_bindings, fn _repo, _changes ->
+      {:ok, %{count: 0, socket_topics: []}}
+    end)
+  end
+
   def put_membership_activation_consequence(%Multi{} = multi, %Membership{} = membership) do
     Multi.run(multi, :retired_bindings, fn repo, _changes ->
       active_account_ids =
@@ -2469,10 +2494,10 @@ defmodule Emisar.Accounts do
       Membership.Query.authorized()
       |> Membership.Query.by_account_id(account_id)
       |> scope_memberships_to_session(session_account_scope(subject))
+      |> Membership.Query.without_deleted_user()
       |> Membership.Query.with_preloaded_account()
-      |> Membership.Query.with_preloaded_user()
       |> Membership.Query.lock_for_update()
-      |> repo.fetch(Membership.Query)
+      |> repo.fetch(Membership.Query, preload: [:user])
     end)
     |> Multi.insert(:audit, fn %{membership: membership} ->
       Audit.Events.session_account_switched(subject, membership)
@@ -3724,9 +3749,8 @@ defmodule Emisar.Accounts do
 
   defp ensure_member_mfa_reset_actor(%Membership{}), do: {:error, :unauthorized}
 
-  defp current_member_mfa_reset_subject(subject, account, actor_membership) do
-    Subject.rebuild(subject, %{actor_membership | user: subject.actor}, account)
-  end
+  defp current_member_mfa_reset_subject(subject, account, actor_membership),
+    do: Subject.rebuild(subject, actor_membership, account)
 
   defp ensure_member_mfa_reset_target(%Membership{} = membership) do
     if membership_invitation_pending?(membership),
@@ -3937,7 +3961,8 @@ defmodule Emisar.Accounts do
     do: refresh_member_sessions(membership)
 
   @doc "The caller's current workspace profile and whether the directory owns its name."
-  def fetch_own_member_profile(%Subject{actor: %Users.User{}} = subject) do
+  def fetch_own_member_profile(%Subject{actor: actor} = subject)
+      when is_struct(actor, Users.User) or is_struct(actor, Membership) do
     with {:ok, current} <-
            Auth.fetch_current_subject(Authorizer.view_own_account_permission(), subject) do
       result =
@@ -3962,7 +3987,8 @@ defmodule Emisar.Accounts do
     do: Membership.Changeset.profile(membership, attrs)
 
   @doc "Change only the authenticated caller's name in this workspace."
-  def update_own_member_profile(attrs, %Subject{actor: %Users.User{}} = subject) do
+  def update_own_member_profile(attrs, %Subject{actor: actor} = subject)
+      when is_struct(actor, Users.User) or is_struct(actor, Membership) do
     with {:ok, current} <-
            Auth.fetch_current_subject(Authorizer.view_own_account_permission(), subject) do
       own_member_query(current)
@@ -4274,7 +4300,8 @@ defmodule Emisar.Accounts do
 
   Same authorization, persistence, and errors as `invite_user_to_account/2`;
   the raw token is not returned by this workflow. `inviter` is who the email
-  is attributed to — passed explicitly because a support subject has no actor.
+  is attributed to — the acting `%Membership{}`, or a sender map for a support
+  subject, which has no actor.
 
   Returns `{:ok, %{membership: m, user: u, delivery: delivery}}`, where
   `delivery` is `{:ok, :sent}`, `{:ok, :suppressed}` (the address bounced or
@@ -4406,7 +4433,7 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_id(membership.id)
       |> Membership.Query.pending_invitation()
       |> Membership.Query.not_disabled()
-      |> Membership.Query.with_preloaded_user()
+      |> Membership.Query.with_preloaded_linked_user()
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Membership.Query,
         with: fn loaded_membership ->
@@ -4489,6 +4516,11 @@ defmodule Emisar.Accounts do
       end
 
     %{membership: membership, user: user, delivery: delivery}
+  end
+
+  defp invitation_sender_label(%Membership{id: id}, %Account{id: account_id}) do
+    account_id |> peek_membership_profile_by_id(id) |> member_display_name() ||
+      "A workspace administrator"
   end
 
   defp invitation_sender_label(%Users.User{id: user_id}, %Account{id: account_id}) do

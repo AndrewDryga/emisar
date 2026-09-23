@@ -1889,6 +1889,16 @@ defmodule Emisar.Runs do
 
   defp put_dispatcher_identity(
          attrs,
+         %Subject{actor: %Accounts.Membership{}, membership_id: membership_id}
+       ) do
+    attrs
+    |> Map.put(:requested_by_membership_id, membership_id)
+    |> Map.delete(:requested_by_id)
+    |> Map.delete(:api_key_id)
+  end
+
+  defp put_dispatcher_identity(
+         attrs,
          %Subject{actor: %ApiKeys.ApiKey{id: api_key_id}, membership_id: membership_id}
        ) do
     attrs
@@ -3091,9 +3101,10 @@ defmodule Emisar.Runs do
   def fetch_and_lock_cancellation_access(subject, opts \\ [])
 
   def fetch_and_lock_cancellation_access(
-        %Subject{account: %Accounts.Account{} = account, actor: %Users.User{}} = subject,
+        %Subject{account: %Accounts.Account{} = account, actor: actor} = subject,
         opts
-      ) do
+      )
+      when is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership) do
     repo = Keyword.get(opts, :repo, Repo)
 
     with :ok <-
@@ -3104,7 +3115,7 @@ defmodule Emisar.Runs do
              Subject.human_membership_id(subject),
              repo: repo
            ),
-         current_subject = Subject.rebuild(subject, %{membership | user: subject.actor}, account),
+         current_subject = Subject.rebuild(subject, membership, account),
          :ok <-
            Auth.Authorizer.ensure_has_permissions(
              current_subject,
@@ -4037,6 +4048,7 @@ defmodule Emisar.Runs do
   # A person dispatches as their exact Member, and an MCP key as the Member that
   # minted it (`subject.membership_id` either way). No other actor dispatches.
   defp dispatch_actor?(%Subject{actor: %Users.User{}}), do: true
+  defp dispatch_actor?(%Subject{actor: %Accounts.Membership{}}), do: true
 
   defp dispatch_actor?(%Subject{actor: %ApiKeys.ApiKey{kind: :mcp, id: id}}),
     do: Repo.valid_uuid?(id)
@@ -4044,6 +4056,7 @@ defmodule Emisar.Runs do
   defp dispatch_actor?(_subject), do: false
 
   defp lock_dispatch_key(_repo, %Subject{actor: %Users.User{}}), do: :ok
+  defp lock_dispatch_key(_repo, %Subject{actor: %Accounts.Membership{}}), do: :ok
 
   defp lock_dispatch_key(repo, %Subject{
          account: %{id: account_id},
@@ -4085,6 +4098,9 @@ defmodule Emisar.Runs do
   end
 
   defp dispatcher_matches_attrs?(%Subject{actor: %Users.User{}}, attrs),
+    do: is_nil(Map.get(attrs, :api_key_id))
+
+  defp dispatcher_matches_attrs?(%Subject{actor: %Accounts.Membership{}}, attrs),
     do: is_nil(Map.get(attrs, :api_key_id))
 
   defp dispatcher_matches_attrs?(%Subject{actor: %ApiKeys.ApiKey{id: id}}, attrs),

@@ -79,7 +79,7 @@ defmodule EmisarWeb.OnboardingLiveTest do
       assert recovery =~ "Sign out and sign in by email to create a workspace"
       refute recovery =~ "Something went wrong"
       assert Repo.aggregate(Accounts.Account, :count) == before
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, _} = Auth.fetch_session_by_token(token)
     end
 
     test "anonymous and revoked browsers cannot create a workspace", %{conn: conn} do
@@ -111,7 +111,7 @@ defmodule EmisarWeb.OnboardingLiveTest do
 
       assert redirected_to(refused) == ~p"/session/recover?reason=personal_required"
       assert Repo.aggregate(Accounts.Account, :count) == 1
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(raw)
+      assert {:ok, _} = Auth.fetch_session_by_token(raw)
     end
 
     test "a colliding slug is deduped and both workspaces coexist", %{conn: conn} do
@@ -185,7 +185,7 @@ defmodule EmisarWeb.OnboardingLiveTest do
       signed_out = delete(conn, ~p"/sign_out")
       assert redirected_to(signed_out) == "/"
       refute get_session(signed_out, :user_token)
-      assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(token) == {:error, :not_found}
       refute Repo.exists?(Membership)
     end
 

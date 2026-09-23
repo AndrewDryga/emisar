@@ -30,7 +30,7 @@ defmodule Emisar.SSOIdentityLinkTest do
     {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Workforce")
     raw_session = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw_session)
+    {:ok, session} = Auth.fetch_session_by_token(raw_session)
     subject = Fixtures.Subjects.subject_for(user, account, session: session)
 
     %{
@@ -494,8 +494,8 @@ defmodule Emisar.SSOIdentityLinkTest do
 
       assert event.target_label == "Workspace Linker"
 
-      assert {:ok, _user, %UserToken{auth_method: :magic_link, user_identity_id: nil}} =
-               Auth.fetch_user_and_token_by_session_token(context.raw_session)
+      assert {:ok, %UserToken{auth_method: :magic_link, user_identity_id: nil}} =
+               Auth.fetch_session_by_token(context.raw_session)
     end
 
     test "refuses a provider that belongs to another account",
@@ -582,7 +582,7 @@ defmodule Emisar.SSOIdentityLinkTest do
         )
 
       raw = Fixtures.Auth.create_session_token!(context.user, :magic_link, nil)
-      {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+      {:ok, session} = Auth.fetch_session_by_token(raw)
 
       subject =
         Fixtures.Subjects.subject_for(context.user, context.account,
@@ -817,7 +817,7 @@ defmodule Emisar.SSOIdentityLinkTest do
                )
 
       assert event.target_label == "Workspace Unlinker"
-      assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(provider_session)
+      assert {:ok, session} = Auth.fetch_session_by_token(provider_session)
 
       assert Emisar.Accounts.fetch_membership_by_account_id_or_slug(
                context.account.id,
@@ -825,10 +825,10 @@ defmodule Emisar.SSOIdentityLinkTest do
              ) ==
                {:error, :not_found}
 
-      assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(unrelated_session)
+      assert {:ok, _token} = Auth.fetch_session_by_token(unrelated_session)
 
-      assert {:ok, _user, _token} =
-               Auth.fetch_user_and_token_by_session_token(context.raw_session)
+      assert {:ok, _token} =
+               Auth.fetch_session_by_token(context.raw_session)
     end
 
     test "does not strand a membership when its account requires SSO",
@@ -884,7 +884,7 @@ defmodule Emisar.SSOIdentityLinkTest do
         user_identity_id: identity.id
       )
 
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, session} = Auth.fetch_session_by_token(raw)
     subject = Fixtures.Subjects.subject_for(context.user, context.account, session: session)
     %{context | raw_session: raw, session_digest: Crypto.hash(raw), subject: subject}
   end

@@ -9,7 +9,7 @@ defmodule EmisarWeb.BillingIntentController do
   boundary.
   """
   use EmisarWeb, :controller
-  alias Emisar.{Accounts, Billing}
+  alias Emisar.{Accounts, Auth, Billing}
   alias EmisarWeb.{BillingIntent, UserAuth}
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
@@ -130,11 +130,11 @@ defmodule EmisarWeb.BillingIntentController do
     |> redirect(to: ~p"/pricing")
   end
 
-  defp capture_destination(%{assigns: %{current_user: %Emisar.Users.User{}}}, _token),
+  defp capture_destination(%{assigns: %{current_auth: %Auth.UserToken{}}}, _token),
     do: ~p"/app/billing/start"
 
   defp capture_destination(_conn, token), do: ~p"/sign_up?billing_intent=#{token}"
 
-  defp default_destination(%{assigns: %{current_user: %Emisar.Users.User{}}}), do: ~p"/app"
+  defp default_destination(%{assigns: %{current_auth: %Auth.UserToken{}}}), do: ~p"/app"
   defp default_destination(_conn), do: ~p"/sign_up"
 end

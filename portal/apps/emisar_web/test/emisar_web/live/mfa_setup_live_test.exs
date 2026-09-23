@@ -10,7 +10,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   setup %{conn: conn} do
     {owner_conn, owner, account} = register_and_log_in(conn)
     owner_token = get_session(owner_conn, :user_token)
-    {:ok, _user, owner_auth} = Auth.fetch_user_and_token_by_session_token(owner_token)
+    {:ok, owner_auth} = Auth.fetch_session_by_token(owner_token)
     owner_subject = Fixtures.Subjects.subject_for(owner, account, session: owner_auth)
 
     {:ok, owner, _codes} =
@@ -18,7 +18,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
         session_token: owner_token
       )
 
-    {:ok, _user, owner_auth} = Auth.fetch_user_and_token_by_session_token(owner_token)
+    {:ok, owner_auth} = Auth.fetch_session_by_token(owner_token)
     owner_subject = Fixtures.Subjects.subject_for(owner, account, session: owner_auth)
 
     {:ok, account} =
@@ -146,8 +146,8 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     # The codes are downloadable as a file, not just copyable.
     assert html =~ "Download .txt"
 
-    assert {:ok, enrolled, current_session} =
-             Auth.fetch_user_and_token_by_session_token(get_session(conn, :user_token))
+    assert {:ok, %{user: enrolled} = current_session} =
+             Auth.fetch_session_by_token(get_session(conn, :user_token))
 
     assert current_session.mfa_enrollment_verified_at == enrolled.mfa_enabled_at
     assigns = :sys.get_state(lv.pid).socket.assigns
@@ -157,8 +157,8 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     assert assigns.current_subject.mfa
 
-    assert {:ok, sibling_user, sibling_session} =
-             Auth.fetch_user_and_token_by_session_token(sibling_token)
+    assert {:ok, %{user: sibling_user} = sibling_session} =
+             Auth.fetch_session_by_token(sibling_token)
 
     assert sibling_user.id == enrolled.id
     assert sibling_session.mfa_enrollment_verified_at == nil
@@ -197,7 +197,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     assert redirected_to(conn) == "/"
     refute Plug.Conn.get_session(conn, :user_token)
-    assert Auth.fetch_user_and_token_by_session_token(token) == {:error, :not_found}
+    assert Auth.fetch_session_by_token(token) == {:error, :not_found}
   end
 
   test "resending enrollment verification confirms delivery and preserves the email step", %{
@@ -251,14 +251,14 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     render_hook(lv, "verify_totp", %{"otp" => NimbleTOTP.verification_code(secret)})
     assert_redirect(lv, "/app")
 
-    assert {:ok, current_user, current_session} =
-             Auth.fetch_user_and_token_by_session_token(get_session(conn, :user_token))
+    assert {:ok, %{user: current_user} = current_session} =
+             Auth.fetch_session_by_token(get_session(conn, :user_token))
 
     assert current_user.id == enrolled.id
     assert current_session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
 
-    assert {:ok, sibling_user, sibling_session} =
-             Auth.fetch_user_and_token_by_session_token(sibling_token)
+    assert {:ok, %{user: sibling_user} = sibling_session} =
+             Auth.fetch_session_by_token(sibling_token)
 
     assert sibling_user.id == enrolled.id
     assert sibling_session.mfa_enrollment_verified_at == nil
@@ -279,14 +279,14 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     render_hook(lv, "verify_recovery", %{"code" => recovery_code})
     assert_redirect(lv, "/app")
 
-    assert {:ok, current_user, current_session} =
-             Auth.fetch_user_and_token_by_session_token(get_session(conn, :user_token))
+    assert {:ok, %{user: current_user} = current_session} =
+             Auth.fetch_session_by_token(get_session(conn, :user_token))
 
     assert current_user.id == enrolled.id
     assert current_session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
 
-    assert {:ok, sibling_user, sibling_session} =
-             Auth.fetch_user_and_token_by_session_token(sibling_token)
+    assert {:ok, %{user: sibling_user} = sibling_session} =
+             Auth.fetch_session_by_token(sibling_token)
 
     assert sibling_user.id == enrolled.id
     assert sibling_session.mfa_enrollment_verified_at == nil
@@ -580,7 +580,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     render_hook(lv, "verify_recovery", %{"code" => recovery_code})
     assert_redirect(lv, "/app")
 
-    assert {:ok, current_user, session} = Auth.fetch_user_and_token_by_session_token(token)
+    assert {:ok, %{user: current_user} = session} = Auth.fetch_session_by_token(token)
     assert current_user.id == enrolled.id
     assert session.auth_method == :sso
     assert session.user_identity_id == identity.id

@@ -30,6 +30,8 @@ defmodule Emisar.Auth.UserToken do
     field :personal_proved_at, :utc_datetime_usec
     field :personal_expires_at, :utc_datetime_usec
 
+    # nil only for a member-only SSO session: a workspace Member without a
+    # personal login (see `auth_user_tokens_member_only_session_check`).
     belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :user_identity, Emisar.SSO.UserIdentity, where: [deleted_at: nil]
 

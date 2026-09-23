@@ -77,7 +77,7 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     assert html =~ "_csrf_token"
     assert html =~ ~s|action="/session/recover"|
     assert get_session(shown, :user_token) == raw
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, _session} = Auth.fetch_session_by_token(raw)
     refute_received {:oidc_begin, _}
   end
 
@@ -90,7 +90,7 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     identity: identity
   } do
     raw = get_session(conn, :user_token)
-    {:ok, _user, donor} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, donor} = Auth.fetch_session_by_token(raw)
     other = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
     old_csrf = Plug.CSRFProtection.get_csrf_token()
 
@@ -119,15 +119,15 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     assert get_session(completed, :current_account_id) == account.id
     replacement_raw = get_session(completed, :user_token)
     refute replacement_raw == raw
-    assert {:ok, _user, replacement} = Auth.fetch_user_and_token_by_session_token(replacement_raw)
+    assert {:ok, replacement} = Auth.fetch_session_by_token(replacement_raw)
     assert replacement.personal_proved_at == donor.personal_proved_at
     assert replacement.personal_expires_at == donor.personal_expires_at
 
     assert {:ok, _} =
              Accounts.fetch_membership_by_account_id_or_slug(sibling.id, replacement)
 
-    assert Auth.fetch_user_and_token_by_session_token(raw) == {:error, :not_found}
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(other)
+    assert Auth.fetch_session_by_token(raw) == {:error, :not_found}
+    assert {:ok, _session} = Auth.fetch_session_by_token(other)
     assert Repo.aggregate(Auth.UserToken.Query.by_context("session"), :count) == 2
     assert Plug.CSRFProtection.get_csrf_token() != old_csrf
     refute get_session(completed, :user_return_to)
@@ -189,7 +189,7 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     begun = post(conn, ~p"/app/#{account}/sso_required", %{"provider_id" => provider.id})
     completed = get(begun, ~p"/sign_in/sso/callback", %{"sub" => identity.provider_identifier})
     raw = get_session(completed, :user_token)
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, session} = Auth.fetch_session_by_token(raw)
     assert session.auth_method == :sso
     assert get_session(completed, :live_socket_id) == Auth.live_socket_topic_for_session(raw)
 
@@ -217,7 +217,7 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
              "Independent Personal Workspace"
 
     assert Repo.reload!(identity).deleted_at
-    assert {:ok, _user, retained} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, retained} = Auth.fetch_session_by_token(raw)
     assert retained.personal_expires_at == session.personal_expires_at
   end
 
@@ -232,7 +232,7 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     assert redirected_to(cancelled) == ~p"/session/recover?reason=sso_incomplete"
     assert get_session(cancelled, :user_token) == raw
     refute Map.has_key?(get_resp_cookies(cancelled), "_emisar_web_key")
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, _session} = Auth.fetch_session_by_token(raw)
     html = html_response(get(cancelled, redirected_to(cancelled)), 200)
     assert html =~ "Choose how to continue"
     assert html =~ "Single sign-on was not completed"
@@ -248,7 +248,7 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     begun = post(conn, ~p"/app/#{account}/sso_required", %{"provider_id" => provider.id})
     rejected = get(begun, ~p"/sign_in/sso/callback", %{"sub" => "another-person"})
     assert redirected_to(rejected) == ~p"/session/recover?reason=sso_incomplete"
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, _session} = Auth.fetch_session_by_token(raw)
     assert Repo.aggregate(SSO.UserIdentity, :count) == 1
     assert Repo.aggregate(SSO.LinkRequest, :count) == 0
   end
@@ -261,7 +261,7 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     raw = get_session(conn, :user_token)
     rejected = post(conn, ~p"/app/#{account}/sso_required", %{"provider_id" => foreign.id})
     assert redirected_to(rejected) == ~p"/app/#{account}/sso_required"
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, _session} = Auth.fetch_session_by_token(raw)
     refute_received {:oidc_begin, _}
     html = html_response(get(rejected, ~p"/app/#{account}/sso_required"), 200)
     assert html |> LazyHTML.from_document() |> LazyHTML.text() =~ "Couldn't start"
@@ -294,7 +294,7 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     assert Accounts.end_all_sessions_for(member, owner) == :ok
     rejected = get(begun, ~p"/sign_in/sso/callback", %{"sub" => identity.provider_identifier})
     assert redirected_to(rejected) == ~p"/session/recover?reason=sso_incomplete"
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, _session} = Auth.fetch_session_by_token(raw)
     refute_received {:oidc_callback, _}
     assert html_response(get(rejected, ~p"/session/recover"), 200) =~ "Independent workspace"
   end
@@ -317,11 +317,11 @@ defmodule EmisarWeb.SSOSessionStepUpControllerTest do
     assert redirected_to(rejected) == ~p"/session/recover?reason=sso_incomplete"
     refute_received {:oidc_callback, _}
 
-    assert {:ok, _, _} =
-             Auth.fetch_user_and_token_by_session_token(get_session(begun, :user_token))
+    assert {:ok, _} =
+             Auth.fetch_session_by_token(get_session(begun, :user_token))
 
-    assert {:ok, _, _} =
-             Auth.fetch_user_and_token_by_session_token(get_session(rejected, :user_token))
+    assert {:ok, _} =
+             Auth.fetch_session_by_token(get_session(rejected, :user_token))
   end
 
   for stash <- ["malformed", %{}, %{account_id: "not-a-uuid", purpose: :workspace_sso}] do

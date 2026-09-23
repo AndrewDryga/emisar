@@ -1,45 +1,49 @@
 defmodule EmisarWeb.OnboardingController do
   use EmisarWeb, :controller
-  alias Emisar.Accounts
+  alias Emisar.{Accounts, Auth, Users}
   alias Emisar.Auth.Subject
   alias EmisarWeb.{OnboardingLive, RequestContext, UserAuth}
 
   def new(conn, params), do: render_form(conn, params)
 
-  def create(conn, params) do
-    if conn.assigns.current_user do
-      name = submitted_name(params)
+  def create(%{assigns: %{current_user: %Users.User{} = user}} = conn, params) do
+    name = submitted_name(params)
 
-      subject = %Subject{
-        actor: conn.assigns.current_user,
-        session_token_id: conn.assigns.current_auth.id,
-        context: RequestContext.from_conn(conn)
-      }
+    subject = %Subject{
+      actor: user,
+      session_token_id: conn.assigns.current_auth.id,
+      context: RequestContext.from_conn(conn)
+    }
 
-      case Accounts.create_account_with_owner_from_name(name, subject) do
-        {:ok, account} ->
-          continue_to_workspace(conn, account, params["billing_intent"])
+    case Accounts.create_account_with_owner_from_name(name, subject) do
+      {:ok, account} ->
+        continue_to_workspace(conn, account, params["billing_intent"])
 
-        {:error, %Ecto.Changeset{data: %Accounts.Account{}} = changeset} ->
-          conn |> put_status(:unprocessable_entity) |> render_form(params, changeset)
+      {:error, %Ecto.Changeset{data: %Accounts.Account{}} = changeset} ->
+        conn |> put_status(:unprocessable_entity) |> render_form(params, changeset)
 
-        {:error, :unauthorized} ->
-          conn
-          |> redirect(to: ~p"/session/recover?reason=personal_required")
+      {:error, :unauthorized} ->
+        conn
+        |> redirect(to: ~p"/session/recover?reason=personal_required")
 
-        {:error, _reason} ->
-          changeset = Accounts.change_account(%Accounts.Account{}, %{"name" => name})
+      {:error, _reason} ->
+        changeset = Accounts.change_account(%Accounts.Account{}, %{"name" => name})
 
-          conn
-          |> put_flash(:error, "Couldn't create this workspace. Try again.")
-          |> put_status(:unprocessable_entity)
-          |> render_form(params, changeset)
-      end
-    else
-      conn
-      |> put_flash(:error, "You must sign in to set up a workspace.")
-      |> redirect(to: ~p"/sign_in")
+        conn
+        |> put_flash(:error, "Couldn't create this workspace. Try again.")
+        |> put_status(:unprocessable_entity)
+        |> render_form(params, changeset)
     end
+  end
+
+  # A member-only session has no personal login to own a new workspace.
+  def create(%{assigns: %{current_auth: %Auth.UserToken{}}} = conn, _params),
+    do: redirect(conn, to: ~p"/session/recover?reason=personal_required")
+
+  def create(conn, _params) do
+    conn
+    |> put_flash(:error, "You must sign in to set up a workspace.")
+    |> redirect(to: ~p"/sign_in")
   end
 
   defp continue_to_workspace(conn, account, token) do

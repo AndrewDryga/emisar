@@ -77,7 +77,7 @@ defmodule Emisar.OAuthTest do
   end
 
   defp subject_from_session(account, raw_token) do
-    assert {:ok, user, session} = Auth.fetch_user_and_token_by_session_token(raw_token)
+    assert {:ok, %{user: user} = session} = Auth.fetch_session_by_token(raw_token)
 
     Fixtures.Subjects.subject_for(user, account, session: session)
   end

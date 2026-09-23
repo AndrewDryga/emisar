@@ -246,7 +246,7 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
 
       assert redirected_to(conn) == ~p"/session/recover"
       assert get_session(conn, :user_token) == token
-      assert {:ok, _user, session} = Emisar.Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, session} = Emisar.Auth.fetch_session_by_token(token)
       assert Emisar.Auth.session_membership_ids(session) == []
 
       assert conn |> recycle() |> get(~p"/session/recover") |> html_response(200) =~

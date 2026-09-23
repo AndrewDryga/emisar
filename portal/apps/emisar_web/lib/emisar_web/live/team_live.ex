@@ -852,7 +852,7 @@ defmodule EmisarWeb.TeamLive do
         </.status_note>
 
         <div class="mt-7">
-          <%= if @current_user.mfa_enabled_at do %>
+          <%= if @current_user && @current_user.mfa_enabled_at do %>
             <%= if @mfa_reset_mode == :totp do %>
               <.simple_form for={%{}} id="member-mfa-reset-totp" phx-submit="verify_reset_totp">
                 <.code_input
@@ -953,6 +953,17 @@ defmodule EmisarWeb.TeamLive do
               </div>
             <% else %>
               <.empty_state
+                :if={is_nil(@current_user)}
+                variant={:bare}
+                tone={:danger}
+                icon="state.locked"
+                title="A personal login is required"
+              >
+                Resetting a member's MFA needs your own second factor. Your membership in this
+                workspace has no personal login.
+              </.empty_state>
+              <.empty_state
+                :if={@current_user}
                 variant={:bare}
                 tone={:danger}
                 icon="state.locked"
@@ -1419,7 +1430,7 @@ defmodule EmisarWeb.TeamLive do
   defp do_invite(socket, params) do
     case Accounts.invite_user_to_account_and_deliver(
            params,
-           socket.assigns.current_user,
+           socket.assigns.current_membership,
            socket.assigns.current_subject
          ) do
       {:ok, %{membership: membership, delivery: delivery}} ->
@@ -1469,7 +1480,7 @@ defmodule EmisarWeb.TeamLive do
   defp do_resend_invitation(socket, %Accounts.Membership{} = membership) do
     case Accounts.resend_account_invitation_and_deliver(
            membership,
-           socket.assigns.current_user,
+           socket.assigns.current_membership,
            socket.assigns.current_subject
          ) do
       {:ok, %{membership: updated, delivery: delivery}} ->

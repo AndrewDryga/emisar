@@ -22,8 +22,8 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       assert html_response(get(conn, ~p"/session/recover"), 200) =~ "Choose how to continue"
 
-      assert {:ok, _user, _session} =
-               Emisar.Auth.fetch_user_and_token_by_session_token(get_session(conn, :user_token))
+      assert {:ok, _session} =
+               Emisar.Auth.fetch_session_by_token(get_session(conn, :user_token))
     end
 
     test "redirects a logged-in user with no account to onboarding", %{conn: conn} do

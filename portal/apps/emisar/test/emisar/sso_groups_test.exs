@@ -529,9 +529,9 @@ defmodule Emisar.SSOGroupsTest do
 
     assert {:ok, _deleted} = SSO.scim_delete_user(provider, identity.id)
 
-    assert {:ok, _user, local_session} = Auth.fetch_user_and_token_by_session_token(mine)
+    assert {:ok, local_session} = Auth.fetch_session_by_token(mine)
     assert Auth.session_membership_ids(local_session) == []
-    assert {:ok, _user, other_session} = Auth.fetch_user_and_token_by_session_token(theirs)
+    assert {:ok, other_session} = Auth.fetch_session_by_token(theirs)
 
     assert {:ok, _member} =
              Accounts.fetch_membership_by_account_id_or_slug(
@@ -549,7 +549,7 @@ defmodule Emisar.SSOGroupsTest do
     token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
 
     assert SSO.scim_delete_user(provider, Ecto.UUID.generate()) == {:error, :not_found}
-    assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(token)
+    assert {:ok, _token} = Auth.fetch_session_by_token(token)
   end
 
   describe "externalId-less group authorization" do

@@ -83,7 +83,7 @@ defmodule EmisarWeb.ProfileLiveTest do
           ip_address: "203.0.113.12"
         })
 
-      {:ok, _, personal_session} = Auth.fetch_user_and_token_by_session_token(personal_raw)
+      {:ok, personal_session} = Auth.fetch_session_by_token(personal_raw)
       conn = conn |> init_test_session(%{}) |> put_session(:user_token, sso_raw)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile?cursor=invalid")
@@ -136,8 +136,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute has_element?(lv, "#email_form")
       assert Emisar.Repo.reload!(user).full_name == user.full_name
       assert Emisar.Repo.reload!(user).email == user.email
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(personal_raw)
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(sso_raw)
+      assert {:ok, _} = Auth.fetch_session_by_token(personal_raw)
+      assert {:ok, _} = Auth.fetch_session_by_token(sso_raw)
       refute_received {:email, _}
     end
   end
@@ -1586,8 +1586,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "recovery codes"
       assert Emisar.Repo.reload!(user).mfa_enabled_at
 
-      {:ok, _enrolled, persisted} =
-        Auth.fetch_user_and_token_by_session_token(session_token(conn))
+      {:ok, persisted} =
+        Auth.fetch_session_by_token(session_token(conn))
 
       assigns = :sys.get_state(lv.pid).socket.assigns
 
@@ -2173,7 +2173,7 @@ defmodule EmisarWeb.ProfileLiveTest do
   defp session_token(conn), do: Plug.Conn.get_session(conn, :user_token)
 
   defp browser_subject(conn, user, account) do
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(session_token(conn))
+    {:ok, session} = Auth.fetch_session_by_token(session_token(conn))
     Fixtures.Subjects.subject_for(user, account, session: session)
   end
 

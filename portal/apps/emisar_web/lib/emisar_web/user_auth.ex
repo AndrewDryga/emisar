@@ -3,6 +3,10 @@ defmodule EmisarWeb.UserAuth do
   Authentication plug + LiveView hooks. Sessions are signed cookies
   carrying a session-token; the token is looked up in `user_tokens` on
   each request. Stale session tokens are rejected by the Auth token expiry check.
+
+  `current_auth` is the live session and `current_membership` the workspace
+  Member it acts as. `current_user` is that session's personal login, nil for a
+  member-only SSO session whose Member has none.
   """
 
   use EmisarWeb, :verified_routes
@@ -10,14 +14,14 @@ defmodule EmisarWeb.UserAuth do
   import Phoenix.Controller
   alias Emisar.{Accounts, ApiKeys, Approvals, Auth}
   alias Emisar.Auth.Subject
-  alias Emisar.{Billing, Catalog, Marketing, Runners, SSO, Throttle}
+  alias Emisar.{Billing, Catalog, Marketing, Runners, SSO, Throttle, Users}
   alias EmisarWeb.{Analytics, BillingIntent, MarketingAttribution, ShellChrome}
   alias EmisarWeb.RequestContext
 
   # Session provenance for an unauthenticated request — no method, no factor, no
-  # SSO identity. `fetch_user_and_token_by_session_token/1` returns the
-  # `%UserToken{}` on a hit; this is the miss/anonymous default the Subject build
-  # reads from; absent personal, local-factor and destination proof fails closed.
+  # SSO identity. `fetch_session_by_token/1` returns the `%UserToken{}` on a
+  # hit; this is the miss/anonymous default the Subject build reads from;
+  # absent personal, local-factor and destination proof fails closed.
   @no_auth %{
     auth_method: nil,
     mfa_verified_at: nil,
@@ -70,19 +74,20 @@ defmodule EmisarWeb.UserAuth do
     do: finish_log_in(conn, user, token, :magic_link, true, registered?)
 
   @doc """
-  Completes an SSO sign-in under the account and current-provider locks. `opts`
-  carry the callback's required `:user_identity_id` and exact
-  `:provider_identifier`, plus the JIT-provisioning
-  `:registered?` flag. The domain returns the committed MFA outcome used for
-  analytics; no web caller chooses it.
+  Completes an SSO sign-in under the account and current-provider locks.
+  `actor` is the callback's person: a linked Member's `%Users.User{}`, or a
+  `%Accounts.Membership{}` without a personal login. `opts` carry the callback's
+  required `:user_identity_id` and exact `:provider_identifier`, plus the
+  JIT-provisioning `:registered?` flag. The domain returns the committed MFA
+  outcome used for analytics; no web caller chooses it.
   """
-  def log_in_sso_user_for_account(conn, user, account_id, opts \\ []) do
+  def log_in_sso_user_for_account(conn, actor, account_id, opts \\ []) do
     {registered?, opts} = Keyword.pop(opts, :registered?, false)
     context = RequestContext.from_conn(conn)
 
-    case Auth.complete_sso_account_sign_in(user, account_id, context, opts) do
+    case Auth.complete_sso_account_sign_in(actor, account_id, context, opts) do
       {:ok, token, mfa} ->
-        {:ok, finish_log_in(conn, user, token, :sso, mfa, registered?)}
+        {:ok, finish_log_in(conn, personal_login(actor), token, :sso, mfa, registered?)}
 
       {:error, :account_disabled} = error ->
         error
@@ -102,16 +107,33 @@ defmodule EmisarWeb.UserAuth do
     user_return_to = get_session(conn, :user_return_to)
     billing_intent = verified_billing_intent(get_session(conn, :billing_intent))
     attribution = MarketingAttribution.current(conn)
-    if registered?, do: Marketing.account_signed_up(user, attribution)
+    :ok = record_sign_up(user, registered?, attribution)
 
     conn
     |> renew_session()
     |> put_token_in_session(token)
     |> maybe_restore_billing_intent(user_return_to, billing_intent)
     |> maybe_flash_just_registered(user, registered?)
-    |> Analytics.track_authentication(user, auth_method, mfa, registered?, attribution)
+    |> track_authentication(user, auth_method, mfa, registered?, attribution)
     |> redirect(to: user_return_to || billing_intent_path(billing_intent) || signed_in_path(conn))
   end
+
+  defp personal_login(%Users.User{} = user), do: user
+  defp personal_login(%Accounts.Membership{}), do: nil
+
+  # A Member without a personal login gets no analytics people profile and no
+  # signup conversion.
+  defp record_sign_up(%Users.User{} = user, true, attribution) do
+    _result = Marketing.account_signed_up(user, attribution)
+    :ok
+  end
+
+  defp record_sign_up(_user, _registered?, _attribution), do: :ok
+
+  defp track_authentication(conn, nil, _auth_method, _mfa, _registered?, _attribution), do: conn
+
+  defp track_authentication(conn, user, auth_method, mfa, registered?, attribution),
+    do: Analytics.track_authentication(conn, user, auth_method, mfa, registered?, attribution)
 
   # A branded account return is the operator's explicit authentication target
   # and wins over a stale pricing choice. Otherwise renew_session/1 would clear
@@ -194,12 +216,12 @@ defmodule EmisarWeb.UserAuth do
 
   # -- Plugs ----------------------------------------------------------
 
-  @doc "Fetch the current user from the session token."
+  @doc "Fetch the current session, and its personal login when it has one, from the session token."
   def fetch_current_user(conn, _opts) do
     {user, auth} =
       with token when is_binary(token) <- get_session(conn, :user_token),
-           {:ok, user, auth} <- Auth.fetch_user_and_token_by_session_token(token) do
-        {user, auth}
+           {:ok, session} <- Auth.fetch_session_by_token(token) do
+        {session.user, session}
       else
         _ -> {nil, @no_auth}
       end
@@ -209,9 +231,13 @@ defmodule EmisarWeb.UserAuth do
     |> assign(:current_auth, auth)
   end
 
+  # A live session is signed in, including a member-only SSO session.
+  defp authenticated?(%{current_auth: %Auth.UserToken{}}), do: true
+  defp authenticated?(_assigns), do: false
+
   @doc "Used in router/pipeline: redirects unauthenticated requests to login."
   def require_authenticated_user(conn, _opts) do
-    if conn.assigns[:current_user] do
+    if authenticated?(conn.assigns) do
       assign_current_account(conn)
     else
       conn
@@ -296,7 +322,7 @@ defmodule EmisarWeb.UserAuth do
 
   @doc "Used in router: prevents already-logged-in users from hitting auth pages."
   def redirect_if_user_is_authenticated(conn, _opts) do
-    if conn.assigns[:current_user] do
+    if authenticated?(conn.assigns) do
       conn
       |> redirect(to: signed_in_path(conn))
       |> halt()
@@ -306,7 +332,6 @@ defmodule EmisarWeb.UserAuth do
   end
 
   defp assign_current_account(conn) do
-    user = conn.assigns.current_user
     account_ref = conn.path_params["account_id_or_slug"]
     session_account_id = get_session(conn, :current_account_id)
 
@@ -318,20 +343,7 @@ defmodule EmisarWeb.UserAuth do
         raise EmisarWeb.NotFoundError
 
       {:error, :not_found} ->
-        if Accounts.has_membership_history?(user) do
-          conn
-          |> redirect(to: ~p"/session/recover")
-          |> halt()
-        else
-          message =
-            Phoenix.Flash.get(conn.assigns.flash, :error) ||
-              "You don't belong to any workspace. Create one to continue."
-
-          conn
-          |> put_flash(:error, message)
-          |> redirect(to: ~p"/onboarding")
-          |> halt()
-        end
+        no_workspace(conn, conn.assigns.current_user)
 
       {:ok, membership} ->
         context = RequestContext.from_conn(conn)
@@ -349,6 +361,30 @@ defmodule EmisarWeb.UserAuth do
             auth_opts(conn.assigns, membership)
           )
         )
+    end
+  end
+
+  # A member-only session's single grant is gone, and it can never gain another.
+  defp no_workspace(conn, nil) do
+    conn
+    |> log_out_user_with_flash("Your workspace access ended. Sign in again to continue.")
+    |> halt()
+  end
+
+  defp no_workspace(conn, %Users.User{} = user) do
+    if Accounts.has_membership_history?(user) do
+      conn
+      |> redirect(to: ~p"/session/recover")
+      |> halt()
+    else
+      message =
+        Phoenix.Flash.get(conn.assigns.flash, :error) ||
+          "You don't belong to any workspace. Create one to continue."
+
+      conn
+      |> put_flash(:error, message)
+      |> redirect(to: ~p"/onboarding")
+      |> halt()
     end
   end
 
@@ -511,11 +547,15 @@ defmodule EmisarWeb.UserAuth do
     context = RequestContext.from_socket(socket)
 
     hook = fn _params, uri, socket ->
-      user = socket.assigns[:current_user]
-
-      if user && Phoenix.LiveView.connected?(socket) do
+      if Phoenix.LiveView.connected?(socket) do
         touch_console_activity(socket.assigns[:current_subject])
-        Analytics.track_console_pageview(user, socket.assigns[:current_account], uri, context)
+
+        track_console_pageview(
+          socket.assigns[:current_user],
+          socket.assigns[:current_account],
+          uri,
+          context
+        )
       end
 
       {:cont, socket}
@@ -531,7 +571,7 @@ defmodule EmisarWeb.UserAuth do
   def on_mount(:ensure_authenticated, params, session, socket) do
     socket = mount_current_user(session, socket)
 
-    if socket.assigns.current_user do
+    if authenticated?(socket.assigns) do
       mount_authenticated_account(socket, session, params)
     else
       socket =
@@ -756,6 +796,12 @@ defmodule EmisarWeb.UserAuth do
 
   defp touch_console_activity(_subject), do: :ok
 
+  # A Member without a personal login gets no analytics people profile.
+  defp track_console_pageview(nil, _account, _uri, _context), do: :ok
+
+  defp track_console_pageview(%Users.User{} = user, account, uri, context),
+    do: Analytics.track_console_pageview(user, account, uri, context)
+
   defp enforce_mfa_requirement(socket),
     do: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}
 
@@ -796,7 +842,7 @@ defmodule EmisarWeb.UserAuth do
          true <- Subject.effective_membership_role(membership) == subject.role do
       # Retain the original permission attenuation and session provenance. This
       # hook refreshes scope only; role/pending changes require a fresh mount.
-      subject = %{subject | actor: membership.user, account: membership.account}
+      subject = Subject.rebuild(subject, membership, membership.account)
 
       {:cont,
        socket
@@ -1065,16 +1111,16 @@ defmodule EmisarWeb.UserAuth do
   defp mount_current_user(session, socket) do
     # When a parent LiveView already mounted the user, inherit both assigns
     # rather than re-hitting the DB (the assign_new contract). Otherwise
-    # resolve the user AND its session provenance in ONE token lookup — the
-    # auth map rides onto the Subject so every audit row records how the
+    # resolve the session AND its optional personal login in ONE token lookup —
+    # the auth map rides onto the Subject so every audit row records how the
     # operator signed in.
     if Map.has_key?(socket.assigns, :current_user) do
       Phoenix.Component.assign_new(socket, :current_auth, fn -> @no_auth end)
     else
       {user, auth} =
         with token when is_binary(token) <- session["user_token"],
-             {:ok, user, auth} <- Auth.fetch_user_and_token_by_session_token(token) do
-          {user, auth}
+             {:ok, current_session} <- Auth.fetch_session_by_token(token) do
+          {current_session.user, current_session}
         else
           _ -> {nil, @no_auth}
         end
@@ -1095,15 +1141,9 @@ defmodule EmisarWeb.UserAuth do
     requested_id = session["current_account_id"]
 
     {account, membership, subject, switchable} =
-      case socket.assigns[:current_user] do
-        nil ->
-          {nil, nil, nil, []}
-
-        _user ->
-          case Accounts.fetch_membership_for_session(
-                 requested_id,
-                 socket.assigns[:current_auth]
-               ) do
+      case socket.assigns[:current_auth] do
+        %Auth.UserToken{} = current_auth ->
+          case Accounts.fetch_membership_for_session(requested_id, current_auth) do
             {:error, :not_found} ->
               {nil, nil, nil, []}
 
@@ -1118,6 +1158,9 @@ defmodule EmisarWeb.UserAuth do
 
               {membership.account, membership, subject, load_switchable_accounts(subject)}
           end
+
+        _anonymous ->
+          {nil, nil, nil, []}
       end
 
     socket

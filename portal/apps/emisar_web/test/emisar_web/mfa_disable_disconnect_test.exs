@@ -30,6 +30,6 @@ defmodule EmisarWeb.MfaDisableDisconnectTest do
     refute disabled.mfa_enabled_at
 
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(token)
+    assert {:ok, _session} = Auth.fetch_session_by_token(token)
   end
 end

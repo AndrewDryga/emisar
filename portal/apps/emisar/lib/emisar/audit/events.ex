@@ -2415,6 +2415,9 @@ defmodule Emisar.Audit.Events do
   defp audit_actor_id(%Subject{actor: %Users.User{}} = subject),
     do: Subject.human_membership_id(subject)
 
+  defp audit_actor_id(%Subject{actor: %Accounts.Membership{}} = subject),
+    do: Subject.human_membership_id(subject)
+
   defp audit_actor_id(%Subject{} = subject), do: Subject.actor_id(subject)
 
   defp format_auth_method(nil), do: nil

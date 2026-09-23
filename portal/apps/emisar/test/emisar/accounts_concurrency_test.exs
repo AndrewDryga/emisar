@@ -134,8 +134,8 @@ defmodule Emisar.AccountsConcurrencyTest do
           assert Task.await(resetter, 30_000) == {:error, :mfa_reset_proof_stale}
           refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
 
-          assert {:ok, _target, _session} =
-                   Auth.fetch_user_and_token_by_session_token(reset.target_session_token)
+          assert {:ok, _session} =
+                   Auth.fetch_session_by_token(reset.target_session_token)
 
           assert mfa_reset_audit_count(reset.account.id) == 0
           refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
@@ -181,10 +181,10 @@ defmodule Emisar.AccountsConcurrencyTest do
             assert_receive {:mfa_reset_disconnect, [^expected_topic], false}, 5_000
             refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
 
-            assert Auth.fetch_user_and_token_by_session_token(reset.target_session_token) ==
+            assert Auth.fetch_session_by_token(reset.target_session_token) ==
                      {:error, :not_found}
 
-            assert Auth.fetch_user_and_token_by_session_token(reset.actor_session_token) ==
+            assert Auth.fetch_session_by_token(reset.actor_session_token) ==
                      {:error, :not_found}
 
             assert mfa_reset_audit_count(reset.account.id) == 1
@@ -235,11 +235,11 @@ defmodule Emisar.AccountsConcurrencyTest do
             refute is_nil(Repo.reload!(higher_reset.actor).mfa_enabled_at)
             refute is_nil(Repo.reload!(lower_reset.actor).mfa_enabled_at)
 
-            assert {:ok, _actor, _session} =
-                     Auth.fetch_user_and_token_by_session_token(higher_reset.actor_session_token)
+            assert {:ok, _session} =
+                     Auth.fetch_session_by_token(higher_reset.actor_session_token)
 
-            assert {:ok, _actor, _session} =
-                     Auth.fetch_user_and_token_by_session_token(lower_reset.actor_session_token)
+            assert {:ok, _session} =
+                     Auth.fetch_session_by_token(lower_reset.actor_session_token)
 
             assert Enum.map(accounts, &mfa_reset_audit_count(&1.id)) |> Enum.sum() == 0
           after

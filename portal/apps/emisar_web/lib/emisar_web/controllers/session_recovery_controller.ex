@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SessionRecoveryController do
   @moduledoc "Recovery outside both the signed-out guard and workspace authorization gate."
   use EmisarWeb, :controller
-  alias Emisar.{Accounts, Users}
+  alias Emisar.{Accounts, Auth}
   alias Emisar.Auth.Subject
   alias EmisarWeb.UserAuth
 
@@ -12,7 +12,7 @@ defmodule EmisarWeb.SessionRecoveryController do
     |> put_resp_header("cache-control", "no-store")
     |> render(:show,
       accounts: accounts,
-      signed_in?: not is_nil(conn.assigns[:current_user]),
+      signed_in?: match?(%Auth.UserToken{}, conn.assigns[:current_auth]),
       sso_incomplete?: params["reason"] == "sso_incomplete",
       personal_required?: params["reason"] == "personal_required"
     )
@@ -26,10 +26,11 @@ defmodule EmisarWeb.SessionRecoveryController do
     UserAuth.log_out_user(conn, to)
   end
 
-  defp continuing_accounts(%{assigns: %{current_user: %Users.User{} = user}} = conn) do
+  defp continuing_accounts(%{assigns: %{current_auth: %Auth.UserToken{} = session}} = conn) do
     # Recovery has no current workspace Subject. This deliberate cross-account
-    # read still resolves only this exact browser's live, frozen Member grants.
-    subject = %Subject{actor: user, session_token_id: conn.assigns.current_auth.id}
+    # read still resolves only this exact browser's live, frozen Member grants,
+    # including a member-only session's one workspace.
+    subject = %Subject{actor: conn.assigns.current_user, session_token_id: session.id}
 
     {:ok, accounts, _metadata} =
       Accounts.list_accounts_for_user(subject, page: [limit: 100], count: false)
@@ -40,7 +41,7 @@ defmodule EmisarWeb.SessionRecoveryController do
 
   defp continuing_accounts(_conn), do: []
 
-  defp restart_path(%{assigns: %{current_user: %Users.User{}}} = conn, account_ref)
+  defp restart_path(%{assigns: %{current_auth: %Auth.UserToken{}}} = conn, account_ref)
        when is_binary(account_ref) do
     case UserAuth.subject_for_account(conn, account_ref) do
       {:ok, subject} -> ~p"/app/#{subject.account}/sign_in"

@@ -126,6 +126,18 @@ defmodule Emisar.Auth.SubjectTest do
       assert direct.role == :admin
       assert direct.permissions == Emisar.Auth.Permissions.for_role(:admin)
     end
+
+    test "a Member without a personal login is its own actor", %{account: account} do
+      membership = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      subject = Subject.for_member(membership, account)
+
+      assert subject.actor == membership
+      assert Subject.actor_kind(subject) == "membership"
+      assert Subject.human_membership_id(subject) == membership.id
+      assert Subject.user_id(subject) == nil
+      assert Subject.personal_denial(subject) == {:error, :personal_login_required}
+    end
   end
 
   describe "Authorizer.permissions_for/1" do
@@ -223,7 +235,7 @@ defmodule Emisar.Auth.SubjectTest do
       user: user
     } do
       owner = Fixtures.Subjects.subject_for(user, account, role: :owner)
-      unknown = %{owner | actor: %Membership{id: owner.membership_id}}
+      unknown = %{owner | actor: account}
 
       assert Emisar.Auth.Authorizer.ensure_has_permissions(
                unknown,
@@ -231,6 +243,38 @@ defmodule Emisar.Auth.SubjectTest do
              ) == {:error, :unauthorized}
 
       assert Emisar.Runners.list_runners_for_account(unknown) == {:error, :unauthorized}
+    end
+
+    test "a Member actor is re-read through its own grant and cannot borrow a linked one", %{
+      account: account,
+      user: user
+    } do
+      permission = Emisar.Runners.Authorizer.view_runners_permission()
+      owner = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      team = Fixtures.Accounts.create_account(plan: "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: team.id)
+      membership = Fixtures.Memberships.create_unlinked_membership(account_id: team.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: team.id,
+          provider_id: provider.id,
+          membership: membership
+        )
+
+      raw = Fixtures.Auth.create_member_session_token!(membership, identity)
+      member = Fixtures.Subjects.unlinked_member_subject(membership, raw)
+      borrowed = %{owner | actor: %Membership{id: owner.membership_id}}
+
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(member, permission) == :ok
+
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(borrowed, permission) ==
+               {:error, :unauthorized}
+
+      Fixtures.Memberships.suspend_membership(membership)
+
+      assert Emisar.Auth.Authorizer.ensure_has_permissions(member, permission) ==
+               {:error, :unauthorized}
     end
 
     test "API key and actorless support subjects keep their own authority", %{

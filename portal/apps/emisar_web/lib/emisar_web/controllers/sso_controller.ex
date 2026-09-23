@@ -429,10 +429,10 @@ defmodule EmisarWeb.SSOController do
   end
 
   defp complete_non_link_callback(conn, params) do
-    case {get_session(conn, @member_mfa_reset_stash_key), conn.assigns[:current_user]} do
-      {%{} = stash, _current_user} -> complete_member_mfa_reset(conn, params, stash)
-      {nil, %Users.User{}} -> conn |> delete_session(@stash_key) |> redirect(to: ~p"/app")
-      {nil, nil} -> complete_sign_in(conn, params)
+    case {get_session(conn, @member_mfa_reset_stash_key), conn.assigns[:current_auth]} do
+      {%{} = stash, _current_auth} -> complete_member_mfa_reset(conn, params, stash)
+      {nil, %Auth.UserToken{}} -> conn |> delete_session(@stash_key) |> redirect(to: ~p"/app")
+      {nil, _anonymous} -> complete_sign_in(conn, params)
     end
   end
 
@@ -470,7 +470,7 @@ defmodule EmisarWeb.SSOController do
   defp complete_sign_in(conn, params) do
     with %{provider_id: provider_id} = stash <- get_session(conn, @stash_key),
          {:ok, started_provider} <- SSO.fetch_provider_for_sign_in(provider_id),
-         {:ok, %{user: user, identity: identity, provider: provider, created?: created?}} <-
+         {:ok, %{identity: identity, provider: provider, created?: created?} = auth} <-
            SSO.complete_auth(started_provider, params, stash),
          {:ok, account} <-
            Accounts.fetch_account_by_id_or_slug_including_disabled(provider.account_id) do
@@ -486,7 +486,7 @@ defmodule EmisarWeb.SSOController do
 
       case UserAuth.log_in_sso_user_for_account(
              conn,
-             user,
+             sso_sign_in_actor(auth),
              account.id,
              user_identity_id: identity.id,
              provider_identifier: identity.provider_identifier,
@@ -524,6 +524,11 @@ defmodule EmisarWeb.SSOController do
         sso_error(conn, callback_error_message(reason))
     end
   end
+
+  # A linked Member signs in as its person; a Member without a personal login
+  # signs in as itself, to this one workspace.
+  defp sso_sign_in_actor(%{user: %Users.User{} = user}), do: user
+  defp sso_sign_in_actor(%{user: nil, membership: %Accounts.Membership{} = member}), do: member
 
   defp complete_member_mfa_reset(conn, params, stash) do
     account_ref = Map.get(stash, :account_id)

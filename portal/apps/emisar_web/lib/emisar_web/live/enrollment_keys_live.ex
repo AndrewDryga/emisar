@@ -1,6 +1,6 @@
 defmodule EmisarWeb.EnrollmentKeysLive do
   use EmisarWeb, :live_view
-  alias Emisar.Runners
+  alias Emisar.{Runners, Users}
   alias EmisarWeb.{LiveForm, LiveTable, Permissions, URLHelpers}
   alias Phoenix.LiveView.JS
 
@@ -255,6 +255,11 @@ defmodule EmisarWeb.EnrollmentKeysLive do
     assign(socket, :form, to_form(changeset, as: "enrollment_key"))
   end
 
+  # The browser preference follows the person: the personal login when there is
+  # one, otherwise the Member of a member-only session.
+  defp preference_owner_id(%Users.User{id: id}, _subject), do: id
+  defp preference_owner_id(nil, subject), do: subject.membership_id
+
   defp truthy?("true"), do: true
   defp truthy?(true), do: true
   defp truthy?("on"), do: true
@@ -472,7 +477,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
         :if={@live_action == :index}
         id="enrollment-key-filters"
         phx-hook="EnrollmentKeyFilters"
-        data-preference-key={"enrollment-key-source:#{@current_user.id}:#{@current_account.id}"}
+        data-preference-key={"enrollment-key-source:#{preference_owner_id(@current_user, @current_subject)}:#{@current_account.id}"}
         data-source={@filter_params["source"] || ""}
         data-source-explicit={to_string(Map.has_key?(@filter_params, "source"))}
         class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start"

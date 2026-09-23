@@ -56,7 +56,7 @@ defmodule Emisar.AccountsOwnerAccessTest do
     assert Emisar.ApiKeys.peek_api_key_by_secret(raw).id == key.id
     assert Accounts.runner_access_for_subject(old_subject) == RunnerAccess.all()
     assert old_subject.role == :api_client
-    assert {:ok, _user, _token} = Auth.fetch_user_and_token_by_session_token(session)
+    assert {:ok, _token} = Auth.fetch_session_by_token(session)
     membership_id = target.id
     assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
   end

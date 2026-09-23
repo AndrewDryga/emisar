@@ -85,8 +85,8 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                   :origin ->
                     assert Task.await(callback, 30_000) == {:error, :unauthorized}
 
-                    assert {:ok, _, donor} =
-                             Auth.fetch_user_and_token_by_session_token(context.raw)
+                    assert {:ok, donor} =
+                             Auth.fetch_session_by_token(context.raw)
 
                     assert Auth.session_membership_ids(donor) == [
                              context.sibling_member.id
@@ -98,8 +98,8 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                   :sibling ->
                     assert {:ok, result} = Task.await(callback, 30_000)
 
-                    assert {:ok, _, replacement} =
-                             Auth.fetch_user_and_token_by_session_token(result.token)
+                    assert {:ok, replacement} =
+                             Auth.fetch_session_by_token(result.token)
 
                     assert Auth.session_membership_ids(replacement) == [
                              context.origin_member.id
@@ -156,10 +156,10 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               assert {:ok, result} = Task.await(callback, 30_000)
               assert Task.await(revoker, 30_000) == :ok
 
-              assert {:ok, _, replacement} =
-                       Auth.fetch_user_and_token_by_session_token(result.token)
+              assert {:ok, replacement} =
+                       Auth.fetch_session_by_token(result.token)
 
-              assert Auth.fetch_user_and_token_by_session_token(context.raw) ==
+              assert Auth.fetch_session_by_token(context.raw) ==
                        {:error, :not_found}
 
               assert Auth.session_membership_ids(replacement) == [
@@ -229,10 +229,10 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
             assert {:ok, %Auth.UserToken{id: ^keeper_id}} =
                      Auth.fetch_current_session(context.subject)
 
-            assert Auth.fetch_user_and_token_by_session_token(result.token) ==
+            assert Auth.fetch_session_by_token(result.token) ==
                      {:error, :not_found}
 
-            assert Auth.fetch_user_and_token_by_session_token(context.raw) == {:error, :not_found}
+            assert Auth.fetch_session_by_token(context.raw) == {:error, :not_found}
             old_topic = Auth.live_socket_topic_for_session(context.raw)
             new_topic = Auth.live_socket_topic_for_session(result.token)
             assert_received {:retirement_disconnect, [^old_topic], false}
@@ -302,7 +302,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
         origin_owner = Fixtures.Subjects.subject_for(owner, context.account)
         sibling_owner = Fixtures.Subjects.subject_for(owner, sibling)
         raw = Fixtures.Auth.create_session_token!(context.user, :magic_link, nil)
-        {:ok, _, donor} = Auth.fetch_user_and_token_by_session_token(raw)
+        {:ok, donor} = Auth.fetch_session_by_token(raw)
 
         donor_subject =
           Fixtures.Subjects.subject_for(context.user, context.account, session: donor)
@@ -478,9 +478,9 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
             assert {:ok, %IdentityProvider{satisfies_mfa: false}} = Task.await(updater, 30_000)
             assert {:ok, token, false} = Task.await(minter, 30_000)
 
-            case Auth.fetch_user_and_token_by_session_token(token) do
-              {:ok, fetched_user, session} ->
-                assert fetched_user.id == context.user.id
+            case Auth.fetch_session_by_token(token) do
+              {:ok, session} ->
+                assert session.user.id == context.user.id
                 refute session.mfa_verified_at
 
               {:error, :not_found} ->
@@ -538,7 +538,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
             assert {:ok, :ok} = Task.await(blocker, 30_000)
             assert {:ok, token, true} = Task.await(minter, 30_000)
             assert {:ok, %IdentityProvider{satisfies_mfa: false}} = Task.await(updater, 30_000)
-            assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(token)
+            assert {:ok, session} = Auth.fetch_session_by_token(token)
 
             assert Accounts.fetch_membership_by_account_id_or_slug(
                      context.account.id,
@@ -635,8 +635,8 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               assert_receive {:retirement_disconnect, [^expected_topic], false}, 5_000
               assert Repo.reload!(identity).deleted_at
 
-              assert {:ok, _user, session} =
-                       Auth.fetch_user_and_token_by_session_token(old_session)
+              assert {:ok, session} =
+                       Auth.fetch_session_by_token(old_session)
 
               assert Accounts.fetch_membership_by_account_id_or_slug(
                        context.account.id,
@@ -914,8 +914,8 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               assert_receive {:retirement_disconnect, [^expected_topic], false}, 5_000
               assert Repo.reload!(identity).deleted_at
 
-              assert {:ok, _user, session} =
-                       Auth.fetch_user_and_token_by_session_token(minted_session)
+              assert {:ok, session} =
+                       Auth.fetch_session_by_token(minted_session)
 
               assert Accounts.fetch_membership_by_account_id_or_slug(
                        context.account.id,
@@ -1073,8 +1073,8 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               assert Repo.reload!(identity).deleted_at
               assert Repo.reload!(request)
 
-              assert {:ok, _user, session} =
-                       Auth.fetch_user_and_token_by_session_token(old_session)
+              assert {:ok, session} =
+                       Auth.fetch_session_by_token(old_session)
 
               assert Accounts.fetch_membership_by_account_id_or_slug(
                        context.account.id,
@@ -1359,7 +1359,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
                       {first_raw, first_identity.account_id},
                       {second_raw, sibling.id}
                     ] do
-                  assert {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+                  assert {:ok, session} = Auth.fetch_session_by_token(raw)
                   routes = Auth.MemberGrantRoute.Query.by_token_id(session.id) |> Repo.all()
 
                   expected =
@@ -1442,7 +1442,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
   end
 
   defp session_grant_blocker(raw_token, parent) do
-    {:ok, _user, token} = Auth.fetch_user_and_token_by_session_token(raw_token)
+    {:ok, token} = Auth.fetch_session_by_token(raw_token)
 
     unboxed_task(fn ->
       Repo.transaction(fn ->
@@ -1460,7 +1460,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
   end
 
   defp session_route_blocker(raw_token, parent) do
-    {:ok, _user, token} = Auth.fetch_user_and_token_by_session_token(raw_token)
+    {:ok, token} = Auth.fetch_session_by_token(raw_token)
 
     unboxed_task(fn ->
       Repo.transaction(fn ->

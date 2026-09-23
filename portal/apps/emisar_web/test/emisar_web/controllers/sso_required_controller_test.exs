@@ -43,7 +43,7 @@ defmodule EmisarWeb.SSORequiredControllerTest do
     raw = get_session(conn, :user_token)
     conn = post(conn, ~p"/app/#{account}/sso_required", %{"provider_id" => provider.id})
 
-    assert {:ok, _user, _session} = Auth.fetch_user_and_token_by_session_token(raw)
+    assert {:ok, _session} = Auth.fetch_session_by_token(raw)
     assert get_session(conn, :user_token) == raw
     assert redirected_to(conn) == "https://idp.test/authorize"
   end

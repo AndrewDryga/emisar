@@ -22,7 +22,7 @@ defmodule Emisar.AuthSessionsTest do
       assert Auth.personal_session?(session)
 
       sso = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
-      assert {:ok, _, sso_session} = Auth.fetch_user_and_token_by_session_token(sso)
+      assert {:ok, sso_session} = Auth.fetch_session_by_token(sso)
       refute Auth.personal_session?(sso_session)
 
       Fixtures.Auth.expire_session_independent_proofs!(personal)
@@ -68,7 +68,7 @@ defmodule Emisar.AuthSessionsTest do
       assert session.current?
       assert metadata.count == 1
       assert metadata.next_page_cursor == nil
-      assert Auth.fetch_user_and_token_by_session_token(expired) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(expired) == {:error, :not_found}
     end
 
     test "only returns the subject's own tokens", %{subject: my_subject} do
@@ -251,7 +251,7 @@ defmodule Emisar.AuthSessionsTest do
       api_subject = Auth.Subject.for_api_key(api_key, account)
 
       assert Auth.revoke_session(session.id, api_subject) == {:error, :unauthorized}
-      assert {:ok, ^user, _session} = Auth.fetch_user_and_token_by_session_token(token)
+      assert {:ok, %{user: ^user}} = Auth.fetch_session_by_token(token)
     end
   end
 
@@ -263,7 +263,7 @@ defmodule Emisar.AuthSessionsTest do
 
     test "with only the current session, revokes nothing", %{subject: subject, token: keep} do
       assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) == {:ok, 0}
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(keep)
+      assert {:ok, _} = Auth.fetch_session_by_token(keep)
     end
 
     test "keeps the caller's current session", %{user: user, subject: subject, token: keep} do
@@ -286,7 +286,7 @@ defmodule Emisar.AuthSessionsTest do
       assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) ==
                {:error, :unauthorized}
 
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(other)
+      assert {:ok, _} = Auth.fetch_session_by_token(other)
     end
 
     test "expired personal proof cannot end another browser", %{
@@ -300,7 +300,7 @@ defmodule Emisar.AuthSessionsTest do
       assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) ==
                {:error, :unauthorized}
 
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(other)
+      assert {:ok, _} = Auth.fetch_session_by_token(other)
     end
 
     test "revokes owned SSO sessions too, leaves another user alone, and disconnects after commit",
@@ -323,8 +323,8 @@ defmodule Emisar.AuthSessionsTest do
       assert Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject) == {:ok, 1}
       topic = Auth.live_socket_topic_for_session(other)
       assert_receive {:session_disconnect, [^topic], false}
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(keep)
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(foreign)
+      assert {:ok, _} = Auth.fetch_session_by_token(keep)
+      assert {:ok, _} = Auth.fetch_session_by_token(foreign)
     end
 
     test "audit rejection preserves sessions and emits no disconnect", %{
@@ -346,8 +346,8 @@ defmodule Emisar.AuthSessionsTest do
                Auth.revoke_and_disconnect_other_sessions(Crypto.hash(keep), subject)
 
       refute_received {:session_disconnect, _, _}
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(keep)
-      assert {:ok, _, _} = Auth.fetch_user_and_token_by_session_token(other)
+      assert {:ok, _} = Auth.fetch_session_by_token(keep)
+      assert {:ok, _} = Auth.fetch_session_by_token(other)
     end
   end
 
@@ -355,7 +355,7 @@ defmodule Emisar.AuthSessionsTest do
     user = Fixtures.Users.create_user()
     {:ok, account} = Accounts.create_account_with_owner(Fixtures.Accounts.account_attrs(), user)
     raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil, metadata)
-    {:ok, _user, session} = Auth.fetch_user_and_token_by_session_token(raw)
+    {:ok, session} = Auth.fetch_session_by_token(raw)
     subject = Fixtures.Subjects.subject_for(user, account, session: session)
     {user, account, subject, raw}
   end
