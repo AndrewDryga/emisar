@@ -187,25 +187,6 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert Repo.reload!(identity).membership_id == member.id
   end
 
-  test "an identity written without a Member during a rolling deploy binds to the live seat", %{
-    member: member,
-    identity: identity,
-    user: user,
-    provider: provider
-  } do
-    identity |> Ecto.Changeset.change(membership_id: nil) |> Repo.update!()
-
-    claims = %{
-      "sub" => identity.provider_identifier,
-      "email" => user.email,
-      "email_verified" => true
-    }
-
-    assert {:ok, %{identity: signed_in}} = SSO.complete_auth(provider, %{"claims" => claims}, %{})
-    assert signed_in.membership_id == member.id
-    assert Repo.reload!(identity).membership_id == member.id
-  end
-
   test "session mint rechecks the exact membership after callback completion", %{
     member: member,
     subject: subject,

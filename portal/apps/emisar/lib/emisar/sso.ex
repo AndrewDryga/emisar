@@ -2515,16 +2515,15 @@ defmodule Emisar.SSO do
     end
   end
 
-  # During a rolling deploy the previous release still inserts identities with
-  # no Member. Bind such a row to the user's live seat, the backfill's rule; a
-  # bound identity never moves to another seat by itself.
+  # An identity signs in only to the seat it is bound to; it never moves to
+  # another seat by itself.
   defp returning_auth_writes(provider, identity, locked_user, claims) do
     Multi.new()
     |> Multi.run(:membership, fn repo, _changes ->
       case Accounts.fetch_and_lock_active_membership(
              repo,
              provider.account_id,
-             identity.membership_id || live_seat_id(provider, locked_user)
+             identity.membership_id
            ) do
         {:ok, member} when member.user_id == locked_user.id -> {:ok, member}
         _unavailable -> reinvited_or_unavailable(provider, identity, claims)
@@ -2534,14 +2533,9 @@ defmodule Emisar.SSO do
       %{membership: :reinvited} ->
         pending_auth_writes(provider, identity.provider_identifier, claims)
 
-      %{membership: member} ->
+      %{membership: _member} ->
         Multi.new()
-        |> Multi.update(
-          :identity,
-          identity
-          |> UserIdentity.Changeset.touch_last_seen()
-          |> UserIdentity.Changeset.bind_membership(member)
-        )
+        |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
         |> Multi.run(:user, fn _repo, _changes -> {:ok, locked_user} end)
         |> Multi.run(:auth_result, fn _repo, %{user: user, identity: identity} ->
           {:ok, {:ok, %{user: user, identity: identity, provider: provider, created?: false}}}
@@ -2572,13 +2566,6 @@ defmodule Emisar.SSO do
 
   defp reinvited_or_unavailable(_provider, _identity, _claims),
     do: {:error, :membership_unavailable}
-
-  defp live_seat_id(provider, user) do
-    case Accounts.peek_sync_membership(provider.account_id, user.id) do
-      %Accounts.Membership{id: id} -> id
-      nil -> nil
-    end
-  end
 
   defp synthesized_oidc_identifier?(%UserIdentity{provisioned_via: :scim} = identity),
     do: identity.provider_identifier == identity.scim_external_id
