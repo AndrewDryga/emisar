@@ -1345,6 +1345,39 @@ defmodule Emisar.AuthTest do
       {user, secret, recovery_code}
     end
 
+    test "the link email names the linking workspace, never the requester's branding" do
+      fixture = member_link_fixture()
+      branded = Fixtures.Accounts.create_account(name: "Branded Elsewhere")
+      user = Fixtures.Users.create_user()
+
+      assert {:ok, %{delivery: {:ok, :sent}}} =
+               Auth.request_magic_link(user, %RequestContext{},
+                 member_link: fixture.link,
+                 account_ref: branded.slug,
+                 return_to: "/app/#{branded.slug}"
+               )
+
+      assert_received {:email, sent}
+      assert sent.subject == "Link your emisar sign-in to a workspace"
+      assert sent.text_body =~ fixture.account.name
+      refute sent.text_body =~ branded.name
+      refute sent.text_body =~ "return_to"
+    end
+
+    test "a completed link tells the personal login which workspace it joined" do
+      fixture = member_link_fixture()
+      user = Fixtures.Users.create_user()
+      factor_id = verify_magic_link(user, member_link: fixture.link)
+
+      assert {:ok, _user, _raw, {:linked, _account}, false} =
+               complete_member_link(user, factor_id, fixture)
+
+      assert_received {:email, notice}
+      assert notice.to == [{"", user.email}]
+      assert notice.subject == "A workspace member was linked to your emisar sign-in"
+      assert notice.text_body =~ fixture.account.name
+    end
+
     test "a proved personal login links the Member and rotates only the asking browser" do
       fixture = member_link_fixture(satisfies_mfa: true)
       user = Fixtures.Users.create_user()
@@ -1413,6 +1446,8 @@ defmodule Emisar.AuthTest do
                    fixture.donor.token
                  )
 
+        assert_received {:email, notice}
+        assert notice.subject == "A workspace member was linked to your emisar sign-in"
         assert Repo.reload!(fixture.member).user_id == user.id
         assert {:ok, session} = Auth.fetch_session_by_token(raw)
         assert session.mfa_enrollment_verified_at == Repo.reload!(user).mfa_enabled_at

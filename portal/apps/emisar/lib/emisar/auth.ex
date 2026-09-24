@@ -772,12 +772,12 @@ defmodule Emisar.Auth do
          intent,
          prior_token_id
        ) do
-    with {:ok, locked_user, token_id, nonce, secret, registration} <-
+    with {:ok, locked_user, token, nonce, secret, registration} <-
            issue_magic_link(user.id, user.email, context, intent, prior_token_id) do
       delivery =
-        case Mailers.UserNotifier.deliver_magic_link(
+        case deliver_magic_link_email(
                locked_user,
-               token_id,
+               token,
                secret,
                context,
                return_to,
@@ -788,7 +788,34 @@ defmodule Emisar.Auth do
           {:error, reason} -> {:error, reason}
         end
 
-      {:ok, %{token_id: token_id, nonce: nonce, delivery: delivery}}
+      {:ok, %{token_id: token.id, nonce: nonce, delivery: delivery}}
+    end
+  end
+
+  # A link factor's email names the workspace whose Member it links, read from
+  # the factor itself; the requester's return path and branding never reach it.
+  defp deliver_magic_link_email(user, token, secret, context, return_to, account) do
+    case magic_member_link(token) do
+      %{account_id: account_id} ->
+        with {:ok, link_account} <- Accounts.fetch_account_by_id_or_slug(account_id) do
+          Mailers.UserNotifier.deliver_member_link_code(
+            user,
+            token.id,
+            secret,
+            link_account,
+            context
+          )
+        end
+
+      nil ->
+        Mailers.UserNotifier.deliver_magic_link(
+          user,
+          token.id,
+          secret,
+          context,
+          return_to,
+          account
+        )
     end
   end
 
@@ -841,7 +868,7 @@ defmodule Emisar.Auth do
 
     case result do
       {:ok, %{user: user, token: token, owner_registration: registration}} ->
-        {:ok, user, token.id, nonce, secret, registration}
+        {:ok, user, token, nonce, secret, registration}
 
       {:error, reason} ->
         {:error, reason}
@@ -1444,7 +1471,7 @@ defmodule Emisar.Auth do
       end)
       |> Multi.delete(:consumed_magic_factor, fn %{verified_factor: factor} -> factor end)
       |> Multi.delete(:consumed_donor, fn %{donor: donor} -> donor end)
-      |> Repo.commit_multi(after_commit: &after_member_link_committed/1)
+      |> Repo.commit_multi(after_commit: &after_member_link_committed(&1, account, context))
       |> case do
         {:ok, %{sign_in: signed_in_user}} ->
           {:ok, signed_in_user, token, {:linked, account}, false}
@@ -1499,9 +1526,22 @@ defmodule Emisar.Auth do
 
   defp member_link_error(reason), do: reason
 
-  defp after_member_link_committed(%{donor: donor, ended_grant_digests: ended_digests} = changes) do
+  defp after_member_link_committed(changes, account, context) do
+    %{donor: donor, ended_grant_digests: ended_digests, sign_in: user} = changes
     :ok = Accounts.after_membership_activation_committed(changes)
-    disconnect_live_socket_topics(Enum.map([donor.token | ended_digests], &live_socket_topic/1))
+
+    :ok =
+      disconnect_live_socket_topics(Enum.map([donor.token | ended_digests], &live_socket_topic/1))
+
+    # The link has committed; a mail outage must not report it failed.
+    case Mailers.UserNotifier.deliver_member_linked(user, account, context) do
+      {:ok, _sent} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("member_linked_notice_failed", user_id: user.id, error: inspect(reason))
+        :ok
+    end
   end
 
   defp lock_signing_in_user(user_id, proof, repo) do

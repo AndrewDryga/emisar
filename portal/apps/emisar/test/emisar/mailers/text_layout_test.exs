@@ -105,6 +105,12 @@ defmodule Emisar.Mailers.TextLayoutTest do
 
     oidc_identity_step_up = sent_text_body()
 
+    UserNotifier.deliver_member_link_code(user, "tok", "ABC234", account, request_context())
+    member_link_code = sent_text_body()
+
+    UserNotifier.deliver_member_linked(user, account, request_context())
+    member_linked = sent_text_body()
+
     invitation_membership =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -129,6 +135,8 @@ defmodule Emisar.Mailers.TextLayoutTest do
       {"email change code", email_change},
       {"authenticator code", mfa_enrollment},
       {"OIDC identity step-up", oidc_identity_step_up},
+      {"member link code", member_link_code},
+      {"member linked notice", member_linked},
       {"invitation", invitation},
       {"approval request", approval_request_body(user, account)},
       {"runbook approval request", runbook_approval_request_body(user, account)},

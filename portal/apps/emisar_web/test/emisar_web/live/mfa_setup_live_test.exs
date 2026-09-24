@@ -654,6 +654,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
       linked = started |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
       assert redirected_to(linked) == ~p"/app/#{account}"
+      assert_received {:email, %{subject: "A workspace member was linked to your emisar sign-in"}}
       conn = recycle(linked)
 
       # Linked, the Member meets the requirement with its personal login's own

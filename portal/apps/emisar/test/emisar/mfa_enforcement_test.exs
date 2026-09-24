@@ -111,6 +111,7 @@ defmodule Emisar.MfaEnforcementTest do
                  donor.token
                )
 
+      assert_received {:email, %{subject: "A workspace member was linked to your emisar sign-in"}}
       {:ok, session} = Auth.fetch_session_by_token(raw)
       linked = Fixtures.Subjects.subject_for(user, account, session: session)
       assert Accounts.ensure_account_compliant(account, linked) == {:error, :mfa_required}

@@ -125,6 +125,72 @@ defmodule Emisar.Mailers.UserNotifier do
     )
   end
 
+  @doc """
+  The code that links a workspace Member to this personal login. It names the
+  workspace from the factor, never from the requester's return path. That
+  workspace's owner typed its name, so the name stays out of the subject and
+  preview.
+  """
+  def deliver_member_link_code(
+        %Users.User{} = user,
+        token_id,
+        secret,
+        %Accounts.Account{} = account,
+        %RequestContext{} = context
+      ) do
+    url = PublicUrl.url("/sign_in/magic/#{token_id}/#{secret}")
+
+    deliver_transactional(
+      user,
+      "Link your emisar sign-in to a workspace",
+      "Your code to link your emisar sign-in to a workspace. It expires in 15 minutes.",
+      [
+        account_instruction(
+          "Someone who signed in to a workspace with its single sign-on asked to link that workspace member to your emisar sign-in.",
+          "Someone who signed in to ",
+          account,
+          " with its single sign-on asked to link that workspace member to your emisar sign-in."
+        ),
+        {:code, secret},
+        {:paragraph,
+         "The code signs that browser in as you. After the link, that workspace's single sign-on also signs you in to the workspace."},
+        {:paragraph,
+         "Enter the code only in your own browser, and only if you started this. If you didn't, ignore this email and do not share the code."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
+      ],
+      {"Link sign-in", url}
+    )
+  end
+
+  @doc """
+  Tells a personal login that a workspace Member was linked to it, so a link its
+  owner did not mean to make is visible. The workspace name stays out of the
+  subject and preview.
+  """
+  def deliver_member_linked(
+        %Users.User{} = user,
+        %Accounts.Account{} = account,
+        %RequestContext{} = context
+      ) do
+    deliver_transactional(
+      user,
+      "A workspace member was linked to your emisar sign-in",
+      "A workspace's single sign-on now signs you in to that workspace.",
+      [
+        account_instruction(
+          "A workspace member was linked to your emisar sign-in.",
+          "A member of ",
+          account,
+          " was linked to your emisar sign-in. That workspace's single sign-on now signs you in to it."
+        ),
+        {:paragraph, "If you didn't do this, reply to this email."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
+      ]
+    )
+  end
+
   # A small, human "who/when/where" block so the recipient can tell their own
   # sign-in from a stranger's. Time is always present; IP and a parsed
   # device summary are shown only when the request carried them. Two-space
