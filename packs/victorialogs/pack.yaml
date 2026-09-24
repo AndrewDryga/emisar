@@ -2,9 +2,10 @@ schema_version: 1
 
 id: victorialogs
 name: VictoriaLogs queries
-version: 0.1.14
-# Older versions allowed low-risk queries to scan unbounded log history.
-retired_below: 0.1.9
+version: 0.1.15
+# Older versions allowed low-risk queries to scan unbounded log history, and
+# below 0.1.12 field_values returned raw log messages at low risk.
+retired_below: 0.1.12
 description: >
   Read-only LogsQL access to VictoriaLogs over its HTTP API: search log
   entries, hit histograms over time, stats aggregations (instant + range),
