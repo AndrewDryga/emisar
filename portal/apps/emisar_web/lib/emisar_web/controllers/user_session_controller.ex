@@ -18,7 +18,7 @@ defmodule EmisarWeb.UserSessionController do
   alias Emisar.{Auth, Config, Throttle, Users}
   alias EmisarWeb.{Analytics, BillingIntent, MagicLinkHandoff, MemberLinkHandoff}
   alias EmisarWeb.{MfaChallengeHandoff, RecentAccounts, RegistrationHandoff}
-  alias EmisarWeb.{RequestContext, ReturnTo, UserAuth}
+  alias EmisarWeb.{RequestContext, ReturnTo, UserAuth, UserSignUpLive}
 
   # The split-code magic link keeps its browser-side nonce in this signed,
   # 15-minute, http-only cookie (`token_id:nonce`); the email carries the
@@ -64,9 +64,15 @@ defmodule EmisarWeb.UserSessionController do
         request_magic_link(conn, email, params, nil)
 
       member_link ->
-        conn
-        |> put_session(:member_link_handoff, handoff)
-        |> request_magic_link(email, params, member_link)
+        case UserSignUpLive.check_signup_throttle(RequestContext.client_ip(conn)) do
+          :ok ->
+            conn
+            |> put_session(:member_link_handoff, handoff)
+            |> request_magic_link(email, params, member_link)
+
+          {:error, :rate_limited} ->
+            member_link_failed(conn, :rate_limited)
+        end
     end
   end
 
@@ -547,6 +553,9 @@ defmodule EmisarWeb.UserSessionController do
 
   defp member_link_failure_message(:member_link_invalid),
     do: "Your personal login couldn't be linked. Start again from your profile."
+
+  defp member_link_failure_message(:rate_limited),
+    do: "Too many sign-in emails from here. Wait a while, then try again."
 
   defp clear_mfa_pending(conn) do
     conn

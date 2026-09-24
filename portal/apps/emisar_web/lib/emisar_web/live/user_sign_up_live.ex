@@ -6,6 +6,13 @@ defmodule EmisarWeb.UserSignUpLive do
   @signup_limit 20
   @signup_window_ms 60 * 60_000
 
+  @doc """
+  Signup's hourly cap per source address. The member-link form shares it: both
+  can create a personal login and email a new address.
+  """
+  def check_signup_throttle(ip_address),
+    do: Throttle.check("sign_up", ip_address, @signup_limit, @signup_window_ms)
+
   # The landing page's CTA collects a work email and GETs here with it; carry it
   # into the form so the operator doesn't retype what they just typed.
   def mount(params, _session, socket) do
@@ -133,12 +140,7 @@ defmodule EmisarWeb.UserSignUpLive do
   end
 
   def handle_event("save", %{"user" => user_params} = all, socket) do
-    case Throttle.check(
-           "sign_up",
-           socket.assigns.request_context.ip_address,
-           @signup_limit,
-           @signup_window_ms
-         ) do
+    case check_signup_throttle(socket.assigns.request_context.ip_address) do
       :ok -> handle_save(socket, user_params, all)
       {:error, :rate_limited} -> signup_rate_limited(socket)
     end

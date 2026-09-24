@@ -855,6 +855,30 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert is_nil(Repo.reload!(member).user_id)
     end
 
+    test "member-link requests share signup's hourly cap per source address", %{
+      conn: conn,
+      account: account,
+      handoff: handoff
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      conn = %{conn | remote_ip: {198, 51, 100, 21}}
+
+      for _ <- 1..20 do
+        email = "cap-#{System.unique_integer([:positive])}@example.test"
+        sent = post(conn, ~p"/sign_in/magic/start", member_link_params(email, handoff, account))
+        assert redirected_to(sent) == ~p"/sign_in/magic?sent=1"
+        assert_received {:email, _sent}
+      end
+
+      email = "cap-#{System.unique_integer([:positive])}@example.test"
+      refused = post(conn, ~p"/sign_in/magic/start", member_link_params(email, handoff, account))
+
+      assert redirected_to(refused) == ~p"/app"
+      assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "Too many sign-in emails"
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
+      refute_received {:email, _}
+    end
+
     test "a member-only browser's email requests always link, never sign in", %{
       conn: conn,
       account: account,
