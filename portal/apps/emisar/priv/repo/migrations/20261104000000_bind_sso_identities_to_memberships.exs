@@ -2,10 +2,18 @@ defmodule Emisar.Repo.Migrations.BindSSOIdentitiesToMemberships do
   use Ecto.Migration
 
   # Each user's live seat in the account, else their latest removed one. A
-  # removed seat keeps directory history and never authorizes a sign-in. A
-  # pending invitation is not a seat: 20261112 detaches it from this login, and
-  # whoever proves the invited address accepts it.
+  # removed seat keeps directory history and never authorizes a sign-in. A link
+  # request may match a pending invitation, as provisioning does, so its
+  # approval still waits for the invitee.
   @seat """
+  SELECT DISTINCT ON (account_id, user_id) account_id, user_id, id
+  FROM account_memberships
+  ORDER BY account_id, user_id, (deleted_at IS NULL) DESC, inserted_at DESC, id DESC
+  """
+
+  # An identity never binds to a pending invitation: 20261112 detaches it from
+  # this login, and whoever proves the invited address accepts it.
+  @identity_seat """
   SELECT DISTINCT ON (account_id, user_id) account_id, user_id, id
   FROM account_memberships
   WHERE NOT (invitation_accepted_at IS NULL AND invitation_token_digest IS NOT NULL)
@@ -26,7 +34,7 @@ defmodule Emisar.Repo.Migrations.BindSSOIdentitiesToMemberships do
 
     execute """
     UPDATE sso_user_identities i SET membership_id = seat.id
-    FROM (#{@seat}) seat
+    FROM (#{@identity_seat}) seat
     WHERE seat.account_id = i.account_id AND seat.user_id = i.user_id
     """
 
