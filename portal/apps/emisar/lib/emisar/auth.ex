@@ -273,6 +273,10 @@ defmodule Emisar.Auth do
   def session_subject_options(%Accounts.Membership{} = member, session),
     do: SessionGrants.subject_options(member, session)
 
+  @doc "Internal — what a switch into `member` records: that Member's own route on the switching bearer."
+  def switched_subject_options(%Accounts.Membership{} = member, %Subject{session_token_id: id}),
+    do: SessionGrants.subject_options(member, %UserToken{id: id})
+
   @doc "Internal — personal self-service requires an unexpired mailbox proof on this exact live bearer."
   def ensure_personal_session(%Subject{} = subject),
     do: SessionGrants.ensure_personal_session(subject)

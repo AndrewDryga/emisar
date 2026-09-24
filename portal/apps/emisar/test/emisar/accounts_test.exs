@@ -3971,6 +3971,38 @@ defmodule Emisar.AccountsTest do
       }
     end
 
+    test "the switch row records how the destination was reached, not the origin", %{
+      user: user,
+      identity: identity,
+      provider: provider,
+      provider_account: provider_account
+    } do
+      sibling_account = federated_sibling(user, provider.issuer, identity.provider_identifier)
+
+      sibling_identity =
+        Emisar.SSO.UserIdentity.Query.not_deleted()
+        |> Emisar.SSO.UserIdentity.Query.by_account_id(sibling_account.id)
+        |> Repo.one!()
+
+      sso_subject =
+        Fixtures.Subjects.subject_for(user, provider_account,
+          auth_method: :sso,
+          user_identity_id: identity.id
+        )
+
+      assert {:ok, %Membership{} = member} =
+               Accounts.switch_account(sibling_account.id, sso_subject)
+
+      assert [event] =
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_account_id(sibling_account.id)
+               |> Audit.Event.Query.by_event_type("session.account_switched")
+               |> Repo.all()
+
+      assert {event.actor_id, event.auth_method, event.user_identity_id} ==
+               {member.id, "sso", sibling_identity.id}
+    end
+
     test "the switcher lists, and the switch reaches, a sibling workspace on the same IdP", %{
       user: user,
       identity: identity,

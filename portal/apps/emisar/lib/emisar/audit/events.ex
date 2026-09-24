@@ -285,14 +285,23 @@ defmodule Emisar.Audit.Events do
   # and request context belong on the row like every other event. The row lives
   # in the account they switched INTO, so its Member there is both actor and
   # target — never the Member of the workspace they left.
+  # The row records how the destination was reached, its own route on this
+  # bearer, not how the workspace being left was.
   def session_account_switched(
         %Subject{} = subject,
-        %Accounts.Membership{} = membership
+        %Accounts.Membership{} = membership,
+        destination
       ) do
     Audit.changeset(
       membership.account_id,
       "session.account_switched",
-      Keyword.merge(actor(subject), actor_kind: "membership", actor_id: membership.id) ++
+      Keyword.merge(actor(subject),
+        actor_kind: "membership",
+        actor_id: membership.id,
+        auth_method: format_auth_method(destination[:auth_method]),
+        mfa: Keyword.get(destination, :mfa, false),
+        user_identity_id: destination[:user_identity_id]
+      ) ++
         [
           target_kind: "membership",
           target_id: membership.id,

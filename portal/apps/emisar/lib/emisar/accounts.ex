@@ -2543,7 +2543,8 @@ defmodule Emisar.Accounts do
       |> repo.fetch(Membership.Query, preload: [:user])
     end)
     |> Multi.insert(:audit, fn %{membership: membership} ->
-      Audit.Events.session_account_switched(subject, membership)
+      destination = Auth.switched_subject_options(membership, subject)
+      Audit.Events.session_account_switched(subject, membership, destination)
     end)
     |> Repo.commit_multi()
     |> case do
