@@ -60,6 +60,21 @@ defmodule Emisar.SSO.UserIdentity.Query do
     where(queryable, [identities: i], i.membership_id in subquery(seat_ids))
   end
 
+  @doc """
+  One identity, preferring the one on this seat. A person can hold two at one
+  provider: an older one left on a seat they were removed from, and one on
+  their current seat.
+  """
+  def seat_first(queryable, membership_id) do
+    queryable
+    |> order_by([identities: i],
+      desc: i.membership_id == ^membership_id,
+      desc: i.inserted_at,
+      desc: i.id
+    )
+    |> limit(1)
+  end
+
   def with_live_membership(queryable) do
     queryable
     |> with_joined_membership_profile()

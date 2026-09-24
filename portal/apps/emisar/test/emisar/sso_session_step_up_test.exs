@@ -115,6 +115,31 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert {:ok, _session} = Auth.fetch_session_by_token(browser.raw)
     end
 
+    test "prefers the current seat's identity over one left on a removed seat",
+         %{user: _, account: _, member: _, provider: _, identity: _} = context do
+      Fixtures.Memberships.mark_membership_as_deleted(context.member)
+
+      current =
+        Fixtures.Memberships.create_membership(
+          account_id: context.account.id,
+          user_id: context.user.id,
+          role: :viewer
+        )
+
+      current_identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: context.account.id,
+          provider_id: context.provider.id,
+          membership: current
+        )
+
+      browser = browser(context.user, context.account, nil, current)
+
+      assert {:ok, [listed]} = SSO.list_session_step_up_providers(browser.subject)
+      assert listed.id == context.provider.id
+      assert begin_step_up(context, browser).identity_id == current_identity.id
+    end
+
     test "denies missing permission and another workspace's provider before provider work",
          %{user: _, account: _, provider: _} = context do
       browser = browser(context.user, context.account)

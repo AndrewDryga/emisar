@@ -512,6 +512,7 @@ defmodule Emisar.SSO do
           identities
           |> Enum.map(& &1.provider)
           |> Enum.filter(&match?(%IdentityProvider{enabled: true, deleted_at: nil}, &1))
+          |> Enum.uniq_by(& &1.id)
           |> Enum.sort_by(& &1.name)
         else
           []
@@ -661,6 +662,7 @@ defmodule Emisar.SSO do
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_provider_id(provider_id)
       |> UserIdentity.Query.by_member_user_id(current.actor.id)
+      |> UserIdentity.Query.seat_first(current.membership_id)
       |> UserIdentity.Query.with_preloaded_provider()
       |> Authorizer.for_subject(current)
 
@@ -1136,6 +1138,7 @@ defmodule Emisar.SSO do
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.by_provider_id(provider.id)
       |> UserIdentity.Query.by_member_user_id(member.user_id)
+      |> UserIdentity.Query.seat_first(member.id)
       |> UserIdentity.Query.lock_for_update()
       |> repo.peek()
 
@@ -4492,10 +4495,11 @@ defmodule Emisar.SSO do
        ),
        do: peek_member_identity(provider, member.id)
 
-  defp peek_seat_identity(%IdentityProvider{} = provider, %Accounts.Membership{user_id: user_id}) do
+  defp peek_seat_identity(%IdentityProvider{} = provider, %Accounts.Membership{} = member) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.by_provider_id(provider.id)
-    |> UserIdentity.Query.by_member_user_id(user_id)
+    |> UserIdentity.Query.by_member_user_id(member.user_id)
+    |> UserIdentity.Query.seat_first(member.id)
     |> Repo.peek()
   end
 
