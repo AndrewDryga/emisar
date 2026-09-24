@@ -12,12 +12,11 @@ defmodule Emisar.Repo.Migrations.BindSSOIdentitiesToMemberships do
   def up do
     create unique_index(:account_memberships, [:account_id, :id])
 
-    # Nullable: the previous release keeps inserting rows without these columns
-    # until the rolling deploy finishes.
     alter table(:sso_user_identities) do
       add :membership_id, :binary_id
     end
 
+    # A link request may match no Member, so this one stays nullable.
     alter table(:sso_link_requests) do
       add :matched_membership_id, :binary_id
     end
@@ -27,6 +26,11 @@ defmodule Emisar.Repo.Migrations.BindSSOIdentitiesToMemberships do
     FROM (#{@seat}) seat
     WHERE seat.account_id = i.account_id AND seat.user_id = i.user_id
     """
+
+    # Every identity belongs to a seat. An identity whose person has no seat in its
+    # workspace fails here, loudly, instead of losing its only person anchor when
+    # 20261110 drops user_id.
+    execute "ALTER TABLE sso_user_identities ALTER COLUMN membership_id SET NOT NULL"
 
     execute """
     UPDATE sso_link_requests r SET matched_membership_id = seat.id
