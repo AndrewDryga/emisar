@@ -39,6 +39,10 @@ defmodule Emisar.Runs do
   # being enforced during exactly the incident they exist for. Bound the batch;
   # a backlog drains over consecutive ticks instead of stalling the job.
   @sweep_batch 2_000
+  # A removed member can leave many queued runs on one runner. One dispatch call
+  # refuses at most this many before it yields; the next result or sweep tick
+  # carries on, so a long backlog never ties up the runner socket.
+  @refusal_drain_limit 100
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__.Supervisor)
@@ -2659,32 +2663,39 @@ defmodule Emisar.Runs do
   end
 
   @doc "Internal — dispatches at most one never-sent run after capacity becomes available."
-  def dispatch_queued_for_runner(runner_id) when is_binary(runner_id) do
+  def dispatch_queued_for_runner(runner_id) when is_binary(runner_id),
+    do: dispatch_queued_for_runner(runner_id, @refusal_drain_limit)
+
+  defp dispatch_queued_for_runner(runner_id, refusals_left) do
     ActionRun.Query.all()
     |> ActionRun.Query.by_runner_id(runner_id)
     |> ActionRun.Query.status_in([:pending])
     |> ActionRun.Query.ordered_by_oldest()
     |> ActionRun.Query.limit_to(1)
     |> Repo.all()
-    |> Enum.each(fn run ->
-      case dispatch_to_runner(run) do
-        :ok ->
-          :ok
+    |> case do
+      [run] -> dispatch_queued_run(run, refusals_left)
+      [] -> :ok
+    end
+  end
 
-        {:error, :not_dispatchable} ->
-          :ok
+  defp dispatch_queued_run(%ActionRun{} = run, refusals_left) do
+    case dispatch_to_runner(run) do
+      :ok ->
+        :ok
 
-        # A refused run no longer holds the slot; the next queued run takes it.
-        {:error, :initiator_no_longer_authorized} ->
-          if match?(%ActionRun{status: :refused}, peek_run_by_id(run.id)),
-            do: dispatch_queued_for_runner(runner_id)
+      {:error, :not_dispatchable} ->
+        :ok
 
-        {:error, reason} ->
-          Logger.warning("queued run delivery failed run=#{run.id}: #{inspect(reason)}")
-      end
-    end)
+      # A refused run no longer holds the slot; the next queued run takes it.
+      {:error, :initiator_no_longer_authorized} ->
+        if refusals_left > 1 and match?(%ActionRun{status: :refused}, peek_run_by_id(run.id)),
+          do: dispatch_queued_for_runner(run.runner_id, refusals_left - 1),
+          else: :ok
 
-    :ok
+      {:error, reason} ->
+        Logger.warning("queued run delivery failed run=#{run.id}: #{inspect(reason)}")
+    end
   end
 
   # Only the post-runner_state reconcile calls this, so the catalog now holds
