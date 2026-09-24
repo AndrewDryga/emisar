@@ -476,6 +476,25 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
     end
 
+    test "a sign-in branded for a workspace the person is not in says so", %{
+      conn: conn,
+      user: user
+    } do
+      account = Fixtures.Accounts.create_account()
+      {conn, token_id, secret} = request_magic_link(conn, user.email)
+
+      conn =
+        get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: "/app/#{account.slug}"]}")
+
+      assert get_session(conn, :user_token)
+      assert redirected_to(conn) == ~p"/app"
+
+      assert get_session(conn, "phoenix_flash") == %{
+               "info" =>
+                 "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
+             }
+    end
+
     test "a branded sign-in target wins over a leftover Team choice", %{conn: conn, user: user} do
       account = Fixtures.Accounts.create_account()
 

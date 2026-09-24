@@ -583,18 +583,16 @@ defmodule EmisarWeb.UserSessionController do
     |> log_in.(user, token, registered?)
   end
 
+  # `log_in` redirects, which sends the response, so the flash is set before it.
+  # The session renewal inside `log_in` keeps the conn's flash.
   defp install_magic_link_session(conn, :not_member, user, token, registered?, log_in) do
-    # The flash is set AFTER `log_in` — its `renew_session` clears the session
-    # (flash included); the flash plug's before_send re-persists this.
-    conn =
-      conn
-      |> delete_session(:user_return_to)
-      |> log_in.(user, token, registered?)
-
-    denied_message =
+    conn
+    |> delete_session(:user_return_to)
+    |> put_flash(
+      :info,
       "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
-
-    put_flash(conn, :info, denied_message)
+    )
+    |> log_in.(user, token, registered?)
   end
 
   defp install_magic_link_session(conn, :no_target, user, token, registered?, log_in),
