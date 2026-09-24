@@ -544,7 +544,8 @@ defmodule Emisar.SSOSessionStepUpTest do
       Fixtures.SSO.create_user_identity(
         account_id: sibling.id,
         provider_id: provider.id,
-        user_id: context.user.id
+        user_id: context.user.id,
+        provider_identifier: context.identity.provider_identifier
       )
 
       {:ok, raw, false} =

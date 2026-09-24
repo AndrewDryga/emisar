@@ -2991,11 +2991,16 @@ defmodule Emisar.SSO do
   defp by_sign_in_actor(queryable, %Accounts.Membership{id: member_id}),
     do: UserIdentity.Query.by_membership_id(queryable, member_id)
 
+  # A sibling is the same account at the same issuer: the exact subject this
+  # sign-in proved. An issuer is not a tenant (every Google Workspace customer
+  # shares one), so a different subject there is a different person's account,
+  # possibly one another customer's directory controls.
   defp sign_in_siblings(repo, %Users.User{id: user_id}, hint) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.provider_identifier_active()
     |> UserIdentity.Query.by_member_user_id(user_id)
     |> UserIdentity.Query.by_active_provider_issuer(hint.provider.issuer)
+    |> UserIdentity.Query.by_provider_identifier(hint.provider_identifier)
     |> UserIdentity.Query.with_authorized_membership()
     |> repo.all()
   end
@@ -3078,6 +3083,8 @@ defmodule Emisar.SSO do
 
       if provider && provider.enabled &&
            provider.issuer == changes.sso_provider.issuer &&
+           provider.identifier_claim == changes.sso_provider.identifier_claim &&
+           hint.provider_identifier == changes.sso_identity.provider_identifier &&
            changes.sso_entitlements[hint.account_id] do
         with {:ok, identity} <- lock_sign_in_identity(repo, hint, actor),
              {:ok, member} <- lock_sign_in_member(repo, identity, actor) do

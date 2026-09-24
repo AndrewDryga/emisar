@@ -1233,7 +1233,7 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
               account_id: sibling.id,
               provider_id: provider.id,
               user_id: context.user.id,
-              provider_identifier: "sibling-person"
+              provider_identifier: context.identity.provider_identifier
             )
 
           assert context.account.id < sibling.id

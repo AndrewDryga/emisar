@@ -609,11 +609,12 @@ defmodule Emisar.AccountsTest do
           satisfies_mfa: true
         )
 
-      Fixtures.SSO.create_user_identity(
-        account_id: account.id,
-        provider_id: own_provider.id,
-        user_id: user.id
-      )
+      own_identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: own_provider.id,
+          user_id: user.id
+        )
 
       sibling = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(sibling, "team")
@@ -627,7 +628,8 @@ defmodule Emisar.AccountsTest do
         Fixtures.SSO.create_user_identity(
           account_id: sibling.id,
           provider_id: sibling_provider.id,
-          user_id: user.id
+          user_id: user.id,
+          provider_identifier: own_identity.provider_identifier
         )
 
       # The session authenticated at the sibling, through the shared IdP.
@@ -3980,8 +3982,10 @@ defmodule Emisar.AccountsTest do
       # The same org runs a second workspace on the same identity provider and
       # provisioned the person there too: one SSO login reaches both. A workspace
       # on a DIFFERENT IdP, and the person's self-created workspace, stay out.
-      sibling_account = federated_sibling(user, provider.issuer)
-      foreign_idp_account = federated_sibling(user, "https://elsewhere.okta.test")
+      sibling_account = federated_sibling(user, provider.issuer, identity.provider_identifier)
+
+      foreign_idp_account =
+        federated_sibling(user, "https://elsewhere.okta.test", identity.provider_identifier)
 
       # The older browser cannot gain a later destination. A new SSO proof can.
       assert Accounts.fetch_membership_by_account_id_or_slug(
@@ -8887,7 +8891,7 @@ defmodule Emisar.AccountsTest do
   # Another workspace that federates with `issuer` and provisioned `user` there:
   # an enabled provider on that issuer, the person's identity under it, and an
   # operator membership. The fixture behind the SSO federation-scope tests.
-  defp federated_sibling(user, issuer) do
+  defp federated_sibling(user, issuer, provider_identifier) do
     {_owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
     provider =
@@ -8906,7 +8910,8 @@ defmodule Emisar.AccountsTest do
     Fixtures.SSO.create_user_identity(%{
       account_id: account.id,
       provider_id: provider.id,
-      user_id: user.id
+      user_id: user.id,
+      provider_identifier: provider_identifier
     })
 
     account

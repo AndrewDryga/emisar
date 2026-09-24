@@ -745,7 +745,8 @@ defmodule Emisar.OAuthTest do
       Fixtures.SSO.create_user_identity(
         account_id: chosen.id,
         provider_id: destination_provider.id,
-        user_id: user.id
+        user_id: user.id,
+        provider_identifier: identity.provider_identifier
       )
 
       raw_token =

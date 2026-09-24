@@ -131,7 +131,8 @@ defmodule Emisar.AuthMemberGrantsTest do
         Fixtures.SSO.create_user_identity(
           account_id: sibling.id,
           provider_id: sibling_provider.id,
-          user_id: user.id
+          user_id: user.id,
+          provider_identifier: identity.provider_identifier
         )
 
       assert {:ok, raw, false} =
@@ -150,6 +151,43 @@ defmodule Emisar.AuthMemberGrantsTest do
       assert {:ok, _disabled} = SSO.update_provider(provider, %{enabled: false}, owner_subject)
       assert Auth.session_subject_options(original, session) == []
       assert Auth.session_subject_options(target, session) == options
+    end
+
+    test "a different account at the same issuer never opens a sibling workspace" do
+      origin = Fixtures.Accounts.create_account(plan: "team")
+      sibling = Fixtures.Accounts.create_account(plan: "team")
+      user = Fixtures.Users.create_user()
+      original = Fixtures.Memberships.create_membership(account_id: origin.id, user_id: user.id)
+      target = Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: user.id)
+      provider = Fixtures.SSO.create_identity_provider(account_id: origin.id)
+
+      sibling_provider =
+        Fixtures.SSO.create_identity_provider(account_id: sibling.id, issuer: provider.issuer)
+
+      # Same person and issuer, but a different account at the provider, as with
+      # two customers on Google Workspace: the origin's directory controls this one.
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: origin.id,
+          provider_id: provider.id,
+          user_id: user.id
+        )
+
+      Fixtures.SSO.create_user_identity(
+        account_id: sibling.id,
+        provider_id: sibling_provider.id,
+        user_id: user.id
+      )
+
+      assert {:ok, raw, _mfa?} =
+               Auth.complete_sso_account_sign_in(user, origin.id, %RequestContext{},
+                 user_identity_id: identity.id,
+                 provider_identifier: identity.provider_identifier
+               )
+
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
+      assert Auth.session_subject_options(original, session)[:user_identity_id] == identity.id
+      assert Auth.session_subject_options(target, session) == []
     end
 
     test "a later trust increase does not retroactively count an old login as MFA" do
@@ -219,7 +257,8 @@ defmodule Emisar.AuthMemberGrantsTest do
         Fixtures.SSO.create_user_identity(
           account_id: account.id,
           provider_id: inferred.id,
-          user_id: user.id
+          user_id: user.id,
+          provider_identifier: identity.provider_identifier
         )
 
       assert {:ok, raw, true} =
@@ -276,7 +315,8 @@ defmodule Emisar.AuthMemberGrantsTest do
       Fixtures.SSO.create_user_identity(
         account_id: destination.id,
         provider_id: target.id,
-        user_id: user.id
+        user_id: user.id,
+        provider_identifier: identity.provider_identifier
       )
 
       assert {:ok, raw, true} =
@@ -371,7 +411,8 @@ defmodule Emisar.AuthMemberGrantsTest do
       Fixtures.SSO.create_user_identity(
         account_id: sibling.id,
         provider_id: sibling_provider.id,
-        user_id: user.id
+        user_id: user.id,
+        provider_identifier: identity.provider_identifier
       )
 
       assert {:ok, raw, false} =
@@ -425,7 +466,8 @@ defmodule Emisar.AuthMemberGrantsTest do
     Fixtures.SSO.create_user_identity(
       account_id: sibling.id,
       provider_id: sibling_provider.id,
-      user_id: user.id
+      user_id: user.id,
+      provider_identifier: identity.provider_identifier
     )
 
     assert {:ok, raw, false} =
