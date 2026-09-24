@@ -1754,6 +1754,27 @@ func TestPackTestModeExtractsOneHostileFlag(t *testing.T) {
 	}
 }
 
+func TestPackTestHelpPrintsUsageAndDashPatternsAreUsageErrors(t *testing.T) {
+	app := testApp(t)
+	// No tool resolves, so reaching a real pack run fails without being a usage error.
+	t.Setenv("PATH", "")
+	for _, args := range [][]string{{"test", "packs", "-h"}, {"test", "packs", "--help"}, {"test", "packs", "--hostile", "-h"}} {
+		out := &bytes.Buffer{}
+		app.Out = out
+		if err := app.Run(t.Context(), args); err != nil {
+			t.Fatalf("%v error = %v", args, err)
+		}
+		if !strings.Contains(out.String(), "./run test packs [name-pattern]") {
+			t.Fatalf("%v output = %q", args, out.String())
+		}
+	}
+	for _, args := range [][]string{{"test", "packs", "-x"}, {"test", "packs", "--names"}, {"test", "packs", "--verbose", "--case", "x"}} {
+		if err := app.Run(t.Context(), args); !IsUsage(err) {
+			t.Fatalf("%v error = %v, want usage", args, err)
+		}
+	}
+}
+
 func TestHostilePackTestOverrideLimitsOnlySUTServices(t *testing.T) {
 	reports := t.TempDir()
 	path, err := writePackTestHostileOverride(reports, packtest.PlanRef{

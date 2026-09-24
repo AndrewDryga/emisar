@@ -185,6 +185,15 @@ func (a *App) test(ctx context.Context, args []string) error {
 			return err
 		}
 		rest = clean
+		if len(rest) == 1 && (rest[0] == "-h" || rest[0] == "--help") {
+			fmt.Fprintln(a.Out, packTestUsage)
+			return nil
+		}
+		// A pack name never starts with '-', so an unknown flag is a usage error
+		// rather than a pattern that matches packs such as apache-httpd.
+		if len(rest) > 0 && strings.HasPrefix(rest[0], "-") && !(len(rest) == 2 && rest[0] == "--names") {
+			return usage("%s", packTestUsage)
+		}
 		if len(rest) == 2 && rest[0] == "--names" {
 			names := strings.Split(rest[1], ",")
 			for _, name := range names {
@@ -201,7 +210,7 @@ func (a *App) test(ctx context.Context, args []string) error {
 			return a.packTest(ctx, rest[0], nil, "", rest[2], hostile)
 		}
 		if len(rest) > 1 {
-			return usage("usage: ./run test packs [name-pattern] | ./run test packs <name> --case <id> | ./run test packs <name> --shard <i>/<n> | ./run test packs --names pack-a,pack-b")
+			return usage("%s", packTestUsage)
 		}
 		pattern := ""
 		if len(rest) == 1 {
@@ -223,6 +232,8 @@ func (a *App) test(ctx context.Context, args []string) error {
 		return usage("%s", testUsage)
 	}
 }
+
+const packTestUsage = "usage: ./run test packs [name-pattern] | ./run test packs <name> --case <id> | ./run test packs <name> --shard <i>/<n> | ./run test packs --names pack-a,pack-b"
 
 func packTestMode(args []string) ([]string, bool, error) {
 	clean := make([]string, 0, len(args))
