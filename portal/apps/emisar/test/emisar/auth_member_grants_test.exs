@@ -373,6 +373,56 @@ defmodule Emisar.AuthMemberGrantsTest do
     end
   end
 
+  describe "switched_subject_options/2" do
+    test "reads the destination Member's own route, not the grant being left" do
+      origin = Fixtures.Accounts.create_account(plan: "team")
+      sibling = Fixtures.Accounts.create_account(plan: "team")
+      user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: origin.id, user_id: user.id)
+      target = Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: user.id)
+      provider = Fixtures.SSO.create_identity_provider(account_id: origin.id)
+
+      sibling_provider =
+        Fixtures.SSO.create_identity_provider(account_id: sibling.id, issuer: provider.issuer)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: origin.id,
+          provider_id: provider.id,
+          user_id: user.id
+        )
+
+      sibling_identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: sibling.id,
+          provider_id: sibling_provider.id,
+          user_id: user.id,
+          provider_identifier: identity.provider_identifier
+        )
+
+      assert {:ok, raw, _mfa?} =
+               Auth.complete_sso_account_sign_in(user, origin.id, %RequestContext{},
+                 user_identity_id: identity.id,
+                 provider_identifier: identity.provider_identifier
+               )
+
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
+      origin_subject = Fixtures.Subjects.subject_for(user, origin, session: session)
+      assert origin_subject.user_identity_id == identity.id
+
+      options = Auth.switched_subject_options(target, origin_subject)
+      assert {options[:auth_method], options[:user_identity_id]} == {:sso, sibling_identity.id}
+    end
+
+    test "a Member the bearer holds no route to yields nothing" do
+      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      other = Fixtures.Accounts.create_account()
+      member = Fixtures.Memberships.create_membership(account_id: other.id, user_id: user.id)
+
+      assert Auth.switched_subject_options(member, subject) == []
+    end
+  end
+
   describe "ensure_personal_session/1" do
     test "requires live independent proof, not a forged method or workspace role" do
       {user, account, _owner} = Fixtures.Subjects.owner_subject(%{plan: "team"})
