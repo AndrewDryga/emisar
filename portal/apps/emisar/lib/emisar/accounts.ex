@@ -1784,8 +1784,14 @@ defmodule Emisar.Accounts do
   Internal — finish the external half of a committed membership activation.
   Identity-bound session rows were deleted in the transaction; their exact
   socket topics ride in `:retired_bindings` because no query can derive them
-  after the delete.
+  after the delete. An activation that accepted an invitation also refreshes
+  that workspace's Team list.
   """
+  def after_membership_activation_committed(%{accepted: %Membership{} = accepted} = changes) do
+    :ok = broadcast_membership_invitation_accepted(accepted)
+    after_membership_activation_committed(Map.delete(changes, :accepted))
+  end
+
   def after_membership_activation_committed(%{retired_bindings: %{socket_topics: topics}}) do
     Auth.disconnect_live_socket_topics(topics)
   end
@@ -2863,12 +2869,6 @@ defmodule Emisar.Accounts do
       account_team_topic(membership.account_id),
       {:list_changed, :team, "membership.invitation_accepted", membership.id}
     )
-  end
-
-  defp invitation_accepted_effects(%{accepted: membership} = changes) do
-    :ok = broadcast_membership_invitation_accepted(membership)
-
-    after_membership_activation_committed(changes)
   end
 
   defp broadcast_membership_removed(%Membership{} = membership) do
@@ -4723,7 +4723,10 @@ defmodule Emisar.Accounts do
       Users.fetch_and_lock_user_by_id(user_id, repo)
     end)
     |> Multi.run(:membership, fn repo, %{user: user} ->
-      with {:ok, invitation} <- lock_pending_invitation(repo, membership, token) do
+      digest = Crypto.user_invite_token_digest(token)
+
+      with {:ok, invitation} <-
+             lock_pending_invitation(repo, membership.account_id, membership.id, digest) do
         if address_owner?(invitation, user) and not is_nil(user.confirmed_at),
           do: {:ok, invitation},
           else: {:error, :unauthorized}
@@ -4744,7 +4747,7 @@ defmodule Emisar.Accounts do
     |> Multi.insert(:audit, fn %{accepted: membership} ->
       Audit.Events.membership_invitation_accepted(membership)
     end)
-    |> Repo.commit_multi(after_commit: &invitation_accepted_effects/1)
+    |> Repo.commit_multi(after_commit: &after_membership_activation_committed/1)
     |> case do
       {:ok, %{accepted: membership}} -> {:ok, membership}
       {:error, reason} -> {:error, reason}
@@ -4752,61 +4755,80 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — invitation-accept flow: the accept-invite page is a public route
-  and the invitee has no session yet, so no `%Subject{}` exists; possession of
-  the invitation token (resolved by `fetch_invitation_by_token/1`) proves the
-  address it was emailed to and is the authorization. Links the invitation's
-  Member to the personal login for that address, creating it on first use,
-  sets the workspace display name, clears the invitation token and stamps
-  `invitation_accepted_at`. The login confirms its address when it signs in with
-  the magic link the page requests next. A login that already holds a seat in
-  the account gets `{:error, :already_member}`. Wrapped in a transaction so a
-  half-accepted state is impossible.
+  Internal — invitation-accept flow, before anyone has proved anything: the
+  opaque invite token is the capability, so there is no `%Subject{}`. Checks that
+  `token` names a pending invitation and that `attrs` is a valid workspace
+  profile, and writes nothing. Returns `{:ok, invited_address, intent}`, where
+  the intent rides the magic-link factor sent to that address until its mailbox
+  proves it (`put_invitation_acceptance/3`); a forwarded link therefore changes
+  nothing. `{:error, :not_found | :expired}` or `{:error, changeset}` otherwise.
   """
-  def accept_invitation(%Membership{invitation_sent_to: address} = membership, token, attrs)
-      when is_binary(token) and is_binary(address) and is_map(attrs) do
-    Multi.new()
-    |> put_active_account_lock(membership.account_id, :active_account)
-    |> Multi.run(:user, fn repo, _changes ->
-      with {:ok, user} <- Users.fetch_or_create_user_by_email(address) do
-        Users.fetch_and_lock_user_by_id(user.id, repo)
+  def prepare_invitation_acceptance(token, attrs) when is_binary(token) and is_map(attrs) do
+    with {:ok, invitation} <- fetch_invitation_by_token(token),
+         {:ok, profile} <- validate_invitation_profile(invitation, attrs) do
+      {:ok, invitation.invitation_sent_to,
+       %{
+         account_id: invitation.account_id,
+         membership_id: invitation.id,
+         token_digest: Crypto.user_invite_token_digest(token),
+         display_name: profile.display_name
+       }}
+    end
+  end
+
+  def prepare_invitation_acceptance(_token, _attrs), do: {:error, :not_found}
+
+  defp validate_invitation_profile(invitation, attrs) do
+    invitation
+    |> Membership.Changeset.accept_invitation_with_profile(attrs)
+    |> Ecto.Changeset.apply_action(:update)
+  end
+
+  @doc """
+  Internal compositional half of invitation acceptance, run in the transaction
+  that spends the magic-link factor and mints the session. The caller holds the
+  invitation's account and the `:user` row `FOR UPDATE`, and that login has just
+  proved the invited mailbox. `nil` (an ordinary sign-in) adds nothing. The
+  invitation must still be pending under the same token, and the login must
+  still own its address; anything else fails the whole completion with
+  `:invitation_invalid`. The accepted seat is `:membership`, so the new session
+  is granted it.
+  """
+  def put_invitation_acceptance(%Multi{} = multi, %Users.User{}, nil), do: multi
+
+  def put_invitation_acceptance(
+        %Multi{} = multi,
+        %Users.User{} = user,
+        %{account_id: account_id, membership_id: id, token_digest: digest, display_name: name}
+      ) do
+    multi
+    |> Multi.run(:membership, fn repo, _changes ->
+      with {:ok, invitation} <- lock_pending_invitation(repo, account_id, id, digest),
+           true <- address_owner?(invitation, user) do
+        {:ok, invitation}
+      else
+        _ -> {:error, :invitation_invalid}
       end
     end)
-    # Lock + re-judge the invitation before anything commits: a token burnt
-    # between the page mount and this submit (a second link holder racing the
-    # first acceptor) must fail :not_found here, and the login is rolled back.
-    # The locked row, not the caller's struct, names the address.
-    |> Multi.run(:membership, fn repo, %{user: user} ->
-      with {:ok, invitation} <- lock_pending_invitation(repo, membership, token) do
-        if address_owner?(invitation, user),
-          do: {:ok, invitation},
-          else: {:error, :not_found}
+    |> Multi.run(:linked, fn repo, %{membership: invitation} ->
+      case link_personal_login(repo, invitation, user) do
+        {:ok, linked} -> {:ok, linked}
+        {:error, _reason} -> {:error, :invitation_invalid}
       end
-    end)
-    |> Multi.run(:linked, fn repo, %{membership: invitation, user: user} ->
-      link_personal_login(repo, invitation, user)
     end)
     |> Multi.run(:credential_revocation, fn repo, %{linked: membership} ->
       ApiKeys.revoke_credentials_for_membership(repo, membership.id)
     end)
     |> Multi.update(:accepted, fn %{linked: membership} ->
-      Membership.Changeset.accept_invitation_with_profile(membership, attrs)
+      Membership.Changeset.accept_invitation_with_profile(membership, %{display_name: name})
     end)
     |> Multi.merge(fn %{accepted: membership} ->
       put_membership_activation_consequence(Multi.new(), membership)
     end)
-    |> Multi.insert(:audit, fn %{accepted: updated} ->
-      Audit.Events.user_invitation_accepted(updated)
+    |> Multi.insert(:invitation_audit, fn %{accepted: accepted} ->
+      Audit.Events.user_invitation_accepted(accepted)
     end)
-    |> Repo.commit_multi(after_commit: &invitation_accepted_effects/1)
-    |> case do
-      {:ok, %{user: user, accepted: updated}} -> {:ok, %{user: user, membership: updated}}
-      {:error, reason} -> {:error, reason}
-    end
   end
-
-  def accept_invitation(%Membership{}, token, attrs) when is_binary(token) and is_map(attrs),
-    do: {:error, :not_found}
 
   # Both acceptances lock in membership activation's order — account, person,
   # invitation — so the person is found before the invitation is judged. An
@@ -4820,9 +4842,7 @@ defmodule Emisar.Accounts do
   # revoked, or the membership vanished) or names no address anyone could
   # prove — the accept races resolve here. Until it is accepted, an invitation
   # is a Member without a personal login.
-  defp lock_pending_invitation(repo, %Membership{id: id, account_id: account_id}, token) do
-    digest = Crypto.user_invite_token_digest(token)
-
+  defp lock_pending_invitation(repo, account_id, id, digest) when is_binary(digest) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_id(id)
     |> Membership.Query.by_account_id(account_id)

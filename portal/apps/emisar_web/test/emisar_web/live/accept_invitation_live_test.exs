@@ -39,10 +39,22 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert has_element?(lv, "#accept_form", "Your name in this workspace")
 
       lv |> form("#accept_form", member: %{display_name: "Work Name"}) |> render_submit()
+      assert is_nil(Emisar.Repo.reload!(invitation.membership).display_name)
+
+      requested =
+        request_invitation_code(build_conn(), invitation.invitation_token, account, "Work Name")
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
+      assert get_session(
+               get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}"),
+               :user_token
+             )
 
       assert Emisar.Repo.reload!(invitation.membership).display_name == "Work Name"
       assert Emisar.Repo.reload!(person).full_name == "Private Personal Name"
-      assert Emisar.Repo.reload!(elsewhere) == elsewhere
+      assert Emisar.Repo.reload!(elsewhere).display_name == elsewhere.display_name
     end
 
     test "a bogus token renders the Invitation-unavailable page with cause-neutral copy", %{
@@ -89,8 +101,19 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
     end
   end
 
+  # The armed form's POST: the invitation token and name, never an address.
+  defp request_invitation_code(conn, token, account, name) do
+    post(conn, ~p"/sign_in/magic/start", %{
+      "invitation_token" => token,
+      "member" => %{"display_name" => name},
+      "return_to" => ~p"/app/#{account}"
+    })
+  end
+
   describe "anonymous accept" do
-    test "renders the join offer and accepts with a valid registration", %{conn: conn} do
+    test "renders the join offer; a valid name arms the code request and accepts nothing", %{
+      conn: conn
+    } do
       {_conn, owner, account} = register_and_log_in(conn)
       token = invitation_token(account, owner)
 
@@ -108,22 +131,20 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token)
       assert is_nil(pending_membership.user_id)
 
-      # A valid accept arms the hidden POST to the magic-link start
-      # (phx-trigger-action), so the invitee gets a one-time sign-in link.
+      # A valid name arms the hidden POST to the magic-link start
+      # (phx-trigger-action), which emails the invited address a code.
       html = lv |> form("#accept_form", params) |> render_submit()
+      assert html =~ "phx-trigger-action"
       assert html =~ ~s|action="/sign_in/magic/start"|
+      assert html =~ ~s|name="invitation_token" value="#{token}"|
       assert html =~ ~s|name="return_to" value="/app/#{account.slug}"|
 
-      # Accepting burns the token and links a new login for the invited address,
-      # which the magic link then proves.
-      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+      # Nothing is accepted or created until that code is used in this browser.
+      assert {:ok, still_pending} = Accounts.fetch_invitation_by_token(token)
+      assert is_nil(still_pending.user_id)
 
-      accepted = Emisar.Repo.reload!(pending_membership)
-      {:ok, user} = Emisar.Users.fetch_user_by_email(pending_membership.invitation_sent_to)
-      assert accepted.user_id == user.id
-      assert accepted.display_name == "New Person"
-      assert is_nil(user.full_name)
-      assert is_nil(user.confirmed_at)
+      assert Emisar.Users.fetch_user_by_email(pending_membership.invitation_sent_to) ==
+               {:error, :not_found}
     end
 
     test "the invitee finishes with the emailed sign-in and opens the workspace", %{conn: conn} do
@@ -137,14 +158,10 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       |> form("#accept_form", %{"member" => %{"display_name" => "New Person"}})
       |> render_submit()
 
-      requested =
-        post(build_conn(), ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => invitation.invitation_sent_to},
-          "return_to" => ~p"/app/#{account}"
-        })
-
+      requested = request_invitation_code(build_conn(), token, account, "New Person")
       assert_received {:email, sent}
       assert sent.to == [{"", invitation.invitation_sent_to}]
+      assert is_nil(Emisar.Repo.reload!(invitation).user_id)
       [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
       completed = get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}")
 
@@ -177,12 +194,15 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
 
-      # A second holder of the same emailed link accepts while this tab sits
-      # on the form, burning the token.
+      # The invitee accepts it signed in elsewhere while this tab sits on the
+      # form, burning the token.
       {:ok, membership} = Accounts.fetch_invitation_by_token(token)
 
-      {:ok, _} =
-        Accounts.accept_invitation(membership, token, %{"display_name" => "First Acceptor"})
+      invitee =
+        Fixtures.Users.create_user(email: membership.invitation_sent_to)
+        |> Fixtures.Users.confirm_user()
+
+      {:ok, _} = Accounts.mark_invitation_accepted(membership, token, invitee)
 
       html =
         lv
@@ -226,13 +246,60 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       {:ok, new_live, _html} = live(build_conn(), ~p"/accept_invitation/#{new_token}")
 
-      new_live
-      |> form("#accept_form", %{"member" => %{"display_name" => "New Link"}})
-      |> render_submit()
+      new_html =
+        new_live
+        |> form("#accept_form", %{"member" => %{"display_name" => "New Link"}})
+        |> render_submit()
 
-      accepted = membership |> Emisar.Repo.reload!() |> Emisar.Repo.preload(:user)
-      assert accepted.display_name == "New Link"
-      assert is_nil(accepted.user.full_name)
+      assert new_html =~ "phx-trigger-action"
+      assert new_html =~ ~s|name="invitation_token" value="#{new_token}"|
+    end
+
+    test "a forwarded link opened in another browser changes nothing", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+      {:ok, invitation} = Accounts.fetch_invitation_by_token(token)
+
+      # The holder submits a name; the code goes to the invited mailbox.
+      _holder = request_invitation_code(build_conn(), token, account, "Holder Name")
+      assert_received {:email, holder_sent}
+      assert holder_sent.to == [{"", invitation.invitation_sent_to}]
+
+      reloaded = Emisar.Repo.reload!(invitation)
+      assert {reloaded.user_id, reloaded.display_name} == {nil, nil}
+      assert {:ok, _still_pending} = Accounts.fetch_invitation_by_token(token)
+
+      # The invitee still joins from their own browser, exactly once.
+      requested = request_invitation_code(build_conn(), token, account, "Real Name")
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      completed = get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert get_session(completed, :user_token)
+      accepted = Emisar.Repo.reload!(invitation)
+      assert accepted.display_name == "Real Name"
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+    end
+
+    test "an invitation rotated after the code was sent fails closed at completion", %{
+      conn: conn
+    } do
+      {_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+      {:ok, invitation} = Accounts.fetch_invitation_by_token(token)
+      requested = request_invitation_code(build_conn(), token, account, "Late Name")
+      assert_received {:email, sent}
+
+      assert {:ok, _resent} =
+               Accounts.resend_account_invitation(invitation, owner_subject(owner, account))
+
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      refused = get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert redirected_to(refused) == ~p"/sign_in"
+      assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "can no longer be accepted"
+      refute get_session(refused, :user_token)
+      assert is_nil(Emisar.Repo.reload!(invitation).user_id)
     end
 
     test "a login that moved off the invited address neither sees nor accepts the invitation",
@@ -287,9 +354,9 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
 
-      # Dispatch the `accept` event directly with a crafted payload whose
-      # `user[email]` is an attacker-chosen address — bypassing the form's own
-      # hidden-field guard to prove the SERVER (not just the client) ignores it.
+      # Dispatch the `accept` event and the code request directly with crafted
+      # payloads naming an attacker-chosen address, bypassing the form, to prove
+      # the SERVER takes the address from the invitation.
       params = %{
         "user" => %{"email" => "attacker@evil.test"},
         "member" => %{
@@ -300,8 +367,14 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       render_submit(lv, "accept", params)
 
-      {:ok, user} = Emisar.Users.fetch_user_by_email(invited_email)
-      assert Emisar.Repo.reload!(invited).user_id == user.id
+      post(
+        build_conn(),
+        ~p"/sign_in/magic/start",
+        Map.merge(params, %{"invitation_token" => token, "return_to" => ~p"/app/#{account}"})
+      )
+
+      assert_received {:email, sent}
+      assert sent.to == [{"", invited_email}]
       assert Emisar.Users.fetch_user_by_email("attacker@evil.test") == {:error, :not_found}
     end
   end

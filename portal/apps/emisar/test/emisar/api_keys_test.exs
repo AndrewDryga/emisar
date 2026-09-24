@@ -137,10 +137,19 @@ defmodule Emisar.ApiKeysTest do
                  reader
                )
 
-      assert {:ok, %{membership: rejoined}} =
-               Accounts.accept_invitation(invitation.membership, invitation.invitation_token, %{
-                 display_name: "Rejoined Member"
-               })
+      assert {:ok, accepted} =
+               Accounts.mark_invitation_accepted(
+                 invitation.membership,
+                 invitation.invitation_token,
+                 Fixtures.Users.confirm_user(person)
+               )
+
+      assert {:ok, rejoined} =
+               Accounts.update_member_profile_as_admin(
+                 accepted,
+                 %{display_name: "Rejoined Member"},
+                 reader
+               )
 
       {:ok, _raw, new_key} =
         ApiKeys.create_key(%{name: "new agent"}, Fixtures.Subjects.membership_subject(rejoined))

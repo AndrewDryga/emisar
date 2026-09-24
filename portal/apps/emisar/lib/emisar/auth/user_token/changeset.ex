@@ -96,7 +96,8 @@ defmodule Emisar.Auth.UserToken.Changeset do
         sent_to,
         attempts,
         owner_registration,
-        member_link \\ nil
+        member_link \\ nil,
+        invitation \\ nil
       )
       when is_binary(digest) and is_integer(attempts) do
     change(%UserToken{},
@@ -105,23 +106,27 @@ defmodule Emisar.Auth.UserToken.Changeset do
       sent_to: sent_to,
       user_id: user.id,
       remaining_attempts: attempts,
-      metadata: magic_link_metadata(owner_registration, member_link)
+      metadata: magic_link_metadata(owner_registration, member_link, invitation)
     )
   end
 
-  defp magic_link_metadata(nil, nil), do: %{}
+  defp magic_link_metadata(nil, nil, nil), do: %{}
 
-  defp magic_link_metadata(%{account_name: account_name, full_name: full_name}, nil)
+  defp magic_link_metadata(%{account_name: account_name, full_name: full_name}, nil, nil)
        when is_binary(account_name) and (is_binary(full_name) or is_nil(full_name)) do
     %{"registration_account_name" => account_name, "registration_full_name" => full_name}
   end
 
-  defp magic_link_metadata(nil, %{
-         account_id: account_id,
-         membership_id: membership_id,
-         identity_id: identity_id,
-         donor_token_id: donor_token_id
-       })
+  defp magic_link_metadata(
+         nil,
+         %{
+           account_id: account_id,
+           membership_id: membership_id,
+           identity_id: identity_id,
+           donor_token_id: donor_token_id
+         },
+         nil
+       )
        when is_binary(account_id) and is_binary(membership_id) and is_binary(identity_id) and
               is_binary(donor_token_id) do
     %{
@@ -129,6 +134,22 @@ defmodule Emisar.Auth.UserToken.Changeset do
       "member_link_membership_id" => membership_id,
       "member_link_identity_id" => identity_id,
       "member_link_donor_token_id" => donor_token_id
+    }
+  end
+
+  defp magic_link_metadata(nil, nil, %{
+         account_id: account_id,
+         membership_id: membership_id,
+         token_digest: token_digest,
+         display_name: display_name
+       })
+       when is_binary(account_id) and is_binary(membership_id) and is_binary(token_digest) and
+              is_binary(display_name) do
+    %{
+      "invitation_account_id" => account_id,
+      "invitation_membership_id" => membership_id,
+      "invitation_token_digest" => token_digest,
+      "invitation_display_name" => display_name
     }
   end
 

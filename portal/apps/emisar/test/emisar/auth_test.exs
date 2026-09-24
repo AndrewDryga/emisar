@@ -1275,6 +1275,107 @@ defmodule Emisar.AuthTest do
     end
   end
 
+  describe "complete_magic_link_sign_in/5 — invitation" do
+    # A pending invitation to `user`'s address and the intent its name form carries.
+    defp invitation_fixture(%User{} = user) do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, %{membership: invitation, invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: user.email, role: "operator"),
+          subject
+        )
+
+      {:ok, _address, intent} =
+        Accounts.prepare_invitation_acceptance(token, %{"display_name" => "Invited Name"})
+
+      %{account: account, subject: subject, invitation: invitation, intent: intent}
+    end
+
+    defp accepted_events(account) do
+      Audit.Event.Query.all()
+      |> Audit.Event.Query.by_account_id(account.id)
+      |> Audit.Event.Query.by_event_type("user.invitation_accepted")
+      |> Repo.all()
+    end
+
+    test "requesting and verifying accept nothing; completion accepts once and grants the seat" do
+      user = Fixtures.Users.create_user()
+      %{account: account, invitation: invitation, intent: intent} = invitation_fixture(user)
+      factor_id = verify_magic_link(user, invitation: intent)
+      assert is_nil(Repo.reload!(invitation).user_id)
+
+      assert {:ok, %User{}, raw, {:member, %Account{id: account_id}}, false} =
+               Auth.complete_magic_link_sign_in(user.id, factor_id, nil, %RequestContext{})
+
+      assert account_id == account.id
+      accepted = Repo.reload!(invitation)
+      assert {accepted.user_id, accepted.display_name} == {user.id, "Invited Name"}
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
+
+      assert {:ok, %Accounts.Membership{id: member_id}} =
+               Accounts.fetch_membership_by_account_id_or_slug(account.id, session)
+
+      assert member_id == invitation.id
+      assert length(accepted_events(account)) == 1
+
+      assert Auth.complete_magic_link_sign_in(user.id, factor_id, nil, %RequestContext{}) ==
+               {:error, :invalid_or_expired}
+
+      assert length(accepted_events(account)) == 1
+    end
+
+    test "an invitation rotated before completion fails closed, with no session" do
+      user = Fixtures.Users.create_user()
+
+      %{account: account, subject: subject, invitation: invitation, intent: intent} =
+        invitation_fixture(user)
+
+      factor_id = verify_magic_link(user, invitation: intent)
+      assert {:ok, _resent} = Accounts.resend_account_invitation(invitation, subject)
+      sessions_before = session_rows()
+
+      assert Auth.complete_magic_link_sign_in(user.id, factor_id, nil, %RequestContext{}) ==
+               {:error, :invitation_invalid}
+
+      assert session_rows() == sessions_before
+      assert is_nil(Repo.reload!(invitation).user_id)
+      assert accepted_events(account) == []
+    end
+
+    test "an enrolled login accepts only after its second factor" do
+      {user, secret, _recovery_code} = mfa_user()
+      %{invitation: invitation, intent: intent} = invitation_fixture(user)
+      factor_id = verify_magic_link(user, invitation: intent)
+
+      assert Auth.complete_magic_link_sign_in(user.id, factor_id, nil, %RequestContext{}) ==
+               {:error, :mfa_required}
+
+      assert is_nil(Repo.reload!(invitation).user_id)
+
+      assert {:ok, proof} =
+               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
+
+      assert {:ok, _user, _raw, {:member, _account}, false} =
+               Auth.complete_magic_link_mfa_sign_in(proof, factor_id, nil, %RequestContext{})
+
+      assert Repo.reload!(invitation).user_id == user.id
+    end
+
+    test "a same-browser resend keeps the invitation" do
+      user = Fixtures.Users.create_user()
+      %{invitation: invitation, intent: intent} = invitation_fixture(user)
+      {first_id, _nonce, _secret} = request_magic_link(user, invitation: intent)
+      {second_id, nonce, secret} = request_magic_link(user, prior_magic_link_token_id: first_id)
+      assert {:ok, _user} = Auth.verify_magic_link(second_id, secret, nonce)
+
+      assert {:ok, _user, _raw, {:member, _account}, false} =
+               Auth.complete_magic_link_sign_in(user.id, second_id, nil, %RequestContext{})
+
+      assert Repo.reload!(invitation).user_id == user.id
+    end
+  end
+
   describe "complete_magic_link_sign_in/5 — member link" do
     # A Member without a personal login, its workspace identity, and the
     # member-only session (the donor) whose browser asks to link one.

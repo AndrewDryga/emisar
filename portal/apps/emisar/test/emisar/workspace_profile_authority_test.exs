@@ -199,23 +199,6 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     refute_received {:email, _}
   end
 
-  test "anonymous invitation acceptance retains the explicitly supplied workspace name" do
-    {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
-
-    {:ok, invitation} =
-      Accounts.invite_user_to_account(%{email: "new@example.test", role: "viewer"}, subject)
-
-    assert invitation.membership.display_name == nil
-
-    assert {:ok, %{membership: accepted}} =
-             Accounts.accept_invitation(invitation.membership, invitation.invitation_token, %{
-               display_name: "New Teammate"
-             })
-
-    assert accepted.display_name == "New Teammate"
-    assert accepted.contact_email == "new@example.test"
-  end
-
   test "a workspace administrator changes only this member's local name" do
     {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     person = Fixtures.Users.create_user(full_name: "Personal Name")

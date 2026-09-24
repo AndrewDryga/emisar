@@ -722,7 +722,11 @@ defmodule Emisar.Auth do
   from the signed member-link handoff, or `nil`: the exact Member without a
   personal login, its SSO identity and the member-only session that asked. It
   stays on the server-side factor; completion links that Member only from
-  that same session. A factor carries one intent, never both.
+  that same session.
+  `:invitation` — `%{account_id, membership_id, token_digest, display_name}` from
+  `Accounts.prepare_invitation_acceptance/2`, or `nil`: completion accepts that
+  exact pending invitation for the login that proved this mailbox, in the same
+  transaction that mints its session. A factor carries at most one intent.
   `:prior_magic_link_token_id` — the exact browser-bound factor being replaced
   by a resend; its still-live server-side intent is inherited.
 
@@ -738,7 +742,8 @@ defmodule Emisar.Auth do
         context,
         account,
         Keyword.get(opts, :return_to),
-        {Keyword.get(opts, :owner_registration), Keyword.get(opts, :member_link)},
+        {Keyword.get(opts, :owner_registration), Keyword.get(opts, :member_link),
+         Keyword.get(opts, :invitation)},
         Keyword.get(opts, :prior_magic_link_token_id)
       )
     end
@@ -843,7 +848,10 @@ defmodule Emisar.Auth do
       |> Multi.run(:requested_intent, fn repo, %{user: user} ->
         {:ok, requested_intent(repo, user, intent, prior_token_id)}
       end)
-      |> Accounts.put_owner_registration_intent(fn %{requested_intent: {registration, _link}} ->
+      |> Accounts.put_owner_registration_intent(fn %{
+                                                     requested_intent:
+                                                       {registration, _link, _invitation}
+                                                   } ->
         registration
       end)
       |> Multi.delete_all(:prior, fn %{user: user} ->
@@ -853,7 +861,7 @@ defmodule Emisar.Auth do
       |> Multi.insert(:token, fn %{
                                    user: user,
                                    owner_registration: registration,
-                                   requested_intent: {_registration, member_link}
+                                   requested_intent: {_registration, member_link, invitation}
                                  } ->
         UserToken.Changeset.magic_link(
           user,
@@ -861,7 +869,8 @@ defmodule Emisar.Auth do
           user.email,
           @magic_link_attempts,
           registration,
-          member_link
+          member_link,
+          invitation
         )
       end)
       |> Audit.Multi.log_for_user(:audit, nil, "user.magic_link_issued",
@@ -879,28 +888,34 @@ defmodule Emisar.Auth do
     end
   end
 
-  # `{owner_registration, member_link}` for the new factor. An explicit request
-  # names its one intent; a resend inherits the intent of the exact
-  # browser-bound factor it replaces.
-  defp requested_intent(_repo, %Users.User{}, {%{} = registration, nil}, _token_id),
-    do: {registration, nil}
+  # `{owner_registration, member_link, invitation}` for the new factor. An
+  # explicit request names its one intent; a resend inherits the intent of the
+  # exact browser-bound factor it replaces.
+  defp requested_intent(_repo, %Users.User{}, {%{} = registration, nil, nil}, _token_id),
+    do: {registration, nil, nil}
 
-  defp requested_intent(_repo, %Users.User{}, {nil, %{} = member_link}, _token_id),
-    do: {nil, member_link}
+  defp requested_intent(_repo, %Users.User{}, {nil, %{} = member_link, nil}, _token_id),
+    do: {nil, member_link, nil}
 
-  defp requested_intent(repo, %Users.User{} = user, {nil, nil}, token_id)
+  defp requested_intent(_repo, %Users.User{}, {nil, nil, %{} = invitation}, _token_id),
+    do: {nil, nil, invitation}
+
+  defp requested_intent(repo, %Users.User{} = user, {nil, nil, nil}, token_id)
        when is_binary(token_id) do
     factor =
       if Repo.valid_uuid?(token_id) do
         requested_magic_factor(repo, user, token_id)
       end
 
-    if factor && factor.sent_to == user.email,
-      do: {magic_owner_registration(factor, user), magic_member_link(factor)},
-      else: {nil, nil}
+    if factor && factor.sent_to == user.email do
+      {magic_owner_registration(factor, user), magic_member_link(factor),
+       magic_invitation(factor)}
+    else
+      {nil, nil, nil}
+    end
   end
 
-  defp requested_intent(_repo, %Users.User{}, _intent, _token_id), do: {nil, nil}
+  defp requested_intent(_repo, %Users.User{}, _intent, _token_id), do: {nil, nil, nil}
 
   # A resend carries the prior factor's registration intent forward, so freshness
   # is judged per CONTEXT like the verify path — a magic_link_verified factor
@@ -1179,8 +1194,8 @@ defmodule Emisar.Auth do
         presented_digest \\ nil
       ) do
     with {:ok, user} <- Users.fetch_user_by_id(user_id) do
-      case peek_member_link(verified_token_id, user) do
-        %{} = link ->
+      case peek_magic_intent(verified_token_id, user) do
+        {:member_link, link} ->
           insert_member_link_session(
             user,
             verified_token_id,
@@ -1189,6 +1204,9 @@ defmodule Emisar.Auth do
             presented_digest,
             context
           )
+
+        {:invitation, invitation} ->
+          complete_invitation_sign_in(user, verified_token_id, invitation, nil, context)
 
         nil ->
           target = resolve_post_auth_account(user, account_ref)
@@ -1227,8 +1245,8 @@ defmodule Emisar.Auth do
         presented_digest \\ nil
       ) do
     with {:ok, user} <- Users.fetch_user_by_id(mfa_proof_user_id(proof)) do
-      case peek_member_link(verified_token_id, user) do
-        %{} = link ->
+      case peek_magic_intent(verified_token_id, user) do
+        {:member_link, link} ->
           insert_member_link_session(
             user,
             verified_token_id,
@@ -1237,6 +1255,9 @@ defmodule Emisar.Auth do
             presented_digest,
             context
           )
+
+        {:invitation, invitation} ->
+          complete_invitation_sign_in(user, verified_token_id, invitation, proof, context)
 
         nil ->
           target = resolve_post_auth_account(user, account_ref)
@@ -1251,6 +1272,22 @@ defmodule Emisar.Auth do
 
   # A disabled branded account never mints a session — its members are sent to
   # that account's own sign-in page, so the boundary needs the account back.
+  # An invitation factor signs in to the workspace it invites to, whatever the
+  # request was branded with. The acceptance itself is read off the locked factor
+  # inside `insert_magic_link_session/5`, so it commits with the session or not at all.
+  defp complete_invitation_sign_in(user, verified_token_id, invitation, proof, context) do
+    case Accounts.fetch_account_by_id_or_slug(invitation.account_id) do
+      {:ok, account} ->
+        complete_sign_in_for_target(
+          {:member, account},
+          &insert_magic_link_session(user, verified_token_id, &1, proof, context)
+        )
+
+      {:error, _reason} ->
+        {:error, :invitation_invalid}
+    end
+  end
+
   defp complete_sign_in_for_target({:disabled, %Accounts.Account{} = account}, _mint),
     do: {:error, {:account_disabled, account}}
 
@@ -1318,6 +1355,9 @@ defmodule Emisar.Auth do
       |> Users.put_owner_registration_profile(loaded_user, registration)
       |> Accounts.put_owner_registration(registration)
     end)
+    |> Multi.merge(fn %{user: loaded_user, verified_factor: factor} ->
+      Accounts.put_invitation_acceptance(Multi.new(), loaded_user, magic_invitation(factor))
+    end)
     |> Multi.merge(fn %{registration_user: registration_user} ->
       Users.put_sign_in(Multi.new(), registration_user, "magic_link", context)
     end)
@@ -1370,18 +1410,41 @@ defmodule Emisar.Auth do
 
   defp magic_member_link(%UserToken{}), do: nil
 
+  defp magic_invitation(%UserToken{
+         metadata: %{
+           "invitation_account_id" => account_id,
+           "invitation_membership_id" => membership_id,
+           "invitation_token_digest" => token_digest,
+           "invitation_display_name" => display_name
+         }
+       }) do
+    %{
+      account_id: account_id,
+      membership_id: membership_id,
+      token_digest: token_digest,
+      display_name: display_name
+    }
+  end
+
+  defp magic_invitation(%UserToken{}), do: nil
+
   # The unlocked read only chooses which transaction to build. Each one relocks
-  # this exact factor and requires the same intent, so a member-link factor can
-  # never finish as an ordinary sign-in, nor a sign-in factor as a link.
-  defp peek_member_link(token_id, %Users.User{} = user) do
-    if Repo.valid_uuid?(token_id) do
-      factor =
+  # this exact factor and reads its intent there, so a member-link factor can
+  # never finish as an ordinary sign-in, nor a sign-in factor as a link, and an
+  # invitation factor always carries its acceptance.
+  defp peek_magic_intent(token_id, %Users.User{} = user) do
+    factor =
+      if Repo.valid_uuid?(token_id) do
         UserToken.Query.by_id(token_id)
         |> UserToken.Query.by_user_id(user.id)
         |> UserToken.Query.by_context("magic_link_verified")
         |> Repo.peek()
+      end
 
-      if factor, do: magic_member_link(factor)
+    case factor && {magic_member_link(factor), magic_invitation(factor)} do
+      {%{} = link, _invitation} -> {:member_link, link}
+      {nil, %{} = invitation} -> {:invitation, invitation}
+      _none -> nil
     end
   end
 

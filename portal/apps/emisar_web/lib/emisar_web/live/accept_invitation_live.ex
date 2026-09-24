@@ -5,9 +5,10 @@ defmodule EmisarWeb.AcceptInvitationLive do
 
   Four render branches:
 
-    * Not signed in → a name form; accepting links the member to the personal
-      login for the invited address (created on first use) and emails it a
-      magic-link sign-in (no password to set).
+    * Not signed in → a name form; submitting emails the invited address a
+      sign-in code (creating its personal login on first use). Using that code in
+      this browser accepts the invitation and signs in, in one step, so a
+      forwarded link changes nothing.
     * Signed in AS the invited email → accept over HTTP, then explicitly sign
       in again. Acceptance never adds the new membership to an old browser's proof.
     * Signed in as a DIFFERENT email → "this invite is for X, sign out
@@ -106,9 +107,9 @@ defmodule EmisarWeb.AcceptInvitationLive do
         as <.chip>{Emisar.Auth.role_label(@membership.role)}</.chip>.
       </p>
 
-      <%!-- On accept we flip `trigger_submit` and the form POSTs the invitee's
-           email to the magic-link request, so they get a one-time sign-in link
-           (no password to set). --%>
+      <%!-- On accept we flip `trigger_submit` and the form POSTs the invitation
+           token and name to the magic-link request, which emails the invited
+           address; the invitation is accepted when that code is used here. --%>
       <.simple_form
         for={@form}
         id="accept_form"
@@ -118,7 +119,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
         phx-submit="accept"
         phx-trigger-action={@trigger_submit}
       >
-        <input type="hidden" name="user[email]" value={@membership.invitation_sent_to} />
+        <input type="hidden" name="invitation_token" value={@token} />
         <input type="hidden" name="return_to" value={~p"/app/#{@membership.account}"} />
 
         <%!-- Naked meta field (the detail-page key+value grammar) — the box
@@ -139,7 +140,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
         />
 
         <p class="text-sm text-zinc-400">
-          We'll email you a sign-in link and a 6-character code to finish signing in.
+          We'll email a sign-in link and a 6-character code to this address. You join when you use one of them in this browser.
         </p>
 
         <:actions>
@@ -249,27 +250,23 @@ defmodule EmisarWeb.AcceptInvitationLive do
     {:noreply, assign_form(socket, changeset)}
   end
 
+  # Checks the name and that the invitation is still pending, and writes
+  # nothing: the form then asks for the invited address's code, and only using
+  # that code in this browser accepts.
   def handle_event("accept", %{"member" => attrs}, %{assigns: %{state: :anonymous}} = socket) do
-    case Accounts.accept_invitation(socket.assigns.membership, socket.assigns.token, attrs) do
-      {:ok, _} ->
+    case Accounts.prepare_invitation_acceptance(socket.assigns.token, attrs) do
+      {:ok, _address, _intent} ->
         {:noreply, assign(socket, :trigger_submit, true)}
 
       # Field errors (e.g. a missing name) render inline on the form.
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
 
-      # The invitation was burnt, revoked, or expired between mount and this
-      # submit (a second link-holder raced us, or the window lapsed). That's
-      # terminal — transition to the unavailable state a fresh mount would
-      # render, never a 7-second flash over a form that can no longer succeed.
-      {:error, :not_found} ->
-        {:noreply, assign_invitation_unavailable(socket, :not_found)}
-
-      {:error, :already_member} ->
-        {:noreply, put_flash(socket, :error, already_member_message())}
-
-      {:error, _other} ->
-        {:noreply, put_flash(socket, :error, "Could not accept the invitation.")}
+      # The invitation was accepted, revoked, or expired between mount and this
+      # submit. That's terminal — transition to the unavailable state a fresh
+      # mount would render, never a flash over a form that can no longer succeed.
+      {:error, reason} when reason in [:not_found, :expired] ->
+        {:noreply, assign_invitation_unavailable(socket, reason)}
     end
   end
 

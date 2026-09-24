@@ -39,11 +39,15 @@ defmodule Emisar.AuthEmailChangeTest do
                  target_subject
                )
 
+      # The mailbox owner accepts it with a login of their own.
+      mailbox_owner =
+        Fixtures.Users.create_user(email: victim_email) |> Fixtures.Users.confirm_user()
+
       assert {:ok, _} =
-               Accounts.accept_invitation(
+               Accounts.mark_invitation_accepted(
                  invitation.membership,
                  invitation.invitation_token,
-                 %{display_name: "Mailbox Owner"}
+                 mailbox_owner
                )
 
       assert {:ok, retained_token} =

@@ -15,7 +15,7 @@ defmodule EmisarWeb.UserSessionController do
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{Auth, Config, Throttle, Users}
+  alias Emisar.{Accounts, Auth, Config, Throttle, Users}
   alias EmisarWeb.{Analytics, BillingIntent, MagicLinkHandoff, MemberLinkHandoff}
   alias EmisarWeb.{MfaChallengeHandoff, RecentAccounts, RegistrationHandoff}
   alias EmisarWeb.{RequestContext, ReturnTo, UserAuth, UserSignUpLive}
@@ -53,6 +53,21 @@ defmodule EmisarWeb.UserSessionController do
   A member-only browser's requests always link: a resend or another address
   reuses the handoff its link started with, and without one nothing is sent.
   """
+  # An invitation's name form asks for a code for the invited address. The
+  # address comes from the invitation, never the form, and nothing is accepted
+  # until that mailbox's code completes in this browser. A browser signed in
+  # through workspace SSO without a personal login goes back to the invitation,
+  # which tells it to sign out first.
+  def magic_link_start(conn, %{"invitation_token" => token, "member" => member} = params)
+      when is_binary(token) and is_map(member) do
+    with false <- match?(%Auth.UserToken{user_id: nil}, conn.assigns[:current_auth]),
+         {:ok, address, invitation} <- Accounts.prepare_invitation_acceptance(token, member) do
+      request_magic_link(conn, address, params, {:invitation, invitation})
+    else
+      _ -> redirect(conn, to: ~p"/accept_invitation/#{token}")
+    end
+  end
+
   def magic_link_start(conn, %{"user" => %{"email" => email}} = params) when is_binary(email) do
     handoff = params["member_link_handoff"] || member_link_in_flight(conn)
 
@@ -68,7 +83,7 @@ defmodule EmisarWeb.UserSessionController do
           :ok ->
             conn
             |> put_session(:member_link_handoff, handoff)
-            |> request_magic_link(email, params, member_link)
+            |> request_magic_link(email, params, {:member_link, member_link})
 
           {:error, :rate_limited} ->
             member_link_failed(conn, :rate_limited)
@@ -83,7 +98,7 @@ defmodule EmisarWeb.UserSessionController do
     |> redirect(to: ~p"/sign_in/magic?sent=1")
   end
 
-  defp request_magic_link(conn, email, params, member_link) do
+  defp request_magic_link(conn, email, params, intent) do
     context = RequestContext.from_conn(conn)
     return_to = ReturnTo.app_path(params["return_to"])
     handoff = params["registration_handoff"]
@@ -100,7 +115,7 @@ defmodule EmisarWeb.UserSessionController do
         conn = conn |> clear_magic_request() |> replace_billing_intent(billing_intent)
 
         conn =
-          with {:ok, user} <- magic_link_user(email, member_link),
+          with {:ok, user} <- magic_link_user(email, intent),
                {:ok, %{token_id: token_id, nonce: nonce}} <-
                  Auth.request_magic_link(
                    user,
@@ -109,7 +124,7 @@ defmodule EmisarWeb.UserSessionController do
                      account_ref: branded_account_ref(return_to),
                      return_to: return_to,
                      prior_magic_link_token_id: prior_token_id
-                   ] ++ magic_link_intent(handoff, member_link, user)
+                   ] ++ magic_link_intent(handoff, intent, user)
                  ) do
             put_magic_request(conn, token_id, nonce)
             # The LiveView verifies the typed code (the nonce isn't readable from JS),
@@ -123,6 +138,16 @@ defmodule EmisarWeb.UserSessionController do
           end
 
         finish_magic_request(conn, trimmed, return_to)
+
+      {:error, :rate_limited} when is_tuple(intent) and elem(intent, 0) == :invitation ->
+        # No factor exists to resend yet, so the intent would be lost to a decoy;
+        # the invitation page asks again once the recipient cap allows it.
+        conn
+        |> put_flash(
+          :error,
+          "You've asked for several sign-in emails for that address. Wait a few minutes, then try again."
+        )
+        |> redirect(to: ~p"/accept_invitation/#{params["invitation_token"]}")
 
       {:error, :rate_limited} when is_binary(handoff) ->
         # A first signup request has no server-side factor from which a later
@@ -197,7 +222,7 @@ defmodule EmisarWeb.UserSessionController do
   # it first is read back); a sign-in stays silent instead.
   defp magic_link_user(email, nil), do: Users.fetch_user_by_email(email)
 
-  defp magic_link_user(email, %{}) do
+  defp magic_link_user(email, {_intent, %{}}) do
     with {:error, :not_found} <- Users.fetch_user_by_email(email),
          {:error, _changeset} <- Users.register_user(%{email: email}) do
       Users.fetch_user_by_email(email)
@@ -207,7 +232,8 @@ defmodule EmisarWeb.UserSessionController do
   defp magic_link_intent(handoff, nil, user),
     do: [owner_registration: owner_registration(handoff, user)]
 
-  defp magic_link_intent(_handoff, member_link, _user), do: [member_link: member_link]
+  defp magic_link_intent(_handoff, {:member_link, link}, _user), do: [member_link: link]
+  defp magic_link_intent(_handoff, {:invitation, invitation}, _user), do: [invitation: invitation]
 
   defp magic_link_expiry do
     DateTime.utc_now()
@@ -301,6 +327,9 @@ defmodule EmisarWeb.UserSessionController do
 
         {:error, reason} when reason in [:already_member, :member_link_invalid] ->
           member_link_failed(conn, reason)
+
+        {:error, :invitation_invalid} ->
+          invitation_failed(conn)
 
         {:error, _reason} ->
           conn |> clear_mfa_pending() |> restart_mfa_sign_in()
@@ -524,6 +553,9 @@ defmodule EmisarWeb.UserSessionController do
       {:error, reason} when reason in [:already_member, :member_link_invalid] ->
         member_link_failed(conn, reason)
 
+      {:error, :invitation_invalid} ->
+        invitation_failed(conn)
+
       {:error, _reason} ->
         restart_magic_sign_in(conn)
     end
@@ -545,6 +577,20 @@ defmodule EmisarWeb.UserSessionController do
     |> delete_session(:member_link_handoff)
     |> put_flash(:error, member_link_failure_message(reason))
     |> redirect(to: ~p"/app")
+  end
+
+  # The invitation stopped being acceptable between the email and its code:
+  # accepted, revoked, resent or expired, or the login is already a member.
+  # Nothing was signed in.
+  defp invitation_failed(conn) do
+    conn
+    |> clear_magic_request()
+    |> clear_mfa_pending()
+    |> put_flash(
+      :error,
+      "This invitation can no longer be accepted. Sign in if you already joined, or ask for a fresh invitation."
+    )
+    |> redirect(to: ~p"/sign_in")
   end
 
   defp member_link_failure_message(:already_member) do
