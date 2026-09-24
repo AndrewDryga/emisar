@@ -2674,6 +2674,11 @@ defmodule Emisar.Runs do
         {:error, :not_dispatchable} ->
           :ok
 
+        # A refused run no longer holds the slot; the next queued run takes it.
+        {:error, :initiator_no_longer_authorized} ->
+          if match?(%ActionRun{status: :refused}, peek_run_by_id(run.id)),
+            do: dispatch_queued_for_runner(runner_id)
+
         {:error, reason} ->
           Logger.warning("queued run delivery failed run=#{run.id}: #{inspect(reason)}")
       end
@@ -2845,12 +2850,15 @@ defmodule Emisar.Runs do
           :ok
         else
           # The person who queued it can no longer dispatch it here. Left pending,
-          # it would hold every run queued behind it on this runner.
+          # it would hold every run queued behind it on this runner. Fenced to
+          # the state this claim tried, so a run another dispatcher has since
+          # sent is never rewritten as refused.
           {:error, :initiator_no_longer_authorized} = error ->
-            mark_refused(
-              run,
-              "the member who started this run lost access before it was sent, so it never ran — dispatch it again as a member with access"
-            )
+            transition_from(run, expected_status, :refused, %{
+              finished_at: DateTime.utc_now(),
+              error_message:
+                "the member who started this run lost access before it was sent, so it never ran — dispatch it again as a member with access"
+            })
 
             error
 
