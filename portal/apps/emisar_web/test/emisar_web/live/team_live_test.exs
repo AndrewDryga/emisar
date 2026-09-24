@@ -627,8 +627,12 @@ defmodule EmisarWeb.TeamLiveTest do
 
       refute approved =~ "Couldn't approve that request."
       assert Emisar.Repo.reload(request) == nil
-      {:ok, user} = Emisar.Users.fetch_user_by_email("scoped-access@corp.test")
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+
+      assert [%{user_id: nil} = membership] =
+               Emisar.Accounts.list_sync_memberships_by_contact_email(
+                 account.id,
+                 "scoped-access@corp.test"
+               )
 
       assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
                %Emisar.Accounts.RunnerAccess{
@@ -680,8 +684,11 @@ defmodule EmisarWeb.TeamLiveTest do
 
       render_click(lv, "approve_request", %{"id" => request.id})
 
-      {:ok, user} = Emisar.Users.fetch_user_by_email("packed@corp.test")
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      assert [%{user_id: nil} = membership] =
+               Emisar.Accounts.list_sync_memberships_by_contact_email(
+                 account.id,
+                 "packed@corp.test"
+               )
 
       assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
                %Emisar.Accounts.RunnerAccess{
@@ -740,8 +747,10 @@ defmodule EmisarWeb.TeamLiveTest do
 
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
 
-      assert {:ok, request} =
-               Emisar.SSO.Provisioning.capture_link_request(
+      assert {:ok, %{request: request}} =
+               Ecto.Multi.new()
+               |> Emisar.SSO.Provisioning.put_link_request(
+                 :request,
                  provider,
                  "okta|unverified-match",
                  member.email,
@@ -749,6 +758,7 @@ defmodule EmisarWeb.TeamLiveTest do
                  %{"email" => member.email},
                  :oidc
                )
+               |> Emisar.Repo.commit_multi()
 
       assert is_nil(request.matched_membership_id)
 
@@ -2960,7 +2970,7 @@ defmodule EmisarWeb.TeamLiveTest do
         })
 
       assert html =~ "managed by your identity provider"
-      assert Emisar.Repo.reload!(synced.user).full_name == "Synced Member"
+      assert Emisar.Repo.reload!(synced.membership).display_name == "Synced Member"
     end
 
     test "a member deactivated in the IdP can't be reinstated (stays suspended)", %{
@@ -3784,7 +3794,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     external_id = "ext-#{System.unique_integer([:positive])}"
 
-    {:ok, %{identity: identity, user: user}} =
+    {:ok, %{identity: identity}} =
       Emisar.SSO.scim_provision_user(provider, %{
         external_id: external_id,
         email: "synced-#{System.unique_integer([:positive])}@example.test",
@@ -3796,6 +3806,6 @@ defmodule EmisarWeb.TeamLiveTest do
     # through this; without it the row isn't actually directory-managed.
     {:ok, membership} = Emisar.SSO.recompute_role_for_identity(provider, identity)
 
-    %{provider: provider, membership: membership, resource_id: identity.id, user: user}
+    %{provider: provider, membership: membership, resource_id: identity.id}
   end
 end

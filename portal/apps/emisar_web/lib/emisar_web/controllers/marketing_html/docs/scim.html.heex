@@ -152,9 +152,12 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Provisioning</strong>
-            creates the user and membership at the connection's default role before their
-            first login, with runner access combined from Default access and mapped
-            directory groups.
+            creates a workspace member at the connection's default role before their first
+            sign-in, with runner access combined from Default access and mapped directory
+            groups. It creates no emisar login; a member links their own as described under <.link
+              navigate={~p"/docs/sso" <> "#provisioning-fields"}
+              class="text-brand-400 hover:text-brand-300"
+            >single sign-on</.link>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -271,6 +274,21 @@
             defaults to true. emisar accepts a JSON boolean or the case-insensitive strings <code>"True"</code>/<code>"False"</code>
             that Entra sends. Repeating a create with the same <code>externalId</code>
             reconciles the existing identity and returns the same server <code>id</code>.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            A <code>POST</code>
+            for a new <code>externalId</code>
+            whose email a member of this workspace already uses answers <code>409</code>
+            and waits for approval under <a
+              href={~p"/app/team"}
+              class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
+            >Team → Pending access requests</a>. Once it is approved, the directory's next
+            retry reconciles that member. If several members use the email, the create is
+            refused with <code>409</code>
+            until the extra member is removed.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

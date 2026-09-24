@@ -2,7 +2,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Billing, Fixtures, Repo, SSO, Users}
+  alias Emisar.{Accounts, Billing, Fixtures, Repo, SSO}
   alias Emisar.Accounts.{Account, Membership, RunnerAccess}
   alias Emisar.SSO.{DirectoryGroup, GroupRoleMapping, GroupRunnerAccessMapping}
   alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUserUpdate, UserIdentity}
@@ -14,8 +14,11 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
     unboxed_scim(fn context ->
       attrs = scim_attrs(context, "repost-activation")
 
-      {:ok, %{user: user, identity: identity, membership: member}} =
+      {:ok, %{identity: identity, membership: member}} =
         SSO.scim_provision_user(context.provider, attrs)
+
+      # A seat with a personal login: its re-POST locks that User first.
+      {user, member} = link_login(context, member, "repost-activation")
 
       identity = identity |> Ecto.Changeset.change(created_by: :admin) |> Repo.update!()
       Fixtures.Memberships.mark_membership_as_deleted(member)
@@ -280,11 +283,10 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
                  Fixtures.Memberships.force_runner_access(membership, RunnerAccess.all())
                end)
 
+      {user, _membership} = link_login(context, membership, "version-retry")
+
       {_raw, api_key} =
-        Fixtures.ApiKeys.create_api_key(
-          account_id: context.account.id,
-          created_by_id: Fixtures.SSO.identity_membership(identity).user_id
-        )
+        Fixtures.ApiKeys.create_api_key(account_id: context.account.id, created_by_id: user.id)
 
       assert is_nil(Repo.reload!(api_key).revoked_at)
 
@@ -465,27 +467,22 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
     unboxed_scim(fn context ->
       attrs = scim_attrs(context, "approval-order")
 
-      {:ok, %{user: user, membership: membership}} =
-        SSO.scim_provision_user(context.provider, attrs)
-
+      {:ok, %{membership: membership}} = SSO.scim_provision_user(context.provider, attrs)
       membership = Fixtures.Memberships.force_role(membership, "owner")
-      approver = Fixtures.Subjects.subject_for(user, context.account, role: :owner)
-
       request_email = "pending-#{context.suffix}@example.test"
 
-      assert {:ok, %LinkRequest{} = request} =
-               Emisar.SSO.Provisioning.capture_link_request(
-                 context.provider,
-                 "pending-#{context.suffix}",
-                 request_email,
-                 "Pending Person",
-                 %{
-                   "email" => request_email,
-                   "email_verified" => true,
-                   "name" => "Pending Person"
-                 },
-                 :oidc
-               )
+      request =
+        Fixtures.SSO.create_link_request(
+          provider: context.provider,
+          provider_identifier: "pending-#{context.suffix}",
+          email: request_email,
+          full_name: "Pending Person",
+          claims: %{
+            "email" => request_email,
+            "email_verified" => true,
+            "name" => "Pending Person"
+          }
+        )
 
       parent = self()
       blocker = membership_blocker(membership, parent)
@@ -507,7 +504,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
             unboxed_task(fn ->
               send(parent, {:approval_backend, backend_pid()})
 
-              SSO.approve_link_request(request, RunnerAccess.none(), approver)
+              SSO.approve_link_request(request, RunnerAccess.none(), context.subject)
             end)
 
           try do
@@ -538,7 +535,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
     end)
   end
 
-  test "provider deletion wins a queued collision and the fallback refuses to refill" do
+  test "provider deletion wins a queued collision, which then files no request" do
     unboxed_scim(fn context ->
       attrs = prepare_collision(context, "delete-first")
       parent = self()
@@ -588,7 +585,7 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
     end)
   end
 
-  test "a colliding create queued first cannot refill after deletion wins its fallback" do
+  test "a colliding create queued first files its request, and the deletion sweeps it" do
     unboxed_scim(fn context ->
       attrs = prepare_collision(context, "collision-first")
       parent = self()
@@ -620,10 +617,11 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
             send(blocker.pid, :release)
             assert {:ok, %Account{}} = Task.await(blocker, 30_000)
 
+            assert Task.await(collision, 30_000) == {:error, :identity_pending_approval}
+
             assert {:ok, %IdentityProvider{deleted_at: %DateTime{}}} =
                      Task.await(deletion, 30_000)
 
-            assert Task.await(collision, 30_000) == {:error, :directory_sync_disabled}
             refute link_request_exists?(context.provider.id)
           after
             stop_tasks([deletion])
@@ -694,7 +692,6 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
       audit_types: ["user.provisioned_via_scim"],
       snapshot: fn ->
         %{
-          user: Users.fetch_user_by_email(attrs.email),
           identities: identity_count(context.provider.id),
           memberships: membership_count(context.account.id)
         }
@@ -758,13 +755,20 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
   defp existing_snapshot(identity, membership) do
     current_identity = Repo.reload!(identity)
     current_membership = Repo.reload!(membership)
-    {:ok, user} = Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
 
     %{
       identity: {current_identity.scim_external_id, current_identity.scim_active},
-      user_name: user.full_name,
-      membership: {current_membership.role, current_membership.disabled_at}
+      membership:
+        {current_membership.role, current_membership.disabled_at, current_membership.display_name}
     }
+  end
+
+  # The directory creates Members without a personal login; a person links one
+  # by proving the mailbox. The login's address matches the fixture cleanup.
+  defp link_login(context, membership, label) do
+    user = Fixtures.Users.create_user(%{email: "#{label}-login-#{context.suffix}@example.test"})
+    {:ok, linked} = Accounts.link_personal_login(Repo, membership, user)
+    {user, linked}
   end
 
   defp prepare_collision(context, label) do

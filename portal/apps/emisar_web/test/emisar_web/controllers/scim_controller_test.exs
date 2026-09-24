@@ -122,6 +122,14 @@ defmodule EmisarWeb.SCIMControllerTest do
     |> Map.fetch!(:id)
   end
 
+  # The Member a directory externalId was provisioned as; it has no personal login.
+  defp directory_member(provider, external_id) do
+    SSO.UserIdentity.Query.not_deleted()
+    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id(provider.id, external_id)
+    |> Repo.fetch!(SSO.UserIdentity.Query)
+    |> Fixtures.SSO.identity_membership()
+  end
+
   defp user_path(token, external_id) do
     {:ok, provider} = SSO.authenticate_scim_token(token)
     "/scim/v2/Users/#{user_resource_id(provider, external_id)}"
@@ -237,7 +245,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
   describe "cross-account isolation" do
     test "an account-A token cannot touch account B — provision lands only in A", %{conn: conn} do
-      %{token: token_a, account: account_a} = scim_provider()
+      %{token: token_a, account: account_a, provider: provider_a} = scim_provider()
       %{account: account_b} = scim_provider()
 
       body =
@@ -249,10 +257,11 @@ defmodule EmisarWeb.SCIMControllerTest do
         )
         |> json_response(201)
 
-      {:ok, user} = Users.fetch_user_by_email("scoped@acme.test")
+      assert directory_member(provider_a, "okta|scoped").account_id == account_a.id
 
-      assert Accounts.peek_sync_membership(account_a.id, user.id)
-      refute Accounts.peek_sync_membership(account_b.id, user.id)
+      assert Accounts.list_sync_memberships_by_contact_email(account_b.id, "scoped@acme.test") ==
+               []
+
       assert body["externalId"] == "okta|scoped"
     end
   end
@@ -264,9 +273,10 @@ defmodule EmisarWeb.SCIMControllerTest do
       scim_provider()
     end
 
-    test "provisions a user (201) with the SCIM User resource", %{
+    test "provisions a Member (201) with the SCIM User resource, never a personal login", %{
       conn: conn,
       token: token,
+      provider: provider,
       account: account
     } do
       conn =
@@ -286,15 +296,18 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Repo.valid_uuid?(body["id"])
       refute body["id"] == body["externalId"]
 
-      {:ok, user} = Users.fetch_user_by_email("new@acme.test")
-      assert Accounts.peek_sync_membership(account.id, user.id)
+      member = directory_member(provider, "okta|new")
+      assert member.account_id == account.id
+      assert is_nil(member.user_id)
+      assert member.contact_email == "new@acme.test"
+      assert Users.fetch_user_by_email("new@acme.test") == {:error, :not_found}
     end
 
     test "a POST with active:false provisions the user already suspended (deactivated in the IdP)",
          %{
            conn: conn,
            token: token,
-           account: account
+           provider: provider
          } do
       body =
         conn
@@ -307,8 +320,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["active"] == false
 
-      {:ok, user} = Users.fetch_user_by_email("disabled@acme.test")
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert directory_member(provider, "okta|disabled").disabled_at
     end
 
     test "a repeated POST for the same externalId reconciles — no duplicate", %{
@@ -335,14 +347,19 @@ defmodule EmisarWeb.SCIMControllerTest do
     test "a person holding an unresolved invitation is refused with 409, not provisioned", %{
       conn: conn,
       token: token,
-      account: account,
+      provider: provider,
       subject: subject
     } do
       payload = user_payload("okta|reinvited", email: "reinvited@acme.test")
       assert conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(201)
 
-      {:ok, user} = Users.fetch_user_by_email("reinvited@acme.test")
-      membership = Accounts.peek_sync_membership(account.id, user.id)
+      # The person linked their own login to the directory's Member, then was
+      # removed and invited back by hand.
+      user = Fixtures.Users.create_user(email: "reinvited@acme.test")
+
+      {:ok, membership} =
+        Accounts.link_personal_login(Repo, directory_member(provider, "okta|reinvited"), user)
+
       assert {:ok, _removed} = Accounts.delete_membership(membership, subject)
 
       invitation_attrs = Fixtures.Accounts.invitation_attrs(email: user.email)
@@ -354,6 +371,32 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["scimType"] == "mutability"
       assert body["detail"] =~ "unresolved invitation"
+    end
+
+    test "an address members here use answers 409: one parks a link, two are ambiguous", %{
+      conn: conn,
+      token: token,
+      account: account
+    } do
+      Fixtures.Memberships.create_unlinked_membership(
+        account_id: account.id,
+        contact_email: "shared@acme.test"
+      )
+
+      payload = user_payload("okta|shared", email: "shared@acme.test")
+      pending = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(409)
+
+      assert pending["scimType"] == "uniqueness"
+      assert pending["detail"] =~ "An admin must approve linking this user"
+
+      Fixtures.Memberships.create_unlinked_membership(
+        account_id: account.id,
+        contact_email: "shared@acme.test"
+      )
+
+      ambiguous = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(409)
+      assert ambiguous["scimType"] == "uniqueness"
+      assert ambiguous["detail"] =~ "More than one member of this account uses that email"
     end
 
     test "a payload with no externalId or userName → 400 SCIM error", %{conn: conn, token: token} do
@@ -387,9 +430,9 @@ defmodule EmisarWeb.SCIMControllerTest do
              ) === {:ok, [], 0}
     end
 
-    test "a payload the user changeset rejects → 400 invalidValue", %{conn: conn, token: token} do
+    test "a payload the member changeset rejects → 400 invalidValue", %{conn: conn, token: token} do
       # externalId is present (passes the blank gate), but the email carries a
-      # space — the provision changeset's email validate_format rejects it. A
+      # space — the member's contact validation rejects it. A
       # NON-unique changeset error flows back to render_error(%Changeset{}) →
       # 400 invalidValue, never a 500.
       body =
@@ -418,7 +461,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|patch",
           email: "patch@acme.test",
@@ -439,10 +482,8 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["active"] == false
 
-      membership = Accounts.peek_sync_membership(account.id, user.id)
-      assert membership.disabled_at
-      # The user survives — deprovision suspends, never deletes.
-      assert {:ok, _user} = Users.fetch_user_by_id(user.id)
+      # The member survives — deprovision suspends, never deletes.
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "PATCH active:false with a pathless value map (Entra shape) works", %{
@@ -451,7 +492,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|entra", email: "e@acme.test"})
 
       patch_body = %{"Operations" => [%{"op" => "Replace", "value" => %{"active" => false}}]}
@@ -462,7 +503,7 @@ defmodule EmisarWeb.SCIMControllerTest do
              |> patch(user_path(token, "okta|entra"), patch_body)
              |> json_response(200)
 
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "an unsupported PATCH op → SCIM error, not a silent no-op", %{
@@ -493,7 +534,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|ci", email: "ci@acme.test"})
 
       patch_body = %{
@@ -506,7 +547,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert body["active"] == false
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "the LAST `active` operation decides, not the first", %{
@@ -515,7 +556,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|last", email: "last@acme.test"})
 
       # RFC 7644 applies operations in order — an IdP that reinstates and then
@@ -534,7 +575,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert body["active"] == false
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "reactivating a manually suspended member reports them still inactive", %{
@@ -549,10 +590,10 @@ defmodule EmisarWeb.SCIMControllerTest do
       # we then TOLD the IdP: the identity's flag said active, so the response said
       # active, for someone who cannot sign in. The IdP stops flagging them and
       # nobody finds out.
-      {:ok, %{user: user, membership: membership}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|held", email: "held@acme.test"})
 
-      {:ok, _suspended} = Accounts.suspend_membership(membership, subject)
+      {:ok, _suspended} = Accounts.suspend_membership(member, subject)
 
       body =
         conn
@@ -562,7 +603,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       # The hold stands...
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       # ...and the IdP is told so, rather than being told the reactivation worked.
       assert body["active"] == false
@@ -588,14 +629,14 @@ defmodule EmisarWeb.SCIMControllerTest do
       # the identity. The directory was then told two different things: a read said
       # active, a deprovision said no such user. So it either retried forever or
       # concluded they were gone and re-created them — undoing the removal.
-      {:ok, %{user: user, membership: membership}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|removed",
           email: "removed@acme.test"
         })
 
-      Fixtures.Memberships.mark_membership_as_deleted(membership)
-      refute Accounts.peek_sync_membership(account.id, user.id)
+      Fixtures.Memberships.mark_membership_as_deleted(member)
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id)
 
       read =
         conn
@@ -649,7 +690,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       token: token,
       provider: provider
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|rename-only",
           email: "rename-only@acme.test",
@@ -664,9 +705,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       |> scim_patch(token, user_path(token, "okta|rename-only"), patch_body)
       |> json_response(200)
 
-      assert Repo.reload!(user).full_name == "Old Name"
-
-      assert Accounts.peek_sync_membership(provider.account_id, user.id).display_name ==
+      assert Accounts.peek_sync_membership_by_id(provider.account_id, member.id).display_name ==
                "New Name"
     end
 
@@ -675,7 +714,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       token: token,
       provider: provider
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|entra-rename",
           email: "entra-rename@acme.test",
@@ -690,9 +729,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       |> scim_patch(token, user_path(token, "okta|entra-rename"), patch_body)
       |> json_response(200)
 
-      assert Repo.reload!(user).full_name == "Old Name"
-
-      assert Accounts.peek_sync_membership(provider.account_id, user.id).display_name ==
+      assert Accounts.peek_sync_membership_by_id(provider.account_id, member.id).display_name ==
                "Entra Name"
     end
 
@@ -702,7 +739,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|both-ops",
           email: "both-ops@acme.test",
@@ -722,9 +759,8 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert body["active"] == false
-      assert Repo.reload!(user).full_name == "Old Name"
-      assert Accounts.peek_sync_membership(account.id, user.id).display_name == "Renamed"
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).display_name == "Renamed"
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "a PatchOp whose deactivation is refused commits nothing — not even the rename", %{
@@ -736,16 +772,15 @@ defmodule EmisarWeb.SCIMControllerTest do
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :viewer})
 
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|atomic",
           email: "atomic@acme.test",
           full_name: "Old Name"
         })
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "owner")
-      demote_other_owners(account.id, except: user.id)
+      Fixtures.Memberships.force_role(member, "owner")
+      demote_other_owners(account.id, except: member.id)
 
       patch_body = %{
         "Operations" => [
@@ -760,9 +795,8 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(409)
 
       assert body["status"] == "409"
-      assert Repo.reload!(user).full_name == "Old Name"
 
-      unchanged = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      unchanged = Accounts.peek_sync_membership_by_id(account.id, member.id)
       refute unchanged.disabled_at
       assert unchanged.display_name == "Old Name"
     end
@@ -915,12 +949,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|re", email: "re@acme.test"})
 
       id = user_resource_id(provider, "okta|re")
       {:ok, _} = SSO.scim_update_user(provider, id, %SCIMUserUpdate{active: false})
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       patch_body = %{"Operations" => [%{"op" => "replace", "path" => "active", "value" => true}]}
 
@@ -932,7 +966,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert body["active"] == true
-      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "DELETE suspends the member and retires every wire operation on the resource", %{
@@ -941,15 +975,14 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user, identity: identity}} =
+      {:ok, %{membership: member, identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|del", email: "del@acme.test"})
 
       path = "/scim/v2/Users/#{identity.id}"
       conn = conn |> auth(token) |> delete(path)
       assert response(conn, 204)
 
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
-      assert {:ok, _user} = Users.fetch_user_by_id(user.id)
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       assert conn |> recycle() |> auth(token) |> get(path) |> json_response(404)
 
@@ -973,13 +1006,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :viewer})
 
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|owner", email: "o@acme.test"})
 
-      # Make the provisioned user the account's single active owner.
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "owner")
-      demote_other_owners(account.id, except: user.id)
+      # Make the provisioned member the account's single active owner.
+      Fixtures.Memberships.force_role(member, "owner")
+      demote_other_owners(account.id, except: member.id)
 
       body =
         conn
@@ -990,7 +1022,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
       assert body["status"] == "409"
       # Still active — the lockout guard held.
-      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "DELETE of an unknown server id → 404 SCIM error", %{conn: conn} do
@@ -1011,27 +1043,28 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user, identity: identity}} =
+      {:ok, %{membership: member, identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|redel", email: "redel@acme.test"})
 
       path = "/scim/v2/Users/#{identity.id}"
       deleted = conn |> auth(token) |> delete(path)
       assert response(deleted, 204)
       assert get_resp_header(deleted, "content-type") == ["application/scim+json; charset=utf-8"]
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       assert conn |> recycle() |> auth(token) |> delete(path) |> json_response(404)
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "POST after DELETE revives the same resource and person", %{
       conn: conn,
       token: token,
+      provider: provider,
       account: account
     } do
       payload = user_payload("okta|recreate", email: "recreate@acme.test")
       created = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(201)
-      {:ok, user} = Users.fetch_user_by_email("recreate@acme.test")
+      member = directory_member(provider, "okta|recreate")
 
       assert conn
              |> recycle()
@@ -1047,11 +1080,11 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert recreated["id"] == created["id"]
       assert recreated["active"]
-      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       identities =
         SSO.UserIdentity.Query.all()
-        |> SSO.UserIdentity.Query.by_member_user_id(user.id)
+        |> SSO.UserIdentity.Query.by_membership_id(member.id)
         |> Repo.all()
 
       assert [identity] = identities
@@ -1082,10 +1115,10 @@ defmodule EmisarWeb.SCIMControllerTest do
 
     test "a PATCH active:true on an already-active member is idempotent (200, still active)",
          %{conn: conn, token: token, provider: provider, account: account} do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|aa", email: "aa@acme.test"})
 
-      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       body =
         conn
@@ -1094,7 +1127,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["active"] == true
       # Reinstating an already-active membership is a no-op — still active.
-      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "a PATCH active:true on an unknown server id → 404", %{conn: conn, token: token} do
@@ -1146,13 +1179,13 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|put-off-bool",
           email: "pob@acme.test"
         })
 
-      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       # A plain JSON boolean `active:false` (the canonical PUT replace) parses via
       # parse_active → false → apply_active deactivate → 200 User resource; the
@@ -1164,9 +1197,8 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["active"] == false
       assert body["externalId"] == "okta|put-off-bool"
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
-      # Suspend, never delete — the user row survives.
-      assert {:ok, _user} = Users.fetch_user_by_id(user.id)
+      # Suspend, never delete — the member row survives.
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "PUT active:true reactivates a suspended membership", %{
@@ -1175,12 +1207,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|put-on", email: "puton@acme.test"})
 
       id = user_resource_id(provider, "okta|put-on")
       {:ok, _} = SSO.scim_update_user(provider, id, %SCIMUserUpdate{active: false})
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       body =
         conn
@@ -1189,7 +1221,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["active"] == true
       assert body["externalId"] == "okta|put-on"
-      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "PUT with a changed displayName renames the synced user", %{
@@ -1197,7 +1229,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       token: token,
       provider: provider
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|put-rename",
           email: "put-rename@acme.test",
@@ -1213,9 +1245,8 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert body["active"] == true
-      assert Repo.reload!(user).full_name == "Old Name"
 
-      assert Accounts.peek_sync_membership(provider.account_id, user.id).display_name ==
+      assert Accounts.peek_sync_membership_by_id(provider.account_id, member.id).display_name ==
                "New Name"
     end
 
@@ -1225,7 +1256,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|put-off",
           email: "putoff@acme.test"
@@ -1237,9 +1268,8 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert body["active"] == false
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
-      # Suspend, never delete — the user row survives.
-      assert {:ok, _user} = Users.fetch_user_by_id(user.id)
+      # Suspend, never delete — the member row survives.
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "PUT applies displayName + active — email stays immutable", %{
@@ -1248,7 +1278,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{
           external_id: "okta|put-ignore",
           email: "ignore@acme.test",
@@ -1256,8 +1286,8 @@ defmodule EmisarWeb.SCIMControllerTest do
         })
 
       # The PUT flips active:false and carries a displayName + emails: the
-      # IdP-owned name and lifecycle apply; the sign-in email never does (an
-      # email rewrite via sync would be an account-takeover surface).
+      # IdP-owned name and lifecycle apply; the contact never changes (an
+      # address rewrite via sync would be an account-takeover surface).
       body =
         conn
         |> scim_put(token, user_path(token, "okta|put-ignore"), %{
@@ -1268,12 +1298,11 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert body["active"] == false
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
 
-      {:ok, reloaded} = Users.fetch_user_by_id(user.id)
-      assert reloaded.full_name == "Original Name"
-      assert Accounts.peek_sync_membership(account.id, user.id).display_name == "Renamed By IdP"
-      assert reloaded.email == "ignore@acme.test"
+      reloaded = Accounts.peek_sync_membership_by_id(account.id, member.id)
+      assert reloaded.disabled_at
+      assert reloaded.display_name == "Renamed By IdP"
+      assert reloaded.contact_email == "ignore@acme.test"
     end
 
     test "PUT with no `active` → 400 invalidValue", %{
@@ -1326,13 +1355,12 @@ defmodule EmisarWeb.SCIMControllerTest do
       %{token: token, provider: provider, account: account} =
         scim_provider(%{default_role: :viewer})
 
-      {:ok, %{user: user}} =
+      {:ok, %{membership: member}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|put-owner", email: "po@acme.test"})
 
-      # Make the provisioned user the account's single active owner.
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "owner")
-      demote_other_owners(account.id, except: user.id)
+      # Make the provisioned member the account's single active owner.
+      Fixtures.Memberships.force_role(member, "owner")
+      demote_other_owners(account.id, except: member.id)
 
       body =
         conn
@@ -1343,7 +1371,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert body["status"] == "409"
       assert body["scimType"] == "mutability"
       # Still active — the last-owner guard held; scim_active untouched.
-      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
   end
 
@@ -1362,7 +1390,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider_b: provider_b,
       account_b: account_b
     } do
-      {:ok, %{identity: identity_b, user: user_b}} =
+      {:ok, %{identity: identity_b, membership: member_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|in-b", email: "inb@acme.test"})
 
       body =
@@ -1373,7 +1401,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert body["status"] == "404"
       # B's membership is untouched — A's token never reached it.
-      refute Accounts.peek_sync_membership(account_b.id, user_b.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account_b.id, member_b.id).disabled_at
     end
 
     test "PUT active:true on an account-B server id → 404; B's suspension stands", %{
@@ -1382,7 +1410,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider_b: provider_b,
       account_b: account_b
     } do
-      {:ok, %{user: user_b}} =
+      {:ok, %{membership: member_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|susp-b", email: "sb@acme.test"})
 
       id_b = user_resource_id(provider_b, "okta|susp-b")
@@ -1393,7 +1421,7 @@ defmodule EmisarWeb.SCIMControllerTest do
              |> json_response(404)
 
       # B stays suspended — A's reactivate never reached B's membership.
-      assert Accounts.peek_sync_membership(account_b.id, user_b.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account_b.id, member_b.id).disabled_at
     end
 
     test "PATCH active:true on an account-B server id → 404; B's suspension stands", %{
@@ -1402,7 +1430,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider_b: provider_b,
       account_b: account_b
     } do
-      {:ok, %{user: user_b}} =
+      {:ok, %{membership: member_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|patch-b", email: "pb@acme.test"})
 
       id_b = user_resource_id(provider_b, "okta|patch-b")
@@ -1412,12 +1440,12 @@ defmodule EmisarWeb.SCIMControllerTest do
              |> scim_patch(token_a, "/scim/v2/Users/#{id_b}", active_patch(true))
              |> json_response(404)
 
-      assert Accounts.peek_sync_membership(account_b.id, user_b.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account_b.id, member_b.id).disabled_at
     end
 
     test "PATCH active:false on an account-B server id → 404; B's member stays active",
          %{conn: conn, token_a: token_a, provider_b: provider_b, account_b: account_b} do
-      {:ok, %{user: user_b}} =
+      {:ok, %{membership: member_b}} =
         SSO.scim_provision_user(provider_b, %{external_id: "okta|live-b", email: "lb@acme.test"})
 
       assert conn
@@ -1429,7 +1457,7 @@ defmodule EmisarWeb.SCIMControllerTest do
              |> json_response(404)
 
       # B's member is still active — A's deactivate never reached B.
-      refute Accounts.peek_sync_membership(account_b.id, user_b.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account_b.id, member_b.id).disabled_at
     end
   end
 
@@ -1444,7 +1472,7 @@ defmodule EmisarWeb.SCIMControllerTest do
          %{conn: conn, token: token, provider: provider, account: account} do
       ext = "okta|lifecycle"
 
-      # 1. Provision → active member, user + identity created.
+      # 1. Provision → active member + identity created, no personal login.
       provisioned =
         conn
         |> scim_post(token, ~p"/scim/v2/Users", user_payload(ext, email: "life@acme.test"))
@@ -1455,10 +1483,9 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Repo.valid_uuid?(id)
       refute id == ext
 
-      {:ok, user} = Users.fetch_user_by_email("life@acme.test")
-      membership = Accounts.peek_sync_membership(account.id, user.id)
-      assert membership
-      refute membership.disabled_at
+      member = directory_member(provider, ext)
+      assert is_nil(member.user_id)
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       # 2. Deactivate → membership suspended, identity flagged inactive.
       deactivated =
@@ -1467,7 +1494,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert deactivated["active"] == false
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       # 3. Reactivate → membership reinstated.
       reactivated =
@@ -1476,14 +1503,13 @@ defmodule EmisarWeb.SCIMControllerTest do
         |> json_response(200)
 
       assert reactivated["active"] == true
-      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       # 4. DELETE → access suspended, wire resource retired, person kept.
       assert conn |> auth(token) |> delete(~p"/scim/v2/Users/#{id}") |> response(204)
 
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
-      # The person and historical identity row persist, but the SCIM resource is gone.
-      assert {:ok, _user} = Users.fetch_user_by_id(user.id)
+      # The member and historical identity row persist, but the SCIM resource is gone.
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
       assert SSO.scim_fetch_user(provider, id) == {:error, :not_found}
     end
 
@@ -1493,7 +1519,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       provider: provider,
       account: account
     } do
-      {:ok, %{user: user, identity: identity}} =
+      {:ok, %{membership: member, identity: identity}} =
         SSO.scim_provision_user(provider, %{external_id: "okta|drift", email: "drift@acme.test"})
 
       # Force the identity flag out of sync with the (still-active) membership —
@@ -1501,7 +1527,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       {:ok, _} =
         identity |> Ecto.Changeset.change(scim_active: false) |> Repo.update()
 
-      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       # The next reconcile (a re-POST) realigns scim_active with the live
       # membership state — load_provisioned flips it back to true.
@@ -2125,13 +2151,13 @@ defmodule EmisarWeb.SCIMControllerTest do
   end
 
   # Promote-then-isolate the last owner: demote every OTHER owner so the kept
-  # user is the account's single active owner (mirrors the domain test helper).
-  defp demote_other_owners(account_id, except: keep_user_id) do
+  # member is the account's single active owner (mirrors the domain test helper).
+  defp demote_other_owners(account_id, except: keep_membership_id) do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
     |> Accounts.Membership.Query.by_role(:owner)
     |> Repo.all()
-    |> Enum.reject(&(&1.user_id == keep_user_id))
+    |> Enum.reject(&(&1.id == keep_membership_id))
     |> Enum.each(&Fixtures.Memberships.force_role(&1, "admin"))
   end
 

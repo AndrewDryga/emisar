@@ -10,7 +10,7 @@ defmodule Emisar.SSOSCIMTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, ApiKeys, Crypto, Repo, SSO, Users}
   alias Emisar.Fixtures
-  alias Emisar.SSO.{IdentityProvider, SCIMUserUpdate}
+  alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUser, SCIMUserUpdate}
 
   defp enterprise_owner do
     Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
@@ -53,8 +53,17 @@ defmodule Emisar.SSOSCIMTest do
   # A directory user under a known name, so a rename has something to move.
   defp provisioned(provider, external_id, full_name) do
     attrs = scim_attrs(%{external_id: external_id, full_name: full_name})
-    {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
-    %{user: user, identity: identity}
+
+    {:ok, %{membership: membership, identity: identity}} =
+      SSO.scim_provision_user(provider, attrs)
+
+    %{membership: membership, identity: identity}
+  end
+
+  defp link_requests(provider) do
+    LinkRequest.Query.all()
+    |> LinkRequest.Query.by_provider_id(provider.id)
+    |> Repo.all()
   end
 
   # -- Token auth ------------------------------------------------------
@@ -96,16 +105,19 @@ defmodule Emisar.SSOSCIMTest do
       scim_provider()
     end
 
-    test "creates a user_identity (created_by :provider, provisioned_via :scim) + membership at default_role" do
+    test "creates a Member without a personal login and its identity at default_role" do
       %{provider: provider, account: account} = scim_provider(%{default_role: :operator})
       attrs = scim_attrs(%{external_id: "okta|prov-1", email: "prov@acme.test"})
 
-      assert {:ok, %{user: user, identity: identity, membership: membership}} =
+      assert {:ok, %{identity: identity, membership: membership}} =
                SSO.scim_provision_user(provider, attrs)
 
-      assert user.email == "prov@acme.test"
-      assert user.full_name == "Dir User"
-      assert user.confirmed_at
+      # The directory's name and address are this workspace's profile; no
+      # personal login exists or is reserved for the address.
+      assert is_nil(membership.user_id)
+      assert membership.display_name == "Dir User"
+      assert membership.contact_email == "prov@acme.test"
+      assert Users.fetch_user_by_email("prov@acme.test") == {:error, :not_found}
 
       assert identity.created_by == :provider
       assert identity.provisioned_via == :scim
@@ -116,19 +128,99 @@ defmodule Emisar.SSOSCIMTest do
       assert identity.scim_active
 
       assert membership.account_id == account.id
-      assert membership.user_id == user.id
       assert membership.role == :operator
       refute membership.disabled_at
     end
 
-    test "a no-email directory user provisions with nil email (identified by externalId)", %{
+    test "a no-email directory user provisions with no contact (identified by externalId)", %{
       provider: provider
     } do
       attrs = scim_attrs(%{external_id: "okta|nomail"})
 
-      assert {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
-      refute user.email
+      assert {:ok, %{identity: identity, membership: membership}} =
+               SSO.scim_provision_user(provider, attrs)
+
+      refute membership.contact_email
       assert identity.scim_external_id == "okta|nomail"
+    end
+
+    test "reserves no personal login: the mailbox owner signs up with no seat here", %{
+      provider: provider,
+      account: account
+    } do
+      email = Fixtures.Random.unique_email()
+      attrs = scim_attrs(%{external_id: "okta|mailbox", email: email})
+
+      assert {:ok, %{membership: membership}} = SSO.scim_provision_user(provider, attrs)
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
+
+      assert {:ok, %Users.User{email: ^email} = user} =
+               Accounts.begin_owner_registration(
+                 %{email: email, full_name: "Mailbox Owner"},
+                 Fixtures.Accounts.account_attrs()
+               )
+
+      assert is_nil(Accounts.peek_sync_membership(account.id, user.id))
+      assert is_nil(Repo.reload!(membership).user_id)
+    end
+
+    test "an address one live Member here uses parks a link request for that Member", %{
+      provider: provider,
+      account: account
+    } do
+      member =
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          contact_email: "Shared@Acme.test"
+        )
+
+      attrs = scim_attrs(%{external_id: "okta|shared", email: "shared@acme.test"})
+
+      assert SSO.scim_provision_user(provider, attrs) == {:error, :identity_pending_approval}
+
+      assert [%LinkRequest{} = request] = link_requests(provider)
+      assert request.matched_membership_id == member.id
+      assert request.provider_identifier == "okta|shared"
+      assert request.source == :scim
+
+      assert {:ok, [], 0} =
+               SSO.scim_list_users(provider, scim_filter: {:external_id, "okta|shared"})
+    end
+
+    test "an address two live Members here use is refused as ambiguous", %{
+      provider: provider,
+      account: account
+    } do
+      for _member <- 1..2 do
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          contact_email: "twice@acme.test"
+        )
+      end
+
+      attrs = scim_attrs(%{external_id: "okta|twice", email: "twice@acme.test"})
+
+      assert SSO.scim_provision_user(provider, attrs) == {:error, :member_email_ambiguous}
+      assert link_requests(provider) == []
+
+      assert {:ok, [], 0} =
+               SSO.scim_list_users(provider, scim_filter: {:external_id, "okta|twice"})
+    end
+
+    test "only this account's contacts match: another account's member or login never does", %{
+      provider: provider,
+      account: account
+    } do
+      %{account: other_account} = scim_provider()
+      login = Fixtures.Users.create_user(email: "elsewhere@acme.test")
+      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: login.id)
+      attrs = scim_attrs(%{external_id: "okta|elsewhere-person", email: login.email})
+
+      assert {:ok, %{membership: membership}} = SSO.scim_provision_user(provider, attrs)
+      assert membership.account_id == account.id
+      assert is_nil(membership.user_id)
+      assert link_requests(provider) == []
+      assert is_nil(Accounts.peek_sync_membership(account.id, login.id))
     end
 
     test "a re-POST of a deprovisioned (suspended) user reactivates them (#4)", %{
@@ -137,21 +229,23 @@ defmodule Emisar.SSOSCIMTest do
     } do
       attrs = scim_attrs(%{external_id: "okta|readd", email: "readd@acme.test"})
 
-      assert {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      assert {:ok, %{membership: member, identity: identity}} =
+               SSO.scim_provision_user(provider, attrs)
 
       {:ok, _} =
         SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
 
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       # Some IdPs re-POST rather than PATCH active:true — the re-POST restores
       # access (reinstate the membership + scim_active), never staying suspended.
       assert {:ok, %{identity: identity, membership: membership}} =
                SSO.scim_provision_user(provider, attrs)
 
+      assert membership.id == member.id
       refute membership.disabled_at
       assert identity.scim_active
-      refute Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "a re-POST after the membership was removed re-creates it (#10)", %{
@@ -160,19 +254,27 @@ defmodule Emisar.SSOSCIMTest do
     } do
       attrs = scim_attrs(%{external_id: "okta|removed", email: "removed@acme.test"})
 
-      assert {:ok, %{user: user, membership: membership}} =
+      assert {:ok, %{membership: membership, identity: identity}} =
                SSO.scim_provision_user(provider, attrs)
 
       # An operator removed them from the team (membership soft-deleted) while
       # the identity lived on.
       Fixtures.Memberships.mark_membership_as_deleted(membership)
 
-      refute Accounts.peek_sync_membership(account.id, user.id)
+      refute Accounts.peek_sync_membership_by_id(account.id, membership.id)
 
-      # The re-POST re-provisions a fresh membership rather than 404ing.
-      assert {:ok, %{membership: new_membership}} = SSO.scim_provision_user(provider, attrs)
+      # The re-POST re-provisions a fresh Member, still without a personal login,
+      # at the removed seat's profile, and moves the identity to it.
+      assert {:ok, %{membership: new_membership, identity: rebound}} =
+               SSO.scim_provision_user(provider, attrs)
+
+      refute new_membership.id == membership.id
       refute new_membership.disabled_at
-      assert Accounts.peek_sync_membership(account.id, user.id)
+      assert is_nil(new_membership.user_id)
+      assert new_membership.contact_email == "removed@acme.test"
+      assert new_membership.display_name == "Dir User"
+      assert rebound.id == identity.id
+      assert rebound.membership_id == new_membership.id
     end
   end
 
@@ -187,7 +289,8 @@ defmodule Emisar.SSOSCIMTest do
       provider: provider,
       account: account
     } do
-      %{user: user, identity: identity} = provisioned(provider, "okta|ordered", "Old Name")
+      %{membership: member, identity: identity} =
+        provisioned(provider, "okta|ordered", "Old Name")
 
       operations = [
         %{"op" => "replace", "path" => "active", "value" => true},
@@ -200,16 +303,16 @@ defmodule Emisar.SSOSCIMTest do
                SSO.scim_patch_user(provider, identity.id, operations)
 
       assert membership.disabled_at
-      assert Repo.reload!(user).full_name == "Old Name"
       assert membership.display_name == "Final Name"
-      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "a case-insensitive verb and Entra's pathless value map are both recognized", %{
       provider: provider,
       account: account
     } do
-      %{user: user, identity: identity} = provisioned(provider, "okta|pathless", "Old Name")
+      %{membership: member, identity: identity} =
+        provisioned(provider, "okta|pathless", "Old Name")
 
       operations = [
         %{"op" => "Add", "value" => %{"active" => "False", "displayName" => "Pathless Name"}}
@@ -217,16 +320,14 @@ defmodule Emisar.SSOSCIMTest do
 
       assert {:ok, _result} = SSO.scim_patch_user(provider, identity.id, operations)
 
-      assert Repo.reload!(user).full_name == "Old Name"
-
-      assert Fixtures.Memberships.fetch_membership(account.id, user.id).display_name ==
-               "Pathless Name"
-
-      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      patched = Accounts.peek_sync_membership_by_id(account.id, member.id)
+      assert patched.display_name == "Pathless Name"
+      assert patched.disabled_at
     end
 
     test "a whole name wins over the components batched around it", %{provider: provider} do
-      %{user: user, identity: identity} = provisioned(provider, "okta|whole", "Old Name")
+      %{membership: member, identity: identity} =
+        provisioned(provider, "okta|whole", "Old Name")
 
       operations = [
         %{"op" => "add", "path" => "name.givenName", "value" => "Given"},
@@ -235,40 +336,37 @@ defmodule Emisar.SSOSCIMTest do
       ]
 
       assert {:ok, _result} = SSO.scim_patch_user(provider, identity.id, operations)
-      assert Repo.reload!(user).full_name == "Old Name"
-
-      assert Fixtures.Memberships.fetch_membership(provider.account_id, user.id).display_name ==
-               "Whole Name"
+      assert Repo.reload!(member).display_name == "Whole Name"
     end
 
     test "a component-only rename keeps the half the batch does not name", %{provider: provider} do
-      %{user: user, identity: identity} = provisioned(provider, "okta|component", "Ada Lovelace")
+      %{membership: member, identity: identity} =
+        provisioned(provider, "okta|component", "Ada Lovelace")
 
       operations = [%{"op" => "Add", "path" => "name.givenName", "value" => "Augusta"}]
 
       assert {:ok, _result} = SSO.scim_patch_user(provider, identity.id, operations)
-      assert Repo.reload!(user).full_name == "Ada Lovelace"
-
-      assert Fixtures.Memberships.fetch_membership(provider.account_id, user.id).display_name ==
-               "Augusta Lovelace"
+      assert Repo.reload!(member).display_name == "Augusta Lovelace"
     end
 
     test "a batch past the operation cap is refused before any of it is applied", %{
       provider: provider,
       account: account
     } do
-      %{user: user, identity: identity} = provisioned(provider, "okta|flood", "Old Name")
+      %{membership: member, identity: identity} =
+        provisioned(provider, "okta|flood", "Old Name")
+
       operation = %{"op" => "replace", "path" => "active", "value" => false}
 
       assert SSO.scim_patch_user(provider, identity.id, List.duplicate(operation, 101)) ==
                {:error, :too_many_scim_operations}
 
-      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
-      assert Repo.reload!(user).full_name == "Old Name"
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "an unparseable `active` takes the rename batched with it", %{provider: provider} do
-      %{user: user, identity: identity} = provisioned(provider, "okta|badactive", "Old Name")
+      %{membership: member, identity: identity} =
+        provisioned(provider, "okta|badactive", "Old Name")
 
       operations = [
         %{"op" => "replace", "path" => "displayName", "value" => "New Name"},
@@ -278,7 +376,7 @@ defmodule Emisar.SSOSCIMTest do
       assert SSO.scim_patch_user(provider, identity.id, operations) ==
                {:error, :invalid_scim_active}
 
-      assert Repo.reload!(user).full_name == "Old Name"
+      assert Repo.reload!(member).display_name == "Old Name"
     end
 
     test "a batch asking for nothing we model is refused, not silently accepted", %{
@@ -293,7 +391,8 @@ defmodule Emisar.SSOSCIMTest do
     end
 
     test "a supported operation cannot hide an unsupported one", %{provider: provider} do
-      %{user: user, identity: identity} = provisioned(provider, "okta|mixed", "Old Name")
+      %{membership: member, identity: identity} =
+        provisioned(provider, "okta|mixed", "Old Name")
 
       operations = [
         %{"op" => "replace", "path" => "displayName", "value" => "New Name"},
@@ -303,7 +402,7 @@ defmodule Emisar.SSOSCIMTest do
       assert SSO.scim_patch_user(provider, identity.id, operations) ==
                {:error, :unsupported_scim_patch}
 
-      assert Repo.reload!(user).full_name == "Old Name"
+      assert Repo.reload!(member).display_name == "Old Name"
     end
 
     test "another provider's resource id is not found (the provider scopes the write)", %{
@@ -311,7 +410,7 @@ defmodule Emisar.SSOSCIMTest do
     } do
       %{provider: provider_b, account: account_b} = scim_provider()
 
-      %{user: user, identity: identity_b} =
+      %{membership: member_b, identity: identity_b} =
         provisioned(provider_b, "okta|elsewhere", "B Person")
 
       operations = [%{"op" => "replace", "path" => "active", "value" => false}]
@@ -319,35 +418,35 @@ defmodule Emisar.SSOSCIMTest do
       assert SSO.scim_patch_user(provider_a, identity_b.id, operations) ==
                {:error, :not_found}
 
-      refute Fixtures.Memberships.fetch_membership(account_b.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account_b.id, member_b.id).disabled_at
     end
   end
 
   # -- Deprovision / reprovision ---------------------------------------
 
   describe "scim_update_user/3 deactivate" do
-    test "suspends the membership (disabled_at) + revokes the user's API keys + does NOT delete the user" do
+    test "suspends the membership (disabled_at) + revokes its API keys + keeps the member" do
       %{provider: provider, account: account} = scim_provider(%{default_role: :admin})
       attrs = scim_attrs(%{external_id: "okta|deprov", email: "deprov@acme.test"})
 
-      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: member, identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
-      {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      # The directory-provisioned Member signs in through SSO and mints a key.
+      raw_session = Fixtures.Auth.create_member_session_token!(member, identity)
+      member_subject = Fixtures.Subjects.unlinked_member_subject(member, raw_session)
+      assert {:ok, _raw, key} = ApiKeys.mint_quick_key(member_subject)
 
       assert {:ok, %{membership: membership, identity: deactivated}} =
                SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
 
       # Membership suspended, the SCIM lifecycle flag flipped.
+      assert membership.id == member.id
       assert membership.disabled_at
       refute deactivated.scim_active
 
-      # The membership row was disabled, not deleted.
-      reloaded_membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      assert reloaded_membership.disabled_at
-
-      # The user + identity survive (audit preservation) — only access is cut.
-      assert {:ok, _user} = Users.fetch_user_by_id(user.id)
+      # The membership row was disabled, not deleted, and the identity survives
+      # (audit preservation) — only access is cut.
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
       assert {:ok, _scim_user} = SSO.scim_fetch_user(provider, identity.id)
 
       # Their delegated execute access (API keys) is revoked — a revoked key
@@ -359,23 +458,20 @@ defmodule Emisar.SSOSCIMTest do
       %{provider: provider, account: account} = scim_provider(%{default_role: :viewer})
       attrs = scim_attrs(%{external_id: "okta|owner"})
 
-      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: membership, identity: identity}} =
+        SSO.scim_provision_user(provider, attrs)
 
-      # Promote the lone provisioned member to the account's only owner (the
-      # bootstrap owner is a separate account in this fixture, so this user is
-      # the last active owner of their membership's account once promoted).
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      # Promote the provisioned member to owner, then demote the bootstrap owner
+      # so the provisioned member is the account's single remaining active owner.
       Fixtures.Memberships.force_role(membership, "owner")
-      # Demote the original bootstrap owner so the provisioned user is the
-      # single remaining active owner.
-      demote_other_owners(account.id, except: user.id)
+      demote_other_owners(account.id, except: membership.id)
 
       assert SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false}) ==
                {:error, :last_owner}
 
       # The membership stays active and the SCIM flag is left untouched, so the
       # projection still answers active.
-      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, membership.id).disabled_at
       assert {:ok, unchanged} = SSO.scim_fetch_user(provider, identity.id)
       assert unchanged.active
     end
@@ -386,16 +482,64 @@ defmodule Emisar.SSOSCIMTest do
       %{provider: provider, account: account} = scim_provider(%{default_role: :operator})
       attrs = scim_attrs(%{external_id: "okta|react", email: "react@acme.test"})
 
-      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: member, identity: identity}} = SSO.scim_provision_user(provider, attrs)
       {:ok, _} = SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
-      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       assert {:ok, %{membership: membership, identity: identity}} =
                SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: true})
 
       refute membership.disabled_at
       assert identity.scim_active
-      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
+    end
+  end
+
+  describe "a directory Member without a personal login" do
+    setup do
+      scim_provider()
+    end
+
+    test "answers GET, both filters, PATCH suspend and restore, DELETE and revival", %{
+      provider: provider
+    } do
+      attrs = scim_attrs(%{external_id: "okta|life", email: "life@acme.test"})
+
+      assert {:ok, %{membership: %{user_id: nil, id: member_id}, identity: %{id: id}}} =
+               SSO.scim_provision_user(provider, attrs)
+
+      assert {:ok, %SCIMUser{id: ^id, user_name: "life@acme.test", active: true}} =
+               SSO.scim_fetch_user(provider, id)
+
+      assert {:ok, [%SCIMUser{id: ^id}], 1} =
+               SSO.scim_list_users(provider, scim_filter: {:user_name, "LIFE@acme.test"})
+
+      assert {:ok, [%SCIMUser{id: ^id}], 1} =
+               SSO.scim_list_users(provider, scim_filter: {:external_id, "okta|life"})
+
+      suspend = [%{"op" => "replace", "path" => "active", "value" => false}]
+      restore = [%{"op" => "replace", "path" => "active", "value" => true}]
+
+      assert {:ok, %{membership: %{id: ^member_id, disabled_at: %DateTime{}}}} =
+               SSO.scim_patch_user(provider, id, suspend)
+
+      assert {:ok, %SCIMUser{active: false}} = SSO.scim_fetch_user(provider, id)
+
+      assert {:ok, %{membership: %{id: ^member_id, disabled_at: nil}}} =
+               SSO.scim_patch_user(provider, id, restore)
+
+      assert {:ok, %{identity: %{scim_deleted_at: %DateTime{}}}} =
+               SSO.scim_delete_user(provider, id)
+
+      assert SSO.scim_fetch_user(provider, id) == {:error, :not_found}
+
+      assert {:ok, %{identity: %{id: ^id}, membership: revived}} =
+               SSO.scim_provision_user(provider, attrs)
+
+      assert revived.id == member_id
+      assert is_nil(revived.user_id)
+      refute revived.disabled_at
+      assert {:ok, %SCIMUser{active: true}} = SSO.scim_fetch_user(provider, id)
     end
   end
 
@@ -501,12 +645,12 @@ defmodule Emisar.SSOSCIMTest do
 
   # -- Helpers ---------------------------------------------------------
 
-  defp demote_other_owners(account_id, except: keep_user_id) do
+  defp demote_other_owners(account_id, except: keep_membership_id) do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
     |> Accounts.Membership.Query.by_role(:owner)
     |> Repo.all()
-    |> Enum.reject(&(&1.user_id == keep_user_id))
+    |> Enum.reject(&(&1.id == keep_membership_id))
     |> Enum.each(&Fixtures.Memberships.force_role(&1, "admin"))
   end
 

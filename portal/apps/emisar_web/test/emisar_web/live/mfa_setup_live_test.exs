@@ -5,7 +5,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   for this browser before continuing to the dashboard.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Auth, Mail, Users}
+  alias Emisar.{Accounts, Auth, Mail}
 
   setup %{conn: conn} do
     {owner_conn, owner, account} = register_and_log_in(conn)
@@ -398,7 +398,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   end
 
   test "a no-email member fails closed with actionable profile guidance", %{account: account} do
-    {:ok, user} = Users.provision_sso_user(%{full_name: "No Email"})
+    user = Fixtures.Users.create_sso_user(full_name: "No Email")
 
     Fixtures.Memberships.create_membership(
       account_id: account.id,

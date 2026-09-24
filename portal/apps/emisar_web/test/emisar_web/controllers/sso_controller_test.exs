@@ -1029,7 +1029,9 @@ defmodule EmisarWeb.SSOControllerTest do
       assert actor_id == actor.id
     end
 
-    test "a valid stash + verified claims logs the user in with :sso provenance", %{conn: conn} do
+    test "a first sign-in creates a Member without a personal login and signs it in", %{
+      conn: conn
+    } do
       account = enterprise_account()
       provider = provider_fixture(account)
       # Claims ride the callback as query params, so the provider's boolean
@@ -1049,17 +1051,50 @@ defmodule EmisarWeb.SSOControllerTest do
       assert redirected_to(conn) == ~p"/app/#{account}"
       # …and the account is remembered for the SSO landing page (signed cookie).
       assert Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
+      # SSO registers no personal login, so there is no signup conversion.
+      refute (Phoenix.Flash.get(conn.assigns.flash, :info) || "") =~ "Welcome to emisar"
 
-      # The session carries a real token, the stash is cleared, and the
-      # persisted token row records the SSO sign-in method.
+      # The session carries a real member-only token, the stash is cleared, and
+      # the persisted token row records the SSO sign-in method.
       token = get_session(conn, :user_token)
       assert token
       refute get_session(conn, @stash_key)
 
-      assert {:ok, %{user: user} = auth} = Emisar.Auth.fetch_session_by_token(token)
-      assert user.email == "cb@acme.test"
+      assert {:ok, %{user: nil} = auth} = Emisar.Auth.fetch_session_by_token(token)
       assert auth.auth_method == :sso
       assert auth.user_identity_id
+      assert [membership_id] = Emisar.Auth.session_membership_ids(auth)
+
+      assert [%{id: ^membership_id, user_id: nil}] =
+               Emisar.Accounts.list_sync_memberships_by_contact_email(account.id, "cb@acme.test")
+
+      assert Emisar.Users.fetch_user_by_email("cb@acme.test") == {:error, :not_found}
+    end
+
+    test "an address two members here use is refused with an explanation", %{conn: conn} do
+      account = enterprise_account()
+      provider = provider_fixture(account)
+
+      for _member <- 1..2 do
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          contact_email: "twice@acme.test"
+        )
+      end
+
+      claims = %{"sub" => "okta|twice", "email" => "twice@acme.test", "email_verified" => "true"}
+
+      conn =
+        conn
+        |> stash_callback(provider)
+        |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
+
+      assert redirected_to(conn) == ~p"/sign_in"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
+               "More than one member of this workspace uses your email address"
+
+      refute get_session(conn, :user_token)
     end
 
     test "a removed identity cannot sign into a replacement seat and explains recovery", %{
@@ -1122,7 +1157,11 @@ defmodule EmisarWeb.SSOControllerTest do
 
       refute get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/sign_in"
-      assert Emisar.Users.fetch_user_by_email("disabled@acme.test") == {:error, :not_found}
+
+      assert Emisar.Accounts.list_sync_memberships_by_contact_email(
+               account.id,
+               "disabled@acme.test"
+             ) == []
     end
 
     test "a protected OAuth request resumes after SSO sign-in", %{conn: conn} do
@@ -1188,14 +1227,14 @@ defmodule EmisarWeb.SSOControllerTest do
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
       token = get_session(conn, :user_token)
-      {:ok, %{user: user}} = Emisar.Auth.fetch_session_by_token(token)
-      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {:ok, session} = Emisar.Auth.fetch_session_by_token(token)
+      [membership_id] = Emisar.Auth.session_membership_ids(session)
 
       [event] =
         Emisar.Audit.Event.Query.all()
         |> Emisar.Audit.Event.Query.by_account_id(account.id)
         |> Emisar.Audit.Event.Query.by_event_type("user.signed_in")
-        |> Emisar.Audit.Event.Query.by_target_id(member.id)
+        |> Emisar.Audit.Event.Query.by_target_id(membership_id)
         |> Repo.all()
 
       assert event.payload["method"] == "sso"
@@ -1271,7 +1310,7 @@ defmodule EmisarWeb.SSOControllerTest do
     end
 
     test "an unmapped complete_auth error gets the generic fallback copy", %{conn: conn} do
-      # every recognised failure (`:email_taken`,
+      # every recognised failure (`:member_email_ambiguous`,
       # `:identity_pending_approval`, `:email_domain_not_allowed`, missing stash)
       # has tailored copy; anything else (here an IdP/transport failure surfaced by
       # `complete_auth`) falls to one generic "try again, or contact your admin"

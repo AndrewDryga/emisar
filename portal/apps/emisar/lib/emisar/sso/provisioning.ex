@@ -24,42 +24,14 @@ defmodule Emisar.SSO.Provisioning do
     |> Repo.all()
   end
 
-  # Capture (or refresh) a pending link request. When the email matches an
-  # EXISTING account member, the request records them (`matched_membership_id`) so
-  # an admin can link the IdP identity to that member instead of failing/duplicating
-  # — never an auto-merge (C1): the admin's approval is still the gate. The
-  # display email is the raw value (helps the admin recognize who's asking); the
-  # binding on approval uses the captured id, not the email.
-  def capture_link_request(
-        %IdentityProvider{} = provider,
-        identifier,
-        email,
-        full_name,
-        claims,
-        source
-      ) do
-    Multi.new()
-    |> put_active_account_lock(provider.account_id)
-    |> Multi.merge(fn _changes ->
-      put_link_request(
-        Multi.new(),
-        :request,
-        provider,
-        identifier,
-        email,
-        full_name,
-        claims,
-        source
-      )
-    end)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{request: request}} -> {:ok, request}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  @doc "Internal — compose one current-provider pending-link upsert into SSO's transaction."
+  @doc """
+  Internal — compose one current-provider pending-link upsert into SSO's
+  transaction. The request records the one live Member whose workspace contact
+  the trusted email names, so approval links the identity to that Member — never
+  an auto-merge (C1): the admin's approval is still the gate. An email that names
+  two or more Members is refused as ambiguous. The display email is the raw value
+  (it helps the admin recognize who is asking); approval binds the captured id.
+  """
   def put_link_request(
         %Multi{} = multi,
         key,
@@ -70,24 +42,34 @@ defmodule Emisar.SSO.Provisioning do
         claims,
         source
       ) do
-    matched_email = link_match_email(provider, email, claims, source)
-    member = matched_member(provider, matched_email)
+    case member_contact_match(provider, link_match_email(provider, email, claims, source)) do
+      :ambiguous ->
+        Multi.error(multi, key, :member_email_ambiguous)
 
-    attrs = %{
-      provider_identifier: identifier,
-      source: source,
-      namespace_fingerprint: namespace_fingerprint(provider),
-      email: email,
-      full_name: full_name,
-      claims: claims,
-      matched_membership_id: member && member.id
-    }
+      match ->
+        attrs = %{
+          provider_identifier: identifier,
+          source: source,
+          namespace_fingerprint: namespace_fingerprint(provider),
+          email: email,
+          full_name: full_name,
+          claims: claims,
+          matched_membership_id: matched_membership_id(match)
+        }
 
+        insert_link_request(multi, key, provider, attrs)
+    end
+  end
+
+  defp matched_membership_id({:ok, %Accounts.Membership{id: id}}), do: id
+  defp matched_membership_id(:none), do: nil
+
+  defp insert_link_request(multi, key, provider, attrs) do
     changeset = LinkRequest.Changeset.create(provider.account_id, provider.id, attrs)
 
     # `source` is replaced with the rest. A re-capture of the same identifier from
     # the OTHER namespace describes a different person — it replaces the email,
-    # claims and matched user — so leaving the original source behind made the
+    # claims and matched member — so leaving the original source behind made the
     # approval stamp the column the request no longer belongs to.
     Multi.insert(multi, key, changeset,
       on_conflict:
@@ -131,48 +113,29 @@ defmodule Emisar.SSO.Provisioning do
 
   defp link_match_email(_provider, email, _claims, :scim), do: email
 
-  # Directory collision variant: park a link request ONLY when the SCIM email
-  # matches an existing member, so an admin has someone to link to. A non-member
-  # collision has no link target — the caller keeps the genuine `:email_taken`
-  # (C1). Returns `:captured | :no_match`.
-  def capture_member_link(
-        %IdentityProvider{} = provider,
-        identifier,
-        email,
-        full_name,
-        claims,
-        :scim
-      ) do
-    if matched_member(provider, email) do
-      case capture_link_request(provider, identifier, email, full_name, claims, :scim) do
-        {:ok, request} -> {:captured, request}
-        {:error, _} -> :no_match
-      end
-    else
-      :no_match
+  # Email is never identity: an inbound address is compared only with this
+  # account's own workspace contacts, never with a personal login's address, so a
+  # provider can never match another account's members. One live Member is a link
+  # target for the admin; two or more are ambiguous; none is a new person.
+  def member_contact_match(%IdentityProvider{} = provider, email) when is_binary(email) do
+    case Accounts.list_sync_memberships_by_contact_email(provider.account_id, email) do
+      [] -> :none
+      [%Accounts.Membership{} = member] -> {:ok, member}
+      [_first, _second] -> :ambiguous
     end
   end
 
-  # The existing account MEMBER an inbound email matches, if any. Restricted to
-  # members (never pulls an outsider into the account); a lookup for the admin,
-  # not a merge.
-  def matched_member(%IdentityProvider{} = provider, email) when is_binary(email) do
-    with {:ok, user} <- Users.fetch_user_by_email(email),
-         %Accounts.Membership{} = member <-
-           Accounts.peek_sync_membership(provider.account_id, user.id) do
-      member
-    else
-      _ -> nil
-    end
-  end
-
-  def matched_member(_provider, _email), do: nil
+  def member_contact_match(_provider, _email), do: :none
 
   # The personal login linked to an identity's preloaded seat, locked. Callers
   # take it before the identity, in membership activation's User -> identity order.
+  # A seat without a personal login has no User to lock.
   def lock_seat_user(repo, %UserIdentity{membership: %Accounts.Membership{user_id: user_id}})
       when is_binary(user_id),
       do: Users.fetch_and_lock_user_by_id(user_id, repo)
+
+  def lock_seat_user(_repo, %UserIdentity{membership: %Accounts.Membership{user_id: nil}}),
+    do: {:ok, nil}
 
   def lock_seat_user(_repo, %UserIdentity{}), do: {:error, :not_found}
 

@@ -347,7 +347,7 @@ defmodule EmisarWeb.SSOController do
   defp failure_reason({:account_disabled, _account}), do: "account_disabled"
   defp failure_reason(:account_disabled), do: "account_disabled"
   defp failure_reason(:email_domain_not_allowed), do: "email_domain_not_allowed"
-  defp failure_reason(:email_taken), do: "email_already_bound"
+  defp failure_reason(:member_email_ambiguous), do: "member_email_ambiguous"
   defp failure_reason(:identity_pending_approval), do: "identity_pending_approval"
   defp failure_reason(:identity_namespace_changed), do: "provider_config_changed"
   defp failure_reason(:identity_already_linked), do: "identity_conflict"
@@ -471,7 +471,7 @@ defmodule EmisarWeb.SSOController do
   defp complete_sign_in(conn, params) do
     with %{provider_id: provider_id} = stash <- get_session(conn, @stash_key),
          {:ok, started_provider} <- SSO.fetch_provider_for_sign_in(provider_id),
-         {:ok, %{identity: identity, provider: provider, created?: created?} = auth} <-
+         {:ok, %{identity: identity, provider: provider} = auth} <-
            SSO.complete_auth(started_provider, params, stash),
          {:ok, account} <-
            Accounts.fetch_account_by_id_or_slug_including_disabled(provider.account_id) do
@@ -490,8 +490,7 @@ defmodule EmisarWeb.SSOController do
              sso_sign_in_actor(auth),
              account.id,
              user_identity_id: identity.id,
-             provider_identifier: identity.provider_identifier,
-             registered?: created?
+             provider_identifier: identity.provider_identifier
            ) do
         {:ok, conn} ->
           conn
@@ -662,8 +661,8 @@ defmodule EmisarWeb.SSOController do
     |> redirect(to: ~p"/sign_in/sso/pending")
   end
 
-  defp callback_error_message(:email_taken) do
-    "An account already exists for this email. Ask an admin to link your single sign-on identity."
+  defp callback_error_message(:member_email_ambiguous) do
+    "More than one member of this workspace uses your email address, so single sign-on cannot tell which one you are. Ask your team admin."
   end
 
   defp callback_error_message(:identity_pending_approval) do

@@ -77,17 +77,16 @@ defmodule EmisarWeb.UserAuth do
   Completes an SSO sign-in under the account and current-provider locks.
   `actor` is the callback's person: a linked Member's `%Users.User{}`, or a
   `%Accounts.Membership{}` without a personal login. `opts` carry the callback's
-  required `:user_identity_id` and exact `:provider_identifier`, plus the
-  JIT-provisioning `:registered?` flag. The domain returns the committed MFA
-  outcome used for analytics; no web caller chooses it.
+  required `:user_identity_id` and exact `:provider_identifier`. SSO never
+  registers a personal login, so it records no signup. The domain returns the
+  committed MFA outcome used for analytics; no web caller chooses it.
   """
   def log_in_sso_user_for_account(conn, actor, account_id, opts \\ []) do
-    {registered?, opts} = Keyword.pop(opts, :registered?, false)
     context = RequestContext.from_conn(conn)
 
     case Auth.complete_sso_account_sign_in(actor, account_id, context, opts) do
       {:ok, token, mfa} ->
-        {:ok, finish_log_in(conn, personal_login(actor), token, :sso, mfa, registered?)}
+        {:ok, finish_log_in(conn, personal_login(actor), token, :sso, mfa, false)}
 
       {:error, :account_disabled} = error ->
         error
@@ -154,9 +153,9 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # The first sign-in right after registering (magic-link round-trip or SSO JIT).
-  # The inbox proof has already completed for the magic-link path, so this flash
-  # only welcomes the operator to the workspace that transaction just created.
+  # The first sign-in right after registering (the magic-link round-trip). The
+  # inbox proof has already completed, so this flash only welcomes the operator
+  # to the workspace that transaction just created.
   defp maybe_flash_just_registered(conn, _user, true) do
     put_flash(conn, :info, "Welcome to emisar! Your workspace is ready.")
   end

@@ -2009,10 +2009,6 @@ defmodule EmisarWeb.TeamLive do
     "That person also belongs to another workspace, so this link cannot be approved from this workspace."
   end
 
-  defp approval_error_message(:email_taken) do
-    "A user with that email already exists. Approving would create a duplicate, so this request can't be auto-approved."
-  end
-
   defp approval_error_message(_reason), do: "Couldn't approve that request."
 
   defp do_dismiss_request(socket, id) do

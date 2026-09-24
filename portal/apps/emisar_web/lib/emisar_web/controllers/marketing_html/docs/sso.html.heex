@@ -134,6 +134,13 @@
         cannot control assignments that tightly.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
+        Either way, single sign-on adds a member to this workspace, not an emisar login. The member
+        signs in through your provider and reaches only this workspace. For email sign-in, their own
+        sessions and multi-factor authentication, a member links a personal login from Profile:
+        emisar emails a code to the address they enter. If that address already has a login with
+        multi-factor authentication, the member also enters a code from it.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Turning on
         <.link navigate={~p"/docs/scim"} class="text-brand-400 hover:text-brand-300">
           directory sync
@@ -213,15 +220,15 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         emisar recognises a returning member by the identifier claim, not by their email
         address. People change addresses, and an address can be reassigned; a subject cannot.
-        Matching on email would let whoever controls an address inherit the emisar account
-        behind it, so a first SSO sign-in never silently merges into an existing one. What
-        happens instead depends on who owns the address:
+        Matching on email would let whoever controls an address inherit the membership behind
+        it, so a first SSO sign-in never silently merges into an existing one. emisar compares
+        its verified email only with the contact addresses of this workspace's members:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex gap-3">
           <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
           <span>
-            <strong class="text-zinc-200">Already a member of this account.</strong>
+            <strong class="text-zinc-200">One member uses the address.</strong>
             The sign-in is held, and an owner or admin approves it under <a
               href={~p"/app/team"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
@@ -235,9 +242,18 @@
         <li class="flex gap-3">
           <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
           <span>
-            <strong class="text-zinc-200">Someone outside this account.</strong>
-            The sign-in is refused. There is nobody here to link them to, and emisar will not
-            claim another account's user by matching an address.
+            <strong class="text-zinc-200">Several members use the address.</strong>
+            The sign-in is refused, because emisar cannot tell which member it is. Remove the
+            member who should not have that address; the next sign-in is then held for approval.
+          </span>
+        </li>
+        <li class="flex gap-3">
+          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
+          <span>
+            <strong class="text-zinc-200">No member uses the address.</strong>
+            The sign-in follows the
+            <a href="#provisioning-fields" class="text-brand-400 hover:text-brand-300">New members</a>
+            setting above.
           </span>
         </li>
       </ul>
@@ -519,9 +535,9 @@
                 connection restricts an email domain or needs email-based linking, include an
                 explicitly verified email; Google Workspace may instead use a matching
                 <code>hd</code>
-                for its tenant boundary. UserInfo-only email or profile claims are not read. If an
-                existing emisar user has the verified email, an administrator must link the
-                provider identity deliberately. emisar never merges by email.
+                for its tenant boundary. UserInfo-only email or profile claims are not read. If
+                several members of this workspace use the verified email, remove the extra member;
+                see <a href="#subject-not-email" class="text-brand-400 hover:text-brand-300">When the email already belongs to someone</a>.
               </td>
             </tr>
             <tr>

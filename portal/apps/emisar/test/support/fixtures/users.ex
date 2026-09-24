@@ -28,20 +28,22 @@ defmodule Emisar.Fixtures.Users do
     if confirmed?, do: confirm_user(user), else: user
   end
 
-  @doc "Persists an SSO user, including profiles without an email address."
+  @doc """
+  Persists a personal login without an email address: the shape SSO created
+  before JIT and directory sync made Members only. Existing rows keep it, so the
+  screens that meet one stay covered. Defaults to confirmed.
+  """
   def create_sso_user(attrs \\ %{}) do
     attrs = Map.new(attrs)
-    confirmed? = Map.get(attrs, :confirmed?, true)
+    confirmed_at = if Map.get(attrs, :confirmed?, true), do: DateTime.utc_now()
 
-    changeset =
-      %{full_name: "SSO User"}
-      |> Map.merge(Map.drop(attrs, [:confirmed?]))
-      |> User.Changeset.sso_create()
+    fields =
+      Map.merge(
+        %{full_name: "SSO User", confirmed_at: confirmed_at},
+        Map.drop(attrs, [:confirmed?])
+      )
 
-    changeset =
-      if confirmed?, do: changeset, else: Ecto.Changeset.put_change(changeset, :confirmed_at, nil)
-
-    Emisar.Repo.insert!(changeset)
+    %User{} |> Ecto.Changeset.change(fields) |> Emisar.Repo.insert!()
   end
 
   @doc "Marks a user's email confirmed, bypassing the token flow. Test/seed convenience."

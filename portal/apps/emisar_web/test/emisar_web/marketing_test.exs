@@ -397,12 +397,16 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "directory sync"
     # The registered callback the operator must wire up.
     assert html =~ "/sign_in/sso/callback"
-    # The headline security posture (must match the built behavior), and the two
-    # ways a colliding address actually resolves — an existing member is linked by
-    # an admin, an outsider is refused.
+    # The headline security posture (must match the built behavior): SSO adds a
+    # workspace member, not a login, and a colliding address resolves only against
+    # this workspace's member contacts — one member is linked by an admin, several
+    # are refused.
     assert html =~ "by the identifier claim, not by their email"
+    assert squish(html) =~ "single sign-on adds a member to this workspace, not an emisar login"
     assert html =~ "Pending access requests"
-    assert html =~ "The sign-in is refused."
+
+    assert squish(html) =~
+             "The sign-in is refused, because emisar cannot tell which member it is."
 
     assert squish(html) =~
              "Each HTTPS request for discovery, JWKS, pushed authorization, or token exchange must complete within 15 seconds. Emisar closes an OIDC connection after 30 seconds or 1 MiB of combined encrypted request-and-response traffic, including protocol overhead. Endpoints must respond directly; automatic redirects and Retry-After retries are not followed."
@@ -499,7 +503,10 @@ defmodule EmisarWeb.MarketingTest do
 
     # The SCIM base URL the operator must wire up.
     assert html =~ "/scim/v2"
-    # Deprovisioning suspends, never deletes (must match the built behavior).
+    # Provisioning creates a member, never a login; deprovisioning suspends, never
+    # deletes (must match the built behavior).
+    assert squish(html) =~ "creates a workspace member at the connection's default role"
+    assert squish(html) =~ "It creates no emisar login"
     assert html =~ "suspends"
     refute html =~ "deletes the user"
     assert squish(html) =~ "keys issued from that membership are revoked immediately"
@@ -1998,7 +2005,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Regenerating a new set requires a current"
       assert html =~ "the old set works until the new one is issued"
 
-      assert html =~ "provider that supplies no email"
+      assert squish(html) =~ "such as one added by single sign-on or directory sync"
       assert html =~ "Require SSO"
       assert html =~ "SCIM directory sync"
       assert html =~ "Sessions and offboarding"

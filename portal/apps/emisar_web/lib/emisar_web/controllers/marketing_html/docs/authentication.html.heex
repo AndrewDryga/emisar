@@ -83,10 +83,10 @@
             proves only that browser, and disabling then re-enrolling invalidates earlier session
             proofs.
             Before emisar reveals an authenticator secret, the member confirms a code sent to
-            their current email address — a provider that supplies no email leaves enrollment
-            closed until an administrator corrects the identity. An SSO connection satisfies
-            the requirement only when you mark that provider as enforcing MFA; otherwise emisar
-            still asks for TOTP. Recovery codes are shown once and each works once.
+            their current email address. A member without a personal login, such as one added by
+            single sign-on or directory sync, first links one on the same page. An SSO connection
+            satisfies the requirement only when you mark that provider as enforcing MFA; otherwise
+            emisar still asks for TOTP. Recovery codes are shown once and each works once.
             Regenerating a new set requires a current authenticator or recovery code;
             the old set works until the new one is issued.
           </span>

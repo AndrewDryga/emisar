@@ -505,8 +505,11 @@ defmodule Emisar.SSOGroupsTest do
     %{provider: provider, account: account} = scim_provider()
     %{identity: identity} = provision(provider, "okta|sessions")
 
-    {:ok, user} =
-      Emisar.Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
+    # The directory's Member, linked by its person to their own login.
+    user = Fixtures.Users.create_user()
+
+    {:ok, _linked} =
+      Accounts.link_personal_login(Repo, Fixtures.SSO.identity_membership(identity), user)
 
     mine =
       Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)

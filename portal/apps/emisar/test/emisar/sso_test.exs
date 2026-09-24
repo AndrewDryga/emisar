@@ -251,6 +251,17 @@ defmodule Emisar.SSOTest do
     %{identity: identity, membership: membership}
   end
 
+  # Directory sync creates Members without a personal login. A person links one
+  # by proving the mailbox; tests about that person's own sessions start here.
+  defp link_login(%UserIdentity{} = identity, attrs \\ %{}) do
+    user = Fixtures.Users.create_user(attrs)
+
+    {:ok, _linked} =
+      Accounts.link_personal_login(Repo, Fixtures.SSO.identity_membership(identity), user)
+
+    user
+  end
+
   defp role_of(identity), do: Fixtures.SSO.identity_membership(identity).role
 
   defp map_group(provider, subject, external_group_id, role) do
@@ -2742,7 +2753,7 @@ defmodule Emisar.SSOTest do
   # -- complete_auth/3 -------------------------------------------------
 
   describe "complete_auth/3 — resolution + JIT" do
-    test "first login JIT-provisions a fresh user + identity + membership at default_role" do
+    test "first login JIT-provisions a Member without a personal login + identity at default_role" do
       {_user, account, subject} = enterprise_owner()
 
       provider =
@@ -2759,17 +2770,18 @@ defmodule Emisar.SSOTest do
         "name" => "New Operator"
       }
 
-      assert {:ok, %{user: user, identity: identity, provider: current_provider, created?: true}} =
+      assert {:ok,
+              %{user: nil, membership: membership, identity: identity, provider: current_provider}} =
                SSO.complete_auth(provider, callback(claims), %{})
 
       assert current_provider.id == provider.id
-      assert user.email == "new@acme.test"
-      assert user.full_name == "New Operator"
-      assert user.confirmed_at
+      assert is_nil(membership.user_id)
+      assert membership.display_name == "New Operator"
+      assert membership.contact_email == "new@acme.test"
+      assert Users.fetch_user_by_email("new@acme.test") == {:error, :not_found}
       assert identity.provider_identifier == "okta|new-1"
       assert identity.created_by == :provider
-
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      assert identity.membership_id == membership.id
       assert membership.role == :operator
 
       assert Accounts.runner_access_for_membership(account.id, membership.id) ==
@@ -2789,33 +2801,58 @@ defmodule Emisar.SSOTest do
              }
     end
 
-    test "an existing same-email user is NEVER matched — a colliding email fails :email_taken" do
+    test "a personal login elsewhere with the same address is NEVER matched — JIT creates a new Member" do
       {_user, account, _subject} = enterprise_owner()
+      {_other_owner, other_account, _other_subject} = enterprise_owner()
       provider = provider_fixture(account)
       existing = Fixtures.Users.create_user(%{email: "taken@acme.test"})
+      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: existing.id)
 
       claims = %{"sub" => "okta|other", "email" => "taken@acme.test", "email_verified" => true}
 
-      assert SSO.complete_auth(provider, callback(claims), %{}) == {:error, :email_taken}
+      assert {:ok, %{user: nil, membership: membership}} =
+               SSO.complete_auth(provider, callback(claims), %{})
 
-      # The pre-existing user is untouched + no identity was bound to it.
+      assert membership.account_id == account.id
+      assert is_nil(membership.user_id)
+      assert membership.contact_email == "taken@acme.test"
+
+      # The personal login is untouched: no identity bound to it, no seat here.
       assert UserIdentity.Query.not_deleted()
              |> UserIdentity.Query.by_member_user_id(existing.id)
              |> Repo.all() == []
+
+      assert is_nil(Accounts.peek_sync_membership(account.id, existing.id))
     end
 
-    test "a repeated (provider, sub) login resolves to the SAME user — no duplicate" do
+    test "JIT reserves no personal login: the mailbox owner signs up with no seat here" do
+      {_owner, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account)
+      email = Fixtures.Random.unique_email()
+      claims = %{"sub" => "okta|mailbox", "email" => email, "email_verified" => true}
+
+      assert {:ok, %{user: nil, membership: membership}} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
+
+      assert {:ok, %Users.User{email: ^email} = user} =
+               Accounts.begin_owner_registration(
+                 %{email: email, full_name: "Mailbox Owner"},
+                 Fixtures.Accounts.account_attrs()
+               )
+
+      assert is_nil(Accounts.peek_sync_membership(account.id, user.id))
+      assert is_nil(Repo.reload!(membership).user_id)
+    end
+
+    test "a repeated (provider, sub) login resolves to the SAME member — no duplicate" do
       {_user, account, _subject} = enterprise_owner()
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|stable", "email" => "stable@acme.test", "email_verified" => true}
 
-      # created?: true only on the FIRST login (the JIT registration) — the
-      # returning login resolves the existing identity, so it's signed_in.
-      assert {:ok, %{user: first, created?: true}} =
-               SSO.complete_auth(provider, callback(claims), %{})
-
-      assert {:ok, %{user: second, created?: false}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{membership: first}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{membership: second}} = SSO.complete_auth(provider, callback(claims), %{})
 
       assert first.id == second.id
     end
@@ -2846,8 +2883,7 @@ defmodule Emisar.SSOTest do
               %{
                 user: nil,
                 membership: %Accounts.Membership{id: ^membership_id},
-                identity: %UserIdentity{id: ^identity_id},
-                created?: false
+                identity: %UserIdentity{id: ^identity_id}
               }} = SSO.complete_auth(provider, callback(claims), %{})
     end
 
@@ -2876,25 +2912,26 @@ defmodule Emisar.SSOTest do
                SSO.complete_auth(provider, callback(claims), %{})
     end
 
-    test "a no-email IdP JIT-provisions a user with nil email (identified by sub)" do
+    test "a no-email IdP JIT-provisions a Member with no contact (identified by sub)" do
       {_user, account, _subject} = enterprise_owner()
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|nomail", "name" => "No Email"}
 
-      assert {:ok, %{user: user, identity: identity}} =
+      assert {:ok, %{membership: membership, identity: identity}} =
                SSO.complete_auth(provider, callback(claims), %{})
 
-      refute user.email
+      refute membership.contact_email
+      assert membership.display_name == "No Email"
       assert identity.provider_identifier == "okta|nomail"
     end
 
-    test "an unverified email claim is not trusted — users.email stays nil (R6)" do
+    test "an unverified email claim is not trusted — the Member's contact stays nil (R6)" do
       {_user, account, _subject} = enterprise_owner()
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|unverified", "email" => "unverified@acme.test"}
 
-      assert {:ok, %{user: user}} = SSO.complete_auth(provider, callback(claims), %{})
-      refute user.email
+      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      refute membership.contact_email
     end
 
     test "JIT trusts email_verified arriving as the string \"true\"" do
@@ -2902,8 +2939,8 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|str", "email" => "str@acme.test", "email_verified" => "true"}
 
-      assert {:ok, %{user: user}} = SSO.complete_auth(provider, callback(claims), %{})
-      assert user.email == "str@acme.test"
+      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert membership.contact_email == "str@acme.test"
     end
 
     test "a string \"false\" email_verified is NOT trusted even with an hd claim (the email is dropped)" do
@@ -2912,7 +2949,7 @@ defmodule Emisar.SSOTest do
 
       # email_verified is the STRING "false" (some IdPs / the SCIM path send strings)
       # paired with a Google-style `hd` — a forged hd must not launder an unverified
-      # email. The user still provisions (identity binds by sub), but with NO email.
+      # email. The member still provisions (identity binds by sub), with NO contact.
       claims = %{
         "sub" => "okta|strfalse",
         "email" => "unverified@acme.test",
@@ -2920,8 +2957,8 @@ defmodule Emisar.SSOTest do
         "hd" => "acme.test"
       }
 
-      assert {:ok, %{user: user}} = SSO.complete_auth(provider, callback(claims), %{})
-      assert is_nil(user.email)
+      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert is_nil(membership.contact_email)
     end
 
     test "a :manual provisioner parks an unknown sub as a pending request, never auto-creating" do
@@ -2947,7 +2984,7 @@ defmodule Emisar.SSOTest do
       # person — and deactivating `directory-123` left `oid-456` signed in.
       %{provider: provider, account: account} = scim_provider(%{provisioner: :jit})
 
-      {:ok, %{user: directory_user}} =
+      {:ok, %{membership: directory_member}} =
         SSO.scim_provision_user(provider, %{external_id: "directory-123"})
 
       claims = %{"sub" => "oid-456"}
@@ -2965,7 +3002,7 @@ defmodule Emisar.SSOTest do
 
       assert Enum.map(identities, & &1.provider_identifier) == ["directory-123"]
 
-      assert Fixtures.Memberships.fetch_membership(account.id, directory_user.id)
+      assert Accounts.peek_sync_membership_by_id(account.id, directory_member.id)
     end
 
     test "a :jit login matching an existing member is parked for approval (not auto-merged)" do
@@ -2991,6 +3028,29 @@ defmodule Emisar.SSOTest do
 
       assert request.matched_membership_id == membership.id
       assert request.email == "  JIT@ACME.TEST  "
+    end
+
+    test "a :jit login naming two live members' contact is refused as ambiguous" do
+      {_owner, account, _subject} = enterprise_owner()
+      provider = provider_fixture(account, provisioner: :jit)
+      linked = Fixtures.Users.create_user(%{email: "twice@acme.test"})
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: linked.id)
+
+      Fixtures.Memberships.create_unlinked_membership(
+        account_id: account.id,
+        contact_email: "TWICE@acme.test"
+      )
+
+      claims = %{"sub" => "okta|twice", "email" => "twice@acme.test", "email_verified" => true}
+
+      assert SSO.complete_auth(provider, callback(claims), %{}) ==
+               {:error, :member_email_ambiguous}
+
+      assert link_requests(provider.id) == []
+
+      assert UserIdentity.Query.not_deleted()
+             |> UserIdentity.Query.by_provider_id(provider.id)
+             |> Repo.all() == []
     end
 
     test "an unverified OIDC email stays display-only and never preselects a member" do
@@ -3031,8 +3091,10 @@ defmodule Emisar.SSOTest do
         role: :viewer
       )
 
-      assert {:ok, request} =
-               SSO.Provisioning.capture_link_request(
+      assert {:ok, %{request: request}} =
+               Ecto.Multi.new()
+               |> SSO.Provisioning.put_link_request(
+                 :request,
                  provider,
                  "okta|raw-capture",
                  member.email,
@@ -3040,31 +3102,42 @@ defmodule Emisar.SSOTest do
                  %{"email" => member.email},
                  :oidc
                )
+               |> Repo.commit_multi()
 
       assert request.email == member.email
       assert is_nil(request.matched_membership_id)
     end
 
-    test "provisioning into account A's provider never lands in account B" do
+    test "provisioning into account A's provider never matches or lands in account B" do
       {_ua, account_a, _sa} = enterprise_owner()
       {_ub, account_b, _sb} = enterprise_owner()
       provider = provider_fixture(account_a)
+
+      b_member =
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account_b.id,
+          contact_email: "scoped@acme.test"
+        )
+
       claims = %{"sub" => "okta|scoped", "email" => "scoped@acme.test", "email_verified" => true}
 
-      assert {:ok, %{user: user}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
 
-      assert Fixtures.Memberships.fetch_membership(account_a.id, user.id)
-      refute Fixtures.Memberships.fetch_membership(account_b.id, user.id)
+      assert membership.account_id == account_a.id
+      refute membership.id == b_member.id
+      assert link_requests(provider.id) == []
+
+      assert Accounts.list_sync_memberships_by_contact_email(account_b.id, "scoped@acme.test") ==
+               [b_member]
     end
   end
 
-  describe "complete_auth/3 — a provider-created user's other workspaces" do
-    # The chain the 2026-09-16 audit reproduced: a provider JIT-creates the
-    # global user row for an email it does not own; the real person later signs
-    # in by magic link, becomes that row, and creates their own workspace; the
-    # provider then mints a session for the row. That session must stay inside
-    # the provider's account — the person's own workspace is reachable through
-    # their own inbox, never through someone else's IdP.
+  describe "complete_auth/3 — a provider-created member and the person's own workspaces" do
+    # The chain the 2026-09-16 audit reproduced: a provider JIT-created the
+    # global user row for an email it does not own, and the real person later
+    # became that row. JIT now creates only a Member of the provider's account,
+    # so the person registers their own login and workspace, and the provider's
+    # session stays inside its account.
     test "a session the provider mints never reaches a workspace the person created later" do
       {_owner, attacker_account, _subject} = enterprise_owner()
       provider = provider_fixture(attacker_account, default_role: :viewer)
@@ -3077,15 +3150,17 @@ defmodule Emisar.SSOTest do
         "name" => "Victim"
       }
 
-      assert {:ok, %{user: user, identity: identity, created?: true}} =
+      assert {:ok, %{user: nil, membership: member, identity: identity}} =
                SSO.complete_auth(provider, callback(claims), %{})
 
-      assert user.email == victim_email
+      # The person registers through their own inbox and creates their workspace.
+      assert {:ok, user} =
+               Accounts.begin_owner_registration(
+                 %{email: victim_email, full_name: "Victim"},
+                 Fixtures.Accounts.account_attrs()
+               )
 
-      # The person signs in through their inbox (a magic-link session is the
-      # user's own credential) and creates their workspace.
-      assert {:ok, %{id: same_id}} = Users.fetch_user_by_email(victim_email)
-      assert same_id == user.id
+      user = Fixtures.Users.confirm_user(user)
 
       {:ok, own_account} =
         Accounts.create_account_with_owner(%{name: "Victim Corp", slug: "victim-corp"}, user)
@@ -3099,11 +3174,13 @@ defmodule Emisar.SSOTest do
                  magic_session
                )
 
-      # The provider signs the row in again and holds its session.
-      assert {:ok, %{user: returning, identity: %UserIdentity{id: identity_id}, created?: false}} =
+      # The provider signs its Member in again and holds that session.
+      assert {:ok, %{user: nil, membership: returning, identity: %UserIdentity{id: identity_id}}} =
                SSO.complete_auth(provider, callback(claims), %{})
 
       assert identity_id == identity.id
+      assert returning.id == member.id
+      assert is_nil(returning.user_id)
 
       assert {:ok, sso_token, _mfa} =
                Auth.complete_sso_account_sign_in(
@@ -3114,7 +3191,7 @@ defmodule Emisar.SSOTest do
                  provider_identifier: identity.provider_identifier
                )
 
-      {:ok, %{user: session_user} = sso_session} = Auth.fetch_session_by_token(sso_token)
+      {:ok, %{user: nil} = sso_session} = Auth.fetch_session_by_token(sso_token)
       assert sso_session.auth_method == :sso
       assert sso_session.user_identity_id == identity.id
 
@@ -3135,11 +3212,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, %Accounts.Membership{account_id: ^attacker_id}} =
                Accounts.fetch_membership_for_session(nil, sso_session)
 
-      sso_subject =
-        Fixtures.Subjects.subject_for(session_user, attacker_account,
-          auth_method: :sso,
-          user_identity_id: identity.id
-        )
+      sso_subject = Fixtures.Subjects.unlinked_member_subject(returning, sso_token)
 
       assert {:ok, [%Accounts.Account{id: ^attacker_id}], _meta} =
                Accounts.list_accounts_for_user(sso_subject)
@@ -3298,11 +3371,9 @@ defmodule Emisar.SSOTest do
         end)
 
       assert updated.default_role == :operator
-      assert {:ok, %{user: user, provider: current, created?: true}} = callback_result
+      assert {:ok, %{membership: membership, provider: current}} = callback_result
       assert current.id == updated.id
       assert current.default_role == :operator
-
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       assert membership.role == :operator
 
       assert Accounts.runner_access_for_membership(account.id, membership.id) ==
@@ -3419,8 +3490,8 @@ defmodule Emisar.SSOTest do
         )
 
       claims = %{"sub" => "g|hd", "email" => "x@acme.test", "hd" => "acme.test"}
-      assert {:ok, %{user: user}} = SSO.complete_auth(provider, callback(claims), %{})
-      assert is_nil(user.email)
+      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert is_nil(membership.contact_email)
     end
 
     test "an explicit unverified-email claim cannot use hd to pass the domain gate", %{
@@ -3485,8 +3556,8 @@ defmodule Emisar.SSOTest do
         "hd" => "evil.test"
       }
 
-      assert {:ok, %{user: user}} = SSO.complete_auth(provider, callback(claims), %{})
-      assert user.email == "ok@acme.test"
+      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert membership.contact_email == "ok@acme.test"
     end
 
     test "no verified domain is refused when a domain is required", %{account: account} do
@@ -3597,8 +3668,7 @@ defmodule Emisar.SSOTest do
     } do
       %{identity: identity} = provision(provider, "okta|live")
 
-      {:ok, user} =
-        Emisar.Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
+      user = link_login(identity)
 
       token =
         Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
@@ -3625,8 +3695,7 @@ defmodule Emisar.SSOTest do
     } do
       %{identity: identity} = provision(provider, "okta|gone")
 
-      {:ok, user} =
-        Emisar.Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
+      user = link_login(identity)
 
       token =
         Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
@@ -3655,8 +3724,7 @@ defmodule Emisar.SSOTest do
       provider = provider |> Ecto.Changeset.change(satisfies_mfa: true) |> Repo.update!()
       %{identity: identity} = provision(provider, "okta|mfa-downgrade")
 
-      {:ok, user} =
-        Emisar.Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
+      user = link_login(identity)
 
       other_provider = provider_fixture(account, kind: :entra, name: "Entra")
 
@@ -3706,8 +3774,7 @@ defmodule Emisar.SSOTest do
     } do
       %{identity: identity} = provision(provider, "okta|mfa-noop")
 
-      {:ok, user} =
-        Emisar.Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
+      user = link_login(identity)
 
       token =
         Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
@@ -3947,7 +4014,7 @@ defmodule Emisar.SSOTest do
       # and the id spaces are unrelated, and then one person's sub can equal
       # another's externalId. Before this guard, the second person's login resolved
       # the first person's identity and signed them in AS them.
-      {:ok, %{user: alice}} =
+      {:ok, %{membership: alice}} =
         SSO.scim_provision_user(provider, %{
           external_id: "shared-value",
           email: "alice@acme.test"
@@ -3971,18 +4038,19 @@ defmodule Emisar.SSOTest do
       # He gets an admin decision, not Alice's account.
       assert {:pending, %LinkRequest{}} = SSO.complete_auth(provider, callback(bob_claims), %{})
 
-      # Alice herself still converges — same value, and the claims agree on who.
+      # Alice herself still converges — same value, and the verified email names
+      # her seat's workspace contact.
       alice_claims = %{
         "sub" => "shared-value",
         "email" => "  ALICE@ACME.TEST  ",
         "email_verified" => true
       }
 
-      assert {:ok, %{user: signed_in}} =
+      assert {:ok, %{user: nil, membership: signed_in}} =
                SSO.complete_auth(provider, callback(alice_claims), %{})
 
       assert signed_in.id == alice.id
-      assert account.id
+      assert signed_in.account_id == account.id
     end
 
     test "an unverified email cannot converge a synthesized directory identity", %{
@@ -4009,6 +4077,38 @@ defmodule Emisar.SSOTest do
       assert Repo.reload!(identity).last_seen_at == identity.last_seen_at
     end
 
+    test "the same-person rule reads the seat's workspace contact, not a personal address", %{
+      provider: okta_provider
+    } do
+      provider = Repo.update!(Ecto.Changeset.change(okta_provider, kind: :openid_connect))
+
+      %{identity: identity, membership: member} =
+        provision(provider, "contact-rule", %{email: "contact@acme.test"})
+
+      link_login(identity, email: "personal@acme.test")
+
+      # A token naming only the linked login's own address is not the seat's person.
+      personal = %{
+        "sub" => "contact-rule",
+        "email" => "personal@acme.test",
+        "email_verified" => true
+      }
+
+      assert {:pending, %LinkRequest{}} = SSO.complete_auth(provider, callback(personal), %{})
+      assert Repo.reload!(identity).last_seen_at == identity.last_seen_at
+
+      contact = %{
+        "sub" => "contact-rule",
+        "email" => "contact@acme.test",
+        "email_verified" => true
+      }
+
+      assert {:ok, %{membership: signed_in}} =
+               SSO.complete_auth(provider, callback(contact), %{})
+
+      assert signed_in.id == member.id
+    end
+
     test "Okta converges an exact active SCIM sub when its token omits email_verified" do
       issuer = "https://certification.okta.test"
 
@@ -4025,8 +4125,7 @@ defmodule Emisar.SSOTest do
         "name" => "Okta Cert"
       }
 
-      assert {:ok, %{identity: signed_in, created?: false}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{identity: signed_in}} = SSO.complete_auth(provider, callback(claims), %{})
 
       assert signed_in.id == identity.id
       assert Repo.reload!(identity).last_seen_at
@@ -4093,8 +4192,7 @@ defmodule Emisar.SSOTest do
         "name" => "Entra Cert"
       }
 
-      assert {:ok, %{identity: signed_in, created?: false}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{identity: signed_in}} = SSO.complete_auth(provider, callback(claims), %{})
 
       assert signed_in.id == identity.id
       assert Repo.reload!(identity).last_seen_at
@@ -4196,7 +4294,7 @@ defmodule Emisar.SSOTest do
       assert SSO.scim_provision_user(provider, %{
                external_id: "shared-identifier",
                email: second.email
-             }) == {:error, :email_taken}
+             }) == {:error, :identity_pending_approval}
 
       request =
         SSO.LinkRequest.Query.all()
@@ -4239,11 +4337,12 @@ defmodule Emisar.SSOTest do
         |> Repo.insert()
 
       # The directory pushes a DIFFERENT identifier for the same person; the email
-      # collides, so it parks a link request rather than creating a second identity.
+      # names their seat's contact, so it parks a link request rather than
+      # creating a second identity.
       assert SSO.scim_provision_user(provider, %{
                external_id: "directory-external-E",
                email: user.email
-             }) == {:error, :email_taken}
+             }) == {:error, :identity_pending_approval}
 
       request =
         SSO.LinkRequest.Query.all()
@@ -4325,11 +4424,12 @@ defmodule Emisar.SSOTest do
 
       attrs = scim_attrs(%{external_id: "okta|prov-1", email: "prov@acme.test"})
 
-      assert {:ok, %{user: user, identity: identity, membership: membership}} =
+      assert {:ok, %{identity: identity, membership: membership}} =
                SSO.scim_provision_user(provider, attrs)
 
-      assert user.email == "prov@acme.test"
-      assert user.confirmed_at
+      assert is_nil(membership.user_id)
+      assert membership.contact_email == "prov@acme.test"
+      assert Users.fetch_user_by_email("prov@acme.test") == {:error, :not_found}
 
       assert identity.created_by == :provider
       assert identity.provisioned_via == :scim
@@ -4379,8 +4479,10 @@ defmodule Emisar.SSOTest do
     } do
       attrs = scim_attrs(%{external_id: "okta|stable", email: "stable@acme.test"})
 
-      assert {:ok, %{user: first, identity: id1}} = SSO.scim_provision_user(provider, attrs)
-      assert {:ok, %{user: second, identity: id2}} = SSO.scim_provision_user(provider, attrs)
+      assert {:ok, %{membership: first, identity: id1}} = SSO.scim_provision_user(provider, attrs)
+
+      assert {:ok, %{membership: second, identity: id2}} =
+               SSO.scim_provision_user(provider, attrs)
 
       assert first.id == second.id
       assert id1.id == id2.id
@@ -4396,14 +4498,14 @@ defmodule Emisar.SSOTest do
     } do
       attrs = scim_attrs(%{external_id: "okta|readd", email: "readd@acme.test"})
 
-      assert {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
+      assert {:ok, %{membership: member}} = SSO.scim_provision_user(provider, attrs)
 
       {:ok, _} =
         SSO.scim_update_user(provider, user_resource_id(provider, "okta|readd"), %SCIMUserUpdate{
           active: false
         })
 
-      assert Accounts.peek_sync_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       # Some IdPs re-POST rather than PATCH active:true — the re-POST restores
       # access (reinstate the membership + scim_active), never staying suspended.
@@ -4420,11 +4522,11 @@ defmodule Emisar.SSOTest do
            account: account
          } do
       attrs = scim_attrs(%{external_id: "okta|manual", email: "manual@acme.test"})
-      assert {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
+      assert {:ok, %{membership: member}} = SSO.scim_provision_user(provider, attrs)
 
       # An operator suspends them in the portal; the IdP still lists them active,
       # so scim_active stays true — this is NOT an IdP deprovision.
-      membership = Accounts.peek_sync_membership(account.id, user.id)
+      membership = Accounts.peek_sync_membership_by_id(account.id, member.id)
       assert Fixtures.Memberships.suspend_membership(membership).disabled_at
 
       # A routine re-POST (an IdP that re-creates the still-active user) must NOT
@@ -4439,12 +4541,14 @@ defmodule Emisar.SSOTest do
     } do
       attrs = scim_attrs(%{external_id: "okta|reinvited", email: "reinvited@acme.test"})
 
-      assert {:ok, %{user: user, membership: membership}} =
-               SSO.scim_provision_user(provider, attrs)
+      assert {:ok, %{identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
-      # Removed from the account, then invited back by hand — the identity
-      # survives both, so the directory's next push lands on a seat that is
-      # nothing but an unresolved invitation.
+      # The person linked their login to the directory's Member, was removed from
+      # the account, then invited back by hand — the identity survives both, so
+      # the directory's next push lands on a seat that is nothing but an
+      # unresolved invitation.
+      user = link_login(identity, email: "reinvited@acme.test")
+      membership = Fixtures.SSO.identity_membership(identity)
       assert {:ok, _removed} = Accounts.delete_membership(membership, subject)
 
       invitation_attrs = Fixtures.Accounts.invitation_attrs(email: user.email)
@@ -4468,18 +4572,22 @@ defmodule Emisar.SSOTest do
       refute reprovisioned.disabled_at
     end
 
-    test "a colliding email fails :email_taken — never merges onto the existing user", %{
-      provider: provider
+    test "a personal login with the same address is never matched — a new Member is created", %{
+      provider: provider,
+      account: account
     } do
       existing = Fixtures.Users.create_user(%{email: "taken@acme.test"})
       attrs = scim_attrs(%{external_id: "okta|collide", email: "taken@acme.test"})
 
-      assert SSO.scim_provision_user(provider, attrs) == {:error, :email_taken}
+      assert {:ok, %{membership: membership}} = SSO.scim_provision_user(provider, attrs)
+      assert is_nil(membership.user_id)
 
-      # The pre-existing user is untouched + no identity was bound to it.
+      # The pre-existing user is untouched: no identity bound to it, no seat here.
       assert UserIdentity.Query.not_deleted()
              |> UserIdentity.Query.by_member_user_id(existing.id)
              |> Repo.all() == []
+
+      assert is_nil(Accounts.peek_sync_membership(account.id, existing.id))
     end
 
     test "a provider-A-scoped provision never lands in account B (cross-account)", %{
@@ -4489,10 +4597,10 @@ defmodule Emisar.SSOTest do
       %{account: account_b} = scim_provider()
       attrs = scim_attrs(%{external_id: "okta|scoped", email: "scoped@acme.test"})
 
-      assert {:ok, %{user: user}} = SSO.scim_provision_user(provider_a, attrs)
+      assert {:ok, %{membership: membership}} = SSO.scim_provision_user(provider_a, attrs)
 
-      assert Fixtures.Memberships.fetch_membership(account_a.id, user.id)
-      refute Fixtures.Memberships.fetch_membership(account_b.id, user.id)
+      assert membership.account_id == account_a.id
+      assert Accounts.list_sync_memberships_by_contact_email(account_b.id, attrs.email) == []
     end
   end
 
@@ -4502,6 +4610,7 @@ defmodule Emisar.SSOTest do
     test "a sole-tenancy rename still leaves the personal name alone" do
       %{provider: provider} = scim_provider()
       %{identity: identity} = provision(provider, "okta|solo")
+      user = link_login(identity, full_name: "Own Name")
 
       assert {:ok, _} =
                SSO.scim_update_user(
@@ -4512,10 +4621,7 @@ defmodule Emisar.SSOTest do
                  }
                )
 
-      {:ok, user} =
-        Emisar.Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
-
-      assert user.full_name == "Dir User"
+      assert Repo.reload!(user).full_name == "Own Name"
 
       membership = Fixtures.SSO.identity_membership(identity)
       assert membership.display_name == "Solo Person"
@@ -4528,17 +4634,14 @@ defmodule Emisar.SSOTest do
       # what another account's operators read.
       %{provider: provider} = scim_provider()
       %{identity: identity} = provision(provider, "okta|shared")
-
-      {:ok, user} =
-        Emisar.Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
-
+      user = link_login(identity)
       their_own_name = user.full_name
 
       other_account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
         account_id: other_account.id,
-        user_id: Fixtures.SSO.identity_membership(identity).user_id,
+        user_id: user.id,
         role: "operator"
       )
 
@@ -4567,12 +4670,12 @@ defmodule Emisar.SSOTest do
       # was silent for any member who belongs to a second workspace.
       %{provider: provider, account: account} = scim_provider()
       %{identity: identity} = provision(provider, "okta|relabel")
-
+      user = link_login(identity)
       other_account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
         account_id: other_account.id,
-        user_id: Fixtures.SSO.identity_membership(identity).user_id,
+        user_id: user.id,
         role: "operator"
       )
 
@@ -4746,8 +4849,8 @@ defmodule Emisar.SSOTest do
       # over. Only this account's grants are removed; bearers survive.
       %{provider: provider} = scim_provider()
       attrs = scim_attrs(%{external_id: "okta|multi", email: "multi@acme.test"})
-      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
-
+      {:ok, %{identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      user = link_login(identity)
       other_account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_membership(
@@ -4789,11 +4892,11 @@ defmodule Emisar.SSOTest do
                )
     end
 
-    test "suspends the membership (disabled_at) + flips scim_active, never deleting the user" do
+    test "suspends the membership (disabled_at) + flips scim_active, never deleting the member" do
       %{provider: provider} = scim_provider(%{default_role: :admin})
       attrs = scim_attrs(%{external_id: "okta|deprov", email: "deprov@acme.test"})
 
-      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: member, identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
       assert {:ok, %{membership: membership, identity: deactivated}} =
                SSO.scim_update_user(
@@ -4805,8 +4908,8 @@ defmodule Emisar.SSOTest do
       assert membership.disabled_at
       refute deactivated.scim_active
 
-      # The user + identity survive (audit preservation) — only access is cut.
-      assert {:ok, _user} = Emisar.Users.fetch_user_by_id(user.id)
+      # The member + identity survive (audit preservation) — only access is cut.
+      assert Accounts.peek_sync_membership_by_id(provider.account_id, member.id)
       assert {:ok, _scim_user} = SSO.scim_fetch_user(provider, identity.id)
     end
 
@@ -4834,12 +4937,12 @@ defmodule Emisar.SSOTest do
       %{provider: provider, account: account} = scim_provider(%{default_role: :viewer})
       attrs = scim_attrs(%{external_id: "okta|owner"})
 
-      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: membership, identity: identity}} =
+        SSO.scim_provision_user(provider, attrs)
 
       # Promote the lone provisioned member to the account's only owner.
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       Fixtures.Memberships.force_role(membership, "owner")
-      demote_other_owners(account.id, except: user.id)
+      demote_other_owners(account.id, except: membership.id)
 
       assert SSO.scim_update_user(
                provider,
@@ -4849,7 +4952,7 @@ defmodule Emisar.SSOTest do
 
       # The membership stays active and the SCIM flag is left untouched, so the
       # projection still answers active.
-      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, membership.id).disabled_at
       assert {:ok, unchanged} = SSO.scim_fetch_user(provider, identity.id)
       assert unchanged.active
     end
@@ -4869,14 +4972,14 @@ defmodule Emisar.SSOTest do
       %{provider: provider, account: account} = scim_provider(%{default_role: :operator})
       attrs = scim_attrs(%{external_id: "okta|react", email: "react@acme.test"})
 
-      {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: member}} = SSO.scim_provision_user(provider, attrs)
 
       {:ok, _} =
         SSO.scim_update_user(provider, user_resource_id(provider, "okta|react"), %SCIMUserUpdate{
           active: false
         })
 
-      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       assert {:ok, %{membership: membership, identity: identity}} =
                SSO.scim_update_user(
@@ -4890,7 +4993,7 @@ defmodule Emisar.SSOTest do
       # The IdP reactivating clears the directory-suspended mark — an operator can
       # reinstate them again if suspended manually later.
       refute membership.directory_suspended
-      refute Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
     test "returns :not_found when no identity matches the resource id" do
@@ -4904,9 +5007,7 @@ defmodule Emisar.SSOTest do
       %{provider: provider, account: account} = scim_provider(%{default_role: :operator})
       attrs = scim_attrs(%{external_id: "okta|held", email: "held@acme.test"})
 
-      {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
-
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {:ok, %{membership: membership}} = SSO.scim_provision_user(provider, attrs)
       Fixtures.Memberships.suspend_membership(membership)
 
       {:ok, _} =
@@ -4925,7 +5026,7 @@ defmodule Emisar.SSOTest do
       # the member stays out until an operator reinstates locally.
       assert returned.disabled_at
       refute returned.directory_suspended
-      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, membership.id).disabled_at
     end
   end
 
@@ -4935,7 +5036,7 @@ defmodule Emisar.SSOTest do
     test "replaces only the workspace display name, audited to the directory" do
       %{provider: provider} = scim_provider()
       attrs = scim_attrs(%{external_id: "okta|rename", full_name: "Old Name"})
-      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: member, identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
       assert {:ok, %{identity: %UserIdentity{} = returned}} =
                SSO.scim_update_user(
@@ -4947,10 +5048,7 @@ defmodule Emisar.SSOTest do
                )
 
       assert returned.id == identity.id
-      assert Repo.reload!(user).full_name == "Old Name"
-
-      assert Fixtures.Memberships.fetch_membership(provider.account_id, user.id).display_name ==
-               "New Name"
+      assert Repo.reload!(member).display_name == "New Name"
 
       assert event =
                Enum.find(
@@ -4966,7 +5064,7 @@ defmodule Emisar.SSOTest do
     test "an unchanged name is a no-op — no audit row" do
       %{provider: provider} = scim_provider()
       attrs = scim_attrs(%{external_id: "okta|same", full_name: "Keep Name"})
-      {:ok, %{user: user}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: member}} = SSO.scim_provision_user(provider, attrs)
 
       assert {:ok, %{identity: %UserIdentity{}}} =
                SSO.scim_update_user(
@@ -4977,7 +5075,7 @@ defmodule Emisar.SSOTest do
                  }
                )
 
-      assert Repo.reload!(user).full_name == "Keep Name"
+      assert Repo.reload!(member).display_name == "Keep Name"
 
       refute Enum.any?(
                Repo.all(Emisar.Audit.Event),
@@ -4997,13 +5095,15 @@ defmodule Emisar.SSOTest do
       %{provider: provider_a} = scim_provider()
       %{provider: provider_b} = scim_provider()
       attrs = scim_attrs(%{external_id: "okta|scoped", full_name: "A Name"})
-      {:ok, %{user: user, identity: identity_a}} = SSO.scim_provision_user(provider_a, attrs)
+
+      {:ok, %{membership: member_a, identity: identity_a}} =
+        SSO.scim_provision_user(provider_a, attrs)
 
       assert SSO.scim_update_user(provider_b, identity_a.id, %SCIMUserUpdate{
                name: {:replace, "Hijack"}
              }) == {:error, :not_found}
 
-      assert Repo.reload!(user).full_name == "A Name"
+      assert Repo.reload!(member_a).display_name == "A Name"
     end
   end
 
@@ -5033,7 +5133,7 @@ defmodule Emisar.SSOTest do
         )
 
       attrs = scim_attrs(%{external_id: "okta|retire", email: "retire@acme.test"})
-      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: member, identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
       {:ok, _group} =
         SSO.scim_upsert_group(provider, %{
@@ -5041,7 +5141,7 @@ defmodule Emisar.SSOTest do
           member_ids: [identity.id]
         })
 
-      privileged = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      privileged = Repo.reload!(member)
       assert privileged.role == :admin
 
       assert Accounts.runner_access_for_membership(account.id, privileged.id) ==
@@ -5058,7 +5158,7 @@ defmodule Emisar.SSOTest do
       assert SSO.scim_fetch_user(provider, identity.id) == {:error, :not_found}
       assert {:ok, [], 0} = SSO.scim_list_users(provider)
 
-      reset_membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      reset_membership = Repo.reload!(member)
       assert reset_membership.role == :viewer
 
       assert Accounts.runner_access_for_membership(account.id, reset_membership.id) ==
@@ -5068,10 +5168,10 @@ defmodule Emisar.SSOTest do
              |> DirectoryGroupMember.Query.by_user_identity_id(identity.id)
              |> Repo.exists?()
 
-      assert {:ok, %{user: revived_user, identity: revived, membership: inactive_membership}} =
+      assert {:ok, %{identity: revived, membership: inactive_membership}} =
                SSO.scim_provision_user(provider, Map.put(attrs, :active, false))
 
-      assert revived_user.id == user.id
+      assert inactive_membership.id == member.id
       assert revived.id == identity.id
       refute revived.deleted_at
       refute revived.scim_deleted_at
@@ -5090,7 +5190,7 @@ defmodule Emisar.SSOTest do
 
       identities =
         UserIdentity.Query.all()
-        |> UserIdentity.Query.by_member_user_id(user.id)
+        |> UserIdentity.Query.by_membership_id(member.id)
         |> Repo.all()
 
       assert [%UserIdentity{id: revived_id}] = identities
@@ -5136,11 +5236,12 @@ defmodule Emisar.SSOTest do
           email: "rebound-delete@acme.test"
         })
 
-      {:ok, %{user: user, identity: identity}} = SSO.scim_provision_user(provider, attrs)
+      {:ok, %{membership: member, identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
+      # The login's verified email names the directory Member's workspace contact.
       claims = %{
         "sub" => "admin-linked-subject",
-        "email" => user.email,
+        "email" => "rebound-delete@acme.test",
         "email_verified" => true
       }
 
@@ -5158,7 +5259,7 @@ defmodule Emisar.SSOTest do
                {:error, :scim_resource_retired}
 
       assert Repo.reload!(rebound).scim_deleted_at
-      assert Fixtures.Memberships.fetch_membership(account.id, user.id).disabled_at
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
       assert {:ok, _dismissed} = SSO.dismiss_link_request(retired_request, subject)
 
       other_user = Fixtures.Users.create_user(email: "new-subject-owner@acme.test")
@@ -5223,7 +5324,7 @@ defmodule Emisar.SSOTest do
     test "an already-suspended delete cannot restore retired browser proof" do
       %{provider: provider} = scim_provider()
       %{identity: identity} = provision(provider, "okta|session-retire")
-      {:ok, user} = Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
+      user = link_login(identity)
 
       sso_session =
         Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
@@ -5299,7 +5400,7 @@ defmodule Emisar.SSOTest do
       assert {:ok, %{identity: retired}} = SSO.scim_delete_user(provider, identity.id)
       assert retired.scim_external_id == "oidc-first-delete"
 
-      assert {:ok, %{user: revived_user, identity: revived}} =
+      assert {:ok, %{identity: revived, membership: revived_membership}} =
                SSO.scim_provision_user(
                  provider,
                  scim_attrs(%{
@@ -5308,7 +5409,7 @@ defmodule Emisar.SSOTest do
                  })
                )
 
-      assert revived_user.id == user.id
+      assert revived_membership.user_id == user.id
       assert revived.id == identity.id
     end
 
@@ -5454,7 +5555,8 @@ defmodule Emisar.SSOTest do
     test "another account's membership never decides a row's active state", %{
       provider: provider
     } do
-      {:ok, %{user: user}} = SSO.scim_provision_user(provider, %{external_id: "okta|two-tenant"})
+      %{identity: identity} = provision(provider, "okta|two-tenant")
+      user = link_login(identity)
 
       # The same person is also a (suspended) member of an unrelated account —
       # only the provider's own account may decide what its directory is told.
@@ -5965,7 +6067,7 @@ defmodule Emisar.SSOTest do
       {_user, account, subject} = enterprise_owner()
       provider = account |> provider_fixture() |> Fixtures.SSO.enable_scim()
       %{identity: identity} = provision(provider, "okta|session-guard")
-      {:ok, user} = Users.fetch_user_by_id(Fixtures.SSO.identity_membership(identity).user_id)
+      user = link_login(identity)
 
       assert {:ok,
               %{
@@ -8456,12 +8558,14 @@ defmodule Emisar.SSOTest do
     } do
       provider = Fixtures.SSO.enable_scim(provider)
 
-      assert {:ok, %{user: member, identity: directory_identity}} =
+      assert {:ok, %{identity: directory_identity}} =
                SSO.scim_provision_user(provider, %{
                  external_id: "directory-external-123",
                  email: "rebound-directory@acme.test",
                  full_name: "Directory Person"
                })
+
+      member = link_login(directory_identity, email: "rebound-directory@acme.test")
 
       request =
         capture_request(provider, %{
@@ -8671,12 +8775,14 @@ defmodule Emisar.SSOTest do
          %{account: account, subject: subject, provider: provider} do
       %{provider: foreign_provider} = scim_provider()
 
-      assert {:ok, %{user: member, identity: foreign_identity}} =
+      assert {:ok, %{identity: foreign_identity}} =
                SSO.scim_provision_user(foreign_provider, %{
                  external_id: "foreign-directory-id",
                  email: "scim-reactivation@acme.test",
                  full_name: "SCIM Reactivation"
                })
+
+      member = link_login(foreign_identity, email: "scim-reactivation@acme.test")
 
       assert {:ok, %{membership: dormant}} =
                SSO.scim_update_user(
@@ -8760,7 +8866,7 @@ defmodule Emisar.SSOTest do
       assert "already has an identity for this connection" in errors_on(changeset).membership_id
     end
 
-    test "provisions the captured identity + consumes the request", %{
+    test "provisions a new Member without a personal login + consumes the request", %{
       account: account,
       subject: subject,
       provider: provider
@@ -8775,27 +8881,32 @@ defmodule Emisar.SSOTest do
 
       {:ok, access} = RunnerAccess.restricted(["production"], [])
 
-      assert {:ok, %{user: user, identity: identity}} =
+      assert {:ok, %{membership: membership, identity: identity}} =
                SSO.approve_link_request(request, access, subject)
 
-      assert user.email == "approve@acme.test"
+      assert is_nil(membership.user_id)
+      assert membership.display_name == "Approve Me"
+      assert membership.contact_email == "approve@acme.test"
+      assert Users.fetch_user_by_email("approve@acme.test") == {:error, :not_found}
       assert identity.provider_identifier == "okta|approve"
       assert identity.created_by == :admin
       assert identity.provisioned_via == :manual
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      assert identity.membership_id == membership.id
       assert membership.role == :operator
       assert Accounts.runner_access_for_membership(account.id, membership.id) == access
       assert link_requests(provider.id) == []
 
-      # The bound sub now signs in normally, resolving to the provisioned user.
+      # The bound sub now signs in normally, as the provisioned Member.
       claims = %{
         "sub" => "okta|approve",
         "email" => "approve@acme.test",
         "email_verified" => true
       }
 
-      assert {:ok, %{user: signed_in}} = SSO.complete_auth(provider, callback(claims), %{})
-      assert signed_in.id == user.id
+      assert {:ok, %{user: nil, membership: signed_in}} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      assert signed_in.id == membership.id
     end
 
     test "broadcasts to the waiting pending page on approval", %{
@@ -8815,7 +8926,7 @@ defmodule Emisar.SSOTest do
       assert provider_id == provider.id
     end
 
-    test "a matched request links the identity to the EXISTING user — no dup, role kept", %{
+    test "a matched request links the identity to the EXISTING member — no dup, role kept", %{
       account: account,
       subject: subject,
       provider: provider
@@ -8843,12 +8954,14 @@ defmodule Emisar.SSOTest do
 
       assert request.matched_membership_id == membership.id
 
-      assert {:ok, %{user: user, identity: identity}} =
+      assert {:ok, %{membership: linked, identity: identity}} =
                SSO.approve_link_request(request, RunnerAccess.none(), subject)
 
-      # Bound to the EXISTING user. OIDC owns only the login identifier; the
+      # Bound to the EXISTING member. OIDC owns only the login identifier; the
       # directory column stays available for a later SCIM assertion.
-      assert user.id == member.id
+      assert linked.id == membership.id
+      assert linked.user_id == member.id
+      assert identity.membership_id == membership.id
       assert identity.provider_identifier == "okta|m"
       refute identity.scim_external_id
       # The member's existing role is untouched (not downgraded to :operator).
@@ -8859,6 +8972,75 @@ defmodule Emisar.SSOTest do
                existing_access
 
       assert link_requests(provider.id) == []
+    end
+
+    test "a match to a Member without a personal login links the identity to that Member", %{
+      account: account,
+      subject: subject,
+      provider: provider
+    } do
+      member =
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          contact_email: "unlinked-match@acme.test",
+          role: "viewer"
+        )
+
+      claims = %{
+        "sub" => "okta|unlinked-match",
+        "email" => "unlinked-match@acme.test",
+        "email_verified" => true
+      }
+
+      request = capture_request(provider, claims)
+      assert request.matched_membership_id == member.id
+
+      assert {:ok, %{membership: linked, identity: identity}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+
+      assert linked.id == member.id
+      assert is_nil(linked.user_id)
+      assert linked.role == :viewer
+      assert identity.membership_id == member.id
+      assert identity.provider_identifier == "okta|unlinked-match"
+      assert link_requests(provider.id) == []
+
+      assert {:ok, %{user: nil, membership: signed_in}} =
+               SSO.complete_auth(provider, callback(claims), %{})
+
+      assert signed_in.id == member.id
+    end
+
+    test "an admin can't link an identity onto an owner without a personal login", %{
+      account: account,
+      provider: provider
+    } do
+      owner =
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          contact_email: "unlinked-owner@acme.test",
+          role: "owner"
+        )
+
+      admin_membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      admin = Fixtures.Subjects.membership_subject(admin_membership)
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|unlinked-owner-impersonator",
+          "email" => "unlinked-owner@acme.test",
+          "email_verified" => true
+        })
+
+      assert request.matched_membership_id == owner.id
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+               {:error, :link_target_outranks_approver}
+
+      refute Repo.one(UserIdentity)
+      assert [_still_pending] = link_requests(provider.id)
     end
 
     test "a legacy unverified OIDC match cannot be approved", %{
@@ -8896,11 +9078,12 @@ defmodule Emisar.SSOTest do
       assert Repo.aggregate(Audit.Event, :count) == audit_count
     end
 
-    test "refuses when the email already belongs to a non-member user (H1)", %{
+    test "a personal login elsewhere with the address is never the target (H1)", %{
+      account: account,
       subject: subject,
       provider: provider
     } do
-      _existing = Fixtures.Users.create_user(%{email: "taken@acme.test"})
+      existing = Fixtures.Users.create_user(%{email: "taken@acme.test"})
 
       request =
         capture_request(provider, %{
@@ -8909,11 +9092,13 @@ defmodule Emisar.SSOTest do
           "email_verified" => true
         })
 
-      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
-               {:error, :email_taken}
+      assert is_nil(request.matched_membership_id)
 
-      # The request survives so an admin can resolve it another way.
-      assert [_still_pending] = link_requests(provider.id)
+      assert {:ok, %{membership: membership}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), subject)
+
+      assert is_nil(membership.user_id)
+      assert is_nil(Accounts.peek_sync_membership(account.id, existing.id))
     end
 
     test "denies a viewer and leaves the request pending", %{account: account, provider: provider} do
@@ -8966,20 +9151,22 @@ defmodule Emisar.SSOTest do
 
       attrs = %{external_id: "okta|scim", email: "member@acme.test", full_name: "Member"}
 
-      # Collision → :email_taken (the controller renders 409), but a matched request is parked.
-      assert SSO.scim_provision_user(provider, attrs) == {:error, :email_taken}
+      # The address names the member's workspace contact (the controller renders
+      # 409), and a matched request is parked.
+      assert SSO.scim_provision_user(provider, attrs) == {:error, :identity_pending_approval}
       assert [request] = link_requests(provider.id)
       assert request.matched_membership_id == membership.id
 
       # Admin approves → the identity is linked to the existing member.
-      assert {:ok, %{user: user}} =
+      assert {:ok, %{membership: linked}} =
                SSO.approve_link_request(request, RunnerAccess.none(), subject)
 
-      assert user.id == member.id
+      assert linked.id == membership.id
+      assert linked.user_id == member.id
 
       # The next SCIM push self-heals: the identity now resolves to the member.
-      assert {:ok, %{user: healed}} = SSO.scim_provision_user(provider, attrs)
-      assert healed.id == member.id
+      assert {:ok, %{membership: healed}} = SSO.scim_provision_user(provider, attrs)
+      assert healed.id == membership.id
     end
   end
 
@@ -9187,7 +9374,7 @@ defmodule Emisar.SSOTest do
           provider_identifier: "reassignable-subject"
         })
 
-      assert {:ok, %{user: authenticated, identity: active_identity, created?: false}} =
+      assert {:ok, %{user: authenticated, identity: active_identity}} =
                SSO.complete_auth(
                  provider,
                  callback(%{"sub" => "reassignable-subject"}),
@@ -9583,12 +9770,12 @@ defmodule Emisar.SSOTest do
     }
   end
 
-  defp demote_other_owners(account_id, except: keep_user_id) do
+  defp demote_other_owners(account_id, except: keep_membership_id) do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
     |> Accounts.Membership.Query.by_role(:owner)
     |> Repo.all()
-    |> Enum.reject(&(&1.user_id == keep_user_id))
+    |> Enum.reject(&(&1.id == keep_membership_id))
     |> Enum.each(&Fixtures.Memberships.force_role(&1, "admin"))
   end
 end

@@ -1828,9 +1828,11 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal — compose SSO/SCIM membership creation into a caller's transaction.
-  Active creation includes the cross-account binding consequence; a directory
-  row born suspended has granted no access and deliberately skips it. The
-  caller owns the outer commit and `after_membership_activation_committed/1`.
+  The Member is created without a personal login; only a directory re-adding a
+  linked person to a replacement seat passes that person's `:user_id`. Active
+  creation includes the cross-account binding consequence; a directory row born
+  suspended has granted no access and deliberately skips it. The caller owns
+  the outer commit and `after_membership_activation_committed/1`.
   """
   # Defense in depth: `:owner` is never assignable via sync (the provider
   # changeset rejects it as a default_role too) — owner is a deliberate human
@@ -1838,7 +1840,6 @@ defmodule Emisar.Accounts do
   def put_sso_membership(
         multi,
         account_id,
-        user_id,
         role,
         granted,
         opts \\ []
@@ -1847,7 +1848,6 @@ defmodule Emisar.Accounts do
   def put_sso_membership(
         %Multi{} = multi,
         _account_id,
-        _user_id,
         :owner,
         %RunnerAccess{},
         _opts
@@ -1857,7 +1857,6 @@ defmodule Emisar.Accounts do
   def put_sso_membership(
         %Multi{} = multi,
         account_id,
-        user_id,
         role,
         %RunnerAccess{} = granted,
         opts
@@ -1872,7 +1871,7 @@ defmodule Emisar.Accounts do
 
     attrs = %{
       account_id: account_id,
-      user_id: user_id,
+      user_id: Keyword.get(opts, :user_id),
       display_name: Keyword.get(opts, :display_name),
       contact_email: Keyword.get(opts, :contact_email),
       role: role,
@@ -2330,6 +2329,33 @@ defmodule Emisar.Accounts do
   end
 
   def peek_sync_membership_by_id(_account_id, _membership_id), do: nil
+
+  @doc """
+  Internal - lock one exact live seat of this account, suspension included, in
+  the caller's transaction, so a decision about it still holds at commit.
+  """
+  def fetch_and_lock_sync_membership(repo, account_id, membership_id)
+      when is_binary(account_id) and is_binary(membership_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_id(membership_id)
+    |> Membership.Query.lock_for_update()
+    |> repo.fetch(Membership.Query)
+  end
+
+  @doc """
+  Internal — SSO provisioning's contact match: up to two live Members of this
+  account whose workspace contact is `email`, enough to tell one Member from an
+  ambiguous address. Only this account's own contacts are read, never a
+  personal login's address. Suspended Members and pending invitations count.
+  """
+  def list_sync_memberships_by_contact_email(account_id, email) when is_binary(email) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_contact_email(email)
+    |> Membership.Query.limit_to(2)
+    |> Repo.all()
+  end
 
   @doc "Internal - exact account-owned profile history; never an access grant."
   def peek_membership_profile_by_id(account_id, membership_id) when is_binary(membership_id) do

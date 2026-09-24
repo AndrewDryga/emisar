@@ -140,10 +140,13 @@ defmodule Emisar.SSO.SCIM do
   binding identifier and SCIM correlation value; the identity row's UUID is the
   SCIM resource id. An existing identity is reused (idempotent — a re-POST never
   duplicates), and a resource retired by `DELETE /Users` revives that same
-  identity and person. Otherwise a fresh user + identity (`created_by: :provider`,
-  `provisioned_via: :scim`) + membership at `provider.default_role` are created
-  in one `Multi`. Trusts the IdP's email within the connection (collision →
-  `:email_taken`, never a merge). `{:ok, %{user, identity, membership}}`.
+  identity and person. Otherwise the directory's email is compared only with this
+  account's Member contacts, never a personal login's address: one live Member is
+  parked as a link request for an admin (`{:error, :identity_pending_approval}`),
+  two or more are refused (`{:error, :member_email_ambiguous}`), and none creates
+  a Member without a personal login plus its identity (`created_by: :provider`,
+  `provisioned_via: :scim`) at `provider.default_role` in one `Multi`.
+  `{:ok, %{identity, membership}}`.
   """
   def scim_provision_user(%IdentityProvider{} = provider, attrs),
     do: provision_or_load(provider, attrs, :may_retry)
@@ -329,7 +332,7 @@ defmodule Emisar.SSO.SCIM do
       # Foreign invitation acceptance holds that User before retiring bindings;
       # use the same User -> identity order, not identity -> FK wait. That User
       # is the one linked to the identity's seat; the locked identity must still
-      # be on that seat.
+      # be on that seat. A seat without a personal login has no User to lock.
       |> Multi.run(:user, fn repo, _changes -> lock_seat_user(repo, identity) end)
       |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider} ->
         with {:ok, locked} <- lock_repost_identity(locked_provider, identity.id, state, repo),
@@ -358,13 +361,7 @@ defmodule Emisar.SSO.SCIM do
       |> maybe_put_repost_authorization(authorization)
       |> Multi.run(:result, fn _repo, changes ->
         membership = Map.get(changes, :membership, changes.membership_transition.membership)
-
-        {:ok,
-         %{
-           user: changes.user,
-           identity: changes.updated_identity,
-           membership: membership
-         }}
+        {:ok, %{identity: changes.updated_identity, membership: membership}}
       end)
 
     case Repo.commit_multi(multi, after_commit: &repost_effects/1) do
@@ -427,20 +424,20 @@ defmodule Emisar.SSO.SCIM do
          true,
          authorization
        ) do
-    case Accounts.peek_sync_membership(provider.account_id, user.id) do
+    case current_seat(provider, user, identity) do
       %Accounts.Membership{} = membership ->
         put_reconciled_membership_multi(provider, identity, membership)
 
       nil ->
         {role, access} = repost_authorization(provider, authorization)
-        profile = Accounts.peek_membership_profile(provider.account_id, user.id)
+        profile = removed_seat_profile(provider, user, identity)
 
         Accounts.put_sso_membership(
           Multi.new(),
           provider.account_id,
-          user.id,
           role,
           access,
+          user_id: user && user.id,
           display_name: profile && profile.display_name,
           contact_email: profile && profile.contact_email,
           directory_managed?: true,
@@ -474,6 +471,21 @@ defmodule Emisar.SSO.SCIM do
         end)
     end
   end
+
+  # A linked person's seat here may have been replaced (say, by a re-invite); a
+  # Member without a personal login has only the identity's own seat. With no live
+  # seat left, the re-POST re-adds the same person at their removed seat's profile.
+  defp current_seat(provider, %Users.User{id: user_id}, _identity),
+    do: Accounts.peek_sync_membership(provider.account_id, user_id)
+
+  defp current_seat(provider, nil, %UserIdentity{membership_id: membership_id}),
+    do: Accounts.peek_sync_membership_by_id(provider.account_id, membership_id)
+
+  defp removed_seat_profile(provider, %Users.User{id: user_id}, _identity),
+    do: Accounts.peek_membership_profile(provider.account_id, user_id)
+
+  defp removed_seat_profile(provider, nil, %UserIdentity{membership_id: membership_id}),
+    do: Accounts.peek_membership_profile_by_id(provider.account_id, membership_id)
 
   # Every seat read judges `Membership.authorizable?/1`, so an unresolved
   # invitation grants nothing: calling one an active seat answered the directory
@@ -579,8 +591,13 @@ defmodule Emisar.SSO.SCIM do
     multi = build_scim_provision_multi(provider, external_id, attrs)
 
     case Repo.commit_multi(multi, after_commit: &Accounts.after_membership_activation_committed/1) do
-      {:ok, %{user: user, identity: identity, membership: membership}} ->
-        {:ok, %{user: user, identity: identity, membership: membership}}
+      {:ok, %{identity: identity, membership: membership}} ->
+        {:ok, %{identity: identity, membership: membership}}
+
+      # The address names a Member here: the create is parked for an admin to
+      # link, and the IdP's retry converges on the linked identity once approved.
+      {:ok, %{link_request: _request}} ->
+        {:error, :identity_pending_approval}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         # #9: lost a concurrent first-provision race — the winner created the
@@ -604,38 +621,9 @@ defmodule Emisar.SSO.SCIM do
             {:error, changeset}
         end
 
-      {:error, :email_taken} ->
-        # The SCIM email matches an existing user. If they're a member, park a
-        # link request for an admin to approve (Okta retries and self-heals once
-        # linked); a non-member is a genuine collision. Never merge (C1). A
-        # provider revoked before the fenced fallback gets the bearer-time 401.
-        email = attrs[:email]
-        full_name = attrs[:full_name]
-
-        case capture_current_scim_member_link(provider, external_id, email, full_name) do
-          {:error, :directory_sync_disabled} = revoked -> revoked
-          _captured_or_unmatched -> {:error, :email_taken}
-        end
-
       {:error, reason} ->
         {:error, reason}
     end
-  end
-
-  # The create transaction rolled back before reaching this collision path. Use
-  # the established account -> provider lock order before the link write: OIDC
-  # collision capture takes the same account lock, so reversing these two rows
-  # here would deadlock a SCIM collision against an OIDC callback. Delete either
-  # sweeps the request afterwards or makes this fallback refuse — it can never
-  # refill the queue after the connection is gone.
-  defp capture_current_scim_member_link(provider, external_id, email, full_name) do
-    Multi.new()
-    |> put_active_account_lock(provider.account_id)
-    |> put_current_scim_provider(provider)
-    |> Multi.run(:link_request, fn _repo, %{locked_provider: locked_provider} ->
-      {:ok, capture_member_link(locked_provider, external_id, email, full_name, %{}, :scim)}
-    end)
-    |> Repo.commit_multi()
   end
 
   # Only an identifier collision is the race the re-call converges on, so only it
@@ -648,35 +636,51 @@ defmodule Emisar.SSO.SCIM do
     end)
   end
 
+  # Email is never identity: the directory's address is compared only with this
+  # account's own contacts, under the account lock every provisioning path takes.
+  # One live Member is a link request for an admin and two or more are refused as
+  # ambiguous (`put_link_request/8`); none is a new Member without a personal login.
   defp build_scim_provision_multi(%IdentityProvider{} = provider, external_id, attrs) do
-    user_attrs = %{
-      email: attrs[:email],
-      full_name: attrs[:full_name]
-    }
-
     Multi.new()
     |> put_active_account_lock(provider.account_id)
     |> put_current_scim_provider(provider)
-    |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
-    |> Multi.merge(fn %{locked_provider: locked_provider, user: user} ->
-      Accounts.put_sso_membership(
-        Multi.new(),
-        locked_provider.account_id,
-        user.id,
-        locked_provider.default_role,
-        provider_runner_access(locked_provider),
-        display_name: attrs[:full_name],
-        contact_email: attrs[:email],
-        active?: scim_active_from(attrs),
-        directory_managed?: true,
-        directory_provider: locked_provider
-      )
+    |> Multi.merge(fn %{locked_provider: locked_provider} ->
+      case member_contact_match(locked_provider, attrs[:email]) do
+        :none ->
+          put_scim_member(locked_provider, external_id, attrs)
+
+        _member_or_ambiguous ->
+          put_link_request(
+            Multi.new(),
+            :link_request,
+            locked_provider,
+            external_id,
+            attrs[:email],
+            attrs[:full_name],
+            %{},
+            :scim
+          )
+      end
     end)
-    |> Multi.run(:identity, fn _repo, %{locked_provider: locked_provider, membership: member} ->
-      create_scim_identity(locked_provider, member, external_id, attrs)
+  end
+
+  defp put_scim_member(%IdentityProvider{} = provider, external_id, attrs) do
+    Multi.new()
+    |> Accounts.put_sso_membership(
+      provider.account_id,
+      provider.default_role,
+      provider_runner_access(provider),
+      display_name: attrs[:full_name],
+      contact_email: attrs[:email],
+      active?: scim_active_from(attrs),
+      directory_managed?: true,
+      directory_provider: provider
+    )
+    |> Multi.run(:identity, fn _repo, %{membership: member} ->
+      create_scim_identity(provider, member, external_id, attrs)
     end)
-    |> Multi.insert(:audit, fn %{locked_provider: locked_provider, membership: member} ->
-      Audit.Events.user_provisioned_via_scim(member, locked_provider)
+    |> Multi.insert(:audit, fn %{membership: member} ->
+      Audit.Events.user_provisioned_via_scim(member, provider)
     end)
   end
 

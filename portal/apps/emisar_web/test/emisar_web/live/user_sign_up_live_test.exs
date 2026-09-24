@@ -183,6 +183,35 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     assert Users.fetch_user_by_email(params["user"]["email"]) == {:error, :not_found}
   end
 
+  test "an address a directory provisioned signs up as a new person, never the decoy", %{
+    conn: conn
+  } do
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+    {:ok, provider, _token} = Emisar.SSO.enable_scim(provider, subject)
+    params = sign_up_params()
+    email = params["user"]["email"]
+
+    # The directory creates a workspace Member for the address, not a login.
+    assert {:ok, %{membership: member}} =
+             Emisar.SSO.scim_provision_user(provider, %{
+               external_id: "okta|signup",
+               email: email,
+               full_name: "Directory Name"
+             })
+
+    {:ok, lv, _html} = live(conn, ~p"/sign_up")
+    html = lv |> form("#registration_form", params) |> render_submit()
+
+    {:ok, user} = Users.fetch_user_by_email(email)
+    assert [_, handoff] = Regex.run(~r/name="registration_handoff"[^>]*value="([^"]+)"/, html)
+
+    assert RegistrationHandoff.verify(handoff) ==
+             {:ok, {user.id, "Founder Co", "Founder Person"}}
+
+    assert is_nil(Emisar.Repo.reload!(member).user_id)
+  end
+
   test "a taken email arms the same neutral magic-link POST without a workspace", %{conn: conn} do
     existing =
       Fixtures.Users.create_user()

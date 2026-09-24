@@ -323,13 +323,17 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
     {:ok, provider, _token} = SSO.enable_scim(provider, subject)
 
-    {:ok, %{user: person, identity: identity, membership: member}} =
+    {:ok, %{identity: identity, membership: member}} =
       SSO.scim_provision_user(provider, %{
         external_id: "directory-person",
         email: "directory@example.test",
         full_name: "Directory Name"
       })
 
+    # The directory creates the Member; the person linked their own login to it
+    # by proving the mailbox.
+    person = Fixtures.Users.create_user(email: "directory@example.test", full_name: "Own Name")
+    {:ok, member} = Accounts.link_personal_login(Repo, member, person)
     {provider, person, identity, member}
   end
 end

@@ -322,6 +322,10 @@ defmodule Emisar.Accounts.Membership.Query do
   def with_contact_email(queryable),
     do: where(queryable, [memberships: m], not is_nil(m.contact_email))
 
+  @doc "Members whose workspace contact is `email`; the citext column compares case-insensitively."
+  def by_contact_email(queryable, email),
+    do: where(queryable, [memberships: m], m.contact_email == ^email)
+
   @doc "Select local contact addresses for the workspace deliverability overlay."
   def select_user_emails(queryable) do
     select(queryable, [memberships: m], m.contact_email)

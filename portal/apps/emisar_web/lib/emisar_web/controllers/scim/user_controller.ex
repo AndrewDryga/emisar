@@ -237,12 +237,6 @@ defmodule EmisarWeb.SCIM.UserController do
     )
   end
 
-  # The email uniqueness this reports is GLOBAL, not per-account, so saying "in
-  # the account" told an account's bearer something false about an address that
-  # may belong to a workspace it cannot see. The 409 itself is unavoidable — the
-  # write genuinely cannot proceed and the directory has to be told — but it says
-  # only that the address is unavailable, and says the same whether the person is
-  # a member here or a stranger elsewhere.
   # The connection already has an identity under this identifier, bound to
   # someone else. There is no row this create can honestly occupy.
   defp render_error(conn, :identifier_taken) do
@@ -251,10 +245,33 @@ defmodule EmisarWeb.SCIM.UserController do
     |> json(Resource.error(409, "uniqueness", "That externalId is already in use."))
   end
 
-  defp render_error(conn, :email_taken) do
+  # The email names a member of this account, compared only with this account's
+  # own member contacts. The create is parked as an access request; the 409 lands
+  # in the IdP's provisioning log, and its retry succeeds once an admin links it.
+  defp render_error(conn, :identity_pending_approval) do
     conn
     |> put_status(:conflict)
-    |> json(Resource.error(409, "uniqueness", "That email address is not available."))
+    |> json(
+      Resource.error(
+        409,
+        "uniqueness",
+        "A member of this account already uses that email address. An admin must " <>
+          "approve linking this user to them before the directory can provision them."
+      )
+    )
+  end
+
+  defp render_error(conn, :member_email_ambiguous) do
+    conn
+    |> put_status(:conflict)
+    |> json(
+      Resource.error(
+        409,
+        "uniqueness",
+        "More than one member of this account uses that email address, so the " <>
+          "directory user cannot be matched to one of them."
+      )
+    )
   end
 
   defp render_error(conn, :too_many_scim_operations),

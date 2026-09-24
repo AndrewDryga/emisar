@@ -10,8 +10,9 @@ defmodule Emisar.SSO do
   Enterprise. The login flow (`begin_auth`/`complete_auth`) is pre-Subject — it IS
   the authentication — and resolves an identity strictly by `(provider, sub)`,
   **never by email** (the account-takeover guard). An unknown `sub`
-  JIT-provisions a fresh user + identity + membership when the provider's
-  `provisioner` is `:jit`.
+  JIT-provisions a workspace Member + identity when the provider's
+  `provisioner` is `:jit`. SSO and SCIM create Members only, never a personal
+  login: a Member links one by proving the mailbox (`Emisar.Auth`).
   """
   use Supervisor
   import Emisar.SSO.Provisioning
@@ -605,7 +606,7 @@ defmodule Emisar.SSO do
              names_identity_owner?(
                changes.locked_provider,
                changes.locked_identity,
-               subject,
+               member,
                claims
              ) do
         {:ok, member}
@@ -711,7 +712,12 @@ defmodule Emisar.SSO do
              ensure_session_step_up_identity(stashed, changes.sso_identity, changes.sso_provider),
            true <- changes.sso_membership.id == subject.membership_id,
            true <-
-             names_identity_owner?(changes.sso_provider, changes.sso_identity, subject, claims),
+             names_identity_owner?(
+               changes.sso_provider,
+               changes.sso_identity,
+               changes.sso_membership,
+               claims
+             ),
            :ok <- ensure_email_domain_allowed(changes.sso_provider, claims),
            {:ok, current, session} <-
              session_step_up_actor(stashed.actor_session_token_digest, subject),
@@ -725,10 +731,11 @@ defmodule Emisar.SSO do
   end
 
   # Sign-in accepts a SCIM-synthesized identifier only when the token names the
-  # same person (existing_auth_writes/4); step-up applies the same rule.
-  defp names_identity_owner?(provider, identity, %Subject{actor: user}, claims) do
+  # same person (existing_auth_writes/5); step-up applies the same rule to the
+  # current seat the identity signs into.
+  defp names_identity_owner?(provider, identity, %Accounts.Membership{} = member, claims) do
     not synthesized_oidc_identifier?(identity) or
-      claims_name_the_same_person?(provider, identity, user, claims)
+      claims_name_the_same_person?(provider, identity, member, claims)
   end
 
   @identity_link_reauthentication_max_age_seconds 120
@@ -2422,12 +2429,14 @@ defmodule Emisar.SSO do
   Validate the OIDC callback (state/nonce/PKCE + ID-token signature/iss/aud/exp
   + RFC 9207 issuer check), then resolve the identity strictly by
   `(provider, identifier_claim)` — the `sub` for every provider except Entra, which
-  uses `oid` — and never by email. An unknown `sub` JIT-provisions a fresh user
-  when the provider's `provisioner` is `:jit`, or is captured as a pending link
-  request and returns `{:pending, request}` when it is `:manual` (the web layer
-  parks the person on the pending-approval page). Returns
-  `{:ok, %{user, membership, identity, provider, created?}}` for the web layer to
-  log in; `user` is nil when the identity's Member has no personal login.
+  uses `oid` — and never by email. An unknown `sub` is captured as a pending link
+  request, returning `{:pending, request}` for the web layer's pending-approval
+  page, when the provider's `provisioner` is `:manual`, when directory sync is on,
+  or when its verified email names one live Member of this account; an email
+  naming two or more Members is refused with `:member_email_ambiguous`. Otherwise
+  `:jit` creates a new Member without a personal login. Returns
+  `{:ok, %{user, membership, identity, provider}}` for the web layer to log in;
+  `user` is nil when the identity's Member has no personal login.
   """
   def complete_auth(%IdentityProvider{} = provider, params, stashed) do
     with {:ok, %{identifier: identifier, claims: claims}} <-
@@ -2471,9 +2480,6 @@ defmodule Emisar.SSO do
 
       {:error, %Ecto.Changeset{data: %LinkRequest{}}} ->
         {:error, :identity_pending_approval}
-
-      {:error, :email_taken} ->
-        commit_verified_email_collision(started_provider, namespace, identifier, claims)
 
       {:error, reason} ->
         {:error, reason}
@@ -2540,9 +2546,7 @@ defmodule Emisar.SSO do
 
   defp existing_identity_auth_writes(provider, identifier, identity_hint, claims) do
     Multi.new()
-    |> Multi.run(:locked_user, fn repo, _changes ->
-      lock_callback_seat_user(repo, identity_hint)
-    end)
+    |> Multi.run(:locked_user, fn repo, _changes -> lock_seat_user(repo, identity_hint) end)
     |> Multi.run(:resolved_identity, fn repo, _changes ->
       current =
         UserIdentity.Query.not_deleted()
@@ -2564,21 +2568,12 @@ defmodule Emisar.SSO do
     end)
     |> Multi.merge(fn
       %{locked_user: user, resolved_identity: %UserIdentity{} = identity} ->
-        existing_auth_writes(provider, identity, user, claims)
+        existing_auth_writes(provider, identity, identity_hint.membership, user, claims)
 
       %{resolved_identity: nil} ->
         unknown_identity_writes(provider, identifier, claims)
     end)
   end
-
-  # A seat without a personal login signs in as the Member itself.
-  defp lock_callback_seat_user(_repo, %UserIdentity{
-         membership: %Accounts.Membership{user_id: nil}
-       }),
-       do: {:ok, nil}
-
-  defp lock_callback_seat_user(repo, %UserIdentity{} = identity),
-    do: lock_seat_user(repo, identity)
 
   # An identity the DIRECTORY created holds an OIDC identifier nobody ever
   # asserted over OIDC: SCIM provisioning writes its `externalId` into both
@@ -2591,9 +2586,10 @@ defmodule Emisar.SSO do
   # So the first login against a synthesized identifier has to agree on WHO, not
   # only on the identifier. When it does not, nothing is authenticated: it becomes
   # a link request for an admin, which is what an unrecognized person gets anyway.
-  defp existing_auth_writes(%IdentityProvider{} = provider, identity, user, claims) do
+  # A seat without a personal login signs in as the Member itself (`user` nil).
+  defp existing_auth_writes(%IdentityProvider{} = provider, identity, member, user, claims) do
     if synthesized_oidc_identifier?(identity) do
-      if claims_name_the_same_person?(provider, identity, user, claims) do
+      if claims_name_the_same_person?(provider, identity, member, claims) do
         returning_auth_writes(provider, identity, user)
       else
         pending_auth_writes(provider, identity.provider_identifier, claims)
@@ -2618,20 +2614,13 @@ defmodule Emisar.SSO do
       end
     end)
     |> Multi.update(:identity, UserIdentity.Changeset.touch_last_seen(identity))
-    |> Multi.run(:user, fn _repo, _changes -> {:ok, locked_user} end)
     |> Multi.run(:auth_result, fn _repo, changes ->
-      {:ok, {:ok, auth_result(changes, provider, false)}}
+      {:ok, {:ok, auth_result(locked_user, changes, provider)}}
     end)
   end
 
-  defp auth_result(%{user: user, membership: member, identity: identity}, provider, created?),
-    do: %{
-      user: user,
-      membership: member,
-      identity: identity,
-      provider: provider,
-      created?: created?
-    }
+  defp auth_result(user, %{membership: member, identity: identity}, provider),
+    do: %{user: user, membership: member, identity: identity, provider: provider}
 
   defp synthesized_oidc_identifier?(%UserIdentity{provisioned_via: :scim} = identity),
     do: identity.provider_identifier == identity.scim_external_id
@@ -2658,7 +2647,7 @@ defmodule Emisar.SSO do
            scim_deleted_at: nil,
            provider_identifier_retired_at: nil
          } = identity,
-         _user,
+         _member,
          %{"iss" => issuer, "oid" => oid} = claims
        ) do
     oid == identity.provider_identifier and
@@ -2680,7 +2669,7 @@ defmodule Emisar.SSO do
            scim_deleted_at: nil,
            provider_identifier_retired_at: nil
          } = identity,
-         _user,
+         _member,
          %{"iss" => issuer, "sub" => sub} = claims
        ) do
     sub == identity.provider_identifier and
@@ -2690,17 +2679,24 @@ defmodule Emisar.SSO do
       active_scim_membership?(provider, identity)
   end
 
-  # A Member without a personal login has no verified address to compare.
-  defp claims_name_the_same_person?(_provider, _identity, nil, _claims), do: false
-
-  defp claims_name_the_same_person?(provider, _identity, user, claims) do
-    with email when is_binary(email) <- verified_email(provider, claims),
-         {:ok, email_owner} <- Users.fetch_user_by_email(email) do
-      email_owner.id == user.id
-    else
-      _ -> false
+  # Everywhere else the token must carry a verified email equal to this
+  # workspace's contact for the seat the identity signs into. Only the account's
+  # own contact is compared, never a personal login's address; the citext column
+  # compares case-insensitively, and so does this.
+  defp claims_name_the_same_person?(
+         provider,
+         _identity,
+         %Accounts.Membership{contact_email: contact},
+         claims
+       )
+       when is_binary(contact) do
+    case verified_email(provider, claims) do
+      email when is_binary(email) -> String.downcase(email) == String.downcase(contact)
+      nil -> false
     end
   end
+
+  defp claims_name_the_same_person?(_provider, _identity, _member, _claims), do: false
 
   defp active_scim_membership?(provider, identity) do
     case Accounts.peek_sync_membership_by_id(provider.account_id, identity.membership_id) do
@@ -2730,15 +2726,25 @@ defmodule Emisar.SSO do
        ),
        do: pending_auth_writes(provider, identifier, claims)
 
+  # Email is never identity. A verified email naming one live Member of this
+  # account is held for an admin to link, exactly as `:manual` holds everyone;
+  # one naming two or more is refused as ambiguous there. Otherwise the person is
+  # new here: a Member without a personal login, whatever logins exist elsewhere.
   defp unknown_identity_writes(
          %IdentityProvider{provisioner: :jit} = provider,
          identifier,
          claims
        ) do
-    build_provision_writes(provider, identifier, claims, [])
-    |> Multi.run(:auth_result, fn _repo, changes ->
-      {:ok, {:ok, auth_result(changes, provider, true)}}
-    end)
+    case member_contact_match(provider, verified_email(provider, claims)) do
+      :none ->
+        build_provision_writes(provider, identifier, claims, [])
+        |> Multi.run(:auth_result, fn _repo, changes ->
+          {:ok, {:ok, auth_result(nil, changes, provider)}}
+        end)
+
+      _member_or_ambiguous ->
+        pending_auth_writes(provider, identifier, claims)
+    end
   end
 
   # The unknown identity is captured as a pending link request (the real `sub` +
@@ -2761,60 +2767,22 @@ defmodule Emisar.SSO do
     end)
   end
 
-  defp commit_verified_email_collision(started_provider, namespace, identifier, claims) do
-    Multi.new()
-    |> put_active_account_lock(started_provider.account_id)
-    |> put_sso_entitlement(started_provider.account_id)
-    |> put_callback_provider_lock(started_provider, namespace, claims)
-    |> Multi.merge(fn %{locked_provider: provider} ->
-      cond do
-        provider.scim_enabled or provider.provisioner == :manual ->
-          pending_auth_writes(provider, identifier, claims)
-
-        matched_member(provider, verified_email(provider, claims)) ->
-          pending_auth_writes(provider, identifier, claims)
-
-        true ->
-          Multi.error(Multi.new(), :auth_result, :email_taken)
-      end
-    end)
-    |> Repo.commit_multi()
-    |> case do
-      {:ok, %{auth_result: {:pending, request} = result}} ->
-        broadcast_link_request_pending(request)
-        result
-
-      {:ok, %{auth_result: result}} ->
-        result
-
-      {:error, %Ecto.Changeset{data: %LinkRequest{}}} ->
-        {:error, :email_taken}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
+  # A new Member without a personal login: its workspace profile comes from the
+  # token, and only a verified email becomes its contact.
   defp build_provision_writes(%IdentityProvider{} = provider, identifier, claims, opts) do
     created_by = Keyword.get(opts, :created_by, :provider)
     provisioned_via = Keyword.get(opts, :provisioned_via, :oidc_jit)
     audit = Keyword.get(opts, :audit, &Audit.Events.user_provisioned_via_sso(&1, provider))
     runner_access = Keyword.get(opts, :runner_access, provider_runner_access(provider))
-    user_attrs = %{email: verified_email(provider, claims), full_name: claims["name"]}
 
     Multi.new()
-    |> Multi.run(:user, fn _repo, _changes -> Users.provision_sso_user(user_attrs) end)
-    |> Multi.merge(fn %{user: user} ->
-      Accounts.put_sso_membership(
-        Multi.new(),
-        provider.account_id,
-        user.id,
-        provider.default_role,
-        runner_access,
-        display_name: user_attrs.full_name,
-        contact_email: user_attrs.email
-      )
-    end)
+    |> Accounts.put_sso_membership(
+      provider.account_id,
+      provider.default_role,
+      runner_access,
+      display_name: claims["name"],
+      contact_email: verified_email(provider, claims)
+    )
     |> Multi.run(:identity, fn _repo, %{membership: member} ->
       create_identity(provider, member, identifier, claims, created_by, provisioned_via)
     end)
@@ -3986,10 +3954,11 @@ defmodule Emisar.SSO do
   def link_request_invitation_pending?(%LinkRequest{}), do: false
 
   @doc """
-  Approve a pending manual-link request: provision the captured identity at the
-  provider's `default_role` and delete the request, atomically. `manage_sso` +
-  Team or Enterprise; account-scoped. Binds the captured `sub` (never email — H1).
-  `{:ok, %{user: user, identity: identity}}`.
+  Approve a pending manual-link request and delete it, atomically: a request
+  that matched a live Member binds the captured identity to that Member; any
+  other provisions a new Member without a personal login at the provider's
+  `default_role`. `manage_sso` + Team or Enterprise; account-scoped. Binds the
+  captured `sub` (never email — H1). `{:ok, %{membership: member, identity: identity}}`.
   """
   def approve_link_request(
         %LinkRequest{id: id},
@@ -4004,10 +3973,10 @@ defmodule Emisar.SSO do
       multi = approve_link_request_multi(provider, request, access, subject)
 
       case Repo.commit_multi(multi) do
-        {:ok, %{user: user, identity: identity} = changes} ->
+        {:ok, %{membership: member, identity: identity} = changes} ->
           :ok = link_approval_membership_effects(changes)
           broadcast_link_request_approved(request)
-          {:ok, %{user: user, identity: identity}}
+          {:ok, %{membership: member, identity: identity}}
 
         {:error, reason} ->
           {:error, reason}
@@ -4047,8 +4016,9 @@ defmodule Emisar.SSO do
   #   * the target must not hold an active membership in another account, because
   #     this account's admin has no authority over a User shared with another
   #     account. This guard remains until personal linking is independently proved.
+  #     A Member without a personal login has no other membership.
   #
-  # A request with no match provisions a fresh user and escalates nothing.
+  # A request with no match provisions a new Member and escalates nothing.
   defp ensure_link_target_within_authority(
          %LinkRequest{matched_membership_id: nil},
          _provider,
@@ -4063,15 +4033,13 @@ defmodule Emisar.SSO do
          approver_role,
          repo
        ) do
-    with %Accounts.Membership{user_id: user_id} <- peek_matched_membership(provider, request),
-         {:ok, user} <- Users.fetch_user_by_id(user_id),
+    with %Accounts.Membership{} = matched <- peek_matched_membership(provider, request),
          # LOCKED, because this decision has to still be true when the binding
          # commits. Re-reading inside the transaction was not enough on its own:
          # nothing stopped a concurrent promotion to owner, or a membership granted
          # in another account, from committing in the gap — leaving the approver's
          # IdP credential bound to someone they have no authority over.
-         {:ok, memberships} <- Accounts.fetch_and_lock_active_memberships_for_user(user, repo) do
-      elsewhere = Enum.reject(memberships, &(&1.account_id == provider.account_id))
+         {:ok, elsewhere} <- lock_link_target(provider, matched, repo) do
       # Re-read under those locks: the decision judges the member's current row.
       matched_membership = peek_matched_membership(provider, request)
 
@@ -4100,6 +4068,23 @@ defmodule Emisar.SSO do
     else
       nil -> {:error, :matched_user_unavailable}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # A linked person's User and live seats are locked, and each seat outside this
+  # account is authority this admin does not hold. A Member without a personal
+  # login is only this seat.
+  defp lock_link_target(provider, %Accounts.Membership{user_id: nil} = matched, repo) do
+    with {:ok, _locked} <-
+           Accounts.fetch_and_lock_sync_membership(repo, provider.account_id, matched.id) do
+      {:ok, []}
+    end
+  end
+
+  defp lock_link_target(provider, %Accounts.Membership{user_id: user_id}, repo) do
+    with {:ok, user} <- Users.fetch_user_by_id(user_id),
+         {:ok, memberships} <- Accounts.fetch_and_lock_active_memberships_for_user(user, repo) do
+      {:ok, Enum.reject(memberships, &(&1.account_id == provider.account_id))}
     end
   end
 
@@ -4183,15 +4168,15 @@ defmodule Emisar.SSO do
 
   defp account_link_requests_topic(account_id), do: "sso_link_requests:#{account_id}"
 
-  # No existing member matched → provision a fresh user (the original flow).
+  # No existing member matched → provision a new Member without a personal login.
   defp approve_link_request_multi(
          %IdentityProvider{} = provider,
          %LinkRequest{matched_membership_id: nil} = request,
          access,
          subject
        ) do
-    # This branch creates a user, an identity, a membership and an audit row, and
-    # it never re-checked the approver — so an admin demoted, suspended or removed
+    # This branch creates a membership, an identity and an audit row, and it
+    # never re-checked the approver — so an admin demoted, suspended or removed
     # while the request sat open could still run all of it on a cached subject.
     # Nothing here reads the approver's row otherwise.
     Multi.new()
@@ -4229,7 +4214,7 @@ defmodule Emisar.SSO do
   end
 
   # An existing account member matched → bind this IdP identity to THAT member (no
-  # new user, no email merge — the admin's approval is the gate). OIDC claims
+  # new member, no email merge — the admin's approval is the gate). OIDC claims
   # bind only provider_identifier; a SCIM request also owns scim_external_id.
   # Keeping the directory column nil until the directory asserts it lets later
   # retirement distinguish an OIDC-only link from a lifecycle row. The member's
@@ -4253,7 +4238,6 @@ defmodule Emisar.SSO do
       |> Multi.run(:matched_member, fn repo, _changes ->
         fetch_matched_member(locked_provider, request, subject, repo)
       end)
-      |> Multi.run(:user, fn _repo, %{matched_member: member} -> {:ok, member.user} end)
       |> Multi.merge(fn %{matched_member: member} ->
         ensure_active_membership_multi(locked_provider, member)
       end)
@@ -4268,7 +4252,7 @@ defmodule Emisar.SSO do
   end
 
   # Re-verify at approval time (the match was recorded at capture): the matched
-  # member must still be live in this account, with its person.
+  # member must still be live in this account.
   # Re-judge the target INSIDE the transaction, not just re-fetch them. The
   # authority check that runs before the approval reads state the approval then
   # acts on moments later: a concurrent promotion to owner, or a membership
@@ -4285,9 +4269,8 @@ defmodule Emisar.SSO do
          :ok <- ensure_matched_request_has_trusted_email(provider, request),
          {:ok, approver_role} <- ensure_approver_still_holds_authority(provider, subject, repo),
          :ok <- ensure_link_target_within_authority(request, provider, approver_role, repo),
-         %Accounts.Membership{} = member <- peek_matched_membership(provider, request),
-         {:ok, user} <- Users.fetch_user_by_id(member.user_id) do
-      {:ok, %{member | user: user}}
+         %Accounts.Membership{} = member <- peek_matched_membership(provider, request) do
+      {:ok, member}
     else
       {:error, reason} when is_atom(reason) -> {:error, reason}
       _ -> {:error, :matched_user_unavailable}
@@ -4448,7 +4431,7 @@ defmodule Emisar.SSO do
   # request, and approving THAT overwrote the externalId — back and forth, one
   # approval at a time, with whichever side was not current unable to see them.
   defp link_identity(%IdentityProvider{} = provider, member, %LinkRequest{} = request, repo) do
-    case peek_identity(provider, member.user_id) do
+    case peek_seat_identity(provider, member) do
       %UserIdentity{scim_deleted_at: %DateTime{}} ->
         {:error, :scim_resource_retired}
 
@@ -4494,8 +4477,15 @@ defmodule Emisar.SSO do
   end
 
   # The person's identity for this connection, including one left on a seat they
-  # were removed from; approval moves it to the matched member's seat.
-  defp peek_identity(%IdentityProvider{} = provider, user_id) do
+  # were removed from; approval moves it to the matched member's seat. A Member
+  # without a personal login has only its own seat's identity.
+  defp peek_seat_identity(
+         %IdentityProvider{} = provider,
+         %Accounts.Membership{user_id: nil} = member
+       ),
+       do: peek_member_identity(provider, member.id)
+
+  defp peek_seat_identity(%IdentityProvider{} = provider, %Accounts.Membership{user_id: user_id}) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.by_provider_id(provider.id)
     |> UserIdentity.Query.by_member_user_id(user_id)

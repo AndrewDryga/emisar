@@ -1716,7 +1716,7 @@ defmodule Emisar.Audit.Events do
     )
   end
 
-  @doc "A user JIT-provisioned by an SSO login. Actor is the system (the IdP via JIT), not a member."
+  @doc "A Member JIT-provisioned by an SSO login. Actor is the system (the IdP via JIT), not a member."
   def user_provisioned_via_sso(
         %Accounts.Membership{} = member,
         %SSO.IdentityProvider{} = provider
@@ -1741,7 +1741,7 @@ defmodule Emisar.Audit.Events do
   # operator auditing an offboarding sees *which* directory did it, not a
   # generic "system" (decision 7).
 
-  @doc "A user provisioned by inbound SCIM. Actor is the directory-sync connection, not a member."
+  @doc "A Member provisioned by inbound SCIM. Actor is the directory-sync connection, not a member."
   def user_provisioned_via_scim(
         %Accounts.Membership{} = member,
         %SSO.IdentityProvider{} = provider

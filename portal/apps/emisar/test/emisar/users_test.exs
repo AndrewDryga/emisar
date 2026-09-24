@@ -385,35 +385,6 @@ defmodule Emisar.UsersTest do
     end
   end
 
-  describe "provision_sso_user/1" do
-    test "creates a confirmed, password-less user (the IdP is the credential)" do
-      email = "sso-#{System.unique_integer([:positive])}@example.test"
-
-      assert {:ok, %User{} = user} =
-               Users.provision_sso_user(%{email: email, full_name: "SSO Person"})
-
-      assert user.email == email
-      assert user.full_name == "SSO Person"
-      refute is_nil(user.confirmed_at)
-    end
-
-    test "provisions a no-email user (a no-email IdP / unverified claim → nil)" do
-      assert {:ok, %User{email: nil} = user} =
-               Users.provision_sso_user(%{full_name: "Anonymous SSO"})
-
-      refute is_nil(user.confirmed_at)
-    end
-
-    test "a colliding email is :email_taken, never a silent merge (takeover guard §9 C1)" do
-      existing = Fixtures.Users.create_user(email: "taken@example.test")
-
-      assert Users.provision_sso_user(%{email: "taken@example.test", full_name: "Impostor"}) ==
-               {:error, :email_taken}
-
-      assert Repo.reload!(existing).full_name == existing.full_name
-    end
-  end
-
   describe "update_user_mfa/5" do
     test "enabling sets the secret, enrolled-at, recovery digests, and clears the replay stamp" do
       {user, _account, _subject} = Fixtures.Subjects.owner_subject()

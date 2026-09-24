@@ -4,7 +4,6 @@ defmodule Emisar.Users.User.Changeset do
 
   # The column is a varchar(255), and nothing bounded the field — so a longer
   # name reached Postgres and came back as a 500 rather than a rejected change.
-  # A directory push is the realistic source of one.
   @full_name_max_length 255
 
   def registration(user, attrs) do
@@ -38,33 +37,8 @@ defmodule Emisar.Users.User.Changeset do
 
   def profile(user, attrs), do: user |> cast(attrs, [:full_name]) |> validate_full_name()
 
-  @doc """
-  Create an SSO-provisioned user. Email is **optional** (a no-email IdP, or an
-  unverified claim → nil) and is NOT required; when present it still hits the
-  citext unique index, so a collision surfaces as a constraint error (mapped to
-  `:email_taken`, never a silent merge). No password — the IdP is the
-  credential; `confirmed_at` is set (the IdP is the email authority).
-  """
-  def sso_create(attrs) do
-    %User{}
-    |> cast(attrs, [:email, :full_name])
-    |> validate_full_name()
-    |> validate_optional_email()
-    |> put_change(:confirmed_at, DateTime.utc_now())
-  end
-
   defp validate_full_name(changeset),
     do: validate_length(changeset, :full_name, max: @full_name_max_length)
-
-  defp validate_optional_email(changeset) do
-    if get_change(changeset, :email) do
-      changeset
-      |> Emisar.EmailAddress.validate(:email)
-      |> unique_constraint(:email)
-    else
-      changeset
-    end
-  end
 
   defp next_email_changed_at(%User{email_changed_at: %DateTime{} = previous}) do
     now = DateTime.utc_now()

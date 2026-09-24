@@ -22,12 +22,19 @@ defmodule Emisar.SSOMembershipBindingTest do
       Fixtures.SSO.create_identity_provider(account_id: account.id)
       |> Fixtures.SSO.enable_scim()
 
-    assert {:ok, %{identity: identity, membership: member, user: user}} =
+    email = Fixtures.Random.unique_email()
+
+    assert {:ok, %{identity: identity, membership: member}} =
              SSO.scim_provision_user(provider, %{
                external_id: "directory-person",
-               email: "directory-person@example.com",
+               email: email,
                full_name: "Original Member"
              })
+
+    # The person linked a personal login to the directory's Member by proving
+    # the mailbox, so a replacement seat of that login is the same person.
+    user = Fixtures.Users.create_user(email: email)
+    {:ok, member} = Accounts.link_personal_login(Repo, member, user)
 
     %{
       account: account,
@@ -203,6 +210,42 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert unchanged.role == replacement.role
     refute unchanged.directory_authorization_pending_version
     refute unchanged.directory_managed
+  end
+
+  test "a removed Member without a personal login is never re-found through its address", %{
+    account: account,
+    subject: subject,
+    provider: provider
+  } do
+    email = Fixtures.Random.unique_email()
+
+    assert {:ok, %{identity: identity, membership: member}} =
+             SSO.scim_provision_user(provider, %{
+               external_id: "unlinked-person",
+               email: email,
+               full_name: "Unlinked Member"
+             })
+
+    assert {:ok, _removed} = Accounts.delete_membership(member, subject)
+
+    namesake =
+      Fixtures.Memberships.create_unlinked_membership(
+        account_id: account.id,
+        contact_email: email
+      )
+
+    claims = %{"sub" => identity.provider_identifier, "email" => email, "email_verified" => true}
+
+    assert {:error, :membership_unavailable} =
+             SSO.complete_auth(provider, %{"claims" => claims}, %{})
+
+    assert {:ok, %{membership: reseated, identity: rebound}} =
+             SSO.scim_provision_user(provider, %{external_id: "unlinked-person", active: true})
+
+    refute reseated.id in [member.id, namesake.id]
+    assert is_nil(reseated.user_id)
+    assert reseated.contact_email == email
+    assert rebound.membership_id == reseated.id
   end
 
   test "an identity cannot bind a membership from a different account", %{

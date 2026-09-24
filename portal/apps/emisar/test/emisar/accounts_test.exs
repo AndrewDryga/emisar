@@ -43,9 +43,9 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  defp commit_sso_membership(account_id, user_id, role, access, opts) do
+  defp commit_sso_membership(account_id, role, access, opts) do
     Multi.new()
-    |> Accounts.put_sso_membership(account_id, user_id, role, access, opts)
+    |> Accounts.put_sso_membership(account_id, role, access, opts)
     |> Repo.commit_multi(after_commit: &Accounts.after_membership_activation_committed/1)
     |> case do
       {:ok, %{membership: membership}} -> {:ok, membership}
@@ -3614,22 +3614,24 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "put_sso_membership/6" do
-    test "creates a membership at the given role for a JIT-provisioned user" do
+  describe "put_sso_membership/5" do
+    test "creates a Member without a personal login at the given role" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
 
       assert {:ok, %Membership{role: :operator} = membership} =
                commit_sso_membership(
                  account.id,
-                 user.id,
                  :operator,
                  Accounts.RunnerAccess.none(),
-                 directory_managed?: false
+                 directory_managed?: false,
+                 display_name: "Directory Person",
+                 contact_email: "directory-person@example.test"
                )
 
       assert membership.account_id == account.id
-      assert membership.user_id == user.id
+      assert is_nil(membership.user_id)
+      assert membership.display_name == "Directory Person"
+      assert membership.contact_email == "directory-person@example.test"
       assert membership.runner_access_mode == :none
       refute membership.runner_access_directory_managed
     end
@@ -3640,10 +3642,10 @@ defmodule Emisar.AccountsTest do
 
       assert commit_sso_membership(
                account.id,
-               user.id,
                :owner,
                Accounts.RunnerAccess.none(),
-               directory_managed?: true
+               directory_managed?: true,
+               user_id: user.id
              ) ==
                {:error, :owner_not_assignable}
 
@@ -3785,6 +3787,66 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.peek_sync_membership_by_id(member.account_id, replacement.id).id ==
                replacement.id
+    end
+  end
+
+  describe "fetch_and_lock_sync_membership/3" do
+    test "locks the exact live seat, suspension included, never a removed or foreign one" do
+      member = Fixtures.Memberships.create_membership()
+      Fixtures.Memberships.suspend_membership(member)
+
+      assert {:ok, %Membership{id: id, disabled_at: %DateTime{}}} =
+               Accounts.fetch_and_lock_sync_membership(Repo, member.account_id, member.id)
+
+      assert id == member.id
+
+      assert Accounts.fetch_and_lock_sync_membership(Repo, Ecto.UUID.generate(), member.id) ==
+               {:error, :not_found}
+
+      Fixtures.Memberships.mark_membership_as_deleted(member)
+
+      assert Accounts.fetch_and_lock_sync_membership(Repo, member.account_id, member.id) ==
+               {:error, :not_found}
+    end
+  end
+
+  describe "list_sync_memberships_by_contact_email/2" do
+    test "matches only this account's live contacts, case-insensitively, up to two" do
+      account = Fixtures.Accounts.create_account()
+      email = Fixtures.Random.unique_email()
+
+      first =
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          contact_email: email
+        )
+
+      other_account = Fixtures.Accounts.create_account()
+
+      Fixtures.Memberships.create_unlinked_membership(
+        account_id: other_account.id,
+        contact_email: email
+      )
+
+      removed =
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          contact_email: email
+        )
+
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
+
+      matched = Accounts.list_sync_memberships_by_contact_email(account.id, String.upcase(email))
+      assert Enum.map(matched, & &1.id) == [first.id]
+
+      for _member <- 1..2 do
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          contact_email: email
+        )
+      end
+
+      assert length(Accounts.list_sync_memberships_by_contact_email(account.id, email)) == 2
     end
   end
 
@@ -5761,12 +5823,9 @@ defmodule Emisar.AccountsTest do
       other_provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :entra)
 
-      user = Fixtures.Users.create_user()
-
       {:ok, member} =
         commit_sso_membership(
           account.id,
-          user.id,
           :operator,
           Accounts.RunnerAccess.none(),
           directory_managed?: true,
@@ -6124,12 +6183,10 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       provider_a = Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :okta)
       provider_b = Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :entra)
-      user = Fixtures.Users.create_user()
 
       {:ok, membership} =
         commit_sso_membership(
           account.id,
-          user.id,
           :operator,
           Accounts.RunnerAccess.none(),
           directory_managed?: true,

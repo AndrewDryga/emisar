@@ -306,13 +306,10 @@ defmodule Emisar.BillingManagerRoleTest do
     end
 
     test "a directory provisioning it lands with none", %{account: account} do
-      user = Fixtures.Users.create_user()
-
       assert {:ok, %{membership: %Accounts.Membership{role: :billing_manager} = membership}} =
                Multi.new()
                |> Accounts.put_sso_membership(
                  account.id,
-                 user.id,
                  :billing_manager,
                  Accounts.RunnerAccess.all(),
                  directory_managed?: true
