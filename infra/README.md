@@ -534,7 +534,12 @@ operator, with authority to clone Cloud SQL instances and edit project IAM:
    them back), replacement of the instance-scoped IAM bindings, and replacement
    of the instance template with the clone's connection name, which rolls the
    MIG — the application cutover that the ≈30-minute slice of the 2 h RTO
-   budget covers. Delete the `import` blocks in the next commit.
+   budget covers. Delete the `import` blocks in the next commit. When Livebook
+   runs, the plan also updates its VM metadata in place, but its database proxy
+   takes the connection name only at boot, so restart it once the apply
+   finishes: `gcloud compute instances stop emisar-livebook --zone <zone>`, then
+   `gcloud compute instances start emisar-livebook --zone <zone>`, where
+   `<zone>` is the first entry of `zones`.
 5. Verify from outside (sign-in, a run, the audit page) and only then stop the
    old instance with `gcloud sql instances patch emisar --activation-policy
    NEVER`; keep it for the backup retention window before deleting it and
