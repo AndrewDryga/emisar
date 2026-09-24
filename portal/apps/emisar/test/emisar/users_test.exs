@@ -625,7 +625,7 @@ defmodule Emisar.UsersTest do
   end
 
   describe "fetch_or_create_user_by_email/1" do
-    test "creates a placeholder user for an unknown email" do
+    test "creates an unconfirmed personal login for an unknown email" do
       email = "invite-#{System.unique_integer([:positive])}@example.test"
 
       assert {:ok, %User{} = user} = Users.fetch_or_create_user_by_email(email)
@@ -640,38 +640,6 @@ defmodule Emisar.UsersTest do
       assert id == existing.id
 
       assert {:ok, %User{id: ^id}} = Users.fetch_or_create_user_by_email("already@example.test")
-    end
-  end
-
-  describe "fetch_or_create_and_lock_user_by_email/2" do
-    test "creates or resolves the exact current address owner" do
-      email = "locked-invite-#{System.unique_integer([:positive])}@example.test"
-
-      assert {:ok, %User{} = created} =
-               Users.fetch_or_create_and_lock_user_by_email(email, Repo)
-
-      assert created.email == email
-
-      assert {:ok, %User{id: id}} =
-               Users.fetch_or_create_and_lock_user_by_email(email, Repo)
-
-      assert id == created.id
-    end
-  end
-
-  describe "confirm_invited_user/1" do
-    test "confirms the invited address without changing personal profile fields" do
-      {:ok, user} = Users.fetch_or_create_user_by_email("joiner@example.test")
-      assert is_nil(user.confirmed_at)
-
-      assert {:ok, %User{} = registered} =
-               Users.confirm_invited_user(user)
-
-      assert registered.full_name == user.full_name
-      assert registered.email == user.email
-      refute is_nil(registered.confirmed_at)
-      assert %DateTime{} = Repo.reload!(user).confirmed_at
-      assert {:ok, ^registered} = Users.confirm_invited_user(registered)
     end
   end
 

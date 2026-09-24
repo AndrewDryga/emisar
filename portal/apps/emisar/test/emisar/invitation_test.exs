@@ -2,7 +2,6 @@ defmodule Emisar.InvitationTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Billing, Crypto, Fixtures, Repo, RequestContext, Users}
   alias Emisar.Accounts.{Account, Membership, RunnerAccess}
-  alias Emisar.Users.User
 
   defp inviter_subject(account) do
     inviter = Fixtures.Users.create_user()
@@ -104,19 +103,18 @@ defmodule Emisar.InvitationTest do
       %{account: account, subject: subject}
     end
 
-    test "creates a placeholder user for a brand-new email", %{subject: subject} do
-      assert {:ok,
-              %{
-                membership: membership,
-                user: invitee,
-                invitation_token: token
-              }} =
+    test "creates a Member for the address and no personal login", %{subject: subject} do
+      assert {:ok, %{membership: membership, invitation_token: token} = result} =
                Accounts.invite_user_to_account(
                  Fixtures.Accounts.invitation_attrs(email: "new@example.test", role: "admin"),
                  subject
                )
 
-      assert invitee.email == "new@example.test"
+      refute Map.has_key?(result, :user)
+      assert is_nil(membership.user_id)
+      assert membership.invitation_sent_to == "new@example.test"
+      assert membership.contact_email == "new@example.test"
+      assert Users.fetch_user_by_email("new@example.test") == {:error, :not_found}
       assert is_binary(token)
       assert byte_size(token) > 16
       assert membership.role == :admin
@@ -150,10 +148,12 @@ defmodule Emisar.InvitationTest do
       assert Accounts.count_memberships(account.id) == 3
     end
 
-    test "reuses an existing user when the email already exists", %{subject: subject} do
+    test "an existing personal login for the address is neither linked nor changed", %{
+      subject: subject
+    } do
       existing = Fixtures.Users.create_user(email: "alice@example.test")
 
-      assert {:ok, %{user: invitee}} =
+      assert {:ok, %{membership: membership}} =
                Accounts.invite_user_to_account(
                  Fixtures.Accounts.invitation_attrs(
                    email: "alice@example.test",
@@ -163,7 +163,8 @@ defmodule Emisar.InvitationTest do
                  subject
                )
 
-      assert invitee.id == existing.id
+      assert is_nil(membership.user_id)
+      assert Repo.reload!(existing) == existing
     end
 
     test "persists and audits normalized selected runner access on the invitation", %{
@@ -199,6 +200,8 @@ defmodule Emisar.InvitationTest do
 
       assert {:ok, [event], _meta} =
                Emisar.Audit.list_events(subject, filter: [event_type: ["user.invited"]])
+
+      assert {event.target_kind, event.target_id} == {"membership", membership.id}
 
       assert event.payload["runner_access"] == %{
                "mode" => "restricted",
@@ -296,8 +299,8 @@ defmodule Emisar.InvitationTest do
       assert {:ok, [], _meta} = Emisar.Audit.list_events(subject)
     end
 
-    test "trims the email; the citext column owns case-insensitive identity", %{subject: subject} do
-      assert {:ok, %{user: invitee}} =
+    test "trims the email; the citext columns own case-insensitive identity", %{subject: subject} do
+      assert {:ok, %{membership: invitation, invitation_token: token}} =
                Accounts.invite_user_to_account(
                  Fixtures.Accounts.invitation_attrs(
                    email: "  HELLO@Example.Test  ",
@@ -307,20 +310,18 @@ defmodule Emisar.InvitationTest do
                )
 
       # Stored as typed (whitespace trimmed) — no app-side downcase.
-      assert invitee.email == "HELLO@Example.Test"
+      assert invitation.invitation_sent_to == "HELLO@Example.Test"
 
-      # A differently-cased invite resolves to the SAME user row: the
-      # unique citext index is the guarantee, not normalization.
-      other_account = Fixtures.Accounts.create_account()
-      {_inviter, other_subject} = inviter_subject(other_account)
+      # A differently-cased address is the same one: the citext contact already
+      # lists it, and the login that owns it accepts.
+      assert Accounts.invite_user_to_account(
+               Fixtures.Accounts.invitation_attrs(email: "hello@example.test", role: "viewer"),
+               subject
+             ) == {:error, :already_member}
 
-      assert {:ok, %{user: same_user}} =
-               Accounts.invite_user_to_account(
-                 Fixtures.Accounts.invitation_attrs(email: "hello@example.test", role: "viewer"),
-                 other_subject
-               )
-
-      assert same_user.id == invitee.id
+      owner = Fixtures.Users.create_user(email: "hello@example.test")
+      assert {:ok, accepted} = Accounts.mark_invitation_accepted(invitation, token, owner)
+      assert accepted.user_id == owner.id
     end
 
     test "rolls back when the user already belongs to the account", %{
@@ -474,15 +475,15 @@ defmodule Emisar.InvitationTest do
       # The membership's account is read off `subject.account`, so B's owner can
       # only ever invite into B — there is no caller-supplied account id to
       # redirect the invite into A.
-      assert {:ok, %{membership: %Membership{account_id: account_id}, user: invitee}} =
+      assert {:ok, %{membership: %Membership{account_id: account_id}}} =
                Accounts.invite_user_to_account(
                  Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
                  subject_b
                )
 
       assert account_id == account_b.id
-      # And nothing was written into A: the invitee has no membership there.
-      assert is_nil(Fixtures.Memberships.fetch_membership(account_a.id, invitee.id))
+      # And nothing was written into A: no seat there names the address.
+      assert Accounts.list_sync_memberships_by_contact_email(account_a.id, email) == []
     end
   end
 
@@ -491,31 +492,28 @@ defmodule Emisar.InvitationTest do
       account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)
 
-      {:ok, %{membership: membership, invitation_token: token, user: invitee}} =
+      {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(email: "bob@example.test", role: "admin"),
           subject
         )
 
-      %{membership: membership, token: token, invitee: invitee, account: account}
+      %{membership: membership, token: token, account: account}
     end
 
     test "preloads are caller-driven: opted-in assocs load, the default loads none", %{
       token: token,
-      account: account,
-      invitee: invitee
+      account: account
     } do
-      assert {:ok, membership} =
-               Accounts.fetch_invitation_by_token(token, preload: [:account, :user])
+      assert {:ok, membership} = Accounts.fetch_invitation_by_token(token, preload: [:account])
 
       assert membership.account.id == account.id
-      assert membership.user.id == invitee.id
+      assert is_nil(membership.user_id)
 
       # Without the opt the row comes back bare — callers that only need
       # the membership itself pay for no joins.
       assert {:ok, bare} = Accounts.fetch_invitation_by_token(token)
       assert %Ecto.Association.NotLoaded{} = bare.account
-      assert %Ecto.Association.NotLoaded{} = bare.user
     end
 
     test "returns :not_found for an unknown token" do
@@ -589,8 +587,8 @@ defmodule Emisar.InvitationTest do
           subject
         )
 
-      assert {:ok, %Membership{account: %Account{}, user: %User{}}} =
-               Accounts.fetch_invitation_by_token(token, preload: [:account, :user])
+      assert {:ok, %Membership{account: %Account{}}} =
+               Accounts.fetch_invitation_by_token(token, preload: [:account])
     end
 
     test "does not resolve an invitation for a disabled account" do
@@ -625,11 +623,12 @@ defmodule Emisar.InvitationTest do
 
     test "an accepted invitation no longer resolves (pending-only)" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      user = Fixtures.Users.create_user()
 
-      {:ok, %{membership: membership, user: user, invitation_token: token}} =
+      {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
-            email: "tok-accepted-#{System.unique_integer([:positive])}@example.test",
+            email: user.email,
             role: "operator",
             runner_access_mode: "all"
           ),
@@ -657,12 +656,10 @@ defmodule Emisar.InvitationTest do
       %{membership: membership, invitee: invitee, token: token}
     end
 
-    test "in-place accept burns the token; a replay is :not_found", %{
-      membership: membership,
-      invitee: invitee,
-      token: token
-    } do
+    test "links the signed-in login that owns the address and burns the token; a replay is :not_found",
+         %{membership: membership, invitee: invitee, token: token} do
       assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, token, invitee)
+      assert accepted.user_id == invitee.id
       assert accepted.invitation_accepted_at
       assert is_nil(accepted.invitation_token_digest)
       assert is_nil(accepted.invitation_sent_to)
@@ -680,6 +677,22 @@ defmodule Emisar.InvitationTest do
 
       assert Accounts.mark_invitation_accepted(membership, token, bystander) ==
                {:error, :unauthorized}
+
+      assert Repo.reload!(membership) == membership
+    end
+
+    test "the address owner must have confirmed it", %{
+      membership: membership,
+      invitee: invitee,
+      token: token
+    } do
+      unconfirmed =
+        invitee |> Ecto.Changeset.change(confirmed_at: nil) |> Repo.update!()
+
+      assert Accounts.mark_invitation_accepted(membership, token, unconfirmed) ==
+               {:error, :unauthorized}
+
+      assert Repo.reload!(membership) == membership
     end
 
     test "stamps invitation_accepted_at + clears the token without touching the user" do
@@ -693,29 +706,27 @@ defmodule Emisar.InvitationTest do
       )
 
       subject = Fixtures.Subjects.subject_for(inviter, account, role: :owner)
+      user = Fixtures.Users.create_user(full_name: "Personal Name")
 
-      email = "joiner-#{System.unique_integer([:positive])}@example.test"
-
-      {:ok, %{membership: membership, user: user, invitation_token: token}} =
+      {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
-            email: email,
+            email: user.email,
             role: "operator",
             runner_access_mode: "all"
           ),
           subject
         )
 
-      # No full_name set — the signed-in-as-self path skips the registration
+      # No workspace name set — the signed-in-as-self path skips the profile
       # changeset entirely.
       assert {:ok, accepted} = Accounts.mark_invitation_accepted(membership, token, user)
       assert accepted.invitation_accepted_at != nil
+      assert accepted.user_id == user.id
       refute accepted.invitation_token_digest
 
       # User row is untouched: same email, same full_name.
-      {:ok, reloaded} = Users.fetch_user_by_id(user.id)
-      assert reloaded.email == user.email
-      assert reloaded.full_name == user.full_name
+      assert Repo.reload!(user) == user
     end
 
     test "a different signed-in user can't accept (burn) someone else's invite" do
@@ -754,11 +765,12 @@ defmodule Emisar.InvitationTest do
 
     test "a stale invitation cannot be accepted after the account is disabled" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      user = Fixtures.Users.create_user()
 
-      {:ok, %{membership: membership, user: user, invitation_token: token}} =
+      {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
-            email: "mark-disabled-#{System.unique_integer([:positive])}@example.test",
+            email: user.email,
             role: "operator",
             runner_access_mode: "all"
           ),
@@ -778,6 +790,7 @@ defmodule Emisar.InvitationTest do
 
       reloaded = Repo.reload!(membership)
       assert is_nil(reloaded.invitation_accepted_at)
+      assert is_nil(reloaded.user_id)
       assert is_binary(reloaded.invitation_token_digest)
     end
 
@@ -803,17 +816,20 @@ defmodule Emisar.InvitationTest do
       {:ok, grant} = Emisar.ApiKeys.approve_device_grant(pending_grant, subject)
       {token, digest} = Crypto.user_invite_token()
 
+      # An invitation an earlier build left holding credentials, without the
+      # personal login the migration detached from it.
       pending =
         membership
         |> Ecto.Changeset.change(
+          user_id: nil,
           invitation_token_digest: digest,
           invitation_sent_to: user.email,
-          invitation_email_changed_at: user.email_changed_at,
           invitation_accepted_at: nil
         )
         |> Repo.update!()
 
-      assert {:ok, _accepted} = Accounts.mark_invitation_accepted(pending, token, user)
+      assert {:ok, accepted} = Accounts.mark_invitation_accepted(pending, token, user)
+      assert accepted.user_id == user.id
       assert Repo.reload!(key).revoked_at
       assert Repo.reload!(grant).status == :denied
     end
@@ -833,22 +849,41 @@ defmodule Emisar.InvitationTest do
       %{membership: membership, token: token}
     end
 
-    test "sets the workspace name, confirms the address and clears the token", %{
-      membership: membership,
-      token: token
-    } do
-      attrs = %{"display_name" => "Carol"}
+    test "creates and links the personal login for the address, names the Member, clears the token",
+         %{membership: membership, token: token} do
+      assert Users.fetch_user_by_email("carol@example.test") == {:error, :not_found}
 
       assert {:ok, %{user: user, membership: accepted_membership}} =
-               Accounts.accept_invitation(membership, token, attrs)
+               Accounts.accept_invitation(membership, token, %{"display_name" => "Carol"})
 
+      assert Users.fetch_user_by_email("carol@example.test") == {:ok, user}
+      assert accepted_membership.user_id == user.id
       assert is_nil(user.full_name)
       assert accepted_membership.display_name == "Carol"
-      # Accepting the invite proves email ownership — the user is confirmed and
-      # signs in by magic link (no password is set).
-      assert user.confirmed_at
+      # The login proves its mailbox — and is confirmed — by the magic link the
+      # page requests next (no password is set).
+      assert is_nil(user.confirmed_at)
       assert is_nil(accepted_membership.invitation_token_digest)
       assert accepted_membership.invitation_accepted_at
+    end
+
+    test "links the address's existing personal login without changing it" do
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      existing = Fixtures.Users.create_user(full_name: "Private Personal Name")
+
+      {:ok, %{membership: membership, invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: existing.email, role: "operator"),
+          subject
+        )
+
+      assert {:ok, %{user: user, membership: accepted}} =
+               Accounts.accept_invitation(membership, token, %{"display_name" => "Work Name"})
+
+      assert user.id == existing.id
+      assert accepted.user_id == existing.id
+      assert accepted.display_name == "Work Name"
+      assert Repo.reload!(existing) == existing
     end
 
     test "the proved invitation cannot replace the address it was sent to", %{
@@ -863,6 +898,7 @@ defmodule Emisar.InvitationTest do
 
       assert user.email == "carol@example.test"
       assert Repo.reload!(user).email == "carol@example.test"
+      assert Users.fetch_user_by_email("attacker@example.test") == {:error, :not_found}
     end
 
     test "a second accept with the same (stale) membership loses — first wins", %{
@@ -909,11 +945,12 @@ defmodule Emisar.InvitationTest do
 
     test "a stale invitation cannot provision a user after the account is disabled" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      email = "accept-disabled-#{System.unique_integer([:positive])}@example.test"
 
-      {:ok, %{membership: membership, user: invitee, invitation_token: token}} =
+      {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
-            email: "accept-disabled-#{System.unique_integer([:positive])}@example.test",
+            email: email,
             role: "operator",
             runner_access_mode: "all"
           ),
@@ -933,26 +970,116 @@ defmodule Emisar.InvitationTest do
       assert Accounts.accept_invitation(membership, token, late_attrs) ==
                {:error, :not_found}
 
-      {:ok, reloaded} = Users.fetch_user_by_id(invitee.id)
-      assert is_nil(reloaded.confirmed_at)
-      assert is_nil(reloaded.full_name)
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
+      assert Repo.reload!(membership) == membership
+    end
+
+    test "an expired invitation is refused by both acceptances and creates no login" do
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      owner_of_address = Fixtures.Users.create_user()
+      email = "expired-#{System.unique_integer([:positive])}@example.test"
+
+      {:ok, %{membership: signed_in, invitation_token: signed_in_token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: owner_of_address.email, role: "operator"),
+          subject
+        )
+
+      {:ok, %{membership: anonymous, invitation_token: anonymous_token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
+          subject
+        )
+
+      eight_days_ago = DateTime.add(DateTime.utc_now(), -8 * 24 * 3600, :second)
+
+      [signed_in, anonymous] =
+        for invitation <- [signed_in, anonymous] do
+          invitation |> Ecto.Changeset.change(inserted_at: eight_days_ago) |> Repo.update!()
+        end
+
+      assert Accounts.mark_invitation_accepted(signed_in, signed_in_token, owner_of_address) ==
+               {:error, :not_found}
+
+      assert Accounts.accept_invitation(anonymous, anonymous_token, %{"display_name" => "Late"}) ==
+               {:error, :not_found}
+
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
+      assert Repo.reload!(signed_in) == signed_in
+      assert Repo.reload!(anonymous) == anonymous
+    end
+
+    test "a personal login already seated in the account is refused by both acceptances" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      seated = Fixtures.Users.create_user()
+
+      # The seat lists another contact, so the address reaches an invitation.
+      seat =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: seated.id,
+          contact_email: "work-#{System.unique_integer([:positive])}@example.test"
+        )
+
+      {:ok, %{membership: invitation, invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: seated.email, role: "admin"),
+          subject
+        )
+
+      assert Accounts.mark_invitation_accepted(invitation, token, seated) ==
+               {:error, :already_member}
+
+      assert Accounts.accept_invitation(invitation, token, %{"display_name" => "Twice"}) ==
+               {:error, :already_member}
+
+      assert Repo.reload!(invitation) == invitation
+      assert Repo.reload!(seat) == seat
+    end
+
+    test "a token from one account never accepts an invitation in another" do
+      {_owner_a, _account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      invitee = Fixtures.Users.create_user()
+      attrs = Fixtures.Accounts.invitation_attrs(email: invitee.email, role: "operator")
+
+      {:ok, %{membership: invitation_a, invitation_token: token_a}} =
+        Accounts.invite_user_to_account(attrs, subject_a)
+
+      {:ok, %{membership: invitation_b}} = Accounts.invite_user_to_account(attrs, subject_b)
+      forged = %{invitation_a | account_id: account_b.id}
+
+      for invitation <- [invitation_b, forged] do
+        assert Accounts.mark_invitation_accepted(invitation, token_a, invitee) ==
+                 {:error, :not_found}
+
+        assert Accounts.accept_invitation(invitation, token_a, %{"display_name" => "Crossed"}) ==
+                 {:error, :not_found}
+      end
+
+      assert Repo.reload!(invitation_a) == invitation_a
+      assert Repo.reload!(invitation_b) == invitation_b
+      assert {:ok, accepted} = Accounts.mark_invitation_accepted(invitation_a, token_a, invitee)
+      assert accepted.account_id == invitation_a.account_id
+      assert Repo.reload!(invitation_b) == invitation_b
     end
 
     test "credential revocation rolls back with a rejected acceptance, then commits with it" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      user = Fixtures.Users.create_user()
 
-      {:ok, %{membership: invitation, user: user, invitation_token: token}} =
+      {:ok, %{membership: invitation, invitation_token: token}} =
         Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(
-            email: "accept-rollback-#{System.unique_integer([:positive])}@example.test",
-            role: "operator"
-          ),
+          Fixtures.Accounts.invitation_attrs(email: user.email, role: "operator"),
           subject
         )
 
+      # An earlier build let a linked invitation hold credentials; the migration
+      # then detached its personal login.
       temporarily_authorized =
         invitation
         |> Ecto.Changeset.change(
+          user_id: user.id,
           invitation_token_digest: nil,
           invitation_accepted_at: DateTime.utc_now()
         )
@@ -971,6 +1098,7 @@ defmodule Emisar.InvitationTest do
       pending =
         temporarily_authorized
         |> Ecto.Changeset.change(
+          user_id: nil,
           invitation_token_digest: invitation.invitation_token_digest,
           invitation_accepted_at: nil
         )
@@ -983,81 +1111,49 @@ defmodule Emisar.InvitationTest do
 
       assert is_nil(Repo.reload!(key).revoked_at)
       assert Repo.reload!(grant).status == :approved
-      assert Membership.invitation_pending?(Repo.reload!(pending))
-      assert is_nil(Repo.reload!(user).confirmed_at)
+      assert Repo.reload!(pending) == pending
 
       assert {:ok, %{membership: accepted}} =
                Accounts.accept_invitation(pending, token, %{"display_name" => "Accepted Member"})
 
       assert Membership.authorizable?(accepted)
+      assert accepted.user_id == user.id
       assert Repo.reload!(key).revoked_at
       assert Repo.reload!(grant).status == :denied
-      assert Repo.reload!(user).confirmed_at
     end
   end
 
   describe "invitation address and rotation binding" do
-    test "an old-address link fails and recovery requires an explicit invitation to the intended address" do
+    test "an invitation stays with its address, never the login that moved off it" do
       account = Fixtures.Accounts.create_account()
       {_inviter, subject} = inviter_subject(account)
       original_email = "old-inbox-#{System.unique_integer([:positive])}@example.test"
       current_email = "new-inbox-#{System.unique_integer([:positive])}@example.test"
+      moved = Fixtures.Users.create_user(email: original_email)
 
-      {:ok, %{membership: membership, user: user, invitation_token: old_token}} =
+      {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(email: original_email, role: "operator"),
           subject
         )
 
-      user =
-        user
-        |> Emisar.Users.User.Changeset.email(%{email: current_email})
-        |> Repo.update!()
+      moved = Fixtures.Users.update_email(moved, current_email) |> Fixtures.Users.confirm_user()
 
-      assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
+      assert {:ok, %Membership{id: id}} = Accounts.fetch_invitation_by_token(token)
+      assert id == membership.id
 
-      assert Accounts.accept_invitation(membership, old_token, %{"display_name" => "Wrong Proof"}) ==
-               {:error, :not_found}
+      # The login no longer owns the address the invitation was sent to.
+      assert Accounts.mark_invitation_accepted(membership, token, moved) ==
+               {:error, :unauthorized}
 
-      # Returning to the same address does not resurrect the old-inbox proof:
-      # the invitation is bound to the exact email generation too.
-      user =
-        user
-        |> Emisar.Users.User.Changeset.email(%{email: original_email})
-        |> Repo.update!()
-
-      assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
-
-      user
-      |> Emisar.Users.User.Changeset.email(%{email: current_email})
-      |> Repo.update!()
-
-      assert {:error, :stale_invitation_contact} =
-               Accounts.resend_account_invitation(membership, subject)
-
-      assert Repo.reload!(membership).contact_email == original_email
-      assert {:ok, _removed} = Accounts.delete_membership(membership, subject)
-
-      assert {:ok, %{membership: refreshed, invitation_token: current_token}} =
-               Accounts.invite_user_to_account(
-                 Fixtures.Accounts.invitation_attrs(email: current_email, role: "operator"),
-                 subject
-               )
-
-      assert refreshed.invitation_sent_to == current_email
-      refute refreshed.id == membership.id
-      refute current_token == old_token
-      assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
-
+      # Whoever proves the address joins, with a login of its own.
       assert {:ok, %{user: accepted, membership: accepted_member}} =
-               Accounts.accept_invitation(refreshed, current_token, %{
-                 "display_name" => "Inbox Owner"
-               })
+               Accounts.accept_invitation(membership, token, %{"display_name" => "Inbox Owner"})
 
-      assert accepted.email == current_email
-      assert accepted.confirmed_at
-      assert is_nil(accepted.full_name)
-      assert accepted_member.display_name == "Inbox Owner"
+      assert accepted.email == original_email
+      refute accepted.id == moved.id
+      assert accepted_member.user_id == accepted.id
+      assert is_nil(Fixtures.Memberships.fetch_membership(account.id, moved.id))
     end
 
     test "a rotated token defeats a holder who mounted the old token" do
@@ -1102,6 +1198,9 @@ defmodule Emisar.InvitationTest do
         |> Repo.update!()
 
       assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}
+
+      assert Accounts.accept_invitation(membership, old_token, %{"display_name" => "Anyone"}) ==
+               {:error, :not_found}
 
       assert {:error, :stale_invitation_contact} =
                Accounts.resend_account_invitation(membership, subject)

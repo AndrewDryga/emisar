@@ -312,9 +312,7 @@ defmodule Emisar.Admin do
              inviter(),
              target_subject
            ) do
-      # Same as mutate_member: the written row carries no :user preload, and the
-      # invitee's address is the whole point of the verb's result.
-      {:ok, membership_result(%{result.membership | user: result.user})}
+      {:ok, membership_result(result.membership)}
     end
   end
 

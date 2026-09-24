@@ -36,7 +36,6 @@ defmodule Emisar.Fixtures.Memberships do
           :invited_by_membership_id,
           :invitation_token_digest,
           :invitation_sent_to,
-          :invitation_email_changed_at,
           :directory_managed,
           :runner_access_directory_managed,
           :directory_provider_id,

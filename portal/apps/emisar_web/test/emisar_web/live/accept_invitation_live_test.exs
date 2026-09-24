@@ -105,7 +105,8 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       params = %{"member" => %{"display_name" => "New Person"}}
 
-      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token, preload: [:user])
+      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token)
+      assert is_nil(pending_membership.user_id)
 
       # A valid accept arms the hidden POST to the magic-link start
       # (phx-trigger-action), so the invitee gets a one-time sign-in link.
@@ -113,13 +114,45 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert html =~ ~s|action="/sign_in/magic/start"|
       assert html =~ ~s|name="return_to" value="/app/#{account.slug}"|
 
-      # Accepting burns the token and completes the registration.
+      # Accepting burns the token and links a new login for the invited address,
+      # which the magic link then proves.
       assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
 
-      user = Emisar.Repo.reload!(pending_membership.user)
+      accepted = Emisar.Repo.reload!(pending_membership)
+      {:ok, user} = Emisar.Users.fetch_user_by_email(pending_membership.invitation_sent_to)
+      assert accepted.user_id == user.id
+      assert accepted.display_name == "New Person"
       assert is_nil(user.full_name)
-      assert Emisar.Repo.reload!(pending_membership).display_name == "New Person"
+      assert is_nil(user.confirmed_at)
+    end
+
+    test "the invitee finishes with the emailed sign-in and opens the workspace", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+      {:ok, invitation} = Accounts.fetch_invitation_by_token(token)
+
+      {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+
+      lv
+      |> form("#accept_form", %{"member" => %{"display_name" => "New Person"}})
+      |> render_submit()
+
+      requested =
+        post(build_conn(), ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => invitation.invitation_sent_to},
+          "return_to" => ~p"/app/#{account}"
+        })
+
+      assert_received {:email, sent}
+      assert sent.to == [{"", invitation.invitation_sent_to}]
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      completed = get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert get_session(completed, :user_token)
+      {:ok, user} = Emisar.Users.fetch_user_by_email(invitation.invitation_sent_to)
       assert user.confirmed_at
+      assert Emisar.Repo.reload!(invitation).user_id == user.id
+      assert html_response(get(recycle(completed), ~p"/app/#{account}"), 200) =~ "New Person"
     end
 
     test "a signed-out visitor pushing accept_existing is a no-op, not a crash", %{conn: conn} do
@@ -202,12 +235,14 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert is_nil(accepted.user.full_name)
     end
 
-    test "an old-address link neither resolves nor reveals the current address", %{conn: conn} do
+    test "a login that moved off the invited address neither sees nor accepts the invitation",
+         %{conn: conn} do
       {_conn, owner, account} = register_and_log_in(conn)
       original_email = "old-link-#{System.unique_integer([:positive])}@example.com"
       current_email = "current-#{System.unique_integer([:positive])}@example.com"
+      moved = Fixtures.Users.create_user(email: original_email)
 
-      {:ok, %{user: user, invitation_token: token}} =
+      {:ok, %{invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
             email: original_email,
@@ -217,15 +252,21 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
           owner_subject(owner, account)
         )
 
-      user
-      |> Emisar.Users.User.Changeset.email(%{email: current_email})
-      |> Emisar.Repo.update!()
+      moved = moved |> Fixtures.Users.update_email(current_email) |> Fixtures.Users.confirm_user()
 
+      # The invitation still belongs to its address, and names only that address.
       {:ok, _live, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
-
-      assert html =~ "Invitation unavailable"
+      assert html =~ original_email
       refute html =~ current_email
-      refute html =~ account.name
+
+      signed_in = log_in_user(build_conn(), moved)
+      {:ok, _live, html} = live(signed_in, ~p"/accept_invitation/#{token}")
+      assert html =~ "Sign in with your invited email"
+
+      rejected = post(signed_in, ~p"/accept_invitation/#{token}", %{})
+      assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
+      assert {:ok, pending} = Accounts.fetch_invitation_by_token(token)
+      assert is_nil(pending.user_id)
     end
   end
 
@@ -241,8 +282,8 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       {_conn, owner, account} = register_and_log_in(conn)
       token = invitation_token(account, owner)
 
-      {:ok, invited} = Accounts.fetch_invitation_by_token(token, preload: [:user])
-      invited_email = invited.user.email
+      {:ok, invited} = Accounts.fetch_invitation_by_token(token)
+      invited_email = invited.invitation_sent_to
 
       {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
 
@@ -259,10 +300,52 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       render_submit(lv, "accept", params)
 
-      user = Emisar.Repo.reload!(invited.user)
-      assert user.email == invited_email
-      refute user.email == "attacker@evil.test"
-      assert user.confirmed_at
+      {:ok, user} = Emisar.Users.fetch_user_by_email(invited_email)
+      assert Emisar.Repo.reload!(invited).user_id == user.id
+      assert Emisar.Users.fetch_user_by_email("attacker@evil.test") == {:error, :not_found}
+    end
+  end
+
+  describe "member-only SSO session" do
+    test "is asked to sign out first and cannot accept from this browser", %{conn: conn} do
+      {_conn, owner, account} = register_and_log_in(conn)
+      token = invitation_token(account, owner)
+      {:ok, invitation} = Accounts.fetch_invitation_by_token(token)
+
+      {_sso_owner, sso_account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      provider = Fixtures.SSO.create_identity_provider(account_id: sso_account.id)
+      member = Fixtures.Memberships.create_unlinked_membership(account_id: sso_account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: sso_account.id,
+          provider_id: provider.id,
+          membership: member
+        )
+
+      member_only =
+        build_conn()
+        |> init_test_session(%{})
+        |> put_session(:user_token, Fixtures.Auth.create_member_session_token!(member, identity))
+
+      {:ok, lv, html} = live(member_only, ~p"/accept_invitation/#{token}")
+
+      assert html =~ invitation.invitation_sent_to
+      assert html =~ "without a personal login"
+      assert html =~ "Sign out"
+      refute has_element?(lv, "#accept_form")
+      refute has_element?(lv, "#accept_existing_form")
+
+      # The rendered branch is not the gate: a crafted accept is a no-op, and
+      # HTTP acceptance needs a personal login.
+      render_click(lv, "accept", %{"member" => %{"display_name" => "Member Only"}})
+      rejected = post(member_only, ~p"/accept_invitation/#{token}", %{})
+      assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
+
+      assert Emisar.Repo.reload!(invitation) == invitation
+
+      assert Emisar.Users.fetch_user_by_email(invitation.invitation_sent_to) ==
+               {:error, :not_found}
     end
   end
 
@@ -288,7 +371,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
         role: "owner"
       )
 
-      {:ok, %{invitation_token: token}} =
+      {:ok, %{membership: invitation, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
             email: invitee.email,
@@ -323,6 +406,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert {:ok, _pending} = Accounts.fetch_invitation_by_token(token)
       accepted = post(protected, ~p"/accept_invitation/#{token}", %{_csrf_token: csrf})
       assert redirected_to(accepted) == ~p"/session/recover"
+      assert Emisar.Repo.reload!(invitation).user_id == invitee.id
       assert get_session(accepted, :user_token) == raw
       assert html_response(get(accepted, ~p"/session/recover"), 200) =~ "Invitation accepted"
       assert html_response(get(accepted, ~p"/app/#{old_account}"), 200)
@@ -381,6 +465,61 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       refute html =~ "Accept invitation"
     end
 
+    test "an invited address matches the signed-in login's in any letter case", %{
+      owner: owner,
+      account: account
+    } do
+      invitee =
+        Fixtures.Users.create_user(
+          email: "casey-#{System.unique_integer([:positive])}@example.com"
+        )
+
+      {:ok, %{membership: invitation, invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: String.upcase(invitee.email), role: "viewer"),
+          owner_subject(owner, account)
+        )
+
+      signed_in = build_conn() |> log_in_user(invitee)
+      {:ok, lv, html} = live(signed_in, ~p"/accept_invitation/#{token}")
+
+      assert html =~ "You&#39;re signed in as"
+      assert has_element?(lv, "#accept_existing_form")
+
+      accepted = post(signed_in, ~p"/accept_invitation/#{token}", %{})
+      assert redirected_to(accepted) == ~p"/session/recover"
+      assert Emisar.Repo.reload!(invitation).user_id == invitee.id
+    end
+
+    test "a login that already holds a seat is told so, and the invitation stays open", %{
+      owner: owner,
+      account: account
+    } do
+      seated = Fixtures.Users.create_user()
+
+      # The seat lists another contact, so the address reached an invitation.
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: seated.id,
+        contact_email: "work-#{System.unique_integer([:positive])}@example.com"
+      )
+
+      {:ok, %{membership: invitation, invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: seated.email, role: "admin"),
+          owner_subject(owner, account)
+        )
+
+      rejected = build_conn() |> log_in_user(seated) |> post(~p"/accept_invitation/#{token}", %{})
+
+      assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
+
+      assert Phoenix.Flash.get(rejected.assigns.flash, :error) ==
+               EmisarWeb.AcceptInvitationLive.already_member_message()
+
+      assert Emisar.Repo.reload!(invitation) == invitation
+    end
+
     test "a DIFFERENT signed-in user gets the wrong-account screen, not the accept", %{
       owner: owner,
       account: account
@@ -402,7 +541,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       account: account
     } do
       token = invitation_token(account, owner)
-      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token, preload: [:user])
+      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token)
       bystander = Fixtures.Users.create_user()
 
       {:ok, lv, _html} =
@@ -419,7 +558,10 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       end
 
       assert {:ok, _still_pending} = Accounts.fetch_invitation_by_token(token)
-      assert Emisar.Repo.reload!(pending_membership.user).full_name == nil
+      assert Emisar.Repo.reload!(pending_membership) == pending_membership
+
+      assert Emisar.Users.fetch_user_by_email(pending_membership.invitation_sent_to) ==
+               {:error, :not_found}
     end
   end
 end

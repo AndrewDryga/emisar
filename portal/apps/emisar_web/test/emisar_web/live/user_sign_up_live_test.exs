@@ -212,6 +212,32 @@ defmodule EmisarWeb.UserSignUpLiveTest do
     assert is_nil(Emisar.Repo.reload!(member).user_id)
   end
 
+  test "an invited address signs up as a new person, never the decoy", %{conn: conn} do
+    {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+    params = sign_up_params()
+    email = params["user"]["email"]
+
+    # The invitation creates a workspace Member for the address, not a login.
+    assert {:ok, %{membership: invitation}} =
+             Emisar.Accounts.invite_user_to_account(
+               Fixtures.Accounts.invitation_attrs(email: email),
+               subject
+             )
+
+    assert Users.fetch_user_by_email(email) == {:error, :not_found}
+
+    {:ok, lv, _html} = live(conn, ~p"/sign_up")
+    html = lv |> form("#registration_form", params) |> render_submit()
+
+    {:ok, user} = Users.fetch_user_by_email(email)
+    assert [_, handoff] = Regex.run(~r/name="registration_handoff"[^>]*value="([^"]+)"/, html)
+
+    assert RegistrationHandoff.verify(handoff) ==
+             {:ok, {user.id, "Founder Co", "Founder Person"}}
+
+    assert is_nil(Emisar.Repo.reload!(invitation).user_id)
+  end
+
   test "a taken email arms the same neutral magic-link POST without a workspace", %{conn: conn} do
     existing =
       Fixtures.Users.create_user()

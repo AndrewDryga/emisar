@@ -41,19 +41,18 @@ defmodule Emisar.MfaEnforcementTest do
 
       owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
 
-      email = "operator-#{System.unique_integer([:positive])}@example.com"
+      operator_user = Fixtures.Users.create_user()
 
-      {:ok, %{user: operator_user, membership: m, invitation_token: token}} =
+      {:ok, %{membership: m, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
-            email: email,
+            email: operator_user.email,
             role: "operator",
             runner_access_mode: "all"
           ),
           owner_subject
         )
 
-      Fixtures.Users.confirm_user(operator_user)
       {:ok, _} = Accounts.mark_invitation_accepted(m, token, operator_user)
       operator_subject = Fixtures.Subjects.subject_for(operator_user, account, role: :operator)
 

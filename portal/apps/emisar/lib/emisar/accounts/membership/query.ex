@@ -148,18 +148,12 @@ defmodule Emisar.Accounts.Membership.Query do
     )
   end
 
-  @doc "Pending invitations still bound to the invited user's current address."
-  def invitation_matches_current_email(queryable) do
-    queryable
-    |> with_joined_user()
-    |> where(
-      [memberships: m, user: u],
-      not is_nil(m.invitation_sent_to) and
-        not is_nil(m.invitation_email_changed_at) and
-        m.invitation_sent_to == u.email and
-        m.invitation_email_changed_at == u.email_changed_at
-    )
-  end
+  @doc """
+  Invitations that name the address they were sent to. Only that address can
+  accept one; an invitation issued before invitations recorded it has none.
+  """
+  def with_invitation_sent_to(queryable),
+    do: where(queryable, [memberships: m], not is_nil(m.invitation_sent_to))
 
   # Invitation links lapse after a week — long enough for a weekend
   # inbox, short enough that a leaked link isn't a standing seat. The
@@ -289,20 +283,6 @@ defmodule Emisar.Accounts.Membership.Query do
     queryable
     |> with_joined_user()
     |> preload([memberships: m, user: user], user: user)
-  end
-
-  @doc """
-  Inner-join and preload the live personal login of a Member that always has
-  one, such as a pending invitation. Unlike `with_preloaded_user/1`, a locking
-  read may use it, and the lock also holds the login's row.
-  """
-  def with_preloaded_linked_user(queryable) do
-    queryable
-    |> join(:inner, [memberships: m], user in ^Emisar.Users.User.Query.not_deleted(),
-      on: m.user_id == user.id,
-      as: :linked_user
-    )
-    |> preload([linked_user: u], user: u)
   end
 
   @doc "Restrict to Members whose linked personal login has completed MFA enrollment."

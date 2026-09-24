@@ -4535,18 +4535,16 @@ defmodule Emisar.SSOTest do
       assert reprovisioned.disabled_at
     end
 
-    test "a re-POST refuses while the person's account invitation is unresolved", %{
-      provider: provider,
-      subject: subject
-    } do
+    test "a re-POST re-seats a removed person; an invitation to their address never seats them twice",
+         %{provider: provider, subject: subject} do
       attrs = scim_attrs(%{external_id: "okta|reinvited", email: "reinvited@acme.test"})
 
       assert {:ok, %{identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
       # The person linked their login to the directory's Member, was removed from
-      # the account, then invited back by hand — the identity survives both, so
-      # the directory's next push lands on a seat that is nothing but an
-      # unresolved invitation.
+      # the account, then their address was invited back by hand — the identity
+      # survives both. The invitation names only the address, so it is not the
+      # person's seat: the directory's next push re-adds the person.
       user = link_login(identity, email: "reinvited@acme.test")
       membership = Fixtures.SSO.identity_membership(identity)
       assert {:ok, _removed} = Accounts.delete_membership(membership, subject)
@@ -4556,20 +4554,18 @@ defmodule Emisar.SSOTest do
       assert {:ok, %{membership: invitation, invitation_token: invitation_token}} =
                Accounts.invite_user_to_account(invitation_attrs, subject)
 
-      # An unresolved invitation grants nothing, so answering "provisioned,
-      # active" handed the directory a seat that cannot sign in.
-      assert SSO.scim_provision_user(provider, attrs) == {:error, :invitation_pending}
-      assert Accounts.membership_invitation_pending?(Repo.reload!(invitation))
+      assert {:ok, %{membership: reprovisioned}} = SSO.scim_provision_user(provider, attrs)
+      assert reprovisioned.user_id == user.id
+      refute reprovisioned.disabled_at
 
       resource_id = user_resource_id(provider, "okta|reinvited")
       assert {:ok, scim_user} = SSO.scim_fetch_user(provider, resource_id)
-      refute scim_user.active
+      assert scim_user.active
 
-      assert {:ok, _accepted} =
-               Accounts.mark_invitation_accepted(invitation, invitation_token, user)
+      assert Accounts.mark_invitation_accepted(invitation, invitation_token, user) ==
+               {:error, :already_member}
 
-      assert {:ok, %{membership: reprovisioned}} = SSO.scim_provision_user(provider, attrs)
-      refute reprovisioned.disabled_at
+      assert Accounts.membership_invitation_pending?(Repo.reload!(invitation))
     end
 
     test "a personal login with the same address is never matched — a new Member is created", %{

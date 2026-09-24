@@ -1267,26 +1267,27 @@ defmodule Emisar.AccountsTest do
       refute Repo.one(Membership)
     end
 
-    test "an invitation before inbox proof cannot inherit the submitted profile" do
+    test "an invitation before inbox proof neither names nor seats the pending signup" do
       submitted_email = Fixtures.Random.unique_email()
+      signup = %{email: submitted_email, full_name: "Unproved Name"}
 
       assert {:ok, %User{} = user} =
-               Accounts.begin_owner_registration(
-                 %{email: submitted_email, full_name: "Unproved Name"},
-                 Fixtures.Accounts.account_attrs()
-               )
+               Accounts.begin_owner_registration(signup, Fixtures.Accounts.account_attrs())
 
       {_inviter, _account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:ok, %{user: invited_user}} =
+      assert {:ok, %{membership: invitation}} =
                Accounts.invite_user_to_account(
                  Fixtures.Accounts.invitation_attrs(email: submitted_email),
                  subject
                )
 
-      assert invited_user.id == user.id
-      refute invited_user.full_name
-      refute Repo.reload!(user).full_name
+      assert is_nil(invitation.user_id)
+      assert Repo.reload!(user) == user
+
+      # The signup resumes; the invitation never turns it into the neutral decoy.
+      assert Accounts.begin_owner_registration(signup, Fixtures.Accounts.account_attrs()) ==
+               {:ok, user}
     end
 
     test "an invalid workspace tags the account changeset and creates no user" do
@@ -7405,14 +7406,15 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, _} = Accounts.delete_membership(target, subject)
 
-      assert {:ok, %{membership: fresh}} =
+      assert {:ok, %{membership: fresh, invitation_token: token}} =
                Accounts.invite_user_to_account(
                  Fixtures.Accounts.invitation_attrs(email: target_user.email, role: "viewer"),
                  subject
                )
 
-      assert fresh.user_id == target_user.id
       assert fresh.id != target.id
+      assert {:ok, accepted} = Accounts.mark_invitation_accepted(fresh, token, target_user)
+      assert accepted.user_id == target_user.id
     end
 
     test "an operator (no manage_team permission) cannot remove a member → :unauthorized" do
@@ -7541,8 +7543,9 @@ defmodule Emisar.AccountsTest do
       assert %Membership{role: :operator} = result.membership
       assert result.membership.invited_by_membership_id == subject.membership_id
       assert is_nil(result.membership.invited_by_id)
-      assert result.user.email == email
+      assert result.membership.invitation_sent_to == email
       refute Map.has_key?(result, :invitation_token)
+      refute Map.has_key?(result, :user)
 
       assert_receive {:email, sent}
       assert sent.to == [{"", email}]
@@ -7606,7 +7609,7 @@ defmodule Emisar.AccountsTest do
       # The account comes from the SUBJECT, so an existing membership elsewhere
       # neither collides with the invite nor gains a role from it.
       assert result.membership.account_id == account.id
-      assert result.user.id == invitee.id
+      assert is_nil(result.membership.user_id)
 
       assert %Membership{role: :owner} =
                Fixtures.Memberships.fetch_membership(other_account.id, invitee.id)
@@ -7681,7 +7684,7 @@ defmodule Emisar.AccountsTest do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       email = "resend-#{System.unique_integer([:positive])}@example.test"
 
-      {:ok, %{membership: membership, user: user, invitation_token: old_token}} =
+      {:ok, %{membership: membership, invitation_token: old_token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
           subject
@@ -7698,16 +7701,12 @@ defmodule Emisar.AccountsTest do
       # acceptance or replaced by the resend below — after which :not_found).
       assert Accounts.fetch_invitation_by_token(old_token) == {:error, :expired}
 
-      assert {:ok,
-              %{
-                membership: %Membership{} = updated,
-                user: %User{id: user_id},
-                invitation_token: new_token
-              }} =
+      assert {:ok, %{membership: %Membership{} = updated, invitation_token: new_token}} =
                Accounts.resend_account_invitation(membership, subject)
 
-      assert user_id == user.id
       assert updated.id == membership.id
+      assert updated.invitation_sent_to == email
+      assert is_nil(updated.user_id)
       refute new_token == old_token
       refute updated.invitation_token_digest == membership.invitation_token_digest
       assert DateTime.compare(updated.inserted_at, expired_at) == :gt
@@ -7768,11 +7767,12 @@ defmodule Emisar.AccountsTest do
 
     test "an accepted invitation is no longer resendable" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      user = Fixtures.Users.create_user()
 
-      {:ok, %{membership: membership, user: user, invitation_token: token}} =
+      {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
-            email: "accepted-resend-#{System.unique_integer([:positive])}@example.test",
+            email: user.email,
             role: "operator",
             runner_access_mode: "all"
           ),

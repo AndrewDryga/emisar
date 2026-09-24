@@ -642,15 +642,16 @@ defmodule Emisar.AuthAuditTest do
       member: member,
       membership: membership
     } do
-      # Stamp the membership as pending an invitation, then accept it.
+      # Stamp the membership as an invitation to the member's address — without
+      # a personal login, as every pending invitation is — then accept it.
       {token, digest} = Crypto.user_invite_token()
 
       {:ok, with_token} =
         membership
         |> Ecto.Changeset.change(
+          user_id: nil,
           invitation_token_digest: digest,
-          invitation_sent_to: member.email,
-          invitation_email_changed_at: member.email_changed_at
+          invitation_sent_to: member.email
         )
         |> Emisar.Repo.update()
 

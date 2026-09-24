@@ -383,13 +383,14 @@ defmodule Emisar.Users do
   # stay private to Users.
 
   @doc """
-  Internal — Accounts invite: the user by email, or a placeholder
-  (unconfirmed, no password) for the invitation to hang off.
+  Internal — the personal login for an address, or a new one (unconfirmed, no
+  name) when none exists yet: a staff-created workspace's owner, or the person
+  accepting an invitation sent to that address. The address is confirmed later,
+  by the first sign-in that proves the mailbox.
 
-  Two concurrent invites can race on the same NEW email; the insert is
-  ON CONFLICT DO NOTHING (a raw unique violation would abort the whole
-  invite transaction) and we re-read the row that won — ours or the
-  concurrent one.
+  Two concurrent callers can race on the same NEW email; the insert is
+  ON CONFLICT DO NOTHING (a raw unique violation would abort the caller's
+  transaction) and we re-read the row that won — ours or the concurrent one.
   """
   def fetch_or_create_user_by_email(email) when is_binary(email) do
     changeset = User.Changeset.registration(%User{}, %{email: email})
@@ -399,43 +400,6 @@ defmodule Emisar.Users do
       fetch_user_by_email(email)
     end
   end
-
-  @doc """
-  Internal — Accounts invitation issuance: resolve or create the address owner,
-  then lock that exact current row before the caller binds and sends a bearer to
-  its email. If a concurrent address change frees the requested address, the
-  post-wait lookup creates/resolves its new owner rather than returning the
-  stale user snapshot.
-  """
-  def fetch_or_create_and_lock_user_by_email(email, repo)
-      when is_binary(email) and is_atom(repo) do
-    queryable =
-      User.Query.not_deleted()
-      |> User.Query.by_email(email)
-      |> User.Query.lock_for_update()
-
-    case repo.fetch(queryable, User.Query) do
-      {:ok, %User{} = user} ->
-        {:ok, user}
-
-      {:error, :not_found} ->
-        changeset = User.Changeset.registration(%User{}, %{email: email})
-
-        with {:ok, _} <- repo.insert(changeset, on_conflict: :nothing) do
-          repo.fetch(queryable, User.Query)
-        end
-    end
-  end
-
-  @doc """
-  Internal — Accounts invitation accept: confirm the locked user's existing
-  address after the caller checks the invitation's exact address and generation.
-  Workspace profile input never changes the personal name or email.
-  """
-  def confirm_invited_user(%User{confirmed_at: nil} = user),
-    do: user |> User.Changeset.confirm() |> Repo.update()
-
-  def confirm_invited_user(%User{} = user), do: {:ok, user}
 
   @doc """
   Internal — Accounts team admin: clear the member's MFA enrollment

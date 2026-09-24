@@ -1764,11 +1764,11 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — Auth's personal-login link: bind a locked Member without a
-  personal login to the personal login that just proved its mailbox. A person
-  holds one live seat per workspace, so a User already seated here is refused
-  with `{:error, :already_member}`. No `%Subject{}`: Auth holds the donor
-  session, accounts, person and Member locks this decision relies on.
+  Internal — bind a locked Member without a personal login to the personal
+  login that just proved its mailbox: Auth's member link, and invitation
+  acceptance. A person holds one live seat per workspace, so a User already
+  seated here is refused with `{:error, :already_member}`. No `%Subject{}`: the
+  caller holds the account, person and Member locks this decision relies on.
   """
   def link_personal_login(repo, %Membership{user_id: nil} = member, %Users.User{id: user_id}) do
     seated =
@@ -4266,21 +4266,20 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Invites a user into the account from one raw invitation submission — the same
-  attrs `change_invitation/2` validates.
+  Invites an address into the account from one raw invitation submission — the
+  same attrs `change_invitation/2` validates.
 
-  If no user with that email exists, an unconfirmed placeholder user is
-  created so we have something to hang the membership and invitation
-  token off of. Returns
-  `{:ok, %{membership: m, user: u, invitation_token: token}}` on success,
-  `{:error, %Ecto.Changeset{}}` when the submission is invalid, or
+  The invitation is a workspace Member without a personal login: it stores only
+  the address it is sent to, and accepting it links the person who proves that
+  address. Returns `{:ok, %{membership: m, invitation_token: token}}` on
+  success, `{:error, %Ecto.Changeset{}}` when the submission is invalid, or
   `{:error, :already_member | :unauthorized | :insufficient_privileges |
   :runner_access_exceeds_subject}`.
 
   The submission is revalidated against the account's live runner rows as the
-  transaction's first step — before the placeholder user, the membership, the
-  audit row, or any delivery — so a runner soft-deleted while the operator was
-  composing cannot slip into the grant.
+  transaction's first step — before the membership, the audit row, or any
+  delivery — so a runner soft-deleted while the operator was composing cannot
+  slip into the grant.
 
   The caller is responsible for sending the invitation email; this
   context only persists the records and mints the token.
@@ -4300,13 +4299,12 @@ defmodule Emisar.Accounts do
       |> Multi.run(:invitation, fn repo, _changes ->
         validate_invitation(repo, attrs, subject)
       end)
-      |> Multi.run(:user, fn repo, %{invitation: invitation} ->
-        Users.fetch_or_create_and_lock_user_by_email(invitation.email, repo)
+      |> Multi.run(:unseated, fn repo, %{invitation: invitation} ->
+        ensure_address_unseated(repo, account_id, invitation.email)
       end)
-      |> Multi.insert(:membership, fn %{user: user, invitation: invitation} ->
+      |> Multi.insert(:membership, fn %{invitation: invitation} ->
         Membership.Changeset.create(%{
           account_id: account_id,
-          user_id: user.id,
           contact_email: invitation.email,
           role: invitation.role,
           runner_access_mode: invitation.runner_access.mode,
@@ -4316,8 +4314,7 @@ defmodule Emisar.Accounts do
           # the acting inviter either.
           invited_by_membership_id: Subject.human_membership_id(subject),
           invitation_token_digest: token_digest,
-          invitation_sent_to: user.email,
-          invitation_email_changed_at: user.email_changed_at
+          invitation_sent_to: invitation.email
         })
       end)
       |> Multi.run(:runner_access, fn repo, %{membership: membership, invitation: invitation} ->
@@ -4328,16 +4325,8 @@ defmodule Emisar.Accounts do
       end)
       |> Repo.commit_multi()
       |> case do
-        {:ok, %{user: user, membership: membership}} ->
-          {:ok, %{membership: membership, user: user, invitation_token: token}}
-
-        # The partial unique index on (account_id, user_id) is the source of
-        # truth for "already a member" — let the insert hit it instead of a
-        # read-before-write check that races under concurrent invites.
-        {:error, %Ecto.Changeset{data: %Membership{}} = changeset} ->
-          if Repo.Changeset.unique_constraint_error?(changeset),
-            do: {:error, :already_member},
-            else: {:error, changeset}
+        {:ok, %{membership: membership}} ->
+          {:ok, %{membership: membership, invitation_token: token}}
 
         {:error, reason} ->
           {:error, reason}
@@ -4345,15 +4334,28 @@ defmodule Emisar.Accounts do
     end
   end
 
+  # Email is never identity: an address is already here only when one of this
+  # account's own seats — a member, a suspended member or an open invitation —
+  # lists it as its contact (citext, so case-insensitively). No personal login
+  # is consulted; accepting refuses a person who already holds a seat here.
+  defp ensure_address_unseated(repo, account_id, email) do
+    seated =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_account_id(account_id)
+      |> Membership.Query.by_contact_email(email)
+
+    if repo.exists?(seated), do: {:error, :already_member}, else: {:ok, email}
+  end
+
   @doc """
-  Invites a user into the account and emails them the join link.
+  Invites an address into the account and emails it the join link.
 
   Same authorization, persistence, and errors as `invite_user_to_account/2`;
   the raw token is not returned by this workflow. `inviter` is who the email
   is attributed to — the acting `%Membership{}`, or a sender map for a support
   subject, which has no actor.
 
-  Returns `{:ok, %{membership: m, user: u, delivery: delivery}}`, where
+  Returns `{:ok, %{membership: m, delivery: delivery}}`, where
   `delivery` is `{:ok, :sent}`, `{:ok, :suppressed}` (the address bounced or
   was marked spam, so nothing was sent), or `{:error, reason}`.
   """
@@ -4468,11 +4470,14 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Resends a pending account invitation. Requires `invite` on memberships,
-  role coverage for the invitee's current role, and same-account scope.
+  Resends a pending account invitation to the address it was sent to. Requires
+  `invite` on memberships, role coverage for the invitee's current role, and
+  same-account scope. An invitation issued before invitations recorded their
+  address names none, so it cannot be resent: `:stale_invitation_contact`.
 
-  Returns `{:ok, %{membership: m, user: u, invitation_token: token}}` or
-  `{:error, :not_found | :unauthorized | :insufficient_privileges | %Ecto.Changeset{}}`.
+  Returns `{:ok, %{membership: m, invitation_token: token}}` or
+  `{:error, :not_found | :unauthorized | :insufficient_privileges |
+  :stale_invitation_contact | %Ecto.Changeset{}}`.
   """
   def resend_account_invitation(%Membership{} = membership, %Subject{} = subject) do
     with :ok <- ensure_invite_permitted(membership.role, subject),
@@ -4483,18 +4488,12 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_id(membership.id)
       |> Membership.Query.pending_invitation()
       |> Membership.Query.not_disabled()
-      |> Membership.Query.with_preloaded_linked_user()
       |> Authorizer.for_subject(subject)
       |> Repo.fetch_and_update(Membership.Query,
         with: fn loaded_membership ->
           with :ok <- ensure_invite_permitted(loaded_membership.role, subject),
-               :ok <- ensure_invitation_contact_current(loaded_membership) do
-            Membership.Changeset.resend_invitation(
-              loaded_membership,
-              token_digest,
-              loaded_membership.invitation_sent_to,
-              loaded_membership.invitation_email_changed_at
-            )
+               :ok <- ensure_invitation_addressed(loaded_membership) do
+            Membership.Changeset.resend_invitation(loaded_membership, token_digest)
           else
             {:error, reason} ->
               reason
@@ -4510,8 +4509,8 @@ defmodule Emisar.Accounts do
         after_commit: &broadcast_membership_invitation_resent/1
       )
       |> case do
-        {:ok, %Membership{user: %Users.User{} = user} = updated} ->
-          {:ok, %{membership: updated, user: user, invitation_token: token}}
+        {:ok, %Membership{} = updated} ->
+          {:ok, %{membership: updated, invitation_token: token}}
 
         {:error, reason} ->
           {:error, reason}
@@ -4519,20 +4518,18 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp ensure_invitation_contact_current(%Membership{user: %Users.User{} = user} = member) do
-    if is_binary(member.invitation_sent_to) and
-         member.invitation_sent_to == user.email and
-         member.invitation_email_changed_at == user.email_changed_at,
-       do: :ok,
-       else: {:error, :stale_invitation_contact}
-  end
+  defp ensure_invitation_addressed(%Membership{invitation_sent_to: sent_to})
+       when is_binary(sent_to),
+       do: :ok
+
+  defp ensure_invitation_addressed(%Membership{}), do: {:error, :stale_invitation_contact}
 
   @doc """
   Resends a pending account invitation and emails the refreshed join link.
 
   Same authorization, persistence, and errors as
   `resend_account_invitation/2`; the raw token is not returned by this workflow.
-  Returns `{:ok, %{membership: m, user: u, delivery: delivery}}` with the
+  Returns `{:ok, %{membership: m, delivery: delivery}}` with the
   same `delivery` shapes as `invite_user_to_account_and_deliver/5`.
   """
   def resend_account_invitation_and_deliver(
@@ -4551,7 +4548,7 @@ defmodule Emisar.Accounts do
   # undo the invitation. The raw token stays in this delivery workflow — its
   # callers get a verdict, never a link they could relay themselves.
   defp invited_result(invitation, inviter, %Account{} = account) do
-    %{membership: membership, user: user, invitation_token: token} = invitation
+    %{membership: membership, invitation_token: token} = invitation
 
     delivery =
       case Emisar.Mailers.UserNotifier.deliver_account_invitation(
@@ -4565,7 +4562,7 @@ defmodule Emisar.Accounts do
         {:error, reason} -> {:error, reason}
       end
 
-    %{membership: membership, user: user, delivery: delivery}
+    %{membership: membership, delivery: delivery}
   end
 
   defp invitation_sender_label(%Membership{id: id}, %Account{id: account_id}) do
@@ -4614,10 +4611,12 @@ defmodule Emisar.Accounts do
   invitation past its window (the bearer holds the emailed token, so naming
   the state is not an enumeration oracle), or `{:error, :not_found}` for
   everything else — garbage, revoked, and accepted-then-burned tokens are
-  deliberately indistinguishable (acceptance clears the digest).
+  deliberately indistinguishable (acceptance clears the digest). An invitation
+  issued before invitations recorded their address names none that anyone could
+  prove, so it is `:not_found` too.
 
-  Options: `preload:` — associations the caller renders (`:account`,
-  `:user`); omit when only the row itself is needed.
+  Options: `preload:` — associations the caller renders (`:account`); omit
+  when only the row itself is needed.
   """
   def fetch_invitation_by_token(token, opts \\ [])
 
@@ -4630,7 +4629,7 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_invitation_token_digest(digest)
       |> Membership.Query.pending_invitation()
       |> Membership.Query.invitation_not_expired()
-      |> Membership.Query.invitation_matches_current_email()
+      |> Membership.Query.with_invitation_sent_to()
       |> Membership.Query.with_joined_account()
       |> apply_membership_preloads(preloads)
 
@@ -4648,7 +4647,7 @@ defmodule Emisar.Accounts do
     queryable =
       Membership.Query.not_deleted()
       |> Membership.Query.by_invitation_token_digest(digest)
-      |> Membership.Query.invitation_matches_current_email()
+      |> Membership.Query.with_invitation_sent_to()
       |> Membership.Query.with_joined_account()
 
     case Repo.peek(queryable) do
@@ -4660,38 +4659,34 @@ defmodule Emisar.Accounts do
   @doc """
   Internal — invitation-accept flow: takes the `%Users.User{}` (not a
   `%Subject{}`) because the accept-invite page is a public route with only
-  `current_user` assigned. Marks an invitation accepted without touching the
-  user record — used when an already-signed-in user clicks an invite link for
-  one of their own accounts (they are already authenticated and confirmed, so we
-  just clear the token + stamp `invitation_accepted_at`). The accepting user
-  must BE the invited user (the membership's `user_id`): a signed-in *different*
-  user holding the token (e.g. a forwarded link) must not be able to burn the
-  invitation. Returns `{:error, :unauthorized}` otherwise.
+  `current_user` assigned. A signed-in personal login accepts an invitation sent
+  to its own confirmed address: the invitation's Member is linked to that login,
+  the token is cleared and `invitation_accepted_at` stamped; the login itself is
+  unchanged. Anyone else holding the token (e.g. a forwarded link) gets
+  `{:error, :unauthorized}` and cannot burn the invitation; a login that already
+  holds a seat in the account gets `{:error, :already_member}`.
   """
-  def mark_invitation_accepted(
-        %Membership{user_id: user_id} = membership,
-        token,
-        %Users.User{id: user_id} = user
-      )
+  def mark_invitation_accepted(%Membership{} = membership, token, %Users.User{id: user_id})
       when is_binary(token) do
     Multi.new()
     |> put_active_account_lock(membership.account_id, :active_account)
-    |> Multi.run(:invited_user, fn repo, _changes ->
-      Users.fetch_and_lock_user_by_id(membership.user_id, repo)
+    |> Multi.run(:user, fn repo, _changes ->
+      Users.fetch_and_lock_user_by_id(user_id, repo)
     end)
-    |> Multi.run(:membership, fn repo, %{invited_user: invited_user} ->
-      with {:ok, loaded_membership} <-
-             lock_pending_invitation(repo, membership, token, invited_user),
-           true <- loaded_membership.user_id == user.id do
-        {:ok, loaded_membership}
-      else
-        _ -> {:error, :not_found}
+    |> Multi.run(:membership, fn repo, %{user: user} ->
+      with {:ok, invitation} <- lock_pending_invitation(repo, membership, token) do
+        if address_owner?(invitation, user) and not is_nil(user.confirmed_at),
+          do: {:ok, invitation},
+          else: {:error, :unauthorized}
       end
     end)
-    |> Multi.run(:credential_revocation, fn repo, %{membership: membership} ->
+    |> Multi.run(:linked, fn repo, %{membership: invitation, user: user} ->
+      link_personal_login(repo, invitation, user)
+    end)
+    |> Multi.run(:credential_revocation, fn repo, %{linked: membership} ->
       ApiKeys.revoke_credentials_for_membership(repo, membership.id)
     end)
-    |> Multi.update(:accepted, fn %{membership: membership} ->
+    |> Multi.update(:accepted, fn %{linked: membership} ->
       Membership.Changeset.accept_invitation(membership)
     end)
     |> Multi.merge(fn %{accepted: membership} ->
@@ -4707,39 +4702,46 @@ defmodule Emisar.Accounts do
     end
   end
 
-  def mark_invitation_accepted(%Membership{}, _token, %Users.User{}),
-    do: {:error, :unauthorized}
-
   @doc """
   Internal — invitation-accept flow: the accept-invite page is a public route
   and the invitee has no session yet, so no `%Subject{}` exists; possession of
-  the invitation token (resolved by `fetch_invitation_by_token/1`) is the
-  authorization. Accepts a membership invitation: sets the workspace display name,
-  clears the invitation token, marks invitation_accepted_at, and confirms the
-  user since acceptance proves they own the email. Wrapped in a transaction so
-  a half-accepted state is impossible.
+  the invitation token (resolved by `fetch_invitation_by_token/1`) proves the
+  address it was emailed to and is the authorization. Links the invitation's
+  Member to the personal login for that address, creating it on first use,
+  sets the workspace display name, clears the invitation token and stamps
+  `invitation_accepted_at`. The login confirms its address when it signs in with
+  the magic link the page requests next. A login that already holds a seat in
+  the account gets `{:error, :already_member}`. Wrapped in a transaction so a
+  half-accepted state is impossible.
   """
-  def accept_invitation(%Membership{} = membership, token, %{} = profile_attrs)
-      when is_binary(token) do
+  def accept_invitation(%Membership{invitation_sent_to: address} = membership, token, attrs)
+      when is_binary(token) and is_binary(address) and is_map(attrs) do
     Multi.new()
     |> put_active_account_lock(membership.account_id, :active_account)
-    |> Multi.run(:invited_user, fn repo, _changes ->
-      Users.fetch_and_lock_user_by_id(membership.user_id, repo)
+    |> Multi.run(:user, fn repo, _changes ->
+      with {:ok, user} <- Users.fetch_or_create_user_by_email(address) do
+        Users.fetch_and_lock_user_by_id(user.id, repo)
+      end
     end)
-    # Lock + re-judge the invitation before changing either row: a token burnt between the
-    # page mount and this submit (a second link holder racing the first
-    # acceptor) must fail :not_found here — before any profile or proof changes.
-    |> Multi.run(:membership, fn repo, %{invited_user: invited_user} ->
-      lock_pending_invitation(repo, membership, token, invited_user)
+    # Lock + re-judge the invitation before anything commits: a token burnt
+    # between the page mount and this submit (a second link holder racing the
+    # first acceptor) must fail :not_found here, and the login is rolled back.
+    # The locked row, not the caller's struct, names the address.
+    |> Multi.run(:membership, fn repo, %{user: user} ->
+      with {:ok, invitation} <- lock_pending_invitation(repo, membership, token) do
+        if address_owner?(invitation, user),
+          do: {:ok, invitation},
+          else: {:error, :not_found}
+      end
     end)
-    |> Multi.run(:credential_revocation, fn repo, %{membership: membership} ->
+    |> Multi.run(:linked, fn repo, %{membership: invitation, user: user} ->
+      link_personal_login(repo, invitation, user)
+    end)
+    |> Multi.run(:credential_revocation, fn repo, %{linked: membership} ->
       ApiKeys.revoke_credentials_for_membership(repo, membership.id)
     end)
-    |> Multi.run(:user, fn _repo, %{membership: loaded_membership} ->
-      Users.confirm_invited_user(loaded_membership.user)
-    end)
-    |> Multi.update(:accepted, fn %{membership: membership} ->
-      Membership.Changeset.accept_invitation_with_profile(membership, profile_attrs)
+    |> Multi.update(:accepted, fn %{linked: membership} ->
+      Membership.Changeset.accept_invitation_with_profile(membership, attrs)
     end)
     |> Multi.merge(fn %{accepted: membership} ->
       put_membership_activation_consequence(Multi.new(), membership)
@@ -4754,37 +4756,36 @@ defmodule Emisar.Accounts do
     end
   end
 
-  # `nil` means the invitation is no longer pending (accepted, expired,
-  # revoked, or the membership vanished) — the accept races resolve here.
-  defp lock_pending_invitation(
-         repo,
-         %Membership{id: id, account_id: account_id},
-         token,
-         %Users.User{} = user
-       ) do
+  def accept_invitation(%Membership{}, token, attrs) when is_binary(token) and is_map(attrs),
+    do: {:error, :not_found}
+
+  # Both acceptances lock in membership activation's order — account, person,
+  # invitation — so the person is found before the invitation is judged. An
+  # invitation names an address, not a person: only the personal login that
+  # owns it now (citext, so case-insensitively) is linked. The caller holds that
+  # login's lock, so its address cannot move meanwhile.
+  defp address_owner?(%Membership{invitation_sent_to: address}, %Users.User{id: user_id}),
+    do: match?({:ok, %Users.User{id: ^user_id}}, Users.fetch_user_by_email(address))
+
+  # `:not_found` means the invitation is no longer pending (accepted, expired,
+  # revoked, or the membership vanished) or names no address anyone could
+  # prove — the accept races resolve here. Until it is accepted, an invitation
+  # is a Member without a personal login.
+  defp lock_pending_invitation(repo, %Membership{id: id, account_id: account_id}, token) do
     digest = Crypto.user_invite_token_digest(token)
 
-    membership =
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_id(id)
-      |> Membership.Query.by_account_id(account_id)
-      |> Membership.Query.by_invitation_token_digest(digest)
-      |> Membership.Query.pending_invitation()
-      |> Membership.Query.invitation_not_expired()
-      |> Membership.Query.lock_for_update()
-      |> repo.one()
-
-    with %Membership{
-           user_id: user_id,
-           invitation_sent_to: sent_to,
-           invitation_email_changed_at: email_changed_at
-         } = membership
-         when is_binary(sent_to) and is_struct(email_changed_at, DateTime) <- membership,
-         true <- user.id == user_id,
-         true <- user.email == sent_to and user.email_changed_at == email_changed_at do
-      {:ok, %{membership | user: user}}
-    else
-      _ -> {:error, :not_found}
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_id(id)
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_invitation_token_digest(digest)
+    |> Membership.Query.pending_invitation()
+    |> Membership.Query.invitation_not_expired()
+    |> Membership.Query.with_invitation_sent_to()
+    |> Membership.Query.lock_for_update()
+    |> repo.one()
+    |> case do
+      %Membership{user_id: nil} = invitation -> {:ok, invitation}
+      _other -> {:error, :not_found}
     end
   end
 

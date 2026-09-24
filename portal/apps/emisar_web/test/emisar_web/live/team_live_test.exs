@@ -1077,8 +1077,11 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "db-primary"
       assert html =~ "postgres"
 
-      {:ok, user} = Emisar.Users.fetch_user_by_email("scoped-receipt@example.com")
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      [membership] =
+        Emisar.Accounts.list_sync_memberships_by_contact_email(
+          account.id,
+          "scoped-receipt@example.com"
+        )
 
       assert Emisar.Accounts.runner_access_for_memberships([membership])[membership.id] ==
                %Emisar.Accounts.RunnerAccess{
@@ -1131,8 +1134,8 @@ defmodule EmisarWeb.TeamLiveTest do
       })
       |> render_submit()
 
-      {:ok, user} = Emisar.Users.fetch_user_by_email("scoped@example.com")
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      [membership] =
+        Emisar.Accounts.list_sync_memberships_by_contact_email(account.id, "scoped@example.com")
 
       assert Emisar.Accounts.runner_access_for_memberships([membership])[membership.id] ==
                %Emisar.Accounts.RunnerAccess{

@@ -14,7 +14,6 @@ defmodule Emisar.Seeds.DemoAccount do
   alias Emisar.Runners
   alias Emisar.Seeds.Helpers
   alias Emisar.Users
-  alias Emisar.Users.User
 
   @account_name "Northstar Labs"
   @email "demo@emisar.dev"
@@ -143,55 +142,28 @@ defmodule Emisar.Seeds.DemoAccount do
 
   @doc """
   Invites `email` as a standing, accepted member of the demo account — or
-  converges the membership a previous seed (or a sign-in) left behind.
+  converges the membership a previous seed (or a sign-in) left behind. An
+  invitation names only the address, so the teammate's confirmed personal login
+  comes first and accepts it, as a signed-in invitee would.
   """
   def invite_member(%{account: account, owner_subject: owner_subject}, email, full_name, role) do
-    member =
-      case Users.fetch_user_by_email(email) do
-        {:ok, %User{} = existing_user} ->
-          case Accounts.peek_sync_membership(account.id, existing_user.id) do
-            nil ->
-              {:ok, %{user: invited, membership: membership, invitation_token: token}} =
-                Accounts.invite_user_to_account(
-                  %{"email" => email, "role" => role, "runner_access_mode" => "all"},
-                  owner_subject
-                )
+    member = Helpers.ensure_persona(email, full_name)
 
-              {:ok, _membership} =
-                Accounts.mark_invitation_accepted(membership, token, invited)
+    case Accounts.peek_sync_membership(account.id, member.id) do
+      nil ->
+        {:ok, %{membership: membership, invitation_token: token}} =
+          Accounts.invite_user_to_account(
+            %{"email" => email, "role" => role, "runner_access_mode" => "all"},
+            owner_subject
+          )
 
-              invited
+        {:ok, _membership} = Accounts.mark_invitation_accepted(membership, token, member)
 
-            membership ->
-              membership =
-                if Accounts.membership_disabled?(membership) do
-                  {:ok, reinstated} = Accounts.reinstate_membership(membership, owner_subject)
-                  reinstated
-                else
-                  membership
-                end
-
-              if is_nil(membership.invitation_accepted_at) do
-                {:ok, %{membership: membership, invitation_token: token}} =
-                  Accounts.resend_account_invitation(membership, owner_subject)
-
-                {:ok, _membership} =
-                  Accounts.mark_invitation_accepted(membership, token, existing_user)
-              end
-
-              existing_user
-          end
-
-        {:error, :not_found} ->
-          {:ok, %{user: invited, membership: membership, invitation_token: token}} =
-            Accounts.invite_user_to_account(
-              %{"email" => email, "role" => role, "runner_access_mode" => "all"},
-              owner_subject
-            )
-
-          {:ok, _membership} = Accounts.mark_invitation_accepted(membership, token, invited)
-          invited
-      end
+      membership ->
+        if Accounts.membership_disabled?(membership) do
+          {:ok, _reinstated} = Accounts.reinstate_membership(membership, owner_subject)
+        end
+    end
 
     account.id
     |> Accounts.peek_sync_membership(member.id)
@@ -199,8 +171,5 @@ defmodule Emisar.Seeds.DemoAccount do
     |> Repo.update!()
 
     member
-    |> Helpers.ensure_profile(full_name)
-    |> Helpers.confirm_user()
-    |> Helpers.clear_seeded_mfa()
   end
 end

@@ -344,7 +344,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Enum.count(scim_users, &(&1.external_id == "okta|dup")) == 1
     end
 
-    test "a person holding an unresolved invitation is refused with 409, not provisioned", %{
+    test "a removed person is re-added while an invitation to their address is pending", %{
       conn: conn,
       token: token,
       provider: provider,
@@ -354,7 +354,8 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(201)
 
       # The person linked their own login to the directory's Member, then was
-      # removed and invited back by hand.
+      # removed and their address invited back by hand. The invitation names only
+      # the address, so it is not the person's seat.
       user = Fixtures.Users.create_user(email: "reinvited@acme.test")
 
       {:ok, membership} =
@@ -365,12 +366,11 @@ defmodule EmisarWeb.SCIMControllerTest do
       invitation_attrs = Fixtures.Accounts.invitation_attrs(email: user.email)
       assert {:ok, _invited} = Accounts.invite_user_to_account(invitation_attrs, subject)
 
-      # The seat grants nothing until the invitation is accepted, so the answer
-      # names the remedy instead of reporting a provisioned, active user.
-      body = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(409)
+      body = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(201)
 
-      assert body["scimType"] == "mutability"
-      assert body["detail"] =~ "unresolved invitation"
+      assert body["active"]
+      assert %{user_id: user_id} = directory_member(provider, "okta|reinvited")
+      assert user_id == user.id
     end
 
     test "an address members here use answers 409: one parks a link, two are ambiguous", %{

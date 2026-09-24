@@ -1,23 +1,28 @@
 defmodule EmisarWeb.AcceptInvitationLive do
   @moduledoc """
-  Endpoint of the team-invitation flow.
+  Endpoint of the team-invitation flow. An invitation names an email address;
+  whoever proves that address joins.
 
-  Three render branches:
+  Four render branches:
 
-    * Not signed in → a name form; accepting provisions the member and
-      emails them a magic-link sign-in (no password to set).
+    * Not signed in → a name form; accepting links the member to the personal
+      login for the invited address (created on first use) and emails it a
+      magic-link sign-in (no password to set).
     * Signed in AS the invited email → accept over HTTP, then explicitly sign
       in again. Acceptance never adds the new membership to an old browser's proof.
     * Signed in as a DIFFERENT email → "this invite is for X, sign out
       first" with an explicit sign-out link. Previously the visitor was
       silently bounced to /app and never saw the invite.
+    * Signed in to a workspace through single sign-on without a personal login
+      → nothing here can accept for it, so sign out first, then sign in or sign
+      up with the invited address.
   """
   use EmisarWeb, :live_view
-  alias Emisar.Accounts
+  alias Emisar.{Accounts, Auth, Users}
   alias EmisarWeb.LiveForm
 
   def mount(%{"token" => token}, _session, socket) do
-    case Accounts.fetch_invitation_by_token(token, preload: [:account, :user]) do
+    case Accounts.fetch_invitation_by_token(token, preload: [:account]) do
       # A dead link renders its state ON the page (never redirect + flash —
       # the inline-errors house rule) with a heading that names what happened.
       # The two states deliberately share one render: acceptance burns the
@@ -35,7 +40,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
          |> assign(:token, token)
          |> assign(:trigger_submit, false)
          |> assign_form(Accounts.change_member_profile(membership))
-         |> assign(:state, derive_state(socket, membership))}
+         |> assign(:state, derive_state(socket.assigns, membership))}
     end
   end
 
@@ -60,19 +65,23 @@ defmodule EmisarWeb.AcceptInvitationLive do
     |> assign(:state, :invitation_unavailable)
   end
 
-  # Three possible states for the page render.
-  defp derive_state(socket, membership) do
-    case socket.assigns[:current_user] do
-      nil ->
-        :anonymous
-
-      %{id: id} when id == membership.user_id ->
-        :signed_in_match
-
-      %{} ->
-        :signed_in_mismatch
-    end
+  # The page only chooses what to offer; acceptance re-checks the address.
+  defp derive_state(%{current_user: %Users.User{} = user}, membership) do
+    if invited_address?(user, membership),
+      do: :signed_in_match,
+      else: :signed_in_mismatch
   end
+
+  # A member-only SSO session has no personal login to accept with, and this
+  # browser's email sign-in only links one to its own workspace Member.
+  defp derive_state(%{current_auth: %Auth.UserToken{}}, _membership), do: :member_only
+  defp derive_state(_assigns, _membership), do: :anonymous
+
+  # Both addresses are citext columns, which compare case-insensitively; so does this.
+  defp invited_address?(%Users.User{email: email}, membership) when is_binary(email),
+    do: String.downcase(email) == String.downcase(membership.invitation_sent_to)
+
+  defp invited_address?(%Users.User{}, _membership), do: false
 
   def render(%{state: :invitation_unavailable} = assigns) do
     ~H"""
@@ -196,6 +205,32 @@ defmodule EmisarWeb.AcceptInvitationLive do
     """
   end
 
+  def render(%{state: :member_only} = assigns) do
+    ~H"""
+    <.auth_layout title="Sign in with your invited email">
+      <div class="space-y-4 text-sm text-zinc-300">
+        <p>
+          This invitation is for <span class="font-mono text-zinc-100">{@membership.invitation_sent_to}</span>, but
+          this browser is signed in to a workspace through single sign-on, without a personal login.
+        </p>
+        <p class="text-zinc-400">
+          Sign out, then reopen this invitation from your email to sign in or sign up with that address.
+        </p>
+
+        <.button
+          variant={:secondary}
+          tone={:rose}
+          href={~p"/sign_out"}
+          method="delete"
+          class="mt-2 w-full"
+        >
+          Sign out
+        </.button>
+      </div>
+    </.auth_layout>
+    """
+  end
+
   # IL-15: the rendered branch is not the gate. A crafted push can name any
   # event from any state, so each handler declares the state it belongs to and
   # everything else is a no-op — an unavailable invitation has no `membership`,
@@ -230,12 +265,19 @@ defmodule EmisarWeb.AcceptInvitationLive do
       {:error, :not_found} ->
         {:noreply, assign_invitation_unavailable(socket, :not_found)}
 
+      {:error, :already_member} ->
+        {:noreply, put_flash(socket, :error, already_member_message())}
+
       {:error, _other} ->
         {:noreply, put_flash(socket, :error, "Could not accept the invitation.")}
     end
   end
 
   def handle_event(_event, _params, socket), do: {:noreply, socket}
+
+  @doc "Copy for an invitation whose address already belongs to a member of that workspace."
+  def already_member_message,
+    do: "That email address already belongs to a member of this workspace. Sign in to open it."
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "member"))
