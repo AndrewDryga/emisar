@@ -1,0 +1,81 @@
+schema_version: 1
+id: emqx.clients
+title: Find MQTT clients
+kind: script
+risk: low
+description: >
+  List client sessions, connected or not, with GET /api/v5/clients, filtered
+  by client ID or username substring, exact IP address, and connection
+  state: each client's ID, username, address, node, protocol version,
+  keepalive, connect time, subscription count, inflight and queued message
+  counts, and messages received and sent. meta.hasnext says whether more
+  sessions matched than limit. Credentials and message contents are not
+  returned.
+args:
+  - name: clientid_contains
+    type: string
+    required: false
+    default: ""
+    description: Only clients whose ID contains this text. Empty matches every client.
+    validation:
+      pattern: "^[!-~]{0,256}$"
+      max_length: 256
+  - name: username_contains
+    type: string
+    required: false
+    default: ""
+    description: Only clients whose username contains this text. Empty matches every username.
+    validation:
+      pattern: "^[!-~]{0,256}$"
+      max_length: 256
+  - name: ip_address
+    type: string
+    required: false
+    default: ""
+    description: Only clients connected from this exact IPv4 or IPv6 address.
+    validation:
+      pattern: "^[0-9A-Fa-f:.]{0,45}$"
+      max_length: 45
+  - name: state
+    type: string
+    required: false
+    default: any
+    description: connected, disconnected (a session kept for a client that is offline), or any.
+    validation:
+      enum: [any, connected, disconnected]
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Clients to return, from the first page. At most 1,000 per call.
+    validation:
+      min: 1
+      max: 1000
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/clients endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - device offline
+  - find mqtt client
+  - client not connected
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - clients
+    - "{{ args.limit }}"
+    - "{{ args.clientid_contains }}"
+    - "{{ args.username_contains }}"
+    - "{{ args.ip_address }}"
+    - "{{ args.state }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Connected clients whose ID contains sensor
+    args:
+      clientid_contains: sensor
+      state: connected

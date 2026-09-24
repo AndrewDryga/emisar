@@ -1,0 +1,31 @@
+schema_version: 1
+id: emqx.rates
+title: Show current EMQX throughput
+kind: script
+risk: low
+description: >
+  Show the cluster's current connection, live connection, topic,
+  subscription, and retained message counts, and its per-second received,
+  sent, and dropped message rates, with GET /api/v5/monitor_current. These
+  are the numbers on the Dashboard overview.
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/monitor_current endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - message rate spike
+  - throughput dropped
+  - how many devices are connected
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - rates
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Current throughput
+    args: {}

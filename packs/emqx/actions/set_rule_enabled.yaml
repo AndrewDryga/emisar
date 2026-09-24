@@ -1,0 +1,45 @@
+schema_version: 1
+id: emqx.set_rule_enabled
+title: Enable or disable a rule
+kind: script
+risk: high
+description: >
+  Enable or disable one rule engine rule with PUT /api/v5/rules/{id}, and
+  return the updated rule. A disabled rule stops matching messages, so its
+  actions receive nothing until it is enabled again, and messages published
+  meanwhile are not replayed. The rule's SQL and actions stay as they are.
+args:
+  - name: rule_id
+    type: string
+    required: true
+    description: The rule's ID, as emqx.rules lists it.
+    validation:
+      pattern: "^[!-~]{1,256}$"
+      max_length: 256
+  - name: enable
+    type: boolean
+    required: true
+    description: true to enable, false to disable.
+side_effects:
+  - Starts or stops the rule sending matched messages to its actions.
+search_terms:
+  - disable rule
+  - stop forwarding messages
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - set-rule-enabled
+    - "{{ args.rule_id }}"
+    - "{{ args.enable }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Disable a rule
+    args:
+      rule_id: rule_to_postgres
+      enable: false

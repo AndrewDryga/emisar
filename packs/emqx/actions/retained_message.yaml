@@ -1,0 +1,42 @@
+schema_version: 1
+id: emqx.retained_message
+title: Read a retained message
+kind: script
+risk: high
+description: >
+  Read one retained message, payload included, with GET
+  /api/v5/mqtt/retainer/message/{topic}. The payload is the publisher's raw
+  message body, base64-encoded, and can hold device data, commands, or
+  credentials, which is why this read is high risk. Fails with NOT_FOUND
+  when the topic holds no retained message; emqx.retained lists them without
+  payloads.
+args:
+  - name: topic
+    type: string
+    required: true
+    description: The exact topic, without the + and # wildcards.
+    validation:
+      pattern: '^[!-"$-*,-~]{1,512}$'
+      max_length: 512
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/mqtt/retainer/message/{topic} endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - what is retained on this topic
+  - read retained payload
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - retained-message
+    - "{{ args.topic }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: One retained message
+    args:
+      topic: devices/line1/config

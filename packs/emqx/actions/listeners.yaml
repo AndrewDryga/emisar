@@ -1,0 +1,30 @@
+schema_version: 1
+id: emqx.listeners
+title: List EMQX listeners
+kind: script
+risk: low
+description: >
+  List MQTT listeners with their bind address, running state, and current and
+  maximum connections per node with GET /api/v5/listeners. Status only; TLS
+  settings are not returned.
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/listeners endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - clients cannot connect
+  - connection limit reached
+  - port not listening
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - listeners
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Listeners
+    args: {}

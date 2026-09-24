@@ -1,0 +1,45 @@
+schema_version: 1
+id: emqx.set_data_action_enabled
+title: Enable or disable a data integration action
+kind: script
+risk: high
+description: >
+  Enable or disable one action, the sink rules send results to, with PUT
+  /api/v5/actions/{type:name}/enable/{true|false}. While it is disabled its
+  rules' results are not delivered to it, and they are not replayed when it
+  is enabled again.
+args:
+  - name: action_id
+    type: string
+    required: true
+    description: type:name, such as http:my_webhook, as emqx.rule_metrics names it.
+    validation:
+      pattern: "^[a-z0-9_]{1,64}:[A-Za-z0-9_.-]{1,128}$"
+      max_length: 193
+  - name: enable
+    type: boolean
+    required: true
+    description: true to enable, false to disable.
+side_effects:
+  - Starts or stops the action delivering its rules' results.
+search_terms:
+  - disable sink
+  - stop writing to database
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - set-data-action-enabled
+    - "{{ args.action_id }}"
+    - "{{ args.enable }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Disable an action
+    args:
+      action_id: http:my_webhook
+      enable: false

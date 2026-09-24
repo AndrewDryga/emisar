@@ -1,0 +1,41 @@
+schema_version: 1
+id: emqx.kick_client
+title: Disconnect an MQTT client
+kind: script
+risk: high
+description: >
+  Disconnect one client and discard its session with DELETE
+  /api/v5/clients/{clientid}. A client with reconnect logic comes back with a
+  new session; subscriptions and queued messages it does not restore are
+  lost. Fails with CLIENTID_NOT_FOUND when no session exists. emqx.ban keeps
+  a client out.
+args:
+  - name: clientid
+    type: string
+    required: true
+    description: The exact client ID, as emqx.clients lists it.
+    validation:
+      pattern: "^[!-~]{1,256}$"
+      max_length: 256
+side_effects:
+  - Closes the client's connection and discards its session, including its subscriptions and queued messages.
+search_terms:
+  - kick client
+  - stuck client
+  - force a device to reconnect
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - kick-client
+    - "{{ args.clientid }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Disconnect one client
+    args:
+      clientid: sensor-7

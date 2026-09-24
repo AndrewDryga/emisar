@@ -1,0 +1,32 @@
+schema_version: 1
+id: emqx.rule_metrics
+title: Show rule engine metrics
+kind: script
+risk: low
+description: >
+  Show matched, passed, and failed counts per rule, each action's enabled
+  and up status with its success, failure, drop, retry, and queue counts,
+  and each connector's enabled and up status, summed across the cluster, as
+  Prometheus text from GET /api/v5/prometheus/data_integration. Rules,
+  actions, and connectors appear by ID; emqx.rules shows rule SQL.
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/prometheus/data_integration endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - rule not firing
+  - bridge failing
+  - messages not forwarded
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - rule-metrics
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Rule engine metrics
+    args: {}

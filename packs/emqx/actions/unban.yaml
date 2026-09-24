@@ -1,0 +1,46 @@
+schema_version: 1
+id: emqx.unban
+title: Lift a ban
+kind: script
+risk: high
+description: >
+  Remove one ban with DELETE /api/v5/banned/{kind}/{who}, so that client,
+  user, or address can connect again. Fails with NOT_FOUND when no such ban
+  exists; emqx.banned lists them.
+args:
+  - name: kind
+    type: string
+    required: true
+    description: What who names — a client ID, a username, or a peer host address.
+    validation:
+      enum: [clientid, username, peerhost]
+  - name: who
+    type: string
+    required: true
+    description: The client ID, username, or IP address to let back in.
+    validation:
+      pattern: '^[!#-\[\]-~]{1,256}$'
+      max_length: 256
+side_effects:
+  - Removes the ban; matching clients can connect again.
+search_terms:
+  - unban client
+  - device banned by mistake
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - unban
+    - "{{ args.kind }}"
+    - "{{ args.who }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Lift a client ban
+    args:
+      kind: clientid
+      who: sensor-7

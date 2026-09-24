@@ -1,0 +1,40 @@
+schema_version: 1
+id: emqx.delete_retained
+title: Delete a retained message
+kind: script
+risk: high
+description: >
+  Delete the retained message on one exact topic with DELETE
+  /api/v5/mqtt/retainer/message/{topic}, so new subscribers stop receiving
+  it. It cannot be restored; only its publisher can retain a new one. Fails
+  with NOT_FOUND when the topic holds no retained message; emqx.retained
+  lists them.
+args:
+  - name: topic
+    type: string
+    required: true
+    description: The exact topic, without the + and # wildcards.
+    validation:
+      pattern: '^[!-"$-*,-~]{1,512}$'
+      max_length: 512
+side_effects:
+  - Removes the retained message on that topic permanently.
+search_terms:
+  - clear retained message
+  - devices get old config
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - delete-retained
+    - "{{ args.topic }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Delete one retained message
+    args:
+      topic: devices/line1/config

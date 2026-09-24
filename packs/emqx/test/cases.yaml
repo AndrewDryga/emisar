@@ -1,0 +1,432 @@
+services: [emqx, mqtt-client]
+versions:
+  - version: 5.8.9
+    digest: "@sha256:35b46f7aa7a0d51f3959e4344221ac5ec7f948b03e43099286b6c40a07bb393b"
+    default: true
+  - version: 6.3.1
+    digest: "@sha256:5ecbf93d04e34aaf4096af074e93b773d0838c8ea668cfabdec7976b272d9606"
+secret_env: [EMQX_API_KEY, EMQX_API_SECRET]
+env:
+  EMQX_API_KEY: packtest-canary-emqx-key-3b7d
+  EMQX_API_SECRET: packtest-canary-emqx-secret-9e1f
+  EMQX_URL: "http://emqx:18083"
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: emqx.nodes
+    expect:
+      json:
+        /0/node: emqx@127.0.0.1
+        /0/node_status: running
+  - name: emqx.nodes-invalid-secret
+    action: emqx.nodes
+    env:
+      EMQX_API_SECRET: packtest-canary-emqx-invalid-2c8a
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["curl: (22)"]
+      stdout_contains: [BAD_API_KEY_OR_SECRET]
+  - name: emqx.nodes-missing-secret
+    action: emqx.nodes
+    unset_env: [EMQX_API_SECRET]
+    expect:
+      status: failure
+      stderr_contains: [EMQX_API_SECRET]
+  - action: emqx.listeners
+    expect:
+      stdout_contains: ['"id":"tcp:default"', current_connections]
+  - action: emqx.stats
+    arrange:
+      # Stats are sampled, so wait until they count the helper subscriber.
+      - argv: [/bin/sh, -c, 'sh /packs/emqx/test/fixtures/api.sh GET "stats?aggregate=true" | grep -q "\"connections.count\":1,"']
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      json:
+        /connections.count: 1
+        /subscriptions.count: 2
+  - action: emqx.metrics
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      json:
+        /client.connected: 1
+        /packets.subscribe.received: 1
+  - action: emqx.rates
+    arrange:
+      - argv: [/bin/sh, -c, 'sh /packs/emqx/test/fixtures/api.sh GET monitor_current | grep -q "\"connections\":1,"']
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      json:
+        /connections: 1
+        /subscriptions: 2
+  - action: emqx.alarms
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, connectors, '{"type":"http","name":"packtest_down","url":"http://127.0.0.1:9/","enable":true}']
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'alarms?activated=true']
+        expect:
+          stdout_contains: ['"name":"connector:http:packtest_down"']
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      stdout_contains: ['"name":"connector:http:packtest_down"', "resource down"]
+  - name: emqx.alarms-history
+    action: emqx.alarms
+    args:
+      state: history
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, connectors, '{"type":"http","name":"packtest_down","url":"http://127.0.0.1:9/","enable":true}']
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'alarms?activated=true']
+        expect:
+          stdout_contains: ['"name":"connector:http:packtest_down"']
+        retry_for: 30s
+        retry_every: 500ms
+      # Deleting the connector clears its alarm into the history.
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, DELETE, 'connectors/http:packtest_down']
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'alarms?activated=false']
+        expect:
+          stdout_contains: ['"name":"connector:http:packtest_down"']
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      stdout_contains: ['"name":"connector:http:packtest_down"', deactivate_at]
+  - action: emqx.clients
+    args:
+      clientid_contains: packtest
+      state: connected
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      json:
+        /data/0/clientid: packtest-sensor
+        /data/0/username: packtest-sensor
+        /data/0/connected: true
+        /data/0/subscriptions_cnt: 2
+  - name: emqx.clients-filtered-out
+    action: emqx.clients
+    args:
+      username_contains: nobody
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      stdout_contains: ['"data":[]']
+  - action: emqx.client
+    args:
+      clientid: packtest-sensor
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      json:
+        /clientid: packtest-sensor
+        /connected: true
+        /listener: tcp:default
+        /subscriptions_cnt: 2
+  - name: emqx.client-not-found
+    action: emqx.client
+    args:
+      clientid: packtest-nobody
+    expect:
+      status: failure
+      exit: [22]
+      stdout_contains: [CLIENTID_NOT_FOUND]
+  - action: emqx.subscriptions
+    args:
+      clientid: packtest-sensor
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      stdout_contains: ['"topic":"packtest/+/temp"', '"topic":"packtest/alerts"']
+  - name: emqx.subscriptions-under-filter
+    action: emqx.subscriptions
+    args:
+      topic_filter: packtest/+/temp
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      json:
+        /data/0/clientid: packtest-sensor
+        /data/0/topic: packtest/+/temp
+      stdout_not_contains: [packtest/alerts]
+  - action: emqx.topics
+    args:
+      topic: packtest/alerts
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      json:
+        /data/0/topic: packtest/alerts
+        /data/0/node: emqx@127.0.0.1
+  - action: emqx.retained
+    args:
+      topic_filter: packtest/#
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, publish, '{"topic":"packtest/line1/config","payload":"setpoint=21","qos":1,"retain":true}']
+    expect:
+      json:
+        /data/0/topic: packtest/line1/config
+      # The broker's own $SYS topics are retained too; the filter leaves them out.
+      stdout_not_contains: ['"payload"', $SYS]
+  - action: emqx.retained_message
+    args:
+      topic: packtest/line1/config
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, publish, '{"topic":"packtest/line1/config","payload":"setpoint=21","qos":1,"retain":true}']
+    expect:
+      json:
+        /topic: packtest/line1/config
+        # base64 of "setpoint=21"
+        /payload: c2V0cG9pbnQ9MjE=
+  - name: emqx.retained_message-not-found
+    action: emqx.retained_message
+    args:
+      topic: packtest/line9/config
+    expect:
+      status: failure
+      exit: [22]
+      stdout_contains: [NOT_FOUND]
+  - action: emqx.rules
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, rules, '{"id":"packtest_rule","sql":"SELECT * FROM \"packtest/#\"","actions":[]}']
+    expect:
+      json:
+        /data/0/id: packtest_rule
+        /data/0/enable: true
+      stdout_contains: ['SELECT * FROM \"packtest/#\"']
+  - action: emqx.rule_metrics
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, rules, '{"id":"packtest_rule","sql":"SELECT * FROM \"packtest/#\"","actions":[]}']
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, publish, '{"topic":"packtest/a","payload":"hello","qos":0}']
+    expect:
+      stdout_contains: ['emqx_rule_matched{id="packtest_rule"} 1', emqx_rules_count]
+  - action: emqx.auth_metrics
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      # Runner redaction reads "password_based:<backend>" as a password
+      # assignment and masks the backend; the counter after it survives.
+      stdout_contains:
+        - 'emqx_authn_success{id="password_based:[REDACTED]} 1'
+        - 'emqx_authz_allow{type="file"}'
+        - emqx_banned_count 0
+  - action: emqx.authz_settings
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, PUT, authorization/settings, '{"no_match":"deny","deny_action":"disconnect","cache":{"enable":true,"max_size":32,"ttl":"1m"}}']
+    expect:
+      json:
+        /no_match: deny
+        /deny_action: disconnect
+  - action: emqx.banned
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, banned, '{"as":"clientid","who":"packtest-ghost","reason":"packtest"}']
+    expect:
+      json:
+        /data/0/as: clientid
+        /data/0/who: packtest-ghost
+        /data/0/reason: packtest
+  - action: emqx.kick_client
+    args:
+      clientid: packtest-sensor
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      json:
+        /kicked: true
+    probes:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'metrics?aggregate=true']
+        expect:
+          json:
+            /client.disconnected: 1
+  - name: emqx.kick_client-not-found
+    action: emqx.kick_client
+    args:
+      clientid: packtest-nobody
+    expect:
+      status: failure
+      exit: [22]
+      stdout_contains: [CLIENTID_NOT_FOUND]
+  - action: emqx.ban
+    args:
+      kind: clientid
+      who: packtest-sensor
+      reason: packtest flood
+      minutes: 60
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        retry_for: 30s
+        retry_every: 500ms
+    expect:
+      json:
+        /as: clientid
+        /who: packtest-sensor
+        /reason: packtest flood
+      stdout_not_contains: ['"until":"infinity"']
+    probes:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, banned]
+        expect:
+          json:
+            /data/0/who: packtest-sensor
+      # The ban disconnected the live client, and the helper's reconnect is
+      # refused as not authorised before it exits.
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'metrics?aggregate=true']
+        expect:
+          json:
+            /packets.connack.auth_error: 1
+        retry_for: 30s
+        retry_every: 500ms
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, clients/packtest-sensor]
+        expect:
+          exit: [22]
+          stdout_contains: [CLIENTID_NOT_FOUND]
+  - name: emqx.ban-until-lifted
+    action: emqx.ban
+    args:
+      kind: username
+      who: packtest-nobody
+      reason: packtest
+      minutes: 0
+    expect:
+      json:
+        /as: username
+        /until: infinity
+    probes:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, banned]
+        expect:
+          json:
+            /data/0/who: packtest-nobody
+  - action: emqx.unban
+    args:
+      kind: clientid
+      who: packtest-ghost
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, banned, '{"as":"clientid","who":"packtest-ghost","reason":"packtest"}']
+    expect:
+      json:
+        /unbanned: true
+    probes:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, banned]
+        expect:
+          json:
+            /meta/count: 0
+  - name: emqx.unban-not-found
+    action: emqx.unban
+    args:
+      kind: clientid
+      who: packtest-ghost
+    expect:
+      status: failure
+      exit: [22]
+      stdout_contains: [NOT_FOUND]
+  - action: emqx.set_rule_enabled
+    args:
+      rule_id: packtest_rule
+      enable: false
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, rules, '{"id":"packtest_rule","sql":"SELECT * FROM \"packtest/#\"","actions":[]}']
+    expect:
+      json:
+        /id: packtest_rule
+        /enable: false
+    probes:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, rules/packtest_rule]
+        expect:
+          json:
+            /enable: false
+  - action: emqx.start_connector
+    args:
+      connector_id: http:packtest_hook
+    arrange:
+      # Created but never started, the state a connector is in until something
+      # starts it. EMQX 5.8 has no stop operation to reach it another way.
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, connectors, '{"type":"http","name":"packtest_hook","url":"http://127.0.0.1:18083/","enable":true,"resource_opts":{"start_after_created":false}}']
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'connectors/http:packtest_hook']
+        expect:
+          json:
+            /status: stopped
+    expect:
+      json:
+        /started: true
+    probes:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'connectors/http:packtest_hook']
+        expect:
+          json:
+            /status: connected
+        retry_for: 30s
+        retry_every: 500ms
+  - name: emqx.start_connector-unreachable
+    action: emqx.start_connector
+    args:
+      connector_id: http:packtest_down
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, connectors, '{"type":"http","name":"packtest_down","url":"http://127.0.0.1:9/","enable":true}']
+    expect:
+      status: failure
+      exit: [22]
+      stdout_contains: [Connection refused]
+  - action: emqx.set_data_action_enabled
+    args:
+      action_id: http:packtest_hook
+      enable: false
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, connectors, '{"type":"http","name":"packtest_hook","url":"http://127.0.0.1:18083/","enable":true}']
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, actions, '{"type":"http","name":"packtest_hook","connector":"packtest_hook","enable":true,"parameters":{"method":"post","body":"${payload}"}}']
+    expect:
+      json:
+        /enable: false
+    probes:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'actions/http:packtest_hook']
+        expect:
+          json:
+            /enable: false
+  - action: emqx.restart_listener
+    args:
+      listener_id: tcp:default
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, 'listeners/tcp:default/stop']
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'listeners/tcp:default']
+        expect:
+          json:
+            /running: false
+    expect:
+      json:
+        /restarted: true
+    probes:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'listeners/tcp:default']
+        expect:
+          json:
+            /running: true
+        retry_for: 30s
+        retry_every: 500ms
+  - action: emqx.delete_retained
+    args:
+      topic: packtest/line1/config
+    arrange:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, POST, publish, '{"topic":"packtest/line1/config","payload":"setpoint=21","qos":1,"retain":true}']
+    expect:
+      json:
+        /deleted: true
+    probes:
+      - argv: [/bin/sh, /packs/emqx/test/fixtures/api.sh, GET, 'mqtt/retainer/message/packtest%2Fline1%2Fconfig']
+        expect:
+          exit: [22]
+          stdout_contains: [NOT_FOUND]

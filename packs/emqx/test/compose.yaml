@@ -1,0 +1,47 @@
+services:
+  emqx:
+    image: emqx/emqx:${PACKTEST_VERSION:-5.8.9}${PACKTEST_DIGEST-}
+    environment:
+      EMQX_NODE__NAME: emqx@127.0.0.1
+      # The fixture's key:secret pair is loaded before any listener starts.
+      EMQX_API_KEY__BOOTSTRAP_FILE: /opt/emqx/etc/packtest-api-key.conf
+      EMQX_AUTHENTICATION__1__MECHANISM: password_based
+      EMQX_AUTHENTICATION__1__BACKEND: built_in_database
+      # The helper subscriber's MQTT login, imported as plain text at boot.
+      EMQX_AUTHENTICATION__1__BOOTSTRAP_FILE: /opt/emqx/etc/packtest-mqtt-users.csv
+      EMQX_AUTHENTICATION__1__BOOTSTRAP_TYPE: plain
+    volumes:
+      - ${EMISAR_ROOT}/packs/emqx/test/fixtures/api-key-bootstrap.conf:/opt/emqx/etc/packtest-api-key.conf:ro
+      - ${EMISAR_ROOT}/packs/emqx/test/fixtures/mqtt-users.csv:/opt/emqx/etc/packtest-mqtt-users.csv:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18083/api/v5/status"]
+      interval: 5s
+      start_period: 60s
+      start_interval: 1s
+      retries: 30
+
+  # A live subscriber for the client, subscription, kick, ban, and listener
+  # cases. It is a helper, not the product under test, so its version is pinned
+  # independently of PACKTEST_VERSION. It reconnects after a kick or a listener
+  # restart and exits once a ban refuses it.
+  mqtt-client:
+    image: eclipse-mosquitto:2.1.1-alpine@sha256:9fec559dbc89664d171ac8ea8230bbbeb50c2eb52615d631599ec31cbccbfb39
+    depends_on:
+      emqx:
+        condition: service_healthy
+    command:
+      - mosquitto_sub
+      - -h
+      - emqx
+      - -u
+      - packtest-sensor
+      - -P
+      - packtest-mqtt-pass-5b2e
+      - -i
+      - packtest-sensor
+      - -q
+      - "1"
+      - -t
+      - packtest/+/temp
+      - -t
+      - packtest/alerts

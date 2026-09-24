@@ -1,0 +1,44 @@
+schema_version: 1
+id: emqx.alarms
+title: List EMQX alarms
+kind: script
+risk: low
+description: >
+  List the alarms raised now, or the history of cleared ones, with GET
+  /api/v5/alarms: each alarm's name, node, message, details, and when it was
+  raised and cleared. A connector or action that went down raises one naming
+  it and the reason, such as "resource down: Connection refused". At most
+  100 alarms per call.
+args:
+  - name: state
+    type: string
+    required: false
+    default: active
+    description: active for alarms raised now; history for alarms already cleared.
+    validation:
+      enum: [active, history]
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/alarms endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - broker alarm
+  - connector down
+  - high memory
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - alarms
+    - "{{ args.state }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Alarms raised now
+    args: {}
+  - title: Cleared alarms
+    args:
+      state: history

@@ -1,0 +1,86 @@
+schema_version: 1
+
+id: emqx
+name: EMQX MQTT broker
+version: 0.1.0
+description: >
+  Operate an EMQX 5 or 6 MQTT broker over its REST API: node, listener,
+  throughput, and alarm status; client sessions, subscriptions, topic
+  routes, and retained messages; authentication, authorization, and rule
+  engine counters; and client kicks and bans, rule and action toggles,
+  connector reconnects, listener restarts, and retained message deletes.
+  The API key and secret are streamed over curl stdin.
+vendor: emisar
+homepage: https://emisar.dev/packs/emqx
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+
+# `emisar pack suggest`: the dashboard and REST API port, which is EMQX's own.
+detect:
+  ports:
+    - 18083
+
+setup:
+  summary: >
+    Every action calls the EMQX REST API at `$EMQX_URL` via curl on the runner
+    host, with HTTP Basic auth from `$EMQX_API_KEY` and `$EMQX_API_SECRET` sent
+    over curl stdin, so neither appears in the process arguments or the audit
+    log.
+  env:
+    - name: EMQX_URL
+      default: http://127.0.0.1:18083
+      description: >
+        Base URL of the dashboard listener, which serves the REST API — scheme,
+        host, and port. Each action appends its /api/v5 path.
+      example: http://emqx:18083
+    - name: EMQX_API_KEY
+      required: true
+      description: >
+        An API key from the Dashboard's System → API Key page, or the first
+        field of an `api_key.bootstrap_file` line (`<key>:<secret>:<role>`).
+        The `viewer` role runs every read. The actions that change the
+        broker (kick, ban, unban, rule and action toggles, connector start,
+        listener restart, retained message delete) need `administrator`.
+        Roles exist in EMQX 5.9 and later and in Enterprise 5.3 and later;
+        open-source 5.8 keys are always administrators.
+    - name: EMQX_API_SECRET
+      required: true
+      description: >
+        The key's secret, shown once when the key is created, or the second
+        field of the bootstrap file line.
+  notes:
+    - "Any of `EMQX_URL` / `EMQX_API_KEY` / `EMQX_API_SECRET` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Each write is one request against one named client, ban, rule, action, connector, listener, or topic. Publishing, creating or editing rules, connectors, and actions, built-in database users and ACL rules, cluster membership, configuration, plugins, gateways, and message tracing are not included."
+    - "Connector, action, and authenticator configurations are not read: EMQX masks password and authorization header values in them but not custom headers such as API keys. Their status and counters come from emqx.rule_metrics, emqx.auth_metrics, and emqx.alarms."
+  verify: emqx.nodes
+
+actions:
+  - actions/nodes.yaml
+  - actions/listeners.yaml
+  - actions/stats.yaml
+  - actions/metrics.yaml
+  - actions/rates.yaml
+  - actions/alarms.yaml
+  - actions/clients.yaml
+  - actions/client.yaml
+  - actions/subscriptions.yaml
+  - actions/topics.yaml
+  - actions/retained.yaml
+  - actions/retained_message.yaml
+  - actions/rules.yaml
+  - actions/rule_metrics.yaml
+  - actions/auth_metrics.yaml
+  - actions/authz_settings.yaml
+  - actions/banned.yaml
+  - actions/kick_client.yaml
+  - actions/ban.yaml
+  - actions/unban.yaml
+  - actions/set_rule_enabled.yaml
+  - actions/set_data_action_enabled.yaml
+  - actions/start_connector.yaml
+  - actions/restart_listener.yaml
+  - actions/delete_retained.yaml

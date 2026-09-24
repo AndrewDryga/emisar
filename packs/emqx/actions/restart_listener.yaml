@@ -1,0 +1,41 @@
+schema_version: 1
+id: emqx.restart_listener
+title: Restart an MQTT listener
+kind: script
+risk: high
+description: >
+  Restart one listener's acceptor on every node with POST
+  /api/v5/listeners/{type:name}/restart, which also starts a listener that
+  stopped. New connections to it are refused until it is back; clients
+  already connected stay connected. emqx.listeners lists listener IDs such
+  as tcp:default and whether each is running.
+args:
+  - name: listener_id
+    type: string
+    required: true
+    description: type:name, such as tcp:default or ssl:default.
+    validation:
+      pattern: "^(tcp|ssl|ws|wss|quic):[A-Za-z0-9_.-]{1,64}$"
+      max_length: 69
+side_effects:
+  - Stops and starts the listener, refusing new connections on it until it is back.
+search_terms:
+  - clients cannot connect
+  - listener not running
+  - port not listening
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - restart-listener
+    - "{{ args.listener_id }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Restart the default TCP listener
+    args:
+      listener_id: tcp:default

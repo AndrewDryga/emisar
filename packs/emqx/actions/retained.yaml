@@ -1,0 +1,51 @@
+schema_version: 1
+id: emqx.retained
+title: List retained messages
+kind: script
+risk: low
+description: >
+  List retained messages with GET /api/v5/mqtt/retainer/messages, optionally
+  only those on topics that match a filter such as devices/+/config: each
+  message's topic, QoS, publisher client ID and username, and publish time.
+  Payloads are not returned; emqx.retained_message reads one.
+args:
+  - name: topic_filter
+    type: string
+    required: false
+    default: ""
+    description: Only topics that match this filter, wildcards allowed. Empty lists every retained message.
+    validation:
+      pattern: "^[!-~]{0,512}$"
+      max_length: 512
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Retained messages to return, from the first page. At most 1,000 per call.
+    validation:
+      min: 1
+      max: 1000
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/mqtt/retainer/messages endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - stale retained message
+  - devices get old config
+  - retained messages
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - retained
+    - "{{ args.limit }}"
+    - "{{ args.topic_filter }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Retained config messages
+    args:
+      topic_filter: devices/+/config

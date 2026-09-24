@@ -1,0 +1,65 @@
+schema_version: 1
+id: emqx.subscriptions
+title: List MQTT subscriptions
+kind: script
+risk: low
+description: >
+  List subscriptions with GET /api/v5/subscriptions, for one client ID or for
+  topic filters that fall under a filter such as plant/#: each
+  subscription's client, topic filter, QoS, node, and its no local, retain as
+  published, and retain handling options.
+args:
+  - name: clientid
+    type: string
+    required: false
+    default: ""
+    description: Only this exact client ID. Empty lists every client.
+    validation:
+      pattern: "^[!-~]{0,256}$"
+      max_length: 256
+  - name: topic_filter
+    type: string
+    required: false
+    default: ""
+    description: >
+      Only subscriptions whose topic filter falls under this filter; plant/#
+      matches plant/+/temp and plant/alerts. Empty lists every subscription.
+    validation:
+      pattern: "^[!-~]{0,512}$"
+      max_length: 512
+  - name: limit
+    type: integer
+    required: false
+    default: 100
+    description: Subscriptions to return, from the first page. At most 1,000 per call.
+    validation:
+      min: 1
+      max: 1000
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/subscriptions endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - messages not delivered
+  - client not receiving messages
+  - who subscribes to this topic
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - subscriptions
+    - "{{ args.limit }}"
+    - "{{ args.clientid }}"
+    - "{{ args.topic_filter }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: One client's subscriptions
+    args:
+      clientid: sensor-7
+  - title: Subscriptions under plant/
+    args:
+      topic_filter: plant/#

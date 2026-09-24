@@ -1,0 +1,31 @@
+schema_version: 1
+id: emqx.metrics
+title: Show EMQX message and packet counters
+kind: script
+risk: low
+description: >
+  Show the counters EMQX keeps since each node started, summed across the
+  cluster, with GET /api/v5/metrics: messages received, sent, delivered, and
+  dropped by reason, packets by type, client connects, disconnects, and auth
+  results, and session events.
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/metrics endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - messages dropped
+  - message loss
+  - clients keep disconnecting
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - metrics
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Message and packet counters
+    args: {}

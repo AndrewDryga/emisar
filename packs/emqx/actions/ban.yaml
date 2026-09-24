@@ -1,0 +1,66 @@
+schema_version: 1
+id: emqx.ban
+title: Ban an MQTT client, user, or address
+kind: script
+risk: high
+description: >
+  Add a ban with POST /api/v5/banned: EMQX disconnects every matching live
+  client and refuses its connections until the ban ends or emqx.unban lifts
+  it. A peerhost ban shuts out every device behind that address, such as a
+  whole site behind one NAT. Returns the stored ban.
+args:
+  - name: kind
+    type: string
+    required: true
+    description: What who names — a client ID, a username, or a peer host address.
+    validation:
+      enum: [clientid, username, peerhost]
+  - name: who
+    type: string
+    required: true
+    description: The client ID, username, or IP address to ban.
+    validation:
+      pattern: '^[!#-\[\]-~]{1,256}$'
+      max_length: 256
+  - name: reason
+    type: string
+    required: true
+    description: Why, as the ban table will show it.
+    validation:
+      pattern: '^[ !#-\[\]-~]{1,256}$'
+      max_length: 256
+  - name: minutes
+    type: integer
+    required: true
+    description: How long the ban lasts. 0 keeps it until emqx.unban lifts it.
+    validation:
+      min: 0
+      max: 525600
+side_effects:
+  - Disconnects matching clients and refuses their connections until the ban ends or is lifted.
+search_terms:
+  - block a device
+  - misbehaving client
+  - client flooding the broker
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - ban
+    - "{{ args.kind }}"
+    - "{{ args.who }}"
+    - "{{ args.reason }}"
+    - "{{ args.minutes }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Ban a flooding client for an hour
+    args:
+      kind: clientid
+      who: sensor-7
+      reason: flooding plant topics
+      minutes: 60

@@ -1,0 +1,2 @@
+user_id,password,is_superuser
+packtest-sensor,packtest-mqtt-pass-5b2e,false

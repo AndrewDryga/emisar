@@ -1,0 +1,32 @@
+schema_version: 1
+id: emqx.authz_settings
+title: Show authorization settings
+kind: script
+risk: low
+description: >
+  Show what EMQX does when no authorization rule matches a publish or
+  subscribe (no_match), what it does on a deny (deny_action: ignore or
+  disconnect), and the authorization cache settings, with GET
+  /api/v5/authorization/settings. Allow and deny counts per source are in
+  emqx.auth_metrics.
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/authorization/settings endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - publish denied
+  - subscribe denied
+  - acl no match
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - authz-settings
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Authorization settings
+    args: {}

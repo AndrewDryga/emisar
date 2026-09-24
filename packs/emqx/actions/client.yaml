@@ -1,0 +1,43 @@
+schema_version: 1
+id: emqx.client
+title: Show one MQTT client
+kind: script
+risk: low
+description: >
+  Show one client's session with GET /api/v5/clients/{clientid}: whether it
+  is connected, when it connected, its address, listener, protocol, and
+  keepalive, clean start and session expiry, subscription, inflight, and
+  queue counts and limits, and its message, packet, and byte counters. Fails
+  with CLIENTID_NOT_FOUND when the broker holds no session for that ID.
+  Credentials and message contents are not returned.
+args:
+  - name: clientid
+    type: string
+    required: true
+    description: The exact client ID, as emqx.clients lists it.
+    validation:
+      pattern: "^[!-~]{1,256}$"
+      max_length: 256
+side_effects:
+  - One read-only HTTP GET to the EMQX /api/v5/clients/{clientid} endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - device keeps disconnecting
+  - message queue full
+  - client inflight
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - client
+    - "{{ args.clientid }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: One client
+    args:
+      clientid: sensor-7

@@ -1,0 +1,40 @@
+schema_version: 1
+id: emqx.start_connector
+title: Start a data integration connector
+kind: script
+risk: high
+description: >
+  Start or reconnect one connector on every node with POST
+  /api/v5/connectors/{type:name}/start, as after the database, HTTP service,
+  or Kafka cluster it connects to comes back. Fails with the connection
+  error while that system is still unreachable.
+args:
+  - name: connector_id
+    type: string
+    required: true
+    description: type:name, such as http:my_webhook, as emqx.rule_metrics and emqx.alarms name it.
+    validation:
+      pattern: "^[a-z0-9_]{1,64}:[A-Za-z0-9_.-]{1,128}$"
+      max_length: 193
+side_effects:
+  - Opens the connector's connections to its external system.
+search_terms:
+  - reconnect connector
+  - bridge disconnected
+  - resource down
+execution:
+  script:
+    path: scripts/emqx_api.sh
+    interpreter: /bin/sh
+  argv:
+    - start-connector
+    - "{{ args.connector_id }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 8192
+  max_stderr_bytes: 8192
+examples:
+  - title: Reconnect a connector
+    args:
+      connector_id: http:my_webhook
