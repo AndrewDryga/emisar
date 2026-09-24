@@ -171,6 +171,9 @@ func TestDefaultRules_SecretFieldAndAssignment(t *testing.T) {
 		{"prefixed affix", "app_access_token=zzztokenvaluezzz", "zzztokenvaluezzz"},
 		{"suffixed affix", "client_secret_v2=shhdonttell", "shhdonttell"},
 		{"single-quoted value", "refresh_token='quotedsecret'", "quotedsecret"},
+		// Why an identifier such as EMQX's password_based:built_in_database is masked
+		// too: the same shape carries real tokens, like a Redis reset-token key.
+		{"secret-named key with a colon value", "password_reset:9f2b4c7e1a", "9f2b4c7e1a"},
 		{"json field mixed case", `{"Api_Key":"jsontokvalue","ok":1}`, "jsontokvalue"},
 		{"json field and number", `{"password":123456,"ok":1}`, "123456"},
 		{"json field and boolean", `{"client_secret":true,"ok":1}`, "true"},
