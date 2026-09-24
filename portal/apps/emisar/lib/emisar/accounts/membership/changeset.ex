@@ -121,6 +121,9 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> unique_constraint([:account_id, :user_id])
   end
 
+  @doc "The personal login leaves this seat; the Member stays and signs in through workspace SSO."
+  def detach_personal_login(%Membership{} = membership), do: change(membership, user_id: nil)
+
   def suspend(%Membership{} = membership, disabled_by_membership_id) do
     membership
     |> change(

@@ -52,6 +52,7 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:oidc_identities, [])
      |> assign(:oidc_identities_error?, false)
      |> assign(:oidc_identities_loaded?, false)
+     |> assign(:linked_workspaces, [])
      |> OIDCStepUp.reset()
      |> ConfirmDialog.init()
      |> assign(:mfa_facts, nil)
@@ -81,6 +82,7 @@ defmodule EmisarWeb.ProfileLive do
   defp load_profile(socket, params, user) do
     socket
     |> load_sessions(params)
+    |> load_linked_workspaces()
     |> load_oidc_identities()
     |> load_workspace_profile()
     |> assign_mfa_facts(user)
@@ -114,6 +116,14 @@ defmodule EmisarWeb.ProfileLive do
       :workspace_profile_form,
       to_form(Accounts.change_member_profile(member, attrs), as: "workspace_profile")
     )
+  end
+
+  # Only a browser with personal proof can detach, so any other gets none.
+  defp load_linked_workspaces(socket) do
+    case Accounts.list_detachable_memberships(socket.assigns.current_subject) do
+      {:ok, members} -> assign(socket, :linked_workspaces, members)
+      {:error, _reason} -> assign(socket, :linked_workspaces, [])
+    end
   end
 
   defp load_oidc_identities(socket) do
@@ -206,6 +216,13 @@ defmodule EmisarWeb.ProfileLive do
     }
   end
 
+  defp linked_workspace_name(socket, member_id) do
+    case Enum.find(socket.assigns.linked_workspaces, &(&1.id == member_id)) do
+      %{account: %{name: name}} -> name
+      nil -> "that workspace"
+    end
+  end
+
   defp session_sign_in_method(:magic_link), do: "Email link"
   defp session_sign_in_method(:sso), do: "Single sign-on"
   defp session_sign_in_method(nil), do: nil
@@ -224,7 +241,8 @@ defmodule EmisarWeb.ProfileLive do
              "resend_email_code",
              "confirm_email_change",
              "revoke_session",
-             "revoke_other_sessions"
+             "revoke_other_sessions",
+             "detach_personal_login"
            ] do
     {:noreply, personal_authority_error(socket)}
   end
@@ -555,6 +573,37 @@ defmodule EmisarWeb.ProfileLive do
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't sign out this session. Try again.")}
+    end
+  end
+
+  # The detached seat's grants on this browser end with it, so leave the
+  # workspace when it was the current one; otherwise reload Profile.
+  def handle_event("detach_personal_login", %{"id" => id}, socket) do
+    case Accounts.detach_personal_login(id, socket.assigns.current_subject) do
+      {:ok, member} ->
+        name = linked_workspace_name(socket, member.id)
+
+        to =
+          if member.account_id == socket.assigns.current_account.id,
+            do: ~p"/app",
+            else: ~p"/app/#{socket.assigns.current_account}/settings/profile"
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Your personal login is no longer linked to #{name}.")
+         |> redirect(to: to)}
+
+      {:error, :unauthorized} ->
+        {:noreply, personal_authority_error(socket)}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :error,
+           "That workspace couldn't be detached. Reload the page and try again."
+         )
+         |> load_linked_workspaces()}
     end
   end
 
@@ -1608,6 +1657,47 @@ defmodule EmisarWeb.ProfileLive do
             trigger_submit={@oidc_trigger_submit}
             action={~p"/app/#{@current_account}/settings/sso/identity/link"}
           />
+        </.section_with_note>
+
+        <.section_with_note
+          :if={@current_user && @linked_workspaces != []}
+          id="linked-workspaces"
+        >
+          <:header>
+            <.section_header title="Linked workspaces">
+              <:subtitle>
+                Workspace memberships your personal login signs in to. Each also signs in through its workspace's single sign-on.
+              </:subtitle>
+            </.section_header>
+          </:header>
+          <:note>
+            Didn't link one of these? Detach it, then sign out everywhere else.
+          </:note>
+
+          <ul id="linked-workspaces-list" class="divide-y divide-zinc-800/70 text-sm">
+            <.list_row :for={member <- @linked_workspaces} id={"linked-workspace-#{member.id}"}>
+              <:title>
+                <span class="truncate font-medium text-zinc-100">{member.account.name}</span>
+              </:title>
+              <:actions>
+                <.confirm_button
+                  id={"detach-personal-login-#{member.id}"}
+                  title={"Detach your personal login from #{member.account.name}?"}
+                  confirm_label="Detach"
+                  variant={:secondary}
+                  tone={:rose}
+                  size={:sm}
+                  class="shrink-0"
+                  on_confirm={JS.push("detach_personal_login", value: %{id: member.id})}
+                >
+                  <:body>
+                    This login loses access to {member.account.name} on every device. The membership stays and signs in only through its single sign-on.
+                  </:body>
+                  Detach
+                </.confirm_button>
+              </:actions>
+            </.list_row>
+          </ul>
         </.section_with_note>
 
         <.section_with_note :if={@current_user} id="multi-factor-authentication">

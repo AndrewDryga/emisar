@@ -106,6 +106,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute has_element?(lv, "#change-email")
       refute has_element?(lv, "#active-sessions")
       refute has_element?(lv, "#signout-others")
+      refute has_element?(lv, "#linked-workspaces")
       refute has_element?(lv, "[phx-click=retry_sessions]")
       refute html =~ "Private personal browser"
       refute html =~ "203.0.113.12"
@@ -123,7 +124,8 @@ defmodule EmisarWeb.ProfileLiveTest do
             {"resend_email_code", %{}},
             {"confirm_email_change", %{"email_step" => %{"code" => "123456"}}},
             {"revoke_session", %{"id" => personal_session.id}},
-            {"revoke_other_sessions", %{}}
+            {"revoke_other_sessions", %{}},
+            {"detach_personal_login", %{"id" => Ecto.UUID.generate()}}
           ] do
         assert render_click(lv, event, params) =~
                  "These controls require unexpired personal email-link proof in this browser."
@@ -1026,6 +1028,36 @@ defmodule EmisarWeb.ProfileLiveTest do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn)
       %{conn: conn, user: user, account: account}
+    end
+
+    test "lists the workspaces a personal login reaches through SSO and detaches one", %{
+      conn: conn,
+      user: user,
+      account: account
+    } do
+      other = Fixtures.Accounts.create_account(name: "Client Workspace", plan: "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: other.id)
+      seat = Fixtures.Memberships.create_membership(account_id: other.id, user_id: user.id)
+
+      Fixtures.SSO.create_user_identity(
+        account_id: other.id,
+        provider_id: provider.id,
+        user_id: user.id
+      )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      assert has_element?(lv, "#linked-workspace-#{seat.id}", "Client Workspace")
+      refute has_element?(lv, "#linked-workspaces", account.name)
+
+      result = render_click(lv, "detach_personal_login", %{"id" => seat.id})
+      assert {:error, {:redirect, %{to: to}}} = result
+      assert to == ~p"/app/#{account}/settings/profile"
+      {:ok, followed} = follow_redirect(result, conn)
+
+      assert html_response(followed, 200) =~
+               "Your personal login is no longer linked to Client Workspace."
+
+      assert is_nil(Emisar.Repo.reload!(seat).user_id)
     end
 
     test "lists sessions and revokes the selected one", %{

@@ -184,7 +184,8 @@ defmodule Emisar.Mailers.UserNotifier do
           account,
           " was linked to your emisar sign-in. That workspace's single sign-on now signs you in to it."
         ),
-        {:paragraph, "If you didn't do this, reply to this email."},
+        {:paragraph,
+         "If you didn't do this, sign in, open your Profile and detach it under Linked workspaces."},
         {:section, "Request details"},
         {:pre, request_details(context)}
       ]

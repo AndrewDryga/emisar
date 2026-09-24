@@ -4019,6 +4019,100 @@ defmodule Emisar.Accounts do
     with {:ok, inserted} <- repo.insert(event), do: {:ok, [inserted | events]}
   end
 
+  @doc """
+  Personal self-service: the caller's own seats that a workspace SSO identity
+  came through, which `detach_personal_login/2` can detach. Requires this
+  browser's personal proof. Reads across workspaces, but only the caller's own
+  seats (the documented `list_accounts_for_user/2` exception to IL-4).
+  """
+  def list_detachable_memberships(%Subject{actor: %Users.User{} = user} = subject) do
+    with :ok <- Subject.ensure_personal_user(subject) do
+      seats =
+        Membership.Query.not_deleted()
+        |> Membership.Query.by_user_id(user.id)
+        |> Membership.Query.with_preloaded_account()
+        |> Repo.all()
+
+      with_identity = SSO.membership_ids_with_identity(Repo, Enum.map(seats, & &1.id))
+      {:ok, Enum.filter(seats, &(&1.id in with_identity))}
+    end
+  end
+
+  def list_detachable_memberships(%Subject{} = subject), do: Subject.personal_denial(subject)
+
+  @doc """
+  Personal self-service: detaches the caller's personal login from one of their
+  seats. The seat stays a Member that signs in through its workspace SSO; this
+  person's sessions lose it, and it is audited in that workspace as the seat
+  itself. The workspace controls every other fact about the seat, so only one is
+  checked: an SSO identity came through it, or detaching would leave a seat
+  nobody can sign in to (`{:error, :no_sso_identity}`). Requires this browser's
+  personal proof. Returns `{:ok, member}` or `{:error, :not_found}`.
+  """
+  def detach_personal_login(membership_id, %Subject{actor: %Users.User{} = user} = subject) do
+    with :ok <- Subject.ensure_personal_user(subject),
+         %Membership{account_id: account_id} <- peek_own_seat(membership_id, user.id) do
+      Multi.new()
+      |> put_membership_account_lock(account_id)
+      |> Auth.put_personal_session(subject)
+      |> Multi.run(:membership, fn repo, %{user: locked_user} ->
+        with {:ok, seat} <- lock_own_seat(repo, account_id, membership_id, locked_user.id),
+             [_seat_id] <- SSO.membership_ids_with_identity(repo, [seat.id]) do
+          {:ok, seat}
+        else
+          [] -> {:error, :no_sso_identity}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.update(:detached, fn %{membership: seat} ->
+        Membership.Changeset.detach_personal_login(seat)
+      end)
+      |> Multi.run(:ended_grants, fn repo, %{detached: seat} ->
+        Auth.delete_membership_session_grants(seat, repo)
+      end)
+      |> Multi.insert(:audit, fn %{detached: seat} ->
+        Audit.Events.membership_personal_login_detached(
+          seat,
+          subject.context,
+          subject.mfa == true
+        )
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{ended_grants: %{socket_topics: topics}} ->
+          Auth.disconnect_live_socket_topics(topics)
+        end
+      )
+      |> case do
+        {:ok, %{detached: seat}} -> {:ok, seat}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def detach_personal_login(_membership_id, %Subject{} = subject),
+    do: Subject.personal_denial(subject)
+
+  defp peek_own_seat(membership_id, user_id) do
+    if Repo.valid_uuid?(membership_id) do
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_id(membership_id)
+      |> Membership.Query.by_user_id(user_id)
+      |> Repo.peek()
+    end
+  end
+
+  defp lock_own_seat(repo, account_id, membership_id, user_id) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_id(membership_id)
+    |> Membership.Query.by_user_id(user_id)
+    |> Membership.Query.lock_for_update()
+    |> repo.fetch(Membership.Query)
+  end
+
   # -- Directory authorization bookkeeping -----------------------------
 
   @doc "Internal - atomically mark a provider's affected memberships fail-closed until reconciliation."

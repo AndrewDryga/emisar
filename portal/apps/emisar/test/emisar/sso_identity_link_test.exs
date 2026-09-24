@@ -878,6 +878,36 @@ defmodule Emisar.SSOIdentityLinkTest do
     end
   end
 
+  describe "membership_ids_with_identity/2" do
+    test "names the seats any identity came through, retired ones included" do
+      account = Fixtures.Accounts.create_account(plan: "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      live = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+      retired = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+      bare = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: provider.id,
+        membership: live
+      )
+
+      retired_identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: retired
+        )
+
+      Fixtures.SSO.retire_identity(retired_identity)
+
+      assert Enum.sort(SSO.membership_ids_with_identity(Repo, [live.id, retired.id, bare.id])) ==
+               Enum.sort([live.id, retired.id])
+
+      assert SSO.membership_ids_with_identity(Repo, []) == []
+    end
+  end
+
   defp with_sso_session(context, identity) do
     raw =
       Fixtures.Auth.create_session_token!(context.user, :sso, nil, %{},

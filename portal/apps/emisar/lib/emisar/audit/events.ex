@@ -372,6 +372,29 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc """
+  A person detached their personal login from this Member, which now signs in
+  only through workspace SSO. Only the request id is kept from the request, so
+  the workspace learns nothing about where the person signed in from.
+  """
+  def membership_personal_login_detached(
+        %Accounts.Membership{} = membership,
+        %RequestContext{} = context,
+        mfa?
+      )
+      when is_boolean(mfa?) do
+    Audit.changeset(membership.account_id, "membership.personal_login_detached",
+      actor_kind: "membership",
+      actor_id: membership.id,
+      target_kind: "membership",
+      target_id: membership.id,
+      target_label: Accounts.member_display_name(membership),
+      auth_method: "magic_link",
+      mfa: mfa?,
+      context: %RequestContext{request_id: context.request_id}
+    )
+  end
+
   # -- User ------------------------------------------------------------
 
   def user_sessions_revoked(%Subject{} = subject, %Accounts.Membership{} = membership),

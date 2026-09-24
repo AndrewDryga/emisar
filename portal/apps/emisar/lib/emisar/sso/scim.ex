@@ -320,6 +320,16 @@ defmodule Emisar.SSO.SCIM do
   defp repost_group_ids(%UserIdentity{} = identity, :live),
     do: Map.get(group_ids_by_identity([identity]), identity.id, [])
 
+  # A detach can commit between this request's first read and its account lock.
+  # The seat must still hold the person that read found, or a re-POST would
+  # re-seat a person who just detached their login; the retry reads afresh.
+  defp seat_holds_user?(%UserIdentity{account_id: account_id, membership_id: id}, user) do
+    case Accounts.peek_membership_profile_by_id(account_id, id) do
+      %Accounts.Membership{user_id: user_id} -> user_id == (user && user.id)
+      nil -> false
+    end
+  end
+
   defp reconcile_provisioned(provider, identity, external_id, active, authorization, state) do
     expected_version =
       if authorization, do: authorization.authorization_version, else: :any
@@ -334,9 +344,10 @@ defmodule Emisar.SSO.SCIM do
       # is the one linked to the identity's seat; the locked identity must still
       # be on that seat. A seat without a personal login has no User to lock.
       |> Multi.run(:user, fn repo, _changes -> lock_seat_user(repo, identity) end)
-      |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider} ->
+      |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider, user: user} ->
         with {:ok, locked} <- lock_repost_identity(locked_provider, identity.id, state, repo),
-             true <- locked.membership_id == identity.membership_id do
+             true <- locked.membership_id == identity.membership_id,
+             true <- seat_holds_user?(locked, user) do
           {:ok, locked}
         else
           false -> {:error, :not_found}

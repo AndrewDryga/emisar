@@ -248,6 +248,28 @@ defmodule Emisar.SSOSCIMTest do
       refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
+    test "a re-POST after a person detached their login keeps the seat without one", %{
+      provider: provider
+    } do
+      attrs = scim_attrs(%{external_id: "okta|detached", email: "detached@acme.test"})
+      assert {:ok, %{membership: member}} = SSO.scim_provision_user(provider, attrs)
+
+      # The person linked this seat, as the member-link flow does, then detached it.
+      person = Fixtures.Users.create_user()
+      member |> Ecto.Changeset.change(user_id: person.id) |> Repo.update!()
+      raw = Fixtures.Auth.create_session_token!(person, :magic_link, nil)
+      {:ok, session} = Emisar.Auth.fetch_session_by_token(raw)
+      subject = %Emisar.Auth.Subject{actor: person, session_token_id: session.id}
+      assert {:ok, _detached} = Accounts.detach_personal_login(member.id, subject)
+
+      assert {:ok, %{membership: reposted}} = SSO.scim_provision_user(provider, attrs)
+      assert {reposted.id, reposted.user_id} == {member.id, nil}
+
+      Fixtures.Memberships.mark_membership_as_deleted(reposted)
+      assert {:ok, %{membership: recreated}} = SSO.scim_provision_user(provider, attrs)
+      assert is_nil(recreated.user_id)
+    end
+
     test "a re-POST after the membership was removed re-creates it (#10)", %{
       provider: provider,
       account: account

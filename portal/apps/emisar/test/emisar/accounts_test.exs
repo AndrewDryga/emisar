@@ -7034,6 +7034,126 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  # A person with a personal browser session, a workspace of their own without
+  # SSO, and a sole-owner seat in another workspace that an SSO identity came through.
+  defp linked_sso_seat do
+    user = Fixtures.Users.create_user()
+    own = Fixtures.Accounts.create_account()
+    own_seat = Fixtures.Memberships.create_membership(account_id: own.id, user_id: user.id)
+    other = Fixtures.Accounts.create_account(plan: "team")
+    provider = Fixtures.SSO.create_identity_provider(account_id: other.id)
+
+    seat =
+      Fixtures.Memberships.create_membership(
+        account_id: other.id,
+        user_id: user.id,
+        role: "owner"
+      )
+
+    identity =
+      Fixtures.SSO.create_user_identity(
+        account_id: other.id,
+        provider_id: provider.id,
+        user_id: user.id
+      )
+
+    raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    {:ok, session} = Auth.fetch_session_by_token(raw)
+
+    %{
+      user: user,
+      own: own,
+      own_seat: own_seat,
+      other: other,
+      seat: seat,
+      identity: identity,
+      session: session,
+      subject: %Auth.Subject{actor: user, session_token_id: session.id}
+    }
+  end
+
+  describe "list_detachable_memberships/1" do
+    test "lists only the caller's seats an SSO identity came through" do
+      %{other: other, seat: seat, subject: subject} = linked_sso_seat()
+
+      assert {:ok, [%Membership{id: seat_id, account: %Account{id: account_id}}]} =
+               Accounts.list_detachable_memberships(subject)
+
+      assert {seat_id, account_id} == {seat.id, other.id}
+    end
+
+    test "refuses a browser without personal proof" do
+      %{user: user} = linked_sso_seat()
+      sso_raw = Fixtures.Auth.create_session_token!(user, :sso, nil)
+      {:ok, sso_session} = Auth.fetch_session_by_token(sso_raw)
+
+      assert Accounts.list_detachable_memberships(%Auth.Subject{
+               actor: user,
+               session_token_id: sso_session.id
+             }) == {:error, :unauthorized}
+    end
+  end
+
+  describe "detach_personal_login/2" do
+    test "leaves the seat without a login, ends this person's grant there and audits it there" do
+      %{own: own, other: other, seat: seat, session: session, subject: subject} =
+        linked_sso_seat()
+
+      context = RequestContext.new(%{ip_address: "203.0.113.7", request_id: "req-detach"})
+
+      assert {:ok, %Membership{id: seat_id, user_id: nil}} =
+               Accounts.detach_personal_login(seat.id, %{subject | context: context})
+
+      assert seat_id == seat.id
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(other.id, session) ==
+               {:error, :not_found}
+
+      assert {:ok, _own_seat} = Accounts.fetch_membership_by_account_id_or_slug(own.id, session)
+
+      assert [event] =
+               AuditEvent.Query.all()
+               |> AuditEvent.Query.by_event_type("membership.personal_login_detached")
+               |> Repo.all()
+
+      assert {event.account_id, event.actor_id, event.target_id} == {other.id, seat.id, seat.id}
+      assert {event.ip_address, event.request_id} == {nil, "req-detach"}
+    end
+
+    test "a retired identity still lets its seat be detached" do
+      %{seat: seat, identity: identity, subject: subject} = linked_sso_seat()
+      Fixtures.SSO.retire_identity(identity)
+
+      assert {:ok, %Membership{user_id: nil}} = Accounts.detach_personal_login(seat.id, subject)
+    end
+
+    test "refuses a seat no SSO identity came through, another person's and a bad id" do
+      %{own_seat: own_seat, other: other, subject: subject} = linked_sso_seat()
+      stranger = Fixtures.Memberships.create_membership(account_id: other.id)
+
+      assert Accounts.detach_personal_login(own_seat.id, subject) == {:error, :no_sso_identity}
+      assert Accounts.detach_personal_login(stranger.id, subject) == {:error, :not_found}
+      assert Accounts.detach_personal_login("not-a-uuid", subject) == {:error, :not_found}
+      assert Repo.reload!(own_seat).user_id == own_seat.user_id
+      assert Repo.reload!(stranger).user_id == stranger.user_id
+    end
+
+    test "refuses a browser without personal proof or without a personal login" do
+      %{user: user, seat: seat} = linked_sso_seat()
+      sso_raw = Fixtures.Auth.create_session_token!(user, :sso, nil)
+      {:ok, sso_session} = Auth.fetch_session_by_token(sso_raw)
+      sso_subject = %Auth.Subject{actor: user, session_token_id: sso_session.id}
+      member = Fixtures.Memberships.create_unlinked_membership()
+
+      assert Accounts.detach_personal_login(seat.id, sso_subject) == {:error, :unauthorized}
+
+      assert Accounts.detach_personal_login(seat.id, %Auth.Subject{actor: member}) ==
+               {:error, :personal_login_required}
+
+      assert Repo.reload!(seat).user_id == user.id
+    end
+  end
+
   describe "update_member_profile_as_admin/3" do
     test "a directory-synced member's profile is refused — the IdP owns the name" do
       account = Fixtures.Accounts.create_account()

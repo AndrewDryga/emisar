@@ -154,6 +154,8 @@ defmodule Emisar.Audit.Event.Query do
        {"membership.profile_updated", "Profile updated", "Workspace profile updated"},
        {"membership.personal_login_linked", "Personal login linked",
         "Member linked a personal login"},
+       {"membership.personal_login_detached", "Personal login detached",
+        "Member's personal login detached"},
        {"membership.removed", "Member removed", "Member removed"},
        {"membership.erased", "User account deleted", "Member’s user account deleted"},
        {"membership.suspended", "Member suspended", "Member suspended"},
@@ -889,6 +891,9 @@ defmodule Emisar.Audit.Event.Query do
     "membership.personal_login_linked" =>
       {true, true, false,
        "A member without a personal login linked one by proving its email address and any second factor it already had."},
+    "membership.personal_login_detached" =>
+      {true, true, false,
+       "A person detached their personal login from this member, which now signs in only through the workspace's single sign-on."},
     "user.updated_by_admin" => {true, true, true, "An admin edited a teammate's profile."},
     "user.magic_link_issued" => {true, false, false, "A sign-in link and code were created."},
     "user.mfa_enrollment_requested" =>
