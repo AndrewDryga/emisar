@@ -476,16 +476,65 @@ operator, with authority to clone Cloud SQL instances and edit project IAM:
    `gcloud projects remove-iam-policy-binding` and the same `--member`,
    `--role` and `--condition`; only an exact match removes a conditional
    binding. A first denial can be IAM propagation; retry after a minute.
-3. Point Terraform at the clone: set `name = "emisar-restore-<stamp>"` on the
-   `emisar` instance resource, then in the HCP workspace run
-   `terraform state rm google_sql_database_instance.emisar` and
-   `terraform import google_sql_database_instance.emisar
-   projects/<project>/instances/emisar-restore-<stamp>` (workspace RBAC; the
-   sensitive variables never leave HCP).
-4. Plan and Confirm & Apply: the plan updates the IAM conditions in place,
-   re-creates the `google_sql_user` rows on the clone, and replaces the instance
-   template with the clone's connection name, which rolls the MIG — the
-   application cutover that the ≈30-minute slice of the 2 h RTO budget covers.
+3. Point Terraform at the clone. `instance` forces replacement of the
+   `google_sql_database` and `google_sql_user` rows, so they move with the
+   instance or the plan stops on `prevent_destroy`. From `infra/` after
+   `terraform login`, list them with `terraform state list | grep '^google_sql_'`.
+   In one commit, set `name = "emisar-restore-<stamp>"` on the `emisar` instance
+   resource and add temporary `import` blocks to `database.tf`, one per listed
+   address:
+
+   ```hcl
+   import {
+     to = google_sql_database_instance.emisar
+     id = "projects/${var.project_id}/instances/emisar-restore-<stamp>"
+   }
+   import {
+     to = google_sql_database.emisar
+     id = "projects/${var.project_id}/instances/emisar-restore-<stamp>/databases/emisar"
+   }
+   import {
+     to = google_sql_user.pgaudit_owner
+     id = "${var.project_id}/emisar-restore-<stamp>/emisar"
+   }
+   import {
+     to = google_sql_user.emisar_vm[0]
+     id = "${var.project_id}/emisar-restore-<stamp>/${trimsuffix(google_service_account.vm.email, ".gserviceaccount.com")}"
+   }
+   import {
+     to = google_sql_user.database_operator[0]
+     id = "${var.project_id}/emisar-restore-<stamp>/${var.database_operator_iam_user}"
+   }
+   import {
+     to = google_sql_user.livebook[0]
+     id = "${var.project_id}/emisar-restore-<stamp>/${trimsuffix(google_service_account.livebook[0].email, ".gserviceaccount.com")}"
+   }
+   ```
+
+   The clone already holds this database and these users, so they are imported,
+   never created. The imports run in the HCP plan, where the sensitive variables
+   live; a local `terraform import` cannot evaluate them. Once CI passes, apply
+   no other run until step 4 finishes, remove the listed addresses from state in
+   one write (check with `-dry-run` first), then merge:
+
+   ```bash
+   terraform state rm google_sql_database_instance.emisar google_sql_database.emisar \
+     google_sql_user.pgaudit_owner 'google_sql_user.emisar_vm[0]' \
+     'google_sql_user.database_operator[0]' 'google_sql_user.livebook[0]'
+   ```
+
+   `state rm` only forgets; the old instance and its rows stay intact. It must
+   precede the plan, because Terraform skips an import whose address is still
+   in state.
+4. Plan and Confirm & Apply the merged commit's saved plan (rerun its
+   `deployment-plan` job if it planned before the `state rm`). It must import
+   every listed address; a `prevent_destroy` error means step 3 missed one.
+   Expect in-place updates to `pgaudit_owner` (a fresh apply-only password) and
+   to the IAM users' `database_roles` (re-asserted; the provider does not read
+   them back), replacement of the instance-scoped IAM bindings, and replacement
+   of the instance template with the clone's connection name, which rolls the
+   MIG — the application cutover that the ≈30-minute slice of the 2 h RTO
+   budget covers. Delete the `import` blocks in the next commit.
 5. Verify from outside (sign-in, a run, the audit page) and only then stop the
    old instance with `gcloud sql instances patch emisar --activation-policy
    NEVER`; keep it for the backup retention window before deleting it and
