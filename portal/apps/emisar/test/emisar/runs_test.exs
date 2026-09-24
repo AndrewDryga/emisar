@@ -4163,6 +4163,37 @@ defmodule Emisar.RunsTest do
       assert Runs.peek_run_by_id(next_pending.id).status == :pending
     end
 
+    test "refuses a queued run whose initiator lost access, so the next one dispatches", %{
+      account: account,
+      runner: runner
+    } do
+      Emisar.Runners.subscribe_runner_transport(runner)
+      {:ok, stale} = Runs.create_run(base_attrs(account.id, runner.id))
+      {:ok, next} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      Emisar.Accounts.Membership
+      |> Repo.get!(stale.initiating_membership_id)
+      |> Fixtures.Memberships.mark_membership_as_deleted()
+
+      assert Runs.dispatch_queued_for_runner(runner.id) == :ok
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+
+      refused = Runs.peek_run_by_id(stale.id)
+      assert refused.status == :refused
+      assert refused.error_message =~ "lost access before it was sent"
+
+      assert [_audited] =
+               Emisar.Audit.Event.Query.all()
+               |> Emisar.Audit.Event.Query.by_account_id(account.id)
+               |> Emisar.Audit.Event.Query.by_event_type("action_run.refused")
+               |> Repo.all()
+
+      assert Runs.dispatch_queued_for_runner(runner.id) == :ok
+      request_id = next.request_id
+      assert_receive {:cloud_to_runner, _generation, %{"request_id" => ^request_id}}, 500
+      assert Runs.peek_run_by_id(next.id).status == :sent
+    end
+
     test "leaves :running, terminal, and other-runner runs untouched (no double-exec)", %{
       account: account,
       runner: runner

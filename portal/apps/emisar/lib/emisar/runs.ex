@@ -2844,6 +2844,16 @@ defmodule Emisar.Runs do
                ) do
           :ok
         else
+          # The person who queued it can no longer dispatch it here. Left pending,
+          # it would hold every run queued behind it on this runner.
+          {:error, :initiator_no_longer_authorized} = error ->
+            mark_refused(
+              run,
+              "the member who started this run lost access before it was sent, so it never ran — dispatch it again as a member with access"
+            )
+
+            error
+
           {:error, reason} = error ->
             Logger.warning("dispatch delivery failed run=#{run.id}: #{inspect(reason)}")
             error
