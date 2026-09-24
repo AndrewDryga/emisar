@@ -1533,7 +1533,12 @@ defmodule Emisar.Auth do
     :ok =
       disconnect_live_socket_topics(Enum.map([donor.token | ended_digests], &live_socket_topic/1))
 
-    # The link has committed; a mail outage must not report it failed.
+    notify_member_linked(user, account, context)
+  end
+
+  # Best effort, like the approval emails: the link has committed, so a mail
+  # failure is logged rather than reported as a failed link.
+  defp notify_member_linked(user, account, context) do
     case Mailers.UserNotifier.deliver_member_linked(user, account, context) do
       {:ok, _sent} ->
         :ok
@@ -1542,6 +1547,10 @@ defmodule Emisar.Auth do
         Logger.warning("member_linked_notice_failed", user_id: user.id, error: inspect(reason))
         :ok
     end
+  rescue
+    error ->
+      Logger.warning("member_linked_notice_crashed", user_id: user.id, error: inspect(error))
+      :ok
   end
 
   defp lock_signing_in_user(user_id, proof, repo) do

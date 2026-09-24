@@ -897,9 +897,12 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp one_line(nil), do: nil
 
+  # Bidirectional controls carry no text; in a name a workspace typed they could
+  # reorder the sentence around it.
   defp one_line(value) do
     value
     |> to_string()
+    |> String.replace(~r/[\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u, "")
     |> String.replace(~r/[\x00-\x1F\x7F]+/u, " ")
     |> String.replace(~r/\s+/u, " ")
     |> String.trim()

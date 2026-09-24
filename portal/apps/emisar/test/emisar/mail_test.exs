@@ -259,6 +259,20 @@ defmodule Emisar.MailTest do
     end
   end
 
+  describe "workspace-typed names" do
+    test "lose bidirectional controls that could reorder the sentence around them" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account(name: "Fleet\u202Eops\u2066 Team")
+
+      UserNotifier.deliver_member_link_code(user, "tok", "ABC234", account, %RequestContext{})
+
+      assert_email_sent(fn email ->
+        email.text_body =~ "Fleetops Team" and
+          not String.contains?(email.text_body <> email.html_body, ["\u202E", "\u2066"])
+      end)
+    end
+  end
+
   describe "branded return_to threading" do
     setup do
       %{user: Fixtures.Users.create_user()}
