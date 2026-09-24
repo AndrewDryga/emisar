@@ -262,13 +262,13 @@ defmodule Emisar.MailTest do
   describe "workspace-typed names" do
     test "lose bidirectional controls that could reorder the sentence around them" do
       user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account(name: "Fleet\u202Eops\u2066 Team")
+      account = Fixtures.Accounts.create_account(name: "Fleet\u202Eops\u2066 Team\u061C 2")
 
       UserNotifier.deliver_member_link_code(user, "tok", "ABC234", account, %RequestContext{})
 
       assert_email_sent(fn email ->
-        email.text_body =~ "Fleetops Team" and
-          not String.contains?(email.text_body <> email.html_body, ["\u202E", "\u2066"])
+        email.text_body =~ "Fleetops Team 2" and
+          not String.contains?(email.text_body <> email.html_body, ["\u202E", "\u2066", "\u061C"])
       end)
     end
   end

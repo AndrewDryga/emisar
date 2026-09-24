@@ -902,7 +902,7 @@ defmodule Emisar.Mailers.UserNotifier do
   defp one_line(value) do
     value
     |> to_string()
-    |> String.replace(~r/[\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u, "")
+    |> String.replace(~r/[\x{061C}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u, "")
     |> String.replace(~r/[\x00-\x1F\x7F]+/u, " ")
     |> String.replace(~r/\s+/u, " ")
     |> String.trim()
