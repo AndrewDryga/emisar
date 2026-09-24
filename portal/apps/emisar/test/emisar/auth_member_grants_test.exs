@@ -190,6 +190,45 @@ defmodule Emisar.AuthMemberGrantsTest do
       assert Auth.session_subject_options(target, session) == []
     end
 
+    test "the same identifier under another claim never opens a sibling workspace" do
+      origin = Fixtures.Accounts.create_account(plan: "team")
+      sibling = Fixtures.Accounts.create_account(plan: "team")
+      user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: origin.id, user_id: user.id)
+      target = Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: user.id)
+      provider = Fixtures.SSO.create_identity_provider(account_id: origin.id)
+
+      sibling_provider =
+        Fixtures.SSO.create_identity_provider(
+          account_id: sibling.id,
+          issuer: provider.issuer,
+          identifier_claim: :oid
+        )
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: origin.id,
+          provider_id: provider.id,
+          user_id: user.id
+        )
+
+      Fixtures.SSO.create_user_identity(
+        account_id: sibling.id,
+        provider_id: sibling_provider.id,
+        user_id: user.id,
+        provider_identifier: identity.provider_identifier
+      )
+
+      assert {:ok, raw, _mfa?} =
+               Auth.complete_sso_account_sign_in(user, origin.id, %RequestContext{},
+                 user_identity_id: identity.id,
+                 provider_identifier: identity.provider_identifier
+               )
+
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
+      assert Auth.session_subject_options(target, session) == []
+    end
+
     test "a later trust increase does not retroactively count an old login as MFA" do
       {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       user = Fixtures.Users.create_user()
