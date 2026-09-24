@@ -97,6 +97,14 @@ defmodule Emisar.Auth.SessionGrants do
     end)
   end
 
+  def members(repo, token_id) do
+    MemberGrant.Query.by_token_id(token_id)
+    |> MemberGrant.Query.ordered_by_id()
+    |> MemberGrant.Query.with_preloaded_membership()
+    |> repo.all()
+    |> Enum.flat_map(&List.wrap(&1.membership))
+  end
+
   def account_ids(token_id) do
     MemberGrant.Query.by_token_id(token_id)
     |> MemberGrant.Query.select_account_ids()

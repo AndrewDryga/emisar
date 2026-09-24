@@ -226,9 +226,12 @@ defmodule Emisar.Auth do
   defp record_sso_sign_in(repo, destinations, context) do
     members = destinations |> Enum.map(& &1.membership) |> Enum.uniq_by(& &1.id)
     {:ok, _count} = Accounts.record_sso_sign_in_activity(repo, Enum.map(members, & &1.id))
+    insert_member_events(repo, members, &Audit.Events.member_signed_in_via_sso(&1, context))
+  end
 
+  defp insert_member_events(repo, members, event_fun) do
     Enum.reduce_while(members, {:ok, []}, fn member, {:ok, events} ->
-      case repo.insert(Audit.Events.member_signed_in_via_sso(member, context)) do
+      case repo.insert(event_fun.(member)) do
         {:ok, event} -> {:cont, {:ok, [event | events]}}
         {:error, _changeset} = error -> {:halt, error}
       end
@@ -386,6 +389,8 @@ defmodule Emisar.Auth do
   user — and only when exactly one row was deleted, so a double-submitted
   sign-out serializes on the token lock and audits once. Expired,
   removed-auth-method, and soft-deleted-user rows are still swept, silently.
+  A member-only SSO session has no personal login, so each Member it held
+  records the sign-out, as each recorded the sign-in.
 
   Returns `:ok`, including for an unknown or stale token, or `{:error, reason}`
   when the transaction fails.
@@ -405,19 +410,28 @@ defmodule Emisar.Auth do
       |> UserToken.Query.by_context("session")
 
     Multi.new()
-    |> Multi.run(:session_user, fn repo, _changes ->
+    |> Multi.run(:session_actor, fn repo, _changes ->
       case repo.peek(live_session_query) do
         %UserToken{user: %Users.User{} = user} -> {:ok, user}
+        %UserToken{user_id: nil} = session -> {:ok, SessionGrants.members(repo, session.id)}
         _dead_or_missing -> {:ok, nil}
       end
     end)
     |> Multi.delete_all(:sessions, stored_session_query)
     |> Audit.Multi.log_for_user(:audit, nil, "user.signed_out",
       extra: [context: context],
-      user_fn: fn %{session_user: user, sessions: {count, _}} ->
-        if count == 1, do: user
+      user_fn: fn
+        %{session_actor: %Users.User{} = user, sessions: {1, _}} -> user
+        _changes -> nil
       end
     )
+    |> Multi.run(:member_audit, fn
+      repo, %{session_actor: [_ | _] = members, sessions: {1, _}} ->
+        insert_member_events(repo, members, &Audit.Events.member_signed_out(&1, context))
+
+      _repo, _changes ->
+        {:ok, []}
+    end)
     |> Repo.commit_multi()
     |> case do
       {:ok, _changes} -> :ok

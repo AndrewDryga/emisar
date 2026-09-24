@@ -257,6 +257,27 @@ defmodule Emisar.MembersWithoutPersonalLoginTest do
              |> Repo.one()
   end
 
+  test "a member-only session's sign-out is audited as its Member" do
+    account = Fixtures.Accounts.create_account(plan: "team")
+    provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+    %{membership: membership, raw: raw} = signed_in_member(account, provider)
+    context = RequestContext.new(%{ip_address: "203.0.113.7", user_agent: "Firefox"})
+
+    assert Auth.complete_session_sign_out(raw, context) == :ok
+    assert Auth.fetch_session_by_token(raw) == {:error, :not_found}
+    member_id = membership.id
+
+    assert %Audit.Event{
+             actor_kind: "membership",
+             actor_id: ^member_id,
+             target_id: ^member_id,
+             ip_address: "203.0.113.7"
+           } =
+             Audit.Event.Query.all()
+             |> Audit.Event.Query.by_event_type("user.signed_out")
+             |> Repo.one()
+  end
+
   test "a member-only session reaches no other workspace and cannot switch" do
     account = Fixtures.Accounts.create_account(plan: "team")
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id)

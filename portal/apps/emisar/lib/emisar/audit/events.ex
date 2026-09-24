@@ -1716,6 +1716,22 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc """
+  A member-only SSO session signed out. One row per Member the session held,
+  mirroring its sign-in; a session with a personal login audits through
+  `Audit.user_changesets/3`.
+  """
+  def member_signed_out(%Accounts.Membership{} = member, %RequestContext{} = context) do
+    Audit.changeset(member.account_id, "user.signed_out",
+      actor_kind: "membership",
+      actor_id: member.id,
+      target_kind: "membership",
+      target_id: member.id,
+      target_label: Accounts.member_display_name(member),
+      context: context
+    )
+  end
+
   @doc "A Member JIT-provisioned by an SSO login. Actor is the system (the IdP via JIT), not a member."
   def user_provisioned_via_sso(
         %Accounts.Membership{} = member,

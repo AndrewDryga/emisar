@@ -25,6 +25,8 @@ defmodule Emisar.Auth.MemberGrant.Query do
 
   def lock_for_update(queryable), do: lock(queryable, "FOR UPDATE")
 
+  def with_preloaded_membership(queryable), do: preload(queryable, :membership)
+
   def with_joined_token(queryable) do
     with_named_binding(queryable, :grant_token, fn queryable, binding ->
       join(queryable, :inner, [member_grants: g], token in assoc(g, :user_token), as: ^binding)
