@@ -7,7 +7,7 @@ defmodule Emisar.MembersWithoutPersonalLoginTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Fixtures, OAuth, Runners, Runs, Users}
   alias Emisar.Auth.UserToken
-  alias Emisar.RequestContext
+  alias Emisar.{RequestContext, SSO}
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
 
@@ -332,6 +332,66 @@ defmodule Emisar.MembersWithoutPersonalLoginTest do
       assert Auth.Authorizer.ensure_has_permissions(subject, permission) ==
                {:error, :unauthorized}
     end
+  end
+
+  for action <- [:disabled, :deleted] do
+    test "a connection #{action} ends the keys of a Member left with no sign-in" do
+      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      %{membership: membership, subject: subject} = signed_in_member(account, provider)
+      assert {:ok, raw, _key} = ApiKeys.mint_quick_key(subject)
+
+      assert {:ok, _provider} =
+               (case unquote(action) do
+                  :disabled -> SSO.update_provider(provider, %{enabled: false}, owner_subject)
+                  :deleted -> SSO.delete_provider(provider, owner_subject)
+                end)
+
+      assert ApiKeys.peek_api_key_by_secret(raw) == nil
+      member_id = membership.id
+
+      assert [%Audit.Event{target_id: ^member_id, payload: %{"api_keys" => 1}}] =
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_event_type("membership.credentials_revoked")
+               |> Repo.all()
+    end
+  end
+
+  test "keys another sign-in, a personal login or another workspace still backs survive" do
+    {owner, account, owner_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+    first = Fixtures.SSO.create_identity_provider(account_id: account.id)
+    second = Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :openid_connect)
+    %{membership: member, subject: subject} = signed_in_member(account, first)
+
+    Fixtures.SSO.create_user_identity(
+      account_id: account.id,
+      provider_id: second.id,
+      membership: member
+    )
+
+    Fixtures.SSO.create_user_identity(
+      account_id: account.id,
+      provider_id: first.id,
+      user_id: owner.id
+    )
+
+    other = Fixtures.Accounts.create_account(plan: "team")
+
+    other_provider =
+      Fixtures.SSO.create_identity_provider(account_id: other.id, issuer: first.issuer)
+
+    %{subject: stranger} = signed_in_member(other, other_provider)
+
+    assert {:ok, member_raw, _key} = ApiKeys.mint_quick_key(subject)
+    assert {:ok, owner_raw, _key} = ApiKeys.mint_quick_key(owner_subject)
+    assert {:ok, stranger_raw, _key} = ApiKeys.mint_quick_key(stranger)
+
+    assert {:ok, _first} = SSO.update_provider(first, %{enabled: false}, owner_subject)
+    assert Enum.all?([member_raw, owner_raw, stranger_raw], &ApiKeys.peek_api_key_by_secret/1)
+
+    assert {:ok, _second} = SSO.update_provider(second, %{enabled: false}, owner_subject)
+    assert ApiKeys.peek_api_key_by_secret(member_raw) == nil
+    assert Enum.all?([owner_raw, stranger_raw], &ApiKeys.peek_api_key_by_secret/1)
   end
 
   test "a reinstated Member without a personal login signs in again; its old session stays dead" do

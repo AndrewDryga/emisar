@@ -6959,6 +6959,81 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "revoke_stranded_member_credentials/4" do
+    setup do
+      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      %{account: account, owner_subject: owner_subject, provider: provider}
+    end
+
+    # A Member without a personal login, its identity at `provider`, and a key it minted.
+    defp login_less_key(account, provider) do
+      member = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: member
+        )
+
+      raw = Fixtures.Auth.create_member_session_token!(member, identity)
+      subject = Fixtures.Subjects.unlinked_member_subject(member, raw)
+      {:ok, key_raw, key} = Emisar.ApiKeys.mint_quick_key(subject)
+      {member, key_raw, key}
+    end
+
+    test "ends a login-less Member's keys and audits the revocation once", %{
+      account: account,
+      owner_subject: owner_subject,
+      provider: provider
+    } do
+      {member, key_raw, _key} = login_less_key(account, provider)
+
+      assert {:ok, [%AuditEvent{event_type: "membership.credentials_revoked"} = event]} =
+               Accounts.revoke_stranded_member_credentials(
+                 Repo,
+                 provider,
+                 [member.id],
+                 owner_subject
+               )
+
+      assert event.target_id == member.id
+      assert Emisar.ApiKeys.peek_api_key_by_secret(key_raw) == nil
+
+      assert Accounts.revoke_stranded_member_credentials(
+               Repo,
+               provider,
+               [member.id],
+               owner_subject
+             ) == {:ok, []}
+    end
+
+    test "leaves a personal login's, a suspended Member's and another workspace's keys", %{
+      account: account,
+      owner_subject: owner_subject,
+      provider: provider
+    } do
+      {:ok, _owner_raw, owner_key} = Emisar.ApiKeys.mint_quick_key(owner_subject)
+      {suspended, _suspended_raw, suspended_key} = login_less_key(account, provider)
+      Fixtures.Memberships.suspend_membership(suspended)
+      other = Fixtures.Accounts.create_account(plan: "team")
+      other_provider = Fixtures.SSO.create_identity_provider(account_id: other.id)
+      {stranger, _stranger_raw, stranger_key} = login_less_key(other, other_provider)
+
+      assert Accounts.revoke_stranded_member_credentials(
+               Repo,
+               provider,
+               [owner_subject.membership_id, suspended.id, stranger.id],
+               owner_subject
+             ) == {:ok, []}
+
+      for key <- [owner_key, suspended_key, stranger_key] do
+        assert is_nil(Repo.reload!(key).revoked_at)
+      end
+    end
+  end
+
   describe "update_member_profile_as_admin/3" do
     test "a directory-synced member's profile is refused — the IdP owns the name" do
       account = Fixtures.Accounts.create_account()

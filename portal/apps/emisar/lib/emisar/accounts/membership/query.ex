@@ -32,6 +32,9 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_id(queryable, id),
     do: where(queryable, [memberships: m], m.id == ^id)
 
+  def without_personal_login(queryable),
+    do: where(queryable, [memberships: m], is_nil(m.user_id))
+
   @doc "The fail-closed scope: a session that may act in no account reads nothing."
   def none(queryable), do: where(queryable, false)
 

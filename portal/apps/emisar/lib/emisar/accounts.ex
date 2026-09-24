@@ -3971,6 +3971,54 @@ defmodule Emisar.Accounts do
 
   defp ensure_current_authorization_version(%Membership{}, %SSO.IdentityProvider{}), do: :ok
 
+  @doc """
+  Internal — ends the API keys and approved device grants of the listed Members
+  that have no personal login, inside the caller's transaction that disabled or
+  deleted `provider`. Such a Member signs in only through workspace SSO, so once
+  it has no usable identity left, keys it minted must not keep working. The
+  caller passes only Members left without one. Writes one
+  `membership.credentials_revoked` row per Member that lost anything.
+  """
+  def revoke_stranded_member_credentials(
+        repo,
+        %SSO.IdentityProvider{} = provider,
+        membership_ids,
+        %Subject{} = subject
+      )
+      when is_list(membership_ids) do
+    Membership.Query.authorized()
+    |> Membership.Query.by_account_id(provider.account_id)
+    |> Membership.Query.by_ids(membership_ids)
+    |> Membership.Query.without_personal_login()
+    |> Membership.Query.lock_for_update()
+    |> repo.all()
+    |> Enum.reduce_while({:ok, []}, fn member, {:ok, events} ->
+      with {:ok, counts} <- ApiKeys.revoke_credentials_for_membership(repo, member.id),
+           {:ok, events} <-
+             audit_revoked_credentials(repo, subject, member, provider, counts, events) do
+        {:cont, {:ok, events}}
+      else
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp audit_revoked_credentials(
+         _repo,
+         _subject,
+         _member,
+         _provider,
+         %{api_keys: 0, device_grants: 0},
+         events
+       ),
+       do: {:ok, events}
+
+  defp audit_revoked_credentials(repo, subject, member, provider, counts, events) do
+    event = Audit.Events.membership_credentials_revoked(subject, member, provider, counts)
+
+    with {:ok, inserted} <- repo.insert(event), do: {:ok, [inserted | events]}
+  end
+
   # -- Directory authorization bookkeeping -----------------------------
 
   @doc "Internal - atomically mark a provider's affected memberships fail-closed until reconciliation."

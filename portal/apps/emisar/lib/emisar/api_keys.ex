@@ -1353,7 +1353,8 @@ defmodule Emisar.ApiKeys do
   `membership_id` through the caller's transaction `repo`.
 
   Accounts calls this while it holds the membership lock, before a suspension,
-  removal, or permission reduction commits. That keeps the membership write,
+  removal, or permission reduction commits, and when a Member without a personal
+  login loses its last usable SSO identity to a disabled or deleted connection. That keeps the membership write,
   its audit row, API-key revocation, and device-grant denial all-or-nothing.
   Browser/session cleanup remains a post-commit side effect. The membership
   lifecycle audit is the bulk-revocation audit anchor.

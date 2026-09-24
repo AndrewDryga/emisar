@@ -245,7 +245,9 @@ defmodule Emisar.Audit.Event.Query do
        {"sso.existing_user_linked", "Identity linked to an existing user",
         "SSO identity linked to an existing user"},
        {"sso.link_request_approved", "Link request approved", "SSO link request approved"},
-       {"sso.link_request_dismissed", "Link request dismissed", "SSO link request dismissed"}
+       {"sso.link_request_dismissed", "Link request dismissed", "SSO link request dismissed"},
+       {"membership.credentials_revoked", "Member credentials revoked",
+        "Member API keys revoked (SSO connection gone)"}
      ]},
     {"Audit",
      [
@@ -1048,6 +1050,9 @@ defmodule Emisar.Audit.Event.Query do
     "sso.provider_updated" =>
       {true, true, true, "An admin changed an identity provider's configuration."},
     "sso.provider_deleted" => {true, true, true, "An admin removed an identity provider."},
+    "membership.credentials_revoked" =>
+      {true, true, true,
+       "An admin disabled or removed the SSO connection a member without a personal login signs in through, so its API keys ended."},
     "sso.link_request_approved" =>
       {true, true, true, "An admin approved an SSO request and created a user."},
     "sso.link_request_dismissed" =>

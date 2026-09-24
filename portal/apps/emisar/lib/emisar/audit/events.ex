@@ -223,6 +223,34 @@ defmodule Emisar.Audit.Events do
   def membership_reinstated(%Subject{} = subject, %Accounts.Membership{} = membership),
     do: member_event(subject, membership, "membership.reinstated")
 
+  @doc """
+  A Member without a personal login lost its API keys and approved device
+  grants because the SSO connection it signs in through was disabled or deleted.
+  """
+  def membership_credentials_revoked(
+        %Subject{} = subject,
+        %Accounts.Membership{} = membership,
+        %SSO.IdentityProvider{} = provider,
+        %{api_keys: api_keys, device_grants: device_grants}
+      ) do
+    Audit.changeset(
+      membership.account_id,
+      "membership.credentials_revoked",
+      actor(subject) ++
+        [
+          target_kind: "membership",
+          target_id: membership.id,
+          target_label: Accounts.member_display_name(membership),
+          payload: %{
+            provider_id: provider.id,
+            provider_kind: to_string(provider.kind),
+            api_keys: api_keys,
+            device_grants: device_grants
+          }
+        ]
+    )
+  end
+
   def membership_removed(%Subject{} = subject, %Accounts.Membership{} = membership) do
     Audit.changeset(
       membership.account_id,

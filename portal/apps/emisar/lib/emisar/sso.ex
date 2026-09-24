@@ -1282,6 +1282,34 @@ defmodule Emisar.SSO do
     account_requires_sso?(identity.account_id) and not another_usable_identity?(identity)
   end
 
+  # Members of this connection left with no usable identity once it is disabled
+  # or deleted. This runs after the provider write in the same transaction, so
+  # the connection itself no longer counts as usable.
+  defp revoke_stranded_member_credentials(repo, %IdentityProvider{} = provider, subject) do
+    bound =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.by_account_id(provider.account_id)
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> UserIdentity.Query.select_membership_ids()
+      |> repo.all()
+
+    usable =
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.provider_identifier_active()
+      |> UserIdentity.Query.by_account_id(provider.account_id)
+      |> UserIdentity.Query.by_membership_ids(bound)
+      |> UserIdentity.Query.with_enabled_provider()
+      |> UserIdentity.Query.select_membership_ids()
+      |> repo.all()
+
+    Accounts.revoke_stranded_member_credentials(
+      repo,
+      provider,
+      Enum.uniq(bound) -- usable,
+      subject
+    )
+  end
+
   defp another_usable_identity?(identity) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.provider_identifier_active()
@@ -1381,6 +1409,15 @@ defmodule Emisar.SSO do
         else
           {:ok, %{socket_topics: []}}
         end
+      end)
+      |> Multi.run(:stranded_credentials, fn repo,
+                                             %{
+                                               provider: provider,
+                                               update_target: %{changeset: changeset}
+                                             } ->
+        if Ecto.Changeset.get_change(changeset, :enabled) == false,
+          do: revoke_stranded_member_credentials(repo, provider, subject),
+          else: {:ok, []}
       end)
       |> Multi.insert(:audit, fn %{
                                    update_target: %{provider: before},
@@ -1483,6 +1520,9 @@ defmodule Emisar.SSO do
       end)
       |> Multi.run(:session_effect, fn repo, %{provider: provider} ->
         delete_provider_session_routes(provider, repo)
+      end)
+      |> Multi.run(:stranded_credentials, fn repo, %{provider: provider} ->
+        revoke_stranded_member_credentials(repo, provider, subject)
       end)
       |> Multi.insert(:audit, fn %{provider: provider} ->
         Audit.Events.identity_provider_deleted(subject, provider)
@@ -1981,6 +2021,9 @@ defmodule Emisar.SSO do
   #
   # Session rows carry the identity that authenticated them, so removal is exact:
   # unrelated magic-link and other-provider credentials and sockets survive.
+  # API keys end only for a Member without a personal login that is left with no
+  # usable identity (`revoke_stranded_member_credentials/3`); a personal login
+  # still backs the keys of a Member that has one.
   # A pending request is a person waiting on an admin. Once the connection they
   # arrived through is gone, approval is impossible — `approve_link_request` can
   # no longer fetch the provider — so leaving them queued showed admins a
