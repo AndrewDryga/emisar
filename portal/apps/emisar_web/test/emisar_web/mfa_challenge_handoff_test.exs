@@ -14,7 +14,7 @@ defmodule EmisarWeb.MfaChallengeHandoffTest do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
       assert {:ok, proof} =
-               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert {:ok, ^proof} = proof |> MfaChallengeHandoff.sign() |> MfaChallengeHandoff.verify()
       assert Auth.mfa_proof_user_id(proof) == user.id

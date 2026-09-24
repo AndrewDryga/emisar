@@ -116,7 +116,7 @@ defmodule Emisar.AuthMfaSessionBindingTest do
 
       assert Auth.enable_mfa(
                secret,
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                proof,
                Crypto.hash(raw_b),
                subject_a

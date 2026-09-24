@@ -41,7 +41,7 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
 
           Auth.enable_mfa(
             secret,
-            NimbleTOTP.verification_code(secret),
+            Fixtures.Auth.totp_code(secret),
             proof,
             Crypto.hash(session_token),
             subject
@@ -79,7 +79,7 @@ defmodule Emisar.AuthMfaSessionConcurrencyTest do
     unboxed_owner(fn user, account, subject ->
       secret = Auth.generate_mfa_secret()
       proof = Fixtures.Users.mfa_enrollment_proof(subject)
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
 
       tokens = %{
         first: Fixtures.Auth.create_session_token!(user, :magic_link, nil),

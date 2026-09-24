@@ -583,7 +583,7 @@ defmodule Emisar.UsersTest do
     end
 
     test "a valid OTP verifies and stamps the consumed bucket", %{user: user, secret: secret} do
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
 
       assert {:ok, %User{}} = Users.verify_and_consume_mfa(user.id, otp, [])
       assert %DateTime{} = Repo.reload!(user).mfa_last_used_at
@@ -611,7 +611,7 @@ defmodule Emisar.UsersTest do
       user: user,
       secret: secret
     } do
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
 
       {:ok, _} =
         Users.update_user_mfa(user.id, nil, nil, [],

@@ -136,7 +136,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     # the secret from it to play the authenticator's part.
     assert [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
     secret = Base.decode32!(encoded, padding: false)
-    otp = NimbleTOTP.verification_code(secret)
+    otp = Fixtures.Auth.totp_code(secret)
 
     # code_input's hidden field is client-owned, so render_submit can't set
     # it — drive the submit event directly (same as the profile MFA tests).
@@ -248,7 +248,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     assert html =~ "Enter an authenticator or recovery code to continue."
 
-    render_hook(lv, "verify_totp", %{"otp" => NimbleTOTP.verification_code(secret)})
+    render_hook(lv, "verify_totp", %{"otp" => Fixtures.Auth.totp_code(secret)})
     assert_redirect(lv, "/app")
 
     assert {:ok, %{user: current_user} = current_session} =
@@ -686,14 +686,14 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   defp submit_concurrent_mfa_enrollment(lv, secret) do
     html =
       render_hook(lv, "confirm_mfa", %{
-        "mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}
+        "mfa" => %{"otp" => Fixtures.Auth.totp_code(secret)}
       })
 
     case html do
       html when is_binary(html) ->
         if html =~ "That code didn" do
           render_hook(lv, "confirm_mfa", %{
-            "mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}
+            "mfa" => %{"otp" => Fixtures.Auth.totp_code(secret)}
           })
         else
           html

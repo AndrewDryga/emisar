@@ -51,7 +51,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/sign_in/mfa")
 
       assert {:error, {:redirect, %{to: to}}} =
-               render_hook(lv, "verify_totp", %{"otp" => NimbleTOTP.verification_code(secret)})
+               render_hook(lv, "verify_totp", %{"otp" => Fixtures.Auth.totp_code(secret)})
 
       assert to =~ "/sign_in/mfa/complete?handoff="
     end

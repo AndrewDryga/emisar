@@ -781,7 +781,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert is_nil(Repo.reload!(member).user_id)
 
       {:ok, proof} =
-        Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+        Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       completed =
         challenged
@@ -884,7 +884,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     defp verified_handoff(user, secret) do
       {:ok, proof} =
-        Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+        Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       MfaChallengeHandoff.sign(proof)
     end

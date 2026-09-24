@@ -1433,7 +1433,7 @@ defmodule Emisar.AuthTest do
         assert_nothing_linked(fixture, sessions_before)
 
         code =
-          if factor == :totp, do: NimbleTOTP.verification_code(secret), else: recovery_code
+          if factor == :totp, do: Fixtures.Auth.totp_code(secret), else: recovery_code
 
         assert {:ok, proof} = Auth.verify_mfa_challenge(user, {factor, code})
 
@@ -1490,7 +1490,7 @@ defmodule Emisar.AuthTest do
       {user, secret, _recovery_code} = mfa_user()
       factor_id = verify_magic_link(user, member_link: fixture.link)
       sessions_before = session_rows()
-      code = NimbleTOTP.verification_code(secret)
+      code = Fixtures.Auth.totp_code(secret)
       wrong = if code == "000000", do: "111111", else: "000000"
 
       assert Auth.verify_mfa_challenge(user, {:totp, wrong}) == {:error, :invalid}
@@ -1677,7 +1677,7 @@ defmodule Emisar.AuthTest do
       verified_token_id = verify_magic_link(user)
 
       assert {:ok, proof} =
-               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert {:ok, %User{} = signed_in, token, :no_target, false} =
                Auth.complete_magic_link_mfa_sign_in(
@@ -1727,7 +1727,7 @@ defmodule Emisar.AuthTest do
       verified_token_id = verify_magic_link(user)
 
       assert {:ok, proof} =
-               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert {:ok, _user, token, :no_target, false} =
                Auth.complete_magic_link_mfa_sign_in(
@@ -1756,7 +1756,7 @@ defmodule Emisar.AuthTest do
       verified_token_id = verify_magic_link(user)
 
       assert {:ok, proof} =
-               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert {:ok, _user, _token, {:member, landed}, false} =
                Auth.complete_magic_link_mfa_sign_in(
@@ -1777,7 +1777,7 @@ defmodule Emisar.AuthTest do
       verified_token_id = verify_magic_link(user)
 
       assert {:ok, proof} =
-               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       Fixtures.Users.update_email(user, Fixtures.Random.unique_email())
 
@@ -1801,7 +1801,7 @@ defmodule Emisar.AuthTest do
       verified_token_id = verify_magic_link(user)
 
       assert {:ok, proof} =
-               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert {:ok, _user} = Auth.disable_mfa(code, subject)
 
@@ -1826,7 +1826,7 @@ defmodule Emisar.AuthTest do
       verified_token_id = verify_magic_link(user)
 
       assert {:ok, proof} =
-               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert {:ok, _user} = Auth.disable_mfa(code, subject)
       Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
@@ -2218,7 +2218,7 @@ defmodule Emisar.AuthTest do
       {magic_id, magic_nonce, magic_secret} = request_magic_link(enrolled)
       assert {:ok, _user} = Auth.verify_magic_link(magic_id, magic_secret, magic_nonce)
       old_confirmation = Fixtures.Auth.create_confirmation_token!(enrolled)
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
 
       assert {:error, %Ecto.Changeset{}} =
                change_email_with_proofs(existing.email, otp, subject)
@@ -2254,7 +2254,7 @@ defmodule Emisar.AuthTest do
 
       {:ok, :totp} = Auth.begin_email_change("new@example.com", subject)
 
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
 
       assert {:ok, %User{email: "new@example.com"}} =
                change_email_with_proofs("new@example.com", otp, subject)
@@ -2284,7 +2284,7 @@ defmodule Emisar.AuthTest do
 
       # The disable misses spent the window, so the genuine TOTP is refused
       # before verification: the email stands and the code was never consumed.
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
       assert change_email_with_proofs("new@example.com", otp, subject) == {:error, :rate_limited}
 
       reloaded = Repo.reload!(user)
@@ -2530,7 +2530,7 @@ defmodule Emisar.AuthTest do
       assert {:ok, %User{id: id, mfa_enabled_at: %DateTime{}}, codes} =
                Auth.enable_mfa(
                  secret,
-                 NimbleTOTP.verification_code(secret),
+                 Fixtures.Auth.totp_code(secret),
                  proof,
                  Crypto.hash(session_token),
                  subject
@@ -2548,7 +2548,7 @@ defmodule Emisar.AuthTest do
     } do
       assert Auth.enable_mfa(
                secret,
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                "forged",
                Crypto.hash(session_token),
                subject
@@ -2590,7 +2590,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.enable_mfa(
                secret,
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                proof,
                Crypto.hash(session_token),
                subject
@@ -2615,7 +2615,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.enable_mfa(
                secret,
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                expired,
                Crypto.hash(session_token),
                subject
@@ -2728,7 +2728,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.enable_mfa(
                secret,
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                proof,
                Crypto.hash(session_token),
                subject
@@ -2749,7 +2749,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.enable_mfa(
                secret,
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                proof,
                Crypto.hash(session_token),
                subject
@@ -2770,7 +2770,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.enable_mfa(
                secret,
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                proof,
                Crypto.hash(foreign_token),
                subject
@@ -2794,7 +2794,7 @@ defmodule Emisar.AuthTest do
 
       assert Auth.enable_mfa(
                secret,
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                proof,
                Crypto.hash(raw_token),
                subject
@@ -2830,7 +2830,7 @@ defmodule Emisar.AuthTest do
       refute subject.actor.mfa_enabled_at
 
       assert {:ok, %User{mfa_secret: nil, mfa_enabled_at: nil, mfa_recovery_codes: []}} =
-               Auth.disable_mfa(NimbleTOTP.verification_code(secret), subject)
+               Auth.disable_mfa(Fixtures.Auth.totp_code(secret), subject)
     end
 
     test "accepts a valid recovery code", %{secret: secret, subject: subject} do
@@ -2901,7 +2901,7 @@ defmodule Emisar.AuthTest do
       subject: subject
     } do
       {:ok, _user, [old_code | _]} = Fixtures.Users.enroll_mfa(secret, subject)
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
 
       assert {:ok, %User{mfa_enabled_at: %DateTime{}} = user, new_codes} =
                Auth.regenerate_mfa_recovery_codes(otp, subject)
@@ -2950,7 +2950,7 @@ defmodule Emisar.AuthTest do
       subject: subject
     } do
       {:ok, user, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
 
       results =
         otp
@@ -2997,7 +2997,7 @@ defmodule Emisar.AuthTest do
       end
 
       assert Auth.regenerate_mfa_recovery_codes(
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                subject
              ) == {:error, :rate_limited}
 
@@ -3019,7 +3019,7 @@ defmodule Emisar.AuthTest do
       )
 
       assert Auth.regenerate_mfa_recovery_codes(
-               NimbleTOTP.verification_code(secret),
+               Fixtures.Auth.totp_code(secret),
                subject
              ) == {:error, :mfa_not_enabled}
 
@@ -3149,7 +3149,7 @@ defmodule Emisar.AuthTest do
     } do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
       assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:totp, otp})
 
       user = Repo.reload!(user)
@@ -3180,7 +3180,7 @@ defmodule Emisar.AuthTest do
       assert Auth.verify_mfa_challenge(user, {:totp, "abcdef"}) == {:error, :invalid}
 
       # The genuine current code is untouched by the failed attempt.
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
       assert {:ok, _proof} = Auth.verify_mfa_challenge(Repo.reload!(user), {:totp, otp})
     end
 
@@ -3191,7 +3191,7 @@ defmodule Emisar.AuthTest do
       # `user` is the pre-disable snapshot — it still carries the live secret +
       # mfa_enabled_at, exactly the stale struct a sign-in attempt would hold.
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
 
       {:ok, _} = Auth.disable_mfa(otp, subject)
 
@@ -3203,7 +3203,7 @@ defmodule Emisar.AuthTest do
     test "an OTP for a rotated secret can't complete sign-in (MAJOR-4)", %{subject: subject} do
       secret1 = Auth.generate_mfa_secret()
       {user, _codes} = Fixtures.Users.enable_mfa!(secret1, subject)
-      otp1 = NimbleTOTP.verification_code(secret1)
+      otp1 = Fixtures.Auth.totp_code(secret1)
 
       # Rotate the secret out from under the in-flight verify (disable + re-enable).
       {:ok, _} = Auth.disable_mfa(otp1, subject)
@@ -3253,7 +3253,7 @@ defmodule Emisar.AuthTest do
 
       # The window is exhausted: even the genuine current code is refused, and
       # switching to the recovery factor doesn't buy more attempts.
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
       assert Auth.verify_mfa_challenge(user, {:totp, otp}) == {:error, :rate_limited}
 
       assert Auth.verify_mfa_challenge(user, {:recovery_code, "not-a-real-code"}) ==
@@ -3277,7 +3277,7 @@ defmodule Emisar.AuthTest do
 
       for _ <- 1..6, do: Auth.verify_mfa_challenge(user, {:totp, "000000"})
 
-      other_otp = NimbleTOTP.verification_code(other_secret)
+      other_otp = Fixtures.Auth.totp_code(other_secret)
       assert {:ok, _proof} = Auth.verify_mfa_challenge(other_user, {:totp, other_otp})
     end
 
@@ -3306,7 +3306,7 @@ defmodule Emisar.AuthTest do
 
       assert {:ok, _proof} =
                Auth.verify_current_session_mfa_challenge(
-                 {:totp, NimbleTOTP.verification_code(secret)},
+                 {:totp, Fixtures.Auth.totp_code(secret)},
                  subject
                )
 
@@ -3467,7 +3467,7 @@ defmodule Emisar.AuthTest do
             # only when generating and consuming the code straddled a bucket;
             # an invalid code within the same bucket must still fail the test.
             assert div(System.os_time(:second), 30) != div(generated_at, 30)
-            Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+            Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
           result ->
             result
@@ -3554,7 +3554,7 @@ defmodule Emisar.AuthTest do
       assert {:ok, proof} =
                Auth.verify_mfa_challenge(
                  user,
-                 {:totp, NimbleTOTP.verification_code(secret)}
+                 {:totp, Fixtures.Auth.totp_code(secret)}
                )
 
       {other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
@@ -3599,7 +3599,7 @@ defmodule Emisar.AuthTest do
       assert {:ok, proof} =
                Auth.verify_mfa_challenge(
                  user,
-                 {:totp, NimbleTOTP.verification_code(secret)}
+                 {:totp, Fixtures.Auth.totp_code(secret)}
                )
 
       {wrong_context_token, digest} = Crypto.session_token()
@@ -3657,7 +3657,7 @@ defmodule Emisar.AuthTest do
       {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
 
       assert {:ok, proof} =
-               Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert Auth.mfa_proof_user_id(proof) == user.id
     end
@@ -3733,7 +3733,7 @@ defmodule Emisar.AuthTest do
 
     {:ok, local_proof} =
       Auth.verify_current_session_mfa_challenge(
-        {:totp, NimbleTOTP.verification_code(secret)},
+        {:totp, Fixtures.Auth.totp_code(secret)},
         subject
       )
 

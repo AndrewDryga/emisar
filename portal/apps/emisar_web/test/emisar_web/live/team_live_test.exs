@@ -3186,7 +3186,7 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "authenticator and recovery codes will be removed"
 
       render_hook(lv, "verify_reset_totp", %{
-        "otp" => NimbleTOTP.verification_code(secret)
+        "otp" => Fixtures.Auth.totp_code(secret)
       })
 
       assert_redirect(lv, ~p"/app/#{account}/settings/team")

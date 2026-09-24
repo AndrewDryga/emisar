@@ -89,7 +89,7 @@ defmodule Emisar.AuthAuditTest do
       proof: proof,
       session_token: session_token
     } do
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
 
       assert {:ok, _updated, _codes} =
                Auth.enable_mfa(secret, otp, proof, Crypto.hash(session_token), subject)
@@ -108,14 +108,14 @@ defmodule Emisar.AuthAuditTest do
       {:ok, _enabled, _} =
         Auth.enable_mfa(
           secret,
-          NimbleTOTP.verification_code(secret),
+          Fixtures.Auth.totp_code(secret),
           proof,
           Crypto.hash(session_token),
           subject
         )
 
       :ok = Audit.subscribe_account_audit(account.id)
-      assert {:ok, _} = Auth.disable_mfa(NimbleTOTP.verification_code(secret), subject)
+      assert {:ok, _} = Auth.disable_mfa(Fixtures.Auth.totp_code(secret), subject)
       assert [event] = events_of(account, "user.mfa_disabled")
       assert event.actor_id == subject.membership_id
       assert_receive {:audit_event, ^event}
@@ -132,7 +132,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, _} =
         Auth.enable_mfa(
           secret,
-          NimbleTOTP.verification_code(secret),
+          Fixtures.Auth.totp_code(secret),
           proof,
           Crypto.hash(session_token),
           subject
@@ -154,7 +154,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, _} =
         Auth.enable_mfa(
           secret,
-          NimbleTOTP.verification_code(secret),
+          Fixtures.Auth.totp_code(secret),
           proof,
           Crypto.hash(session_token),
           subject
@@ -163,7 +163,7 @@ defmodule Emisar.AuthAuditTest do
       assert {:ok, _proof} =
                Auth.verify_mfa_challenge(
                  enabled,
-                 {:totp, NimbleTOTP.verification_code(secret)}
+                 {:totp, Fixtures.Auth.totp_code(secret)}
                )
 
       assert [event] = events_of(account, "user.mfa_verified")
@@ -181,7 +181,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, _} =
         Auth.enable_mfa(
           secret,
-          NimbleTOTP.verification_code(secret),
+          Fixtures.Auth.totp_code(secret),
           proof,
           Crypto.hash(session_token),
           subject
@@ -190,7 +190,7 @@ defmodule Emisar.AuthAuditTest do
       assert {:ok, mfa_proof} =
                Auth.verify_mfa_challenge(
                  enabled,
-                 {:totp, NimbleTOTP.verification_code(secret)}
+                 {:totp, Fixtures.Auth.totp_code(secret)}
                )
 
       assert {:ok, _session} =
@@ -218,7 +218,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, codes} =
         Auth.enable_mfa(
           secret,
-          NimbleTOTP.verification_code(secret),
+          Fixtures.Auth.totp_code(secret),
           proof,
           Crypto.hash(session_token),
           subject
@@ -240,7 +240,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, _} =
         Auth.enable_mfa(
           secret,
-          NimbleTOTP.verification_code(secret),
+          Fixtures.Auth.totp_code(secret),
           proof,
           Crypto.hash(session_token),
           subject
@@ -266,7 +266,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, enabled, codes} =
         Auth.enable_mfa(
           secret,
-          NimbleTOTP.verification_code(secret),
+          Fixtures.Auth.totp_code(secret),
           proof,
           Crypto.hash(session_token),
           subject
@@ -321,7 +321,7 @@ defmodule Emisar.AuthAuditTest do
       {:ok, _enabled, _} =
         Auth.enable_mfa(
           secret,
-          NimbleTOTP.verification_code(secret),
+          Fixtures.Auth.totp_code(secret),
           proof,
           Crypto.hash(session_token),
           subject
@@ -330,7 +330,7 @@ defmodule Emisar.AuthAuditTest do
       :ok = Audit.subscribe_account_audit(account.id)
 
       {:ok, _, _codes} =
-        Auth.regenerate_mfa_recovery_codes(NimbleTOTP.verification_code(secret), subject)
+        Auth.regenerate_mfa_recovery_codes(Fixtures.Auth.totp_code(secret), subject)
 
       assert [event] = events_of(account, "user.mfa_recovery_codes_regenerated")
       assert event.actor_id == subject.membership_id
@@ -350,7 +350,7 @@ defmodule Emisar.AuthAuditTest do
         assert {:ok, enabled, [code | _]} =
                  Auth.enable_mfa(
                    secret,
-                   NimbleTOTP.verification_code(secret),
+                   Fixtures.Auth.totp_code(secret),
                    proof,
                    Crypto.hash(session_token),
                    subject

@@ -110,13 +110,9 @@ defmodule Emisar.Fixtures.Users do
 
   @doc """
   Enrolls TOTP MFA through the real current-inbox proof and returns its tagged result
-  (`{:ok, user, recovery_codes}` / `{:error, reason}`). Generating a code with
-  `NimbleTOTP.verification_code/1` and validating it inside `enable_mfa` reads the
-  clock twice; if a 30s window boundary falls between the two reads the code is
-  already stale and `enable_mfa` returns `{:error, :invalid_otp}` — a rare flake.
-  Retry once across the boundary: a second straddle can't happen microseconds later.
-  A test asserting `enable_mfa`'s success contract calls this directly; `enable_mfa!`
-  wraps it for setup sites that just need an MFA-enabled user.
+  (`{:ok, user, recovery_codes}` / `{:error, reason}`). A test asserting
+  `enable_mfa`'s success contract calls this directly; `enable_mfa!` wraps it for
+  setup sites that just need an MFA-enabled user.
   """
   def enroll_mfa(secret, %Subject{} = subject, opts \\ []) when is_binary(secret) do
     {session_token, disposable_session?} =
@@ -145,25 +141,13 @@ defmodule Emisar.Fixtures.Users do
       proof = mfa_enrollment_proof(subject)
       session_digest = Emisar.Crypto.hash(session_token)
 
-      case Emisar.Auth.enable_mfa(
-             secret,
-             NimbleTOTP.verification_code(secret),
-             proof,
-             session_digest,
-             subject
-           ) do
-        {:error, :invalid_otp} ->
-          Emisar.Auth.enable_mfa(
-            secret,
-            NimbleTOTP.verification_code(secret),
-            proof,
-            session_digest,
-            subject
-          )
-
-        enrolled ->
-          enrolled
-      end
+      Emisar.Auth.enable_mfa(
+        secret,
+        Fixtures.Auth.totp_code(secret),
+        proof,
+        session_digest,
+        subject
+      )
     after
       if disposable_session?, do: Emisar.Auth.delete_session_token(session_token)
     end

@@ -8865,7 +8865,7 @@ defmodule Emisar.AccountsTest do
     proof
   end
 
-  defp current_totp, do: NimbleTOTP.verification_code(mfa_reset_secret())
+  defp current_totp, do: Fixtures.Auth.totp_code(mfa_reset_secret())
   defp mfa_reset_secret, do: "JBSWY3DPEHPK3PXP"
 
   defp support_subject(account) do

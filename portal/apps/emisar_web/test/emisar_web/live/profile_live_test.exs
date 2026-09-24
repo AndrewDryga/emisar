@@ -616,7 +616,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html =
         render_hook(lv, "confirm_email_change", %{
-          "email_step" => %{"code" => NimbleTOTP.verification_code(secret)}
+          "email_step" => %{"code" => Fixtures.Auth.totp_code(secret)}
         })
 
       assert html =~ "Your email has not changed yet."
@@ -712,7 +712,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       end
 
       render_hook(lv, "confirm_email_change", %{
-        "email_step" => %{"code" => NimbleTOTP.verification_code(secret)}
+        "email_step" => %{"code" => Fixtures.Auth.totp_code(secret)}
       })
 
       # The refusal renders at the code input and the step stays open to retry.
@@ -1518,7 +1518,7 @@ defmodule EmisarWeb.ProfileLiveTest do
           case @event do
             "confirm_mfa" ->
               secret = lv |> begin_mfa_enrollment() |> mfa_secret_from()
-              %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}}
+              %{"mfa" => %{"otp" => Fixtures.Auth.totp_code(secret)}}
 
             event when event in ["resend_mfa_enrollment_email", "verify_mfa_enrollment_email"] ->
               render_click(lv, "start_mfa", %{})
@@ -2075,7 +2075,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       render_submit(lv, "regenerate_recovery_codes", %{
         "mfa_recovery_regeneration" => %{
-          "code" => NimbleTOTP.verification_code(secret)
+          "code" => Fixtures.Auth.totp_code(secret)
         }
       })
 
@@ -2104,7 +2104,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       html =
         render_submit(lv, "regenerate_recovery_codes", %{
           "mfa_recovery_regeneration" => %{
-            "code" => NimbleTOTP.verification_code(secret)
+            "code" => Fixtures.Auth.totp_code(secret)
           }
         })
 
@@ -2158,7 +2158,7 @@ defmodule EmisarWeb.ProfileLiveTest do
         assert Auth.verify_mfa_challenge(enrolled, {:totp, "000000"}) == {:error, :invalid}
       end
 
-      otp = NimbleTOTP.verification_code(secret)
+      otp = Fixtures.Auth.totp_code(secret)
       html = render_submit(lv, "disable_mfa", %{"mfa_disable" => %{"code" => otp}})
 
       # The refusal renders at the code input and the step stays open to retry.
@@ -2255,7 +2255,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       html
     else
       render_submit(lv, "regenerate_recovery_codes", %{
-        "mfa_recovery_regeneration" => %{"code" => NimbleTOTP.verification_code(secret)}
+        "mfa_recovery_regeneration" => %{"code" => Fixtures.Auth.totp_code(secret)}
       })
     end
   end
@@ -2268,12 +2268,12 @@ defmodule EmisarWeb.ProfileLiveTest do
   # flash, so a second submit with a fresh code lands in a stable window.
   defp submit_mfa_enrollment(lv, secret) do
     html =
-      render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
+      render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => Fixtures.Auth.totp_code(secret)}})
 
     if html =~ "MFA enabled." do
       html
     else
-      render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}})
+      render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => Fixtures.Auth.totp_code(secret)}})
     end
   end
 
@@ -2283,14 +2283,14 @@ defmodule EmisarWeb.ProfileLiveTest do
   defp submit_concurrent_mfa_enrollment(lv, secret) do
     html =
       render_hook(lv, "confirm_mfa", %{
-        "mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}
+        "mfa" => %{"otp" => Fixtures.Auth.totp_code(secret)}
       })
 
     case html do
       html when is_binary(html) ->
         if html =~ "That code didn" do
           render_hook(lv, "confirm_mfa", %{
-            "mfa" => %{"otp" => NimbleTOTP.verification_code(secret)}
+            "mfa" => %{"otp" => Fixtures.Auth.totp_code(secret)}
           })
         else
           html

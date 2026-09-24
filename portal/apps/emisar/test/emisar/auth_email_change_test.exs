@@ -218,7 +218,7 @@ defmodule Emisar.AuthEmailChangeTest do
       assert {:ok, proof} =
                Auth.confirm_email_change(
                  "new@example.test",
-                 NimbleTOTP.verification_code(secret),
+                 Fixtures.Auth.totp_code(secret),
                  digest,
                  subject
                )
@@ -241,7 +241,7 @@ defmodule Emisar.AuthEmailChangeTest do
       assert {:ok, next_proof} =
                Auth.confirm_email_change(
                  "another@example.test",
-                 NimbleTOTP.verification_code(secret),
+                 Fixtures.Auth.totp_code(secret),
                  digest,
                  subject
                )

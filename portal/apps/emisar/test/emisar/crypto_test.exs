@@ -226,7 +226,7 @@ defmodule Emisar.CryptoTest do
     # replay guard lives in Users.verify_and_consume_mfa under a row lock.
     test "accepts the same code repeatedly — no replay guard here" do
       secret = Crypto.totp_secret()
-      code = NimbleTOTP.verification_code(secret)
+      code = Emisar.Fixtures.Auth.totp_code(secret)
 
       assert Crypto.valid_totp?(secret, code)
       assert Crypto.valid_totp?(secret, code)

@@ -105,7 +105,7 @@ defmodule Emisar.SSOIdentityLinkTest do
                Auth.confirm_oidc_identity_step_up(
                  context.provider.id,
                  :link,
-                 NimbleTOTP.verification_code(secret),
+                 Fixtures.Auth.totp_code(secret),
                  context.subject
                )
 

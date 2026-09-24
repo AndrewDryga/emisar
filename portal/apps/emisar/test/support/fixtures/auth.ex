@@ -10,6 +10,21 @@ defmodule Emisar.Fixtures.Auth do
   alias Emisar.Repo
   alias Emisar.Users.User
 
+  @doc """
+  The current TOTP code, never taken in the last two seconds of its 30-second
+  step. A code is valid only within its own step, so near the end of one this
+  waits for the next rather than hand a test a code that goes stale before the
+  server checks it.
+  """
+  def totp_code(secret) when is_binary(secret) do
+    left_ms = 30_000 - rem(System.os_time(:millisecond), 30_000)
+    # A wall-clock wait, not synchronization: nothing can be received to mark
+    # the start of the next step.
+    # credo:disable-for-next-line Emisar.Checks.TestNoProcessSleep
+    if left_ms < 2_000, do: Process.sleep(left_ms + 10)
+    NimbleTOTP.verification_code(secret)
+  end
+
   @doc "Extracts the six-character code from a transactional email's dedicated code line."
   def code_from_email(%{text_body: text_body}) when is_binary(text_body) do
     [_, code] = Regex.run(~r/^    ([0-9A-Z]{6})$/m, text_body)
