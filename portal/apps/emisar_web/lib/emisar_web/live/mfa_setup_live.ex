@@ -8,12 +8,13 @@ defmodule EmisarWeb.MfaSetupLive do
   Enrollment first requires an explicit current-inbox verification, then
   confirms a TOTP code, shows the recovery codes once, and continues to /app.
   Voluntary management (disable, regenerate codes) stays on the profile page.
-  A Member without a personal login has no local factor to set up; only its
-  identity provider can satisfy the requirement.
+  A Member without a personal login has no local factor: it links a personal
+  login first (the factor belongs to that login), or its identity provider
+  satisfies the requirement.
   """
   use EmisarWeb, :live_view
   alias Emisar.Auth
-  alias EmisarWeb.{MfaEnrollment, MfaErrors, UserAuth}
+  alias EmisarWeb.{MemberLinkHandoff, MfaEnrollment, MfaErrors, UserAuth}
 
   @email_unavailable_error "Your profile has no email address. Ask your workspace administrator for help, or contact support@emisar.dev."
   @email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
@@ -40,7 +41,8 @@ defmodule EmisarWeb.MfaSetupLive do
     {:ok,
      socket
      |> assign(:page_title, "Multi-factor authentication required")
-     |> assign(:mfa_mode, :no_personal_login)}
+     |> assign(:mfa_mode, :no_personal_login)
+     |> assign(:member_link_handoff, MemberLinkHandoff.sign(socket.assigns.current_subject))}
   end
 
   defp mount_required_mfa(socket, user) do
@@ -79,13 +81,18 @@ defmodule EmisarWeb.MfaSetupLive do
             Enter an authenticator or recovery code to continue.
           <% :no_personal_login -> %>
             Your identity provider sign-in did not verify a second factor, and your membership
-            in this workspace has no personal login to add one. Ask a workspace administrator
-            to require MFA at your identity provider, then sign in again.
+            in this workspace has no personal login yet. Link one to set up an authenticator,
+            or ask a workspace administrator to require MFA at your identity provider.
         <% end %>
       </p>
 
       <%= cond do %>
         <% @mfa_mode == :no_personal_login -> %>
+          <.member_link_form
+            :if={@member_link_handoff}
+            handoff={@member_link_handoff}
+            return_to={~p"/app/#{@current_account}"}
+          />
         <% @mfa_mode == :challenge -> %>
           <%= if @mfa_challenge_mode == :totp do %>
             <.simple_form for={%{}} phx-submit="verify_totp">

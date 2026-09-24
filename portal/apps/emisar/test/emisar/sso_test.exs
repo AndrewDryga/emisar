@@ -5926,6 +5926,40 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "fetch_and_lock_member_identity/4" do
+    test "locks only the live identity bound to that exact Member and account" do
+      account = Fixtures.Accounts.create_account()
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+      other = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: member
+        )
+
+      identity_id = identity.id
+
+      assert {:ok, %UserIdentity{id: ^identity_id}} =
+               SSO.fetch_and_lock_member_identity(Repo, account.id, member.id, identity.id)
+
+      assert SSO.fetch_and_lock_member_identity(Repo, account.id, other.id, identity.id) ==
+               {:error, :not_found}
+
+      foreign = Fixtures.Accounts.create_account()
+
+      assert SSO.fetch_and_lock_member_identity(Repo, foreign.id, member.id, identity.id) ==
+               {:error, :not_found}
+
+      Fixtures.SSO.retire_identity(identity)
+
+      assert SSO.fetch_and_lock_member_identity(Repo, account.id, member.id, identity.id) ==
+               {:error, :not_found}
+    end
+  end
+
   describe "put_sign_in_authority/4" do
     test "refuses a session for an identity whose connection has been disabled" do
       {_user, account, subject} = enterprise_owner()

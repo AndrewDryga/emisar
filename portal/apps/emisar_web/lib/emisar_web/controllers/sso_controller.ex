@@ -130,8 +130,9 @@ defmodule EmisarWeb.SSOController do
     conn = clear_ceremonies(conn)
     redirect_uri = url(~p"/sign_in/sso/callback")
 
-    with %Users.User{} <- conn.assigns[:current_user],
-         %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
+    # The acting admin may be a Member without a personal login: its fresh IdP
+    # reauthentication is then the only reset proof it can give.
+    with %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
          {:ok, subject} <- UserAuth.subject_for_account(conn, account_ref),
          true <- Accounts.subject_can_manage_team?(subject),
          {:ok, %{reset_mfa?: true, membership: target_membership}} <-
@@ -534,8 +535,7 @@ defmodule EmisarWeb.SSOController do
     account_ref = Map.get(stash, :account_id)
     target_membership_id = Map.get(stash, :target_membership_id)
 
-    with %Users.User{} <- conn.assigns[:current_user],
-         %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
+    with %Auth.UserToken{token: actor_session_token_digest} <- conn.assigns[:current_auth],
          account_id when is_binary(account_id) <- account_ref,
          membership_id when is_binary(membership_id) <- target_membership_id,
          {:ok, subject} <- UserAuth.subject_for_account(conn, account_id),

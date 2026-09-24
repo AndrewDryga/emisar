@@ -959,8 +959,17 @@ defmodule EmisarWeb.TeamLive do
                 icon="state.locked"
                 title="A personal login is required"
               >
-                Resetting a member's MFA needs your own second factor. Your membership in this
-                workspace has no personal login.
+                Resetting a member's MFA needs your own second factor. Your identity provider
+                doesn't verify one here, and your membership in this workspace has no personal
+                login yet. Link one from your profile, then set up MFA.
+                <div class="mt-4">
+                  <.button
+                    navigate={~p"/app/#{@current_account}/settings/profile"}
+                    variant={:secondary}
+                  >
+                    Open profile
+                  </.button>
+                </div>
               </.empty_state>
               <.empty_state
                 :if={@current_user}

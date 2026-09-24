@@ -2,7 +2,8 @@ defmodule EmisarWeb.UserSessionControllerTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Accounts, Auth, Repo, Users}
   alias Emisar.Audit.Event
-  alias EmisarWeb.{BillingIntent, MagicLinkHandoff, MfaChallengeHandoff, RegistrationHandoff}
+  alias EmisarWeb.{BillingIntent, MagicLinkHandoff, MemberLinkHandoff}
+  alias EmisarWeb.{MfaChallengeHandoff, RegistrationHandoff}
 
   describe "split-code magic link" do
     # Drive the real request, then pull token_id + the 6-char secret out of the
@@ -686,6 +687,182 @@ defmodule EmisarWeb.UserSessionControllerTest do
       assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
       conn = get(recycle(conn), ~p"/sign_in/magic?sent=1")
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Wait a few minutes"
+    end
+  end
+
+  describe "member personal-login link" do
+    # A member-only SSO browser: a Member without a personal login, its
+    # workspace identity, and the signed handoff its workspace page renders.
+    setup %{conn: conn} do
+      account = Fixtures.Accounts.create_account(plan: "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: member
+        )
+
+      donor_raw = Fixtures.Auth.create_member_session_token!(member, identity)
+
+      %{
+        conn: conn |> init_test_session(%{}) |> put_session(:user_token, donor_raw),
+        account: account,
+        member: member,
+        identity: identity,
+        donor_raw: donor_raw,
+        handoff:
+          MemberLinkHandoff.sign(Fixtures.Subjects.unlinked_member_subject(member, donor_raw))
+      }
+    end
+
+    defp member_link_params(email, handoff, account) do
+      %{
+        "user" => %{"email" => email},
+        "member_link_handoff" => handoff,
+        "return_to" => "/app/#{account.slug}"
+      }
+    end
+
+    defp start_member_link(conn, email, handoff, account) do
+      conn = post(conn, ~p"/sign_in/magic/start", member_link_params(email, handoff, account))
+      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      {recycle(conn), token_id, secret}
+    end
+
+    test "a new address becomes a personal login linked to the Member", %{
+      conn: conn,
+      account: account,
+      member: member,
+      handoff: handoff,
+      donor_raw: donor_raw
+    } do
+      email = "linked-#{System.unique_integer([:positive])}@example.test"
+      {conn, token_id, secret} = start_member_link(conn, email, handoff, account)
+      assert {:ok, %Users.User{confirmed_at: nil} = user} = Users.fetch_user_by_email(email)
+
+      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert redirected_to(conn) == ~p"/app/#{account}"
+      assert get_session(conn, "phoenix_flash") == %{"info" => "Personal login linked."}
+      assert {:ok, session} = Auth.fetch_session_by_token(get_session(conn, :user_token))
+      assert session.user.id == user.id
+      assert %DateTime{} = session.user.confirmed_at
+      assert Repo.reload!(member).user_id == user.id
+      assert Auth.fetch_session_by_token(donor_raw) == {:error, :not_found}
+    end
+
+    test "an existing login with MFA links only after its second factor", %{
+      conn: conn,
+      account: account,
+      member: member,
+      handoff: handoff,
+      donor_raw: donor_raw
+    } do
+      secret = Auth.generate_mfa_secret()
+
+      user =
+        Fixtures.Users.create_user()
+        |> Fixtures.Users.set_mfa_state(
+          mfa_secret: secret,
+          mfa_enabled_at: DateTime.utc_now(),
+          mfa_recovery_codes: []
+        )
+
+      {conn, token_id, code} = start_member_link(conn, user.email, handoff, account)
+
+      challenged = get(conn, ~p"/sign_in/magic/#{token_id}/#{code}")
+      assert redirected_to(challenged) == ~p"/sign_in/mfa"
+      assert get_session(challenged, :user_token) == donor_raw
+      assert is_nil(Repo.reload!(member).user_id)
+
+      {:ok, proof} =
+        Auth.verify_mfa_challenge(user, {:totp, NimbleTOTP.verification_code(secret)})
+
+      completed =
+        challenged
+        |> recycle()
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: MfaChallengeHandoff.sign(proof)]}")
+
+      assert redirected_to(completed) == ~p"/app/#{account}"
+      assert Repo.reload!(member).user_id == user.id
+      assert {:ok, session} = Auth.fetch_session_by_token(get_session(completed, :user_token))
+      assert %DateTime{} = session.mfa_verified_at
+    end
+
+    test "a handoff from another or no browser session is refused before anything is sent", %{
+      account: account,
+      member: member,
+      identity: identity,
+      handoff: handoff
+    } do
+      other_raw = Fixtures.Auth.create_member_session_token!(member, identity)
+      email = "stranger-#{System.unique_integer([:positive])}@example.test"
+
+      for conn <- [
+            build_conn() |> init_test_session(%{}) |> put_session(:user_token, other_raw),
+            build_conn()
+          ] do
+        conn = post(conn, ~p"/sign_in/magic/start", member_link_params(email, handoff, account))
+
+        assert redirected_to(conn) == ~p"/app"
+        assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "couldn't be linked"
+      end
+
+      refute_received {:email, _}
+      assert Users.fetch_user_by_email(email) == {:error, :not_found}
+    end
+
+    test "a login already seated in the workspace is refused; the browser keeps its session", %{
+      conn: conn,
+      account: account,
+      member: member,
+      handoff: handoff,
+      donor_raw: donor_raw
+    } do
+      user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+      {conn, token_id, secret} = start_member_link(conn, user.email, handoff, account)
+
+      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert redirected_to(conn) == ~p"/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "already a member of this workspace"
+      assert get_session(conn, :user_token) == donor_raw
+      assert is_nil(Repo.reload!(member).user_id)
+    end
+
+    test "a member-only browser's email requests always link, never sign in", %{
+      conn: conn,
+      account: account,
+      member: member,
+      handoff: handoff
+    } do
+      plain = %{
+        "user" => %{"email" => "plain-#{System.unique_integer([:positive])}@example.test"}
+      }
+
+      refused = post(conn, ~p"/sign_in/magic/start", plain)
+      assert redirected_to(refused) == ~p"/app"
+      refute_received {:email, _}
+
+      # Mid-link, another address (or a resend) rides the handoff the link began with.
+      first = "first-#{System.unique_integer([:positive])}@example.test"
+      {conn, _token_id, _secret} = start_member_link(conn, first, handoff, account)
+      second = "second-#{System.unique_integer([:positive])}@example.test"
+      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => second}})
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
+      linked = conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+
+      assert redirected_to(linked) == ~p"/app/#{account}"
+      assert {:ok, user} = Users.fetch_user_by_email(second)
+      assert Repo.reload!(member).user_id == user.id
     end
   end
 

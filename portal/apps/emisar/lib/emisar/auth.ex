@@ -700,8 +700,13 @@ defmodule Emisar.Auth do
   recovered from the encrypted signup handoff, or `nil`; it stays on the
   server-side factor until the final session transaction applies the proved
   profile and creates the workspace atomically.
+  `:member_link` — `%{account_id, membership_id, identity_id, donor_token_id}`
+  from the signed member-link handoff, or `nil`: the exact Member without a
+  personal login, its SSO identity and the member-only session that asked. It
+  stays on the server-side factor; completion links that Member only from
+  that same session. A factor carries one intent, never both.
   `:prior_magic_link_token_id` — the exact browser-bound factor being replaced
-  by a resend; its still-live server-side registration intent is inherited.
+  by a resend; its still-live server-side intent is inherited.
 
   Returns `{:ok, %{token_id: id, nonce: nonce, delivery: delivery}}` — the caller
   keeps `nonce` browser-side (a short-lived cookie) — where `delivery` is
@@ -715,7 +720,7 @@ defmodule Emisar.Auth do
         context,
         account,
         Keyword.get(opts, :return_to),
-        Keyword.get(opts, :owner_registration),
+        {Keyword.get(opts, :owner_registration), Keyword.get(opts, :member_link)},
         Keyword.get(opts, :prior_magic_link_token_id)
       )
     end
@@ -750,17 +755,11 @@ defmodule Emisar.Auth do
          context,
          account,
          return_to,
-         owner_registration,
+         intent,
          prior_token_id
        ) do
     with {:ok, locked_user, token_id, nonce, secret, registration} <-
-           issue_magic_link(
-             user.id,
-             user.email,
-             context,
-             owner_registration,
-             prior_token_id
-           ) do
+           issue_magic_link(user.id, user.email, context, intent, prior_token_id) do
       delivery =
         case Mailers.UserNotifier.deliver_magic_link(
                locked_user,
@@ -783,7 +782,7 @@ defmodule Emisar.Auth do
   # `secret` (a short alphanumeric code) is emailed alongside a link carrying
   # `token_id` + `secret`. Deletes any prior outstanding magic-link token for the
   # user (single outstanding). Private — the raw secret stays inside Auth.
-  defp issue_magic_link(user_id, expected_email, context, owner_registration, prior_token_id) do
+  defp issue_magic_link(user_id, expected_email, context, intent, prior_token_id) do
     {nonce, secret, digest} = Crypto.magic_link_token()
 
     result =
@@ -796,23 +795,28 @@ defmodule Emisar.Auth do
           _ -> {:error, :not_found}
         end
       end)
-      |> Multi.run(:requested_owner_registration, fn repo, %{user: user} ->
-        requested_owner_registration(repo, user, owner_registration, prior_token_id)
+      |> Multi.run(:requested_intent, fn repo, %{user: user} ->
+        {:ok, requested_intent(repo, user, intent, prior_token_id)}
       end)
-      |> Accounts.put_owner_registration_intent(fn %{requested_owner_registration: registration} ->
+      |> Accounts.put_owner_registration_intent(fn %{requested_intent: {registration, _link}} ->
         registration
       end)
       |> Multi.delete_all(:prior, fn %{user: user} ->
         UserToken.Query.by_user_id(user.id)
         |> UserToken.Query.by_contexts(@magic_link_contexts)
       end)
-      |> Multi.insert(:token, fn %{user: user, owner_registration: registration} ->
+      |> Multi.insert(:token, fn %{
+                                   user: user,
+                                   owner_registration: registration,
+                                   requested_intent: {_registration, member_link}
+                                 } ->
         UserToken.Changeset.magic_link(
           user,
           digest,
           user.email,
           @magic_link_attempts,
-          registration
+          registration,
+          member_link
         )
       end)
       |> Audit.Multi.log_for_user(:audit, nil, "user.magic_link_issued",
@@ -830,21 +834,28 @@ defmodule Emisar.Auth do
     end
   end
 
-  defp requested_owner_registration(_repo, %Users.User{}, %{} = registration, _token_id),
-    do: {:ok, registration}
+  # `{owner_registration, member_link}` for the new factor. An explicit request
+  # names its one intent; a resend inherits the intent of the exact
+  # browser-bound factor it replaces.
+  defp requested_intent(_repo, %Users.User{}, {%{} = registration, nil}, _token_id),
+    do: {registration, nil}
 
-  defp requested_owner_registration(repo, %Users.User{} = user, nil, token_id)
+  defp requested_intent(_repo, %Users.User{}, {nil, %{} = member_link}, _token_id),
+    do: {nil, member_link}
+
+  defp requested_intent(repo, %Users.User{} = user, {nil, nil}, token_id)
        when is_binary(token_id) do
     factor =
       if Repo.valid_uuid?(token_id) do
         requested_magic_factor(repo, user, token_id)
       end
 
-    {:ok, if(factor && factor.sent_to == user.email, do: magic_owner_registration(factor, user))}
+    if factor && factor.sent_to == user.email,
+      do: {magic_owner_registration(factor, user), magic_member_link(factor)},
+      else: {nil, nil}
   end
 
-  defp requested_owner_registration(_repo, %Users.User{}, _registration, _token_id),
-    do: {:ok, nil}
+  defp requested_intent(_repo, %Users.User{}, _intent, _token_id), do: {nil, nil}
 
   # A resend carries the prior factor's registration intent forward, so freshness
   # is judged per CONTEXT like the verify path — a magic_link_verified factor
@@ -1107,20 +1118,41 @@ defmodule Emisar.Auth do
   boundary routes on). `{:error, :mfa_required}` when the second factor is still
   owed, `{:error, {:account_disabled, account}}` when the branded account is on
   hold, or `{:error, :not_found}` when the user no longer resolves.
+
+  A factor issued with a member-link intent completes only as that link, from
+  the browser whose member-only session asked for it: `presented_digest` is that
+  browser's session-cookie digest. Success returns `{:linked, account}` as the
+  target; `{:error, :already_member}` when this personal login already has a
+  seat in that workspace, and `{:error, :member_link_invalid}` when the donor
+  session, the Member or its identity no longer qualifies.
   """
   def complete_magic_link_sign_in(
         user_id,
         verified_token_id,
         account_ref,
-        %RequestContext{} = context
+        %RequestContext{} = context,
+        presented_digest \\ nil
       ) do
     with {:ok, user} <- Users.fetch_user_by_id(user_id) do
-      target = resolve_post_auth_account(user, account_ref)
+      case peek_member_link(verified_token_id, user) do
+        %{} = link ->
+          insert_member_link_session(
+            user,
+            verified_token_id,
+            link,
+            nil,
+            presented_digest,
+            context
+          )
 
-      complete_sign_in_for_target(
-        target,
-        &insert_magic_link_session(user, verified_token_id, &1, nil, context)
-      )
+        nil ->
+          target = resolve_post_auth_account(user, account_ref)
+
+          complete_sign_in_for_target(
+            target,
+            &insert_magic_link_session(user, verified_token_id, &1, nil, context)
+          )
+      end
     end
   end
 
@@ -1136,24 +1168,39 @@ defmodule Emisar.Auth do
   with `mfa_verified_at` stamped now.
 
   Same `{:ok, user, token, target, registered?}` success shape as
-  `complete_magic_link_sign_in/4`; `{:error, :mfa_proof_stale}` when the proof no
+  `complete_magic_link_sign_in/5`; `{:error, :mfa_proof_stale}` when the proof no
   longer matches the row, `{:error, :invalid_or_expired}` when the exact verified
   inbox factor is stale or already consumed, `{:error, {:account_disabled,
-  account}}`, or `{:error, :not_found}`.
+  account}}`, or `{:error, :not_found}`. A member-link factor completes as that
+  link exactly as `complete_magic_link_sign_in/5` describes.
   """
   def complete_magic_link_mfa_sign_in(
         proof,
         verified_token_id,
         account_ref,
-        %RequestContext{} = context
+        %RequestContext{} = context,
+        presented_digest \\ nil
       ) do
     with {:ok, user} <- Users.fetch_user_by_id(mfa_proof_user_id(proof)) do
-      target = resolve_post_auth_account(user, account_ref)
+      case peek_member_link(verified_token_id, user) do
+        %{} = link ->
+          insert_member_link_session(
+            user,
+            verified_token_id,
+            link,
+            proof,
+            presented_digest,
+            context
+          )
 
-      complete_sign_in_for_target(
-        target,
-        &insert_magic_link_session(user, verified_token_id, &1, proof, context)
-      )
+        nil ->
+          target = resolve_post_auth_account(user, account_ref)
+
+          complete_sign_in_for_target(
+            target,
+            &insert_magic_link_session(user, verified_token_id, &1, proof, context)
+          )
+      end
     end
   end
 
@@ -1210,7 +1257,7 @@ defmodule Emisar.Auth do
       Users.fetch_and_lock_user_by_id(user.id, repo)
     end)
     |> Multi.run(:verified_factor, fn repo, %{user: loaded_user} ->
-      lock_verified_magic_link(verified_token_id, loaded_user, repo)
+      lock_verified_magic_link(verified_token_id, loaded_user, nil, repo)
     end)
     |> Multi.run(:mfa_state, fn _repo, %{user: loaded_user} ->
       with :ok <- ensure_mfa_state_current(loaded_user, proof), do: {:ok, proof}
@@ -1260,7 +1307,40 @@ defmodule Emisar.Auth do
 
   defp magic_owner_registration(%UserToken{}, %Users.User{}), do: nil
 
-  defp lock_verified_magic_link(token_id, %Users.User{} = user, repo) do
+  defp magic_member_link(%UserToken{
+         metadata: %{
+           "member_link_account_id" => account_id,
+           "member_link_membership_id" => membership_id,
+           "member_link_identity_id" => identity_id,
+           "member_link_donor_token_id" => donor_token_id
+         }
+       }) do
+    %{
+      account_id: account_id,
+      membership_id: membership_id,
+      identity_id: identity_id,
+      donor_token_id: donor_token_id
+    }
+  end
+
+  defp magic_member_link(%UserToken{}), do: nil
+
+  # The unlocked read only chooses which transaction to build. Each one relocks
+  # this exact factor and requires the same intent, so a member-link factor can
+  # never finish as an ordinary sign-in, nor a sign-in factor as a link.
+  defp peek_member_link(token_id, %Users.User{} = user) do
+    if Repo.valid_uuid?(token_id) do
+      factor =
+        UserToken.Query.by_id(token_id)
+        |> UserToken.Query.by_user_id(user.id)
+        |> UserToken.Query.by_context("magic_link_verified")
+        |> Repo.peek()
+
+      if factor, do: magic_member_link(factor)
+    end
+  end
+
+  defp lock_verified_magic_link(token_id, %Users.User{} = user, member_link, repo) do
     factor_query =
       UserToken.Query.by_id(token_id)
       |> UserToken.Query.by_user_id(user.id)
@@ -1268,11 +1348,146 @@ defmodule Emisar.Auth do
       |> UserToken.Query.lock_for_update()
 
     with {:ok, factor} <- repo.fetch(factor_query, UserToken.Query),
-         true <- factor.sent_to == user.email and verified_magic_link_fresh?(factor) do
+         true <- factor.sent_to == user.email and verified_magic_link_fresh?(factor),
+         true <- magic_member_link(factor) == member_link do
       {:ok, factor}
     else
       _ -> {:error, :invalid_or_expired}
     end
+  end
+
+  # Links the Member a factor names to the personal login that just proved its
+  # mailbox and, when it has one, its current factor, then rotates only the
+  # browser whose member-only session asked. That donor bearer is locked first,
+  # by the presented cookie digest, then the accounts, the person, the factor,
+  # the Member and its identity; every named fact is rechecked under those locks
+  # and both credentials are spent here. The new personal bearer gets the grants
+  # a magic-link sign-in gets, plus the donor's SSO route with its original proof
+  # age; every other bearer's grant for the Member ends.
+  defp insert_member_link_session(user, verified_token_id, link, proof, presented_digest, context) do
+    {token, digest} = Crypto.session_token()
+    metadata = %{ip_address: context.ip_address, user_agent: context.user_agent}
+    mfa_verified_at = if proof, do: DateTime.utc_now()
+
+    with true <- Enum.all?(Map.values(link), &Repo.valid_uuid?/1),
+         {:ok, account} <- Accounts.fetch_account_by_id_or_slug(link.account_id) do
+      Multi.new()
+      |> Multi.run(:donor, fn repo, _changes ->
+        lock_member_link_donor(repo, presented_digest, link)
+      end)
+      |> SessionGrants.put_personal_authority(user, account)
+      |> Multi.run(:user, fn repo, _changes ->
+        Users.fetch_and_lock_user_by_id(user.id, repo)
+      end)
+      |> Multi.run(:verified_factor, fn repo, %{user: loaded_user} ->
+        lock_verified_magic_link(verified_token_id, loaded_user, link, repo)
+      end)
+      |> Multi.run(:mfa_state, fn _repo, %{user: loaded_user} ->
+        with :ok <- ensure_mfa_state_current(loaded_user, proof), do: {:ok, proof}
+      end)
+      |> Multi.run(:link_member, fn repo, %{donor: donor} ->
+        lock_member_link_member(repo, donor, link)
+      end)
+      |> Multi.run(:link_identity, fn repo, _changes ->
+        SSO.fetch_and_lock_member_identity(
+          repo,
+          link.account_id,
+          link.membership_id,
+          link.identity_id
+        )
+      end)
+      |> Multi.run(:linked_member, fn repo, %{link_member: member, user: loaded_user} ->
+        Accounts.link_personal_login(repo, member, loaded_user)
+      end)
+      |> Multi.merge(fn %{linked_member: member} ->
+        Accounts.put_membership_activation_consequence(Multi.new(), member)
+      end)
+      |> Multi.merge(fn %{user: loaded_user} ->
+        Users.put_sign_in(Multi.new(), loaded_user, "magic_link", context)
+      end)
+      |> Multi.insert(:token, fn %{sign_in: signed_in_user} ->
+        UserToken.Changeset.session(
+          signed_in_user,
+          digest,
+          metadata,
+          :magic_link,
+          mfa_verified_at
+        )
+      end)
+      |> Multi.run(:ended_grant_digests, fn repo, changes ->
+        SessionGrants.transfer_for_member_link(
+          repo,
+          changes.donor,
+          changes.token,
+          changes.linked_member
+        )
+      end)
+      |> Multi.run(:member_grants, fn repo, %{token: session} = changes ->
+        SessionGrants.insert_personal(repo, session, changes)
+      end)
+      |> Multi.insert(:link_audit, fn %{linked_member: member} ->
+        Audit.Events.membership_personal_login_linked(member, context, not is_nil(proof))
+      end)
+      |> Multi.delete(:consumed_magic_factor, fn %{verified_factor: factor} -> factor end)
+      |> Multi.delete(:consumed_donor, fn %{donor: donor} -> donor end)
+      |> Repo.commit_multi(after_commit: &after_member_link_committed/1)
+      |> case do
+        {:ok, %{sign_in: signed_in_user}} ->
+          {:ok, signed_in_user, token, {:linked, account}, false}
+
+        {:error, reason} ->
+          {:error, member_link_error(reason)}
+      end
+    else
+      _ -> {:error, :member_link_invalid}
+    end
+  end
+
+  # Only the exact live member-only bearer that asked, still proving the named
+  # identity, can finish the link; another browser presents another cookie.
+  defp lock_member_link_donor(repo, presented_digest, link) when is_binary(presented_digest) do
+    donor_query =
+      UserToken.Query.by_token_digest(presented_digest)
+      |> UserToken.Query.by_id(link.donor_token_id)
+      |> UserToken.Query.member_only()
+      |> UserToken.Query.by_context("session")
+      |> UserToken.Query.not_expired("session")
+      |> UserToken.Query.lock_for_update()
+
+    case repo.fetch(donor_query, UserToken.Query) do
+      {:ok, %UserToken{user_identity_id: identity_id} = donor}
+      when identity_id == link.identity_id ->
+        {:ok, donor}
+
+      _ ->
+        {:error, :member_link_invalid}
+    end
+  end
+
+  defp lock_member_link_donor(_repo, _presented_digest, _link),
+    do: {:error, :member_link_invalid}
+
+  # The Member must still grant authority, still lack a personal login, and still
+  # be reached through the donor's current route. Another browser that linked it
+  # first, a suspension, or a revoked grant, identity or provider refuses it.
+  defp lock_member_link_member(repo, donor, link) do
+    with {:ok, %Accounts.Membership{user_id: nil} = member} <-
+           Accounts.fetch_and_lock_active_membership(repo, link.account_id, link.membership_id),
+         true <- member.id in SessionGrants.membership_ids(donor) do
+      {:ok, member}
+    else
+      _ -> {:error, :member_link_invalid}
+    end
+  end
+
+  defp member_link_error(reason) when reason in [:account_disabled, :not_found],
+    do: :member_link_invalid
+
+  defp member_link_error(reason), do: reason
+
+  defp after_member_link_committed(%{donor: donor, ended_grant_digests: ended_digests} = changes) do
+    :ok = Accounts.after_membership_activation_committed(changes)
+    disconnect_live_socket_topics(Enum.map([donor.token | ended_digests], &live_socket_topic/1))
   end
 
   defp lock_signing_in_user(user_id, proof, repo) do
@@ -2839,7 +3054,7 @@ defmodule Emisar.Auth do
   Pre-Subject — this is the sign-in second factor, so it takes the
   partially-authenticated `%Users.User{}` (no tenant resolved yet). Returns
   `{:ok, proof}` — an opaque term bound to the enrollment that was just
-  verified, which `complete_magic_link_mfa_sign_in/4` re-checks against the
+  verified, which `complete_magic_link_mfa_sign_in/5` re-checks against the
   locked row before minting anything — `{:error, :rate_limited}` once the window
   is exhausted, `{:error, :replay}` on a reused TOTP, or `{:error, :invalid}`
   otherwise; misses are audited as `user.mfa_failed`.
@@ -2880,7 +3095,9 @@ defmodule Emisar.Auth do
   reauthentication in the short-lived, purpose-bound handoff that Accounts
   consumes for one member MFA reset. The target's exact enrollment epoch and
   row version make a successful reset, disable, or re-enrollment stale the
-  proof instead of turning it into a reusable administrator capability.
+  proof instead of turning it into a reusable administrator capability. An
+  administrator without a personal login has no local factor, so only a fresh
+  IdP reauthentication is its source.
   """
   def issue_member_mfa_reset_proof(
         %Accounts.Membership{} = membership,
@@ -2892,14 +3109,15 @@ defmodule Emisar.Auth do
         source,
         actor_session_token_digest,
         %Subject{
-          actor: %Users.User{id: actor_id},
+          actor: actor,
           account: %Accounts.Account{id: account_id},
           membership_id: actor_membership_id
         }
       )
       when membership.account_id == account_id and membership.user_id == target_user_id and
              is_binary(actor_membership_id) and is_binary(actor_session_token_digest) do
-    with {:ok, source} <- member_mfa_reset_source(source) do
+    with {:ok, actor_id} <- member_mfa_reset_actor_id(actor, source),
+         {:ok, source} <- member_mfa_reset_source(source) do
       payload = %{
         actor_id: actor_id,
         actor_membership_id: actor_membership_id,
@@ -2923,6 +3141,13 @@ defmodule Emisar.Auth do
 
   def issue_member_mfa_reset_proof(_, _, _, _, %Subject{}),
     do: {:error, :mfa_reset_proof_stale}
+
+  defp member_mfa_reset_actor_id(%Users.User{id: actor_id}, _source), do: {:ok, actor_id}
+
+  defp member_mfa_reset_actor_id(%Accounts.Membership{user_id: nil}, {:sso, _reauthentication}),
+    do: {:ok, nil}
+
+  defp member_mfa_reset_actor_id(_actor, _source), do: {:error, :mfa_reset_proof_stale}
 
   @doc "Internal — verify and decode the reset-specific handoff; generic MFA proofs use another salt."
   def verify_member_mfa_reset_proof(proof) when is_binary(proof) do
@@ -2955,17 +3180,21 @@ defmodule Emisar.Auth do
   def verify_local_member_mfa_reset_source(_, %Users.User{}),
     do: {:error, :mfa_reset_proof_stale}
 
-  @doc "Internal — lock the exact live actor session bound into a member-MFA-reset proof."
+  @doc """
+  Internal — lock the exact live actor session bound into a member-MFA-reset
+  proof: the actor's personal login's session, or with a `nil` actor id the
+  member-only session of an administrator without one.
+  """
   def lock_member_mfa_reset_session(
         repo,
         token_digest,
         actor_id,
         source
       )
-      when is_binary(token_digest) and is_binary(actor_id) do
+      when is_binary(token_digest) and (is_binary(actor_id) or is_nil(actor_id)) do
     result =
       UserToken.Query.by_token_digest(token_digest)
-      |> UserToken.Query.by_user_id(actor_id)
+      |> by_member_mfa_reset_actor(actor_id)
       |> UserToken.Query.by_context("session")
       |> UserToken.Query.not_expired("session")
       |> UserToken.Query.lock_for_update()
@@ -3061,7 +3290,15 @@ defmodule Emisar.Auth do
 
   defp member_mfa_reset_source(_source), do: {:error, :mfa_reset_proof_stale}
 
-  defp ensure_member_mfa_reset_session_source(%UserToken{}, {:local, _proof}), do: :ok
+  defp by_member_mfa_reset_actor(queryable, nil), do: UserToken.Query.member_only(queryable)
+
+  defp by_member_mfa_reset_actor(queryable, actor_id),
+    do: UserToken.Query.by_user_id(queryable, actor_id)
+
+  # A local factor belongs to a personal login; a member-only session has none.
+  defp ensure_member_mfa_reset_session_source(%UserToken{user_id: user_id}, {:local, _proof})
+       when is_binary(user_id),
+       do: :ok
 
   defp ensure_member_mfa_reset_session_source(
          %UserToken{auth_method: :sso, user_identity_id: identity_id},

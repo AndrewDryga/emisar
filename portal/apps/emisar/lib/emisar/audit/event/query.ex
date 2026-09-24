@@ -152,6 +152,8 @@ defmodule Emisar.Audit.Event.Query do
         "Invitation resend requested"},
        {"membership.role_changed", "Role changed", "Member role changed"},
        {"membership.profile_updated", "Profile updated", "Workspace profile updated"},
+       {"membership.personal_login_linked", "Personal login linked",
+        "Member linked a personal login"},
        {"membership.removed", "Member removed", "Member removed"},
        {"membership.erased", "User account deleted", "Member’s user account deleted"},
        {"membership.suspended", "Member suspended", "Member suspended"},
@@ -882,6 +884,9 @@ defmodule Emisar.Audit.Event.Query do
     "user.profile_updated" => {true, true, false, "A user edited their own profile."},
     "membership.profile_updated" =>
       {true, true, true, "A member's workspace display name changed."},
+    "membership.personal_login_linked" =>
+      {true, true, false,
+       "A member without a personal login linked one by proving its email address and any second factor it already had."},
     "user.updated_by_admin" => {true, true, true, "An admin edited a teammate's profile."},
     "user.magic_link_issued" => {true, false, false, "A sign-in link and code were created."},
     "user.mfa_enrollment_requested" =>

@@ -134,6 +134,37 @@ defmodule Emisar.Auth.SessionGrants do
     end)
   end
 
+  # Linking a personal login moves the donor's grant for the Member, with its
+  # SSO route and that route's original proof age, to the new personal bearer and
+  # adds the personal route a magic-link sign-in gives the now-linked Member.
+  # Every other bearer's grant for the Member ends, so no older session becomes
+  # this personal login. Returns the ended bearers' digests for disconnection.
+  def transfer_for_member_link(repo, donor, token, member) do
+    donor_grant_query =
+      MemberGrant.Query.by_token_id(donor.id)
+      |> MemberGrant.Query.by_membership(member.account_id, member.id)
+      |> MemberGrant.Query.lock_for_update()
+
+    other_grants_query =
+      MemberGrant.Query.by_membership(member.account_id, member.id)
+      |> MemberGrant.Query.excluding_token_id(donor.id)
+      |> MemberGrant.Query.select_token_digests()
+
+    with {:ok, grant} <- repo.fetch(donor_grant_query, MemberGrant.Query),
+         {_count, ended_digests} = repo.delete_all(other_grants_query),
+         {:ok, moved} <- repo.update(MemberGrant.Changeset.transfer_session(grant, token)),
+         {:ok, _route} <-
+           repo.insert(
+             MemberGrantRoute.Changeset.personal(
+               moved,
+               token.personal_proved_at,
+               token.personal_expires_at
+             )
+           ) do
+      {:ok, Enum.uniq(ended_digests)}
+    end
+  end
+
   def membership_ids(session) do
     case session_id(session) do
       nil ->

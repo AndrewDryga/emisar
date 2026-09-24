@@ -2,7 +2,7 @@ defmodule Emisar.AuthTest do
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Audit, Auth, Crypto, Fixtures, Mail, RequestContext, Users}
   alias Emisar.Accounts.Account
-  alias Emisar.Auth.{SecurityAttemptWindow, Subject, UserToken}
+  alias Emisar.Auth.{MemberGrantRoute, SecurityAttemptWindow, Subject, UserToken}
   alias Emisar.Users.User
 
   defp session_rows do
@@ -938,7 +938,7 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "complete_magic_link_sign_in/4" do
+  describe "complete_magic_link_sign_in/5" do
     setup do
       {user, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject, user: user}
@@ -1275,7 +1275,359 @@ defmodule Emisar.AuthTest do
     end
   end
 
-  describe "complete_magic_link_mfa_sign_in/4" do
+  describe "complete_magic_link_sign_in/5 — member link" do
+    # A Member without a personal login, its workspace identity, and the
+    # member-only session (the donor) whose browser asks to link one.
+    defp member_link_fixture(provider_attrs \\ [], identity_attrs \\ []) do
+      account = Fixtures.Accounts.create_account(plan: "team")
+
+      provider =
+        Fixtures.SSO.create_identity_provider(
+          Keyword.put(provider_attrs, :account_id, account.id)
+        )
+
+      member = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          [account_id: account.id, provider_id: provider.id, membership: member] ++
+            identity_attrs
+        )
+
+      raw = Fixtures.Auth.create_member_session_token!(member, identity)
+      {:ok, donor} = Auth.fetch_session_by_token(raw)
+
+      %{
+        account: account,
+        member: member,
+        identity: identity,
+        provider: provider,
+        raw: raw,
+        donor: donor,
+        link: %{
+          account_id: account.id,
+          membership_id: member.id,
+          identity_id: identity.id,
+          donor_token_id: donor.id
+        }
+      }
+    end
+
+    defp complete_member_link(user, factor_id, fixture, context \\ %RequestContext{}),
+      do: Auth.complete_magic_link_sign_in(user.id, factor_id, nil, context, fixture.donor.token)
+
+    # A refused link wrote nothing: the Member stays unlinked, every session row
+    # (the donor included) is unchanged, and its workspace audited no link.
+    defp assert_nothing_linked(fixture, sessions_before) do
+      assert is_nil(Repo.reload!(fixture.member).user_id)
+      assert session_rows() == sessions_before
+
+      link_events =
+        Audit.Event.Query.all()
+        |> Audit.Event.Query.by_account_id(fixture.account.id)
+        |> Audit.Event.Query.by_event_type("membership.personal_login_linked")
+
+      refute Repo.exists?(link_events)
+    end
+
+    defp mfa_user do
+      secret = Auth.generate_mfa_secret()
+      {recovery_code, digest} = Crypto.mfa_recovery_code()
+
+      user =
+        Fixtures.Users.create_user()
+        |> Fixtures.Users.set_mfa_state(
+          mfa_secret: secret,
+          mfa_enabled_at: DateTime.utc_now(),
+          mfa_recovery_codes: [digest]
+        )
+
+      {user, secret, recovery_code}
+    end
+
+    test "a proved personal login links the Member and rotates only the asking browser" do
+      fixture = member_link_fixture(satisfies_mfa: true)
+      user = Fixtures.Users.create_user()
+      elsewhere = Fixtures.Memberships.create_membership(user_id: user.id)
+      [route] = MemberGrantRoute.Query.by_membership_id(fixture.member.id) |> Repo.all()
+      factor_id = verify_magic_link(user, member_link: fixture.link)
+
+      assert {:ok, %User{id: user_id}, raw, {:linked, %Account{id: account_id}}, false} =
+               complete_member_link(user, factor_id, fixture)
+
+      assert {user_id, account_id} == {user.id, fixture.account.id}
+      linked = Repo.reload!(fixture.member)
+      assert linked.user_id == user.id
+
+      assert {:ok, %UserToken{user_id: ^user_id, auth_method: :magic_link} = session} =
+               Auth.fetch_session_by_token(raw)
+
+      assert Enum.sort(Auth.session_membership_ids(session)) ==
+               Enum.sort([linked.id, elsewhere.id])
+
+      # The donor's SSO route moved to the new bearer with its original proof age,
+      # beside a fresh personal route, so the workspace keeps its SSO provenance.
+      moved = Repo.get!(MemberGrantRoute, route.id)
+      assert {moved.proved_at, moved.expires_at} == {route.proved_at, route.expires_at}
+      assert Repo.get!(Auth.MemberGrant, moved.member_grant_id).user_token_id == session.id
+      options = Auth.session_subject_options(linked, session)
+      assert {options[:auth_method], options[:user_identity_id]} == {:sso, fixture.identity.id}
+
+      assert Auth.fetch_session_by_token(fixture.raw) == {:error, :not_found}
+      refute Repo.get(UserToken, factor_id)
+
+      member_id = linked.id
+
+      assert [
+               %Audit.Event{
+                 actor_kind: "membership",
+                 actor_id: ^member_id,
+                 target_id: ^member_id,
+                 auth_method: "magic_link",
+                 mfa: false
+               }
+             ] = events_of_type("membership.personal_login_linked")
+    end
+
+    test "a personal login with MFA links only after its TOTP or a recovery code" do
+      for factor <- [:totp, :recovery_code] do
+        fixture = member_link_fixture()
+        {user, secret, recovery_code} = mfa_user()
+        factor_id = verify_magic_link(user, member_link: fixture.link)
+        sessions_before = session_rows()
+
+        assert complete_member_link(user, factor_id, fixture) == {:error, :mfa_required}
+        assert_nothing_linked(fixture, sessions_before)
+
+        code =
+          if factor == :totp, do: NimbleTOTP.verification_code(secret), else: recovery_code
+
+        assert {:ok, proof} = Auth.verify_mfa_challenge(user, {factor, code})
+
+        assert {:ok, _user, raw, {:linked, _account}, false} =
+                 Auth.complete_magic_link_mfa_sign_in(
+                   proof,
+                   factor_id,
+                   nil,
+                   %RequestContext{},
+                   fixture.donor.token
+                 )
+
+        assert Repo.reload!(fixture.member).user_id == user.id
+        assert {:ok, session} = Auth.fetch_session_by_token(raw)
+        assert session.mfa_enrollment_verified_at == Repo.reload!(user).mfa_enabled_at
+      end
+    end
+
+    test "a wrong, expired or replayed code links nothing" do
+      fixture = member_link_fixture()
+      user = Fixtures.Users.create_user()
+      {token_id, nonce, secret} = request_magic_link(user, member_link: fixture.link)
+      sessions_before = session_rows()
+
+      wrong = if secret == "AAAAAA", do: "BBBBBB", else: "AAAAAA"
+      assert Auth.verify_magic_link(token_id, wrong, nonce) == {:error, :invalid_or_expired}
+      assert complete_member_link(user, token_id, fixture) == {:error, :invalid_or_expired}
+      assert_nothing_linked(fixture, sessions_before)
+
+      assert {:ok, _user} = Auth.verify_magic_link(token_id, secret, nonce)
+      factor = Repo.get!(UserToken, token_id)
+      verified_at = DateTime.utc_now() |> DateTime.add(-601, :second) |> DateTime.to_iso8601()
+
+      UserToken.Query.by_id(token_id)
+      |> Repo.update_all(set: [metadata: Map.put(factor.metadata, "verified_at", verified_at)])
+
+      assert complete_member_link(user, token_id, fixture) == {:error, :invalid_or_expired}
+      assert_nothing_linked(fixture, sessions_before)
+
+      replayed = member_link_fixture()
+      factor_id = verify_magic_link(user, member_link: replayed.link)
+
+      assert {:ok, _user, _raw, {:linked, _account}, false} =
+               complete_member_link(user, factor_id, replayed)
+
+      assert complete_member_link(user, factor_id, replayed) == {:error, :invalid_or_expired}
+      assert length(events_of_type("membership.personal_login_linked")) == 1
+    end
+
+    test "a wrong or replayed second factor links nothing" do
+      fixture = member_link_fixture()
+      {user, secret, _recovery_code} = mfa_user()
+      factor_id = verify_magic_link(user, member_link: fixture.link)
+      sessions_before = session_rows()
+      code = NimbleTOTP.verification_code(secret)
+      wrong = if code == "000000", do: "111111", else: "000000"
+
+      assert Auth.verify_mfa_challenge(user, {:totp, wrong}) == {:error, :invalid}
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:totp, code})
+      assert Auth.verify_mfa_challenge(user, {:totp, code}) == {:error, :replay}
+      assert complete_member_link(user, factor_id, fixture) == {:error, :mfa_required}
+      assert_nothing_linked(fixture, sessions_before)
+    end
+
+    test "another browser, or none, cannot finish the link" do
+      fixture = member_link_fixture()
+      other_raw = Fixtures.Auth.create_member_session_token!(fixture.member, fixture.identity)
+      user = Fixtures.Users.create_user()
+      factor_id = verify_magic_link(user, member_link: fixture.link)
+      sessions_before = session_rows()
+
+      for presented <- [Crypto.hash(other_raw), nil] do
+        assert Auth.complete_magic_link_sign_in(
+                 user.id,
+                 factor_id,
+                 nil,
+                 %RequestContext{},
+                 presented
+               ) == {:error, :member_link_invalid}
+      end
+
+      assert_nothing_linked(fixture, sessions_before)
+      assert Repo.get!(UserToken, factor_id).context == "magic_link_verified"
+    end
+
+    for revocation <- [:signed_out, :suspended, :identity_retired, :provider_disabled] do
+      test "#{revocation} mid-flow refuses the link" do
+        fixture = member_link_fixture()
+        user = Fixtures.Users.create_user()
+        factor_id = verify_magic_link(user, member_link: fixture.link)
+
+        case unquote(revocation) do
+          :signed_out -> :ok = Auth.complete_session_sign_out(fixture.raw)
+          :suspended -> Fixtures.Memberships.suspend_membership(fixture.member)
+          :identity_retired -> Fixtures.SSO.retire_identity(fixture.identity)
+          :provider_disabled -> Fixtures.SSO.disable_provider(fixture.provider)
+        end
+
+        sessions_before = session_rows()
+
+        assert complete_member_link(user, factor_id, fixture) == {:error, :member_link_invalid}
+        assert_nothing_linked(fixture, sessions_before)
+      end
+    end
+
+    test "a Member linked from a second browser refuses the first; its older sessions end" do
+      fixture = member_link_fixture()
+      second_raw = Fixtures.Auth.create_member_session_token!(fixture.member, fixture.identity)
+      {:ok, second} = Auth.fetch_session_by_token(second_raw)
+      first_user = Fixtures.Users.create_user()
+      second_user = Fixtures.Users.create_user()
+      first_factor = verify_magic_link(first_user, member_link: fixture.link)
+
+      second_factor =
+        verify_magic_link(second_user, member_link: %{fixture.link | donor_token_id: second.id})
+
+      assert {:ok, _user, _raw, {:linked, _account}, false} =
+               Auth.complete_magic_link_sign_in(
+                 second_user.id,
+                 second_factor,
+                 nil,
+                 %RequestContext{},
+                 second.token
+               )
+
+      sessions_before = session_rows()
+
+      assert complete_member_link(first_user, first_factor, fixture) ==
+               {:error, :member_link_invalid}
+
+      assert Repo.reload!(fixture.member).user_id == second_user.id
+      assert session_rows() == sessions_before
+
+      # The first browser's member-only session keeps no grant and never
+      # becomes the personal login that linked the Member.
+      assert Auth.session_membership_ids(fixture.donor) == []
+      refute Repo.exists?(Auth.MemberGrant.Query.by_token_id(fixture.donor.id))
+
+      assert {:ok, %UserToken{user_id: nil, user: nil, personal_proved_at: nil}} =
+               Auth.fetch_session_by_token(fixture.raw)
+
+      assert Accounts.fetch_membership_by_account_id_or_slug(fixture.account.id, fixture.donor) ==
+               {:error, :not_found}
+    end
+
+    test "a login seated elsewhere retires the Member's admin-approved binding" do
+      fixture = member_link_fixture([], created_by: :admin, provisioned_via: :manual)
+      user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(user_id: user.id)
+      factor_id = verify_magic_link(user, member_link: fixture.link)
+
+      assert {:ok, _user, raw, {:linked, _account}, false} =
+               complete_member_link(user, factor_id, fixture)
+
+      # An admin approved that identity for a person in no other workspace; the
+      # person linked now belongs to one, so the binding goes and the Member keeps
+      # only its personal route.
+      assert Repo.reload!(fixture.identity).deleted_at
+      assert {:ok, session} = Auth.fetch_session_by_token(raw)
+      linked = Repo.reload!(fixture.member)
+      assert linked.id in Auth.session_membership_ids(session)
+      assert Auth.session_subject_options(linked, session)[:auth_method] == :magic_link
+    end
+
+    test "a personal login already seated in the workspace is refused" do
+      fixture = member_link_fixture()
+      user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: fixture.account.id, user_id: user.id)
+      factor_id = verify_magic_link(user, member_link: fixture.link)
+      sessions_before = session_rows()
+
+      assert complete_member_link(user, factor_id, fixture) == {:error, :already_member}
+      assert_nothing_linked(fixture, sessions_before)
+    end
+
+    test "an intent for one workspace cannot bind another workspace's Member" do
+      fixture = member_link_fixture()
+      foreign = member_link_fixture()
+      user = Fixtures.Users.create_user()
+      sessions_before = session_rows()
+
+      for link <- [
+            %{fixture.link | membership_id: foreign.member.id},
+            %{foreign.link | donor_token_id: fixture.donor.id}
+          ] do
+        factor_id = verify_magic_link(user, member_link: link)
+
+        assert complete_member_link(user, factor_id, fixture) == {:error, :member_link_invalid}
+      end
+
+      assert_nothing_linked(fixture, sessions_before)
+      assert is_nil(Repo.reload!(foreign.member).user_id)
+    end
+
+    test "a resend keeps the link intent of the factor it replaces" do
+      fixture = member_link_fixture()
+      user = Fixtures.Users.create_user()
+      {first_id, _nonce, _secret} = request_magic_link(user, member_link: fixture.link)
+      factor_id = verify_magic_link(user, prior_magic_link_token_id: first_id)
+
+      assert {:ok, _user, _raw, {:linked, _account}, false} =
+               complete_member_link(user, factor_id, fixture)
+    end
+
+    test "an audit failure rolls the link back and keeps both credentials for a retry" do
+      fixture = member_link_fixture()
+      user = Fixtures.Users.create_user()
+      factor_id = verify_magic_link(user, member_link: fixture.link)
+      sessions_before = session_rows()
+
+      assert {:error, %Ecto.Changeset{}} =
+               complete_member_link(
+                 user,
+                 factor_id,
+                 fixture,
+                 %RequestContext{request_id: %{invalid: true}}
+               )
+
+      assert_nothing_linked(fixture, sessions_before)
+      assert Repo.get!(UserToken, factor_id).context == "magic_link_verified"
+
+      assert {:ok, _user, _raw, {:linked, _account}, false} =
+               complete_member_link(user, factor_id, fixture)
+    end
+  end
+
+  describe "complete_magic_link_mfa_sign_in/5" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       secret = Auth.generate_mfa_secret()

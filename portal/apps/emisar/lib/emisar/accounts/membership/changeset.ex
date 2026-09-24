@@ -112,6 +112,15 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   def delete(%Membership{} = membership), do: change(membership, deleted_at: DateTime.utc_now())
 
+  # A Member without a personal login gains the one that proved itself; the
+  # workspace profile stays the account's own.
+  def link_personal_login(%Membership{user_id: nil} = membership, user_id)
+      when is_binary(user_id) do
+    membership
+    |> change(user_id: user_id)
+    |> unique_constraint([:account_id, :user_id])
+  end
+
   def suspend(%Membership{} = membership, disabled_by_membership_id) do
     membership
     |> change(

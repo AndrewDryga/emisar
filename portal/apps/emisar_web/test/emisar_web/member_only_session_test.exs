@@ -64,6 +64,7 @@ defmodule EmisarWeb.MemberOnlySessionTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
     assert html =~ "has no personal login"
+    assert html =~ ~s(id="member-link-form")
     refute html =~ "Personal details"
     refute html =~ "Active sessions"
     assert render_click(lv, "edit_profile") =~ "has no personal login."
@@ -79,16 +80,21 @@ defmodule EmisarWeb.MemberOnlySessionTest do
     assert html =~ "Renamed Member"
   end
 
-  test "MFA setup explains a required factor it cannot add", %{conn: conn, account: account} do
+  test "MFA setup offers a personal login before any factor", %{conn: conn, account: account} do
     Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
 
     assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} = live(conn, ~p"/app/#{account}")
     assert {:ok, _lv, html} = live(conn, ~p"/app/mfa_setup")
-    assert html =~ "has no personal login to add one"
+    assert html =~ "has no personal login yet"
+    assert html =~ ~s(id="member-link-form")
     refute html =~ "Email me a verification code"
   end
 
-  test "Team MFA reset asks for a personal login", %{conn: conn, account: account} do
+  test "Team MFA reset offers only its IdP, or asks for a personal login", %{
+    conn: conn,
+    account: account,
+    provider: provider
+  } do
     target_user =
       Fixtures.Users.create_user()
       |> Fixtures.Users.set_mfa_state(
@@ -104,6 +110,13 @@ defmodule EmisarWeb.MemberOnlySessionTest do
 
     assert html =~ "A personal login is required"
     refute html =~ "Your authenticator code"
+
+    provider |> Ecto.Changeset.change(satisfies_mfa: true) |> Emisar.Repo.update!()
+    {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team/#{target.id}/reset_mfa")
+
+    assert html =~ "Verify with #{provider.name} and reset MFA"
+    refute html =~ "A personal login is required"
+    refute html =~ "Your authenticator code"
   end
 
   test "workspace creation sends a member-only session to recovery, which offers its workspace",
@@ -116,7 +129,9 @@ defmodule EmisarWeb.MemberOnlySessionTest do
 
     html = conn |> get(~p"/session/recover?reason=personal_required") |> html_response(200)
     assert html =~ "Continue to #{account.name}"
-    assert html =~ "Sign out and sign in again"
+    assert html =~ "Creating a workspace needs a personal login"
+    assert html =~ ~s(href="/app/#{account.slug}/settings/profile")
+    refute html =~ "sign in by email"
   end
 
   test "personal SSO flows refuse a member-only session", %{

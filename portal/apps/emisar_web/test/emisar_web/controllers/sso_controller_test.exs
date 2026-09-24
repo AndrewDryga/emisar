@@ -584,6 +584,63 @@ defmodule EmisarWeb.SSOControllerTest do
                Emisar.Auth.fetch_session_by_token(target_session)
     end
 
+    test "an admin without a personal login resets through a fresh IdP reauthentication", %{
+      conn: conn
+    } do
+      account = enterprise_account()
+      provider = provider_fixture(account, satisfies_mfa: true)
+
+      admin =
+        Fixtures.Memberships.create_unlinked_membership(account_id: account.id, role: "admin")
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: admin
+        )
+
+      session_token = Fixtures.Auth.create_member_session_token!(admin, identity)
+
+      target =
+        Fixtures.Users.create_user()
+        |> Fixtures.Users.set_mfa_state(
+          mfa_secret: Emisar.Auth.generate_mfa_secret(),
+          mfa_enabled_at: DateTime.utc_now(),
+          mfa_recovery_codes: []
+        )
+
+      target_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: target.id,
+          role: "operator"
+        )
+
+      begun =
+        conn
+        |> init_test_session(%{})
+        |> put_session(:user_token, session_token)
+        |> post(~p"/app/#{account}/settings/team/#{target_membership.id}/reset_mfa/sso")
+
+      assert redirected_to(begun) == "https://idp.test/auth"
+
+      completed =
+        begun
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => identity.provider_identifier,
+            "auth_time" => System.system_time(:second)
+          }
+        })
+
+      assert redirected_to(completed) == ~p"/app/#{account}/settings/team"
+      assert Phoenix.Flash.get(completed.assigns.flash, :info) =~ "MFA reset."
+      assert is_nil(Repo.reload!(target).mfa_enabled_at)
+      assert get_session(completed, :user_token) == session_token
+    end
+
     test "a revoked actor session takes the controlled failure path", %{conn: conn} do
       reset = member_mfa_reset_controller_fixture(conn)
 

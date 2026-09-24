@@ -314,6 +314,27 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  # A Member without a personal login linked one: from the Member's own SSO
+  # session the person proved the login's mailbox and any factor it already had.
+  # The Member is both the actor and the target.
+  def membership_personal_login_linked(
+        %Accounts.Membership{} = membership,
+        %RequestContext{} = context,
+        mfa?
+      )
+      when is_boolean(mfa?) do
+    Audit.changeset(membership.account_id, "membership.personal_login_linked",
+      actor_kind: "membership",
+      actor_id: membership.id,
+      target_kind: "membership",
+      target_id: membership.id,
+      target_label: Accounts.member_display_name(membership),
+      auth_method: "magic_link",
+      mfa: mfa?,
+      context: context
+    )
+  end
+
   # -- User ------------------------------------------------------------
 
   def user_sessions_revoked(%Subject{} = subject, %Accounts.Membership{} = membership),

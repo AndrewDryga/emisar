@@ -1,7 +1,7 @@
 defmodule EmisarWeb.ProfileLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, ApiKeys, Auth, SSO, Users}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MfaEnrollment}
+  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MemberLinkHandoff, MfaEnrollment}
   alias EmisarWeb.{MfaErrors, OIDCStepUp, UserAgent, UserAuth}
   alias Phoenix.LiveView.JS
 
@@ -28,6 +28,7 @@ defmodule EmisarWeb.ProfileLive do
     {:ok,
      socket
      |> assign(:page_title, "Profile")
+     |> assign(:member_link_handoff, MemberLinkHandoff.sign(socket.assigns.current_subject))
      |> assign(:personal_sign_in?, false)
      |> assign(:profile_editing?, false)
      |> assign(:workspace_profile_editing?, false)
@@ -1266,9 +1267,19 @@ defmodule EmisarWeb.ProfileLive do
           </:header>
           <p class="text-sm text-zinc-400">
             Your membership in this workspace has no personal login. You sign in through
-            this workspace's single sign-on, so personal email, sessions and multi-factor
-            settings are not available here.
+            this workspace's single sign-on. Link a personal login to add your own email
+            sign-in, sessions and multi-factor authentication.
           </p>
+          <.member_link_form
+            :if={@member_link_handoff}
+            handoff={@member_link_handoff}
+            return_to={~p"/app/#{@current_account}"}
+            class="mt-4 max-w-2xl"
+          />
+          <:note>
+            We email a sign-in code to that address. If its login already uses multi-factor
+            authentication, you also enter a code from it.
+          </:note>
         </.section_with_note>
 
         <.section_with_note :if={@current_user} id="personal-details">

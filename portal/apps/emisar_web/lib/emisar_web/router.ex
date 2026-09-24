@@ -285,13 +285,6 @@ defmodule EmisarWeb.Router do
       on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
       live "/sign_up", UserSignUpLive
       live "/sign_in", UserSignInLive
-      live "/sign_in/magic", MagicLinkLive
-
-      # Second-factor challenge for an mfa_enabled user after the magic link
-      # verifies factor one. Reads the partial-auth `:mfa_pending_user_id` from
-      # the session; a NON-pending (fully authed) visitor is bounced to the app
-      # by this pipeline, a never-pending one back to /sign_in/magic on mount.
-      live "/sign_in/mfa", MfaChallengeLive
 
       # Per-account ("branded") sign-in — the slug picks the tenant; offers SSO + magic link.
       live "/app/:account_id_or_slug/sign_in", AccountSignInLive
@@ -300,6 +293,30 @@ defmodule EmisarWeb.Router do
       # and live-updates when an admin approves. Declared before the `:provider_id`
       # begin route below so "pending" isn't read as a provider id.
       live "/sign_in/sso/pending", SSOPendingLive
+    end
+
+    # SSO landing: pick a team (recent-accounts cookie + manual entry) → its branded sign-in page.
+    get "/sign_in/sso", SSOSignInController, :new
+    post "/sign_in/sso", SSOSignInController, :create
+    get "/sign_in/sso/:provider_id", SSOController, :begin
+  end
+
+  # Email proof: the magic link and its second factor. A browser with a personal
+  # login is sent to the app; a member-only SSO session has none, so these pages
+  # stay open to it — linking a personal login rides this same proof.
+  scope "/", EmisarWeb do
+    pipe_through [:browser, :noindex, :redirect_if_personal_login]
+
+    live_session :email_sign_in,
+      session: {__MODULE__, :auth_live_session, []},
+      on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
+      live "/sign_in/magic", MagicLinkLive
+
+      # Second-factor challenge for an mfa_enabled user after the magic link
+      # verifies factor one. Reads the partial-auth `:mfa_pending_user_id` from
+      # the session; a browser with a personal login is bounced to the app by
+      # this pipeline, a never-pending one back to /sign_in/magic on mount.
+      live "/sign_in/mfa", MfaChallengeLive
     end
 
     # Split-code magic link: the LV form POSTs the email to :magic_link_start
@@ -317,11 +334,6 @@ defmodule EmisarWeb.Router do
     # session) establishes the full second-factor-verified session the LiveView
     # can't set itself.
     get "/sign_in/mfa/complete", UserSessionController, :mfa_complete
-
-    # SSO landing: pick a team (recent-accounts cookie + manual entry) → its branded sign-in page.
-    get "/sign_in/sso", SSOSignInController, :new
-    post "/sign_in/sso", SSOSignInController, :create
-    get "/sign_in/sso/:provider_id", SSOController, :begin
   end
 
   # Email confirmation must run whether or not you're signed in — the link

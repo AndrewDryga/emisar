@@ -3573,6 +3573,28 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "link_personal_login/3" do
+    test "binds a Member without a personal login to the proved User" do
+      member = Fixtures.Memberships.create_unlinked_membership()
+      user = Fixtures.Users.create_user()
+
+      assert {:ok, %Membership{user_id: user_id}} =
+               Accounts.link_personal_login(Repo, member, user)
+
+      assert user_id == user.id
+      assert Repo.reload!(member).user_id == user.id
+    end
+
+    test "refuses a User already seated in the workspace" do
+      member = Fixtures.Memberships.create_unlinked_membership()
+      user = Fixtures.Users.create_user()
+      Fixtures.Memberships.create_membership(account_id: member.account_id, user_id: user.id)
+
+      assert Accounts.link_personal_login(Repo, member, user) == {:error, :already_member}
+      assert is_nil(Repo.reload!(member).user_id)
+    end
+  end
+
   describe "after_membership_activation_committed/1" do
     test "delivers only the exact topics carried out of the transaction" do
       Emisar.Config.put_override(
@@ -6704,6 +6726,90 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "reset_member_mfa/4 — Members without a personal login" do
+    test "an administrator without one resets through a fresh IdP reauthentication" do
+      reset = unlinked_admin_reset_fixture()
+
+      assert {:ok, proof} =
+               Accounts.issue_member_mfa_reset_sso_proof(
+                 reset.target_membership,
+                 reset.reauthentication,
+                 reset.session_digest,
+                 reset.subject
+               )
+
+      assert {:ok, %User{mfa_enabled_at: nil}} =
+               Accounts.reset_member_mfa(
+                 reset.target_membership,
+                 proof,
+                 reset.session_digest,
+                 reset.subject
+               )
+
+      admin_id = reset.admin.id
+
+      assert [%AuditEvent{actor_kind: "membership", actor_id: ^admin_id}] =
+               AuditEvent.Query.all()
+               |> AuditEvent.Query.by_event_type("user.mfa_reset_by_admin")
+               |> Repo.all()
+    end
+
+    test "an administrator without one has no local factor to prove" do
+      reset = unlinked_admin_reset_fixture()
+
+      assert Auth.issue_member_mfa_reset_proof(
+               reset.target_membership,
+               reset.target_user,
+               {:local, "local-proof"},
+               reset.session_digest,
+               reset.subject
+             ) == {:error, :mfa_reset_proof_stale}
+
+      assert Accounts.verify_member_mfa_reset(
+               reset.target_membership,
+               {:totp, current_totp()},
+               reset.session_digest,
+               reset.subject
+             ) == {:error, :personal_login_required}
+
+      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+    end
+
+    test "a target without one has no MFA to reset" do
+      reset = member_mfa_reset_fixture()
+      unlinked = Fixtures.Memberships.create_unlinked_membership(account_id: reset.account.id)
+      otp = current_totp()
+
+      # Refused before the actor's own factor is spent.
+      assert Accounts.verify_member_mfa_reset(
+               unlinked,
+               {:totp, otp},
+               reset.actor_session_token_digest,
+               reset.subject
+             ) == {:error, :mfa_not_enabled}
+
+      assert {:ok, proof} =
+               Accounts.verify_member_mfa_reset(
+                 reset.target_membership,
+                 {:totp, otp},
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      assert Accounts.reset_member_mfa(
+               unlinked,
+               proof,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) == {:error, :mfa_reset_proof_stale}
+
+      assert Accounts.reset_member_mfa_for_support(unlinked, support_subject(reset.account)) ==
+               {:error, :mfa_not_enabled}
+
+      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+    end
+  end
+
   describe "reset_member_mfa_for_support/2" do
     test "the explicit actorless support capability resets an enrolled target" do
       reset = member_mfa_reset_fixture()
@@ -8609,6 +8715,50 @@ defmodule Emisar.AccountsTest do
       subject: subject,
       target_user: target_user,
       target_membership: target_membership
+    }
+  end
+
+  # An administrator without a personal login, signed in through an IdP whose
+  # MFA this workspace trusts, and a linked target with an enrolled factor.
+  defp unlinked_admin_reset_fixture do
+    account = Fixtures.Accounts.create_account(plan: "team")
+    provider = Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: true)
+    admin = Fixtures.Memberships.create_unlinked_membership(account_id: account.id, role: "admin")
+
+    identity =
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: provider.id,
+        membership: admin
+      )
+
+    raw = Fixtures.Auth.create_member_session_token!(admin, identity)
+    target_user = enroll_member_mfa(Fixtures.Users.create_user())
+
+    target_membership =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: target_user.id,
+        role: "operator"
+      )
+
+    %{
+      admin: admin,
+      subject: Fixtures.Subjects.unlinked_member_subject(admin, raw),
+      session_digest: Crypto.hash(raw),
+      target_user: target_user,
+      target_membership: target_membership,
+      reauthentication: %{
+        provider_id: provider.id,
+        identity_id: identity.id,
+        provider_identifier: identity.provider_identifier,
+        namespace: {provider.issuer, provider.client_id, provider.identifier_claim},
+        auth_time: System.system_time(:second),
+        target_membership_id: target_membership.id,
+        target_user_id: target_user.id,
+        target_mfa_enabled_at: target_user.mfa_enabled_at,
+        target_updated_at: target_user.updated_at
+      }
     }
   end
 

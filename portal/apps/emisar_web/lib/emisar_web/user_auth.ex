@@ -331,6 +331,19 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
+  @doc """
+  Used in router: the email proof pages (magic link and its second factor) send
+  a browser with a personal login to the app. A member-only SSO session has
+  none, so they stay open to it: linking one rides this same proof.
+  """
+  def redirect_if_personal_login(%{assigns: %{current_user: %Users.User{}}} = conn, _opts) do
+    conn
+    |> redirect(to: signed_in_path(conn))
+    |> halt()
+  end
+
+  def redirect_if_personal_login(conn, _opts), do: conn
+
   defp assign_current_account(conn) do
     account_ref = conn.path_params["account_id_or_slug"]
     session_account_id = get_session(conn, :current_account_id)

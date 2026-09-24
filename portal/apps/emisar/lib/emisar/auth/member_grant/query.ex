@@ -15,6 +15,9 @@ defmodule Emisar.Auth.MemberGrant.Query do
     )
   end
 
+  def excluding_token_id(queryable, token_id),
+    do: where(queryable, [member_grants: g], g.user_token_id != ^token_id)
+
   def select_account_ids(queryable),
     do: select(queryable, [member_grants: g], g.account_id)
 

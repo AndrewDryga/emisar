@@ -2280,15 +2280,18 @@ defmodule Emisar.SSO do
       ),
       do: {:error, :mfa_reset_proof_stale}
 
+  # The acting administrator's exact SSO route, whether its Member is linked to
+  # a personal login or signs in only through this identity.
   defp fetch_member_mfa_reset_identity(
          %Subject{
-           actor: %Users.User{},
+           actor: actor,
            account: %Accounts.Account{id: account_id},
            auth_method: :sso,
            user_identity_id: identity_id
          } = subject
        )
-       when is_binary(identity_id) do
+       when is_binary(identity_id) and
+              (is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership)) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
@@ -2902,6 +2905,21 @@ defmodule Emisar.SSO do
     |> Multi.run(:membership, fn _repo, %{membership_transition: transition} ->
       {:ok, transition.membership}
     end)
+  end
+
+  @doc """
+  Internal — lock one live, unretired SSO identity bound to this exact Member,
+  for Auth's personal-login link. No `%Subject{}`: Auth already holds the donor
+  session and Member it rechecks this identity against.
+  """
+  def fetch_and_lock_member_identity(repo, account_id, membership_id, identity_id) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.provider_identifier_active()
+    |> UserIdentity.Query.by_id(identity_id)
+    |> UserIdentity.Query.by_account_id(account_id)
+    |> UserIdentity.Query.by_membership_id(membership_id)
+    |> UserIdentity.Query.lock_for_update()
+    |> repo.fetch(UserIdentity.Query)
   end
 
   @doc """

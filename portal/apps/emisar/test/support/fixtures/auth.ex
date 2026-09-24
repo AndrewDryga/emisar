@@ -81,8 +81,8 @@ defmodule Emisar.Fixtures.Auth do
   against the user's `mfa_enabled_at`.
 
   Production never mints a session this way — every sign-in flow owns its own
-  provenance (`Auth.complete_magic_link_sign_in/4`,
-  `Auth.complete_magic_link_mfa_sign_in/4`, `Auth.complete_sso_account_sign_in/4`)
+  provenance (`Auth.complete_magic_link_sign_in/5`,
+  `Auth.complete_magic_link_mfa_sign_in/5`, `Auth.complete_sso_account_sign_in/4`)
   precisely so no caller can hand-pick `auth_method`/`mfa_verified_at`. This is
   the test arrange for everything that only needs *a* live session to exist.
   """

@@ -8,12 +8,17 @@ defmodule EmisarWeb.UserSessionController do
   after the magic link verifies and only reaches a full session via `mfa_complete`.
   Account-wide MFA *enrollment* is still enforced post-login by `UserAuth`'s
   `:ensure_account_compliant` gate.
+
+  A member-only SSO session links a personal login through this same flow: its
+  signed `member_link_handoff` rides the email request onto the factor, and the
+  completion presents this browser's session cookie as the link's donor.
   """
 
   use EmisarWeb, :controller
   alias Emisar.{Auth, Config, Throttle, Users}
-  alias EmisarWeb.{Analytics, BillingIntent, MagicLinkHandoff, MfaChallengeHandoff}
-  alias EmisarWeb.{RecentAccounts, RegistrationHandoff, RequestContext, ReturnTo, UserAuth}
+  alias EmisarWeb.{Analytics, BillingIntent, MagicLinkHandoff, MemberLinkHandoff}
+  alias EmisarWeb.{MfaChallengeHandoff, RecentAccounts, RegistrationHandoff}
+  alias EmisarWeb.{RequestContext, ReturnTo, UserAuth}
 
   # The split-code magic link keeps its browser-side nonce in this signed,
   # 15-minute, http-only cookie (`token_id:nonce`); the email carries the
@@ -41,8 +46,38 @@ defmodule EmisarWeb.UserSessionController do
   nonce it hands back is stashed in the signed cookie. Always lands on the "check
   your email" page — a throttled, unknown, or unavailable-team request skips the
   work but shows the same page (no account-existence leak).
+
+  A `member_link_handoff` asks to link a personal login to this browser's
+  member-only session. It is honored only from that exact session, and an
+  address with no personal login yet gets one, exactly as signup creates it.
+  A member-only browser's requests always link: a resend or another address
+  reuses the handoff its link started with, and without one nothing is sent.
   """
   def magic_link_start(conn, %{"user" => %{"email" => email}} = params) when is_binary(email) do
+    handoff = params["member_link_handoff"] || member_link_in_flight(conn)
+
+    case member_link(handoff, conn.assigns[:current_auth]) do
+      :invalid ->
+        member_link_failed(conn, :member_link_invalid)
+
+      nil ->
+        request_magic_link(conn, email, params, nil)
+
+      member_link ->
+        conn
+        |> put_session(:member_link_handoff, handoff)
+        |> request_magic_link(email, params, member_link)
+    end
+  end
+
+  def magic_link_start(conn, _params) do
+    conn
+    |> clear_magic_request()
+    |> replace_billing_intent(nil)
+    |> redirect(to: ~p"/sign_in/magic?sent=1")
+  end
+
+  defp request_magic_link(conn, email, params, member_link) do
     context = RequestContext.from_conn(conn)
     return_to = ReturnTo.app_path(params["return_to"])
     handoff = params["registration_handoff"]
@@ -59,13 +94,16 @@ defmodule EmisarWeb.UserSessionController do
         conn = conn |> clear_magic_request() |> replace_billing_intent(billing_intent)
 
         conn =
-          with {:ok, user} <- Users.fetch_user_by_email(email),
+          with {:ok, user} <- magic_link_user(email, member_link),
                {:ok, %{token_id: token_id, nonce: nonce}} <-
-                 Auth.request_magic_link(user, context,
-                   account_ref: branded_account_ref(return_to),
-                   return_to: return_to,
-                   owner_registration: owner_registration(handoff, user),
-                   prior_magic_link_token_id: prior_token_id
+                 Auth.request_magic_link(
+                   user,
+                   context,
+                   [
+                     account_ref: branded_account_ref(return_to),
+                     return_to: return_to,
+                     prior_magic_link_token_id: prior_token_id
+                   ] ++ magic_link_intent(handoff, member_link, user)
                  ) do
             put_magic_request(conn, token_id, nonce)
             # The LiveView verifies the typed code (the nonce isn't readable from JS),
@@ -113,12 +151,57 @@ defmodule EmisarWeb.UserSessionController do
     end
   end
 
-  def magic_link_start(conn, _params) do
-    conn
-    |> clear_magic_request()
-    |> replace_billing_intent(nil)
-    |> redirect(to: ~p"/sign_in/magic?sent=1")
+  # A member-only browser mid-link reuses its link's handoff for a resend or
+  # another address; no other browser ever inherits one.
+  defp member_link_in_flight(%{assigns: %{current_auth: %Auth.UserToken{user_id: nil}}} = conn),
+    do: get_session(conn, :member_link_handoff)
+
+  defp member_link_in_flight(_conn), do: nil
+
+  # nil for an ordinary request; the link intent when the handoff names this
+  # exact member-only session; `:invalid` for any other handoff, or for a
+  # member-only browser without one (a plain sign-in would replace its session).
+  defp member_link(nil, %Auth.UserToken{user_id: nil}), do: :invalid
+  defp member_link(nil, _current_auth), do: nil
+
+  defp member_link(handoff, %Auth.UserToken{
+         id: donor_token_id,
+         user_id: nil,
+         user_identity_id: identity_id
+       })
+       when is_binary(identity_id) do
+    case MemberLinkHandoff.verify(handoff) do
+      {:ok, {account_id, membership_id, ^identity_id, ^donor_token_id}} ->
+        %{
+          account_id: account_id,
+          membership_id: membership_id,
+          identity_id: identity_id,
+          donor_token_id: donor_token_id
+        }
+
+      _other ->
+        :invalid
+    end
   end
+
+  defp member_link(_handoff, _current_auth), do: :invalid
+
+  # Linking proves the address it names, so an address with no personal login
+  # yet gets one, exactly as signup creates it (a concurrent submit that created
+  # it first is read back); a sign-in stays silent instead.
+  defp magic_link_user(email, nil), do: Users.fetch_user_by_email(email)
+
+  defp magic_link_user(email, %{}) do
+    with {:error, :not_found} <- Users.fetch_user_by_email(email),
+         {:error, _changeset} <- Users.register_user(%{email: email}) do
+      Users.fetch_user_by_email(email)
+    end
+  end
+
+  defp magic_link_intent(handoff, nil, user),
+    do: [owner_registration: owner_registration(handoff, user)]
+
+  defp magic_link_intent(_handoff, member_link, _user), do: [member_link: member_link]
 
   defp magic_link_expiry do
     DateTime.utc_now()
@@ -188,7 +271,13 @@ defmodule EmisarWeb.UserSessionController do
       context = RequestContext.from_conn(conn)
       account_ref = branded_account_ref(get_session(conn, :user_return_to))
 
-      case Auth.complete_magic_link_mfa_sign_in(proof, token_id, account_ref, context) do
+      case Auth.complete_magic_link_mfa_sign_in(
+             proof,
+             token_id,
+             account_ref,
+             context,
+             presented_session_digest(conn)
+           ) do
         {:ok, user, token, target, registered?} ->
           install_magic_link_session(
             conn
@@ -203,6 +292,9 @@ defmodule EmisarWeb.UserSessionController do
 
         {:error, {:account_disabled, account}} ->
           conn |> clear_mfa_pending() |> redirect_to_disabled_account(account)
+
+        {:error, reason} when reason in [:already_member, :member_link_invalid] ->
+          member_link_failed(conn, reason)
 
         {:error, _reason} ->
           conn |> clear_mfa_pending() |> restart_mfa_sign_in()
@@ -393,7 +485,13 @@ defmodule EmisarWeb.UserSessionController do
        when is_binary(user_id) and is_binary(token_id) do
     account_ref = branded_account_ref(get_session(conn, :user_return_to))
 
-    case Auth.complete_magic_link_sign_in(user_id, token_id, account_ref, context) do
+    case Auth.complete_magic_link_sign_in(
+           user_id,
+           token_id,
+           account_ref,
+           context,
+           presented_session_digest(conn)
+         ) do
       {:ok, user, token, target, registered?} ->
         install_magic_link_session(
           conn
@@ -417,10 +515,38 @@ defmodule EmisarWeb.UserSessionController do
       {:error, {:account_disabled, account}} ->
         conn |> clear_magic_request() |> redirect_to_disabled_account(account)
 
+      {:error, reason} when reason in [:already_member, :member_link_invalid] ->
+        member_link_failed(conn, reason)
+
       {:error, _reason} ->
         restart_magic_sign_in(conn)
     end
   end
+
+  # A member-link factor completes only from the browser whose member-only
+  # session asked for it; this is that browser's session-cookie digest.
+  defp presented_session_digest(%{assigns: %{current_auth: %Auth.UserToken{token: digest}}}),
+    do: digest
+
+  defp presented_session_digest(_conn), do: nil
+
+  # A refused link leaves this browser's own session as it was; its workspace,
+  # or the sign-in page when that session has ended, says what happens next.
+  defp member_link_failed(conn, reason) do
+    conn
+    |> clear_magic_request()
+    |> clear_mfa_pending()
+    |> delete_session(:member_link_handoff)
+    |> put_flash(:error, member_link_failure_message(reason))
+    |> redirect(to: ~p"/app")
+  end
+
+  defp member_link_failure_message(:already_member) do
+    "That personal login is already a member of this workspace. Link a different email address."
+  end
+
+  defp member_link_failure_message(:member_link_invalid),
+    do: "Your personal login couldn't be linked. Start again from your profile."
 
   defp clear_mfa_pending(conn) do
     conn
@@ -473,6 +599,16 @@ defmodule EmisarWeb.UserSessionController do
 
   defp install_magic_link_session(conn, :no_target, user, token, registered?, log_in),
     do: log_in.(conn, user, token, registered?)
+
+  # The linked Member's workspace, now reached through the personal login too.
+  # `log_in` redirects, so the landing and the flash are set before it.
+  defp install_magic_link_session(conn, {:linked, account}, user, token, registered?, log_in) do
+    conn
+    |> RecentAccounts.put(%{slug: account.slug, name: account.name})
+    |> put_session(:user_return_to, ~p"/app/#{account}")
+    |> put_flash(:info, "Personal login linked.")
+    |> log_in.(user, token, registered?)
+  end
 
   defp restart_magic_sign_in(conn) do
     conn

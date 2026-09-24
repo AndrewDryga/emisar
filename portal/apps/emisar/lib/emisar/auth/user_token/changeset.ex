@@ -86,31 +86,50 @@ defmodule Emisar.Auth.UserToken.Changeset do
   @doc """
   Split-code magic-link token row. `digest` is `Crypto.hash(nonce <> secret)` —
   neither half is stored, so a DB breach + an intercepted email still can't sign
-  in. `attempts` is the online-guess budget for the 6-character secret.
+  in. `attempts` is the online-guess budget for the 6-character secret. The
+  factor carries at most one server-side intent: the owner registration it
+  finishes, or the exact workspace Member it links to this personal login.
   """
-  def magic_link(%Users.User{} = user, digest, sent_to, attempts, owner_registration)
+  def magic_link(
+        %Users.User{} = user,
+        digest,
+        sent_to,
+        attempts,
+        owner_registration,
+        member_link \\ nil
+      )
       when is_binary(digest) and is_integer(attempts) do
-    metadata =
-      case owner_registration do
-        %{account_name: account_name, full_name: full_name}
-        when is_binary(account_name) and (is_binary(full_name) or is_nil(full_name)) ->
-          %{
-            "registration_account_name" => account_name,
-            "registration_full_name" => full_name
-          }
-
-        nil ->
-          %{}
-      end
-
     change(%UserToken{},
       token: digest,
       context: "magic_link",
       sent_to: sent_to,
       user_id: user.id,
       remaining_attempts: attempts,
-      metadata: metadata
+      metadata: magic_link_metadata(owner_registration, member_link)
     )
+  end
+
+  defp magic_link_metadata(nil, nil), do: %{}
+
+  defp magic_link_metadata(%{account_name: account_name, full_name: full_name}, nil)
+       when is_binary(account_name) and (is_binary(full_name) or is_nil(full_name)) do
+    %{"registration_account_name" => account_name, "registration_full_name" => full_name}
+  end
+
+  defp magic_link_metadata(nil, %{
+         account_id: account_id,
+         membership_id: membership_id,
+         identity_id: identity_id,
+         donor_token_id: donor_token_id
+       })
+       when is_binary(account_id) and is_binary(membership_id) and is_binary(identity_id) and
+              is_binary(donor_token_id) do
+    %{
+      "member_link_account_id" => account_id,
+      "member_link_membership_id" => membership_id,
+      "member_link_identity_id" => identity_id,
+      "member_link_donor_token_id" => donor_token_id
+    }
   end
 
   @doc "Promotes this exact split token into the short-lived factor final session minting consumes."

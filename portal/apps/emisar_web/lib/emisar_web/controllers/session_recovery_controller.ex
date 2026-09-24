@@ -13,6 +13,7 @@ defmodule EmisarWeb.SessionRecoveryController do
     |> render(:show,
       accounts: accounts,
       signed_in?: match?(%Auth.UserToken{}, conn.assigns[:current_auth]),
+      member_only?: match?(%Auth.UserToken{user_id: nil}, conn.assigns[:current_auth]),
       sso_incomplete?: params["reason"] == "sso_incomplete",
       personal_required?: params["reason"] == "personal_required"
     )

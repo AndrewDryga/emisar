@@ -7,9 +7,28 @@ defmodule EmisarWeb.SessionRecoveryHTML do
       <p :if={@sso_incomplete?} role="status" class="mb-4 text-sm leading-relaxed text-zinc-300">
         Single sign-on was not completed. Choose a workspace to try again, or start a new sign-in.
       </p>
-      <p :if={@personal_required?} role="status" class="mb-4 text-sm leading-relaxed text-zinc-300">
+      <p
+        :if={@personal_required? and not @member_only?}
+        role="status"
+        class="mb-4 text-sm leading-relaxed text-zinc-300"
+      >
         Sign out and sign in by email to create a workspace.
       </p>
+      <div :if={@personal_required? and @member_only?} class="mb-4 space-y-3">
+        <p role="status" class="text-sm leading-relaxed text-zinc-300">
+          Creating a workspace needs a personal login, and your membership has none yet.
+          Link one from your profile, then try again.
+        </p>
+        <%!-- A member-only session reaches exactly one workspace. --%>
+        <.button
+          :for={account <- @accounts}
+          href={~p"/app/#{account}/settings/profile"}
+          variant={:secondary}
+          class="w-full"
+        >
+          Link a personal login
+        </.button>
+      </div>
       <p :if={@signed_in?} class="text-sm leading-relaxed text-zinc-400">
         This browser may need a new sign-in to access your workspace. Signing in again
         checks your current access. If access was removed, ask a workspace admin to restore it.

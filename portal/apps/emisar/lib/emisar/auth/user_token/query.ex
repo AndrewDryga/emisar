@@ -25,6 +25,10 @@ defmodule Emisar.Auth.UserToken.Query do
   def by_user_id(queryable \\ all(), user_id),
     do: where(queryable, [tokens: t], t.user_id == ^user_id)
 
+  @doc "A member-only SSO session's row: no personal login stands behind it."
+  def member_only(queryable \\ all()),
+    do: where(queryable, [tokens: t], is_nil(t.user_id))
+
   def by_context(queryable \\ all(), context) when is_binary(context),
     do: where(queryable, [tokens: t], t.context == ^context)
 

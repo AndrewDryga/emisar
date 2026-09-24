@@ -607,6 +607,44 @@ defmodule EmisarWeb.AuthComponents do
     """
   end
 
+  @doc """
+  Links a personal login to a workspace Member that has none. The form posts an
+  email address with the page's signed member-link handoff to the email
+  sign-in; the Member is linked only once this browser proves that mailbox and
+  any second factor its login already has. Shared by Profile and the required
+  MFA page, which offer the link before any factor can be set up.
+  """
+  attr :handoff, :string, required: true, doc: "the signed EmisarWeb.MemberLinkHandoff"
+  attr :return_to, :string, required: true, doc: "the Member's workspace, `/app/<slug>`"
+  attr :class, :string, default: nil
+
+  def member_link_form(assigns) do
+    ~H"""
+    <.simple_form
+      for={%{}}
+      id="member-link-form"
+      class={@class}
+      action={~p"/sign_in/magic/start"}
+      method="post"
+    >
+      <input type="hidden" name="member_link_handoff" value={@handoff} />
+      <input type="hidden" name="return_to" value={@return_to} />
+      <.input
+        name="user[email]"
+        id="member-link-email"
+        value=""
+        type="email"
+        label="Email address"
+        autocomplete="email"
+        required
+      />
+      <:actions>
+        <.button>Email me a code</.button>
+      </:actions>
+    </.simple_form>
+    """
+  end
+
   @doc "The same explicit saved-codes acknowledgement on voluntary and required MFA setup."
   attr :saved, :boolean, required: true
   attr :event, :string, required: true

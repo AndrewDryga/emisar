@@ -1764,6 +1764,23 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
+  Internal — Auth's personal-login link: bind a locked Member without a
+  personal login to the personal login that just proved its mailbox. A person
+  holds one live seat per workspace, so a User already seated here is refused
+  with `{:error, :already_member}`. No `%Subject{}`: Auth holds the donor
+  session, accounts, person and Member locks this decision relies on.
+  """
+  def link_personal_login(repo, %Membership{user_id: nil} = member, %Users.User{id: user_id}) do
+    seated =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_account_and_user(member.account_id, user_id)
+
+    if repo.exists?(seated),
+      do: {:error, :already_member},
+      else: repo.update(Membership.Changeset.link_personal_login(member, user_id))
+  end
+
+  @doc """
   Internal — finish the external half of a committed membership activation.
   Identity-bound session rows were deleted in the transaction; their exact
   socket topics ride in `:retired_bindings` because no query can derive them
@@ -3605,7 +3622,7 @@ defmodule Emisar.Accounts do
         Auth.lock_member_mfa_reset_session(
           repo,
           actor_session_token_digest,
-          actor.id,
+          member_mfa_reset_actor_id(actor),
           payload.source
         )
       end)
@@ -3752,32 +3769,36 @@ defmodule Emisar.Accounts do
   defp current_member_mfa_reset_subject(subject, account, actor_membership),
     do: Subject.rebuild(subject, actor_membership, account)
 
+  # A Member without a personal login has no Emisar factor to reset.
+  defp ensure_member_mfa_reset_target(%Membership{user_id: nil}), do: {:error, :mfa_not_enabled}
+
   defp ensure_member_mfa_reset_target(%Membership{} = membership) do
     if membership_invitation_pending?(membership),
       do: {:error, :invitation_pending},
       else: :ok
   end
 
+  # An administrator without a personal login acts with no User of its own:
+  # `actor` is then nil, and only a fresh IdP reauthentication proves it.
   defp lock_member_mfa_reset_users(repo, reset_memberships, payload) do
     %{actor: actor_membership, target: target_membership} = reset_memberships
+    user_ids = Enum.reject([actor_membership.user_id, target_membership.user_id], &is_nil/1)
 
-    with {:ok, users} <-
-           Users.fetch_and_lock_users_by_ids(
-             [actor_membership.user_id, target_membership.user_id],
-             repo
-           ),
-         %Users.User{} = actor <- Enum.find(users, &(&1.id == actor_membership.user_id)),
+    with {:ok, users} <- Users.fetch_and_lock_users_by_ids(user_ids, repo),
          %Users.User{} = target <- Enum.find(users, &(&1.id == target_membership.user_id)),
          :ok <- ensure_member_mfa_reset_target_user(target, payload),
          # Under the target's user-row lock, so a membership granted elsewhere
          # while this decides waits behind it (see fetch_and_lock_active_memberships_for_user/2).
          :ok <- ensure_member_mfa_reset_target_sole_tenant(repo, target, target_membership) do
-      {:ok, %{actor: actor, target: target}}
+      {:ok, %{actor: Enum.find(users, &(&1.id == actor_membership.user_id)), target: target}}
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp member_mfa_reset_actor_id(%Users.User{id: actor_id}), do: actor_id
+  defp member_mfa_reset_actor_id(nil), do: nil
 
   defp ensure_member_mfa_reset_target_sole_tenant(repo, %Users.User{} = target, membership) do
     if sole_tenancy?(repo, target.id, membership.account_id),
@@ -3865,7 +3886,7 @@ defmodule Emisar.Accounts do
          %{actor: actor_membership, target: target_membership},
          %{actor: actor, target: target}
        ) do
-    with true <- payload.actor_id == actor.id,
+    with true <- payload.actor_id == member_mfa_reset_actor_id(actor),
          true <- payload.actor_membership_id == actor_membership.id,
          true <- payload.target_membership_id == target_membership.id,
          true <- payload.target_user_id == target.id,
@@ -3879,10 +3900,13 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp validate_member_mfa_reset_local_source({:local, _proof} = source, actor),
+  defp validate_member_mfa_reset_local_source({:local, _proof} = source, %Users.User{} = actor),
     do: Auth.verify_local_member_mfa_reset_source(source, actor)
 
   defp validate_member_mfa_reset_local_source({:sso, _reauthentication}, _actor), do: :ok
+
+  defp validate_member_mfa_reset_local_source(_source, _actor),
+    do: {:error, :mfa_reset_proof_stale}
 
   defp put_member_mfa_reset_writes(multi, subject) do
     multi

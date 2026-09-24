@@ -614,6 +614,61 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     end
   end
 
+  describe "a Member without a personal login" do
+    test "links one from the interstitial, then sets up that login's authenticator" do
+      account = Fixtures.Accounts.create_account(plan: "team")
+      Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: member
+        )
+
+      donor_raw = Fixtures.Auth.create_member_session_token!(member, identity)
+      conn = build_conn() |> init_test_session(%{}) |> put_session(:user_token, donor_raw)
+
+      {:ok, _lv, html} = live(conn, ~p"/app/mfa_setup")
+      assert html =~ "Link one to set up an authenticator"
+      refute html =~ "Email me a verification code"
+
+      [handoff] =
+        html
+        |> LazyHTML.from_document()
+        |> LazyHTML.query("#member-link-form input[name='member_link_handoff']")
+        |> LazyHTML.attribute("value")
+
+      user = Fixtures.Users.create_user()
+
+      started =
+        post(conn, ~p"/sign_in/magic/start", %{
+          "user" => %{"email" => user.email},
+          "member_link_handoff" => handoff,
+          "return_to" => "/app/#{account.slug}"
+        })
+
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      linked = started |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+      assert redirected_to(linked) == ~p"/app/#{account}"
+      conn = recycle(linked)
+
+      # Linked, the Member meets the requirement with its personal login's own
+      # local factor.
+      assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} = live(conn, ~p"/app/#{account}")
+      {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+      html = begin_mfa_enrollment(lv)
+      assert [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
+      secret = Base.decode32!(encoded, padding: false)
+      assert submit_concurrent_mfa_enrollment(lv, secret) =~ "Save your recovery codes"
+
+      assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account}")
+    end
+  end
+
   defp begin_mfa_enrollment(lv) do
     render_click(lv, "start_mfa", %{})
     assert_received {:email, email}
