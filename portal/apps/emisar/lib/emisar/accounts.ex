@@ -2548,8 +2548,15 @@ defmodule Emisar.Accounts do
       |> Membership.Query.lock_for_update()
       |> repo.fetch(Membership.Query, preload: [:user])
     end)
-    |> Multi.insert(:audit, fn %{membership: membership} ->
-      destination = Auth.switched_subject_options(membership, subject)
+    # The grant was read before the lock; a sign-out that ended it meanwhile
+    # leaves no route, and a switch audited without one would drop provenance.
+    |> Multi.run(:destination, fn _repo, %{membership: membership} ->
+      case Auth.switched_subject_options(membership, subject) do
+        [] -> {:error, :not_found}
+        destination -> {:ok, destination}
+      end
+    end)
+    |> Multi.insert(:audit, fn %{membership: membership, destination: destination} ->
       Audit.Events.session_account_switched(subject, membership, destination)
     end)
     |> Repo.commit_multi()
