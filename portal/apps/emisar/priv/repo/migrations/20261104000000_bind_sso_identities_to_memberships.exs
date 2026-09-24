@@ -2,10 +2,13 @@ defmodule Emisar.Repo.Migrations.BindSSOIdentitiesToMemberships do
   use Ecto.Migration
 
   # Each user's live seat in the account, else their latest removed one. A
-  # removed seat keeps directory history and never authorizes a sign-in.
+  # removed seat keeps directory history and never authorizes a sign-in. A
+  # pending invitation is not a seat: 20261112 detaches it from this login, and
+  # whoever proves the invited address accepts it.
   @seat """
   SELECT DISTINCT ON (account_id, user_id) account_id, user_id, id
   FROM account_memberships
+  WHERE NOT (invitation_accepted_at IS NULL AND invitation_token_digest IS NOT NULL)
   ORDER BY account_id, user_id, (deleted_at IS NULL) DESC, inserted_at DESC, id DESC
   """
 
