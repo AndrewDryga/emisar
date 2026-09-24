@@ -1311,13 +1311,16 @@ defmodule Emisar.SSO do
   end
 
   @doc """
-  Internal — which of these seats any SSO identity ever came through, live,
-  retired or deleted. Detaching a personal login leaves such a seat reachable
-  through its workspace SSO; a seat without one would have no way in.
+  Internal — which of these seats can sign in through workspace SSO right now: a
+  live identity with an active identifier on an enabled provider. Detaching a
+  personal login leaves only such a seat reachable; a retired, deleted, or
+  disabled route would leave it with no way in.
   """
-  def membership_ids_with_identity(repo, membership_ids) when is_list(membership_ids) do
-    UserIdentity.Query.all()
+  def membership_ids_with_usable_identity(repo, membership_ids) when is_list(membership_ids) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.provider_identifier_active()
     |> UserIdentity.Query.by_membership_ids(membership_ids)
+    |> UserIdentity.Query.with_enabled_provider()
     |> UserIdentity.Query.select_membership_ids()
     |> repo.all()
     |> Enum.uniq()

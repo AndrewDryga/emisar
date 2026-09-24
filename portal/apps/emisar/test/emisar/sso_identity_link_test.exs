@@ -878,13 +878,16 @@ defmodule Emisar.SSOIdentityLinkTest do
     end
   end
 
-  describe "membership_ids_with_identity/2" do
-    test "names the seats any identity came through, retired ones included" do
+  describe "membership_ids_with_usable_identity/2" do
+    test "names only the seats a live identity on an enabled provider reaches" do
       account = Fixtures.Accounts.create_account(plan: "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      live = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
-      retired = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
-      bare = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      disabled =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :openid_connect)
+
+      [live, retired, deleted, off, bare] =
+        for _ <- 1..5, do: Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
 
       Fixtures.SSO.create_user_identity(
         account_id: account.id,
@@ -892,20 +895,30 @@ defmodule Emisar.SSOIdentityLinkTest do
         membership: live
       )
 
-      retired_identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: account.id,
-          provider_id: provider.id,
-          membership: retired
-        )
+      account.id
+      |> identity_for(provider, retired)
+      |> Fixtures.SSO.retire_identity()
 
-      Fixtures.SSO.retire_identity(retired_identity)
+      account.id
+      |> identity_for(provider, deleted)
+      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
+      |> Repo.update!()
 
-      assert Enum.sort(SSO.membership_ids_with_identity(Repo, [live.id, retired.id, bare.id])) ==
-               Enum.sort([live.id, retired.id])
+      identity_for(account.id, disabled, off)
+      Fixtures.SSO.disable_provider(disabled)
 
-      assert SSO.membership_ids_with_identity(Repo, []) == []
+      seat_ids = Enum.map([live, retired, deleted, off, bare], & &1.id)
+      assert SSO.membership_ids_with_usable_identity(Repo, seat_ids) == [live.id]
+      assert SSO.membership_ids_with_usable_identity(Repo, []) == []
     end
+  end
+
+  defp identity_for(account_id, provider, membership) do
+    Fixtures.SSO.create_user_identity(
+      account_id: account_id,
+      provider_id: provider.id,
+      membership: membership
+    )
   end
 
   defp with_sso_session(context, identity) do

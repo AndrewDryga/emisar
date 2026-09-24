@@ -4020,10 +4020,10 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Personal self-service: the caller's own seats that a workspace SSO identity
-  came through, which `detach_personal_login/2` can detach. Requires this
-  browser's personal proof. Reads across workspaces, but only the caller's own
-  seats (the documented `list_accounts_for_user/2` exception to IL-4).
+  Personal self-service: the caller's own seats that can sign in through
+  workspace SSO right now, which `detach_personal_login/2` can detach. Requires
+  this browser's personal proof. Reads across workspaces, but only the caller's
+  own seats (the documented `list_accounts_for_user/2` exception to IL-4).
   """
   def list_detachable_memberships(%Subject{actor: %Users.User{} = user} = subject) do
     with :ok <- Subject.ensure_personal_user(subject) do
@@ -4033,7 +4033,7 @@ defmodule Emisar.Accounts do
         |> Membership.Query.with_preloaded_account()
         |> Repo.all()
 
-      with_identity = SSO.membership_ids_with_identity(Repo, Enum.map(seats, & &1.id))
+      with_identity = SSO.membership_ids_with_usable_identity(Repo, Enum.map(seats, & &1.id))
       {:ok, Enum.filter(seats, &(&1.id in with_identity))}
     end
   end
@@ -4045,9 +4045,10 @@ defmodule Emisar.Accounts do
   seats. The seat stays a Member that signs in through its workspace SSO; this
   person's sessions lose it, and it is audited in that workspace as the seat
   itself. The workspace controls every other fact about the seat, so only one is
-  checked: an SSO identity came through it, or detaching would leave a seat
-  nobody can sign in to (`{:error, :no_sso_identity}`). Requires this browser's
-  personal proof. Returns `{:ok, member}` or `{:error, :not_found}`.
+  checked: it can sign in through workspace SSO right now, or detaching would
+  leave a seat nobody can sign in to (`{:error, :no_sso_identity}`). Requires
+  this browser's personal proof. Returns `{:ok, member}` or
+  `{:error, :not_found}`.
   """
   def detach_personal_login(membership_id, %Subject{actor: %Users.User{} = user} = subject) do
     with :ok <- Subject.ensure_personal_user(subject),
@@ -4057,7 +4058,7 @@ defmodule Emisar.Accounts do
       |> Auth.put_personal_session(subject)
       |> Multi.run(:membership, fn repo, %{user: locked_user} ->
         with {:ok, seat} <- lock_own_seat(repo, account_id, membership_id, locked_user.id),
-             [_seat_id] <- SSO.membership_ids_with_identity(repo, [seat.id]) do
+             [_seat_id] <- SSO.membership_ids_with_usable_identity(repo, [seat.id]) do
           {:ok, seat}
         else
           [] -> {:error, :no_sso_identity}
