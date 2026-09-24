@@ -180,6 +180,31 @@ cases:
       exit: [5]
       reason_contains: [process exited with code 5]
       stderr_contains: ["nomad.job_health_snapshot: job read returned invalid JSON"]
+  # A checkless allocation exists in the response (unlike the live Nomad SUT's
+  # immediate post-submit snapshot). Nomad's nil check-store map encodes null.
+  - name: nomad.job_health_snapshot-checkless-allocation
+    action: nomad.job_health_snapshot
+    env:
+      PATH: /packs/nomad/test/fixtures/snapshot-bin:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    args: {job: packtest-health}
+    expect:
+      stdout_contains: ['"allocations_available":1', '"checks":[]']
+  - name: nomad.job_health_snapshot-checked-allocation
+    action: nomad.job_health_snapshot
+    env:
+      PATH: /packs/nomad/test/fixtures/snapshot-checked-bin:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    args: {job: packtest-health}
+    expect:
+      stdout_contains: ['"checks":[{', '"id":"check-1"', '"status":"success"']
+  - name: nomad.job_health_snapshot-malformed-checks
+    action: nomad.job_health_snapshot
+    env:
+      PATH: /packs/nomad/test/fixtures/snapshot-malformed-bin:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    args: {job: packtest-health}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["checks read returned invalid JSON; expected object or null"]
   - action: nomad.server_members
     expect:
       stdout_contains: ['"Status":"alive"', '"ServerName"']

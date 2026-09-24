@@ -271,6 +271,47 @@ cases:
       stderr_contains: ['format_version "2.0" in the plan document is not a supported 0.x or 1.x plan format']
       stdout_not_contains: ['"total":0']
 
+  - name: tfc.plan_summary-explains-unavailable-json-plan
+    action: tfc.plan_summary
+    args: {run_id: run-DoesNotExist}
+    expect:
+      status: failure
+      stderr_contains: ["If the API returned 404 for a valid run", "tfc.plan_log"]
+
+  - action: tfc.plan_log
+    args: {run_id: run-4Qm7TvLpXsRbNc2d}
+    expect:
+      json:
+        /run_id: run-4Qm7TvLpXsRbNc2d
+        /plan_id: plan-Xt7bQ2mLvNc4Ra8s
+        /plan_status: finished
+        /log/available: true
+      stdout_contains: ["Plan: 1 to add, 1 to change, 2 to destroy."]
+
+  - name: tfc.plan_log-reports-a-missing-log
+    action: tfc.plan_log
+    args: {run_id: run-5NoLogWp4Hs2Ym8q}
+    expect:
+      json:
+        /log/available: false
+        /log/reason: HCP returned no log for this phase
+
+  - name: tfc.plan_log-reports-an-unreadable-log
+    action: tfc.plan_log
+    args: {run_id: run-6DeniedBv1Zx7Qf3}
+    expect:
+      json:
+        /log/available: false
+        /log/reason: the log is gone or this token may not read it
+
+  - name: tfc.plan_log-refuses-a-malformed-presigned-url
+    action: tfc.plan_log
+    args: {run_id: run-9GlobUrlYz2Bc5Df}
+    expect:
+      json:
+        /log/available: false
+        /log/reason: HCP returned a malformed log URL
+
   # The plan is the failed phase. The tail keeps only the last 60 lines and
   # 2 KiB with ANSI control codes stripped ('\u001b' is how a surviving
   # escape byte would read in the JSON output), and the presigned log URL

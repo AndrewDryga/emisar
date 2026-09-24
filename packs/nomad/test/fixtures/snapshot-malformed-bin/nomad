@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+SNAPSHOT_CHECKS_MODE=malformed
+export SNAPSHOT_CHECKS_MODE
+exec /packs/nomad/test/fixtures/snapshot-bin/nomad "$@"

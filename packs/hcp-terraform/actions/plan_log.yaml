@@ -1,0 +1,64 @@
+schema_version: 1
+id: tfc.plan_log
+title: Read a bounded HCP Terraform plan log
+kind: script
+risk: medium
+description: >
+  Read the last 60 lines of a run's plan log, capped at 2 KiB, including for a
+  successfully finished plan. This is a read-scoped fallback when the
+  structured plan JSON needs workspace-admin access. It can show drift and
+  resource changes if they fall within the bounded tail, but it is not a
+  complete per-resource plan summary. Plan logs are raw provider output that
+  can contain sensitive values, so this action is medium risk. The presigned
+  log URL is never emitted; missing and unreadable logs are stated explicitly.
+side_effects:
+  - Two read-only HTTP GETs, for the run and its presigned plan log URL.
+  - Emits a bounded excerpt of raw plan log content.
+  - Read-only.
+search_terms:
+  - review finished plan log
+  - read plan with read-only token
+  - terraform plan drift log
+args:
+  - name: run_id
+    type: string
+    required: true
+    description: Run ID from list_runs (run-…).
+    validation:
+      pattern: "^run-[A-Za-z0-9]{1,32}$"
+      max_length: 36
+execution:
+  script:
+    path: scripts/tfc.sh
+    interpreter: /bin/bash
+  argv: [plan_log, "{{ args.run_id }}"]
+  timeout: 2m
+output:
+  parser: json
+  parser_required: true
+  schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    additionalProperties: false
+    required: [run_id, plan_id, plan_status, log]
+    properties:
+      run_id: {type: string}
+      plan_id: {type: string}
+      plan_status: {type: string}
+      log:
+        type: object
+        additionalProperties: false
+        required: [available]
+        properties:
+          available: {type: boolean}
+          reason: {type: string}
+          tail:
+            type: array
+            maxItems: 60
+            items: {type: string, maxLength: 2048}
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Review the plan log of a completed run
+    args:
+      run_id: run-4Qm7TvLpXsRbNc2d

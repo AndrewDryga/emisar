@@ -1,0 +1,31 @@
+#!/bin/sh
+# Fixed Nomad API responses for allocation-check shape regression cases.
+set -eu
+
+if [ "$1" = operator ] && [ "$2" = api ] && [ "$3" = -X ] && [ "$4" = GET ]; then
+	case "$5" in
+		/v1/job/packtest-health)
+			printf '%s\n' '{"ID":"packtest-health","Name":"packtest-health","Namespace":"default","Region":"global","Type":"service","Status":"running","Version":1,"TaskGroups":[{"Name":"api","Count":1,"Tasks":[{"Name":"web","Driver":"docker","Config":{"image":"busybox:1.36"}}]}]}'
+			;;
+		/v1/job/packtest-health/summary)
+			printf '%s\n' '{"Summary":{"api":{"Running":1}}}'
+			;;
+		/v1/job/packtest-health/allocations?all=false)
+			printf '%s\n' '[{"ID":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","Name":"packtest-health.api[0]","TaskGroup":"api","DesiredStatus":"run","ClientStatus":"running","ModifyTime":1,"TaskStates":{}}]'
+			;;
+		/v1/allocation/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/checks)
+			case "${SNAPSHOT_CHECKS_MODE:-null}" in
+				null) printf '%s\n' null ;;
+				checked) printf '%s\n' '{"check-1":{"ID":"check-1","Check":"ready","Group":"api","Service":"web","Mode":"healthiness","Status":"success","Output":"ok"}}' ;;
+				malformed) printf '%s\n' '[]' ;;
+				*) exit 2 ;;
+			esac
+			;;
+		*) printf 'unexpected Nomad API path: %s\n' "$5" >&2; exit 2 ;;
+	esac
+elif [ "$1" = job ] && [ "$2" = deployments ] && [ "$3" = -json ] && [ "$4" = packtest-health ]; then
+	printf '%s\n' '[]'
+else
+	printf 'unexpected Nomad command\n' >&2
+	exit 2
+fi

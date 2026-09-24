@@ -463,6 +463,24 @@ run_diagnostics() {
         }'
 }
 
+# A finished plan's log remains readable to a run-read token even when the
+# structured JSON plan endpoint refuses that token. This deliberately returns
+# an excerpt, not a complete resource summary.
+plan_log() {
+  local run_id=$1 response plan plan_id plan_status log_url log_json
+  require_id "run_id" "$run_id" "run-"
+  response=$(request api_get "/runs/$run_id?include=plan")
+  plan=$(printf '%s' "$response" |
+    jq -ce '(.included // [] | map(select(.type == "plans")) | first) // error("run has no plan to read")')
+  plan_id=$(printf '%s' "$plan" | jq -er '.id | strings | select(length > 0)')
+  plan_status=$(printf '%s' "$plan" | jq -r '.attributes.status // ""')
+  log_url=$(printf '%s' "$plan" | jq -r '.attributes["log-read-url"] // ""')
+  log_json=$(fetch_log_tail "$log_url")
+  jq -nc --arg run_id "$run_id" --arg plan_id "$plan_id" \
+    --arg plan_status "$plan_status" --argjson log "$log_json" \
+    '{run_id: $run_id, plan_id: $plan_id, plan_status: $plan_status, log: $log}'
+}
+
 # Retry is deliberately not generic run creation: the workspace and the
 # configuration version come only from the fetched source run, the source must
 # already be terminal, and both safety gates are explicit in the POST body so
@@ -606,9 +624,12 @@ run_details() {
 }
 
 plan_summary() {
-  local run_id=$1
+  local run_id=$1 response
   require_id "run_id" "$run_id" "run-"
-  request api_get_following_redirect "/runs/$run_id/plan/json-output" |
+  if ! response=$(request api_get_following_redirect "/runs/$run_id/plan/json-output"); then
+    fail "If the API returned 404 for a valid run, plan JSON may require a user or team token with workspace-admin access; use tfc.run_details for counts or tfc.plan_log for a bounded read-scoped excerpt. Also verify the run ID."
+  fi
+  printf '%s' "$response" |
     jq -ce "$pagination$plan_projection"' project_plan'
 }
 
@@ -669,6 +690,9 @@ case "$mode" in
     ;;
   run_diagnostics)
     run_diagnostics "$2"
+    ;;
+  plan_log)
+    plan_log "$2"
     ;;
   retry_run)
     retry_run "$2" "$3"
