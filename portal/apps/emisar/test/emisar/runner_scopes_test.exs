@@ -987,7 +987,7 @@ defmodule Emisar.RunnerAccessTest do
       :ok = Runners.subscribe_runner_transport(runner)
 
       assert Runs.dispatch_to_runner(run) == {:error, :initiator_no_longer_authorized}
-      assert Runs.peek_run_by_id(run.id).status == :pending
+      assert Runs.peek_run_by_id(run.id).status == :refused
       refute_receive {:cloud_to_runner, _generation, _payload}, 100
 
       assert Accounts.runner_access_for_subject(subject) == RunnerAccess.none()
@@ -1077,7 +1077,7 @@ defmodule Emisar.RunnerAccessTest do
       Fixtures.Memberships.force_runner_access(membership, other_packs)
 
       assert Runs.dispatch_to_runner(run) == {:error, :initiator_no_longer_authorized}
-      assert Runs.peek_run_by_id(run.id).status == :pending
+      assert Runs.peek_run_by_id(run.id).status == :refused
     end
 
     test "catalog inspection stays readable outside the member's current packs" do
