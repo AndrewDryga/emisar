@@ -1853,6 +1853,15 @@ defmodule Emisar.ApiKeysTest do
       refute Repo.one(ApiKey)
     end
 
+    test "refuses a held session whose grant ended before the mint took the lock" do
+      {_user, _account, subject} = owner_subject_pair()
+      member = Repo.get!(Accounts.Membership, subject.membership_id)
+      assert {:ok, %{count: 1}} = Emisar.Auth.delete_membership_session_grants(member, Repo)
+
+      assert ApiKeys.mint_quick_key(subject) == {:error, :unauthorized}
+      refute Repo.one(ApiKey)
+    end
+
     test "ring eviction drops the oldest auto-unused key past the cap, never a used one" do
       {_user, _account, subject} = owner_subject_pair()
       Emisar.Config.put_override(:emisar, :api_key_quick_ring_cap, 1)
