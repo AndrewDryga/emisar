@@ -15,6 +15,7 @@ defmodule Emisar.SecretRedactionTest do
     {Emisar.Accounts.Membership, [:invitation_token_digest]},
     {Emisar.ApiKeys.ApiKey, [:key_hash]},
     {Emisar.ApiKeys.DeviceGrant, [:device_code_digest, :user_code_digest]},
+    {Emisar.Billing.CustomerLinkCode, [:code_digest]},
     {Emisar.Auth.UserToken, [:token]},
     {Emisar.Runners.EnrollmentKey, [:key_hash]},
     {Emisar.Runners.Token, [:token_hash]},

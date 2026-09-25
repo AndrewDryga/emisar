@@ -222,9 +222,9 @@ defmodule EmisarWeb.DomainComponents do
   state. Shared by Billing and the dashboard so each lifecycle state has one
   severity and one explanation.
 
-  Pass a `:cta` slot for the "Manage billing" affordance — a portal button on
-  the billing page, a link to it on the dashboard — and omit it where the
-  viewer can't manage billing.
+  Pass a `:cta` slot for the billing action — the payment update or keep button
+  on the billing page, a link to that page on the dashboard — and omit it where
+  the viewer can't manage billing.
 
       <.subscription_banner
         entitlement_state={@summary.entitlement_state}

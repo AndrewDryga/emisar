@@ -2308,6 +2308,43 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc "A billing manager asked Paddle to end this workspace's own subscription with its paid period."
+  def subscription_cancel_requested(%Subject{} = subject, %Accounts.Account{} = account),
+    do: billing_account_event(subject, account, "subscription.cancel_requested", %{})
+
+  @doc "A billing manager asked Paddle to withdraw the scheduled cancellation of this workspace's subscription."
+  def subscription_keep_requested(%Subject{} = subject, %Accounts.Account{} = account),
+    do: billing_account_event(subject, account, "subscription.keep_requested", %{})
+
+  @doc "A billing manager asked for a code at the billing email to link its existing Paddle customer."
+  def billing_customer_link_requested(%Subject{} = subject, %Accounts.Account{} = account, email)
+      when is_binary(email) do
+    billing_account_event(subject, account, "billing_customer.link_requested", %{email: email})
+  end
+
+  @doc "The mailbox code matched, so the workspace now bills to that email's existing Paddle customer."
+  def billing_customer_linked(%Subject{} = subject, %Accounts.Account{} = account, email)
+      when is_binary(email),
+      do: billing_account_event(subject, account, "billing_customer.linked", %{email: email})
+
+  @doc "A wrong or expired code was entered for linking an existing Paddle customer."
+  def billing_customer_link_failed(%Subject{} = subject, %Accounts.Account{} = account),
+    do: billing_account_event(subject, account, "billing_customer.link_failed", %{})
+
+  defp billing_account_event(subject, account, event_type, payload) do
+    Audit.changeset(
+      account.id,
+      event_type,
+      actor(subject) ++
+        [
+          target_kind: "account",
+          target_id: account.id,
+          target_label: account.name,
+          payload: payload
+        ]
+    )
+  end
+
   # -- Audit -----------------------------------------------------------
 
   @doc "Internal — the retention worker logs each account's meaningful pruned-count so the log never shrinks invisibly."

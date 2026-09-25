@@ -17,9 +17,6 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def create_customer(_attrs), do: {:error, :paddle_unavailable}
 
   @impl true
-  def update_customer(_attrs), do: {:error, :paddle_unavailable}
-
-  @impl true
   def list_customers(_attrs), do: {:error, :paddle_unavailable}
 
   @impl true
@@ -29,9 +26,12 @@ defmodule Emisar.BillingTest.ErrorPaddleClient do
   def bind_checkout_transaction(_id, _binding), do: {:error, :paddle_unavailable}
 
   @impl true
-  # A non-`{:ok, %{"url" => _}}` shape — the live API returning something we
-  # don't model. `open_billing_portal/2` passes it through verbatim.
-  def create_billing_portal_session(_attrs), do: {:error, :paddle_unavailable}
+  def schedule_subscription_cancel(_id), do: {:error, :paddle_unavailable}
+
+  @impl true
+  # A transaction without a checkout URL — the live API answering in a shape we
+  # can't open. `payment_method_update_url/2` refuses it rather than redirect.
+  def payment_method_transaction(id), do: {:ok, %{"id" => "txn_odd_" <> id}}
 
   @impl true
   def retrieve_subscription(_id), do: {:error, :paddle_unavailable}
@@ -75,13 +75,15 @@ defmodule Emisar.BillingTest.ConflictingCustomerPaddleClient do
     {:error, {:http, 409, ~s({"error":{"type":"request_error","code":"#{code}"}})}}
   end
 
+  # A found customer carries the looked-up address and is active unless a test
+  # says otherwise, as Paddle's exact-email filter answers.
   @impl true
-  def list_customers(_attrs),
-    do: {:ok, Emisar.Config.fetch_env!(:emisar, :billing_conflict_customers)}
+  def list_customers(%{email: email}) do
+    customers = Emisar.Config.fetch_env!(:emisar, :billing_conflict_customers)
+    {:ok, Enum.map(customers, &Map.merge(%{"email" => email, "status" => "active"}, &1))}
+  end
 
   # Not what these tests exercise; the behaviour requires them.
-  @impl true
-  def update_customer(_attrs), do: {:error, :unused}
   @impl true
   def cancel_subscription(_id), do: {:error, :unused}
   @impl true
@@ -90,7 +92,9 @@ defmodule Emisar.BillingTest.ConflictingCustomerPaddleClient do
   @impl true
   def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
-  def create_billing_portal_session(_attrs), do: {:error, :unused}
+  def schedule_subscription_cancel(_id), do: {:error, :unused}
+  @impl true
+  def payment_method_transaction(_id), do: {:error, :unused}
   @impl true
   def retrieve_subscription(_id), do: {:error, :unused}
 
@@ -111,12 +115,79 @@ defmodule Emisar.BillingTest.ConflictingCustomerPaddleClient do
   def construct_webhook_event(_payload, _sig, _secret), do: {:error, :unused}
 end
 
+# Paddle answering the subscription controls wrongly, one way per test: the
+# subscription belongs to another customer, a payment transaction has no
+# checkout, or a cancellation comes back without the scheduled change.
+defmodule Emisar.BillingTest.ControlsPaddleClient do
+  @behaviour Emisar.Billing.PaddleClient
+  alias Emisar.Billing.PaddleClient.Stub
+
+  defp mode, do: Emisar.Config.fetch_env!(:emisar, :billing_controls_mode)
+
+  @impl true
+  def retrieve_subscription(id) do
+    {:ok, subscription} = Stub.retrieve_subscription(id)
+
+    case mode() do
+      :foreign_subscription -> {:ok, Map.put(subscription, "customer_id", "ctm_someone_else")}
+      :no_remote_cancel -> {:ok, Map.put(subscription, "scheduled_change", nil)}
+      _other -> {:ok, subscription}
+    end
+  end
+
+  @impl true
+  def payment_method_transaction(id) do
+    {:ok, transaction} = Stub.payment_method_transaction(id)
+
+    if mode() == :odd_transaction,
+      do: {:ok, Map.delete(transaction, "checkout")},
+      else: {:ok, transaction}
+  end
+
+  @impl true
+  def schedule_subscription_cancel(id) do
+    if mode() == :unconfirmed_cancel,
+      do: Stub.retrieve_subscription(id),
+      else: Stub.schedule_subscription_cancel(id)
+  end
+
+  @impl true
+  defdelegate update_subscription(id, attrs), to: Stub
+  @impl true
+  defdelegate create_customer(attrs), to: Stub
+  @impl true
+  defdelegate list_customers(attrs), to: Stub
+  @impl true
+  defdelegate create_checkout_session(attrs), to: Stub
+  @impl true
+  defdelegate bind_checkout_transaction(id, binding), to: Stub
+  @impl true
+  defdelegate cancel_checkout_transaction(id), to: Stub
+  @impl true
+  defdelegate list_checkout_transactions(attrs), to: Stub
+  @impl true
+  defdelegate retrieve_transaction(id), to: Stub
+  @impl true
+  defdelegate list_subscriptions(attrs), to: Stub
+  @impl true
+  defdelegate cancel_subscription(id), to: Stub
+  @impl true
+  defdelegate list_products, to: Stub
+  @impl true
+  defdelegate list_transactions(attrs), to: Stub
+  @impl true
+  defdelegate get_transaction_invoice(id), to: Stub
+  @impl true
+  defdelegate construct_webhook_event(payload, sig, secret), to: Stub
+end
+
 defmodule Emisar.BillingTest do
   use Emisar.DataCase, async: true
   alias Emisar.Auth.Subject
   alias Emisar.Billing
   alias Emisar.Billing.Subscription
   alias Emisar.BillingTest.ConflictingCustomerPaddleClient
+  alias Emisar.BillingTest.ControlsPaddleClient
   alias Emisar.BillingTest.ErrorPaddleClient
   alias Emisar.Fixtures
 
@@ -549,7 +620,7 @@ defmodule Emisar.BillingTest do
 
   describe "cancel_subscription_for_close/1" do
     test "cancels a live Paddle subscription" do
-      account = Fixtures.Accounts.create_account()
+      account = Fixtures.Accounts.create_account(paddle_customer_id: "ctm_close_me")
 
       Fixtures.Accounts.create_subscription(account, "team",
         paddle_subscription_id: "sub_close_me"
@@ -780,6 +851,24 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "upsert_subscription/3 — one workspace per Paddle subscription" do
+    test "a second workspace cannot mirror a subscription another already holds" do
+      holder = Fixtures.Accounts.create_account()
+      other = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(holder, "team", paddle_subscription_id: "sub_taken")
+
+      assert {:error, changeset} =
+               Billing.upsert_subscription(other.id, %{
+                 plan: "team",
+                 status: "active",
+                 paddle_subscription_id: "sub_taken"
+               })
+
+      assert {:paddle_subscription_id, {"has already been taken", _opts}} =
+               List.keyfind(changeset.errors, :paddle_subscription_id, 0)
+    end
+  end
+
   describe "upsert_subscription/3 — unique_constraint backstop" do
     test "a concurrent first-insert loses on the per-account unique index" do
       # upsert_subscription peeks-then-inserts, so two callers that both peek-miss
@@ -978,7 +1067,7 @@ defmodule Emisar.BillingTest do
         paddle_subscription_id: "sub_already_live"
       )
 
-      # The console renders "Manage billing" rather than "Upgrade" here, but a
+      # The console renders "Contact support" rather than "Upgrade" here, but a
       # crafted phx-click reaches the context directly — and Paddle would bill
       # both subscriptions.
       assert Billing.start_checkout(account, "team", :month, subject) ==
@@ -1051,50 +1140,212 @@ defmodule Emisar.BillingTest do
       assert Billing.start_checkout(account, "team", :month, operator_subject) ==
                {:error, :unauthorized}
 
-      assert Billing.open_billing_portal(account, operator_subject) == {:error, :unauthorized}
+      assert Billing.payment_method_update_url(account, operator_subject) ==
+               {:error, :unauthorized}
     end
 
-    test "the owner of another account is denied checkout AND portal for account A" do
-      # Account-B's owner holds manage_billing on B, but ensure_subject_owns_account
-      # binds the gate to the subject's own account — so acting on A is :unauthorized.
+    test "the owner of another account is denied checkout AND subscription controls for A" do
+      # Account-B's owner holds manage_billing on B, but the gate binds it to the
+      # subject's own account — so acting on A is :unauthorized.
       {_user_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Billing.start_checkout(account_a, "team", :month, subject_b) ==
                {:error, :unauthorized}
 
-      assert Billing.open_billing_portal(account_a, subject_b) == {:error, :unauthorized}
+      assert Billing.payment_method_update_url(account_a, subject_b) == {:error, :unauthorized}
     end
   end
 
-  describe "open_billing_portal/2" do
+  describe "payment_method_update_url/2" do
     setup do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
-    test "an account that never subscribed has no portal", %{account: account, subject: subject} do
-      assert Billing.open_billing_portal(account, subject) == {:error, :no_customer}
-    end
-
-    test "returns the stub portal URL when no Paddle key is configured", %{
+    test "opens a transaction for this account's own subscription and returns here", %{
       account: account,
       subject: subject
     } do
-      account =
-        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_existing_01") |> Repo.update!()
+      collected_subscription(account, "sub_payment_own")
 
-      assert {:ok, url} = Billing.open_billing_portal(account, subject)
-      assert url =~ "/app?status=stub-portal"
+      assert {:ok, url} = Billing.payment_method_update_url(account, subject)
+      uri = URI.parse(url)
+      query = URI.decode_query(uri.query)
+      assert {uri.host, query["emisar_account_id"]} == {"stub.paddle.test", account.id}
+      assert String.starts_with?(query["_ptxn"], "txn_stub_pm_")
+    end
+
+    test "has nothing to open without an automatically collected subscription", %{
+      account: account,
+      subject: subject
+    } do
+      assert Billing.payment_method_update_url(account, subject) == {:error, :no_subscription}
+
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_invoiced",
+        collection_mode: "manual"
+      )
+
+      assert Billing.payment_method_update_url(account, subject) == {:error, :no_subscription}
+    end
+
+    test "refuses a transaction Paddle returned without a checkout URL", %{
+      account: account,
+      subject: subject
+    } do
+      collected_subscription(account, "sub_odd_shape")
+      controls_mode(:odd_transaction)
+
+      assert Billing.payment_method_update_url(account, subject) ==
+               {:error, :invalid_provider_data}
+    end
+
+    test "refuses a subscription Paddle says another customer pays for", %{
+      account: account,
+      subject: subject
+    } do
+      collected_subscription(account, "sub_someone_elses")
+      controls_mode(:foreign_subscription)
+
+      assert Billing.payment_method_update_url(account, subject) == {:error, :no_subscription}
     end
 
     test "an owner of another account is refused", %{account: account} do
+      collected_subscription(account, "sub_foreign_payment")
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
-      account =
-        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_existing_01") |> Repo.update!()
+      assert Billing.payment_method_update_url(account, subject_b) == {:error, :unauthorized}
+    end
+  end
 
-      assert Billing.open_billing_portal(account, subject_b) == {:error, :unauthorized}
+  describe "cancel_subscription/2" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
+
+    test "schedules the cancellation, refreshes the mirror, and audits who asked", %{
+      account: account,
+      subject: subject
+    } do
+      collected_subscription(account, "sub_cancel_own")
+
+      assert Billing.cancel_subscription(account, subject) == :ok
+
+      assert %Subscription{scheduled_change_action: "cancel"} =
+               Repo.one(Subscription.Query.by_account_id(Subscription.Query.all(), account.id))
+
+      assert [event] = audit_events(account, "subscription.cancel_requested")
+
+      assert {event.actor_kind, event.actor_id, event.target_id} ==
+               {"membership", subject.membership_id, account.id}
+    end
+
+    test "refuses none at all, a past-due one Paddle won't change, and one that already ends",
+         %{account: account, subject: subject} do
+      assert Billing.cancel_subscription(account, subject) == {:error, :no_subscription}
+
+      collected_subscription(account, "sub_cancel_refused", status: "past_due")
+      assert Billing.cancel_subscription(account, subject) == {:error, :no_subscription}
+
+      collected_subscription(account, "sub_cancel_refused",
+        status: "active",
+        scheduled_change_action: "cancel"
+      )
+
+      assert Billing.cancel_subscription(account, subject) == {:error, :no_subscription}
+      assert audit_events(account, "subscription.cancel_requested") == []
+    end
+
+    test "changes nothing when Paddle says another customer pays for it", %{
+      account: account,
+      subject: subject
+    } do
+      collected_subscription(account, "sub_cancel_foreign")
+      controls_mode(:foreign_subscription)
+
+      assert Billing.cancel_subscription(account, subject) == {:error, :no_subscription}
+      assert audit_events(account, "subscription.cancel_requested") == []
+    end
+
+    test "reports a cancellation Paddle did not confirm, with the request audited", %{
+      account: account,
+      subject: subject
+    } do
+      subscription = collected_subscription(account, "sub_cancel_unconfirmed")
+      controls_mode(:unconfirmed_cancel)
+
+      assert Billing.cancel_subscription(account, subject) == {:error, :change_not_confirmed}
+      assert [_requested] = audit_events(account, "subscription.cancel_requested")
+      assert Repo.reload!(subscription).scheduled_change_action == nil
+    end
+
+    test "an operator and another account's owner are refused", %{account: account} do
+      collected_subscription(account, "sub_cancel_guarded")
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      operator = Fixtures.Users.create_user()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: operator.id,
+        role: "operator"
+      )
+
+      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+
+      assert Billing.cancel_subscription(account, subject_b) == {:error, :unauthorized}
+      assert Billing.cancel_subscription(account, operator_subject) == {:error, :unauthorized}
+      assert audit_events(account, "subscription.cancel_requested") == []
+    end
+  end
+
+  describe "keep_subscription/2" do
+    setup do
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      %{account: account, subject: subject}
+    end
+
+    test "withdraws a scheduled cancellation and audits who kept it", %{
+      account: account,
+      subject: subject
+    } do
+      collected_subscription(account, "sub_keep_own", scheduled_change_action: "cancel")
+
+      assert Billing.keep_subscription(account, subject) == :ok
+
+      assert %Subscription{scheduled_change_action: nil} =
+               Repo.one(Subscription.Query.by_account_id(Subscription.Query.all(), account.id))
+
+      assert [event] = audit_events(account, "subscription.keep_requested")
+      assert {event.actor_id, event.target_id} == {subject.membership_id, account.id}
+    end
+
+    test "has nothing to withdraw when no cancellation is scheduled", %{
+      account: account,
+      subject: subject
+    } do
+      collected_subscription(account, "sub_keep_nothing")
+
+      assert Billing.keep_subscription(account, subject) == {:error, :no_subscription}
+    end
+
+    test "trusts Paddle, not the mirror, about the scheduled cancellation", %{
+      account: account,
+      subject: subject
+    } do
+      collected_subscription(account, "sub_keep_stale", scheduled_change_action: "cancel")
+      controls_mode(:no_remote_cancel)
+
+      assert Billing.keep_subscription(account, subject) == {:error, :no_subscription}
+      assert audit_events(account, "subscription.keep_requested") == []
+    end
+
+    test "another account's owner is refused", %{account: account} do
+      collected_subscription(account, "sub_keep_foreign", scheduled_change_action: "cancel")
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert Billing.keep_subscription(account, subject_b) == {:error, :unauthorized}
     end
   end
 
@@ -1277,16 +1528,11 @@ defmodule Emisar.BillingTest do
     end
 
     test "is idempotent — returns the existing customer id without re-creating" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, account} = Emisar.Accounts.link_account_paddle_customer(account, "ctm_existing_01")
 
-      {:ok, account} =
-        Emisar.Accounts.put_account_paddle_customer_sync(account, "ctm_existing_01", user.id)
-
-      assert {:ok, "ctm_existing_01", synced} =
-               Billing.ensure_paddle_customer(account, subject)
-
-      assert synced.paddle_customer_id == "ctm_existing_01"
-      assert synced.paddle_billing_contact_user_id == user.id
+      assert {:ok, "ctm_existing_01", linked} = Billing.ensure_paddle_customer(account, subject)
+      assert linked.paddle_customer_id == "ctm_existing_01"
     end
 
     test "an operator without manage_billing is refused" do
@@ -1313,89 +1559,214 @@ defmodule Emisar.BillingTest do
     end
   end
 
-  describe "sync_paddle_customer_for_account/1" do
-    test "creates a Paddle customer and stores the selected owner contact" do
-      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+  describe "ensure_paddle_customer/2 — creating and existing customers" do
+    test "creates a customer for the billing contact and links it" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:ok, customer_id, synced} = Billing.sync_paddle_customer_for_account(account.id)
-
+      assert {:ok, customer_id, linked} = Billing.ensure_paddle_customer(account, subject)
       assert String.starts_with?(customer_id, "ctm_stub_")
-      assert synced.paddle_customer_id == customer_id
-      assert synced.paddle_billing_contact_user_id == owner.id
-      assert %DateTime{} = synced.paddle_customer_synced_at
 
-      reloaded = Repo.reload!(account)
-      assert reloaded.paddle_customer_id == customer_id
-      assert reloaded.paddle_billing_contact_user_id == owner.id
+      assert {linked.paddle_customer_id, Repo.reload!(account).paddle_customer_id} ==
+               {customer_id, customer_id}
     end
 
     test "refuses an account with no confirmed owner email" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user(confirmed?: false)
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: owner.id,
+          role: "owner"
+        )
 
-      assert Billing.sync_paddle_customer_for_account(account.id) ==
-               {:error, :no_billing_contact}
+      subject = Fixtures.Subjects.membership_subject(membership)
+
+      assert Billing.ensure_paddle_customer(account, subject) == {:error, :no_billing_contact}
     end
 
-    test "adopts the customer Paddle already has for the owner's email" do
-      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+    # The boundary probe: a workspace contact email is unproved, so an existing
+    # Paddle customer at that address is never adopted on the email alone.
+    test "does not link the customer Paddle already has for the billing email" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      foreign = Fixtures.Accounts.create_account(paddle_customer_id: "ctm_existing_01")
       Emisar.Config.put_override(:emisar, :paddle_client, ConflictingCustomerPaddleClient)
       Emisar.Config.put_override(:emisar, :billing_conflict_code, "customer_already_exists")
 
       Emisar.Config.put_override(:emisar, :billing_conflict_customers, [
-        %{"id" => "ctm_existing_01"}
+        %{"id" => foreign.paddle_customer_id, "custom_data" => %{"account_id" => foreign.id}}
       ])
 
-      assert {:ok, "ctm_existing_01", synced} =
-               Billing.sync_paddle_customer_for_account(account.id)
-
-      assert synced.paddle_customer_id == "ctm_existing_01"
-      assert synced.paddle_billing_contact_user_id == owner.id
-      assert Repo.reload!(account).paddle_customer_id == "ctm_existing_01"
-    end
-
-    test "adopts nothing when the 409 is a different conflict" do
-      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
-      Emisar.Config.put_override(:emisar, :paddle_client, ConflictingCustomerPaddleClient)
-      Emisar.Config.put_override(:emisar, :billing_conflict_code, "conflict")
-
-      Emisar.Config.put_override(:emisar, :billing_conflict_customers, [
-        %{"id" => "ctm_someone_else_01"}
-      ])
-
-      assert {:error, {:http, 409, body}} = Billing.sync_paddle_customer_for_account(account.id)
-      assert body =~ ~s("code":"conflict")
+      assert Billing.ensure_paddle_customer(account, subject) == {:error, :billing_email_in_use}
       refute Repo.reload!(account).paddle_customer_id
     end
 
-    test "adopts nothing when the conflicting customer cannot be looked up" do
-      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+    test "passes a different 409 through and links nothing" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Emisar.Config.put_override(:emisar, :paddle_client, ConflictingCustomerPaddleClient)
-      Emisar.Config.put_override(:emisar, :billing_conflict_code, "customer_already_exists")
+      Emisar.Config.put_override(:emisar, :billing_conflict_code, "conflict")
       Emisar.Config.put_override(:emisar, :billing_conflict_customers, [])
 
-      assert Billing.sync_paddle_customer_for_account(account.id) ==
-               {:error, :conflicting_customer_not_found}
-
+      assert {:error, {:http, 409, body}} = Billing.ensure_paddle_customer(account, subject)
+      assert body =~ ~s("code":"conflict")
       refute Repo.reload!(account).paddle_customer_id
     end
   end
 
-  describe "sync_paddle_customers/1" do
-    test "syncs a bounded page of stale accounts and reports the cursor" do
-      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+  describe "send_customer_link_code/2" do
+    setup do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      conflict_on_create("ctm_payer_01")
+      %{account: account, subject: subject}
+    end
 
-      assert {:ok, %{processed: 1, last_account_id: account_id, full?: false, limit: 10}} =
-               Billing.sync_paddle_customers(limit: 10)
+    test "emails a code to the billing email Paddle knows and stores only its digest", %{
+      account: account,
+      subject: subject
+    } do
+      {:ok, %{owner: contact}} = Emisar.Accounts.fetch_billing_contact(account.id)
 
-      assert account_id == account.id
-      assert Repo.reload!(account).paddle_customer_id
+      assert Billing.send_customer_link_code(account, subject) == {:ok, contact.contact_email}
+
+      assert_received {:email, email}
+      code = Fixtures.Auth.code_from_email(email)
+      assert [{_name, address}] = email.to
+      assert address == contact.contact_email
+      refute email.subject =~ account.name
+
+      pending = Repo.one(Billing.CustomerLinkCode.Query.by_account_id(account.id))
+      assert pending.code_digest == Emisar.Crypto.hash(code)
+      assert {pending.membership_id, pending.email} == {subject.membership_id, address}
+      assert [_requested] = audit_events(account, "billing_customer.link_requested")
+    end
+
+    test "refuses an account that already has a customer", %{account: account, subject: subject} do
+      {:ok, _linked} = Emisar.Accounts.link_account_paddle_customer(account, "ctm_linked_01")
+
+      assert Billing.send_customer_link_code(account, subject) == {:error, :already_linked}
+      refute_received {:email, _email}
+    end
+
+    test "refuses when Paddle has no usable customer for the billing email", %{
+      account: account,
+      subject: subject
+    } do
+      Emisar.Config.put_override(:emisar, :billing_conflict_customers, [])
+      assert Billing.send_customer_link_code(account, subject) == {:error, :no_existing_customer}
+
+      Emisar.Config.put_override(:emisar, :billing_conflict_customers, [
+        %{"id" => "ctm_other_address", "email" => "someone-else@example.test"}
+      ])
+
+      assert Billing.send_customer_link_code(account, subject) == {:error, :no_existing_customer}
+
+      # Paddle cannot bill an archived customer, so there is nothing to link.
+      Emisar.Config.put_override(:emisar, :billing_conflict_customers, [
+        %{"id" => "ctm_archived", "status" => "archived"}
+      ])
+
+      assert Billing.send_customer_link_code(account, subject) == {:error, :archived_customer}
+      refute_received {:email, _email}
+    end
+
+    test "an operator and another account's owner are refused", %{account: account} do
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      operator_subject = role_subject(account, "operator")
+
+      assert Billing.send_customer_link_code(account, subject_b) == {:error, :unauthorized}
+      assert Billing.send_customer_link_code(account, operator_subject) == {:error, :unauthorized}
+      refute_received {:email, _email}
+    end
+  end
+
+  describe "link_existing_customer/3" do
+    setup do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      conflict_on_create("ctm_payer_02")
+      {:ok, _email} = Billing.send_customer_link_code(account, subject)
+      assert_received {:email, email}
+      %{account: account, subject: subject, code: Fixtures.Auth.code_from_email(email)}
+    end
+
+    test "links the existing customer with the emailed code and audits it", %{
+      account: account,
+      subject: subject,
+      code: code
+    } do
+      assert {:ok, %{paddle_customer_id: "ctm_payer_02"}} =
+               Billing.link_existing_customer(account, " #{code} ", subject)
+
+      assert Repo.reload!(account).paddle_customer_id == "ctm_payer_02"
+      refute Repo.one(Billing.CustomerLinkCode.Query.by_account_id(account.id))
+      assert [event] = audit_events(account, "billing_customer.linked")
+      assert event.actor_id == subject.membership_id
+    end
+
+    test "a wrong code spends the attempts and links nothing", %{
+      account: account,
+      subject: subject,
+      code: code
+    } do
+      wrong = if code == "000000", do: "111111", else: "000000"
+
+      for _attempt <- 1..5 do
+        assert Billing.link_existing_customer(account, wrong, subject) == {:error, :invalid_code}
+      end
+
+      assert Billing.link_existing_customer(account, code, subject) == {:error, :invalid_code}
+      refute Repo.reload!(account).paddle_customer_id
+      assert length(audit_events(account, "billing_customer.link_failed")) == 6
+    end
+
+    test "a malformed code is refused without spending an attempt", %{
+      account: account,
+      subject: subject,
+      code: code
+    } do
+      for malformed <- ["12345", "1234567", "abcdef", ""] do
+        assert Billing.link_existing_customer(account, malformed, subject) ==
+                 {:error, :invalid_code}
+      end
+
+      assert Billing.link_existing_customer(account, %{"code" => code}, subject) ==
+               {:error, :invalid_code}
+
+      assert Repo.one(Billing.CustomerLinkCode.Query.by_account_id(account.id)).remaining_attempts ==
+               5
+
+      assert {:ok, _linked} = Billing.link_existing_customer(account, code, subject)
+    end
+
+    test "only the Member who asked can use the code", %{account: account, code: code} do
+      other_owner = role_subject(account, "owner")
+
+      assert Billing.link_existing_customer(account, code, other_owner) == {:error, :invalid_code}
+      refute Repo.reload!(account).paddle_customer_id
+    end
+
+    test "a changed billing email voids the code", %{
+      account: account,
+      subject: subject,
+      code: code
+    } do
+      {:ok, %{owner: contact}} = Emisar.Accounts.fetch_billing_contact(account.id)
+
+      contact
+      |> Ecto.Changeset.change(
+        contact_email: "finance-#{System.unique_integer([:positive])}@example.test"
+      )
+      |> Repo.update!()
+
+      assert Billing.link_existing_customer(account, code, subject) == {:error, :invalid_code}
+      refute Repo.reload!(account).paddle_customer_id
+    end
+
+    test "another account's owner is refused", %{account: account, code: code} do
+      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert Billing.link_existing_customer(account, code, subject_b) == {:error, :unauthorized}
+      refute Repo.reload!(account).paddle_customer_id
     end
   end
 
@@ -2815,11 +3186,13 @@ defmodule Emisar.BillingTest do
           status: "active"
         })
 
+      # Paddle confirms the live subscription, so the competing one is an
+      # unbound duplicate and is refused.
       assert Billing.reconcile_discovered_subscription_data(%{
                "id" => "sub_competing_01",
                "customer_id" => account_two.paddle_customer_id,
                "status" => "active"
-             }) == {:error, :invalid_canonical_subscription}
+             }) == {:error, :invalid_subscription_account_binding}
 
       assert Repo.reload!(live).paddle_subscription_id == "sub_live_existing_01"
     end
@@ -3100,28 +3473,35 @@ defmodule Emisar.BillingTest do
       assert summary.monthly_per_runner_cents == 0
       assert summary.monthly_total_cents == 0
       refute summary.subscription_managed?
-      refute summary.billing_portal_available?
+      refute summary.payment_method_updatable?
+      refute summary.cancel_available?
     end
 
-    test "summary rereads customer availability from the account, not the caller's snapshot" do
+    test "offers subscription controls only for a subscription Paddle collects" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       assert {:ok, before} = Billing.billing_summary(account, subject)
-      refute before.billing_portal_available?
+
+      assert {before.invoices_available?, before.payment_method_updatable?,
+              before.cancel_available?, before.keep_available?} == {false, false, false, false}
 
       account =
         account
         |> Ecto.Changeset.change(paddle_customer_id: "ctm_summary_fresh")
         |> Repo.update!()
 
-      Fixtures.Accounts.create_subscription(account, "team",
-        paddle_subscription_id: "sub_summary"
-      )
+      collected_subscription(account, "sub_summary")
 
-      assert {:ok, after_update} = Billing.billing_summary(account, subject)
-      assert after_update.billing_portal_available?
-      assert {:ok, _url} = Billing.open_billing_portal(account, subject)
+      assert {:ok, collected} = Billing.billing_summary(account, subject)
+
+      assert {collected.invoices_available?, collected.payment_method_updatable?,
+              collected.cancel_available?, collected.keep_available?} == {true, true, true, false}
+
       assert {:ok, [_ | _]} = Billing.list_recent_invoices(account, subject)
       assert {:ok, _url} = Billing.invoice_pdf_url(account, "txn_stub_1", subject)
+
+      collected_subscription(account, "sub_summary", scheduled_change_action: "cancel")
+      assert {:ok, ending} = Billing.billing_summary(account, subject)
+      assert {ending.cancel_available?, ending.keep_available?} == {false, true}
     end
 
     test "an existing provider subscription remains managed after losing paid access" do
@@ -3356,6 +3736,46 @@ defmodule Emisar.BillingTest do
   defp processed_event?(event_id) do
     Repo.exists?(from e in "paddle_processed_events", where: e.id == ^event_id)
   end
+
+  # A Team subscription Paddle collects itself, as its webhooks leave it, for an
+  # account billed to a Paddle customer.
+  defp collected_subscription(account, paddle_subscription_id, attrs \\ []) do
+    period_end = DateTime.add(DateTime.utc_now(), 20 * 86_400, :second)
+    {:ok, _linked} = Emisar.Accounts.link_account_paddle_customer(account, "ctm_" <> account.id)
+
+    Fixtures.Accounts.create_subscription(
+      account,
+      "team",
+      Keyword.merge(
+        [
+          paddle_subscription_id: paddle_subscription_id,
+          collection_mode: "automatic",
+          current_period_end: period_end
+        ],
+        attrs
+      )
+    )
+  end
+
+  defp controls_mode(mode) do
+    Emisar.Config.put_override(:emisar, :paddle_client, ControlsPaddleClient)
+    Emisar.Config.put_override(:emisar, :billing_controls_mode, mode)
+  end
+
+  # Paddle answers a create with "customer_already_exists" and finds exactly this
+  # customer for the email, the way it does for an address it already bills.
+  defp conflict_on_create(customer_id) do
+    Emisar.Config.put_override(:emisar, :paddle_client, ConflictingCustomerPaddleClient)
+    Emisar.Config.put_override(:emisar, :billing_conflict_code, "customer_already_exists")
+    Emisar.Config.put_override(:emisar, :billing_conflict_customers, [%{"id" => customer_id}])
+  end
+
+  defp audit_events(account, event_type) do
+    Emisar.Audit.Event.Query.all()
+    |> Emisar.Audit.Event.Query.by_account_id(account.id)
+    |> Emisar.Audit.Event.Query.by_event_type(event_type)
+    |> Repo.all()
+  end
 end
 
 defmodule Emisar.BillingVendorErrorTest do
@@ -3414,22 +3834,30 @@ defmodule Emisar.BillingVendorErrorTest do
     end
   end
 
-  describe "open_billing_portal/2 — odd vendor shape" do
-    setup do
-      # With a Paddle API key set, open_billing_portal hits the live client
-      # instead of the stub-URL fallback; the failing client returns a
-      # non-{:ok, %{"url" => _}} shape that the function passes through verbatim.
-      Emisar.Config.put_override(:emisar, :paddle_api_key, "pdl_test_key")
-      :ok
-    end
-
-    test "a non-url portal-session result is passed through, not crashed" do
+  describe "cancel_subscription/2 — vendor failure" do
+    test "a Paddle error is returned, and nothing is mirrored or audited" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
 
-      account =
-        account |> Ecto.Changeset.change(paddle_customer_id: "ctm_existing_01") |> Repo.update!()
+      Fixtures.Accounts.create_subscription(account, "team",
+        paddle_subscription_id: "sub_vendor_down",
+        collection_mode: "automatic"
+      )
 
-      assert Billing.open_billing_portal(account, subject) == {:error, :paddle_unavailable}
+      assert Billing.cancel_subscription(account, subject) == {:error, :paddle_unavailable}
+
+      assert %{scheduled_change_action: nil} =
+               Emisar.Repo.one(
+                 Billing.Subscription.Query.by_account_id(
+                   Billing.Subscription.Query.all(),
+                   account.id
+                 )
+               )
+
+      refute Emisar.Repo.exists?(
+               Emisar.Audit.Event.Query.all()
+               |> Emisar.Audit.Event.Query.by_account_id(account.id)
+               |> Emisar.Audit.Event.Query.by_event_type("subscription.cancel_requested")
+             )
     end
   end
 end
@@ -3469,12 +3897,6 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   end
 
   @impl true
-  def update_customer(attrs) do
-    report({:update_customer, attrs})
-    {:ok, %{"id" => attrs[:customer]}}
-  end
-
-  @impl true
   def list_customers(attrs) do
     report({:list_customers, attrs})
     {:ok, [%{"id" => "ctm_captured_01"}]}
@@ -3493,9 +3915,15 @@ defmodule Emisar.BillingTest.CapturingPaddleClient do
   end
 
   @impl true
-  def create_billing_portal_session(attrs) do
-    report({:create_billing_portal_session, attrs})
-    {:ok, %{"url" => "https://stub.paddle.test/portal/captured"}}
+  def schedule_subscription_cancel(id) do
+    report({:schedule_subscription_cancel, id})
+    Emisar.Billing.PaddleClient.Stub.schedule_subscription_cancel(id)
+  end
+
+  @impl true
+  def payment_method_transaction(id) do
+    report({:payment_method_transaction, id})
+    Emisar.Billing.PaddleClient.Stub.payment_method_transaction(id)
   end
 
   @impl true
@@ -3818,67 +4246,44 @@ defmodule Emisar.BillingCheckoutArgsTest do
     assert paddle_attrs.account_id == account.id
   end
 
-  test "a personal edit does not dirty or retarget the workspace billing contact" do
-    {user, account, _subject} = Fixtures.Subjects.owner_subject()
-
-    {:ok, account} =
-      Accounts.put_account_paddle_customer_sync(account, "ctm_existing_private", user.id)
+  test "an existing customer is returned as it is, never rewritten" do
+    {user, account, subject} = Fixtures.Subjects.owner_subject()
+    {:ok, account} = Accounts.link_account_paddle_customer(account, "ctm_existing_private")
 
     user
-    |> Ecto.Changeset.change(email: "private-after-sync@example.test", full_name: "Private Name")
+    |> Ecto.Changeset.change(email: "private-after-link@example.test", full_name: "Private Name")
     |> Repo.update!()
 
-    refute Enum.any?(Accounts.list_paddle_customer_sync_accounts(), &(&1.id == account.id))
-    assert {:ok, "ctm_existing_private", _} = Billing.sync_paddle_customer_for_account(account.id)
-    assert_received {:update_customer, attrs}
-    assert attrs.email == user.email
-    refute attrs.email == "private-after-sync@example.test"
-  end
+    assert {:ok, "ctm_existing_private", _account} =
+             Billing.ensure_paddle_customer(account, subject)
 
-  test "update_customer switches to a new active owner when the prior contact is demoted" do
-    prior_owner = Fixtures.Users.create_user(%{email: "prior-owner@example.test"})
-    account_attrs = Fixtures.Accounts.account_attrs(%{name: "Owner Transfer Co."})
-    {:ok, account} = Accounts.create_account_with_owner(account_attrs, prior_owner)
-
-    new_owner = Fixtures.Users.create_user(%{email: "new-owner@example.test"})
-
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: new_owner.id,
-      role: "owner"
-    )
-
-    {:ok, account} =
-      Accounts.put_account_paddle_customer_sync(account, "ctm_existing_owner", prior_owner.id)
-
-    prior_membership = Fixtures.Memberships.fetch_membership(account.id, prior_owner.id)
-    Fixtures.Memberships.force_role(prior_membership, "admin")
-
-    assert {:ok, "ctm_existing_owner", synced} =
-             Billing.sync_paddle_customer_for_account(account.id)
-
-    assert synced.paddle_billing_contact_user_id == new_owner.id
-    assert_received {:update_customer, paddle_attrs}
-    assert paddle_attrs.customer == "ctm_existing_owner"
-    assert paddle_attrs.email == "new-owner@example.test"
-    assert paddle_attrs.name == "Owner Transfer Co."
-    assert paddle_attrs.account_id == account.id
+    refute_received {:create_customer, _attrs}
+    refute_received {:list_customers, _attrs}
   end
 
   test "a normal checkout leaks no secret / customer id / price id into the log drain" do
-    # The happy checkout + portal-open paths emit no log line carrying the Paddle
-    # API key, the customer id, or the price id — those would land in the drain
-    # (Sentry/console) verbatim. Capture the log around both and assert the
+    # The happy checkout + payment-method paths emit no log line carrying the
+    # Paddle API key, the customer id, or the price id — those would land in the
+    # drain (Sentry/console) verbatim. Capture the log around both and assert the
     # sensitive values never appear.
     Emisar.Config.put_override(:emisar, :paddle_api_key, "pdl_live_secret_key")
 
     {_user, account, subject} = Fixtures.Subjects.owner_subject()
-    account = %{account | paddle_customer_id: "ctm_logsafe_01"}
+    {:ok, account} = Accounts.link_account_paddle_customer(account, "ctm_logsafe_01")
 
     log =
       capture_log(fn ->
         assert {:ok, _} = Billing.start_checkout(account, "team", :month, subject)
-        assert {:ok, _} = Billing.open_billing_portal(account, subject)
+
+        Fixtures.Accounts.create_subscription(account, "team",
+          paddle_subscription_id: "sub_logsafe_01",
+          collection_mode: "automatic"
+        )
+
+        {:ok, remote} = Emisar.Billing.PaddleClient.Stub.retrieve_subscription("sub_logsafe_01")
+        Fixtures.Billing.put_subscription(remote)
+
+        assert {:ok, _} = Billing.payment_method_update_url(account, subject)
       end)
 
     refute log =~ "pdl_live_secret_key"

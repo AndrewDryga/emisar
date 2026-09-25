@@ -23,13 +23,6 @@ defmodule Emisar.Billing.PaddleClient.Live do
   end
 
   @impl true
-  def update_customer(%{customer: customer_id} = attrs) when is_binary(customer_id) do
-    with {:ok, %{"data" => data}} <- patch_json("/customers/#{customer_id}", customer_body(attrs)) do
-      {:ok, data}
-    end
-  end
-
-  @impl true
   def list_customers(%{email: email}) do
     # Exact-match filter, and archived customers are included deliberately: the
     # email uniqueness Paddle enforces on create spans them, while this
@@ -129,20 +122,6 @@ defmodule Emisar.Billing.PaddleClient.Live do
   defp validate_checkout_cursor(_cursor), do: {:error, :malformed_checkout_page}
 
   @impl true
-  def create_billing_portal_session(attrs) do
-    with {:ok,
-          %{
-            "data" =>
-              %{
-                "urls" => %{"general" => %{"overview" => url}}
-              } = data
-          }} <-
-           post_json("/customers/#{attrs[:customer]}/portal-sessions", %{}) do
-      {:ok, Map.put(data, "url", url)}
-    end
-  end
-
-  @impl true
   def retrieve_transaction(id) do
     case get("/transactions/#{id}") do
       {:ok, %{"data" => transaction}} -> {:ok, transaction}
@@ -216,6 +195,28 @@ defmodule Emisar.Billing.PaddleClient.Live do
     end
   end
 
+  # Paddle's default: the subscription stays active until the period it has
+  # paid for ends, and a scheduled change records the cancellation.
+  @impl true
+  def schedule_subscription_cancel(id) do
+    case post_json("/subscriptions/#{id}/cancel", %{effective_from: "next_billing_period"}) do
+      {:ok, %{"data" => %{"id" => ^id} = subscription}} -> {:ok, subscription}
+      {:ok, _response} -> {:error, :cancellation_not_confirmed}
+      other -> other
+    end
+  end
+
+  # For a past-due subscription this is the unpaid renewal; for an active one a
+  # zero-amount transaction that only replaces the saved payment method.
+  @impl true
+  def payment_method_transaction(id) do
+    case get("/subscriptions/#{id}/update-payment-method-transaction") do
+      {:ok, %{"data" => %{"id" => _txn} = transaction}} -> {:ok, transaction}
+      {:ok, _response} -> {:error, :invalid_payment_method_transaction}
+      other -> other
+    end
+  end
+
   @impl true
   def list_products do
     # The catalog is a handful of products; per_page=200 is far above any
@@ -232,7 +233,7 @@ defmodule Emisar.Billing.PaddleClient.Live do
 
     # Only the statuses that represent an actual invoice (a draft/canceled txn
     # isn't one); newest first, a single page — this is "recent invoices", not
-    # a full ledger. The portal link owns the complete history + PDFs.
+    # a full ledger; Paddle's receipt emails reach the payer's complete history.
     subscription_filter =
       case attrs[:subscription_id] do
         id when is_binary(id) -> "&subscription_id=#{id}"

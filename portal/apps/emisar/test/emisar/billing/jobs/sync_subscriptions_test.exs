@@ -86,15 +86,15 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsTest.ControlledPaddleClient do
   @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
-  def update_customer(_attrs), do: {:error, :unused}
-  @impl true
   def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
   def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
-  def create_billing_portal_session(_attrs), do: {:error, :unused}
+  def schedule_subscription_cancel(_id), do: {:error, :unused}
+  @impl true
+  def payment_method_transaction(_id), do: {:error, :unused}
   @impl true
   def list_products, do: {:error, :unused}
   @impl true
@@ -508,15 +508,15 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsUnknownStatusTest.UnknownStatusPa
   @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
-  def update_customer(_attrs), do: {:error, :unused}
-  @impl true
   def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
   def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
-  def create_billing_portal_session(_attrs), do: {:error, :unused}
+  def schedule_subscription_cancel(_id), do: {:error, :unused}
+  @impl true
+  def payment_method_transaction(_id), do: {:error, :unused}
   @impl true
   def list_products, do: {:error, :unused}
   @impl true
@@ -594,15 +594,15 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsNoPeriodTest.NoPeriodPaddleClient
   @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
-  def update_customer(_attrs), do: {:error, :unused}
-  @impl true
   def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
   def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
-  def create_billing_portal_session(_attrs), do: {:error, :unused}
+  def schedule_subscription_cancel(_id), do: {:error, :unused}
+  @impl true
+  def payment_method_transaction(_id), do: {:error, :unused}
   @impl true
   def list_products, do: {:error, :unused}
   @impl true
@@ -685,15 +685,15 @@ defmodule Emisar.Billing.Jobs.SyncSubscriptionsRedactionTest.HttpErrorPaddleClie
   @impl true
   def create_customer(_attrs), do: {:error, :unused}
   @impl true
-  def update_customer(_attrs), do: {:error, :unused}
-  @impl true
   def list_customers(_attrs), do: {:error, :unused}
   @impl true
   def create_checkout_session(_attrs), do: {:error, :unused}
   @impl true
   def bind_checkout_transaction(_id, _binding), do: {:error, :unused}
   @impl true
-  def create_billing_portal_session(_attrs), do: {:error, :unused}
+  def schedule_subscription_cancel(_id), do: {:error, :unused}
+  @impl true
+  def payment_method_transaction(_id), do: {:error, :unused}
   @impl true
   def list_products, do: {:error, :unused}
   @impl true

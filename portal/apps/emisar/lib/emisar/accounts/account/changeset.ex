@@ -61,21 +61,9 @@ defmodule Emisar.Accounts.Account.Changeset do
     |> changeset()
   end
 
-  def sync_paddle_customer(%Account{} = account, customer_id, billing_contact_user_id)
-      when is_binary(customer_id) and is_binary(billing_contact_user_id) do
-    synced_at = DateTime.utc_now()
-
-    # Keep updated_at aligned with the sync marker so the stale-account sweep
-    # does not immediately reselect the row it just marked clean.
-    account
-    |> change(
-      paddle_customer_id: customer_id,
-      paddle_billing_contact_user_id: billing_contact_user_id,
-      paddle_customer_synced_at: synced_at,
-      updated_at: synced_at
-    )
-    |> foreign_key_constraint(:paddle_billing_contact_user_id)
-  end
+  def link_paddle_customer(%Account{paddle_customer_id: nil} = account, customer_id)
+      when is_binary(customer_id),
+      do: change(account, paddle_customer_id: customer_id)
 
   @doc "Stamp the account's monthly value report as delivered now."
   def mark_report_sent(%Account{} = account),

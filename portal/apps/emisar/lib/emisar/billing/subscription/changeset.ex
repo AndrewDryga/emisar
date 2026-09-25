@@ -30,6 +30,9 @@ defmodule Emisar.Billing.Subscription.Changeset do
     |> validate_number(:unit_price_amount, greater_than_or_equal_to: 0)
     |> validate_number(:billing_frequency, greater_than: 0)
     |> unique_constraint(:account_id)
+    |> unique_constraint(:paddle_subscription_id,
+      name: :billing_subscriptions_paddle_subscription_id_idx
+    )
   end
 
   def upsert(subscription \\ %Subscription{}, attrs) do
@@ -50,6 +53,9 @@ defmodule Emisar.Billing.Subscription.Changeset do
       |> validate_number(:unit_price_amount, greater_than_or_equal_to: 0)
       |> validate_number(:billing_frequency, greater_than: 0)
       |> unique_constraint(:account_id)
+      |> unique_constraint(:paddle_subscription_id,
+        name: :billing_subscriptions_paddle_subscription_id_idx
+      )
     end
   end
 
@@ -65,6 +71,9 @@ defmodule Emisar.Billing.Subscription.Changeset do
     |> validate_number(:unit_price_amount, greater_than_or_equal_to: 0)
     |> validate_number(:billing_frequency, greater_than: 0)
     |> unique_constraint(:account_id)
+    |> unique_constraint(:paddle_subscription_id,
+      name: :billing_subscriptions_paddle_subscription_id_idx
+    )
   end
 
   # Once the mirror has Paddle's monotonic timestamp, an incoming event must

@@ -258,7 +258,13 @@ defmodule Emisar.Audit.Event.Query do
      ]},
     {"Billing",
      [
-       {"subscription.changed", "Updated", "Subscription updated"}
+       {"subscription.changed", "Updated", "Subscription updated"},
+       {"subscription.cancel_requested", "Cancellation requested",
+        "Subscription cancellation requested"},
+       {"subscription.keep_requested", "Keep requested", "Subscription keep requested"},
+       {"billing_customer.link_requested", "Link code sent", "Billing link code sent"},
+       {"billing_customer.linked", "Billing account linked", "Existing billing account linked"},
+       {"billing_customer.link_failed", "Link code rejected", "Billing link code rejected"}
      ]},
     {"Emisar staff",
      [
@@ -338,6 +344,26 @@ defmodule Emisar.Audit.Event.Query do
   @kind_values_by_event_type %{
     "subscription.changed" => %{
       actor_kind: ["system"],
+      target_kind: ["account"]
+    },
+    "subscription.cancel_requested" => %{
+      actor_kind: ["membership"],
+      target_kind: ["account"]
+    },
+    "subscription.keep_requested" => %{
+      actor_kind: ["membership"],
+      target_kind: ["account"]
+    },
+    "billing_customer.link_requested" => %{
+      actor_kind: ["membership"],
+      target_kind: ["account"]
+    },
+    "billing_customer.linked" => %{
+      actor_kind: ["membership"],
+      target_kind: ["account"]
+    },
+    "billing_customer.link_failed" => %{
+      actor_kind: ["membership"],
       target_kind: ["account"]
     }
   }
@@ -1070,6 +1096,20 @@ defmodule Emisar.Audit.Event.Query do
     "subscription.changed" =>
       {false, false, true,
        "The subscription’s plan, status, paid access, or scheduled changes were updated."},
+    "subscription.cancel_requested" =>
+      {true, true, true,
+       "A billing manager asked Paddle to end the subscription with its paid period. Subscription updated shows when it took effect."},
+    "subscription.keep_requested" =>
+      {true, true, true,
+       "A billing manager asked Paddle to withdraw the scheduled cancellation. Subscription updated shows when it took effect."},
+    "billing_customer.link_requested" =>
+      {true, true, true,
+       "A code was emailed to the billing address to link its existing Paddle billing account."},
+    "billing_customer.linked" =>
+      {true, true, true,
+       "The emailed code matched, so the workspace now bills to that address's existing Paddle account."},
+    "billing_customer.link_failed" =>
+      {true, true, true, "A wrong or expired billing link code was entered."},
     "staff.account_viewed" =>
       {false, false, true, "Emisar staff opened this workspace in the internal support console."}
   }
@@ -1145,10 +1185,14 @@ defmodule Emisar.Audit.Event.Query do
       categories ->
         allowed = MapSet.new(event_types_for_categories(categories))
 
-        Enum.map(filters, fn
+        # A category the reader cannot read leaves Type with nothing to offer,
+        # and a filter with no choice is not a filter.
+        filters
+        |> Enum.map(fn
           %Filter{name: :event_type} = filter -> narrow_filter_values(filter, allowed)
           filter -> filter
         end)
+        |> Enum.reject(&(&1.name == :event_type and &1.values == []))
     end
   end
 

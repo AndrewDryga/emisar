@@ -6,7 +6,10 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   """
 
   @behaviour Emisar.Billing.PaddleClient
+  alias Emisar.Accounts
   alias Emisar.Billing.PaddleClient.Stub.TransactionStore
+  alias Emisar.Billing.Subscription
+  alias Emisar.Repo
 
   @impl true
   def create_customer(%{email: email} = attrs) do
@@ -27,19 +30,8 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
-  def update_customer(%{customer: customer_id} = attrs) do
-    {:ok,
-     %{
-       "id" => customer_id,
-       "email" => attrs[:email],
-       "name" => attrs[:name],
-       "custom_data" => %{"account_id" => attrs[:account_id]}
-     }}
-  end
-
-  @impl true
   def list_customers(%{email: email}) do
-    {:ok, [%{"id" => "ctm_stub_" <> short_id(email), "email" => email}]}
+    {:ok, [%{"id" => "ctm_stub_" <> short_id(email), "email" => email, "status" => "active"}]}
   end
 
   @impl true
@@ -64,15 +56,6 @@ defmodule Emisar.Billing.PaddleClient.Stub do
       :error ->
         {:error, :not_found}
     end
-  end
-
-  @impl true
-  def create_billing_portal_session(attrs) do
-    {:ok,
-     %{
-       "id" => "pst_stub_" <> short_id(attrs[:customer] || "anon"),
-       "url" => "https://stub.paddle.test/portal"
-     }}
   end
 
   @impl true
@@ -107,13 +90,15 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   @impl true
   def retrieve_subscription(id) do
     now = DateTime.utc_now()
+    mirror = stub_mirror(id)
 
     {:ok,
      %{
        "id" => id,
+       "customer_id" => stub_customer_id(mirror),
        "status" => "active",
        "collection_mode" => "automatic",
-       "scheduled_change" => nil,
+       "scheduled_change" => stub_scheduled_change(mirror),
        "updated_at" => DateTime.to_iso8601(now),
        "next_billed_at" =>
          now
@@ -137,6 +122,11 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
+  def update_subscription(id, %{"scheduled_change" => nil}) do
+    {:ok, subscription} = retrieve_subscription(id)
+    {:ok, Map.put(subscription, "scheduled_change", nil)}
+  end
+
   def update_subscription(id, attrs) do
     quantity = attrs["items"] |> List.first() |> Map.fetch!("quantity")
     now = DateTime.utc_now()
@@ -144,6 +134,7 @@ defmodule Emisar.Billing.PaddleClient.Stub do
     {:ok,
      %{
        "id" => id,
+       "customer_id" => id |> stub_mirror() |> stub_customer_id(),
        "status" => "active",
        "collection_mode" => "automatic",
        "scheduled_change" => nil,
@@ -192,8 +183,68 @@ defmodule Emisar.Billing.PaddleClient.Stub do
   end
 
   @impl true
-  def cancel_subscription(id),
-    do: {:ok, %{"id" => id, "status" => "canceled", "scheduled_change" => nil}}
+  def cancel_subscription(id) do
+    customer_id = id |> stub_mirror() |> stub_customer_id()
+
+    {:ok,
+     %{
+       "id" => id,
+       "customer_id" => customer_id,
+       "status" => "canceled",
+       "scheduled_change" => nil
+     }}
+  end
+
+  @impl true
+  def schedule_subscription_cancel(id) do
+    {:ok, subscription} = retrieve_subscription(id)
+
+    {:ok,
+     Map.put(subscription, "scheduled_change", %{
+       "action" => "cancel",
+       "effective_at" => subscription["next_billed_at"]
+     })}
+  end
+
+  @impl true
+  def payment_method_transaction(id) do
+    transaction_id = "txn_stub_pm_" <> short_id(id)
+
+    {:ok,
+     %{
+       "id" => transaction_id,
+       "subscription_id" => id,
+       "customer_id" => id |> stub_mirror() |> stub_customer_id(),
+       "status" => "ready",
+       "checkout" => %{"url" => "https://stub.paddle.test/checkout?_ptxn=" <> transaction_id}
+     }}
+  end
+
+  # The stub keeps no subscriptions of its own. It answers for the one the local
+  # mirror holds, billed to that account's customer, as Paddle would — for a
+  # disabled account too, which support can still close.
+  defp stub_mirror(subscription_id) do
+    Subscription.Query.all()
+    |> Subscription.Query.by_paddle_subscription_id(subscription_id)
+    |> Repo.peek()
+  end
+
+  defp stub_customer_id(%Subscription{account_id: account_id}) do
+    case Accounts.fetch_account_by_id_or_slug_including_disabled(account_id) do
+      {:ok, account} -> account.paddle_customer_id
+      _missing -> nil
+    end
+  end
+
+  defp stub_customer_id(nil), do: nil
+
+  defp stub_scheduled_change(%Subscription{scheduled_change_action: action} = mirror)
+       when is_binary(action) do
+    effective_at = mirror.scheduled_change_effective_at || mirror.current_period_end
+    %{"action" => action, "effective_at" => effective_at && DateTime.to_iso8601(effective_at)}
+  end
+
+  defp stub_scheduled_change(_mirror), do: nil
 
   @impl true
   def get_transaction_invoice(transaction_id),

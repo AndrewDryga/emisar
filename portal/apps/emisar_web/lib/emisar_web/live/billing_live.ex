@@ -15,6 +15,8 @@ defmodule EmisarWeb.BillingLive do
         loading?: not connected?(socket),
         cycle: (billing_intent && billing_intent.cycle) || :month,
         billing_intent: billing_intent,
+        link_request: nil,
+        invoice_limit: 3,
         summary: nil,
         billing_refresh: nil
       )
@@ -37,8 +39,10 @@ defmodule EmisarWeb.BillingLive do
   # context's refusal as this section's failure state, which reads as an outage
   # rather than "not yours".
   defp assign_invoices(socket, account, subject) do
+    limit = socket.assigns.invoice_limit
+
     if Billing.subject_can_view_invoices?(subject) do
-      assign_async(socket, :invoices, fn -> fetch_invoices(account, subject) end)
+      assign_async(socket, :invoices, fn -> fetch_invoices(account, subject, limit) end)
     else
       socket
     end
@@ -97,8 +101,8 @@ defmodule EmisarWeb.BillingLive do
   # (IL-18) — a slow Paddle response must not hold up the first paint. A
   # failure renders as the section's inline retry state; the rest of the
   # page (and the portal link) still works.
-  defp fetch_invoices(account, subject) do
-    case Billing.list_recent_invoices(account, subject, limit: 3) do
+  defp fetch_invoices(account, subject, limit) do
+    case Billing.list_recent_invoices(account, subject, limit: limit) do
       {:ok, invoices} -> {:ok, %{invoices: invoices}}
       {:error, reason} -> {:error, reason}
     end
@@ -120,26 +124,7 @@ defmodule EmisarWeb.BillingLive do
       fn socket ->
         with {:ok, cycle} <- parse_cycle(params["cycle"]),
              true <- Billing.self_service_checkout?(plan, cycle) do
-          case Billing.start_checkout(
-                 socket.assigns.current_account,
-                 plan,
-                 cycle,
-                 socket.assigns.current_subject
-               ) do
-            {:ok, url} ->
-              {:noreply, redirect(socket, external: url)}
-
-            {:error, :subscription_already_active} ->
-              {:noreply,
-               put_flash(
-                 socket,
-                 :error,
-                 "This account already has a subscription. Use Manage billing to change plans."
-               )}
-
-            {:error, reason} ->
-              {:noreply, put_flash(socket, :error, checkout_error(reason))}
-          end
+          start_checkout(socket, plan, cycle)
         else
           _invalid -> {:noreply, put_flash(socket, :error, "Unknown plan or billing cycle.")}
         end
@@ -147,32 +132,182 @@ defmodule EmisarWeb.BillingLive do
     )
   end
 
-  def handle_event("manage_billing", _params, socket) do
+  # Paddle already knows the billing email, so checkout waits for the code that
+  # proves the payer agreed to bill this workspace there.
+  def handle_event("send_link_code", _params, socket) do
     Permissions.gated(
       socket,
       Billing.subject_can_manage_billing?(socket.assigns.current_subject),
       fn socket ->
-        case Billing.open_billing_portal(
+        case Billing.send_customer_link_code(
                socket.assigns.current_account,
                socket.assigns.current_subject
              ) do
-          {:ok, url} ->
-            {:noreply, redirect(socket, external: url)}
+          {:ok, email} ->
+            {:noreply, assign(socket, :link_request, link_request(socket, sent_to: email))}
 
-          {:error, :no_customer} ->
+          {:error, :already_linked} ->
             {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "No billing details are available yet. Contact support for help."
-             )}
+             socket
+             |> assign(:link_request, nil)
+             |> put_flash(:info, "This workspace already has a billing account. Upgrade again.")}
+
+          {:error, :rate_limited} ->
+            {:noreply,
+             put_flash(socket, :error, "Too many codes were requested. Try again in an hour.")}
+
+          {:error, :archived_customer} ->
+            {:noreply, put_flash(socket, :error, archived_customer_message())}
 
           {:error, _reason} ->
             {:noreply,
              put_flash(
                socket,
                :error,
-               "Couldn't open billing. Try again, or contact support if this continues."
+               "Couldn't send the code. Try again, or contact support if this continues."
+             )}
+        end
+      end
+    )
+  end
+
+  def handle_event("link_customer", %{"code" => code}, socket) when is_binary(code) do
+    Permissions.gated(
+      socket,
+      Billing.subject_can_manage_billing?(socket.assigns.current_subject),
+      fn socket ->
+        case Billing.link_existing_customer(
+               socket.assigns.current_account,
+               code,
+               socket.assigns.current_subject
+             ) do
+          {:ok, _account} ->
+            continue_checkout(assign(socket, :link_request, nil), socket.assigns.link_request)
+
+          {:error, :invalid_code} ->
+            error = "That code is wrong or has expired. Send a new code and try again."
+            {:noreply, assign(socket, :link_request, link_request(socket, error: error))}
+
+          {:error, :rate_limited} ->
+            error = "Too many attempts. Wait a few minutes and try again."
+            {:noreply, assign(socket, :link_request, link_request(socket, error: error))}
+
+          {:error, :archived_customer} ->
+            {:noreply, put_flash(socket, :error, archived_customer_message())}
+
+          {:error, _reason} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Couldn't link the billing account. Try again, or contact support if this continues."
+             )}
+        end
+      end
+    )
+  end
+
+  def handle_event("link_customer", _params, socket) do
+    Permissions.gated(
+      socket,
+      Billing.subject_can_manage_billing?(socket.assigns.current_subject),
+      fn socket ->
+        error = "That code is wrong or has expired. Send a new code and try again."
+        {:noreply, assign(socket, :link_request, link_request(socket, error: error))}
+      end
+    )
+  end
+
+  def handle_event("update_payment_method", _params, socket) do
+    Permissions.gated(
+      socket,
+      Billing.subject_can_manage_billing?(socket.assigns.current_subject),
+      fn socket ->
+        case Billing.payment_method_update_url(
+               socket.assigns.current_account,
+               socket.assigns.current_subject
+             ) do
+          {:ok, url} ->
+            {:noreply, redirect(socket, external: url)}
+
+          {:error, :no_subscription} ->
+            {:noreply, put_flash(socket, :error, "This workspace has no subscription to update.")}
+
+          {:error, _reason} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Couldn't open the payment update. Try again, or contact support if this continues."
+             )}
+        end
+      end
+    )
+  end
+
+  def handle_event("cancel_subscription", _params, socket) do
+    Permissions.gated(
+      socket,
+      Billing.subject_can_manage_billing?(socket.assigns.current_subject),
+      fn socket ->
+        case Billing.cancel_subscription(
+               socket.assigns.current_account,
+               socket.assigns.current_subject
+             ) do
+          :ok ->
+            {:noreply,
+             socket
+             |> refresh_summary()
+             |> put_flash(
+               :info,
+               "Your subscription will end with the current period. Paid features stay until then."
+             )}
+
+          {:error, :no_subscription} ->
+            {:noreply,
+             socket
+             |> refresh_summary()
+             |> put_flash(:error, "This workspace has no subscription to cancel.")}
+
+          {:error, _reason} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Couldn't cancel the subscription. Try again, or contact support if this continues."
+             )}
+        end
+      end
+    )
+  end
+
+  def handle_event("keep_subscription", _params, socket) do
+    Permissions.gated(
+      socket,
+      Billing.subject_can_manage_billing?(socket.assigns.current_subject),
+      fn socket ->
+        case Billing.keep_subscription(
+               socket.assigns.current_account,
+               socket.assigns.current_subject
+             ) do
+          :ok ->
+            {:noreply,
+             socket
+             |> refresh_summary()
+             |> put_flash(:info, "Your subscription will renew as before.")}
+
+          {:error, :no_subscription} ->
+            {:noreply,
+             socket
+             |> refresh_summary()
+             |> put_flash(:error, "No cancellation is scheduled for this subscription.")}
+
+          {:error, _reason} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Couldn't keep the subscription. Try again, or contact support if this continues."
              )}
         end
       end
@@ -209,6 +344,62 @@ defmodule EmisarWeb.BillingLive do
     subject = socket.assigns.current_subject
 
     {:noreply, assign_invoices(socket, account, subject)}
+  end
+
+  # Two years of monthly invoices, the same window the PDF download rechecks.
+  def handle_event("show_all_invoices", _params, socket) do
+    Permissions.gated(
+      socket,
+      Billing.subject_can_view_invoices?(socket.assigns.current_subject),
+      fn socket ->
+        account = socket.assigns.current_account
+        subject = socket.assigns.current_subject
+
+        {:noreply, socket |> assign(:invoice_limit, 24) |> assign_invoices(account, subject)}
+      end
+    )
+  end
+
+  defp start_checkout(socket, plan, cycle) do
+    case Billing.start_checkout(
+           socket.assigns.current_account,
+           plan,
+           cycle,
+           socket.assigns.current_subject
+         ) do
+      {:ok, url} ->
+        {:noreply, redirect(socket, external: url)}
+
+      {:error, :billing_email_in_use} ->
+        {:noreply,
+         assign(socket, :link_request, %{plan: plan, cycle: cycle, sent_to: nil, error: nil})}
+
+      {:error, :subscription_already_active} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This account already has a subscription. Contact support to change plans."
+         )}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, checkout_error(reason))}
+    end
+  end
+
+  defp continue_checkout(socket, %{plan: plan, cycle: cycle}),
+    do: start_checkout(socket, plan, cycle)
+
+  defp continue_checkout(socket, _no_request),
+    do: {:noreply, put_flash(socket, :info, "Billing account linked.")}
+
+  defp archived_customer_message do
+    "That Paddle billing account is archived. Contact support, or use a different billing email."
+  end
+
+  defp link_request(socket, changes) do
+    request = socket.assigns.link_request || %{plan: nil, cycle: nil, sent_to: nil, error: nil}
+    Map.merge(%{request | error: nil}, Map.new(changes))
   end
 
   defp ordered_plans do
@@ -339,7 +530,6 @@ defmodule EmisarWeb.BillingLive do
       sales_led_plan?(summary.plan) -> :support
       summary.subscription_managed? and sales_led_plan?(summary.subscribed_plan) -> :support
       plan.key == "enterprise" -> :sales
-      summary.subscription_managed? and summary.billing_portal_available? -> :manage
       summary.subscription_managed? -> :support
       plan_rank(plan.key) > plan_rank(summary.plan) -> :upgrade
       true -> :support
@@ -493,18 +683,18 @@ defmodule EmisarWeb.BillingLive do
           Billing.subject_can_manage_billing?(@current_subject)
       }>
         <.button
-          :if={@summary.billing_portal_available? and @summary.subscription_source != "complimentary"}
-          id="billing-manage"
+          :if={@summary.payment_method_updatable?}
+          id="billing-update-payment-method"
           variant={:secondary}
-          phx-click="manage_billing"
-          phx-disable-with="Opening billing…"
+          phx-click="update_payment_method"
+          phx-disable-with="Opening…"
         >
-          Manage billing
+          Update payment method
         </.button>
         <.button
           :if={
             @summary.subscription_source == "complimentary" or
-              (not @summary.billing_portal_available? and
+              (not @summary.payment_method_updatable? and
                  (@summary.support_channels.email? or @summary.subscription_managed?))
           }
           id="billing-contact-support"
@@ -546,17 +736,27 @@ defmodule EmisarWeb.BillingLive do
         >
           <:cta :if={Billing.subject_can_manage_billing?(@current_subject)}>
             <.button
-              :if={@summary.billing_portal_available?}
+              :if={@summary.keep_available?}
               variant={:secondary}
               size={:sm}
               class="shrink-0"
-              phx-click="manage_billing"
-              phx-disable-with="Opening billing…"
+              phx-click="keep_subscription"
+              phx-disable-with="Keeping…"
             >
-              Manage billing
+              Keep subscription
             </.button>
             <.button
-              :if={not @summary.billing_portal_available?}
+              :if={not @summary.keep_available? and @summary.payment_method_updatable?}
+              variant={:secondary}
+              size={:sm}
+              class="shrink-0"
+              phx-click="update_payment_method"
+              phx-disable-with="Opening…"
+            >
+              Update payment method
+            </.button>
+            <.button
+              :if={not @summary.keep_available? and not @summary.payment_method_updatable?}
               variant={:secondary}
               size={:sm}
               href={billing_support_mailto(@current_account, @current_user)}
@@ -594,7 +794,42 @@ defmodule EmisarWeb.BillingLive do
                     class="inline"
                   />
                 </p>
+                <.button
+                  :if={
+                    @summary.cancel_available? and
+                      Billing.subject_can_manage_billing?(@current_subject)
+                  }
+                  id="billing-cancel-subscription"
+                  variant={:secondary}
+                  size={:sm}
+                  class="mt-4"
+                  phx-click={show_confirm_dialog("billing-cancel")}
+                >
+                  Cancel subscription
+                </.button>
               </div>
+              <.confirm_dialog
+                :if={
+                  @summary.cancel_available? and Billing.subject_can_manage_billing?(@current_subject)
+                }
+                id="billing-cancel"
+                title="Cancel subscription"
+                confirm_label="Cancel subscription"
+                dismiss_label="Keep subscription"
+                pending_label="Cancelling…"
+                on_confirm={JS.push("cancel_subscription") |> hide_confirm_dialog("billing-cancel")}
+              >
+                <:body>
+                  {@summary.plan_name} stays active until the current period ends<span :if={
+                    @summary.current_period_end
+                  }> on <.local_time
+                      id="billing-cancel-period-end"
+                      value={@summary.current_period_end}
+                      class="inline"
+                    /></span>. Then this workspace moves to the Free plan. You can keep the subscription
+                  any time before that.
+                </:body>
+              </.confirm_dialog>
             </section>
             <.async_result
               :let={invoices}
@@ -602,7 +837,7 @@ defmodule EmisarWeb.BillingLive do
               assign={@invoices}
             >
               <:loading>
-                <section :if={@summary.billing_portal_available?}>
+                <section :if={@summary.invoices_available?}>
                   <.section_header title="Recent invoices" />
                   <p class="flex items-center gap-2 text-sm text-zinc-400">
                     <.icon name="state.loading" class="h-4 w-4 animate-spin" /> Loading invoices…
@@ -628,7 +863,7 @@ defmodule EmisarWeb.BillingLive do
                   </.button>
                 </.event_block>
               </:failed>
-              <section :if={@summary.billing_portal_available?}>
+              <section :if={@summary.invoices_available?}>
                 <.section_header title="Recent invoices">
                   <:actions>
                     <.button
@@ -640,13 +875,13 @@ defmodule EmisarWeb.BillingLive do
                       Refresh invoices
                     </.button>
                     <.button
-                      :if={Billing.subject_can_manage_billing?(@current_subject)}
+                      :if={@invoice_limit < 24 and length(invoices) >= @invoice_limit}
                       variant={:secondary}
                       size={:sm}
-                      phx-click="manage_billing"
-                      phx-disable-with="Opening billing…"
+                      phx-click="show_all_invoices"
+                      phx-disable-with="Loading…"
                     >
-                      View all invoices
+                      Show more
                     </.button>
                   </:actions>
                 </.section_header>
@@ -655,7 +890,7 @@ defmodule EmisarWeb.BillingLive do
                 </.empty_state>
                 <ul :if={invoices != []} id="billing-invoices" class="divide-y divide-zinc-800/70">
                   <li
-                    :for={invoice <- Enum.take(invoices, 3)}
+                    :for={invoice <- Enum.take(invoices, @invoice_limit)}
                     class="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm"
                   >
                     <.local_time
@@ -694,6 +929,10 @@ defmodule EmisarWeb.BillingLive do
                     </div>
                   </li>
                 </ul>
+                <p class="mt-3 text-xs text-zinc-400">
+                  Paddle's receipt emails link to the full payment history, billing address, and
+                  tax details.
+                </p>
               </section>
             </.async_result>
           </div>
@@ -772,8 +1011,61 @@ defmodule EmisarWeb.BillingLive do
             id="billing-upgrade-offers"
             class="min-w-0 max-w-3xl xl:col-start-1 xl:row-start-2"
           >
+            <div :if={@link_request} id="billing-link-customer">
+              <.status_note
+                icon="product.billing"
+                tone={:neutral}
+                title="Confirm the billing email"
+                class="mb-5"
+              >
+                <%= if @link_request.sent_to do %>
+                  We sent a 6-digit code to <span class="font-medium text-zinc-200">{@link_request.sent_to}</span>.
+                  Enter it to bill this workspace to that Paddle account and continue to checkout.
+                  <.form
+                    for={%{}}
+                    as={:link}
+                    id="billing-link-form"
+                    phx-submit="link_customer"
+                    class="mt-4 space-y-4"
+                  >
+                    <.code_input
+                      id="billing-link-code"
+                      name="code"
+                      label="Code"
+                      numeric
+                      error={@link_request.error}
+                    />
+                    <div class="flex flex-wrap gap-3">
+                      <.button type="submit" size={:sm} phx-disable-with="Linking…">
+                        Link and continue
+                      </.button>
+                      <.button
+                        type="button"
+                        variant={:secondary}
+                        size={:sm}
+                        phx-click="send_link_code"
+                        phx-disable-with="Sending…"
+                      >
+                        Send a new code
+                      </.button>
+                    </div>
+                  </.form>
+                <% else %>
+                  Paddle already has a billing account for this workspace's billing email. To bill
+                  this workspace there, email that address a code and enter it here.
+                  <div class="mt-4">
+                    <.button size={:sm} phx-click="send_link_code" phx-disable-with="Sending…">
+                      Email a code
+                    </.button>
+                  </div>
+                <% end %>
+              </.status_note>
+            </div>
             <.status_note
-              :if={billing_intent_actionable?(@billing_intent, @summary, @current_subject)}
+              :if={
+                is_nil(@link_request) and
+                  billing_intent_actionable?(@billing_intent, @summary, @current_subject)
+              }
               icon="product.billing"
               tone={:neutral}
               title={"Review Team for #{@current_account.name}"}
@@ -892,15 +1184,6 @@ defmodule EmisarWeb.BillingLive do
                         href={billing_support_mailto(@current_account, @current_user)}
                       >
                         Contact support
-                      </.button>
-                    <% :manage -> %>
-                      <.button
-                        variant={:secondary}
-                        size={:sm}
-                        phx-click="manage_billing"
-                        phx-disable-with="Opening billing…"
-                      >
-                        Manage billing
                       </.button>
                   <% end %>
                 </div>

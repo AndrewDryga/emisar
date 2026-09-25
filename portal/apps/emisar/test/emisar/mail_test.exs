@@ -271,6 +271,30 @@ defmodule Emisar.MailTest do
           not String.contains?(email.text_body <> email.html_body, ["\u202E", "\u2066", "\u061C"])
       end)
     end
+
+    test "stay out of the billing link code's subject and preview" do
+      user = Fixtures.Users.create_user()
+      account = Fixtures.Accounts.create_account(name: "Payroll Refund Desk")
+
+      contact =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: "owner"
+        )
+
+      UserNotifier.deliver_billing_customer_link_code(
+        contact,
+        "123456",
+        account,
+        %RequestContext{}
+      )
+
+      assert_email_sent(fn email ->
+        email.to == [{"", contact.contact_email}] and email.text_body =~ "Payroll Refund Desk" and
+          not (email.subject =~ "Payroll") and email.text_body =~ "123456"
+      end)
+    end
   end
 
   describe "branded return_to threading" do

@@ -137,14 +137,7 @@ defmodule Emisar.Fixtures.Accounts do
     attrs = Map.new(attrs)
 
     {paddle_customer_id, attrs} = Map.pop(attrs, :paddle_customer_id)
-    {paddle_billing_contact_user_id, attrs} = Map.pop(attrs, :paddle_billing_contact_user_id)
-    {paddle_customer_synced_at, attrs} = Map.pop(attrs, :paddle_customer_synced_at)
-
-    paddle_attrs =
-      %{}
-      |> maybe_put(:paddle_customer_id, paddle_customer_id)
-      |> maybe_put(:paddle_billing_contact_user_id, paddle_billing_contact_user_id)
-      |> maybe_put(:paddle_customer_synced_at, paddle_customer_synced_at)
+    paddle_attrs = maybe_put(%{}, :paddle_customer_id, paddle_customer_id)
 
     {paddle_attrs, attrs}
   end

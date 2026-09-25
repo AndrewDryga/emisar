@@ -383,7 +383,7 @@ func (a *App) e2eBilling(ctx context.Context) error {
 	deleteSQL := `
 delete from billing_subscriptions where account_id = (select id from accounts where slug='demo');
 update accounts
-set paddle_customer_id = null, paddle_customer_synced_at = null
+set paddle_customer_id = null
 where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
 	if err := a.run(ctx, a.Root, env, "psql", "-U", "postgres", "-d", "emisar_dev", "-qc", deleteSQL); err != nil {
 		return err
@@ -393,7 +393,7 @@ where slug = 'demo' and paddle_customer_id like 'ctm_stub_%';`
 		return err
 	}
 	if existingCustomer != "" {
-		relinkSQL := fmt.Sprintf("update accounts set paddle_customer_id = '%s', paddle_customer_synced_at = null where slug = 'demo';", existingCustomer)
+		relinkSQL := fmt.Sprintf("update accounts set paddle_customer_id = '%s' where slug = 'demo';", existingCustomer)
 		if err := a.run(ctx, a.Root, env, "psql", "-U", "postgres", "-d", "emisar_dev", "-qc", relinkSQL); err != nil {
 			return err
 		}

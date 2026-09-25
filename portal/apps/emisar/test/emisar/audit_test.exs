@@ -2794,7 +2794,14 @@ defmodule Emisar.AuditTest do
     # a type joining or leaving the "Billing" group changes what the finance
     # seat sees, and that has to be a reviewed diff.
     test "is exactly the Billing group's types" do
-      assert Audit.Event.Query.billing_event_types() == ["subscription.changed"]
+      assert Audit.Event.Query.billing_event_types() == [
+               "subscription.changed",
+               "subscription.cancel_requested",
+               "subscription.keep_requested",
+               "billing_customer.link_requested",
+               "billing_customer.linked",
+               "billing_customer.link_failed"
+             ]
     end
 
     # Derived from the group, not hand-kept beside it: a billing type added to

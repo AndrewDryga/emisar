@@ -164,6 +164,39 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   @doc """
+  The code that lets a workspace bill to the Paddle account its billing email
+  already has. Whoever asked may not control this mailbox, and they typed the
+  workspace name, so the name stays out of the subject and preview.
+  """
+  def deliver_billing_customer_link_code(
+        %Accounts.Membership{} = contact,
+        code,
+        %Accounts.Account{} = account,
+        %RequestContext{} = context
+      ) do
+    deliver_transactional(
+      contact,
+      "Confirm billing to your Paddle account",
+      "A workspace on emisar asked to bill to your Paddle account. The code expires in 15 minutes.",
+      [
+        account_instruction(
+          "A workspace on emisar asked to bill its subscription to the Paddle account for this email address.",
+          "The workspace ",
+          account,
+          " on emisar asked to bill its subscription to the Paddle account for this email address."
+        ),
+        {:code, code},
+        {:paragraph,
+         "Give this code to that workspace only if you agree. Its invoices and receipts will then come to this address. It cannot see or change your other subscriptions."},
+        {:paragraph,
+         "This code works once and expires in 15 minutes. If you didn't expect this, ignore the email and nothing changes."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
+      ]
+    )
+  end
+
+  @doc """
   Tells a personal login that a workspace Member was linked to it, so a link its
   owner did not mean to make is visible. The workspace name stays out of the
   subject and preview.

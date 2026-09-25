@@ -14,10 +14,10 @@ defmodule Emisar.Billing do
   use Supervisor
   import Emisar.Maps, only: [put_present: 3]
   alias Ecto.Multi
-  alias Emisar.{Accounts, Analytics, Audit, Auth, PublicUrl, Repo, Runners}
+  alias Emisar.{Accounts, Analytics, Audit, Auth, Crypto, Mailers, Repo, Runners, Throttle}
   alias Emisar.Auth.Subject
   alias Emisar.Billing.{Authorizer, Entitlements, PaddleClient, Subscription}
-  alias Emisar.Billing.{CheckoutIntent, Checkouts, ProcessedEvent}
+  alias Emisar.Billing.{CheckoutIntent, Checkouts, CustomerLinkCode, ProcessedEvent}
   alias Emisar.Billing.{SubscriptionRetirement, SubscriptionRetirements}
   require Logger
 
@@ -91,7 +91,6 @@ defmodule Emisar.Billing do
   def init(_opts) do
     children = [
       job_module("ProcessedEventRetention"),
-      job_module("SyncPaddleCustomers"),
       job_module("SyncRunnerQuantities"),
       job_module("SyncSubscriptions")
     ]
@@ -496,13 +495,13 @@ defmodule Emisar.Billing do
     end
   end
 
-  defp ensure_canonical_customer(data, customer_id) do
-    case Map.fetch(data, "customer_id") do
-      :error -> :ok
-      {:ok, ^customer_id} -> :ok
-      _mismatch -> {:error, :cancellation_not_confirmed}
-    end
-  end
+  # Paddle always names the customer a subscription bills; it has to be this
+  # account's before closure cancels anything.
+  defp ensure_canonical_customer(%{"customer_id" => customer_id}, customer_id)
+       when is_binary(customer_id),
+       do: :ok
+
+  defp ensure_canonical_customer(_data, _customer_id), do: {:error, :cancellation_not_confirmed}
 
   @doc "Internal: DB-only final closure check; Accounts holds the account row lock."
   def ensure_ready_to_close(%Accounts.Account{} = account, opts) do
@@ -1189,8 +1188,8 @@ defmodule Emisar.Billing do
   # subscription's id, so we can no longer even see what to cancel. The console
   # only renders "Upgrade" when there is no live subscription, but that is a
   # RENDERING choice: a crafted `phx-click="upgrade"` reaches this function
-  # directly. An existing subscriber changes plans in the Paddle customer portal
-  # ("Manage billing"), which is also what the downgrade branch already does.
+  # directly. An existing subscriber cancels or keeps its own subscription on the
+  # billing page and changes cadence through support.
   #
   # A canceled subscription is not live — the operator must be able to come back.
   defp ensure_no_live_subscription(account_id) do
@@ -1243,56 +1242,187 @@ defmodule Emisar.Billing do
   defp cycle_interval(:month), do: "month"
   defp cycle_interval(:year), do: "year"
 
-  @doc """
-  Creates a Paddle Customer Portal session for the account's customer and
-  returns the hosted-portal URL. Operators land there to update their
-  payment method, download invoices, change plan, or cancel — no email
-  to support required.
+  # -- This workspace's own subscription ------------------------------------
+  #
+  # Every control here acts on the one Paddle subscription the local mirror holds
+  # for the account, never on its customer. One customer can pay for several
+  # workspaces and Paddle's portal sessions are customer-wide, so Emisar opens
+  # none: the payer manages customer details through the link in any Paddle
+  # receipt.
 
-  Returns `{:error, :no_customer}` if the account has never been on a
-  paid plan (no `paddle_customer_id`). Returns a stub URL when no
-  Paddle key is configured (dev/test).
+  @collected_statuses ~w[active trialing past_due]
+  # Paddle refuses every change to a past-due subscription, so cancelling or
+  # keeping one waits until its renewal is paid.
+  @changeable_statuses ~w[active trialing]
+
+  @doc """
+  The URL where a billing manager replaces the payment method on this
+  workspace's own subscription: a Paddle transaction for that subscription (the
+  unpaid renewal when it is past due), opened on Emisar's checkout page.
+  Requires `manage_billing`. Returns `{:ok, url}`, or `{:error,
+  :no_subscription}` without an automatically collected Paddle subscription.
   """
-  def open_billing_portal(%Accounts.Account{} = account, %Subject{} = subject) do
+  def payment_method_update_url(%Accounts.Account{} = account, %Subject{} = subject) do
+    with :ok <- ensure_can_manage_billing(subject, account),
+         {:ok, account} <- Accounts.fetch_account_by_id(account.id),
+         {:ok, subscription} <- fetch_collected_subscription(account.id),
+         {:ok, _data} <- fetch_owned_subscription_data(subscription, account, @collected_statuses),
+         {:ok, transaction} <-
+           PaddleClient.payment_method_transaction(subscription.paddle_subscription_id),
+         :ok <- ensure_owned_transaction(transaction, subscription, account) do
+      Checkouts.provider_checkout_url(transaction, account.id)
+    end
+  end
+
+  @doc """
+  Schedules this workspace's own subscription to end with its paid period.
+  Paid features stay until then; `keep_subscription/2` withdraws it. The request
+  is audited before Paddle is asked, and `subscription.changed` records what
+  took effect. Requires `manage_billing`. Returns `:ok`, or `{:error,
+  :no_subscription}` when there is no collected subscription, it is past due,
+  or it already ends.
+  """
+  def cancel_subscription(%Accounts.Account{} = account, %Subject{} = subject) do
+    with :ok <- ensure_can_manage_billing(subject, account),
+         {:ok, account} <- Accounts.fetch_account_by_id(account.id),
+         {:ok, %Subscription{scheduled_change_action: nil, status: status} = subscription}
+         when status in @changeable_statuses <- fetch_collected_subscription(account.id),
+         {:ok, %{"scheduled_change" => nil}} <-
+           fetch_owned_subscription_data(subscription, account, @changeable_statuses),
+         {:ok, _requested} <-
+           Audit.record(Audit.Events.subscription_cancel_requested(subject, account)),
+         {:ok, data} <-
+           PaddleClient.schedule_subscription_cancel(subscription.paddle_subscription_id),
+         :ok <- ensure_owned_change(data, subscription, account, &(&1["action"] == "cancel")) do
+      mirror_subscription_change(data, subscription)
+    else
+      {:ok, %{}} -> {:error, :no_subscription}
+      other -> other
+    end
+  end
+
+  @doc """
+  Withdraws the scheduled cancellation of this workspace's own subscription, so
+  it renews as before. Audited before Paddle is asked, like
+  `cancel_subscription/2`. Requires `manage_billing`. Returns `:ok`, or
+  `{:error, :no_subscription}` when no cancellation is scheduled or it is past
+  due.
+  """
+  def keep_subscription(%Accounts.Account{} = account, %Subject{} = subject) do
+    with :ok <- ensure_can_manage_billing(subject, account),
+         {:ok, account} <- Accounts.fetch_account_by_id(account.id),
+         {:ok, %Subscription{scheduled_change_action: "cancel", status: status} = subscription}
+         when status in @changeable_statuses <- fetch_collected_subscription(account.id),
+         {:ok, %{"scheduled_change" => %{"action" => "cancel"}}} <-
+           fetch_owned_subscription_data(subscription, account, @changeable_statuses),
+         {:ok, _requested} <-
+           Audit.record(Audit.Events.subscription_keep_requested(subject, account)),
+         {:ok, data} <-
+           PaddleClient.update_subscription(subscription.paddle_subscription_id, %{
+             "scheduled_change" => nil
+           }),
+         :ok <- ensure_owned_change(data, subscription, account, &is_nil/1) do
+      mirror_subscription_change(data, subscription)
+    else
+      {:ok, %{}} -> {:error, :no_subscription}
+      other -> other
+    end
+  end
+
+  defp ensure_can_manage_billing(%Subject{} = subject, %Accounts.Account{} = account) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(
              subject,
              Authorizer.manage_billing_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
-         {:ok, account} <- Accounts.fetch_account_by_id(account.id) do
-      do_open_billing_portal(account)
+           ) do
+      Subject.ensure_in_account(subject, account.id, :unauthorized)
     end
   end
 
-  defp do_open_billing_portal(%Accounts.Account{paddle_customer_id: nil}),
-    do: {:error, :no_customer}
+  defp fetch_collected_subscription(account_id) do
+    subscription = peek_subscription_for_account(account_id)
 
-  defp do_open_billing_portal(%Accounts.Account{paddle_customer_id: customer_id})
-       when is_binary(customer_id) do
-    # Bare /app — the slugless billing path doesn't resolve (every tenant page
-    # nests under the account slug); /app redirects to the session's account.
-    return_url = PublicUrl.url("/app")
+    if collected_subscription?(subscription),
+      do: {:ok, subscription},
+      else: {:error, :no_subscription}
+  end
 
-    if Emisar.Config.get_env(:emisar, :paddle_api_key) do
-      case Emisar.Billing.PaddleClient.create_billing_portal_session(%{
-             customer: customer_id,
-             return_url: return_url
-           }) do
-        {:ok, %{"url" => url}} -> {:ok, url}
-        other -> other
-      end
-    else
-      # Stub path — no real Paddle configured. Send the operator back
-      # to billing with a query param so the LV can show a flash.
-      {:ok, return_url <> "?status=stub-portal"}
+  # Paddle collects this subscription itself, so its card and cancellation are
+  # the workspace's to manage; manually invoiced ones go through support.
+  defp collected_subscription?(%Subscription{
+         paddle_subscription_id: id,
+         collection_mode: "automatic",
+         status: status
+       })
+       when is_binary(id) and status in @collected_statuses,
+       do: true
+
+  defp collected_subscription?(_subscription), do: false
+
+  # The mirror only names the subscription. Before any change Paddle has to
+  # confirm it is still this workspace customer's automatically collected one,
+  # so a stale or wrong mirror row cannot reach another payer's subscription.
+  defp fetch_owned_subscription_data(subscription, account, statuses) do
+    case PaddleClient.retrieve_subscription(subscription.paddle_subscription_id) do
+      {:ok, %{"collection_mode" => "automatic", "status" => status} = data} ->
+        if status in statuses and owned_subscription_data?(data, subscription, account),
+          do: {:ok, data},
+          else: {:error, :no_subscription}
+
+      {:ok, _data} ->
+        {:error, :no_subscription}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp owned_subscription_data?(data, %Subscription{} = subscription, account) do
+    is_binary(account.paddle_customer_id) and
+      data["id"] == subscription.paddle_subscription_id and
+      data["customer_id"] == account.paddle_customer_id
+  end
+
+  # Paddle answers a change with the whole subscription: it must be the same
+  # one, still this customer's and still collected, with the requested
+  # scheduled change in place.
+  defp ensure_owned_change(data, subscription, account, scheduled_change_ok?) do
+    if owned_subscription_data?(data, subscription, account) and
+         data["collection_mode"] == "automatic" and data["status"] in @changeable_statuses and
+         scheduled_change_ok?.(data["scheduled_change"]),
+       do: :ok,
+       else: {:error, :change_not_confirmed}
+  end
+
+  defp ensure_owned_transaction(transaction, %Subscription{} = subscription, account) do
+    if is_binary(account.paddle_customer_id) and
+         transaction["subscription_id"] == subscription.paddle_subscription_id and
+         transaction["customer_id"] == account.paddle_customer_id,
+       do: :ok,
+       else: {:error, :invalid_provider_data}
+  end
+
+  # Paddle already applied the change, so the caller succeeds whatever happens
+  # here; a mirror that lost a race with a webhook converges on the next one.
+  defp mirror_subscription_change(data, %Subscription{} = subscription) do
+    case reconcile_subscription_data(data, expected_subscription: subscription) do
+      {:error, reason} ->
+        Logger.warning("billing.subscription_mirror_deferred",
+          account_id: subscription.account_id,
+          error: inspect(redacted_paddle_error(reason))
+        )
+
+        :ok
+
+      _mirrored ->
+        :ok
     end
   end
 
   @doc """
   Recent invoices (Paddle transactions) for the account's customer — number,
-  date, amount, status — so the billing page shows a payment history inline
-  without a trip to the portal (the portal still owns the full ledger + PDFs).
+  date, amount, status — so the billing page shows this subscription's payment
+  history inline (Paddle's receipt emails reach the payer's full ledger).
   `{:ok, []}` for an account that's never been billed (no `paddle_customer_id`).
   Gated on `view_invoices`, not view-billing: an invoice is a financial document
   naming what the company paid and when, which owners, admins and the billing
@@ -1313,7 +1443,7 @@ defmodule Emisar.Billing do
 
   @doc """
   The signed, short-lived URL of one transaction's invoice PDF, so a billing
-  manager can download an invoice inline instead of opening the portal. Gated on
+  manager can download an invoice inline. Gated on
   `view_invoices`, like the list it is reached from; the transaction is
   re-checked against the account's own recent invoices first, so a crafted id
   can't pull another account's PDF — `{:error, :not_found}` otherwise.
@@ -1342,10 +1472,10 @@ defmodule Emisar.Billing do
        when is_binary(customer_id) do
     limit = Keyword.get(opts, :limit, 6)
 
-    # Two workspaces of one owner can share a Paddle customer (the sync adopts
-    # an existing customer by owner email), so a customer-scoped ledger would
-    # let a billing manager of one read the other's invoices. Scope to THIS
-    # account's own subscription; no subscription id means no invoices to show.
+    # Several workspaces can share a Paddle customer (a proved link to an
+    # existing customer), so a customer-scoped ledger would let a billing
+    # manager of one read the other's invoices. Scope to THIS account's own
+    # subscription; no subscription id means no invoices to show.
     case peek_subscription_for_account(account_id) do
       %Subscription{paddle_subscription_id: subscription_id} when is_binary(subscription_id) ->
         case Emisar.Billing.PaddleClient.list_transactions(%{
@@ -1400,179 +1530,283 @@ defmodule Emisar.Billing do
   defp parse_invoice_datetime(_), do: nil
 
   @doc """
-  Ensures the account has a Paddle customer. Requires `manage` on billing and the subject's account.
+  Ensures the account has a Paddle customer. Requires `manage` on billing and
+  the subject's account. Returns `{:ok, customer_id, account}`.
 
-  Returns `{:ok, customer_id, account}` or `{:error, term}`.
-
-  The Paddle customer is owned by the account's stable active owner contact,
-  not necessarily the actor who clicked checkout. Existing customers are
-  updated so Paddle keeps the current account name + owner email.
+  A new customer is created with the billing contact's email. When Paddle
+  already has a customer for that email the account is NOT linked to it
+  (`{:error, :billing_email_in_use}`): that customer may pay for other
+  workspaces and the email is an unproved workspace contact, so linking takes
+  the mailbox proof of `send_customer_link_code/2`. An existing link is kept as
+  it is, and Emisar never rewrites the customer's own details.
   """
   def ensure_paddle_customer(%Accounts.Account{} = account, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
-             subject,
-             Authorizer.manage_billing_permission()
-           ),
-         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
-      sync_paddle_customer_for_account(account.id)
+    with :ok <- ensure_can_manage_billing(subject, account),
+         {:ok, %{account: account, owner: owner}} <- Accounts.fetch_billing_contact(account.id) do
+      case account.paddle_customer_id do
+        customer_id when is_binary(customer_id) -> {:ok, customer_id, account}
+        nil -> create_paddle_customer(account, owner)
+      end
     end
   end
 
-  @doc """
-  Internal — sync one account's Paddle customer from the current account name
-  and stable active owner contact. Called by checkout after its Subject gate and
-  by `Billing.Jobs.SyncPaddleCustomers` as a trusted server sweep.
-  """
-  def sync_paddle_customer_for_account(account_id) when is_binary(account_id) do
-    with {:ok, %{account: account, owner: owner}} <-
-           Accounts.fetch_paddle_customer_sync_target(account_id) do
-      sync_paddle_customer(account, owner)
-    end
-  end
+  defp create_paddle_customer(account, owner) do
+    attrs = %{email: owner.contact_email, name: account.name, account_id: account.id}
 
-  @doc """
-  Internal — sync a bounded page of accounts whose Paddle customer mirror is
-  missing or stale. Returns sweep metadata so the worker can enqueue the next
-  page without owning the account query.
-  """
-  def sync_paddle_customers(opts \\ []) do
-    opts = normalize_paddle_customer_sync_opts(opts)
-    accounts = Accounts.list_paddle_customer_sync_accounts(opts)
-
-    Enum.each(accounts, &sync_paddle_customer_safely/1)
-
-    {:ok,
-     %{
-       processed: length(accounts),
-       last_account_id: last_account_id(accounts),
-       full?: length(accounts) == opts[:limit],
-       limit: opts[:limit]
-     }}
-  end
-
-  defp sync_paddle_customer_safely(%Accounts.Account{id: account_id}) do
-    case sync_paddle_customer_for_account(account_id) do
-      {:ok, _customer_id, _account} ->
-        :ok
-
-      {:error, reason} when reason in [:no_billing_contact, :not_found] ->
-        :ok
-
-      {:error, reason} ->
-        Logger.warning("paddle_customer_sync.failed",
-          account_id: account_id,
-          error: inspect(redacted_paddle_error(reason))
-        )
-    end
-  end
-
-  defp sync_paddle_customer(%Accounts.Account{paddle_customer_id: nil} = account, owner) do
-    with {:ok, customer_id} <- create_or_adopt_paddle_customer(account, owner),
-         {:ok, linked} <-
-           Accounts.put_account_paddle_customer_sync(account, customer_id, owner.user_id) do
-      sync_linked_paddle_customer(linked, customer_id, owner)
-    end
-  end
-
-  defp sync_paddle_customer(
-         %Accounts.Account{paddle_customer_id: customer_id} = account,
-         owner
-       )
-       when is_binary(customer_id) do
-    with {:ok, _customer} <- update_paddle_customer(account, owner),
-         {:ok, synced} <-
-           Accounts.put_account_paddle_customer_sync(account, customer_id, owner.user_id) do
-      {:ok, synced.paddle_customer_id, synced}
-    end
-  end
-
-  defp create_or_adopt_paddle_customer(%Accounts.Account{} = account, owner) do
-    case PaddleClient.create_customer(customer_attrs(account, owner)) do
-      {:ok, %{"id" => customer_id}} ->
-        {:ok, customer_id}
+    case PaddleClient.create_customer(attrs) do
+      {:ok, %{"id" => customer_id}} when is_binary(customer_id) ->
+        with {:ok, linked} <- Accounts.link_account_paddle_customer(account, customer_id),
+             do: {:ok, linked.paddle_customer_id, linked}
 
       {:ok, _data} ->
         {:error, :missing_customer_id}
 
-      {:error, {:http, 409, _body}} = conflict ->
-        adopt_conflicting_paddle_customer(conflict, owner)
+      {:error, {:http, 409, body}} = conflict ->
+        if paddle_error_code(body) == "customer_already_exists",
+          do: linked_by_concurrent_checkout(account),
+          else: conflict
 
       other ->
         other
     end
   end
 
-  # Paddle enforces one customer per email across the seller account, so an
-  # owner address it already knows — a re-created account, a customer the seller
-  # made by hand, an earlier sync that linked nothing — makes create fail. The
-  # local id stays nil, so the next sweep repeats the identical create and
-  # conflicts again, forever. Adopt the customer already holding the address.
-  defp adopt_conflicting_paddle_customer({:error, {:http, 409, body}} = conflict, owner) do
-    case paddle_error_code(body) do
-      "customer_already_exists" -> fetch_paddle_customer_id_by_email(owner.contact_email)
-      _other_conflict -> conflict
+  # A concurrent first checkout of this same account may have created the
+  # customer a moment ago; any other owner of the email needs the mailbox proof.
+  defp linked_by_concurrent_checkout(account) do
+    case Accounts.fetch_account_by_id(account.id) do
+      {:ok, %Accounts.Account{paddle_customer_id: customer_id} = linked}
+      when is_binary(customer_id) ->
+        {:ok, customer_id, linked}
+
+      _unlinked ->
+        {:error, :billing_email_in_use}
     end
   end
 
-  defp fetch_paddle_customer_id_by_email(email) do
-    # The filter is an exact match on a field Paddle keeps unique, so a
-    # conflicting email resolves to exactly one customer; an empty list means
-    # Paddle contradicted its own 409 and there is nothing to adopt.
-    case PaddleClient.list_customers(%{email: email}) do
-      {:ok, [%{"id" => customer_id}]} -> {:ok, customer_id}
-      {:ok, _customers} -> {:error, :conflicting_customer_not_found}
-      other -> other
-    end
-  end
+  @link_code_ttl_seconds 15 * 60
+  @link_code_attempts 5
+  @link_code_send_limit 5
+  @link_code_send_window_ms 60 * 60 * 1000
+  @link_code_verify_limit 20
+  @link_code_verify_window_ms 15 * 60 * 1000
 
-  defp sync_linked_paddle_customer(%Accounts.Account{} = account, customer_id, owner) do
-    if account.paddle_customer_id == customer_id do
-      {:ok, customer_id, account}
-    else
-      with {:ok, _customer} <- update_paddle_customer(account, owner),
-           {:ok, synced} <-
-             Accounts.put_account_paddle_customer_sync(
-               account,
-               account.paddle_customer_id,
-               owner.user_id
-             ) do
-        {:ok, synced.paddle_customer_id, synced}
+  @doc """
+  Emails a code to the billing contact's address so that the Paddle customer it
+  already has can be linked with `link_existing_customer/3`. Only for an account
+  with no Paddle customer whose billing email Paddle already knows. Requires
+  `manage_billing`. Returns `{:ok, email}` with the address the code went to,
+  or `{:error, :already_linked | :no_existing_customer | :rate_limited}`.
+  """
+  def send_customer_link_code(%Accounts.Account{} = account, %Subject{} = subject) do
+    with :ok <- ensure_can_manage_billing(subject, account),
+         {:ok, %{account: account, owner: owner}} <- Accounts.fetch_billing_contact(account.id),
+         :ok <- ensure_unlinked(account),
+         :ok <-
+           Throttle.check(
+             :billing_customer_link_code,
+             account.id,
+             @link_code_send_limit,
+             @link_code_send_window_ms
+           ),
+         # Per address too: many workspaces cannot pool guesses against one payer.
+         :ok <-
+           Throttle.check(
+             :billing_customer_link_code_email,
+             String.downcase(owner.contact_email),
+             @link_code_send_limit,
+             @link_code_send_window_ms
+           ),
+         {:ok, _customer_id} <- fetch_existing_customer_id(owner.contact_email),
+         {code, digest} = Crypto.credential_step_up_code(),
+         {:ok, _pending} <- issue_link_code(account, subject, owner.contact_email, digest) do
+      _ =
+        Audit.record(
+          Audit.Events.billing_customer_link_requested(subject, account, owner.contact_email)
+        )
+
+      case Mailers.UserNotifier.deliver_billing_customer_link_code(
+             owner,
+             code,
+             account,
+             subject.context
+           ) do
+        {:ok, _sent} -> {:ok, owner.contact_email}
+        {:error, reason} -> {:error, reason}
       end
     end
   end
 
-  defp update_paddle_customer(%Accounts.Account{paddle_customer_id: customer_id} = account, owner)
-       when is_binary(customer_id) do
-    account
-    |> customer_attrs(owner)
-    |> Map.put(:customer, customer_id)
-    |> PaddleClient.update_customer()
+  @doc """
+  Links this workspace to the existing Paddle customer of its billing email once
+  the code `send_customer_link_code/2` emailed there is entered. The Member who
+  asked must enter it, the billing email must be unchanged, and the account must
+  still have no customer; all three are rechecked under the account and contact
+  locks that commit the link and its audit together. Requires `manage_billing`.
+  Returns `{:ok, account}`, or `{:error, :invalid_code | :already_linked |
+  :no_existing_customer | :archived_customer | :rate_limited}`.
+  """
+  def link_existing_customer(%Accounts.Account{} = account, code, %Subject{} = subject)
+      when is_binary(code) do
+    code = String.trim(code)
+
+    with :ok <- ensure_can_manage_billing(subject, account),
+         :ok <- ensure_link_code_shape(code),
+         :ok <-
+           Throttle.check(
+             :billing_customer_link_verify,
+             account.id,
+             @link_code_verify_limit,
+             @link_code_verify_window_ms
+           ),
+         {:ok, %{account: current, owner: owner}} <- Accounts.fetch_billing_contact(account.id),
+         :ok <- ensure_unlinked(current),
+         {:ok, customer_id} <- fetch_existing_customer_id(owner.contact_email) do
+      commit_customer_link(current, owner, customer_id, code, subject)
+    end
   end
 
-  defp customer_attrs(%Accounts.Account{} = account, owner) do
-    %{email: owner.contact_email, name: account.name, account_id: account.id}
+  def link_existing_customer(%Accounts.Account{} = account, _code, %Subject{} = subject) do
+    with :ok <- ensure_can_manage_billing(subject, account), do: {:error, :invalid_code}
   end
 
-  defp normalize_paddle_customer_sync_opts(opts) when is_list(opts) do
-    [
-      limit: normalize_paddle_customer_sync_limit(Keyword.get(opts, :limit)),
-      after_account_id: Keyword.get(opts, :after_account_id)
-    ]
+  defp ensure_link_code_shape(code) do
+    if Regex.match?(~r/\A[0-9]{6}\z/, code), do: :ok, else: {:error, :invalid_code}
   end
 
-  defp normalize_paddle_customer_sync_limit(n) when is_integer(n) and n > 0,
-    do: min(n, 500)
+  # One transaction: the account and the billing contact are locked, then the
+  # proof is checked against what they say now. A spent attempt, the link, and
+  # the audit row all commit or none do.
+  defp commit_customer_link(account, owner, customer_id, code, subject) do
+    Multi.new()
+    |> Multi.run(:account, fn repo, _changes ->
+      Accounts.fetch_and_lock_account(account.id, repo: repo)
+    end)
+    # The actor's billing authority and the billing contact are read again
+    # under the account lock: a demotion or a new contact during the Paddle
+    # lookup refuses the link.
+    |> Multi.run(:authority, fn _repo, _changes ->
+      case ensure_can_manage_billing(subject, account) do
+        :ok -> {:ok, :manage_billing}
+        error -> error
+      end
+    end)
+    |> Multi.run(:contact, fn repo, %{account: locked} ->
+      with :ok <- ensure_unlinked(locked),
+           {:ok, %{owner: %{id: owner_id}}} when owner_id == owner.id <-
+             Accounts.fetch_billing_contact(locked.id),
+           {:ok, %{role: :owner} = contact} <-
+             Accounts.fetch_and_lock_membership(locked.id, owner.id, repo: repo) do
+        {:ok, contact}
+      else
+        {:ok, _other_contact} -> {:error, :invalid_code}
+        error -> error
+      end
+    end)
+    # The customer was looked up by the address read before the lock, so the
+    # locked contact, the proof, and that lookup must all name the same one.
+    |> Multi.run(:proof, fn repo, %{contact: contact} ->
+      pending =
+        CustomerLinkCode.Query.by_account_id(account.id)
+        |> CustomerLinkCode.Query.lock_for_update()
+        |> repo.one()
 
-  defp normalize_paddle_customer_sync_limit(_), do: 100
+      if contact.contact_email == owner.contact_email,
+        do: verify_link_code(pending, repo, subject, owner.contact_email, code),
+        else: {:ok, {:error, :invalid_code}}
+    end)
+    |> Multi.run(:linked, fn _repo, %{account: locked, proof: proof} ->
+      case proof do
+        {:ok, _email} -> Accounts.link_account_paddle_customer(locked, customer_id)
+        {:error, :invalid_code} -> {:ok, :not_linked}
+      end
+    end)
+    |> Multi.run(:audit, fn repo, %{linked: linked, contact: contact} ->
+      case linked do
+        %Accounts.Account{} ->
+          repo.insert(
+            Audit.Events.billing_customer_linked(subject, linked, contact.contact_email)
+          )
 
-  defp last_account_id([]), do: nil
-  defp last_account_id(accounts), do: List.last(accounts).id
+        :not_linked ->
+          repo.insert(Audit.Events.billing_customer_link_failed(subject, account))
+      end
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{linked: %Accounts.Account{} = linked}} -> {:ok, linked}
+      {:ok, %{linked: :not_linked}} -> {:error, :invalid_code}
+      {:error, :not_found} -> {:error, :invalid_code}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp ensure_unlinked(%Accounts.Account{paddle_customer_id: nil}), do: :ok
+  defp ensure_unlinked(%Accounts.Account{}), do: {:error, :already_linked}
+
+  # Paddle keeps emails unique across a seller's customers, archived ones
+  # included, so a known email resolves to exactly one. Only an active customer
+  # with that exact address can bill; an archived one needs support.
+  defp fetch_existing_customer_id(email) do
+    case PaddleClient.list_customers(%{email: email}) do
+      {:ok, [%{"id" => customer_id, "email" => customer_email} = customer]}
+      when is_binary(customer_id) and is_binary(customer_email) ->
+        cond do
+          String.downcase(customer_email) != String.downcase(email) ->
+            {:error, :no_existing_customer}
+
+          customer["status"] == "active" ->
+            {:ok, customer_id}
+
+          true ->
+            {:error, :archived_customer}
+        end
+
+      {:ok, _customers} ->
+        {:error, :no_existing_customer}
+
+      other ->
+        other
+    end
+  end
+
+  defp issue_link_code(account, subject, email, digest) do
+    %{
+      account_id: account.id,
+      membership_id: Subject.human_membership_id(subject),
+      email: email,
+      code_digest: digest,
+      remaining_attempts: @link_code_attempts,
+      expires_at: DateTime.add(DateTime.utc_now(), @link_code_ttl_seconds, :second)
+    }
+    |> CustomerLinkCode.Changeset.issue()
+    |> Repo.insert(on_conflict: :replace_all, conflict_target: :account_id)
+  end
+
+  defp verify_link_code(nil, _repo, _subject, _email, _code), do: {:ok, {:error, :invalid_code}}
+
+  defp verify_link_code(%CustomerLinkCode{} = pending, repo, subject, email, code) do
+    cond do
+      pending.remaining_attempts < 1 or
+        DateTime.compare(pending.expires_at, DateTime.utc_now()) != :gt or
+        pending.membership_id != Subject.human_membership_id(subject) or
+          pending.email != email ->
+        {:ok, {:error, :invalid_code}}
+
+      Crypto.secure_compare(Crypto.hash(code), pending.code_digest) ->
+        {:ok, _deleted} = repo.delete(pending)
+        {:ok, {:ok, pending.email}}
+
+      true ->
+        {:ok, _spent} = repo.update(CustomerLinkCode.Changeset.spend_attempt(pending))
+        {:ok, {:error, :invalid_code}}
+    end
+  end
 
   @doc """
   Internal — collapses a Paddle client / mirror-write failure into a loggable
   term that carries no payload values, so every Paddle-error log line in this
-  context (customer sync + the hourly subscription reconciliation) shares one
+  context (customer creation + the hourly subscription reconciliation) shares one
   scrub. An HTTP failure keeps only its status (never the response body); an
   upsert changeset keeps only its failing field names (never `.changes`, which
   echo mirrored subscription values); any other reason passes through.
@@ -2315,7 +2549,17 @@ defmodule Emisar.Billing do
          subscription_managed?:
            not is_nil(subscription) and is_binary(subscription.paddle_subscription_id) and
              subscription.status != "canceled",
-         billing_portal_available?: is_binary(account.paddle_customer_id),
+         # Controls act on this account's own Paddle subscription, never on its
+         # customer, which may pay for other workspaces too.
+         invoices_available?:
+           not is_nil(subscription) and is_binary(subscription.paddle_subscription_id),
+         payment_method_updatable?: collected_subscription?(subscription),
+         cancel_available?:
+           collected_subscription?(subscription) and subscription.status in @changeable_statuses and
+             is_nil(subscription.scheduled_change_action),
+         keep_available?:
+           collected_subscription?(subscription) and subscription.status in @changeable_statuses and
+             subscription.scheduled_change_action == "cancel",
          features: %{
            sso:
              entitled_feature(

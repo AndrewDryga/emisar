@@ -25,15 +25,15 @@ defmodule Emisar.Billing.RunnerQuantityTest.ControlledPaddleClient do
   @impl true
   defdelegate create_customer(attrs), to: Emisar.Billing.PaddleClient.Stub
   @impl true
-  defdelegate update_customer(attrs), to: Emisar.Billing.PaddleClient.Stub
-  @impl true
   defdelegate list_customers(attrs), to: Emisar.Billing.PaddleClient.Stub
   @impl true
   defdelegate create_checkout_session(attrs), to: Emisar.Billing.PaddleClient.Stub
   @impl true
   defdelegate bind_checkout_transaction(id, binding), to: Emisar.Billing.PaddleClient.Stub
   @impl true
-  defdelegate create_billing_portal_session(attrs), to: Emisar.Billing.PaddleClient.Stub
+  defdelegate schedule_subscription_cancel(id), to: Emisar.Billing.PaddleClient.Stub
+  @impl true
+  defdelegate payment_method_transaction(id), to: Emisar.Billing.PaddleClient.Stub
   @impl true
   defdelegate retrieve_transaction(id), to: Emisar.Billing.PaddleClient.Stub
   @impl true

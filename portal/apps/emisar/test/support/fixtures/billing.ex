@@ -7,13 +7,13 @@ defmodule Emisar.Fixtures.Billing.Provider do
   @impl true
   defdelegate create_customer(attrs), to: Stub
   @impl true
-  defdelegate update_customer(attrs), to: Stub
-  @impl true
   defdelegate list_customers(attrs), to: Stub
   @impl true
   defdelegate list_products(), to: Stub
   @impl true
-  defdelegate create_billing_portal_session(attrs), to: Stub
+  defdelegate schedule_subscription_cancel(id), to: Stub
+  @impl true
+  defdelegate payment_method_transaction(id), to: Stub
   @impl true
   defdelegate list_transactions(attrs), to: Stub
   @impl true
@@ -207,6 +207,13 @@ defmodule Emisar.Fixtures.Billing do
       updated = Map.merge(Map.fetch!(state.subscriptions, id), attrs)
       {updated, put_in(state, [:subscriptions, id], updated)}
     end)
+  end
+
+  @doc "Stores a subscription in the per-test provider, as Paddle holds it."
+  def put_subscription(%{"id" => id} = subscription) do
+    store = Config.fetch_env!(:emisar, :billing_test_provider)
+    Agent.update(store, &put_in(&1, [:subscriptions, id], subscription))
+    subscription
   end
 
   def complete_transaction(transaction_id, attrs \\ %{}) do

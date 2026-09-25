@@ -194,6 +194,8 @@ defmodule Emisar.Billing.PaddleClientLiveTest do
       for status <- ["active", "paused", "canceled"] do
         {_user, account, subject} = Fixtures.Subjects.owner_subject()
         subscription_id = "sub_#{account.id}"
+        customer_id = "ctm_#{account.id}"
+        {:ok, _linked} = Accounts.link_account_paddle_customer(account, customer_id)
 
         Fixtures.Accounts.create_subscription(account, "team",
           paddle_subscription_id: subscription_id
@@ -201,10 +203,8 @@ defmodule Emisar.Billing.PaddleClientLiveTest do
 
         Config.put_override(:emisar, :paddle_client, Live)
 
-        response = %Finch.Response{
-          status: 200,
-          body: Jason.encode!(%{"data" => %{"id" => subscription_id, "status" => status}})
-        }
+        data = %{"id" => subscription_id, "customer_id" => customer_id, "status" => status}
+        response = %Finch.Response{status: 200, body: Jason.encode!(%{"data" => data})}
 
         Config.put_override(:emisar, :paddle_http_response, {:ok, response})
 

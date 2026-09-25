@@ -111,6 +111,22 @@ defmodule Emisar.Mailers.TextLayoutTest do
     UserNotifier.deliver_member_linked(user, account, request_context())
     member_linked = sent_text_body()
 
+    billing_contact =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user(full_name: "Billing Owner").id,
+        role: "owner"
+      )
+
+    UserNotifier.deliver_billing_customer_link_code(
+      billing_contact,
+      "123456",
+      account,
+      request_context()
+    )
+
+    billing_link_code = sent_text_body()
+
     invitation_membership =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -137,6 +153,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
       {"OIDC identity step-up", oidc_identity_step_up},
       {"member link code", member_link_code},
       {"member linked notice", member_linked},
+      {"billing link code", billing_link_code},
       {"invitation", invitation},
       {"approval request", approval_request_body(user, account)},
       {"runbook approval request", runbook_approval_request_body(user, account)},

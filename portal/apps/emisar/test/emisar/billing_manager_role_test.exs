@@ -137,7 +137,7 @@ defmodule Emisar.BillingManagerRoleTest do
       subject: subject
     } do
       assert Enum.map(Audit.event_filters(subject), & &1.name) ==
-               [:from, :to, :request_id, :auth_method]
+               [:event_type, :from, :to, :request_id, :auth_method, :actor_kind]
 
       assert Audit.event_category_values(subject) == []
     end

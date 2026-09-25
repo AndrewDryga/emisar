@@ -285,6 +285,18 @@ defmodule Emisar.Billing.Checkouts do
     end)
   end
 
+  @doc """
+  Internal — the checkout URL Paddle minted for a transaction outside the intent
+  flow (a subscription's payment-method update), returning to this account.
+  """
+  def provider_checkout_url(transaction, account_id) when is_binary(account_id) do
+    url = map_value(transaction, "checkout")["url"]
+
+    if valid_checkout_url?(url),
+      do: {:ok, with_origin_account(url, account_id)},
+      else: {:error, :invalid_provider_data}
+  end
+
   # Keep the provider URL intact in storage. The origin is only a return-path
   # hint; the authenticated return independently authorizes this account.
   defp with_origin_account(url, account_id) do

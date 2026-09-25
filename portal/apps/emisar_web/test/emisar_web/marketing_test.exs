@@ -2229,7 +2229,8 @@ defmodule EmisarWeb.MarketingTest do
       assert billing =~ "Paddle"
       assert billing =~ "You do not need to subscribe to Team first."
       assert billing =~ "three most recent invoices"
-      assert billing =~ "View all invoices"
+      assert billing =~ "Update payment method"
+      assert billing =~ "Each workspace sees and changes only its own subscription."
       assert billing =~ "minimum of one billable runner"
       # The row VALUES, from the catalog that enforces them — the table used to
       # be hand-typed here and pinned by its exact markup spacing, which made

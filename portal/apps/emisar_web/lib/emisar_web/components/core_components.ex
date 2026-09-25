@@ -3743,6 +3743,11 @@ defmodule EmisarWeb.CoreComponents do
     doc: "action-specific label shown while the confirmation event is in flight"
 
   attr :on_confirm, :any, required: true, doc: "JS/event the enabled Confirm dispatches"
+
+  attr :dismiss_label, :string,
+    default: "Cancel",
+    doc: "the button that closes the dialog, for an action whose own name says cancel"
+
   # `:rose` (default) is a DESTRUCTIVE confirm; `:amber` a caution-approve one
   # (trusting a pack's new code fleet-wide) where rose would over-read as danger.
   attr :tone, :atom, default: :rose, values: [:rose, :amber]
@@ -3856,7 +3861,7 @@ defmodule EmisarWeb.CoreComponents do
               type="button"
               phx-click={@close_dialog}
             >
-              Cancel
+              {@dismiss_label}
             </.button>
             <%!-- `nil` token → plain confirm, enabled immediately. A blank-STRING
                  token stays disabled (a page-level dialog with no target selected
