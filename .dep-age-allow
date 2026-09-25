@@ -20,3 +20,4 @@
 # fresh reason. An exemption also covers a DOWNGRADE, because a patched older
 # line is a real answer to an urgent advisory; the date is what keeps that a
 # decision rather than a permanent hole.
+hex lazy_html 0.1.13 2026-10-02 EEF-CVE-2026-92106 / CVE-2026-92106 / GHSA-8rqp-v692-v82q — lazy_html serializes SVG and MathML style and script text unescaped, allowing mutation XSS; a test-only dependency here, but the advisory fails mix hex.audit on 0.1.12 in every CI run, so the patch (published 2026-09-25) cannot wait out its 7-day window
