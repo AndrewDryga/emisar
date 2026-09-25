@@ -79,6 +79,25 @@ cases:
       - argv: [curl, -fsS, http://127.0.0.1/slow]
     expect:
       stdout_contains: [/slow]
+  # nginx's stock combined format puts the referer at column 11, the default. A
+  # row whose column is not a request time prints nothing, so a token in a
+  # referer's query string never reaches the output; a row with a request time
+  # there prints it with the path alone.
+  - name: nginx.slow-requests-skips-a-non-numeric-column
+    action: nginx.slow_requests
+    args: {lines: 1000}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            printf '%s\n' \
+              '203.0.113.9 - - [25/Sep/2026:10:00:00 +0000] "GET /app/page?x=1 HTTP/1.1" 200 512 "https://app.example.com/reset?token=PACKTESTSECRET" "Mozilla/5.0"' \
+              '203.0.113.10 - - [25/Sep/2026:10:00:01 +0000] "GET /checkout?card=PACKTESTCARD HTTP/1.1" 200 512 0.731 "-" "Mozilla/5.0"' \
+              >> /var/log/nginx/access.log
+    expect:
+      stdout_contains: ["0.731 /checkout 200"]
+      stdout_not_contains: [PACKTESTSECRET, PACKTESTCARD, "token="]
   - action: nginx.error_tail
     args: {lines: 20, log_path: /var/log/nginx/error.log}
     arrange:

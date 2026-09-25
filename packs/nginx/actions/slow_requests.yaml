@@ -8,7 +8,9 @@ description: >
   the request path without its query string, and the status — never the whole
   log line, so client addresses, referers, user agents, and URL-borne
   credentials stay in the log. Requires a log_format that includes
-  `$request_time` as a specific column; default assumes column 11. Read-only.
+  `$request_time` as a specific column; default assumes column 11. A row whose
+  chosen column is not a number is skipped, so a column that lands on the
+  referer, user agent or client address prints nothing. Read-only.
 side_effects:
   - Reads /var/log/nginx/access.log.
   - Read-only.
@@ -47,7 +49,7 @@ execution:
       - |
         log="${NGINX_ACCESS_LOG:-/var/log/nginx/access.log}"
         [ -r "$log" ] || { echo "access log not readable: $log" >&2; exit 1; }
-        tail -n {{ args.lines }} "$log" | awk -v c={{ args.column }} '{split($7, p, "?"); print $c, p[1], $9}' | sort -rn | head -n {{ args.limit }}
+        tail -n {{ args.lines }} "$log" | awk -v c={{ args.column }} '$c ~ /^[0-9]+([.][0-9]+)?$/ {split($7, p, "?"); print $c, p[1], $9}' | sort -rn | head -n {{ args.limit }}
   timeout: 60s
 output:
   parser: text

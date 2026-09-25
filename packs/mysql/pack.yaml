@@ -3,9 +3,9 @@ schema_version: 1
 id: mysql
 name: MySQL / MariaDB operations
 version: 0.1.13
-# Versions below this ran processlist, innodb_status and slow_queries, which
-# return live SQL text, at low risk. They fail closed.
-retired_below: 0.1.10
+# Versions below this ran processlist, innodb_status, slow_queries and
+# lock_waits, which return live SQL text, at low risk. They fail closed.
+retired_below: 0.1.12
 description: >
   Read-only MySQL diagnostics plus narrow operator actions for killing
   queries, flushing logs, and analyzing tables. Authenticates via

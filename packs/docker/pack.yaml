@@ -3,7 +3,9 @@ schema_version: 1
 id: docker
 name: Docker operations pack
 version: 0.2.30
-retired_below: 0.2.14
+# Versions below this returned full docker exec and health-check command lines,
+# which can carry passwords, from the low-risk events_tail. They fail closed.
+retired_below: 0.2.30
 description: >
   Operator pack for Docker hosts: read-only inventory and per-container
   introspection, plus narrow mutators (restart, stop, kill, prune).
