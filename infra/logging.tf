@@ -53,6 +53,20 @@ resource "google_logging_project_sink" "security_evidence" {
   FILTER
 }
 
+# The colocated admin runner needs application failure logs, not the project's
+# audit, SQL, network, or future workload logs. Logging views can filter on the
+# source, monitored resource type, and log ID, but not on jsonPayload fields.
+resource "google_logging_log_view" "vm_containers" {
+  parent      = "projects/${var.project_id}"
+  location    = "global"
+  bucket      = "projects/${var.project_id}/locations/global/buckets/_Default"
+  name        = "emisar-vm-containers"
+  description = "Portal VM container logs for governed incident diagnostics"
+  filter      = "SOURCE(\"projects/${var.project_id}\") AND resource.type=\"gce_instance\" AND LOG_ID(\"cos_containers\")"
+
+  depends_on = [google_project_service.apis]
+}
+
 # Google's load-balancer proxies and health checkers (35.191.0.0/16,
 # 130.211.0.0/22) probe every backend on a short interval; those probes reach the
 # VMs directly, so they never appear in the LB request logs — they land in VPC

@@ -4,13 +4,15 @@ title: Query recent Cloud Logging entries
 kind: script
 risk: medium
 description: >
-  Query the newest five recent Cloud Logging entries in a Google Cloud project,
-  optionally narrowed by minimum severity, resource type, and exact log ID.
-  Returns fixed, clipped diagnostic fields; log content is arbitrary application
+  Query up to five recent Cloud Logging entries in a Google Cloud project or a
+  named view in its global _Default bucket, optionally narrowed by minimum
+  severity, resource type, exact log ID, and exact jsonPayload.message.
+  Returns fixed, clipped diagnostic fields including jsonPayload.job and error,
+  plus a continuation cursor; log content is arbitrary application
   output, so redaction is best-effort and the result should be treated as
   sensitive diagnostics.
 side_effects:
-  - One gcloud token read and one read-only Cloud Logging API request.
+  - One gcloud token read and one read-only Cloud Logging API request per page.
   - Returns application-controlled log content into the governed run result and audit trail.
 search_terms:
   - query gcp logs
@@ -46,6 +48,22 @@ args:
     validation:
       pattern: "^([A-Za-z0-9][A-Za-z0-9._~%+/-]{0,511})?$"
       max_length: 512
+  - name: view_id
+    type: string
+    required: false
+    default: ""
+    description: Optional view ID in the project's global _Default bucket; use a view-scoped IAM grant instead of project-wide log access.
+    validation:
+      pattern: "^([A-Za-z][A-Za-z0-9_-]{0,99})?$"
+      max_length: 100
+  - name: json_message
+    type: string
+    required: false
+    default: ""
+    description: Optional exact jsonPayload.message value, such as recurrent_job.failed.
+    validation:
+      pattern: "^([A-Za-z0-9._-]{1,128})?$"
+      max_length: 128
   - name: window_minutes
     type: integer
     required: false
@@ -62,6 +80,14 @@ args:
     validation:
       min: 1
       max: 5
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: Continuation from next_page_cursor; keep all other arguments unchanged.
+    validation:
+      pattern: "^[A-Za-z0-9+./=_~-]*$"
+      max_length: 1024
 execution:
   script:
     path: scripts/logging_api.sh
@@ -74,6 +100,9 @@ execution:
     - "{{ args.log_id }}"
     - "{{ args.window_minutes }}"
     - "{{ args.page_size }}"
+    - "{{ args.view_id }}"
+    - "{{ args.json_message }}"
+    - "{{ args.page_cursor }}"
   timeout: 90s
 output:
   parser: json
@@ -82,7 +111,7 @@ output:
     $schema: https://json-schema.org/draft/2020-12/schema
     type: object
     additionalProperties: false
-    required: [entries, more_available]
+    required: [entries, more_available, next_page_cursor, cursor_omitted]
     properties:
       entries:
         type: array
@@ -90,14 +119,18 @@ output:
         items:
           type: object
           additionalProperties: false
-          required: [timestamp, severity, resource_type, log_name, message, message_truncated]
+          required: [timestamp, severity, resource_type, log_name, job, error, message, message_truncated]
           properties:
             timestamp: {type: string, maxLength: 40}
             severity: {type: string, maxLength: 16}
             resource_type: {type: string, maxLength: 64}
             log_name: {type: string, maxLength: 160}
+            job: {type: string, maxLength: 100}
+            error: {type: string, maxLength: 100}
             message: {type: string, maxLength: 200}
             message_truncated: {type: boolean}
+      next_page_cursor: {type: [string, "null"], maxLength: 1024}
+      cursor_omitted: {type: boolean}
       more_available: {type: boolean}
   max_stdout_bytes: 16384
   max_stderr_bytes: 16384

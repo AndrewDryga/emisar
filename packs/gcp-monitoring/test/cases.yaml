@@ -56,8 +56,12 @@ cases:
         /entries/0/resource_type: gce_instance
         /entries/0/message: "harness log event Authorization: Bearer [REDACTED]"
         /entries/0/message_truncated: false
+        /entries/0/job: Emisar.Runs.Jobs.FleetObservability
+        /entries/0/error: DBConnection.ConnectionError
         /entries/1/message: worker retry [REDACTED]
         /more_available: true
+        /next_page_cursor: log-entries-next
+        /cursor_omitted: false
     probes:
       - name: the bounded project query reached Cloud Logging
         argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
@@ -68,6 +72,26 @@ cases:
             - 'logName = \"projects/example-prod/logs/harness-api\"'
             - '"orderBy": "timestamp desc"'
             - '"pageSize": 5'
+  - name: gcp.log_entries-reads-a-scoped-view-and-follows-the-cursor
+    action: gcp.log_entries
+    args:
+      project: example-prod
+      view_id: emisar-vm-containers
+      json_message: recurrent_job.failed
+      page_cursor: log-entries-next
+    expect:
+      json:
+        /entries/0/job: Emisar.Runs.Jobs.FleetObservability
+        /entries/0/error: DBConnection.ConnectionError
+        /next_page_cursor: log-entries-next
+    probes:
+      - name: the exact view and continuation reached Cloud Logging
+        argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          stdout_contains:
+            - '"resourceNames": ["projects/example-prod/locations/global/buckets/_Default/views/emisar-vm-containers"]'
+            - 'jsonPayload.message = \"recurrent_job.failed\"'
+            - '"pageToken": "log-entries-next"'
   - name: gcp.log_entries-accepts-the-longest-bucket-retention
     action: gcp.log_entries
     args:
@@ -95,6 +119,8 @@ cases:
         /entries/0/message_truncated: true
         /entries/4/message_truncated: true
         /more_available: true
+        /next_page_cursor: null
+        /cursor_omitted: true
   # The response is captured to a file the EXIT trap deletes, so the script has
   # to print the provider's body itself; without that the operator gets the
   # curl (22) line and nothing naming what failed.

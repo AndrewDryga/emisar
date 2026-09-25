@@ -39,6 +39,43 @@ resource "google_project_iam_member" "vm_logging" {
   member  = "serviceAccount:${google_service_account.vm.email}"
 }
 
+# configWriter creates views but does not grant logging.views.setIamPolicy.
+# The HCP apply identity needs that one additional permission to attach the
+# VM's reader grant to the exact view below.
+resource "google_project_iam_custom_role" "terraform_logging_view_policy" {
+  project     = var.project_id
+  role_id     = "emisarTerraformLogViewPolicy"
+  title       = "Emisar Terraform Log View Policy"
+  description = "Set IAM policy on log views managed by the Emisar Terraform workspace."
+  permissions = ["logging.views.setIamPolicy"]
+  stage       = "GA"
+}
+
+resource "google_project_iam_member" "terraform_logging_view_policy" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.terraform_logging_view_policy.name
+  member  = "serviceAccount:terraform@${var.project_id}.iam.gserviceaccount.com"
+}
+
+resource "terraform_data" "logging_view_policy_propagated" {
+  triggers_replace = [google_project_iam_member.terraform_logging_view_policy.id]
+
+  provisioner "local-exec" {
+    command = "sleep 60"
+  }
+}
+
+resource "google_logging_log_view_iam_member" "vm_container_logs" {
+  parent   = google_logging_log_view.vm_containers.parent
+  location = google_logging_log_view.vm_containers.location
+  bucket   = google_logging_log_view.vm_containers.bucket
+  name     = google_logging_log_view.vm_containers.name
+  role     = "roles/logging.viewAccessor"
+  member   = "serviceAccount:${google_service_account.vm.email}"
+
+  depends_on = [terraform_data.logging_view_policy_propagated]
+}
+
 resource "google_project_iam_member" "vm_monitoring" {
   project = var.project_id
   role    = "roles/monitoring.metricWriter"

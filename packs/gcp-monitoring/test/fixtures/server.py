@@ -167,10 +167,14 @@ def log_entries(request_body):
                 "severity": "ERROR",
                 "resource": {"type": "gce_instance"},
                 "logName": "projects/example-prod/logs/harness-api",
-                "textPayload": (
-                    "harness log event Authorization: Bearer "
-                    "packtest-canary-gcp-log-bearer-7498"
-                ),
+                "jsonPayload": {
+                    "message": (
+                        "harness log event Authorization: Bearer "
+                        "packtest-canary-gcp-log-bearer-7498"
+                    ),
+                    "job": "Emisar.Runs.Jobs.FleetObservability",
+                    "error": "DBConnection.ConnectionError",
+                },
             },
             {
                 "timestamp": "2026-08-15T06:29:00Z",
@@ -179,6 +183,8 @@ def log_entries(request_body):
                 "logName": "projects/example-prod/logs/harness-worker",
                 "jsonPayload": {
                     "message": f"worker retry {ACCESS_TOKEN}",
+                    "job": "Emisar.Runbooks.Jobs.AdvanceExecutions",
+                    "error": "DBConnection.ConnectionError",
                     "event": "worker retry",
                     "attempt": 2,
                     "internalCredential": ACCESS_TOKEN,

@@ -111,6 +111,9 @@ case "$mode" in
     log_id=$5
     window_minutes=$6
     page_size=$7
+    view_id=$8
+    json_message=$9
+    page_cursor=${10}
     end_epoch=$(date -u +%s)
     start_epoch=$((end_epoch - window_minutes * 60))
     start_time=$(date -u -d "@$start_epoch" +%Y-%m-%dT%H:%M:%SZ)
@@ -121,10 +124,18 @@ case "$mode" in
     if [ -n "$log_id" ]; then
       recent_filter="$recent_filter AND logName = \"projects/$project/logs/$log_id\""
     fi
+    if [ -n "$json_message" ]; then
+      recent_filter="$recent_filter AND jsonPayload.message = \"$json_message\""
+    fi
+    resource="projects/$project"
+    if [ -n "$view_id" ]; then
+      resource="$resource/locations/global/buckets/_Default/views/$view_id"
+    fi
 
     jq -nce \
-      --arg resource "projects/$project" \
+      --arg resource "$resource" \
       --arg filter "$recent_filter" \
+      --arg page_cursor "$page_cursor" \
       --argjson page_size "$page_size" '
         {
           resourceNames: [$resource],
@@ -132,6 +143,7 @@ case "$mode" in
           orderBy: "timestamp desc",
           pageSize: $page_size
         }
+        | if $page_cursor == "" then . else . + {pageToken: $page_cursor} end
       ' >"$tmp/request.json"
     request_to "$tmp/response.json" --request POST \
       --header 'Content-Type: application/json' \
@@ -169,6 +181,25 @@ case "$mode" in
         if $access_token == "" then .
         else split($access_token) | join("[REDACTED]")
         end;
+      def cursor:
+        (. // "" | tostring) as $value
+        | def chars_allowed:
+            explode | all(.[];
+              (. >= 48 and . <= 57) or
+              (. >= 65 and . <= 90) or
+              (. >= 97 and . <= 122) or
+              . == 43 or . == 45 or . == 46 or . == 47 or . == 61 or
+              . == 95 or . == 126);
+        if $value == "" then {value: null, omitted: false}
+          elif ($value | length) <= 1024 and
+               ($value | utf8bytelength) <= 1024 and
+               ($value | chars_allowed)
+        then {value: $value, omitted: false}
+        else {value: null, omitted: true}
+        end;
+      (.nextPageToken | cursor) as $cursor
+      | (.nextPageToken // "") as $next_page_token
+      |
       {
           entries: [(.entries // [])[:$page_size][] |
             . as $entry |
@@ -178,11 +209,15 @@ case "$mode" in
               severity: ($entry.severity | clipped(16; 16)),
               resource_type: ($entry.resource.type | clipped(64; 64)),
               log_name: ($entry.logName | clipped(160; 160)),
+              job: ($entry.jsonPayload.job | scalar_text | access_token_redacted | clipped(100; 100)),
+              error: ($entry.jsonPayload.error | scalar_text | access_token_redacted | clipped(100; 100)),
               message: ($message | clipped(200; 200)),
               message_truncated: (($message | length) > 200 or
                                   ($message | utf8bytelength) > 200)
             }],
-          more_available: ((.nextPageToken // "") != "")
+          more_available: ($next_page_token != ""),
+          next_page_cursor: $cursor.value,
+          cursor_omitted: $cursor.omitted
         }' "$tmp/response.json"
     ;;
 
