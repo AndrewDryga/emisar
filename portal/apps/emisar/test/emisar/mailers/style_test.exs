@@ -1,40 +1,171 @@
 defmodule Emisar.Mailers.StyleTest do
   @moduledoc """
-  The Gmail apps ignore `color-scheme` and rewrite every authored color by
-  flipping its HSL lightness, so a dark email reaches a dark-theme Gmail reader
-  as a light one. The palette survives that by construction: every ink clears
-  4.5:1 on both grounds as authored and after the flip, and the lockup is a
-  raster on its own ground, which a rewrite never touches.
+  The properties that keep the emails dark in the Gmail apps, which ignore
+  `color-scheme` and flip the HSL lightness of every authored color.
+
+  Surfaces are painted so the flip skips them, neutral text is carried through
+  it by `Style.blend/1`, and accents — which no blend can carry, being RGB math
+  against an HSL flip — sit at the one lightness a flip leaves alone. Where a
+  Gmail app drops the embedded block, the whole body flips; the neutrals still
+  read there.
   """
   use ExUnit.Case, async: true
+  alias Emisar.Accounts
+  alias Emisar.Mailers.MonthlyReport
   alias Emisar.Mailers.Style
+  alias Emisar.Mailers.Transactional
 
-  @inks [:ink, :ink_soft, :brand, :rose, :amber]
   @grounds [:ground, :surface]
+  @neutrals [:ink, :ink_soft]
+  @accents [:brand, :rose, :amber]
+  # The gm- class `Style.gmail_css/0` repaints each fill by.
+  @fills %{
+    "gm-ground" => :ground,
+    "gm-surface" => :surface,
+    "gm-hairline" => :hairline,
+    "gm-edge" => :edge,
+    "gm-fill" => :button_fill
+  }
 
-  test "every ink clears 4.5:1 on both grounds, as authored and after Gmail's lightness flip" do
-    for ink <- @inks, ground <- @grounds do
-      fg = apply(Style, ink, [])
-      bg = apply(Style, ground, [])
+  describe "the palette" do
+    test "every ink clears 4.5:1 on both grounds" do
+      for ink <- @neutrals ++ @accents, ground <- @grounds do
+        fg = apply(Style, ink, [])
+        bg = apply(Style, ground, [])
 
-      assert contrast(fg, bg) >= 4.5, "#{ink} on #{ground} as authored: #{contrast(fg, bg)}"
-
-      assert contrast(flip(fg), flip(bg)) >= 4.5,
-             "#{ink} on #{ground} after the flip: #{contrast(flip(fg), flip(bg))}"
+        assert contrast(fg, bg) >= 4.5, "#{ink} on #{ground}: #{contrast(fg, bg)}"
+      end
     end
 
-    assert contrast(Style.ground(), Style.brand()) >= 4.5
-    assert contrast(flip(Style.ground()), flip(Style.brand())) >= 4.5
+    test "every accent sits at the one lightness a flip leaves alone" do
+      for accent <- @accents do
+        color = apply(Style, accent, [])
+        {_h, lightness, _s} = to_hls(rgb(color))
+
+        assert_in_delta lightness,
+                        0.5,
+                        0.005,
+                        "#{accent} (#{color}) is at #{round(lightness * 100)}% lightness, so " <>
+                          "the flip moves it. No blend can carry a hue — put it at 50%."
+      end
+    end
+
+    test "the neutrals still clear 4.5:1 where a Gmail app drops the block and flips the body" do
+      for ink <- @neutrals, ground <- @grounds do
+        fg = flip(apply(Style, ink, []))
+        bg = flip(apply(Style, ground, []))
+
+        assert contrast(fg, bg) >= 4.5, "#{ink} on #{ground} flipped: #{contrast(fg, bg)}"
+      end
+    end
+
+    test "the button's label clears 4.5:1 on its fill" do
+      assert contrast(Style.ink(), Style.button_fill()) >= 4.5
+    end
   end
 
-  test "the document declares the dark scheme and the masthead is a raster on its ground" do
-    html = Style.document("Title", "Preview", 560, Style.masthead())
+  describe "every rendered body" do
+    test "declares the dark scheme and puts the masthead on a raster" do
+      for {name, html} <- rendered_bodies() do
+        assert html =~ ~s(<meta name="color-scheme" content="dark" />), name
+        assert html =~ ~s(<meta name="supported-color-schemes" content="dark" />), name
+        assert html =~ "color-scheme: dark; supported-color-schemes: dark;", name
+        assert html =~ ~s(/images/brand/emisar-email-lockup.png" width="153" height="40"), name
+        refute html =~ ".svg", name
+      end
+    end
 
-    assert html =~ ~s(<meta name="color-scheme" content="dark" />)
-    assert html =~ ~s(<meta name="supported-color-schemes" content="dark" />)
-    assert html =~ "color-scheme: dark; supported-color-schemes: dark;"
-    assert html =~ ~s(/images/brand/emisar-email-lockup.png" width="153" height="40")
-    refute html =~ ".svg"
+    test "carries the Gmail block and the class it keys off" do
+      for {name, html} <- rendered_bodies() do
+        assert html =~ Style.gmail_css(), "#{name}: no Gmail-only block"
+        assert html =~ ~s(<body class="body ), "#{name}: nothing for `u + .body` to match"
+      end
+    end
+
+    test "paints every surface with the gm- class that repaints its own color" do
+      for {name, html} <- rendered_bodies(), tag <- painted_tags(html) do
+        [color] = Regex.run(~r/background-color:(#[0-9a-f]{6})/, tag, capture: :all_but_first)
+        [classes] = Regex.run(~r/class="([^"]*)"/, tag, capture: :all_but_first) || [""]
+        painted = @fills |> Map.take(String.split(classes)) |> Map.values()
+
+        assert Enum.map(painted, &apply(Style, &1, [])) == [color],
+               "#{name}: #{tag} — a background-color without its own gm- class is " <>
+                 "flipped to its opposite. Pair Style.fill/1 with the matching class."
+      end
+    end
+
+    test "draws dividers and outlines as fills, because a border cannot be painted" do
+      for {name, html} <- rendered_bodies() do
+        refute html =~ ~r/border(-top|-bottom|-left|-right)?:\s*1px/,
+               "#{name}: a border flips to a bright line. Use Style.rule/1, or an edge fill."
+
+        refute html =~ "bgcolor=", "#{name}: a bgcolor flips like a background-color"
+      end
+    end
+  end
+
+  defp painted_tags(html) do
+    ~r/<[a-z]+[^>]*background-color:[^>]*>/
+    |> Regex.scan(html)
+    |> Enum.map(&hd/1)
+  end
+
+  defp rendered_bodies do
+    report = %{
+      period_start: ~U[2026-08-01 00:00:00Z],
+      period_end: ~U[2026-09-01 00:00:00Z],
+      runs: %{
+        total: 4,
+        success: 3,
+        failed: 1,
+        denied: 0,
+        cancelled: 0,
+        dispatched: 4,
+        distinct_runners: 1
+      },
+      approvals: %{
+        requested: 2,
+        approved: 1,
+        denied: 0,
+        expired: 0,
+        cancelled: 0,
+        pending: 1,
+        waiting_now: 1
+      },
+      runners: 1,
+      team_size: 2
+    }
+
+    monthly =
+      MonthlyReport.render(
+        %Accounts.Membership{display_name: "Olivia Owner", contact_email: "olivia@example.com"},
+        %{name: "Fleet Ops", slug: "fleet-ops"},
+        report,
+        "https://emisar.dev/u"
+      )
+
+    transactional =
+      Transactional.render(%{
+        recipient: "Olivia Owner",
+        title: "Approval",
+        preview: "Needs approval.",
+        blocks: [
+          {:paragraph, "A plain paragraph."},
+          {:link_paragraph, "Sign in to ", "Fleet Ops", "https://emisar.dev/app", "."},
+          {:emphasis, "Sent to ", "olivia@example.com", "."},
+          {:status, "This action ", "needs your approval", ".", :warning},
+          {:status, "It is ", "unchanged", ".", :neutral},
+          {:facts, [{"Action", "linux.uptime"}, {"Account", {:link, "Fleet Ops", "https://e"}}]},
+          {:section, "Redacted arguments"},
+          {:pre, "host  web-01"},
+          {:code, "834 512"}
+        ],
+        action: {"Review approval", "https://emisar.dev/a"},
+        secondary_action: {"Open runner", "https://emisar.dev/r"},
+        footer: "You're receiving this because you can approve actions."
+      })
+
+    [{"monthly report", monthly.html}, {"transactional", transactional.html}]
   end
 
   # WCAG relative-luminance contrast between two `#rrggbb` colors.
