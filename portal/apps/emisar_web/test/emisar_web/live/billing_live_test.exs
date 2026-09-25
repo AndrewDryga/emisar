@@ -788,7 +788,10 @@ defmodule EmisarWeb.BillingLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert has_element?(lv, "#billing-cancel", "stays active until the current period ends")
-      html = render_click(lv, "cancel_subscription", %{})
+      # The trigger opens the plain dialog in the browser alone. A pushed dialog
+      # event (the typed dialog's reset) has no handler here and crashed the page.
+      refute has_element?(lv, ~s|#billing-cancel-subscription[phx-click*='"push"']|)
+      html = confirm_dialog(lv, "billing-cancel", "Cancel subscription")
       assert html =~ "Your subscription will end with the current period."
       assert html =~ "Subscription ending"
       refute has_element?(lv, "#billing-cancel-subscription")

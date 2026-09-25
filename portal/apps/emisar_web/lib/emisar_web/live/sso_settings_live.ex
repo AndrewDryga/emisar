@@ -2143,7 +2143,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               typed={@typed}
               on_confirm={
                 JS.push("delete", value: %{id: @provider.id})
-                |> hide_confirm_dialog("delete-provider-#{@provider.id}")
+                |> close_confirm("delete-provider-#{@provider.id}")
               }
             >
               <:body>
@@ -2184,7 +2184,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         <.confirm_zone
           :if={@provider.scim_enabled}
           title="Disable directory sync"
-          phx-click={show_confirm_dialog("disable-scim-#{@provider.id}")}
+          phx-click={open_confirm("disable-scim-#{@provider.id}")}
         >
           <:body>
             Clears this connection's directory token, so your identity provider stops pushing
@@ -2202,7 +2202,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           pending_label="Disabling…"
           on_confirm={
             JS.push("disable_scim", value: %{id: @provider.id})
-            |> hide_confirm_dialog("disable-scim-#{@provider.id}")
+            |> close_confirm("disable-scim-#{@provider.id}")
           }
         >
           <:body>
@@ -2233,7 +2233,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         typed={@typed}
         on_confirm={
           JS.push("delete", value: %{id: @provider.id})
-          |> hide_confirm_dialog("delete-provider-#{@provider.id}")
+          |> close_confirm("delete-provider-#{@provider.id}")
         }
       >
         <:body>

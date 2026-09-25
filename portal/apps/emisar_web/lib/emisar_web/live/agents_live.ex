@@ -822,17 +822,8 @@ defmodule EmisarWeb.AgentsLive do
 
   defp pending_key_confirm_token(_pending), do: nil
 
-  defp confirm_key_action(%{action: action, key: key})
-       when action in ["rotate", "rotate_manual"] do
+  defp confirm_key_action(%{action: action, key: key}) do
     JS.push(action, value: %{id: key.id}) |> close_confirm("agent-key-action")
-  end
-
-  defp confirm_key_action(%{facts: %{expiry: :expired}, key: key}) do
-    JS.push("revoke", value: %{id: key.id}) |> close_confirm("agent-key-action")
-  end
-
-  defp confirm_key_action(%{key: key}) do
-    JS.push("revoke", value: %{id: key.id}) |> hide_confirm_dialog("agent-key-action")
   end
 
   # The issuing human — the grouping key for the list, carrying the membership
@@ -1318,7 +1309,7 @@ defmodule EmisarWeb.AgentsLive do
                     typed={@typed}
                     on_confirm={
                       JS.push("revoke_member_keys", value: %{"membership-id" => membership_id})
-                      |> hide_confirm_dialog("revoke-member-keys-#{membership_id}")
+                      |> close_confirm("revoke-member-keys-#{membership_id}")
                     }
                   >
                     <:body>

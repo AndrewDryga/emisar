@@ -3706,10 +3706,15 @@ defmodule EmisarWeb.CoreComponents do
   Enter in the confirmation input runs the same `on_confirm` command. Open the
   dialog from the trigger with `show_confirm_dialog(id)`; it closes on Cancel,
   Escape, or backdrop click, resetting the typed value each time so a stale entry
-  can't pre-enable Confirm.
+  can't pre-enable Confirm. The field also clears in the browser each time the
+  dialog opens (the `DialogFocus` hook), because LiveView leaves a focused
+  input's value alone when the server's reset lands after `focus_first`.
 
   `on_confirm` is the JS/event the enabled Confirm runs — build it at the call
-  site so the destructive event carries its own value and closes the dialog:
+  site so the destructive event carries its own value and closes the dialog with
+  `close_confirm/2`. That submit clears the typed value on the server
+  (`EmisarWeb.ConfirmDialog.init/1`); never chain a second push after the action,
+  because LiveView drops it while the submit is in flight:
 
       <.button variant={:secondary} tone={:rose} phx-click={show_confirm_dialog("remove-#{m.id}")}>
         Remove from team
@@ -3722,7 +3727,7 @@ defmodule EmisarWeb.CoreComponents do
         confirm_token={m.contact_email || m.id}
         typed={@typed}
         on_confirm={
-          JS.push("remove", value: %{membership_id: m.id}) |> hide_confirm_dialog("remove-#{m.id}")
+          JS.push("remove", value: %{membership_id: m.id}) |> close_confirm("remove-#{m.id}")
         }
       >
         <:body>
@@ -3840,7 +3845,9 @@ defmodule EmisarWeb.CoreComponents do
                unaffected — this is friction only. The token renders through
                HEEx escaped (IL-16) — it's operator data. The input lives in a
                form so `phx-change` serializes it; the enabled Confirm button is
-               that form's submitter, so click and Enter run the same action. --%>
+               that form's submitter, so click and Enter run the same action.
+               The hidden `confirm_dialog` field tells `ConfirmDialog` that this
+               submit spends the typed value. --%>
           <form
             :if={not is_nil(@confirm_token)}
             id={"#{@id}-form"}
@@ -3848,6 +3855,7 @@ defmodule EmisarWeb.CoreComponents do
             phx-submit={@on_confirm}
             class="mt-5"
           >
+            <input type="hidden" name="confirm_dialog" value={@id} />
             <.label for={"#{@id}-input"} variant={:eyebrow}>
               Type <span class="font-mono text-zinc-200">{@confirm_token}</span> to confirm
             </.label>
@@ -3859,6 +3867,7 @@ defmodule EmisarWeb.CoreComponents do
               class="font-mono"
               autocomplete="off"
               phx-debounce="50"
+              data-typed-confirm
             />
           </form>
 
@@ -4019,12 +4028,11 @@ defmodule EmisarWeb.CoreComponents do
   def show_confirm_dialog(js \\ %JS{}, id),
     do: js |> JS.push("confirm_reset") |> fade_dialog_in(id)
 
-  @doc """
-  Closes a TYPED `<.confirm_dialog>` by id and resets the page's typed value.
-  Used by Cancel, the backdrop, and Escape.
-  """
-  def hide_confirm_dialog(js \\ %JS{}, id),
-    do: js |> fade_dialog_out(id) |> JS.push("confirm_reset")
+  # Closes a TYPED `<.confirm_dialog>` and resets the page's typed value — the
+  # dialog's own Cancel, backdrop, and Escape. Its Confirm closes with
+  # `close_confirm/2` instead: the submit resets the value, and a push chained
+  # after the action would be dropped while that submit is in flight.
+  defp hide_confirm_dialog(id), do: %JS{} |> fade_dialog_out(id) |> JS.push("confirm_reset")
 
   @doc """
   Empty-state panel: a centered icon + headline + body + optional CTA.

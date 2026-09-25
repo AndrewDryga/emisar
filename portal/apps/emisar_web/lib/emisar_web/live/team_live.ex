@@ -1329,11 +1329,7 @@ defmodule EmisarWeb.TeamLive do
   defp member_action_confirm_token(_pending), do: nil
 
   defp confirm_member_action(%{action: action, facts: %{membership: membership}}) do
-    js = JS.push(action, value: %{membership_id: membership.id})
-
-    if action == "remove",
-      do: hide_confirm_dialog(js, "member-action"),
-      else: close_confirm(js, "member-action")
+    JS.push(action, value: %{membership_id: membership.id}) |> close_confirm("member-action")
   end
 
   # A REJECTED save keeps its editor open on what the operator typed; only a

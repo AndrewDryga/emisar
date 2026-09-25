@@ -947,6 +947,15 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       refute has_element?(lv, "#profile-oidc-step-continue[disabled]")
 
+      # A wrong code keeps the typed name for the retry: only a confirm dialog's
+      # own submit spends the page's typed value.
+      lv
+      |> element("#profile-oidc-step-form")
+      |> render_submit(%{"confirm_token" => provider.name, "oidc_step" => %{"code" => "wrong"}})
+
+      assert_push_event(lv, "code:reset", %{id: "profile-oidc-step-code"})
+      refute has_element?(lv, "#profile-oidc-step-continue[disabled]")
+
       html =
         render_hook(lv, "confirm_oidc_step_up", %{
           "confirm_token" => provider.name,

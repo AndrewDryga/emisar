@@ -671,7 +671,7 @@ defmodule EmisarWeb.ApprovalsLive do
               typed={@typed}
               on_confirm={
                 JS.push("revoke_all_grants")
-                |> hide_confirm_dialog("revoke-all-grants-dialog")
+                |> close_confirm("revoke-all-grants-dialog")
               }
             >
               <:body>

@@ -1752,7 +1752,7 @@ defmodule EmisarWeb.PacksLive do
       <div
         :if={@pending_pack_action}
         id={"pack-action-mount-#{@pending_pack_action.nonce}"}
-        phx-mounted={show_confirm_dialog("pack-action")}
+        phx-mounted={open_confirm("pack-action")}
       >
         <.confirm_dialog
           id="pack-action"
@@ -1803,7 +1803,7 @@ defmodule EmisarWeb.PacksLive do
         typed={@typed}
         on_confirm={
           JS.push("reject", value: %{id: @reject_target && @reject_target.id})
-          |> hide_confirm_dialog("reject-pack")
+          |> close_confirm("reject-pack")
         }
       >
         <:body>

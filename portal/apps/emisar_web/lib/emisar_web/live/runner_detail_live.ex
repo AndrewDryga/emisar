@@ -912,7 +912,7 @@ defmodule EmisarWeb.RunnerDetailLive do
             confirm_label="Delete runner"
             confirm_token={@runner.name}
             typed={@typed}
-            on_confirm={JS.push("delete") |> hide_confirm_dialog("delete-runner")}
+            on_confirm={JS.push("delete") |> close_confirm("delete-runner")}
           >
             <:body>
               Permanently removes <span class="font-medium text-zinc-200">{@runner.name}</span>.

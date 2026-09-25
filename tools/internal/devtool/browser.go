@@ -130,7 +130,7 @@ type shotCommand struct {
 	group  string
 }
 
-const shotUsage = "usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL]... [--fill '#ID=VALUE']... [--width N] [--settle MS] [<path> --label <name> [options]]..."
+const shotUsage = "usage: ./run shot <path> --label <name> [--task ID] [--group NAME] [--shot NAME|--select CSS|--heading TEXT|--class-contains a,b] [--climb SEL] [--click SEL | --fill '#ID=VALUE']... [--width N] [--settle MS] [<path> --label <name> [options]]..."
 
 func parseShot(args []string) (shotCommand, error) {
 	command := shotCommand{}
@@ -194,7 +194,7 @@ func parseShotGroup(path string, args []string) (devbrowser.ShotOptions, string,
 	flags.StringVar(&classContains, "class-contains", "", "")
 	flags.StringVar(&climb, "climb", "", "")
 	flags.Func("click", "", func(value string) error {
-		options.Clicks = append(options.Clicks, value)
+		options.Steps = append(options.Steps, devbrowser.Step{Click: value})
 		return nil
 	})
 	flags.Func("fill", "", func(value string) error {
@@ -202,7 +202,7 @@ func parseShotGroup(path string, args []string) (devbrowser.ShotOptions, string,
 		if !ok || !regexp.MustCompile(`^#[A-Za-z_][A-Za-z0-9_-]*$`).MatchString(selector) {
 			return fmt.Errorf("fill requires #ID=VALUE (an ID selector, not arbitrary CSS)")
 		}
-		options.Fills = append(options.Fills, devbrowser.FieldFill{Selector: selector, Value: text})
+		options.Steps = append(options.Steps, devbrowser.Step{Fill: &devbrowser.FieldFill{Selector: selector, Value: text}})
 		return nil
 	})
 	flags.Int64Var(&options.Width, "width", 1440, "")

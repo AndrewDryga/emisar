@@ -803,7 +803,7 @@ defmodule EmisarWeb.BillingLive do
                   variant={:secondary}
                   size={:sm}
                   class="mt-4"
-                  phx-click={show_confirm_dialog("billing-cancel")}
+                  phx-click={open_confirm("billing-cancel")}
                 >
                   Cancel subscription
                 </.button>
@@ -817,7 +817,7 @@ defmodule EmisarWeb.BillingLive do
                 confirm_label="Cancel subscription"
                 dismiss_label="Keep subscription"
                 pending_label="Cancelling…"
-                on_confirm={JS.push("cancel_subscription") |> hide_confirm_dialog("billing-cancel")}
+                on_confirm={JS.push("cancel_subscription") |> close_confirm("billing-cancel")}
               >
                 <:body>
                   {@summary.plan_name} stays active until the current period ends<span :if={

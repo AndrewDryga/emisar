@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	devbrowser "github.com/andrewdryga/emisar/tools/internal/browser"
 	"github.com/andrewdryga/emisar/tools/internal/ci"
 	"github.com/andrewdryga/emisar/tools/internal/packtest"
 	"github.com/andrewdryga/emisar/tools/internal/repo"
@@ -1521,12 +1522,13 @@ func TestParseShotGroupsCapturesThatShareOneSession(t *testing.T) {
 	if command.taskID != "task-one" || command.group != "loop" || len(command.shots) != 3 {
 		t.Fatalf("command = %#v", command)
 	}
-	if command.shots[0].Path != "/app/acme/runs" || command.shots[0].Anchor != nil || len(command.shots[0].Clicks) != 0 {
+	if command.shots[0].Path != "/app/acme/runs" || command.shots[0].Anchor != nil || len(command.shots[0].Steps) != 0 {
 		t.Fatalf("first capture = %#v", command.shots[0])
 	}
 	second := command.shots[1]
 	if second.Path != "/app/acme/approvals" || second.Label != "approvals" || second.Anchor == nil ||
-		second.Anchor.Selector != "[data-shot='approval-decisions']" || !slices.Equal(second.Clicks, []string{"#pending a"}) {
+		second.Anchor.Selector != "[data-shot='approval-decisions']" ||
+		!slices.Equal(second.Steps, []devbrowser.Step{{Click: "#pending a"}}) {
 		t.Fatalf("second capture = %#v", second)
 	}
 	if command.shots[2].Width != 390 || command.shots[1].Width != 1440 {
@@ -1554,9 +1556,9 @@ func TestParseShotKeepsRepeatedClicksInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"#step-0 [data-expand]", "#step-0 [data-combobox-trigger]"}
-	if !slices.Equal(command.shots[0].Clicks, want) {
-		t.Fatalf("clicks = %#v", command.shots[0].Clicks)
+	want := []devbrowser.Step{{Click: "#step-0 [data-expand]"}, {Click: "#step-0 [data-combobox-trigger]"}}
+	if !slices.Equal(command.shots[0].Steps, want) {
+		t.Fatalf("steps = %#v", command.shots[0].Steps)
 	}
 }
 
@@ -1572,20 +1574,22 @@ func TestParseShotUsesEmailOverride(t *testing.T) {
 	}
 }
 
-func TestParseShotFillsLiteralValuesAfterClicks(t *testing.T) {
+func TestParseShotKeepsClicksAndLiteralFillsInCommandLineOrder(t *testing.T) {
 	command, err := parseShot([]string{
 		"/app/acme/agents/connect", "--label", "manual",
 		"--click", "#manual-setup summary",
 		"--fill", `#bridge-path-windows=C:\Users\O'Brien & $operator=one\emisar-mcp.exe`,
 		"--fill", "#other=",
+		"--click", "#save",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(command.shots[0].Fills) != 2 || command.shots[0].Fills[0].Selector != "#bridge-path-windows" ||
-		command.shots[0].Fills[0].Value != `C:\Users\O'Brien & $operator=one\emisar-mcp.exe` ||
-		command.shots[0].Fills[1].Value != "" {
-		t.Fatalf("fills = %#v", command.shots[0].Fills)
+	steps := command.shots[0].Steps
+	if len(steps) != 4 || steps[0].Click != "#manual-setup summary" || steps[3].Click != "#save" ||
+		steps[1].Fill == nil || *steps[1].Fill != (devbrowser.FieldFill{Selector: "#bridge-path-windows", Value: `C:\Users\O'Brien & $operator=one\emisar-mcp.exe`}) ||
+		steps[2].Fill == nil || *steps[2].Fill != (devbrowser.FieldFill{Selector: "#other", Value: ""}) {
+		t.Fatalf("steps = %#v", steps)
 	}
 	for _, value := range []string{"missing-separator", "=missing-selector", `[name="path"]=value`, "#id .child=value"} {
 		if _, err := parseShot([]string{"/", "--label", "invalid", "--fill", value}); err == nil {

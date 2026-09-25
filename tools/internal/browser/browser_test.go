@@ -168,16 +168,16 @@ func TestReadyAnchorsAndTwoScaleScreenshot(t *testing.T) {
 	}
 }
 
-func TestShotFillsInputsAndNotifiesTheForm(t *testing.T) {
+func TestShotRunsClicksAndFillsInOrderAndNotifiesTheForm(t *testing.T) {
 	if _, err := ResolveChrome(); err != nil {
 		t.Skip(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
+		// The form is inserted by the click, the way a LiveView event inserts a dialog.
 		_, _ = w.Write([]byte(`<!doctype html><html><body>
-<button onclick="document.querySelector('form').hidden=false">Open</button>
-<form hidden><input id="path" value="previous"><input id="empty" value="previous"></form>
-<script>window.edits=[];for(const event of ['input','change','blur'])document.querySelector('form').addEventListener(event,e=>edits.push([e.type,e.target.id,e.target.value]),true);</script>
+<button onclick="openForm()">Open</button>
+<script>window.edits=[];function openForm(){const holder=document.createElement('div');holder.innerHTML='<form><input id="path" value="previous"><input id="empty" value="previous"><button type="button" id="done">Done</button></form>';document.body.appendChild(holder);const form=holder.querySelector('form');for(const event of ['input','change','blur'])form.addEventListener(event,e=>edits.push([e.type,e.target.id,e.target.value]),true);form.querySelector('#done').addEventListener('click',()=>edits.push(['click','done',form.querySelector('#path').value]));}</script>
 </body></html>`))
 	}))
 	defer server.Close()
@@ -190,8 +190,12 @@ func TestShotFillsInputsAndNotifiesTheForm(t *testing.T) {
 	defer session.Close()
 	path := `C:\Users\O'Brien & $operator=one\emisar-mcp.exe`
 	if _, err := session.Shot(ShotOptions{
-		Path: "/", Label: "filled", Out: t.TempDir(), Clicks: []string{"button"},
-		Fills: []FieldFill{{Selector: "#path", Value: path}, {Selector: "#empty", Value: ""}},
+		Path: "/", Label: "filled", Out: t.TempDir(), Steps: []Step{
+			{Click: "button"},
+			{Fill: &FieldFill{Selector: "#path", Value: path}},
+			{Fill: &FieldFill{Selector: "#empty", Value: ""}},
+			{Click: "#done"},
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +203,7 @@ func TestShotFillsInputsAndNotifiesTheForm(t *testing.T) {
 	if err := chromedp.Run(session.Context, chromedp.Evaluate("window.edits", &edits)); err != nil {
 		t.Fatal(err)
 	}
-	want := [][]string{{"input", "path", path}, {"change", "path", path}, {"blur", "path", path}, {"input", "empty", ""}, {"change", "empty", ""}, {"blur", "empty", ""}}
+	want := [][]string{{"input", "path", path}, {"change", "path", path}, {"blur", "path", path}, {"input", "empty", ""}, {"change", "empty", ""}, {"blur", "empty", ""}, {"click", "done", path}}
 	if !slices.EqualFunc(edits, want, slices.Equal[[]string]) {
 		t.Fatalf("edits = %#v", edits)
 	}

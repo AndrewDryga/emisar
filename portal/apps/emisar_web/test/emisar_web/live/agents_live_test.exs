@@ -2116,6 +2116,28 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert has_element?(lv, "##{dialog} button[disabled]", "Revoke key")
     end
 
+    # The browser drops any push chained after the confirm submit, so the submit
+    # itself must clear the typed name before the next key's dialog renders.
+    test "a confirmed typed revoke leaves the next key's dialog empty", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      subject = owner_subject(user, account)
+
+      {:ok, _raw, first_key} = ApiKeys.create_key(%{name: "first-bot"}, subject)
+      {:ok, _raw, second_key} = ApiKeys.create_key(%{name: "second-bot"}, subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
+      dialog = "agent-key-action"
+
+      render_click(lv, "open_key_action", %{"action" => "revoke", "id" => first_key.id})
+      type_confirm_token(lv, dialog, "first-bot")
+      assert confirm_dialog(lv, dialog, "Revoke key") =~ "API key revoked."
+      flush_key_broadcast(lv)
+
+      render_click(lv, "open_key_action", %{"action" => "revoke", "id" => second_key.id})
+      assert has_element?(lv, ~s(##{dialog}-input[value=""]))
+      assert has_element?(lv, "##{dialog} button[disabled]", "Revoke key")
+    end
+
     # Four verbs on a manager's live row is the labeled-menu threshold: one
     # bordered `Actions ▾` trigger with the verbs as menu rows — no per-row
     # ghost buttons. The confirm ladder is unchanged behind the menu.

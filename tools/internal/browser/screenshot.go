@@ -27,15 +27,20 @@ type ShotOptions struct {
 	Email  string
 	Width  int64
 	Settle time.Duration
-	// Clicks run in order after navigation, each waiting for its selector —
-	// how a shot reaches state behind a reveal (expand a step, then open its
-	// picker), mirroring the docs captures' Clicks.
-	Clicks []string
-	Fills  []FieldFill
+	// Steps run in command-line order after navigation, each waiting for its
+	// selector — how a shot reaches state behind a reveal (expand a step, then
+	// open its picker) or a flow (type into a form, submit it, open the next).
+	Steps  []Step
 	Anchor *Anchor
 }
 
-// FieldFill replaces an input after the clicks have opened its form.
+// Step is one interaction before the capture: a click, or a fill.
+type Step struct {
+	Click string
+	Fill  *FieldFill
+}
+
+// FieldFill replaces an input's value and notifies its form.
 type FieldFill struct {
 	Selector string
 	Value    string
@@ -115,6 +120,47 @@ func (s *Session) CurrentURL() (string, error) {
 	return current, err
 }
 
+// A step finds its element from page JavaScript, like the docs captures:
+// chromedp's node waits read a DOM cache that can miss a subtree LiveView
+// inserts after load (a dialog opened by a server event) and then never return.
+// It also waits until the element is enabled (a confirm button the server
+// enables after the typed value arrives) and is the one under its center
+// point, so a click never lands on an overlay still fading out (a closing dialog).
+const stepTargetScript = `(function(selector){const el=[...document.querySelectorAll(selector)].find(n=>n.checkVisibility());if(!el||el.disabled)return null;el.scrollIntoView({block:'center',inline:'center',behavior:'instant'});const b=el.getBoundingClientRect();const x=b.x+b.width/2,y=b.y+b.height/2;const hit=document.elementFromPoint(x,y);if(!hit||!el.contains(hit))return null;return [x,y]})`
+
+// Passing the values as JSON also preserves empty strings, which the pinned
+// CDP argument encoder otherwise omits in SetValue calls.
+const fillScript = `(function(field){const input=[...document.querySelectorAll(field.Selector)].find(n=>n.checkVisibility());input.focus();input.value=field.Value;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));input.blur();})`
+
+func (s *Session) runStep(step Step) error {
+	selector := step.Click
+	if step.Fill != nil {
+		selector = step.Fill.Selector
+	}
+	encoded, _ := json.Marshal(selector)
+	ctx, cancel := context.WithTimeout(s.Context, 10*time.Second)
+	defer cancel()
+	var center []float64
+	for {
+		center = nil
+		if err := chromedp.Run(ctx, chromedp.Evaluate(stepTargetScript+"("+string(encoded)+")", &center)); err == nil && len(center) == 2 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("no visible, enabled, uncovered element matches %s: %w", selector, ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	if step.Fill == nil {
+		// A real mouse click at the element's center, so focus moves the way a
+		// person's click moves it.
+		return chromedp.Run(s.Context, chromedp.MouseClickXY(center[0], center[1]))
+	}
+	field, _ := json.Marshal(step.Fill)
+	return chromedp.Run(s.Context, chromedp.Evaluate(fillScript+"("+string(field)+")", nil))
+}
+
 func (s *Session) Shot(options ShotOptions) ([]string, error) {
 	if options.Width == 0 {
 		options.Width = 1440
@@ -140,28 +186,15 @@ func (s *Session) Shot(options ShotOptions) ([]string, error) {
 			return nil, err
 		}
 	}
-	for _, click := range options.Clicks {
-		if err := chromedp.Run(s.Context,
-			chromedp.WaitVisible(click, chromedp.ByQuery),
-			chromedp.Click(click, chromedp.ByQuery),
-		); err != nil {
-			return nil, err
-		}
-		if err := s.Ready(10*time.Second, ""); err != nil {
+	// A tab left behind the sign-in tab paints no frames, so requestAnimationFrame
+	// never fires and a JS.show reveal (a dialog opened by a step) stays hidden.
+	if len(options.Steps) > 0 {
+		if err := chromedp.Run(s.Context, page.BringToFront()); err != nil {
 			return nil, err
 		}
 	}
-	for _, fill := range options.Fills {
-		encoded, _ := json.Marshal(fill)
-		// Passing the values as JSON also preserves empty strings, which the
-		// pinned CDP argument encoder otherwise omits in SetValue calls.
-		setValue := `(function(field){const input=document.querySelector(field.Selector);input.value=field.Value;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})(` + string(encoded) + `)`
-		if err := chromedp.Run(s.Context,
-			chromedp.WaitVisible(fill.Selector, chromedp.ByQuery),
-			chromedp.Focus(fill.Selector, chromedp.ByQuery),
-			chromedp.Evaluate(setValue, nil),
-			chromedp.Blur(fill.Selector, chromedp.ByQuery),
-		); err != nil {
+	for _, step := range options.Steps {
+		if err := s.runStep(step); err != nil {
 			return nil, err
 		}
 		if err := s.Ready(10*time.Second, ""); err != nil {
