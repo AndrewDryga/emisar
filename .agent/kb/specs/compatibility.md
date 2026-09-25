@@ -1,7 +1,7 @@
 ---
 name: compatibility
 sources: [runner/pkg/packspec, runner/pkg/actionspec, runner/testdata/cli_surface.golden, portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar/lib/emisar/canonical_json.ex, install.sh, install-mcp.sh, runner/release/container-packs.txt]
-updated: 2026-09-22
+updated: 2026-09-25
 ---
 
 # Compatibility and deprecation policy
@@ -22,8 +22,8 @@ same product contract.
 
 Before 1.0, a normal product feature is a minor bump and a release hotfix is a
 patch bump. Pre-1.0 releases do not promise long-lived compatibility between
-components. The current release snapshot is product `v0.49.0`, runner
-`0.28.0`, and `emisar-mcp` `0.15.0`. Those component versions are release tips;
+components. The current release snapshot is product `v0.50.0`, runner
+`0.29.0`, and `emisar-mcp` `0.16.0`. Those component versions are release tips;
 unstamped local builds report `dev`.
 
 At 1.0:
@@ -823,7 +823,7 @@ It accepts
 `EMISAR_ATTESTATION_WORKFLOW`, and `EMISAR_URL` (the portal the connection phase talks to and writes into
 configs; default `https://emisar.dev`). The bridge installer also requires the
 selected GitHub release to be marked immutable. The current release tags are
-`runner-v0.28.0` and `mcp-v0.15.0`.
+`runner-v0.29.0` and `mcp-v0.16.0`.
 
 **The installers place the binary; the bridge owns the connection phase.** An
 interactive install runs `emisar-mcp connect` as the invoking user, and

@@ -17,6 +17,59 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-09-25],
+      slug: "workspace-owned-members-and-per-workspace-billing",
+      title: "Workspace-owned members and per-workspace billing",
+      tag: "v0.50.0",
+      summary:
+        "Each workspace now owns its members. SSO, SCIM, and invitations create a member of that workspace rather than a personal login, so one customer's identity provider or directory can no longer reach a person's other workspaces, and someone who wants one login across workspaces links it by proving the mailbox. Billing follows the same line: a workspace changes only its own Paddle subscription, with payment method, cancel, and keep controls on the billing page, and linking a Paddle account another workspace already uses takes a code sent to its billing email.",
+      details: [
+        {"Console",
+         [
+           "Audit, approvals, runbooks, enrollment keys, and API keys name the exact workspace member. A person can detach their login from a workspace seat that SSO still signs in to, and a member removed and invited back at the same address moves their SSO identity to the new seat.",
+           "Changing the sign-in email takes proof from the new mailbox in the same session, and an invitation is accepted only by the mailbox it was sent to.",
+           "Every browser signs in once more after this release. API keys and agent connections keep working."
+         ]},
+        {"Billing",
+         [
+           "The Paddle customer portal button is gone because that portal shows every subscription the payer holds. Payers reach Paddle's own pages from any receipt email, and a Paddle customer record is created when a workspace first starts a checkout.",
+           "Invoices list only this workspace's subscription, and a Paddle webhook signed during a secret rotation is accepted."
+         ]},
+        {"Security",
+         [
+           "The staff console requires the staff member's own second factor, a member's MFA can be reset only in the one workspace they belong to, removing or demoting a member withdraws their pending approve votes, and a queued run is refused when the person who started it has lost access.",
+           "Sign-in, magic-link, confirm, and invitation URLs are no longer written to request logs, request size caps apply to the path the router matches, and a production release refuses to boot without a mail provider."
+         ]},
+        {"Audit",
+         [
+           "Events by people now carry actor_kind membership and the workspace member's id. Older rows keep actor_kind user, so a SIEM rule keyed on user needs to match both.",
+           "A page holding only SIEM export receipts no longer creates another receipt, so a collector can catch up on an idle workspace."
+         ]},
+        {"MCP",
+         [
+           "The new cancel_run tool lets an agent withdraw a run it started while the run waits for approval. The run never reaches a runner, and its approval request closes with it.",
+           "Waits default to 45 seconds, inside Slack's 60-second tool limit. Replies stay inside their published schemas: a long review receipt no longer stalls the output tail, argument errors carry their details, and runner issues are capped.",
+           "emisar-mcp connect adds itself to an existing Goose configuration, the Windows installer follows GitHub's release-asset redirects, and disconnecting Grok keeps the operator's own rules."
+         ]},
+        {"Runner",
+         [
+           "The runner marks itself non-dumpable and refuses its own /proc entry as an action argument, so an action running as the runner's user can no longer read the enrollment key or pack credentials from the runner's environment or memory.",
+           "Concurrent audit journal writers are serialized, finished runs release their resources, packs reload after a partial update, and a NUL byte in runner output is stored as U+FFFD instead of closing the connection."
+         ]},
+        {"Packs",
+         [
+           "A new EMQX pack reads broker, client, subscription, listener, rule, and retained-message state. Its eight writes, from kicking or banning a client to restarting a listener or switching a rule, all need approval under the default policy.",
+           "Versions whose tiers let an action skip approval are retired: reads that returned query text, request URLs, job environments, or command lines in docker, mysql, nginx, nomad, postgres, and victorialogs, and the live ruleset applies in pfsense. Elasticsearch actions stay on one index, and the ClickHouse and Consul low-risk reads no longer return raw SQL, errors, or check output.",
+           "Nomad health snapshots handle allocations without service checks, HCP Terraform adds read-scoped plan logs, and action descriptions state what an action does instead of telling the model what to do."
+         ]},
+        {"Platform",
+         [
+           "The console moved to Tailwind CSS 4, and every email shares one container style with an aligned logo.",
+           "The restored-clone database promotion behind the two-hour recovery objective is written down and can be checked before cutover. Terraform is at 1.16.2, and the portal takes Mint 1.10.1 for an HTTP/1 response smuggling advisory."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-09-15],
       slug: "approval-receipts-on-the-run-and-safer-packs",
       title: "Approval receipts on the run and safer packs",

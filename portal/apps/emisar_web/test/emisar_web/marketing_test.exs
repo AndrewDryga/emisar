@@ -1438,6 +1438,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Actions still require current runner and pack access."
       assert html =~ "Sandboxed agents and clearer account pages"
       assert html =~ "Approval receipts on the run and safer packs"
+      assert html =~ "Workspace-owned members and per-workspace billing"
+      assert html =~ "Each workspace now owns its members."
       assert html =~ "Connect AI agents through co:op, Docker Sandboxes, nono, or Dev Containers"
 
       assert html =~
@@ -1484,6 +1486,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.47.0"
       assert html =~ "v0.48.0"
       assert html =~ "v0.49.0"
+      assert html =~ "v0.50.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.
