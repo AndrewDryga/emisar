@@ -47,7 +47,7 @@ export function initDocsFilter() {
       if (groupShown > 0) anyVisible = true
     }
 
-    if (empty) empty.style.display = anyVisible ? "none" : "block"
+    if (empty) empty.hidden = anyVisible
   }
 
   input.addEventListener("input", apply)

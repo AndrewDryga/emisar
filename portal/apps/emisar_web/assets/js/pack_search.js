@@ -48,7 +48,7 @@ export function initPackSearch() {
       show(nav, !section || section.style.display !== "none")
     }
 
-    if (empty) empty.style.display = anyVisible ? "none" : "block"
+    if (empty) empty.hidden = anyVisible
   }
 
   input.addEventListener("input", apply)

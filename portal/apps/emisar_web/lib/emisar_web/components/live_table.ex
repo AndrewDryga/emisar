@@ -682,7 +682,7 @@ defmodule EmisarWeb.LiveTable do
         type="datetime-local"
         name={"#{@prefix}#{@filter.name}"}
         value={@value}
-        phx-debounce="blur-sm"
+        phx-debounce="blur"
         class={[
           "w-full rounded-lg border bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 [color-scheme:dark] disabled:cursor-not-allowed",
           filter_control_class(@active?)

@@ -119,13 +119,18 @@ defmodule EmisarWeb.CoreComponents do
     <div id="flash-group">
       <.flash kind={:info} title={gettext("Done")} flash={@flash} />
       <.flash kind={:error} title={gettext("Something went wrong")} flash={@flash} />
+      <%!-- Tailwind 4 makes [hidden] display:none !important, which beats the inline
+      display JS.show sets, so each notice also drops the attribute to appear. --%>
       <.flash
         id="client-error"
         kind={:neutral}
         title={gettext("Reconnecting")}
         auto_close={false}
-        phx-disconnected={show(".phx-client-error #client-error")}
-        phx-connected={hide("#client-error")}
+        phx-disconnected={
+          show(".phx-client-error #client-error")
+          |> JS.remove_attribute("hidden", to: ".phx-client-error #client-error")
+        }
+        phx-connected={hide("#client-error") |> JS.set_attribute({"hidden", ""}, to: "#client-error")}
         hidden
       >
         {gettext("Restoring connection…")}
@@ -137,8 +142,11 @@ defmodule EmisarWeb.CoreComponents do
         kind={:neutral}
         title={gettext("Reconnecting")}
         auto_close={false}
-        phx-disconnected={show(".phx-server-error #server-error")}
-        phx-connected={hide("#server-error")}
+        phx-disconnected={
+          show(".phx-server-error #server-error")
+          |> JS.remove_attribute("hidden", to: ".phx-server-error #server-error")
+        }
+        phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""}, to: "#server-error")}
         hidden
       >
         {gettext("Restoring connection…")}
