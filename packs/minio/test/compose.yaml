@@ -5,12 +5,15 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-latest}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-RELEASE.2026-08-04T00-00-00Z}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-minio-tools:latest
 
   minio:
-    image: quay.io/minio/minio:${PACKTEST_VERSION:-latest}${PACKTEST_DIGEST-}
+    # MinIO stopped publishing server images in 2025, and the pinned upstream
+    # digest is gone. pgsty/minio is the community-maintained build of the same
+    # server and client, released on MinIO's RELEASE tag scheme.
+    image: pgsty/minio:${PACKTEST_VERSION:-RELEASE.2026-08-04T00-00-00Z}${PACKTEST_DIGEST-}
     command: server /data1 /data2 /data3 /data4 --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minio_admin

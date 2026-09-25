@@ -2,9 +2,9 @@
 # pack already runs as its SUT, so extracting it costs no extra pull, and the
 # client version tracks the server version under test.
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
-ARG PACKTEST_VERSION=latest
+ARG PACKTEST_VERSION=RELEASE.2026-08-04T00-00-00Z
 ARG PACKTEST_DIGEST
-FROM quay.io/minio/minio:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS client
+FROM pgsty/minio:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS client
 
 FROM ${PACKTEST_RUNNER_IMAGE}
 COPY --from=client /usr/bin/mc /usr/local/bin/mc
