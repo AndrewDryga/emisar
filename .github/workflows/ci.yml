@@ -268,6 +268,9 @@ jobs:
           PHX_HOST: localhost
           PORT: "4000"
           EMISAR_DISABLE_BILLING: "1"
+          # A production build refuses to boot without a mail provider; this one
+          # has none on purpose.
+          EMISAR_DISABLE_MAIL: "1"
           # Validate the catalog bundled in this image. The published pointer can
           # still name the previous pack version until CD publishes this commit.
           EMISAR_PACK_CATALOG_URL: ""
@@ -283,7 +286,7 @@ jobs:
 
           docker run --rm --network host \
             -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST \
-            -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL -e FORCE_SSL \
+            -e EMISAR_DISABLE_BILLING -e EMISAR_DISABLE_MAIL -e EMISAR_PACK_CATALOG_URL -e FORCE_SSL \
             emisar/portal:ci /app/bin/emisar eval 'Emisar.Release.migrate()'
 
           # config.exs sets enable_source_code_context, but Sentry reads a
@@ -293,7 +296,7 @@ jobs:
           # the release can actually load the map, not just that a file exists.
           docker run --rm --network host \
             -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST \
-            -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL -e FORCE_SSL \
+            -e EMISAR_DISABLE_BILLING -e EMISAR_DISABLE_MAIL -e EMISAR_PACK_CATALOG_URL -e FORCE_SSL \
             emisar/portal:ci /app/bin/emisar eval '
               case Sentry.Sources.load_source_code_map_if_present() do
                 {:loaded, map} when map_size(map) > 0 -> :ok
@@ -302,7 +305,7 @@ jobs:
 
           cid=$(docker run -d --network host \
             -e DATABASE_URL -e SECRET_KEY_BASE -e PHX_HOST -e PORT \
-            -e EMISAR_DISABLE_BILLING -e EMISAR_PACK_CATALOG_URL \
+            -e EMISAR_DISABLE_BILLING -e EMISAR_DISABLE_MAIL -e EMISAR_PACK_CATALOG_URL \
             -e EMISAR_SSO_ALLOWED_IDP_HOSTS -e ELIXIR_ERL_OPTIONS \
             -e ERL_AFLAGS -e FORCE_SSL \
             emisar/portal:ci)

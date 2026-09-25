@@ -339,14 +339,15 @@ cases:
   # Each script-routed denial asserts the shared guard's own error and that the
   # delegating reader spy was untouched. This prevents kernel permissions or a
   # harmless empty device from making the security proof pass vacuously.
+  # /proc/self and /proc/thread-self resolve to the runner's own pid, and the
+  # runner refuses its own /proc tree as a protected path before exec, so these
+  # three never reach the script guard or the reader. They pin that refusal.
   - name: fs.head-file-rejects-canonical-self-environ-before-reader
     action: fs.head_file
     args: {path: /proc/self/environ}
     expect:
       status: failure
-      exit: [1]
-      reason_contains: [process exited with code 1]
-      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path:"]
+      reason_contains: ["is inside the runner's own configuration or state"]
     probes:
       - name: head was not invoked
         argv: [/bin/sh, -c, "test ! -e /tmp/packtest-head-invoked && echo not-invoked"]
@@ -370,9 +371,7 @@ cases:
     args: {path: /proc/thread-self/environ, pattern: packtest}
     expect:
       status: failure
-      exit: [1]
-      reason_contains: [process exited with code 1]
-      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path:"]
+      reason_contains: ["is inside the runner's own configuration or state"]
     probes:
       - name: grep was not invoked
         argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
@@ -383,9 +382,7 @@ cases:
     args: {path: /proc/self/fd/2147483647, pattern: packtest}
     expect:
       status: failure
-      exit: [1]
-      reason_contains: [process exited with code 1]
-      stderr_contains: ["fs-search: refusing sensitive pseudo-filesystem path:"]
+      reason_contains: ["is inside the runner's own configuration or state"]
     probes:
       - name: grep was not invoked
         argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]

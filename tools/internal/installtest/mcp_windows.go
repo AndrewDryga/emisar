@@ -740,7 +740,10 @@ func testWindowsRedirectChain(root, shell, temp string) error {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	script := parts.String() + fmt.Sprintf(`
+	// The extracted functions name System.Net.Http types, which Windows
+	// PowerShell 5.1 does not load by default; the installer loads the
+	// assembly on its own first lines, before any of them is defined.
+	script := "Add-Type -AssemblyName System.Net.Http\n" + parts.String() + fmt.Sprintf(`
 $script:MaximumRedirects = 5
 function Stop-Install([string]$Message) { throw $Message }
 $env:EMISAR_ALLOW_INSECURE = "1"
