@@ -287,7 +287,10 @@ process memory behind `/proc/<pid>/mem`; non-dumpable, those entries are
 root-owned and no same-user action child can read or attach to them, whatever
 the host's `ptrace_scope`. The runner's own `/proc/<pid>` tree is also a
 protected root for every path argument, so `/proc/self/environ` is refused
-before an action runs. Every other process stays as inspectable as before, so
+before an action runs. `/proc/net` and `/proc/mounts` are links into the calling
+process's own entry, so a path argument naming them is refused too;
+`linux.network_interfaces` and `linux.mount_status` read that state instead.
+Every other process stays as inspectable as before, so
 `ProtectProc=` is still the directive that breaks `/proc` diagnostics, not this.
 
 The installed systemd unit is deliberately modest because every service

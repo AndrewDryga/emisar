@@ -345,7 +345,7 @@ variable "paddle_client_token" {
 
 variable "postmark_api_token" {
   type        = string
-  description = "Postmark server token (outbound mail). Empty → the release logs mail instead of sending — sign-in magic links won't deliver, so set it for real prod."
+  description = "Postmark server token (outbound mail). Required: a production release with no token refuses to boot (portal/config/runtime.exs)."
   sensitive   = true
   default     = ""
 }

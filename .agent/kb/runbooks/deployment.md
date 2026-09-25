@@ -179,7 +179,8 @@ The release contains `bin/migrate`, `bin/server`, the remote console, compiled
 assets, and runtime diagnostics. Cloud-init pulls the reviewed digest and starts
 the container under `emisar.service`; the image's `bin/server` entry point runs
 `bin/migrate` before booting the endpoint, so a failed migration aborts the
-container and the previous version keeps serving. There is no separate migrate
+container. The migrations before it stay applied, so the previous version keeps
+serving only if none of them changed what it reads. There is no separate migrate
 step and no separate log — `emisar.service` is `Restart=always RestartSec=5`, so
 a migration that keeps failing shows up as the unit restarting every five
 seconds and retrying it. Ecto's advisory migration lock serializes concurrent
