@@ -2873,7 +2873,10 @@ defmodule EmisarWeb.MarketingTest do
 
       # Replacing an OIDC secret is not a session revocation; SCIM has no overlap.
       assert html =~ "Replacing the secret does not end existing sessions"
-      assert html =~ "leaving API keys and OAuth credentials active"
+
+      assert html =~
+               "API keys and OAuth credentials stay active, except for a member without a personal login"
+
       assert html =~ "Other sign-in proof and access to other workspaces remain available"
       assert html =~ "Rotation replaces the bearer immediately with no overlap"
     end
@@ -3342,10 +3345,10 @@ defmodule EmisarWeb.MarketingTest do
       # {route, title, date} — the title suffix proves the right head, and
       # Each legal surface declares the date of its current published text.
       for {route, date} <- [
-            {"/privacy", "September 20, 2026"},
+            {"/privacy", "September 25, 2026"},
             {"/terms", "August 26, 2026"},
             {"/refund-policy", "August 26, 2026"},
-            {"/dpa", "September 20, 2026"}
+            {"/dpa", "September 25, 2026"}
           ] do
         html = conn |> get(route) |> html_response(200)
         assert html =~ "· emisar", "missing title suffix on #{route}"

@@ -447,9 +447,11 @@
             >Team → Single sign-on</a>. Complete a real sign-in, then remove the old provider
             secret. Replacing the secret does not end existing sessions. To remove the
             connection's existing sign-in proof for this workspace and stop new sign-ins,
-            disable or delete it, leaving API keys and OAuth credentials active. Other
-            sign-in proof and access to other workspaces remain available. Neither action
-            suspends or deletes members.
+            disable or delete it. Other sign-in proof and access to other workspaces remain
+            available, and neither action suspends or deletes members. API keys and OAuth
+            credentials stay active, except for a member without a personal login that is
+            left with no other way to sign in: it loses them, and re-enabling does not bring
+            them back.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

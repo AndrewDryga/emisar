@@ -2126,7 +2126,8 @@ defmodule EmisarWeb.SSOSettingsLive do
                   <:body>
                     Stops new sign-ins through this connection and removes the access it proved
                     in this workspace. Access proved another way, including access to other
-                    workspaces, is unchanged.
+                    workspaces, is unchanged. Members with no personal login and no other way to
+                    sign in also lose their API keys and agent connections.
                   </:body>
                   Delete connection
                 </.confirm_zone>
@@ -2149,7 +2150,9 @@ defmodule EmisarWeb.SSOSettingsLive do
                 Permanently removes the
                 <span class="font-medium text-rose-100">{@provider.name}</span>
                 connection and the access it proved in this workspace. Access proved another
-                way, including access to other workspaces, is unchanged.
+                way, including access to other workspaces, is unchanged. Members with no
+                personal login and no other way to sign in also lose their API keys and agent
+                connections.
               </:body>
             </.confirm_dialog>
           </div>
@@ -2602,6 +2605,10 @@ defmodule EmisarWeb.SSOSettingsLive do
             type="checkbox"
             label="Allow members to sign in"
           />
+          <p :if={@editing?} class="mt-1 text-[11px] leading-relaxed text-zinc-500">
+            Turning this off also revokes the API keys and agent connections of members with no
+            personal login and no other way to sign in. Turning it back on does not restore them.
+          </p>
         </div>
       </section>
     </div>

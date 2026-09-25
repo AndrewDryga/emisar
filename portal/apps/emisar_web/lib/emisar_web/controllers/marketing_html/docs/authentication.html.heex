@@ -48,9 +48,9 @@
               <td class="px-4 py-3">
                 emisar redirects the member to your identity provider to sign in, and matches
                 the returning identity by the provider's stable subject, never by email. The
-                session may also open another workspace connected to the same trusted provider
-                when that workspace independently recognizes the identity and its sign-in
-                rules allow access. Eligible workspaces are recorded at sign-in. The switcher
+                session may also open another workspace where the member signs in with the same
+                identity-provider account (the same issuer and subject) when that workspace's
+                sign-in rules allow access. Eligible workspaces are recorded at sign-in. The switcher
                 does not add access merely because a membership or identity link was added later.
               </td>
               <td class="px-4 py-3">
@@ -98,7 +98,8 @@
             requires eligible SSO proof for this workspace. A browser without that proof must
             complete SSO step-up before continuing. Personal proof keeps its original expiry.
             The fresh SSO proof also refreshes this browser's access to your other workspaces
-            that use the same issuer. Access to the rest keeps its original expiry.
+            where you sign in with the same identity-provider account (the same issuer and
+            subject). Access to the rest keeps its original expiry.
           </span>
         </li>
       </ul>

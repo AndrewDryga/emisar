@@ -275,10 +275,11 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Once required, a browser needs eligible SSO proof for this workspace. Without it,
         the member must complete SSO step-up before continuing. A member who was removed and
-        later invited back accepts the emailed invitation, then completes the same step-up,
+        later invited back at the same address accepts the emailed invitation, then completes the same step-up,
         which moves their existing SSO identity to the new membership. Personal proof keeps its
-        original expiry. The fresh SSO proof also covers the member's other workspaces that
-        use the same issuer. Access to the rest keeps its original expiry.
+        original expiry. The fresh SSO proof also covers the member's other workspaces where
+        they sign in with the same identity-provider account (the same issuer and subject).
+        Access to the rest keeps its original expiry.
         This option
         cannot be enabled with no active SSO connection, and emisar refuses to disable or
         delete the last active connection while the requirement remains on. Turn off Require
@@ -321,7 +322,10 @@
         still waiting on it. Either way, its existing sign-in proof for this workspace is
         removed. Other sign-in proof and access to other workspaces remain available, and
         users and audit history are kept. Re-enabling the connection does not restore retired
-        proof; members must sign in again if no other valid proof remains.
+        proof; members must sign in again if no other valid proof remains. A member without a
+        personal login that is left with no other way to sign in also loses its API keys, the
+        agent connections built on them, and its approved device access; re-enabling does not
+        bring them back.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An account can have several provider types, but only one enabled connection of each type.
