@@ -162,6 +162,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-mix-
 
+      # The key follows the lockfile, so the restored _build can hold the
+      # umbrella apps compiled at any earlier commit. Elixir's type checker then
+      # reads a module the change left untouched with its stale inferred types
+      # and can reject fresh code (a live clause reported as never used). Keep
+      # the dependency builds; compile the project itself from scratch.
+      - name: Drop cached project builds
+        run: rm -rf _build/test/lib/emisar _build/test/lib/emisar_web
+
       - name: Install Hex and Rebar
         env:
           HEX_VERSION: "2.5.1"

@@ -44,7 +44,7 @@ func (d *driver) roleOf(externalID string) string {
 	    SSO.UserIdentity.Query.not_deleted()
 	    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id("` + d.providerID + `", "` + externalID + `")
 	    |> Repo.peek()
-	  case identity && Accounts.peek_sync_membership(identity.account_id, identity.user_id) do
+	  case identity && Accounts.peek_sync_membership_by_id(identity.account_id, identity.membership_id) do
 	    nil -> IO.puts("none")
 	    membership -> IO.puts(to_string(membership.role))
 	  end`)
@@ -60,7 +60,7 @@ func (d *driver) runnerAccessModeOf(externalID string) string {
 	    SSO.UserIdentity.Query.not_deleted()
 	    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id("` + d.providerID + `", "` + externalID + `")
 	    |> Repo.peek()
-	  case identity && Accounts.peek_sync_membership(identity.account_id, identity.user_id) do
+	  case identity && Accounts.peek_sync_membership_by_id(identity.account_id, identity.membership_id) do
 	    nil -> IO.puts("none")
 	    membership -> IO.puts(to_string(membership.runner_access_mode))
 	  end`)
@@ -399,7 +399,13 @@ func (d *driver) testRoleMapping() {
 	    |> Accounts.Membership.Query.with_preloaded_user()
 	    |> Accounts.Membership.Query.oldest()
 	    |> Repo.peek()
-	  subject = Auth.Subject.for_user(membership.user, membership.account, membership)
+	  # A trusted RPC has no browser session to prove, so it acts as the
+	  # exact-account owner subject support uses, with no actor.
+	  subject = %Auth.Subject{
+	    account: membership.account,
+	    role: :owner,
+	    permissions: Auth.Permissions.for_role(:owner)
+	  }
 	  {:ok, _} =
 	    SSO.create_group_mapping(
 	      provider,
@@ -638,9 +644,10 @@ func (d *driver) testOffboardingEndsAccess() {
 		    SSO.UserIdentity.Query.not_deleted()
 		    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id("` + d.providerID + `", "` + d.aliceKCID + `")
 		    |> Repo.peek()
+		  # A directory-created member has no personal login; its sessions are
+		  # the grants that reach its seat.
 		  count =
-		    Auth.UserToken.Query.by_user_id(identity.user_id)
-		    |> Auth.UserToken.Query.by_context("session")
+		    Auth.MemberGrant.Query.by_membership(identity.account_id, identity.membership_id)
 		    |> Repo.all()
 		    |> length()
 		  IO.puts(to_string(count))`)
@@ -674,7 +681,7 @@ func (d *driver) testOffboardingEndsAccess() {
 	    SSO.UserIdentity.Query.not_deleted()
 	    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id("` + d.providerID + `", "` + d.aliceKCID + `")
 	    |> Repo.peek()
-	  membership = Accounts.peek_sync_membership(identity.account_id, identity.user_id)
+	  membership = Accounts.peek_sync_membership_by_id(identity.account_id, identity.membership_id)
 	  IO.puts(to_string(not is_nil(membership.disabled_at)))`)
 	if suspended != "true" {
 		fail("the member should be suspended after a deprovision, got %q", suspended)
