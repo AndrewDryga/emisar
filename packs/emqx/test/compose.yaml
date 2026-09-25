@@ -14,7 +14,15 @@ services:
       - ${EMISAR_ROOT}/packs/emqx/test/fixtures/api-key-bootstrap.conf:/opt/emqx/etc/packtest-api-key.conf:ro
       - ${EMISAR_ROOT}/packs/emqx/test/fixtures/mqtt-users.csv:/opt/emqx/etc/packtest-mqtt-users.csv:ro
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18083/api/v5/status"]
+      # The status endpoint answers before boot imports the MQTT users, so a
+      # subscriber started on it can be refused; wait for the helper's login.
+      test:
+        - CMD
+        - curl
+        - -fsS
+        - -u
+        - packtest-canary-emqx-key-3b7d:packtest-canary-emqx-secret-9e1f
+        - http://127.0.0.1:18083/api/v5/authentication/password_based:built_in_database/users/packtest-sensor
       interval: 5s
       start_period: 60s
       start_interval: 1s
