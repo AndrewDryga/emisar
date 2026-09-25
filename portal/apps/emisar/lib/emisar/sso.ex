@@ -625,8 +625,12 @@ defmodule Emisar.SSO do
         _ -> {:error, :session_step_up_invalid}
       end
     end)
+    # The person just proved the identity, so a seat they gain elsewhere must not
+    # retire it as an admin approval.
     |> Multi.update(:moved_identity, fn changes ->
-      UserIdentity.Changeset.bind_membership(changes.locked_identity, changes.current_seat)
+      changes.locked_identity
+      |> UserIdentity.Changeset.mark_user_proved()
+      |> UserIdentity.Changeset.bind_membership(changes.current_seat)
     end)
     |> Multi.insert(:identity_audit, fn changes ->
       Audit.Events.sso_identity_linked(subject, changes.current_seat, changes.locked_provider)
@@ -2978,7 +2982,7 @@ defmodule Emisar.SSO do
   """
   def record_member_link_proof(repo, %UserIdentity{} = identity) do
     identity
-    |> UserIdentity.Changeset.verify_by_member_link()
+    |> UserIdentity.Changeset.mark_user_proved()
     |> repo.update()
   end
 

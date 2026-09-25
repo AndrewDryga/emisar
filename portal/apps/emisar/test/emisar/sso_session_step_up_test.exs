@@ -336,8 +336,17 @@ defmodule Emisar.SSOSessionStepUpTest do
       stash = begin_step_up(context, browser)
 
       assert {:ok, _result} = complete(context, browser, stash)
-      assert Repo.reload!(identity).membership_id == replacement.id
-      refute Repo.reload!(identity).membership_id == former.id
+      assert %{membership_id: moved_to, created_by: :user} = Repo.reload!(identity)
+      assert moved_to == replacement.id
+      refute moved_to == former.id
+
+      # The person proved it, so a seat gained elsewhere does not retire it.
+      assert {:ok, %{count: 0}} =
+               SSO.retire_admin_approved_identities(
+                 user.id,
+                 [account.id, Ecto.UUID.generate()],
+                 Repo
+               )
     end
 
     test "a removed member without a login at another address is not offered",
@@ -760,7 +769,9 @@ defmodule Emisar.SSOSessionStepUpTest do
       Fixtures.SSO.create_user_identity(
         account_id: account.id,
         provider_id: provider.id,
-        membership: former
+        membership: former,
+        created_by: :admin,
+        provisioned_via: :manual
       )
 
     owner =
