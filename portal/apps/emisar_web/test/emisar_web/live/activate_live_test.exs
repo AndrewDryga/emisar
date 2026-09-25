@@ -100,6 +100,10 @@ defmodule EmisarWeb.ActivateLiveTest do
       assert approved =~ "Close this tab"
       assert approved =~ ~p"/app/#{account}/agents"
 
+      # The hook reveals the note only after the browser refuses the close.
+      assert has_element?(lv, ~s|#activate-close[data-note-id="activate-close-note"]|)
+      assert has_element?(lv, ~s|#activate-close-note[class~="hidden"]|, "close the tab yourself")
+
       assert {:ok, %{client_keys: client_keys}} = ApiKeys.claim_device_grant(device_code)
       assert Map.keys(client_keys) == ["codex"]
 

@@ -217,9 +217,11 @@ defmodule EmisarWeb.ActivateLive do
                 Go to Agents
               </.button>
             </div>
-            <p id="activate-close-note" class="mt-3 hidden text-center text-xs text-zinc-400">
+            <%!-- Revealed by the CloseTab hook when the browser refuses the
+                 close: it is the operator's next step, so it wears the callout. --%>
+            <.callout id="activate-close-note" tone={:amber} class="mt-5 hidden">
               Your browser blocked that — close the tab yourself.
-            </p>
+            </.callout>
           </div>
         <% @decision == :denied -> %>
           <div class="px-6 py-5">
