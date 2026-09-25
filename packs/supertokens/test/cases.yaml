@@ -1,0 +1,477 @@
+services: [supertokens, postgres]
+versions:
+  - version: 12.2.0
+    digest: "@sha256:9c5254f1daca6cef8868f2bd2af50808ee5790e5f414c54e4186ab2a6ae676b5"
+    default: true
+  - version: 11.4.7
+    digest: "@sha256:7a71606ee6ff6a1173f13e4dc1ee27bd0169c09a74515149a9e0ac82994cfac7"
+secret_env: [SUPERTOKENS_API_KEY]
+env:
+  SUPERTOKENS_API_KEY: packtest-canary-supertokens-4f2a9c1e
+  SUPERTOKENS_URL: "http://supertokens:3567"
+defaults:
+  expect:
+    stdout_not_empty: true
+cases:
+  - action: supertokens.hello
+    expect:
+      stdout_contains: [Hello]
+  - name: supertokens.hello-without-key
+    action: supertokens.hello
+    unset_env: [SUPERTOKENS_API_KEY]
+    expect:
+      stdout_contains: [Hello]
+
+  - action: supertokens.api_version
+    versions: ["12.2.0"]
+    expect:
+      json:
+        /latest: "5.6"
+        /versions/0: "2.7"
+  - name: supertokens.api_version-core-11
+    action: supertokens.api_version
+    versions: ["11.4.7"]
+    expect:
+      json:
+        /latest: "5.4"
+  - name: supertokens.api_version-invalid-api-key
+    action: supertokens.api_version
+    env:
+      SUPERTOKENS_API_KEY: packtest-canary-supertokens-invalid-7c21
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["curl: (22)"]
+      stdout_contains: [Invalid API key]
+
+  # The core fills its per-minute arrays at each minute rollover.
+  - action: supertokens.request_stats
+    arrange:
+      - argv: [/bin/sh, -c, 'sh /packs/supertokens/test/fixtures/core.sh call GET requests/stats | jq -e "[.averageRequestsPerSecond[] | select(. >= 0)] | length > 0"']
+        retry_for: 90s
+        retry_every: 2s
+    expect:
+      stdout_contains: ['"last_1m":{"avg_rps":', '"last_24h":{"avg_rps":']
+      stdout_not_contains: ['"minutes_with_data":0', '"last_24h":{"avg_rps":null']
+
+  - action: supertokens.usage_stats
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      stdout_contains: ['"features":[]']
+      json:
+        /active_last_1d: 3
+        /active_last_30d: 3
+
+  # The raw settings carry the database password and connection URI.
+  - action: supertokens.config
+    expect:
+      stdout_contains:
+        - '{"name":"access_token_validity","value":3600}'
+        - '{"name":"password_hashing_alg","value":"BCRYPT"}'
+        - '{"name":"postgresql_host","value":"postgres"}'
+        - '"withheld":['
+        - '"postgresql_password"'
+        - '"postgresql_connection_uri"'
+      stdout_not_contains: [packtest-canary-supertokens-pg-8e3b, "postgresql://", REDACTED]
+  - name: supertokens.config-migration-mode
+    action: supertokens.config
+    versions: ["12.2.0"]
+    expect:
+      stdout_contains: ['{"name":"migration_mode","value":"LEGACY"}']
+
+  # The raw tenant list returns each provider's client secret.
+  - action: supertokens.tenants
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      stdout_not_contains: [packtest-canary-supertokens-google-secret-5d2e, clientSecret]
+      json:
+        /tenants/0/tenant_id: public
+        /tenants/0/third_party_providers/0/third_party_id: google
+        /tenants/0/third_party_providers/0/clients/0/client_id: packtest-google-client
+        /tenants/0/third_party_providers/0/clients/0/confidential: true
+
+  - action: supertokens.migration_status
+    versions: ["12.2.0"]
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      json:
+        /connection_uri_domains/0/mode: LEGACY
+        /connection_uri_domains/0/pending_users: 3
+  - name: supertokens.migration_status-core-11
+    action: supertokens.migration_status
+    versions: ["11.4.7"]
+    expect:
+      status: failure
+      exit: [22]
+      stdout_contains: [Not found]
+
+  - action: supertokens.user_count
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      json:
+        /count: 3
+  - name: supertokens.user_count-login-method
+    action: supertokens.user_count
+    args: {login_method: thirdparty}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      json:
+        /count: 1
+
+  - action: supertokens.active_users
+    args: {window_minutes: 60}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      json:
+        /count: 3
+
+  - action: supertokens.user
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      user_id:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, id, dave@example.org]
+    expect:
+      json:
+        /emails/0: dave@example.org
+        /thirdParty/0/id: google
+        /loginMethods/0/recipeId: thirdparty
+        /loginMethods/0/verified: true
+  - name: supertokens.user-unknown
+    action: supertokens.user
+    args: {user_id: packtest-no-such-user}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: [UNKNOWN_USER_ID_ERROR]
+
+  # The core lower-cases the address before matching.
+  - action: supertokens.find_user
+    args: {email: ALICE@Example.com}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      json:
+        /count: 1
+        /users/0/loginMethods/0/recipeId: emailpassword
+  - name: supertokens.find_user-third-party
+    action: supertokens.find_user
+    args: {third_party_id: google, third_party_user_id: g-4107}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      json:
+        /count: 1
+        /users/0/emails/0: dave@example.org
+  - name: supertokens.find_user-no-match
+    action: supertokens.find_user
+    args: {email: nobody@example.com}
+    expect:
+      json:
+        /count: 0
+  - name: supertokens.find_user-two-lookups
+    action: supertokens.find_user
+    args: {email: alice@example.com, phone: "+15550100"}
+    expect:
+      status: failure
+      exit: [2]
+      stderr_contains: [set exactly one of email, phone]
+
+  - action: supertokens.users
+    args: {order: newest, limit: 2}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      stdout_not_contains: ['"next_page_cursor":null', REDACTED]
+      json:
+        /count: 2
+        /users/0/emails/0: dave@example.org
+  # The cursor is base64 of an id and a timestamp, so it always ends in "=";
+  # the page after it must still arrive.
+  - name: supertokens.users-next-page
+    action: supertokens.users
+    args: {order: newest, limit: 2}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, -c, 'sh /packs/supertokens/test/fixtures/core.sh call GET "users?limit=2&timeJoinedOrder=DESC" | jq -er .nextPaginationToken']
+    expect:
+      stdout_contains: ['"next_page_cursor":null']
+      json:
+        /count: 1
+        /users/0/emails/0: alice@example.com
+  # An email search matches a domain as well as an address prefix. The search
+  # term is a sensitive argument, so the runner masks it wherever it recurs.
+  - name: supertokens.users-email-search
+    action: supertokens.users
+    args: {email_search: example.com, order: oldest}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      stdout_not_contains: [example.com, dave@]
+      json:
+        /count: 2
+        /users/0/emails/0: "alice@[REDACTED]"
+        /users/1/emails/0: "bob@[REDACTED]"
+  - name: supertokens.users-provider
+    action: supertokens.users
+    args: {provider: google}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      json:
+        /count: 1
+        /users/0/emails/0: dave@example.org
+  - name: supertokens.users-invalid-cursor
+    action: supertokens.users
+    args: {page_cursor: bm90LWEtY3Vyc29y}
+    expect:
+      status: failure
+      exit: [22]
+      stdout_contains: [invalid pagination token]
+
+  # The session data and the rest of the token payload are app-defined; only
+  # their key names and the SuperTokens claims leave the host.
+  - action: supertokens.user_sessions
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      user_id:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, id, alice@example.com]
+    expect:
+      stdout_contains: ['"payload_keys":["plan","st-role"]', '"session_data_keys":["gh_token"]']
+      stdout_not_contains: [packtest-canary-supertokens-sessdb-9f3a, '"pro"']
+      json:
+        /session_count: 1
+        /sessions/0/tenant_id: public
+        /sessions/0/claims/st-role/v/0: admin
+  - name: supertokens.user_sessions-unknown-user
+    action: supertokens.user_sessions
+    args: {user_id: packtest-no-such-user}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: [UNKNOWN_USER_ID_ERROR]
+
+  - action: supertokens.roles
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      json:
+        /count: 2
+        /truncated: false
+        /roles/0/role: admin
+        /roles/0/permissions/0: users:read
+        /roles/0/permissions/1: users:write
+        /roles/1/role: support
+        /roles/1/permissions/0: users:read
+
+  - action: supertokens.user_roles
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      user_id:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, id, alice@example.com]
+    expect:
+      stdout_contains: ['"roles":["admin"]', '"permissions":["users:read","users:write"]']
+  - name: supertokens.user_roles-unknown-user
+    action: supertokens.user_roles
+    args: {user_id: packtest-no-such-user}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: [UNKNOWN_USER_ID_ERROR]
+
+  - action: supertokens.role_users
+    args: {role: admin}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      json:
+        /role: admin
+        /count: 1
+        /truncated: false
+  - name: supertokens.role_users-truncated
+    action: supertokens.role_users
+    args: {role: support, limit: 1}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+      - argv: [/bin/sh, -c, 'for email in alice@example.com bob@example.com; do sh /packs/supertokens/test/fixtures/core.sh call PUT recipe/user/role "{\"userId\":\"$(sh /packs/supertokens/test/fixtures/core.sh id $email)\",\"role\":\"support\"}" >/dev/null; done']
+    expect:
+      json:
+        /count: 2
+        /truncated: true
+  - name: supertokens.role_users-unknown-role
+    action: supertokens.role_users
+    args: {role: packtest-no-such-role}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: [UNKNOWN_ROLE_ERROR]
+
+  - action: supertokens.dashboard_users
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      stdout_not_contains: [packtest-canary-supertokens-dash-6a1f, password]
+      json:
+        /count: 1
+        /users/0/email: ops@example.com
+
+  - action: supertokens.signing_keys
+    expect:
+      stdout_contains: ['"alg":"RS256"', '"dynamic":true', '"dynamic":false']
+
+  # The core returns no code or magic link here; pre-auth session ids are dropped.
+  - action: supertokens.passwordless_codes
+    args: {email: carol@example.com}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      stdout_not_contains: [preAuthSessionId, codeId, linkCode]
+      json:
+        /device_count: 1
+        /devices/0/failed_code_input_attempts: 0
+
+  - action: supertokens.revoke_user_sessions
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, session, bob@example.com]
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, session, bob@example.com]
+    resolve_args:
+      user_id:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, id, bob@example.com]
+    expect:
+      json:
+        /revoked_count: 2
+    probes:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, sessions, bob@example.com]
+        expect:
+          stdout_contains: ["[]"]
+      # Alice's session is untouched.
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, sessions, alice@example.com]
+        expect:
+          stdout_contains: ['["']
+  # The core answers OK with nothing revoked for an unknown user.
+  - name: supertokens.revoke_user_sessions-unknown-user
+    action: supertokens.revoke_user_sessions
+    args: {user_id: packtest-no-such-user}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: [UNKNOWN_USER_ID_ERROR]
+
+  - action: supertokens.revoke_session
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      session_handle:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, session, bob@example.com]
+    expect:
+      stdout_contains: ['"revoked_handles":["']
+    probes:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, sessions, bob@example.com]
+        expect:
+          stdout_contains: ["[]"]
+  - name: supertokens.revoke_session-unknown-handle
+    action: supertokens.revoke_session
+    args: {session_handle: 00000000-0000-4000-8000-000000000000}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [already revoked or expired]
+
+  - action: supertokens.add_user_role
+    args: {role: support}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      user_id:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, id, bob@example.com]
+    expect:
+      json:
+        /role: support
+        /already_had_role: false
+    probes:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, roles, bob@example.com]
+        expect:
+          stdout_contains: ['["support"]']
+  # The core would store a grant for an id that matches no user.
+  - name: supertokens.add_user_role-unknown-user
+    action: supertokens.add_user_role
+    args: {user_id: packtest-no-such-user, role: support}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: [UNKNOWN_USER_ID_ERROR]
+    probes:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, call, GET, 'recipe/role/users?role=support']
+        expect:
+          stdout_contains: ['"users":[]']
+  - name: supertokens.add_user_role-unknown-role
+    action: supertokens.add_user_role
+    args: {role: packtest-no-such-role}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      user_id:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, id, bob@example.com]
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: [UNKNOWN_ROLE_ERROR]
+
+  - action: supertokens.remove_user_role
+    args: {role: admin}
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      user_id:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, id, alice@example.com]
+    expect:
+      json:
+        /had_role: true
+    probes:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, roles, alice@example.com]
+        expect:
+          stdout_contains: ["[]"]
+
+  # Alice holds a role and a session; deleting her removes both.
+  - action: supertokens.delete_user
+    arrange:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, seed]
+    resolve_args:
+      user_id:
+        argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, id, alice@example.com]
+    expect:
+      stdout_not_contains: [alice@example.com]
+      json:
+        /deleted: true
+        /login_methods_removed: 1
+    probes:
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, call, GET, 'users/by-accountinfo?email=alice@example.com&doUnionOfAccountInfo=false']
+        expect:
+          stdout_contains: ['"users":[]']
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, call, GET, 'recipe/role/users?role=admin']
+        expect:
+          stdout_contains: ['"users":[]']
+      - argv: [/bin/sh, /packs/supertokens/test/fixtures/core.sh, call, GET, 'users/count?includeAllTenants=true']
+        expect:
+          stdout_contains: ['"count":2']
+  # The core answers OK for an id it does not know.
+  - name: supertokens.delete_user-unknown
+    action: supertokens.delete_user
+    args: {user_id: packtest-no-such-user}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_contains: [UNKNOWN_USER_ID_ERROR]

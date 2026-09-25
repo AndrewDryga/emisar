@@ -1,0 +1,89 @@
+schema_version: 1
+id: supertokens.users
+title: List users
+kind: script
+risk: medium
+description: >
+  List users newest or oldest first with GET /users, one page at a time.
+  Returns each user's email addresses, phone numbers, login methods and
+  verification state. Filters narrow the list to one login method, one
+  third-party provider, or an email search that matches an address prefix or
+  a domain, so example.com lists everyone at that domain. Pass
+  next_page_cursor back as page_cursor for the next page.
+side_effects:
+  - One read-only HTTP GET to the core's /users endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - recent signups
+  - spam signups
+  - users at a domain
+  - list users
+args:
+  - name: order
+    type: string
+    required: false
+    default: newest
+    description: newest lists the most recent sign-ups first; oldest the earliest.
+    validation:
+      allowed: [newest, oldest]
+  - name: limit
+    type: integer
+    required: false
+    default: 50
+    description: Users per page, up to the core's page maximum of 500.
+    validation: {min: 1, max: 500}
+  - name: login_method
+    type: string
+    required: false
+    default: all
+    description: List only users with this login method, or all of them.
+    validation:
+      allowed: [all, emailpassword, thirdparty, passwordless, webauthn]
+  - name: provider
+    type: string
+    required: false
+    default: ""
+    description: List only users who sign in with this third-party provider id, such as google.
+    validation:
+      pattern: "^([A-Za-z0-9._-]{1,28})?$"
+      max_length: 28
+  - name: email_search
+    type: string
+    required: false
+    default: ""
+    sensitive: true
+    description: An email address prefix or a domain, such as ali or example.com.
+    validation:
+      pattern: "^[^\\s;\"\\\\]{0,320}$"
+      max_length: 320
+  - name: page_cursor
+    type: string
+    required: false
+    default: ""
+    description: next_page_cursor from the previous page.
+    validation:
+      pattern: "^([A-Za-z0-9+/=]{1,256})?$"
+      max_length: 256
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - users
+    - "{{ args.order }}"
+    - "{{ args.limit }}"
+    - "{{ args.login_method }}"
+    - "{{ args.provider }}"
+    - "{{ args.page_cursor }}"
+  env:
+    ARG_EMAIL_SEARCH: "{{ args.email_search }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Newest sign-ups
+    args: {order: newest, limit: 20}
+  - title: Everyone at one domain
+    args: {email_search: example.com}

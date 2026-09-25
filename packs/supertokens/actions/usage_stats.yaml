@@ -1,0 +1,33 @@
+schema_version: 1
+id: supertokens.usage_stats
+title: Show licensed features and active users
+kind: script
+risk: low
+description: >
+  Show which paid features the core's license enables and how many users were
+  active in the last 1, 7 and 30 days, from GET /ee/featureflag.
+  active_by_days[i] counts users active in the last i+1 days. Licensed
+  features add counts per feature, such as tenants and their user counts. A
+  core with the in-memory store reports every feature as enabled.
+side_effects:
+  - One read-only HTTP GET to the core's /ee/featureflag endpoint, which runs one count query per day of the 31-day window.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - is the license active
+  - daily active users
+  - monthly active users
+  - paid feature not enabled
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - usage-stats
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Features and active users
+    args: {}

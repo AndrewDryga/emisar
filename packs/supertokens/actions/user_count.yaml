@@ -1,0 +1,41 @@
+schema_version: 1
+id: supertokens.user_count
+title: Count SuperTokens users
+kind: script
+risk: low
+description: >
+  Count users across every tenant with GET /users/count, optionally only
+  those with one login method. The core counts exactly; a pending
+  passwordless code is not a user until it is consumed.
+side_effects:
+  - One read-only HTTP GET to the core's /users/count endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - how many users
+  - total users
+  - users per login method
+args:
+  - name: login_method
+    type: string
+    required: false
+    default: all
+    description: Count only users with this login method, or all of them.
+    validation:
+      allowed: [all, emailpassword, thirdparty, passwordless, webauthn]
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - user-count
+    - "{{ args.login_method }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Count users
+    args: {}
+  - title: Count social sign-ins
+    args: {login_method: thirdparty}

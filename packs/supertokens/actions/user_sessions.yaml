@@ -1,0 +1,50 @@
+schema_version: 1
+id: supertokens.user_sessions
+title: List a user's sessions
+kind: script
+risk: low
+description: >
+  List a user's live sessions across every tenant and linked account with GET
+  /recipe/session/user, then GET /recipe/session for each: the session
+  handle, tenant, when it was created and when its refresh token expires, and
+  the values of the SuperTokens role, permission, email-verification and MFA
+  claims in its access token. Only the key names of the rest of the
+  access-token payload and of the session data leave the host, since the app
+  defines them. Fails with UNKNOWN_USER_ID_ERROR for an unknown user.
+side_effects:
+  - One HTTP GET for the session list and one per session read, up to limit.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - is the user signed in
+  - how many devices
+  - role not updated in session
+args:
+  - name: user_id
+    type: string
+    required: true
+    description: A SuperTokens user id or a mapped external user id.
+    validation:
+      pattern: "^[!#-\\[\\]-~]{1,128}$"
+      max_length: 128
+  - name: limit
+    type: integer
+    required: false
+    default: 20
+    description: How many sessions to read in detail; session_count still counts them all.
+    validation: {min: 1, max: 100}
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - user-sessions
+    - "{{ args.user_id }}"
+    - "{{ args.limit }}"
+  timeout: 90s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: A user's sessions
+    args: {user_id: 3f2c1a9e-7b1d-4c2e-9a4f-6d8e0b5c7a21}

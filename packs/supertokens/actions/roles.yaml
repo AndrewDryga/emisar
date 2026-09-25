@@ -1,0 +1,31 @@
+schema_version: 1
+id: supertokens.roles
+title: List roles and their permissions
+kind: script
+risk: low
+description: >
+  List every role the app defined in the SuperTokens user-roles recipe with
+  its permissions, from GET /recipe/roles and GET /recipe/role/permissions
+  for each role. Permissions are read for at most 200 roles; beyond that
+  truncated is true.
+side_effects:
+  - One HTTP GET for the role list and one per role, up to 200.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - which permissions does a role have
+  - rbac setup
+  - access control roles
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - roles
+  timeout: 90s
+output:
+  parser: json
+  max_stdout_bytes: 262144
+  max_stderr_bytes: 8192
+examples:
+  - title: Roles and permissions
+    args: {}

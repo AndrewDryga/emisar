@@ -1,0 +1,45 @@
+schema_version: 1
+id: supertokens.revoke_user_sessions
+title: Sign a user out everywhere
+kind: script
+risk: high
+description: >
+  Revoke every session of a user across all tenants and linked accounts with
+  POST /recipe/session/remove, after looking the user up so an unknown id
+  fails instead of revoking nothing. The core refuses the user's refresh
+  tokens at once, but an access token it already issued stays valid until it
+  expires (access_token_validity, one hour by default) unless the backend
+  checks sessions against the database. Revoking counts as activity for
+  supertokens.active_users. The core has no suspend API; SuperTokens'
+  documented ban is a role the app denies, granted with
+  supertokens.add_user_role, plus this revocation.
+side_effects:
+  - Signs the user out of every device; each app session must sign in again once its access token expires.
+  - Deletes the user's sessions from the core; they cannot be restored.
+search_terms:
+  - force logout
+  - compromised account
+  - sign user out of all devices
+args:
+  - name: user_id
+    type: string
+    required: true
+    description: A SuperTokens user id or a mapped external user id.
+    validation:
+      pattern: "^[!#-\\[\\]-~]{1,128}$"
+      max_length: 128
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - revoke-user-sessions
+    - "{{ args.user_id }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Sign a user out everywhere
+    args: {user_id: 3f2c1a9e-7b1d-4c2e-9a4f-6d8e0b5c7a21}

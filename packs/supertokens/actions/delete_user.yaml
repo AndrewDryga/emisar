@@ -1,0 +1,50 @@
+schema_version: 1
+id: supertokens.delete_user
+title: Delete a user
+kind: script
+risk: critical
+description: >
+  Delete a user with POST /user/remove, after looking the user up so an
+  unknown id fails instead of reporting success, then read the user back.
+  Irreversible: removes the user's login methods, sessions, roles, metadata,
+  email-verification state, TOTP devices and external id mapping. The app's
+  own data about the user is untouched. With all_linked_accounts false, only
+  this login method goes and a linked account's other login methods remain,
+  so deleted reports false while any remain. The output carries no email
+  addresses.
+side_effects:
+  - Permanently deletes the user from the core; the user can no longer sign in and cannot be restored.
+  - Signs the user out of every device.
+search_terms:
+  - delete account
+  - gdpr erasure
+  - remove spam user
+args:
+  - name: user_id
+    type: string
+    required: true
+    description: A SuperTokens user id or a mapped external user id.
+    validation:
+      pattern: "^[!#-\\[\\]-~]{1,128}$"
+      max_length: 128
+  - name: all_linked_accounts
+    type: boolean
+    required: false
+    default: false
+    description: Also delete every login method linked to this user.
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - delete-user
+    - "{{ args.user_id }}"
+    - "{{ args.all_linked_accounts }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Delete one user
+    args: {user_id: 3f2c1a9e-7b1d-4c2e-9a4f-6d8e0b5c7a21}

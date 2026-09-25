@@ -1,0 +1,37 @@
+schema_version: 1
+id: supertokens.config
+title: Show core settings
+kind: script
+risk: low
+description: >
+  Show the core's effective settings from GET
+  /recipe/dashboard/tenant/core-config (core 9.1 or later): token lifetimes,
+  password hashing, IP allow and deny rules, and the database host, port,
+  name and pool. Token validity is in seconds, refresh_token_validity in
+  minutes, and the other lifetimes in milliseconds. Only a fixed list of
+  settings leaves the host with values, as name and value rows; every other
+  setting, including the database user, password and connection URI, is
+  listed by name under withheld. non_default names every setting that differs
+  from the core's default.
+side_effects:
+  - One read-only HTTP GET to the core's core-config endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - users logged out every hour
+  - session expires too soon
+  - which password hashing
+  - ip allowlist blocking
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - config
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Core settings
+    args: {}

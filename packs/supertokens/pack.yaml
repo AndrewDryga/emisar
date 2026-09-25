@@ -1,0 +1,84 @@
+schema_version: 1
+
+id: supertokens
+name: SuperTokens authentication core
+version: 0.1.0
+description: >
+  Diagnostics and user operations for a SuperTokens core over its HTTP API:
+  health, versions, request rates, licensed features, settings, tenants and
+  the 12.x migration; users, sessions, roles and dashboard admins; and
+  signing out, granting or removing a role, and deleting a user. The core API
+  key and searched emails and phone numbers are streamed over curl stdin;
+  client secrets, session data, the database password and other secret
+  settings never leave the host.
+vendor: emisar
+homepage: https://emisar.dev/packs/supertokens
+
+requires:
+  os:
+    - linux
+  binaries:
+    - curl
+    - jq
+
+# `emisar pack suggest`: the core's default HTTP port.
+detect:
+  ports:
+    - 3567
+
+setup:
+  summary: >
+    Every action calls the SuperTokens core HTTP API at `$SUPERTOKENS_URL` via
+    curl on the runner host. The API key is read from `$SUPERTOKENS_API_KEY`
+    and sent as the `api-key` header over curl stdin, so it never appears in
+    the process arguments or the audit log.
+  env:
+    - name: SUPERTOKENS_URL
+      default: http://127.0.0.1:3567
+      description: >
+        Base URL of the core — scheme, host, and port, plus any base_path or
+        /appid-<id> prefix the core serves under. Each action appends its path
+        (e.g. /hello, /users/count).
+      example: http://supertokens-core:3567
+    - name: SUPERTOKENS_API_KEY
+      required: false
+      description: >
+        One of the comma-separated keys in the core's `api_keys` setting
+        (`API_KEYS` in the Docker image); each key is at least 20 characters
+        of `A-Z a-z 0-9 = -`. The core has no read-only or scoped key — any
+        key can delete users — so add a dedicated key for the runner to rotate
+        it on its own; the actions' risk tiers and the account policy are the
+        only gate. Leave it unset only when the core sets no `api_keys`.
+  notes:
+    - "Any of `SUPERTOKENS_URL` / `SUPERTOKENS_API_KEY` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Actions address the app in `SUPERTOKENS_URL` and its `public` tenant. App-level reads such as user counts and user lookups cover every tenant; roles and email lookups are per tenant, and tenants other than `public` need a multitenancy license."
+    - "`delete_user` is critical and so denied by the default policy; an account enables it deliberately, for example for GDPR erasure."
+    - "The core keeps no live session count and reports no release number: `active_users` and `user_sessions` stand in for the first, `api_version` for the second. It keeps no failed-login count for passwords, and its logs go to the container's stdout."
+    - "User metadata is not read: SuperTokens documents storing a provider's OAuth tokens there."
+  verify: supertokens.api_version
+
+actions:
+  - actions/hello.yaml
+  - actions/api_version.yaml
+  - actions/request_stats.yaml
+  - actions/usage_stats.yaml
+  - actions/config.yaml
+  - actions/tenants.yaml
+  - actions/migration_status.yaml
+  - actions/user_count.yaml
+  - actions/active_users.yaml
+  - actions/user.yaml
+  - actions/find_user.yaml
+  - actions/users.yaml
+  - actions/user_sessions.yaml
+  - actions/roles.yaml
+  - actions/user_roles.yaml
+  - actions/role_users.yaml
+  - actions/dashboard_users.yaml
+  - actions/signing_keys.yaml
+  - actions/passwordless_codes.yaml
+  - actions/revoke_user_sessions.yaml
+  - actions/revoke_session.yaml
+  - actions/add_user_role.yaml
+  - actions/remove_user_role.yaml
+  - actions/delete_user.yaml

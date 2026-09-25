@@ -1,0 +1,32 @@
+schema_version: 1
+id: supertokens.migration_status
+title: Show the 12.x schema migration status
+kind: script
+risk: low
+description: >
+  Show the schema migration mode and the users still waiting for the backfill
+  for each connection URI domain, from GET /migration/backfill/progress (core
+  12.0 or later). Core 12 reworked its tables, and a PostgreSQL deployment
+  walks from LEGACY to MIGRATED; a fresh one starts in LEGACY. Core 11.x
+  answers 404 Not found.
+side_effects:
+  - One read-only HTTP GET to the core's migration progress endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - migration stuck
+  - upgrade to core 12
+  - pending users backfill
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - migration-status
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Migration status
+    args: {}

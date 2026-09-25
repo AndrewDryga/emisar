@@ -1,0 +1,32 @@
+schema_version: 1
+id: supertokens.signing_keys
+title: List access-token signing keys
+kind: script
+risk: low
+description: >
+  List the public keys the core signs access tokens with, from GET
+  /.well-known/jwks.json: each key id, algorithm and type, whether it is a
+  dynamic key, and when a dynamic key was created. Dynamic keys rotate on
+  access_token_dynamic_signing_key_update_interval (168 hours by default), so
+  this explains "kid not found" token verification failures.
+side_effects:
+  - One read-only HTTP GET to the core's JWKS endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - kid not found
+  - token verification failed
+  - jwt signature invalid
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - signing-keys
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 16384
+  max_stderr_bytes: 8192
+examples:
+  - title: Signing keys
+    args: {}

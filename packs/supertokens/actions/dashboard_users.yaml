@@ -1,0 +1,30 @@
+schema_version: 1
+id: supertokens.dashboard_users
+title: List dashboard admins
+kind: script
+risk: low
+description: >
+  List the people who can sign in to the SuperTokens user-management
+  dashboard, with GET /recipe/dashboard/users: each one's id, email and join
+  time. The core never returns their password hashes. Without a dashboard
+  license the core allows at most 3 of them.
+side_effects:
+  - One read-only HTTP GET to the core's /recipe/dashboard/users endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - who can access the auth dashboard
+  - staff access review
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - dashboard-users
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Dashboard admins
+    args: {}

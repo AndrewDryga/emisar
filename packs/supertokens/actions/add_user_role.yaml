@@ -1,0 +1,50 @@
+schema_version: 1
+id: supertokens.add_user_role
+title: Grant a role to a user
+kind: script
+risk: high
+description: >
+  Grant an existing role to a user in the public tenant with PUT
+  /recipe/user/role, after looking the user up; the core would otherwise
+  store a grant for an id that matches no user. Fails with
+  UNKNOWN_USER_ID_ERROR or UNKNOWN_ROLE_ERROR; roles are defined by the app.
+  already_had_role true means nothing changed. Live sessions see the role
+  when their role claim refreshes; supertokens.revoke_user_sessions applies
+  it at once. supertokens.remove_user_role reverses it.
+side_effects:
+  - Gives the user every permission of the role in the app.
+search_terms:
+  - make user admin
+  - grant access
+  - ban user
+args:
+  - name: user_id
+    type: string
+    required: true
+    description: A SuperTokens user id or a mapped external user id.
+    validation:
+      pattern: "^[!#-\\[\\]-~]{1,128}$"
+      max_length: 128
+  - name: role
+    type: string
+    required: true
+    description: The role name, as supertokens.roles lists it.
+    validation:
+      pattern: "^[!#-\\[\\]-~]([ !#-\\[\\]-~]{0,253}[!#-\\[\\]-~])?$"
+      max_length: 255
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - add-user-role
+    - "{{ args.user_id }}"
+    - "{{ args.role }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Grant support access
+    args: {user_id: 3f2c1a9e-7b1d-4c2e-9a4f-6d8e0b5c7a21, role: support}

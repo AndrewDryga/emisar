@@ -1,0 +1,31 @@
+schema_version: 1
+id: supertokens.request_stats
+title: Show core request rates
+kind: script
+risk: low
+description: >
+  Show the average and peak requests per second this SuperTokens core process
+  served over the last minute, 5 minutes, hour and 24 hours, from GET
+  /requests/stats. The core keeps these in memory per process, so they reset
+  on restart, and in a cluster each core reports only itself.
+side_effects:
+  - One read-only HTTP GET to the core's /requests/stats endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - auth slow
+  - login traffic spike
+  - core overloaded
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - request-stats
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Request rates
+    args: {}

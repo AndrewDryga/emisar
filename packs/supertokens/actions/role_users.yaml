@@ -1,0 +1,47 @@
+schema_version: 1
+id: supertokens.role_users
+title: List the users who hold a role
+kind: script
+risk: low
+description: >
+  List the ids of the users who hold a role in the public tenant with GET
+  /recipe/role/users, with the total count. The core returns every holder, so
+  the list is capped on the host at limit and truncated says when it was
+  cut. Fails with UNKNOWN_ROLE_ERROR when the role does not exist.
+side_effects:
+  - One read-only HTTP GET to the core's /recipe/role/users endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - who has admin
+  - access review
+  - users with a role
+args:
+  - name: role
+    type: string
+    required: true
+    description: The role name, as supertokens.roles lists it.
+    validation:
+      pattern: "^[!#-\\[\\]-~]([ !#-\\[\\]-~]{0,253}[!#-\\[\\]-~])?$"
+      max_length: 255
+  - name: limit
+    type: integer
+    required: false
+    default: 1000
+    description: The most user ids to return; 5000 ids of the longest external form stay under the output cap.
+    validation: {min: 1, max: 5000}
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - role-users
+    - "{{ args.role }}"
+    - "{{ args.limit }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 1048576
+  max_stderr_bytes: 8192
+examples:
+  - title: Who holds admin
+    args: {role: admin}

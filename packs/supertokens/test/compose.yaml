@@ -1,0 +1,34 @@
+services:
+  supertokens:
+    image: supertokens/supertokens-postgresql:${PACKTEST_VERSION:-12.2.0}${PACKTEST_DIGEST-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # PostgreSQL, not the in-memory store: only a PostgreSQL core returns the
+      # database password the config action must withhold, and the in-memory
+      # store enables every licensed feature and reports the migration done.
+      POSTGRESQL_CONNECTION_URI: postgresql://supertokens:packtest-canary-supertokens-pg-8e3b@postgres:5432/supertokens
+      API_KEYS: packtest-canary-supertokens-4f2a9c1e
+      DISABLE_TELEMETRY: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3567/hello"]
+      interval: 5s
+      start_period: 90s
+      start_interval: 1s
+      retries: 30
+
+  # The core's database. It is a helper, not the product under test, so its
+  # version is pinned independently of PACKTEST_VERSION.
+  postgres:
+    image: postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+    environment:
+      POSTGRES_USER: supertokens
+      POSTGRES_PASSWORD: packtest-canary-supertokens-pg-8e3b
+      POSTGRES_DB: supertokens
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "supertokens", "-d", "supertokens"]
+      interval: 5s
+      start_period: 30s
+      start_interval: 1s
+      retries: 30

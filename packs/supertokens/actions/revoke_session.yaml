@@ -1,0 +1,42 @@
+schema_version: 1
+id: supertokens.revoke_session
+title: Sign out one session
+kind: script
+risk: high
+description: >
+  Revoke one session by its handle with POST /recipe/session/remove, the
+  dashboard's per-device sign-out. Fails when no live session has the handle,
+  since the core answers OK for one that is already revoked or expired. The
+  session's refresh token is refused at once; its current access token stays
+  valid until it expires unless the backend checks sessions against the
+  database. supertokens.user_sessions lists the handles.
+side_effects:
+  - Signs out one device or browser; it must sign in again once its access token expires.
+  - Deletes the session from the core; it cannot be restored.
+search_terms:
+  - log out one device
+  - stolen session
+  - revoke session
+args:
+  - name: session_handle
+    type: string
+    required: true
+    description: The session handle, as supertokens.user_sessions lists it.
+    validation:
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(_[a-z0-9-]{1,64})?$"
+      max_length: 101
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - revoke-session
+    - "{{ args.session_handle }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Sign out one device
+    args: {session_handle: 9b0d6c1e-2f4a-4e8b-a1c3-5d7f9e2b4a6c}

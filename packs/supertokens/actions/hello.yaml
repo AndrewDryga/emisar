@@ -1,0 +1,31 @@
+schema_version: 1
+id: supertokens.hello
+title: Check SuperTokens core health
+kind: script
+risk: low
+description: >
+  Check that the SuperTokens core is up and can reach its database with GET
+  /hello. Returns "Hello", or fails with a 500 that names the storage error
+  when the database is unreachable. Needs no API key.
+side_effects:
+  - One read-only HTTP GET to the core's /hello endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - auth down
+  - login broken
+  - sign in failing
+  - auth database unreachable
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - hello
+  timeout: 30s
+output:
+  parser: text
+  max_stdout_bytes: 4096
+  max_stderr_bytes: 8192
+examples:
+  - title: Check core health
+    args: {}

@@ -1,0 +1,43 @@
+schema_version: 1
+id: supertokens.user
+title: Show one user
+kind: script
+risk: medium
+description: >
+  Show one user with GET /user/id. Returns the user's email addresses and
+  phone numbers, each login method with its email-verification state, the
+  tenants the user belongs to, third-party ids, and whether accounts are
+  linked. Accepts a SuperTokens user id or an external id the app mapped to
+  it. Fails with UNKNOWN_USER_ID_ERROR when no such user exists.
+  supertokens.user_roles and supertokens.user_sessions show the user's roles
+  and sessions.
+side_effects:
+  - One read-only HTTP GET to the core's /user/id endpoint.
+  - Read-only — never writes or mutates data.
+search_terms:
+  - user cannot log in
+  - email not verified
+  - which login method
+args:
+  - name: user_id
+    type: string
+    required: true
+    description: A SuperTokens user id or a mapped external user id.
+    validation:
+      pattern: "^[!#-\\[\\]-~]{1,128}$"
+      max_length: 128
+execution:
+  script:
+    path: scripts/supertokens_api.sh
+    interpreter: /bin/sh
+  argv:
+    - user
+    - "{{ args.user_id }}"
+  timeout: 30s
+output:
+  parser: json
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Show a user
+    args: {user_id: 3f2c1a9e-7b1d-4c2e-9a4f-6d8e0b5c7a21}
