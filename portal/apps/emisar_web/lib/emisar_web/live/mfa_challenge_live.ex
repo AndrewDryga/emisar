@@ -32,7 +32,9 @@ defmodule EmisarWeb.MfaChallengeLive do
     end
   end
 
-  def handle_event("verify_totp", %{"otp" => otp}, socket), do: verify(socket, {:totp, otp})
+  # A rejected code leaves empty boxes for the retry, like every other code screen.
+  def handle_event("verify_totp", %{"otp" => otp}, socket),
+    do: socket |> push_event("code:reset", %{id: "mfa-otp"}) |> verify({:totp, otp})
 
   def handle_event("verify_recovery", %{"code" => code}, socket),
     do: verify(socket, {:recovery_code, code})

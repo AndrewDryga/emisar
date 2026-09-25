@@ -923,6 +923,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       lv |> element("#remove-oidc-#{provider.id}") |> render_click()
       assert_received {:email, email}
       assert has_element?(lv, "#profile-oidc-step", "Type Workforce Okta to confirm")
+      assert has_element?(lv, ~s(#profile-oidc-step button[data-copy-text="#{provider.name}"]))
       assert has_element?(lv, "#profile-oidc-step-continue[disabled]", "Remove sign-in method")
 
       for token <- [nil, "Wrong provider"] do

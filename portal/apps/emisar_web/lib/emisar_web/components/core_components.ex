@@ -3856,18 +3856,11 @@ defmodule EmisarWeb.CoreComponents do
             class="mt-5"
           >
             <input type="hidden" name="confirm_dialog" value={@id} />
-            <.label for={"#{@id}-input"} variant={:eyebrow}>
-              Type <span class="font-mono text-zinc-200">{@confirm_token}</span> to confirm
-            </.label>
-            <.input
+            <.typed_confirm_field
               id={"#{@id}-input"}
-              type="text"
-              name="confirm_token"
+              token={@confirm_token}
               value={@typed}
-              class="font-mono"
-              autocomplete="off"
-              phx-debounce="50"
-              data-typed-confirm
+              label_variant={:eyebrow}
             />
           </form>
 
@@ -4033,6 +4026,57 @@ defmodule EmisarWeb.CoreComponents do
   # `close_confirm/2` instead: the submit resets the value, and a push chained
   # after the action would be dropped while that submit is in flight.
   defp hide_confirm_dialog(id), do: %JS{} |> fade_dialog_out(id) |> JS.push("confirm_reset")
+
+  @doc """
+  The type-to-confirm field: a label naming the exact text, a copy control
+  beside it, and the mono input. The text keeps its own case inside an eyebrow
+  label (the comparison is exact), and the clipboard is `copyable_id`'s dim
+  glyph, so an operator pastes a long name instead of retyping it; the
+  deliberate step is still the paste and the Confirm. Rendered by
+  `confirm_dialog` and the OIDC unlink step-up.
+  """
+  attr :id, :string, required: true, doc: "the input's id — the label points at it"
+  attr :name, :string, default: "confirm_token"
+  attr :token, :string, required: true, doc: "the exact text the operator must type"
+  attr :value, :string, required: true, doc: "the live-typed value held by the page"
+  attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
+  attr :rest, :global, include: ~w(required)
+
+  def typed_confirm_field(assigns) do
+    ~H"""
+    <div>
+      <div class="flex items-center gap-1.5">
+        <.label for={@id} variant={@label_variant}>
+          Type <span class="font-mono normal-case tracking-normal text-zinc-200">{@token}</span>
+          to confirm
+        </.label>
+        <%!-- A sibling of the label, not a child: the control's name stays out
+             of the input's accessible name. The copy listener stops the click. --%>
+        <button
+          type="button"
+          data-copy-text={@token}
+          data-copy-label-copied="✓"
+          aria-label={"Copy #{@token}"}
+          title={"Copy #{@token}"}
+          class="shrink-0 rounded-sm p-0.5 text-xs leading-none text-zinc-500 transition hover:text-zinc-200 focus-visible:text-zinc-200"
+        >
+          <.icon name="action.copy" class="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <.input
+        id={@id}
+        type="text"
+        name={@name}
+        value={@value}
+        class="font-mono"
+        autocomplete="off"
+        phx-debounce="50"
+        data-typed-confirm
+        {@rest}
+      />
+    </div>
+    """
+  end
 
   @doc """
   Empty-state panel: a centered icon + headline + body + optional CTA.

@@ -2113,6 +2113,8 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       render_click(lv, "open_key_action", %{"action" => "revoke", "id" => usable_key.id})
       assert has_element?(lv, ~s(##{dialog} input[name="confirm_token"]))
+      # The exact name is one click away from the clipboard.
+      assert has_element?(lv, ~s(##{dialog} button[data-copy-text="usable-bot"]))
       assert has_element?(lv, "##{dialog} button[disabled]", "Revoke key")
     end
 

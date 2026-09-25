@@ -144,14 +144,11 @@ defmodule EmisarWeb.AuthComponents do
             action={@action}
             method="post"
           >
-            <.input
+            <.typed_confirm_field
               :if={@purpose == :unlink}
               id={"#{@id}-confirm-token"}
-              name="confirm_token"
+              token={@step.provider_name}
               value={@typed}
-              type="text"
-              label={"Type #{@step.provider_name} to confirm"}
-              autocomplete="off"
               required
             />
             <p class="text-sm text-zinc-300">

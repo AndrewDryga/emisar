@@ -62,6 +62,8 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
       html = render_hook(lv, "verify_totp", %{"otp" => "000000"})
 
       assert html =~ "didn&#39;t match"
+      # The boxes clear for the retry, like every other code screen.
+      assert_push_event(lv, "code:reset", %{id: "mfa-otp"})
     end
   end
 

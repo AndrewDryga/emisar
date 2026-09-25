@@ -619,7 +619,9 @@ defmodule EmisarWeb.TeamLive do
   end
 
   def handle_event("verify_reset_totp", %{"otp" => otp}, socket) do
-    verify_and_reset_member_mfa(socket, {:totp, otp})
+    socket
+    |> push_event("code:reset", %{id: "member-mfa-reset-otp"})
+    |> verify_and_reset_member_mfa({:totp, otp})
   end
 
   def handle_event("verify_reset_recovery", %{"recovery" => %{"code" => code}}, socket) do
