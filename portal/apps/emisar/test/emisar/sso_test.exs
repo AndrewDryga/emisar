@@ -6058,6 +6058,29 @@ defmodule Emisar.SSOTest do
     end
   end
 
+  describe "record_member_link_proof/2" do
+    test "makes an admin-approved identity the person's own and changes nothing else" do
+      account = Fixtures.Accounts.create_account()
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+
+      identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: member,
+          created_by: :admin,
+          provisioned_via: :manual
+        )
+
+      assert {:ok, proved} = SSO.record_member_link_proof(Repo, identity)
+      assert proved.created_by == :user
+
+      assert Map.drop(proved, [:created_by, :updated_at]) ==
+               Map.drop(identity, [:created_by, :updated_at])
+    end
+  end
+
   describe "put_sign_in_authority/4" do
     test "refuses a session for an identity whose connection has been disabled" do
       {_user, account, subject} = enterprise_owner()

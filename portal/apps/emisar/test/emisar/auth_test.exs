@@ -1682,23 +1682,36 @@ defmodule Emisar.AuthTest do
                {:error, :not_found}
     end
 
-    test "a login seated elsewhere retires the Member's admin-approved binding" do
+    test "a login seated elsewhere keeps the admin-approved identity the link was proved through" do
       fixture = member_link_fixture([], created_by: :admin, provisioned_via: :manual)
       user = Fixtures.Users.create_user()
-      Fixtures.Memberships.create_membership(user_id: user.id)
+      elsewhere = Fixtures.Memberships.create_membership(user_id: user.id)
+      elsewhere_provider = Fixtures.SSO.create_identity_provider(account_id: elsewhere.account_id)
+
+      elsewhere_identity =
+        Fixtures.SSO.create_user_identity(
+          account_id: elsewhere.account_id,
+          provider_id: elsewhere_provider.id,
+          membership: elsewhere,
+          created_by: :admin,
+          provisioned_via: :manual
+        )
+
       factor_id = verify_magic_link(user, member_link: fixture.link)
 
       assert {:ok, _user, raw, {:linked, _account}, false} =
                complete_member_link(user, factor_id, fixture)
 
-      # An admin approved that identity for a person in no other workspace; the
-      # person linked now belongs to one, so the binding goes and the Member keeps
-      # only its personal route.
-      assert Repo.reload!(fixture.identity).deleted_at
+      # This browser proved the identity and the login's mailbox together, so the
+      # binding is the person's own: it survives, and the linked Member keeps the
+      # SSO route a Require SSO workspace checks. An admin approval the login held
+      # in its other workspace still goes, as a new seat has always retired it.
+      assert %{deleted_at: nil, created_by: :user} = Repo.reload!(fixture.identity)
+      assert Repo.reload!(elsewhere_identity).deleted_at
       assert {:ok, session} = Auth.fetch_session_by_token(raw)
       linked = Repo.reload!(fixture.member)
       assert linked.id in Auth.session_membership_ids(session)
-      assert Auth.session_subject_options(linked, session)[:auth_method] == :magic_link
+      assert Auth.session_subject_options(linked, session)[:auth_method] == :sso
     end
 
     test "a personal login already seated in the workspace is refused" do

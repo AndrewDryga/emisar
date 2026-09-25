@@ -7142,7 +7142,7 @@ defmodule Emisar.AccountsTest do
       assert {event.ip_address, event.request_id} == {nil, "req-detach"}
     end
 
-    test "refuses a seat whose only SSO route is retired or on a disabled provider" do
+    test "refuses a seat whose only SSO route is retired, disabled or off the plan" do
       %{seat: seat, identity: identity, subject: subject} = linked_sso_seat()
       Fixtures.SSO.retire_identity(identity)
 
@@ -7152,6 +7152,15 @@ defmodule Emisar.AccountsTest do
       %{seat: seat, provider: provider, subject: subject} = linked_sso_seat()
       Fixtures.SSO.disable_provider(provider)
 
+      assert Accounts.detach_personal_login(seat.id, subject) == {:error, :no_sso_identity}
+      assert Repo.reload!(seat).user_id == seat.user_id
+
+      # A lapsed plan keeps the connection enabled but refuses its sign-ins, so a
+      # detached owner there could reach the workspace neither way.
+      %{seat: seat, other: other, subject: subject} = linked_sso_seat()
+      Fixtures.Accounts.create_subscription(other, "free")
+
+      assert Accounts.list_detachable_memberships(subject) == {:ok, []}
       assert Accounts.detach_personal_login(seat.id, subject) == {:error, :no_sso_identity}
       assert Repo.reload!(seat).user_id == seat.user_id
     end

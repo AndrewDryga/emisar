@@ -313,6 +313,50 @@ defmodule Emisar.SSOSessionStepUpTest do
       assert Accounts.ensure_account_compliant(context.account, current) == :ok
     end
 
+    test "a member without a login, invited back at the same address, moves their identity",
+         %{account: account, provider: provider} = context do
+      {former, identity} = removed_login_less_member(account, provider, "returning@example.test")
+      user = Fixtures.Users.create_user(email: "returning@example.test")
+
+      replacement =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: :viewer,
+          contact_email: "returning@example.test"
+        )
+
+      browser = browser(user, account, nil, replacement)
+      Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+
+      assert {:ok, [listed]} = SSO.list_session_step_up_providers(browser.subject)
+      assert listed.id == provider.id
+
+      context = %{context | identity: identity}
+      stash = begin_step_up(context, browser)
+
+      assert {:ok, _result} = complete(context, browser, stash)
+      assert Repo.reload!(identity).membership_id == replacement.id
+      refute Repo.reload!(identity).membership_id == former.id
+    end
+
+    test "a removed member without a login at another address is not offered",
+         %{account: account, provider: provider} do
+      {_former, _identity} = removed_login_less_member(account, provider, "someone@example.test")
+      user = Fixtures.Users.create_user()
+
+      replacement =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: user.id,
+          role: :viewer
+        )
+
+      browser = browser(user, account, nil, replacement)
+
+      assert SSO.list_session_step_up_providers(browser.subject) == {:ok, []}
+    end
+
     test "a failed proof leaves an identity on the removed seat",
          %{user: _, account: _, member: _, identity: _} = context do
       replacement = invite_back(context)
@@ -703,6 +747,33 @@ defmodule Emisar.SSOSessionStepUpTest do
       user_id: user.id,
       role: :viewer
     )
+  end
+
+  defp removed_login_less_member(account, provider, contact_email) do
+    former =
+      Fixtures.Memberships.create_unlinked_membership(
+        account_id: account.id,
+        contact_email: contact_email
+      )
+
+    identity =
+      Fixtures.SSO.create_user_identity(
+        account_id: account.id,
+        provider_id: provider.id,
+        membership: former
+      )
+
+    owner =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        user_id: Fixtures.Users.create_user().id,
+        role: :owner
+      )
+
+    assert {:ok, _removed} =
+             Accounts.delete_membership(former, Fixtures.Subjects.membership_subject(owner))
+
+    {former, identity}
   end
 
   defp browser(user, account, mfa_at \\ nil, membership \\ nil) do

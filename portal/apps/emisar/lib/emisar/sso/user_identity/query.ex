@@ -61,6 +61,40 @@ defmodule Emisar.SSO.UserIdentity.Query do
   end
 
   @doc """
+  The identities a person may continue with at `seat`: those on their own
+  seats, plus those on a removed seat of the same workspace that never had a
+  personal login and carried the same contact address — a Member without a
+  login, removed and invited back to that address. The provider still has to
+  prove the exact identity before one moves.
+  """
+  def by_member_user_id_or_invited_back(queryable, user_id, %Emisar.Accounts.Membership{
+        account_id: account_id,
+        contact_email: email
+      })
+      when is_binary(email) do
+    own_seats =
+      Emisar.Accounts.Membership.Query.all()
+      |> Emisar.Accounts.Membership.Query.by_user_id(user_id)
+      |> Emisar.Accounts.Membership.Query.select_ids()
+
+    removed_seats =
+      Emisar.Accounts.Membership.Query.removed()
+      |> Emisar.Accounts.Membership.Query.without_personal_login()
+      |> Emisar.Accounts.Membership.Query.by_account_id(account_id)
+      |> Emisar.Accounts.Membership.Query.by_contact_email(email)
+      |> Emisar.Accounts.Membership.Query.select_ids()
+
+    where(
+      queryable,
+      [identities: i],
+      i.membership_id in subquery(own_seats) or i.membership_id in subquery(removed_seats)
+    )
+  end
+
+  def by_member_user_id_or_invited_back(queryable, user_id, _seat),
+    do: by_member_user_id(queryable, user_id)
+
+  @doc """
   One identity, preferring the one on this seat. A person can hold two at one
   provider: an older one left on a seat they were removed from, and one on
   their current seat.
@@ -229,6 +263,9 @@ defmodule Emisar.SSO.UserIdentity.Query do
 
   def select_membership_ids(queryable \\ all()),
     do: select(queryable, [identities: i], i.membership_id)
+
+  def select_membership_and_account_ids(queryable \\ all()),
+    do: select(queryable, [identities: i], {i.membership_id, i.account_id})
 
   # {provider_id, count} rows — the per-connection synced-user tallies for the
   # overview. Group by provider so one query covers every connection.

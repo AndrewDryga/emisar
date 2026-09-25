@@ -1507,6 +1507,12 @@ defmodule Emisar.Auth do
       |> Multi.run(:linked_member, fn repo, %{link_member: member, user: loaded_user} ->
         Accounts.link_personal_login(repo, member, loaded_user)
       end)
+      # This browser proved the identity and the login's mailbox together, so the
+      # binding is the person's own before the new seat's consequences run;
+      # retiring it as an admin approval would strand a Require SSO workspace.
+      |> Multi.run(:link_identity_proved, fn repo, %{link_identity: identity} ->
+        SSO.record_member_link_proof(repo, identity)
+      end)
       |> Multi.merge(fn %{linked_member: member} ->
         Accounts.put_membership_activation_consequence(Multi.new(), member)
       end)

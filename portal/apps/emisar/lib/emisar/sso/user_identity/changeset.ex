@@ -53,6 +53,9 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     |> put_live_constraints()
   end
 
+  @doc "Record that the person linked a personal login through this identity."
+  def verify_by_member_link(%UserIdentity{} = identity), do: change(identity, created_by: :user)
+
   @doc "Retire a self-verified OIDC binding while preserving a SCIM lifecycle row."
   def retire_provider_identifier(%UserIdentity{} = identity),
     do: change(identity, provider_identifier_retired_at: DateTime.utc_now())

@@ -499,10 +499,12 @@ defmodule Emisar.SSO do
              subject,
              Authorizer.view_sso_posture_permission()
            ) do
+      seat = Accounts.peek_active_membership(current.account.id, current.membership_id)
+
       identities =
         UserIdentity.Query.not_deleted()
         |> UserIdentity.Query.provider_identifier_active()
-        |> UserIdentity.Query.by_member_user_id(current.actor.id)
+        |> UserIdentity.Query.by_member_user_id_or_invited_back(current.actor.id, seat)
         |> UserIdentity.Query.with_preloaded_provider()
         |> Authorizer.for_subject(current)
         |> Repo.all()
@@ -569,9 +571,11 @@ defmodule Emisar.SSO do
     do: {:error, :session_step_up_invalid}
 
   # A member removed and later invited back still has their identity on the
-  # removed seat. Accepting the invitation proved the mailbox and the provider
-  # has just proved the identity, so the identity moves to the current seat, in
-  # sign-in's lock order. The step-up then rechecks everything under its own locks.
+  # removed seat — one linked to their login, or one without a login that had
+  # the same contact address. Accepting the invitation proved the mailbox and the
+  # provider has just proved the identity, so the identity moves to the current
+  # seat, in sign-in's lock order. The step-up then rechecks everything under its
+  # own locks.
   defp move_identity_to_current_seat(
          %UserIdentity{membership_id: seat_id},
          _provider,
@@ -589,20 +593,26 @@ defmodule Emisar.SSO do
     |> Multi.run(:locked_user, fn repo, _changes ->
       Users.fetch_and_lock_user_by_id(subject.actor.id, repo)
     end)
-    |> Multi.run(:locked_identity, fn repo, %{locked_user: user} ->
-      case lock_step_up_identity(repo, identity, user) do
+    |> Multi.run(:seat, fn _repo, _changes ->
+      {:ok, Accounts.peek_active_membership(provider.account_id, subject.membership_id)}
+    end)
+    |> Multi.run(:locked_identity, fn repo, %{locked_user: user, seat: seat} ->
+      case lock_step_up_identity(repo, identity, user, seat) do
         %UserIdentity{} = locked -> {:ok, locked}
         nil -> {:error, :session_step_up_invalid}
       end
     end)
     |> Multi.run(:current_seat, fn repo, changes ->
-      with {:ok, member} <-
+      with %Accounts.Membership{contact_email: contact} <- changes.seat,
+           {:ok, member} <-
              Accounts.fetch_and_lock_active_membership(
                repo,
                provider.account_id,
                subject.membership_id
              ),
            true <- member.user_id == changes.locked_user.id,
+           # The identity was matched through this contact; it has to hold now.
+           true <- member.contact_email == contact,
            true <-
              names_identity_owner?(
                changes.locked_provider,
@@ -628,11 +638,11 @@ defmodule Emisar.SSO do
     end
   end
 
-  defp lock_step_up_identity(repo, identity, user) do
+  defp lock_step_up_identity(repo, identity, user, seat) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.provider_identifier_active()
     |> UserIdentity.Query.by_id(identity.id)
-    |> UserIdentity.Query.by_member_user_id(user.id)
+    |> UserIdentity.Query.by_member_user_id_or_invited_back(user.id, seat)
     |> UserIdentity.Query.by_account_id(identity.account_id)
     |> UserIdentity.Query.by_provider_id(identity.provider_id)
     |> UserIdentity.Query.by_provider_identifier(identity.provider_identifier)
@@ -657,11 +667,13 @@ defmodule Emisar.SSO do
   defp session_step_up_actor(_digest, %Subject{}), do: {:error, :unauthorized}
 
   defp session_step_up_identity(provider_id, current) do
+    seat = Accounts.peek_active_membership(current.account.id, current.membership_id)
+
     identity_query =
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.provider_identifier_active()
       |> UserIdentity.Query.by_provider_id(provider_id)
-      |> UserIdentity.Query.by_member_user_id(current.actor.id)
+      |> UserIdentity.Query.by_member_user_id_or_invited_back(current.actor.id, seat)
       |> UserIdentity.Query.seat_first(current.membership_id)
       |> UserIdentity.Query.with_preloaded_provider()
       |> Authorizer.for_subject(current)
@@ -1137,7 +1149,7 @@ defmodule Emisar.SSO do
     user_identity =
       UserIdentity.Query.not_deleted()
       |> UserIdentity.Query.by_provider_id(provider.id)
-      |> UserIdentity.Query.by_member_user_id(member.user_id)
+      |> UserIdentity.Query.by_member_user_id_or_invited_back(member.user_id, member)
       |> UserIdentity.Query.seat_first(member.id)
       |> UserIdentity.Query.lock_for_update()
       |> repo.peek()
@@ -1312,17 +1324,22 @@ defmodule Emisar.SSO do
 
   @doc """
   Internal — which of these seats can sign in through workspace SSO right now: a
-  live identity with an active identifier on an enabled provider. Detaching a
-  personal login leaves only such a seat reachable; a retired, deleted, or
-  disabled route would leave it with no way in.
+  live identity with an active identifier on an enabled provider, in a workspace
+  whose plan still includes SSO. Detaching a personal login leaves only such a
+  seat reachable; a retired, deleted, disabled or unpaid route would leave it
+  with no way in.
   """
   def membership_ids_with_usable_identity(repo, membership_ids) when is_list(membership_ids) do
     UserIdentity.Query.not_deleted()
     |> UserIdentity.Query.provider_identifier_active()
     |> UserIdentity.Query.by_membership_ids(membership_ids)
     |> UserIdentity.Query.with_enabled_provider()
-    |> UserIdentity.Query.select_membership_ids()
+    |> UserIdentity.Query.select_membership_and_account_ids()
     |> repo.all()
+    |> Enum.filter(fn {_membership_id, account_id} ->
+      Billing.sso_available_for_account_id?(account_id, repo: repo)
+    end)
+    |> Enum.map(fn {membership_id, _account_id} -> membership_id end)
     |> Enum.uniq()
   end
 
@@ -2950,6 +2967,19 @@ defmodule Emisar.SSO do
     |> UserIdentity.Query.by_membership_id(membership_id)
     |> UserIdentity.Query.lock_for_update()
     |> repo.fetch(UserIdentity.Query)
+  end
+
+  @doc """
+  Internal — record that the person linked a personal login through this
+  identity, for Auth's personal-login link. The linking browser's session came
+  through the identity and proved the login's mailbox, so the binding is the
+  person's own from here on: a seat gained elsewhere no longer retires it as an
+  admin approval. No `%Subject{}`: Auth holds the identity lock.
+  """
+  def record_member_link_proof(repo, %UserIdentity{} = identity) do
+    identity
+    |> UserIdentity.Changeset.verify_by_member_link()
+    |> repo.update()
   end
 
   @doc """

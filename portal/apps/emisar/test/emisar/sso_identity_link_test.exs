@@ -615,6 +615,49 @@ defmodule Emisar.SSOIdentityLinkTest do
       assert linked.membership_id == replacement.id
     end
 
+    test "a member invited back links the identity a removed seat without a login left at their address",
+         %{account: _account, provider: _provider, user: _user} = context do
+      seat = Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
+
+      former =
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: context.account.id,
+          contact_email: seat.contact_email
+        )
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: context.account.id,
+          provider_id: context.provider.id,
+          membership: former,
+          provider_identifier: "workforce|returning-login-less"
+        })
+
+      Fixtures.Memberships.mark_membership_as_deleted(former)
+      proof = local_proof(context, :link)
+
+      {:ok, begun} =
+        SSO.begin_identity_link(
+          context.provider.id,
+          :link,
+          "https://emisar.test/sign_in/sso/callback",
+          proof,
+          context.session_digest,
+          context.subject
+        )
+
+      assert {:ok, %{identity: linked}} =
+               SSO.complete_identity_link(
+                 callback("workforce|returning-login-less"),
+                 begun,
+                 context.session_digest,
+                 context.subject
+               )
+
+      assert linked.id == identity.id
+      assert linked.membership_id == seat.id
+    end
+
     test "provider verification works while disabled and becomes stale after config changes",
          %{provider: _provider, subject: _subject} = context do
       disabled =
