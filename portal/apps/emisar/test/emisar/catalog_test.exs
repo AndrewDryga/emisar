@@ -2143,7 +2143,6 @@ defmodule Emisar.CatalogTest do
       assert {:ok, overridden} = Catalog.override_pack_retirement(pack_version.id, subject)
       assert %DateTime{} = overridden.retirement_overridden_at
       assert overridden.retirement_overridden_by_membership_id == subject.membership_id
-      assert is_nil(overridden.retirement_overridden_by_id)
       assert overridden.trust_state == :trusted
 
       {:ok, events, _} = Audit.list_events(subject)
@@ -2259,7 +2258,6 @@ defmodule Emisar.CatalogTest do
       assert revoked.trust_state == :rejected
       assert revoked.hash == Fixtures.Catalog.pack_hash("sha256:OK")
       assert revoked.retirement_overridden_at == nil
-      assert revoked.retirement_overridden_by_id == nil
       assert revoked.retirement_overridden_by_membership_id == nil
 
       {:ok, events, _} = Audit.list_events(subject)
@@ -4384,7 +4382,6 @@ defmodule Emisar.CatalogTest do
       trusted
       |> Ecto.Changeset.change(
         retirement_overridden_at: nil,
-        retirement_overridden_by_id: nil,
         retirement_overridden_by_membership_id: nil
       )
       |> Repo.update!()

@@ -344,7 +344,7 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, run} =
         Emisar.Runs.create_run(%{
           account_id: account.id,
-          requested_by_id: user.id,
+          initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
           runner_id: runner.id,
           action_id: "linux.uptime",
           args: %{},
@@ -590,7 +590,8 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, run_a} =
         Emisar.Runs.create_run(%{
           account_id: account_a.id,
-          requested_by_id: user_a.id,
+          initiating_membership_id:
+            Fixtures.Memberships.fetch_membership(account_a.id, user_a.id).id,
           runner_id: runner_a.id,
           action_id: "linux.alpha_dash",
           args: %{},
@@ -607,7 +608,8 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, run_b} =
         Emisar.Runs.create_run(%{
           account_id: account_b.id,
-          requested_by_id: user_b.id,
+          initiating_membership_id:
+            Fixtures.Memberships.fetch_membership(account_b.id, user_b.id).id,
           runner_id: runner_b.id,
           action_id: "linux.bravo_dash",
           args: %{},

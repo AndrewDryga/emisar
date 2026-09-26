@@ -68,7 +68,7 @@ defmodule EmisarWeb.GrantsLiveTest do
   end
 
   test "lists active grants with key + scope + uses + expiry", %{conn: conn} do
-    {conn, user, account, api_key, runner} = seed_account(conn)
+    {conn, _user, account, api_key, runner} = seed_account(conn)
 
     expires = DateTime.add(DateTime.utc_now(), 24 * 3600, :second)
 
@@ -77,7 +77,6 @@ defmodule EmisarWeb.GrantsLiveTest do
         action_id: "cassandra.repair",
         runner_id: runner.id,
         args_sha256: "abc123",
-        granted_by_id: user.id,
         expires_at: expires,
         max_uses: 5
       )
@@ -115,7 +114,7 @@ defmodule EmisarWeb.GrantsLiveTest do
   test "hides revoked grants", %{conn: conn} do
     {conn, user, account, api_key, _runner} = seed_account(conn)
     subject = owner_subject(user, account)
-    g = insert_grant!(account, api_key, action_id: "x", granted_by_id: user.id)
+    g = insert_grant!(account, api_key, action_id: "x")
     {:ok, _} = Approvals.revoke_grant(g, subject)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
@@ -124,13 +123,12 @@ defmodule EmisarWeb.GrantsLiveTest do
   end
 
   test "hides expired grants", %{conn: conn} do
-    {conn, user, account, api_key, _runner} = seed_account(conn)
+    {conn, _user, account, api_key, _runner} = seed_account(conn)
     past = DateTime.add(DateTime.utc_now(), -60, :second)
 
     _ =
       insert_grant!(account, api_key,
         action_id: "stale.grant",
-        granted_by_id: user.id,
         expires_at: past
       )
 
@@ -142,10 +140,7 @@ defmodule EmisarWeb.GrantsLiveTest do
     {conn, user, account, api_key, _runner} = seed_account(conn)
 
     g =
-      insert_grant!(account, api_key,
-        action_id: "cassandra.repair",
-        granted_by_id: user.id
-      )
+      insert_grant!(account, api_key, action_id: "cassandra.repair")
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals")
 

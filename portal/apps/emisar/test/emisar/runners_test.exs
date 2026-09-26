@@ -3351,7 +3351,6 @@ defmodule Emisar.RunnersTest do
       assert String.starts_with?(raw, "emkey-enroll-")
       assert key.account_id == account.id
       assert key.created_by_membership_id == subject.membership_id
-      assert is_nil(key.created_by_id)
       assert is_binary(key.key_hash)
       assert key.description == "for dev"
     end
@@ -3380,7 +3379,6 @@ defmodule Emisar.RunnersTest do
                Runners.create_enrollment_key(
                  %{
                    account_id: foreign.account_id,
-                   created_by_id: foreign.user_id,
                    created_by_membership_id: foreign.id,
                    revoked_by_membership_id: foreign.id
                  },
@@ -3389,7 +3387,6 @@ defmodule Emisar.RunnersTest do
 
       assert key.account_id == subject.account.id
       assert key.created_by_membership_id == subject.membership_id
-      assert is_nil(key.created_by_id)
       assert is_nil(key.revoked_by_membership_id)
     end
 
@@ -3714,7 +3711,6 @@ defmodule Emisar.RunnersTest do
       assert String.starts_with?(raw, "emkey-enroll-")
       assert key.auto_generated_at != nil
       assert key.created_by_membership_id == subject.membership_id
-      assert is_nil(key.created_by_id)
       assert is_nil(key.last_used_at)
       assert EnrollmentKey.auto_unused?(key)
     end
@@ -3797,7 +3793,6 @@ defmodule Emisar.RunnersTest do
                Runners.revoke_enrollment_key(key, subject)
 
       assert revoked.revoked_by_membership_id == subject.membership_id
-      assert is_nil(revoked.revoked_by_id)
       refute Runners.peek_enrollment_key_by_secret(raw)
     end
 

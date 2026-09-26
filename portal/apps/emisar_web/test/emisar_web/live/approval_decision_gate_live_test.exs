@@ -44,7 +44,6 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         action_id: "cassandra.repair",
         source: "operator",
         reason: "needs review",
-        requested_by_id: requested_by.id,
         initiating_membership_id: membership.id,
         args: %{},
         pack_ref: Fixtures.Catalog.default_pack_ref(),

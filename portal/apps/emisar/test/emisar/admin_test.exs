@@ -461,7 +461,6 @@ defmodule Emisar.AdminTest do
       assert membership.id == invited.id
       assert membership.runner_access_mode == :all
       # A platform-run invitation records no member as the inviter.
-      assert is_nil(membership.invited_by_id)
       assert is_nil(membership.invited_by_membership_id)
     end
 

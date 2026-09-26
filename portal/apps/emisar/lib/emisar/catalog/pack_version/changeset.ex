@@ -76,7 +76,6 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     pack_version_or_changeset
     |> change(%{
       retirement_overridden_at: DateTime.utc_now(),
-      retirement_overridden_by_id: nil,
       retirement_overridden_by_membership_id: overridden_by_membership_id
     })
     |> validate_required([:retirement_overridden_by_membership_id])
@@ -119,7 +118,6 @@ defmodule Emisar.Catalog.PackVersion.Changeset do
     |> change(%{
       trust_state: :rejected,
       retirement_overridden_at: nil,
-      retirement_overridden_by_id: nil,
       retirement_overridden_by_membership_id: nil
     })
   end

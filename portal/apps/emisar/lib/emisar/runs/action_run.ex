@@ -159,7 +159,6 @@ defmodule Emisar.Runs.ActionRun do
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
     belongs_to :runbook, Emisar.Runbooks.Runbook, where: [deleted_at: nil]
-    belongs_to :requested_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :policy, Emisar.Policies.Policy, where: [deleted_at: nil]
     belongs_to :mcp_operation_record, Emisar.MCPOperations.Operation
     belongs_to :runbook_execution_item, Emisar.Runbooks.ExecutionItem

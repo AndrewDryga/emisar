@@ -1180,7 +1180,7 @@ defmodule Emisar.OAuthTest do
                "client_id" => client.id
              }) == {:error, :invalid_grant}
 
-      assert %ApiKey{revoked_at: %DateTime{}, revoked_by_id: nil} = Repo.reload!(key)
+      assert %ApiKey{revoked_at: %DateTime{}} = Repo.reload!(key)
       assert OAuth.resolve_access_token(fresh.access_token, @resource) == {:error, :invalid}
       assert_receive {:list_changed, :api_key, "api_key.revoked", key_id}, 500
       assert key_id == key.id

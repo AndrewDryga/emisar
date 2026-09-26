@@ -30,7 +30,6 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
       args: %{},
       reason: "test",
       source: "operator",
-      requested_by_id: user.id,
       initiating_membership_id: membership.id
     }
   end

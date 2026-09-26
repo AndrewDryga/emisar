@@ -2811,7 +2811,7 @@ defmodule Emisar.AccountsTest do
       assert manager_fact.suspended_by_label ==
                Accounts.member_display_name(owner_membership)
 
-      assert is_nil(manager_fact.membership.disabled_by_id)
+      assert is_nil(manager_fact.membership.disabled_by_membership_id)
 
       viewer = Fixtures.Users.create_user()
 
@@ -2829,7 +2829,7 @@ defmodule Emisar.AccountsTest do
 
       viewer_fact = Enum.find(viewer_facts, &(&1.membership.id == suspended.id))
       refute Map.has_key?(viewer_fact, :suspended_by_label)
-      assert is_nil(viewer_fact.membership.disabled_by_id)
+      assert is_nil(viewer_fact.membership.disabled_by_membership_id)
     end
 
     test "a former suspension author retains exact local history after a rejoin", %{
@@ -2861,7 +2861,6 @@ defmodule Emisar.AccountsTest do
       target_fact = Enum.find(facts, &(&1.membership.id == target.id))
 
       assert target_fact.suspended_by_label == "Former Admin"
-      assert is_nil(target_fact.membership.disabled_by_id)
       assert is_nil(target_fact.membership.disabled_by_membership_id)
     end
 
@@ -5275,12 +5274,10 @@ defmodule Emisar.AccountsTest do
       assert Membership.disabled?(suspended)
       assert suspended.disabled_by_membership_id == owner_subject.membership_id
       assert Repo.reload!(target).disabled_by_membership_id == owner_subject.membership_id
-      assert is_nil(suspended.disabled_by_id)
 
       assert {:ok, reinstated} = Accounts.reinstate_membership(suspended, owner_subject)
       refute Membership.disabled?(reinstated)
-      assert is_nil(reinstated.disabled_by_id)
-      assert is_nil(Repo.reload!(target).disabled_by_id)
+      assert is_nil(Repo.reload!(target).disabled_by_membership_id)
       assert is_nil(reinstated.disabled_by_membership_id)
     end
 
@@ -5438,7 +5435,6 @@ defmodule Emisar.AccountsTest do
       surviving_key =
         ApiKey.Changeset.create(
           account.id,
-          target.user_id,
           target.id,
           prefix,
           hash,
@@ -5451,7 +5447,6 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.count_memberships(account.id) == 2
       assert repeated.disabled_at == first.disabled_at
-      assert repeated.disabled_by_id == first.disabled_by_id
       assert repeated.disabled_by_membership_id == first.disabled_by_membership_id
       assert Membership.disabled?(Repo.reload!(target))
       assert length(Repo.all(Emisar.Audit.Event)) == 1
@@ -5581,7 +5576,7 @@ defmodule Emisar.AccountsTest do
                Fixtures.Memberships.fetch_membership(account.id, target.user_id)
              )
 
-      assert is_nil(Repo.reload!(target).disabled_by_id)
+      assert is_nil(Repo.reload!(target).disabled_by_membership_id)
     end
 
     test "a human retry cannot claim a directory-owned suspension", %{
@@ -5595,13 +5590,11 @@ defmodule Emisar.AccountsTest do
                commit_sync_lifecycle(target, provider, :suspend)
 
       assert directory_suspended.directory_suspended
-      assert is_nil(directory_suspended.disabled_by_id)
       assert is_nil(directory_suspended.disabled_by_membership_id)
 
       assert {:ok, unchanged} = Accounts.suspend_membership(directory_suspended, owner_subject)
       assert unchanged.disabled_at == directory_suspended.disabled_at
       assert unchanged.directory_suspended
-      assert is_nil(unchanged.disabled_by_id)
       assert is_nil(unchanged.disabled_by_membership_id)
       assert length(Repo.all(Emisar.Audit.Event)) == 1
     end
@@ -5712,7 +5705,7 @@ defmodule Emisar.AccountsTest do
                commit_sync_lifecycle(member, provider, :suspend)
 
       assert Membership.disabled?(suspended)
-      assert is_nil(suspended.disabled_by_id)
+      assert is_nil(suspended.disabled_by_membership_id)
       assert Membership.disabled?(Repo.reload!(member))
     end
 
@@ -5780,7 +5773,6 @@ defmodule Emisar.AccountsTest do
       surviving_key =
         ApiKey.Changeset.create(
           account.id,
-          member.user_id,
           member.id,
           prefix,
           hash,
@@ -7811,7 +7803,6 @@ defmodule Emisar.AccountsTest do
       assert result.delivery == {:ok, :sent}
       assert %Membership{role: :operator} = result.membership
       assert result.membership.invited_by_membership_id == subject.membership_id
-      assert is_nil(result.membership.invited_by_id)
       assert result.membership.invitation_sent_to == email
       refute Map.has_key?(result, :invitation_token)
       refute Map.has_key?(result, :user)

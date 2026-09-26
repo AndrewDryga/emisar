@@ -98,13 +98,12 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
 
   describe "override_retirement/2" do
     test "stamps the override timestamp + who on a pack-version struct" do
-      pack_version = %PackVersion{retirement_overridden_by_id: Ecto.UUID.generate()}
+      pack_version = %PackVersion{}
       changeset = Changeset.override_retirement(pack_version, "member-123")
 
       assert changeset.valid?
       assert %DateTime{} = changeset.changes.retirement_overridden_at
       assert changeset.changes.retirement_overridden_by_membership_id == "member-123"
-      assert is_nil(changeset.changes.retirement_overridden_by_id)
     end
 
     # The trust-of-a-retired-version path (unreachable via the compiled baseline
@@ -165,7 +164,6 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
         trust_state: :trusted,
         hash: "sha256:GOOD",
         retirement_overridden_at: DateTime.utc_now(),
-        retirement_overridden_by_id: Ecto.UUID.generate(),
         retirement_overridden_by_membership_id: Ecto.UUID.generate()
       }
 
@@ -176,7 +174,6 @@ defmodule Emisar.Catalog.PackVersion.ChangesetTest do
       assert changeset.changes == %{
                trust_state: :rejected,
                retirement_overridden_at: nil,
-               retirement_overridden_by_id: nil,
                retirement_overridden_by_membership_id: nil
              }
     end

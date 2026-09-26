@@ -440,7 +440,6 @@ defmodule Emisar.AuditTest do
         attrs
         |> Map.merge(%{
           source: "operator",
-          requested_by_id: member.user_id,
           initiating_membership_id: member.id
         })
         |> Runs.create_run()
@@ -1370,44 +1369,53 @@ defmodule Emisar.AuditTest do
       %{account: account, request: request, subject: subject}
     end
 
-    test "returns the retained final receipt and each actor's latest vote", %{
+    test "returns the retained final receipt and each Member's latest vote", %{
       account: account,
       request: request,
       subject: subject
     } do
-      actor = Fixtures.Users.create_user()
+      reviewer = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      {:ok, old_vote} =
+      {:ok, _old_vote} =
         Audit.log(account.id, "approval.decision_recorded",
-          actor_kind: "user",
-          actor_id: actor.id,
+          actor_kind: "membership",
+          actor_id: reviewer.id,
           target_kind: "approval_request",
           target_id: request.id,
+          payload: %{decider_membership_id: reviewer.id},
           occurred_at: DateTime.add(DateTime.utc_now(), -60, :second)
         )
 
       {:ok, vote} =
         Audit.log(account.id, "approval.decision_recorded",
+          actor_kind: "membership",
+          actor_id: reviewer.id,
+          target_kind: "approval_request",
+          target_id: request.id,
+          payload: %{decider_membership_id: reviewer.id}
+        )
+
+      # A vote recorded before receipts named Members is not keyed at all.
+      {:ok, _unanchored_vote} =
+        Audit.log(account.id, "approval.decision_recorded",
           actor_kind: "user",
-          actor_id: actor.id,
+          actor_id: Fixtures.Users.create_user().id,
           target_kind: "approval_request",
           target_id: request.id
         )
 
       {:ok, final} =
         Audit.log(account.id, "approval.approved",
-          actor_kind: "user",
-          actor_id: actor.id,
+          actor_kind: "membership",
+          actor_id: reviewer.id,
           target_kind: "approval_request",
           target_id: request.id
         )
 
       assert {:ok, refs} = Audit.approval_event_refs([request.id, "not-a-uuid"], subject)
       assert refs[request.id].final == final.id
-      assert refs[request.id].decisions == %{{:user, actor.id} => vote.id}
-
-      refute Audit.approval_decision_receipt(refs[request.id].decisions, nil, actor.id) ==
-               old_vote.id
+      assert refs[request.id].decisions == %{{:membership, reviewer.id} => vote.id}
+      assert Audit.approval_decision_receipt(refs[request.id].decisions, reviewer.id) == vote.id
     end
 
     test "marks an override receipt as the final approval event", %{
@@ -1481,16 +1489,20 @@ defmodule Emisar.AuditTest do
       account: account,
       request: request
     } do
-      reviewer = Fixtures.Users.create_user()
+      reviewer = Fixtures.Memberships.create_membership(account_id: account.id)
       admin = Fixtures.Users.create_user()
 
       {:ok, _vote} =
         Audit.log(account.id, "approval.decision_recorded",
-          actor_kind: "user",
+          actor_kind: "membership",
           actor_id: reviewer.id,
           target_kind: "approval_request",
           target_id: request.id,
-          payload: %{"reason" => "Read-only query.", "decision" => "approve"}
+          payload: %{
+            "reason" => "Read-only query.",
+            "decision" => "approve",
+            "decider_membership_id" => reviewer.id
+          }
         )
 
       {:ok, _override} =
@@ -1509,7 +1521,7 @@ defmodule Emisar.AuditTest do
 
       receipts = Audit.approval_decision_receipts([request.id], account.id)
 
-      assert receipts[request.id].decisions == %{{:user, reviewer.id} => "Read-only query."}
+      assert receipts[request.id].decisions == %{{:membership, reviewer.id} => "Read-only query."}
 
       assert %{
                actor_id: actor_id,
@@ -1534,12 +1546,14 @@ defmodule Emisar.AuditTest do
     end
   end
 
-  describe "approval_decision_receipt/3" do
-    test "keeps exact Member notes separate from retained User history, including empty notes" do
+  describe "approval_decision_receipt/2" do
+    test "reads a vote by its Member, an empty note included, and never a vote with no Member" do
       {_user, account, subject} = Fixtures.Subjects.owner_subject()
       request = Fixtures.Approvals.create_request(account_id: account.id)
 
-      {:ok, historical} =
+      # Recorded before receipts named Members: the vote and its outcome stay on
+      # the request, and its note stays in the audit log, but no receipt names it.
+      {:ok, _historical} =
         Audit.log(account.id, "approval.decision_recorded",
           actor_kind: "user",
           actor_id: subject.actor.id,
@@ -1555,27 +1569,15 @@ defmodule Emisar.AuditTest do
 
       notes = Audit.approval_decision_receipts([request.id], account.id)[request.id].decisions
 
-      assert notes == %{
-               {:user, subject.actor.id} => "Historical note",
-               {:membership, subject.membership_id} => nil
-             }
-
-      assert Audit.approval_decision_receipt(notes, subject.membership_id, subject.actor.id) ==
-               nil
-
-      assert Audit.approval_decision_receipt(notes, nil, subject.actor.id) == "Historical note"
-      assert Audit.approval_decision_receipt(notes, Ecto.UUID.generate(), nil) == nil
+      assert notes == %{{:membership, subject.membership_id} => nil}
+      assert Audit.approval_decision_receipt(notes, subject.membership_id) == nil
+      assert Audit.approval_decision_receipt(notes, Ecto.UUID.generate()) == nil
 
       assert {:ok, refs} = Audit.approval_event_refs([request.id], subject)
+      assert refs[request.id].decisions == %{{:membership, subject.membership_id} => current.id}
 
-      assert Audit.approval_decision_receipt(
-               refs[request.id].decisions,
-               subject.membership_id,
-               nil
-             ) == current.id
-
-      assert Audit.approval_decision_receipt(refs[request.id].decisions, nil, subject.actor.id) ==
-               historical.id
+      assert Audit.approval_decision_receipt(refs[request.id].decisions, subject.membership_id) ==
+               current.id
     end
   end
 

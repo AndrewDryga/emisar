@@ -28,7 +28,6 @@ defmodule Emisar.Policies.Policy do
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
-    belongs_to :updated_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :updated_by_membership, Emisar.Accounts.Membership
 
     timestamps()

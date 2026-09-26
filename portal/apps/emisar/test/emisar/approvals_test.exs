@@ -28,7 +28,6 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        requested_by_id: initiating_membership.user_id,
         initiating_membership_id: initiating_membership.id,
         args: %{},
         # A parked gated run carries the trusted pack contract dispatch would
@@ -121,7 +120,6 @@ defmodule Emisar.ApprovalsTest do
                Approvals.create_request(run, "Review this action")
 
       assert request.requested_by_membership_id == run.initiating_membership_id
-      assert request.requested_by_id == nil
     end
 
     test "a recorded vote retains its exact deciding Member" do
@@ -130,7 +128,6 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:ok, {_request, :pending}} = Approvals.approve_request(request, subject, "Reviewed")
       assert Repo.one!(Decision).decider_membership_id == subject.membership_id
-      assert Repo.one!(Decision).decider_id == nil
     end
 
     test "the final decision retains its exact deciding Member" do
@@ -141,7 +138,6 @@ defmodule Emisar.ApprovalsTest do
                Approvals.approve_request(request, subject, "Reviewed")
 
       assert decided.decided_by_membership_id == subject.membership_id
-      assert decided.decided_by_id == nil
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 
@@ -629,7 +625,6 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        requested_by_id: membership.user_id,
         initiating_membership_id: membership.id,
         args: %{},
         status: :pending_approval
@@ -654,7 +649,6 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        requested_by_id: requester_subject.actor.id,
         initiating_membership_id: requester_subject.membership_id,
         args: %{},
         # A parked gated run carries the trusted pack contract dispatch would
@@ -705,7 +699,6 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.disk_usage",
         source: "operator",
-        requested_by_id: initiator.id,
         initiating_membership_id: initiating_membership.id,
         args: %{"paths" => ["/srv"]},
         pack_ref: pack_ref,
@@ -740,7 +733,6 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.disk_usage",
         source: "operator",
-        requested_by_id: initiator.id,
         initiating_membership_id: initiating_membership.id,
         args: %{"paths" => [path]},
         pack_ref: "linux-core@#{pack.version}/#{pack.content_hash}",
@@ -820,7 +812,6 @@ defmodule Emisar.ApprovalsTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "mcp",
-        requested_by_id: requester.id,
         initiating_membership_id: requester_membership.id,
         args: %{},
         pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -1588,10 +1579,8 @@ defmodule Emisar.ApprovalsTest do
     test "a request decided without vote rows lists the decision its own record holds" do
       %{account: account, request: request, run: run} = gated_request()
       subject = operator_subject(account)
-      reviewer = named_reviewer(account, "Jane Doe")
 
-      approved =
-        Fixtures.Approvals.approve_request(request, reviewer.actor.id, "Validated on staging.")
+      approved = Fixtures.Approvals.approve_request(request, nil, "Validated on staging.")
 
       assert {:ok, review} = project_review(run, subject)
       assert review.status == :approved
@@ -1607,14 +1596,6 @@ defmodule Emisar.ApprovalsTest do
                  reason: "Validated on staging."
                }
              ] = review.decisions
-
-      # A decider this account no longer knows still leaves the decision, unnamed.
-      account.id
-      |> Fixtures.Memberships.fetch_membership(reviewer.actor.id)
-      |> Fixtures.Memberships.mark_membership_as_deleted()
-
-      assert {:ok, %{approved_count: 1, decisions: [%{actor: nil, decision: :approve}]}} =
-               project_review(run, subject)
 
       # The same record denied with a blank note: one denial, nothing quoted,
       # and no approver to count.
@@ -1637,7 +1618,7 @@ defmodule Emisar.ApprovalsTest do
       subject = operator_subject(account)
       reviewer = named_reviewer(account, "Jane Doe")
 
-      Fixtures.Approvals.approve_request(request, reviewer.actor.id, "Released by hand.")
+      Fixtures.Approvals.approve_request(request, reviewer.membership_id, "Released by hand.")
 
       assert {:ok, review} = project_review(run, subject)
       assert review.status == :approved
@@ -3657,7 +3638,7 @@ defmodule Emisar.ApprovalsTest do
       assert {:error, changeset} = Approvals.approve_request(request, subject, "ok", attrs)
       assert "is invalid" in errors_on(changeset).duration
 
-      assert %Request{status: :pending, decided_by_id: nil} = Repo.reload!(request)
+      assert %Request{status: :pending, decided_by_membership_id: nil} = Repo.reload!(request)
       assert Repo.all(Decision) == []
       assert Fixtures.Approvals.grants_for_api_key(key.id) == []
       assert %ActionRun{status: :pending_approval} = Repo.reload!(run)
@@ -3796,7 +3777,6 @@ defmodule Emisar.ApprovalsTest do
     test "approving a run whose signature aged out while parked is refused up front", %{
       account: account,
       runner: runner,
-      requester: requester,
       requester_membership: requester_membership,
       approver_subject: approver_subject
     } do
@@ -3815,7 +3795,6 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
-          requested_by_id: requester.id,
           initiating_membership_id: requester_membership.id,
           args: %{},
           pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -3837,7 +3816,6 @@ defmodule Emisar.ApprovalsTest do
     test "approving a run with a still-fresh signature proceeds normally", %{
       account: account,
       runner: runner,
-      requester: requester,
       requester_membership: requester_membership,
       approver_subject: approver_subject
     } do
@@ -3857,7 +3835,6 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "mcp",
-          requested_by_id: requester.id,
           initiating_membership_id: requester_membership.id,
           args: %{},
           pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -4181,7 +4158,7 @@ defmodule Emisar.ApprovalsTest do
     test "a suspended initiating membership still blocks release" do
       %{account: account, run: run, request: request} = gated_request(min_approvals: 2)
       owner = distinct_member(account, :owner)
-      initiator = Fixtures.Memberships.fetch_membership(account.id, run.requested_by_id)
+      initiator = Accounts.peek_sync_membership_by_id(account.id, run.initiating_membership_id)
 
       Fixtures.Memberships.suspend_membership(initiator)
 
@@ -4259,7 +4236,6 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
-          requested_by_id: requester.id,
           initiating_membership_id: requester_membership.id,
           args: %{},
           pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -4340,7 +4316,6 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
-          requested_by_id: initiator.id,
           initiating_membership_id: initiating_membership.id,
           args: %{},
           pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -4351,7 +4326,6 @@ defmodule Emisar.ApprovalsTest do
       {:ok, request} =
         Approvals.create_request(run, "x", min_approvals: 2, allow_self_approval: false)
 
-      assert is_nil(Repo.reload!(request).requested_by_id)
       assert request.requested_by_membership_id == initiating_membership.id
       requester = Fixtures.Subjects.membership_subject(initiating_membership)
 
@@ -4386,7 +4360,6 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
-          requested_by_id: member.user_id,
           initiating_membership_id: member.id,
           args: %{},
           pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -4406,7 +4379,7 @@ defmodule Emisar.ApprovalsTest do
       assert approved_count(request.id) == 1
     end
 
-    test "ABUSE: an MCP run (requested_by_id nil) attributes self to the api-key owner; the owner can't self-approve" do
+    test "ABUSE: an MCP run attributes self to the api-key owner; the owner can't self-approve" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Users.create_user()
 
@@ -4560,7 +4533,6 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
-          requested_by_id: initiator.id,
           initiating_membership_id: initiating_membership.id,
           args: %{},
           pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -4616,7 +4588,6 @@ defmodule Emisar.ApprovalsTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
-          requested_by_id: requester.id,
           initiating_membership_id: requester_membership.id,
           args: %{},
           pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -5882,7 +5853,7 @@ defmodule Emisar.ApprovalsTest do
     # re-revoking an already-revoked grant is benign. The
     # revoke read is status-agnostic (`Grant.Query.all() |> by_id`, no
     # `not_revoked` filter), so the revoked row is still fetchable and
-    # `Grant.Changeset.revoke` simply re-stamps `revoked_at`/`revoked_by_id`. No
+    # `Grant.Changeset.revoke` simply re-stamps `revoked_at`/`revoked_by_membership_id`. No
     # crash, no error — idempotent-ish (a double-click on Revoke can't fail).
     test "revoking an already-revoked grant re-stamps without crashing (benign)", %{
       account: account,
@@ -6037,8 +6008,8 @@ defmodule Emisar.ApprovalsTest do
 
       grant = insert_grant(account, key, action_id: "a.one", granted_by_id: approver.id)
 
-      # Same person, a membership somewhere else: `granted_by_id` alone is not
-      # the match — the account is half of it.
+      # Same person, a membership somewhere else: the grant names this
+      # account's seat, so another account's seat matches nothing.
       other_account = Fixtures.Accounts.create_account()
 
       elsewhere =

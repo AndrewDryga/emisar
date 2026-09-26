@@ -102,7 +102,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
 
   @doc """
   OAuth backing keys — non-expiring MCP keys. Consent mints these with no expiry
-  (`ApiKeys.create_backing_key/4`) because OAuth owns their lifecycle, while every
+  (`ApiKeys.create_backing_key/3`) because OAuth owns their lifecycle, while every
   operator-minted MCP key carries one — so `:mcp` + no `expires_at` uniquely marks
   an OAuth-backed connection.
   """

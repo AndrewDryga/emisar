@@ -880,7 +880,6 @@ defmodule Emisar.AuthAuditTest do
       {:ok, reloaded} = Emisar.Policies.fetch_policy(subject)
       assert reloaded.rules == policy.rules
       assert reloaded.updated_by_membership_id == policy.updated_by_membership_id
-      assert reloaded.updated_by_id == policy.updated_by_id
     end
 
     defp audit_count(account, event_type) do

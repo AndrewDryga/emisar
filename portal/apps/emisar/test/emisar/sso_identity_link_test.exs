@@ -663,7 +663,6 @@ defmodule Emisar.SSOIdentityLinkTest do
       disabled =
         context.provider
         |> IdentityProvider.Changeset.update(%{enabled: false})
-        |> Ecto.Changeset.change(sign_in_verified_by_user_id: context.user.id)
         |> Repo.update!()
 
       context = %{context | provider: disabled}
@@ -692,7 +691,6 @@ defmodule Emisar.SSOIdentityLinkTest do
 
       verified = Repo.reload!(disabled)
       assert verified.sign_in_verified_by_membership_id == context.subject.membership_id
-      assert is_nil(verified.sign_in_verified_by_user_id)
 
       assert {:ok, enabled} = SSO.update_provider(disabled, %{enabled: true}, context.subject)
       assert enabled.enabled

@@ -24,8 +24,7 @@ defmodule Emisar.Fixtures.Approvals do
 
         Fixtures.Runs.create_run(%{
           account_id: membership.account_id,
-          initiating_membership_id: membership.id,
-          requested_by_id: membership.user_id
+          initiating_membership_id: membership.id
         })
       end
 
@@ -47,7 +46,6 @@ defmodule Emisar.Fixtures.Approvals do
           status: status,
           overridden: if(status in [:approved, :denied], do: false),
           decided_at: attrs[:decided_at] || DateTime.utc_now(),
-          decided_by_id: attrs[:decided_by_id],
           decided_by_membership_id: attrs[:decided_by_membership_id],
           decision_reason: attrs[:decision_reason]
         )
@@ -63,13 +61,13 @@ defmodule Emisar.Fixtures.Approvals do
   setup state for concurrent-flow tests and the shape of a request decided
   before per-vote rows existed.
   """
-  def approve_request(%Approvals.Request{} = request, decided_by_id, reason \\ nil) do
+  def approve_request(%Approvals.Request{} = request, decided_by_membership_id, reason \\ nil) do
     request
     |> change(
       status: :approved,
       overridden: false,
       decided_at: DateTime.utc_now(),
-      decided_by_id: decided_by_id,
+      decided_by_membership_id: decided_by_membership_id,
       decision_reason: reason
     )
     |> Repo.update!()
@@ -87,7 +85,6 @@ defmodule Emisar.Fixtures.Approvals do
       |> change(
         status: :approved,
         decided_at: DateTime.utc_now(),
-        decided_by_id: subject.actor.id,
         decision_reason: reason
       )
       |> Repo.update!()
@@ -167,7 +164,6 @@ defmodule Emisar.Fixtures.Approvals do
         account_id: account.id,
         runbook_id: runbook.id,
         initiating_membership_id: membership.id,
-        requested_by_id: requested_by.id,
         reason: attrs[:reason] || "Apply the reviewed database settings",
         frozen_plan: %{"schema_version" => 1, "stages" => [stage_plan]},
         inputs_raw: "{}",

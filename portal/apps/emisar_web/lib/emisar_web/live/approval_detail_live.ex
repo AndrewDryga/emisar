@@ -1783,7 +1783,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
         %{
           id: event_id,
           decider_membership_id: request.decided_by_membership_id,
-          decider_id: request.decided_by_id,
           decision: :override,
           decided_at: request.decided_at
         }
@@ -1818,7 +1817,6 @@ defmodule EmisarWeb.ApprovalDetailLive do
     %{
       id: request.id,
       decider_membership_id: request.decided_by_membership_id,
-      decider_id: request.decided_by_id,
       decision: if(request.status == :approved, do: :approve, else: :deny),
       decided_at: request.decided_at
     }
@@ -1837,20 +1835,15 @@ defmodule EmisarWeb.ApprovalDetailLive do
       else: decision_receipt(refs, decision)
   end
 
-  defp decision_receipt(refs, decision) do
-    Audit.approval_decision_receipt(
-      refs.decisions,
-      decision.decider_membership_id,
-      decision.decider_id
-    )
-  end
+  defp decision_receipt(refs, decision),
+    do: Audit.approval_decision_receipt(refs.decisions, decision.decider_membership_id)
 
+  # The row `final_decision/1` builds from the request is the final decision
+  # itself, whoever made it; a vote row is final only when its Member decided.
   defp final_decider?(request, decision) do
-    if is_binary(request.decided_by_membership_id) do
-      request.decided_by_membership_id == decision.decider_membership_id
-    else
-      is_binary(request.decided_by_id) and request.decided_by_id == decision.decider_id
-    end
+    decision.id == request.id or
+      (is_binary(request.decided_by_membership_id) and
+         request.decided_by_membership_id == decision.decider_membership_id)
   end
 
   defp decision_reason(request, %{decision: :override}, %{override: event_id})

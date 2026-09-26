@@ -366,10 +366,6 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "member authority", subject)
     assert [first] = runs(account.id, result.execution_id)
 
-    execution(result.execution_id)
-    |> Ecto.Changeset.change(requested_by_id: nil)
-    |> Repo.update!()
-
     assert {:ok, _} =
              Fixtures.Runs.finish(first, %{
                "status" => "success",
@@ -746,8 +742,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
     healthy =
       Fixtures.Runbooks.create_execution(
         account_id: account.id,
-        initiating_membership_id: subject.membership_id,
-        requested_by_id: subject.actor.id
+        initiating_membership_id: subject.membership_id
       )
 
     assert AdvanceExecutions.execute([]) == :ok

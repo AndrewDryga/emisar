@@ -390,7 +390,7 @@ defmodule Emisar.Audit do
   The retained audit receipts for approval decisions, keyed by request id.
   Requires audit-view permission and returns
   `{:ok, %{request_id => %{final: event_id, override: event_id | nil,
-  decisions: %{{:membership | :user, id} => event_id}}}}`
+  decisions: %{{:membership, id} => event_id}}}}`
   or `{:error, :unauthorized}`. Invalid or cross-account request ids contribute
   no entries.
   """
@@ -416,13 +416,17 @@ defmodule Emisar.Audit do
   end
 
   defp put_approval_event_ref(%Event{event_type: "approval.decision_recorded"} = event, refs) do
-    update_in(
-      refs,
-      [Access.key(event.target_id, empty_approval_refs())],
-      &update_in(&1, [:decisions], fn decisions ->
-        Map.put_new(decisions, approval_receipt_actor_key(event), event.id)
-      end)
-    )
+    case approval_receipt_actor_key(event) do
+      nil ->
+        refs
+
+      key ->
+        update_in(
+          refs,
+          [Access.key(event.target_id, empty_approval_refs())],
+          &update_in(&1, [:decisions], fn decisions -> Map.put_new(decisions, key, event.id) end)
+        )
+    end
   end
 
   defp put_approval_event_ref(%Event{event_type: "approval.overridden"} = event, refs) do
@@ -459,7 +463,7 @@ defmodule Emisar.Audit do
 
   @doc """
   Internal — the retained decision NOTES for approval requests, keyed by request
-  id: `%{request_id => %{decisions: %{{:membership | :user, id} => reason}, override: %{...} |
+  id: `%{request_id => %{decisions: %{{:membership, id} => reason}, override: %{...} |
   nil}}`.
 
   An `Emisar.Approvals.Decision` row records the vote, never the operator's
@@ -492,13 +496,19 @@ defmodule Emisar.Audit do
   end
 
   defp put_decision_receipt(%Event{event_type: "approval.decision_recorded"} = event, receipts) do
-    update_in(
-      receipts,
-      [Access.key(event.target_id, empty_decision_receipts())],
-      &update_in(&1, [:decisions], fn decisions ->
-        Map.put_new(decisions, approval_receipt_actor_key(event), event.payload["reason"])
-      end)
-    )
+    case approval_receipt_actor_key(event) do
+      nil ->
+        receipts
+
+      key ->
+        update_in(
+          receipts,
+          [Access.key(event.target_id, empty_decision_receipts())],
+          &update_in(&1, [:decisions], fn decisions ->
+            Map.put_new(decisions, key, event.payload["reason"])
+          end)
+        )
+    end
   end
 
   defp put_decision_receipt(%Event{event_type: "approval.overridden"} = event, receipts) do
@@ -524,25 +534,22 @@ defmodule Emisar.Audit do
 
   defp empty_decision_receipts, do: %{decisions: %{}, override: nil}
 
+  # A vote recorded before receipts named Members carries no Member key and is
+  # not keyed at all: the vote and its outcome stay on the request, and its note
+  # stays in the audit log.
   defp approval_receipt_actor_key(%Event{payload: %{"decider_membership_id" => id}})
        when is_binary(id),
        do: {:membership, id}
 
-  defp approval_receipt_actor_key(%Event{actor_id: id}), do: {:user, id}
+  defp approval_receipt_actor_key(%Event{}), do: nil
 
   @doc """
   Selects a decision's retained note or event reference from an already-loaded
-  receipt map. Exact Member receipts take precedence, including an empty note.
-  Historical fallback uses only the decision row's retained User id, never a
-  lookup of the Member's current personal link.
+  receipt map by its deciding Member, an empty note included. A vote with no
+  recorded Member has no receipt.
   """
-  def approval_decision_receipt(receipts, membership_id, legacy_user_id) do
-    case Map.fetch(receipts, {:membership, membership_id}) do
-      {:ok, receipt} -> receipt
-      :error when is_binary(legacy_user_id) -> Map.get(receipts, {:user, legacy_user_id})
-      :error -> nil
-    end
-  end
+  def approval_decision_receipt(receipts, membership_id),
+    do: Map.get(receipts, {:membership, membership_id})
 
   @doc """
   Searchable actors from the caller's readable audit history, sorted by label

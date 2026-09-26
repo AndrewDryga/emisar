@@ -978,7 +978,6 @@ defmodule Emisar.RunnerAccessTest do
           action_id: "linux.uptime",
           source: "operator",
           reason: "test current authorization",
-          requested_by_id: owner.id,
           initiating_membership_id: membership.id,
           args: %{}
         })
@@ -1068,7 +1067,6 @@ defmodule Emisar.RunnerAccessTest do
           action_id: "linux.uptime",
           source: "operator",
           reason: "test pack scope at release",
-          requested_by_id: owner.id,
           initiating_membership_id: membership.id,
           args: %{}
         })

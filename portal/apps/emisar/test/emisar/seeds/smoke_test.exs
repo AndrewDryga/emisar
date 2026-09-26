@@ -1,6 +1,6 @@
 defmodule Emisar.Seeds.SmokeTest do
   use Emisar.DataCase, async: false
-  alias Emisar.{Accounts, Approvals, Auth, Fixtures, Repo, Runners, Users}
+  alias Emisar.{Accounts, Approvals, Auth, Fixtures, Repo, Runners, Runs, Users}
 
   test "the fixed development enrollment secret belongs to the exact seed owner" do
     variable = "EMISAR_DEV_FIXED_ENROLLMENT_KEY"
@@ -19,13 +19,11 @@ defmodule Emisar.Seeds.SmokeTest do
 
       key = Runners.peek_enrollment_key_by_secret(raw)
       assert key.reusable
-      assert is_nil(key.created_by_id)
       creator = Accounts.peek_active_membership(key.account_id, key.created_by_membership_id)
       assert creator.role == :owner
       assert creator.contact_email == "demo@emisar.dev"
       policy = Emisar.Policies.peek_policy_for_account(key.account_id)
       assert policy.updated_by_membership_id == creator.id
-      assert is_nil(policy.updated_by_id)
     end
   end
 
@@ -110,7 +108,6 @@ defmodule Emisar.Seeds.SmokeTest do
       for grant <- grants do
         issuer = Accounts.peek_active_membership(grant.account_id, grant.granted_by_membership_id)
         assert issuer.role == :owner
-        assert grant.granted_by_id == nil
       end
 
       keys = Repo.all(Runners.EnrollmentKey)
@@ -119,7 +116,14 @@ defmodule Emisar.Seeds.SmokeTest do
       for key <- keys do
         creator = Accounts.peek_active_membership(key.account_id, key.created_by_membership_id)
         assert creator.role == :owner
-        assert is_nil(key.created_by_id)
+      end
+
+      # Every seeded run was started by a person or that person's agent key, so
+      # each names the seat that started it; the runs pages, approvals and docs
+      # captures all read the requester from there.
+      for run <- Repo.all(Runs.ActionRun) do
+        assert run.initiating_membership_id,
+               "seeded #{run.action_id} (#{run.source}) names no initiating Member"
       end
 
       for {email, name} <- [

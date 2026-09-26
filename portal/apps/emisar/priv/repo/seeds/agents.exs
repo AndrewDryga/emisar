@@ -31,7 +31,6 @@ defmodule Emisar.Seeds.Agents do
   # secret like any real key.
   defp seed_bridge_key(%{
          account: account,
-         user: user,
          owner_membership: owner_membership,
          owner_subject: owner_subject
        }) do
@@ -75,7 +74,6 @@ defmodule Emisar.Seeds.Agents do
           {:ok, key} =
             ApiKeys.ApiKey.Changeset.create(
               account.id,
-              user.id,
               owner_membership.id,
               String.slice(fixed, 0, 12),
               Emisar.Crypto.hash(fixed),
@@ -97,7 +95,6 @@ defmodule Emisar.Seeds.Agents do
             key_hash: Emisar.Crypto.hash(fixed),
             expires_at: Helpers.days_out(30),
             revoked_at: nil,
-            revoked_by_id: nil,
             revoked_by_membership_id: nil,
             replaces_id: nil,
             rotated_to_id: nil
@@ -137,8 +134,7 @@ defmodule Emisar.Seeds.Agents do
   # chip plus the fleet-wide upgrade notice — the day the target moves, and the
   # default demo account has to read healthy.
   defp seed_agent_fleet(
-         %{account: account, user: user, owner_membership: owner_membership, jordan: jordan} =
-           ctx
+         %{account: account, owner_membership: owner_membership, jordan: jordan} = ctx
        ) do
     mcp_bridge_current = Emisar.Compat.mcp_target()
     jordan_membership = Accounts.peek_sync_membership(account.id, jordan.id)
@@ -147,7 +143,7 @@ defmodule Emisar.Seeds.Agents do
     [
       # A pure quick-mint: named after its client, so the list DROPS the redundant
       # "client Claude Code" seg — the name already says which client it is.
-      {user, owner_membership.id, "Claude Code",
+      {owner_membership.id, "Claude Code",
        %{
          "name" => "claude-code",
          "title" => "Claude Code",
@@ -157,28 +153,28 @@ defmodule Emisar.Seeds.Agents do
       # Remote OAuth (ChatGPT): it initialized — so it reports a client — but no
       # tracked call has landed yet → "never used". No bridge (remote), and OAuth
       # owns its lifecycle so there is no static expiry.
-      {user, owner_membership.id, "ChatGPT", %{"name" => "openai-mcp (ChatGPT)"}, nil, nil},
+      {owner_membership.id, "ChatGPT", %{"name" => "openai-mcp (ChatGPT)"}, nil, nil},
       # A second owner's key, so the list gains a second owner group. Codex reports
       # a short "Codex" title that differs from the key name → the client seg stays.
-      {jordan, jordan_membership.id, "Codex CLI",
+      {jordan_membership.id, "Codex CLI",
        %{"name" => "Codex", "version" => "0.9.2", "bridge_version" => mcp_bridge_current},
        Helpers.mins_ago(6), Helpers.days_out(30)},
       # A minimal client initialize — no title, no client version — still renders.
-      {jordan, jordan_membership.id, "Gemini CLI",
+      {jordan_membership.id, "Gemini CLI",
        %{"name" => "gemini-cli-mcp-client", "bridge_version" => mcp_bridge_current},
        Helpers.hours_ago(1), Helpers.days_out(29)},
       # Drift: a key named for one client but actually driven by another (Claude
       # Code), gone quiet for weeks → dormant. Here the client seg earns its place —
       # the name alone would mislead.
-      {jordan, jordan_membership.id, "Claude Desktop",
+      {jordan_membership.id, "Claude Desktop",
        %{
          "name" => "claude-code",
          "title" => "Claude Code",
          "bridge_version" => mcp_bridge_current
        }, Helpers.days_ago(17), Helpers.days_out(13)}
     ]
-    |> Enum.each(fn {owner_user, membership_id, name, client_info, used_at, expires_at} ->
-      seed_agent_key(ctx, owner_user, membership_id, name, client_info, used_at, expires_at)
+    |> Enum.each(fn {membership_id, name, client_info, used_at, expires_at} ->
+      seed_agent_key(ctx, membership_id, name, client_info, used_at, expires_at)
     end)
 
     seed_mid_swap_rotation(ctx, mcp_bridge_current)
@@ -192,7 +188,6 @@ defmodule Emisar.Seeds.Agents do
   # records; `used_at`/`expires_at` set the row's liveness the way real calls do.
   defp seed_agent_key(
          %{account: account},
-         owner_user,
          owner_membership_id,
          name,
          client_info,
@@ -202,7 +197,7 @@ defmodule Emisar.Seeds.Agents do
     existing =
       Enum.find(
         Helpers.account_api_keys(account),
-        &(&1.name == name and &1.created_by_id == owner_user.id)
+        &(&1.name == name and &1.created_by_membership_id == owner_membership_id)
       )
 
     key =
@@ -213,7 +208,6 @@ defmodule Emisar.Seeds.Agents do
           {:ok, minted} =
             ApiKeys.ApiKey.Changeset.create(
               account.id,
-              owner_user.id,
               owner_membership_id,
               prefix,
               hash,
@@ -238,13 +232,13 @@ defmodule Emisar.Seeds.Agents do
   # exists, but its first call hasn't landed — the predecessor keeps working until
   # it does. The list shows the successor's amber "replaces … · swap pending".
   defp seed_mid_swap_rotation(
-         %{account: account, user: user, owner_membership: owner_membership},
+         %{account: account, owner_membership: owner_membership},
          mcp_bridge_current
        ) do
     cursor_keys =
       Enum.filter(
         Helpers.account_api_keys(account),
-        &(&1.name == "Cursor" and &1.created_by_id == user.id)
+        &(&1.name == "Cursor" and &1.created_by_membership_id == owner_membership.id)
       )
 
     cursor_client = %{"name" => "cursor", "bridge_version" => mcp_bridge_current}
@@ -257,7 +251,6 @@ defmodule Emisar.Seeds.Agents do
           {:ok, minted} =
             ApiKeys.ApiKey.Changeset.create(
               account.id,
-              user.id,
               owner_membership.id,
               prefix,
               hash,
@@ -286,7 +279,6 @@ defmodule Emisar.Seeds.Agents do
           {:ok, minted} =
             ApiKeys.ApiKey.Changeset.create(
               account.id,
-              user.id,
               owner_membership.id,
               prefix,
               hash,

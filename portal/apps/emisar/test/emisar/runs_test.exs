@@ -24,7 +24,6 @@ defmodule Emisar.RunsTest do
         reason: "test",
         source: "operator",
         account_id: account_id,
-        requested_by_id: initiator.id,
         initiating_membership_id: initiating_membership.id
       },
       attrs
@@ -274,7 +273,6 @@ defmodule Emisar.RunsTest do
         Fixtures.Memberships.sync_display_name(other_membership, "Foreign Directory Name")
 
       attrs = %{
-        requested_by_id: requester.id,
         initiating_membership_id: local_membership.id
       }
 
@@ -315,7 +313,6 @@ defmodule Emisar.RunsTest do
 
       attrs = %{
         source: "mcp",
-        requested_by_id: nil,
         api_key_id: key.id,
         initiating_membership_id: membership.id
       }
@@ -460,7 +457,6 @@ defmodule Emisar.RunsTest do
         Fixtures.Memberships.sync_display_name(other_membership, "Maya Chen (Employee)")
 
       attrs = %{
-        requested_by_id: requester.id,
         initiating_membership_id: local_membership.id
       }
 
@@ -503,7 +499,6 @@ defmodule Emisar.RunsTest do
         Runs.create_run(
           base_attrs(account.id, runner.id, %{
             source: "mcp",
-            requested_by_id: nil,
             api_key_id: key.id,
             initiating_membership_id: local_membership.id
           })
@@ -567,14 +562,13 @@ defmodule Emisar.RunsTest do
     end
 
     test "the Operator (member) and Runbook filters scope the feed" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       runbook = Fixtures.Runbooks.create_runbook(account_id: account.id)
 
       {:ok, my_run} =
         Runs.create_run(
           base_attrs(account.id, runner.id, %{
-            requested_by_id: user.id,
             initiating_membership_id: subject.membership_id
           })
         )
@@ -655,11 +649,11 @@ defmodule Emisar.RunsTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       _membership = Fixtures.Memberships.sync_display_name(membership, "Local Operator")
 
-      mine = %{requested_by_id: user.id, initiating_membership_id: membership.id}
+      mine = %{initiating_membership_id: membership.id}
       {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, mine))
       {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, mine))
       # A run with no initiating member (an engine path) contributes no option.
-      engine = %{requested_by_id: nil, initiating_membership_id: nil}
+      engine = %{initiating_membership_id: nil}
       {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, engine))
 
       assert Runs.list_run_operator_options(subject) ==
@@ -674,9 +668,9 @@ defmodule Emisar.RunsTest do
     end
 
     test "cross-account — B's options never include A's operators" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_user, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{requested_by_id: user.id}))
+      {:ok, _} = Runs.create_run(base_attrs(account.id, runner.id, %{}))
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       assert Runs.list_run_operator_options(subject_b) == {:ok, []}
@@ -2199,14 +2193,10 @@ defmodule Emisar.RunsTest do
           }
         )
 
-      requester = Fixtures.Users.create_user()
       subject = owner_subject_for(account)
 
       assert {:ok, :pending_approval, %ActionRun{status: :pending_approval} = run} =
-               Runs.dispatch_run(
-                 base_attrs(account.id, runner.id, %{requested_by_id: requester.id}),
-                 subject
-               )
+               Runs.dispatch_run(base_attrs(account.id, runner.id, %{}), subject)
 
       assert {:ok, [request], _} = Approvals.list_pending_approval_requests(subject)
       assert request.reason == run.reason
@@ -2977,7 +2967,6 @@ defmodule Emisar.RunsTest do
       assert run.api_key_id == key.id
       assert run.initiating_membership_id == membership.id
       assert run.source == :mcp
-      assert is_nil(run.requested_by_id)
     end
 
     test "commits every target before delivery and exact replay never redelivers" do
@@ -3518,9 +3507,12 @@ defmodule Emisar.RunsTest do
       runner: runner
     } do
       Emisar.Runners.subscribe_runner_transport(runner)
+      attrs = base_attrs(account.id, runner.id)
+      # A durable caller threads the Member it dispatches for.
+      attrs = Map.put(attrs, :requested_by_membership_id, attrs.initiating_membership_id)
 
       assert {:ok, :running, %ActionRun{} = run} =
-               Runs.dispatch_run_for_account(base_attrs(account.id, runner.id), account.id)
+               Runs.dispatch_run_for_account(attrs, account.id)
 
       assert run.account_id == account.id
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500

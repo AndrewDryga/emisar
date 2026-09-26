@@ -464,7 +464,7 @@ defmodule Emisar.ApiKeys do
   defp bridge_version(%ApiKey{}), do: nil
 
   # An OAuth backing key is a non-expiring MCP key: consent mints it without an
-  # expiry (`create_backing_key/4`) because OAuth owns the lifecycle through the
+  # expiry (`create_backing_key/3`) because OAuth owns the lifecycle through the
   # refresh token, and revocation is the off-switch. Every operator-minted MCP
   # key carries an expiry, so among `:mcp` keys the absent `expires_at`
   # uniquely identifies an OAuth-backed connection — and one can't be rotated,
@@ -523,7 +523,6 @@ defmodule Emisar.ApiKeys do
       |> Multi.insert(:key, fn %{current_subject: current_subject} ->
         ApiKey.Changeset.create(
           account_id,
-          Subject.user_id(current_subject),
           current_subject.membership_id,
           prefix,
           hash,
@@ -568,7 +567,6 @@ defmodule Emisar.ApiKeys do
       |> Multi.insert(:key, fn %{credential: {_raw, prefix, hash}, source: source} ->
         ApiKey.Changeset.create(
           source.account_id,
-          source.created_by_id,
           source.created_by_membership_id,
           prefix,
           hash,
@@ -840,7 +838,6 @@ defmodule Emisar.ApiKeys do
       changeset =
         ApiKey.Changeset.create(
           source.account_id,
-          source.created_by_id,
           source.created_by_membership_id,
           prefix,
           hash,
@@ -1123,7 +1120,6 @@ defmodule Emisar.ApiKeys do
     |> Multi.insert(:key, fn %{current_subject: current_subject} ->
       ApiKey.Changeset.mint_quick(
         account_id,
-        Subject.user_id(current_subject),
         current_subject.membership_id,
         prefix,
         hash,
@@ -1563,12 +1559,11 @@ defmodule Emisar.ApiKeys do
   self-heal would instead break every OAuth connection 30 days after consent
   even while it is actively refreshing.
   """
-  def create_backing_key(account_id, user_id, membership_id, name) do
+  def create_backing_key(account_id, membership_id, name) do
     {_raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
     ApiKey.Changeset.create(
       account_id,
-      user_id,
       membership_id,
       prefix,
       hash,
@@ -1896,7 +1891,6 @@ defmodule Emisar.ApiKeys do
     DeviceGrant.Changeset.approve(
       grant,
       account.id,
-      Subject.user_id(current_subject),
       current_subject.membership_id
     )
   end
@@ -1905,7 +1899,6 @@ defmodule Emisar.ApiKeys do
     DeviceGrant.Changeset.deny(
       grant,
       account.id,
-      Subject.user_id(current_subject),
       current_subject.membership_id
     )
   end
@@ -2062,7 +2055,6 @@ defmodule Emisar.ApiKeys do
       changeset =
         ApiKey.Changeset.mint_quick(
           grant.account_id,
-          grant.approved_by_id,
           grant.approved_by_membership_id,
           prefix,
           hash,

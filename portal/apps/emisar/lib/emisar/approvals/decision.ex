@@ -13,7 +13,6 @@ defmodule Emisar.Approvals.Decision do
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :request, Emisar.Approvals.Request
-    belongs_to :decider, Emisar.Users.User, where: [deleted_at: nil]
     # The exact historical voter survives offboarding for attribution only.
     belongs_to :decider_membership, Emisar.Accounts.Membership
 

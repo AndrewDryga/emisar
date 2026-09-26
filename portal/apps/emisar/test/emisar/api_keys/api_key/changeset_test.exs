@@ -73,7 +73,6 @@ defmodule Emisar.ApiKeys.ApiKey.ChangesetTest do
   describe "create/6" do
     test "casts the browser's params exactly as form/1 does" do
       account_id = Ecto.UUID.generate()
-      user_id = Ecto.UUID.generate()
       membership_id = Ecto.UUID.generate()
       lineage_id = Ecto.UUID.generate()
       attrs = %{"name" => "Agent", "description" => "  ", "expires_at" => "2099-12-25T10:30"}
@@ -81,7 +80,6 @@ defmodule Emisar.ApiKeys.ApiKey.ChangesetTest do
       changeset =
         ApiKey.Changeset.create(
           account_id,
-          user_id,
           membership_id,
           "emk-test-key",
           <<0>>,
@@ -95,7 +93,6 @@ defmodule Emisar.ApiKeys.ApiKey.ChangesetTest do
                name: "Agent",
                expires_at: ~U[2099-12-25 10:30:00.000000Z],
                account_id: account_id,
-               created_by_id: user_id,
                created_by_membership_id: membership_id,
                credential_lineage_id: lineage_id,
                key_prefix: "emk-test-key",
@@ -108,7 +105,6 @@ defmodule Emisar.ApiKeys.ApiKey.ChangesetTest do
 
       changeset =
         ApiKey.Changeset.create(
-          Ecto.UUID.generate(),
           Ecto.UUID.generate(),
           Ecto.UUID.generate(),
           "emk-test-key",
@@ -124,7 +120,6 @@ defmodule Emisar.ApiKeys.ApiKey.ChangesetTest do
       changeset =
         ApiKey.Changeset.create(
           Ecto.UUID.generate(),
-          Ecto.UUID.generate(),
           nil,
           "emk-test-key",
           <<0>>,
@@ -135,11 +130,10 @@ defmodule Emisar.ApiKeys.ApiKey.ChangesetTest do
     end
   end
 
-  describe "mint_quick/6" do
+  describe "mint_quick/5" do
     test "requires the minting membership" do
       changeset =
         ApiKey.Changeset.mint_quick(
-          Ecto.UUID.generate(),
           Ecto.UUID.generate(),
           nil,
           "emk-test-key",

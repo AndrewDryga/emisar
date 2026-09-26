@@ -128,7 +128,6 @@ defmodule Emisar.Accounts.Membership.Changeset do
     membership
     |> change(
       disabled_at: DateTime.utc_now(),
-      disabled_by_id: nil,
       disabled_by_membership_id: disabled_by_membership_id
     )
     |> foreign_key_constraint(:disabled_by_membership_id)
@@ -164,7 +163,6 @@ defmodule Emisar.Accounts.Membership.Changeset do
   def reinstate(%Membership{} = membership) do
     change(membership,
       disabled_at: nil,
-      disabled_by_id: nil,
       disabled_by_membership_id: nil,
       directory_suspended: false
     )

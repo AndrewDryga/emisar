@@ -137,7 +137,6 @@ defmodule Emisar.MembersWithoutPersonalLoginTest do
 
     assert {:ok, :running, run} = Runs.dispatch_run(attrs, subject)
     assert run.initiating_membership_id == membership.id
-    assert is_nil(run.requested_by_id)
     assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
   end
 
@@ -156,7 +155,6 @@ defmodule Emisar.MembersWithoutPersonalLoginTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        requested_by_id: requester.user_id,
         initiating_membership_id: requester.id,
         args: %{},
         pack_ref: Fixtures.Catalog.default_pack_ref(),
@@ -170,7 +168,6 @@ defmodule Emisar.MembersWithoutPersonalLoginTest do
              Approvals.approve_request(request, subject, "Reviewed")
 
     assert decided.decided_by_membership_id == approver.id
-    assert is_nil(decided.decided_by_id)
     assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
   end
 
@@ -181,7 +178,6 @@ defmodule Emisar.MembersWithoutPersonalLoginTest do
 
     assert {:ok, raw, key} = ApiKeys.mint_quick_key(subject)
     assert key.created_by_membership_id == membership.id
-    assert is_nil(key.created_by_id)
 
     key_id = key.id
     assert %ApiKeys.ApiKey{id: ^key_id} = ApiKeys.peek_api_key_by_secret(raw)
@@ -211,7 +207,7 @@ defmodule Emisar.MembersWithoutPersonalLoginTest do
 
     member_id = membership.id
 
-    assert %ApiKeys.ApiKey{created_by_membership_id: ^member_id, created_by_id: nil} =
+    assert %ApiKeys.ApiKey{created_by_membership_id: ^member_id} =
              Repo.one(ApiKeys.ApiKey)
   end
 

@@ -75,7 +75,7 @@ defmodule Emisar.TelemetryTest do
         Runs.create_run(%{
           account_id: account.id,
           runner_id: runner.id,
-          requested_by_id: membership.user_id,
+          initiating_membership_id: membership.id,
           action_id: "linux.uptime",
           source: "operator",
           args: %{},

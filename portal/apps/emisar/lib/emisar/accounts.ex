@@ -1309,7 +1309,6 @@ defmodule Emisar.Accounts do
       membership: %{
         membership
         | invitation_token_digest: nil,
-          disabled_by_id: nil,
           disabled_by_membership_id: nil
       },
       pending_invitation?: pending_invitation?,

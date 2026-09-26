@@ -369,12 +369,7 @@ defmodule Emisar.ApiKeysTest do
                 }}
 
       assert {:ok, _key} =
-               ApiKeys.create_backing_key(
-                 account.id,
-                 Subject.actor_id(subject),
-                 subject.membership_id,
-                 "OAuth"
-               )
+               ApiKeys.create_backing_key(account.id, subject.membership_id, "OAuth")
 
       assert ApiKeys.list_member_key_expirations([subject.membership_id], subject) ==
                {:ok,
@@ -973,7 +968,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "returns raw + persisted key" do
-      {user, account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
 
       assert {:ok, raw, %ApiKey{} = key} =
                ApiKeys.create_key(
@@ -985,7 +980,7 @@ defmodule Emisar.ApiKeysTest do
 
       assert String.starts_with?(raw, "emk-")
       assert key.account_id == account.id
-      assert key.created_by_id == user.id
+      assert key.created_by_membership_id == subject.membership_id
       assert is_binary(key.key_hash)
       assert is_binary(key.key_prefix)
     end
@@ -1476,7 +1471,7 @@ defmodule Emisar.ApiKeysTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       {:ok, backing} =
-        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+        ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
 
       assert ApiKeys.rotate_api_key(backing, subject) == {:error, :oauth_backing}
     end
@@ -1524,7 +1519,6 @@ defmodule Emisar.ApiKeysTest do
 
       assert successor.name == key.name
       assert successor.kind == :mcp
-      assert successor.created_by_id == key.created_by_id
       assert successor.created_by_membership_id == key.created_by_membership_id
       assert successor.replaces_id == key.id
       assert successor.credential_lineage_id == key.credential_lineage_id
@@ -1795,7 +1789,7 @@ defmodule Emisar.ApiKeysTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       {:ok, key} =
-        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+        ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
 
       :ok = ApiKeys.subscribe_account_api_keys(account.id)
       assert ApiKeys.broadcast_backing_key_created(key) == :ok
@@ -1811,7 +1805,7 @@ defmodule Emisar.ApiKeysTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       {:ok, key} =
-        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+        ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
 
       :ok = ApiKeys.subscribe_account_api_keys(account.id)
       assert ApiKeys.broadcast_backing_key_revoked(key) == :ok
@@ -1929,11 +1923,10 @@ defmodule Emisar.ApiKeysTest do
       {_user, account, subject} = owner_subject_pair()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
-      assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_membership_id: id} = revoked} =
+      assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_membership_id: id}} =
                ApiKeys.revoke_api_key(key, subject)
 
       assert id == subject.membership_id
-      assert is_nil(revoked.revoked_by_id)
       assert Repo.reload!(key).revoked_at
     end
 
@@ -1972,7 +1965,6 @@ defmodule Emisar.ApiKeysTest do
         revoked = Repo.reload!(key)
         assert %DateTime{} = revoked.revoked_at
         assert revoked.revoked_by_membership_id == subject.membership_id
-        assert is_nil(revoked.revoked_by_id)
       end
 
       for raw <- [source_raw, pending_raw, leaf_raw, branch_raw] do
@@ -2100,7 +2092,6 @@ defmodule Emisar.ApiKeysTest do
 
       assert second == first
       assert again.revoked_by_membership_id == subject.membership_id
-      assert is_nil(again.revoked_by_id)
       assert Repo.reload!(key).revoked_at
       refute_receive {:list_changed, :api_key, "api_key.revoked", ^id}
 
@@ -2512,7 +2503,6 @@ defmodule Emisar.ApiKeysTest do
       duplicate =
         Emisar.ApiKeys.ApiKey.Changeset.create(
           stale.account_id,
-          stale.created_by_id,
           stale.created_by_membership_id,
           stale.key_prefix,
           stale.key_hash,
@@ -2656,16 +2646,15 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
-  describe "create_backing_key/4" do
+  describe "create_backing_key/3" do
     test "inserts a non-expiring MCP key scoped read+execute, owned by the membership" do
       {user, account, _subject} = owner_subject_pair()
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       assert {:ok, %ApiKey{} = key} =
-               ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+               ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
 
       assert key.account_id == account.id
-      assert key.created_by_id == user.id
       assert key.created_by_membership_id == membership.id
       assert key.name == "OAuth: Claude"
       assert key.kind == :mcp
@@ -2683,7 +2672,7 @@ defmodule Emisar.ApiKeysTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       {:ok, key} =
-        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Cursor")
+        ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Cursor")
 
       assert %ApiKey{id: id} = ApiKeys.peek_api_key_by_id(key.id)
       assert id == key.id
@@ -2696,7 +2685,7 @@ defmodule Emisar.ApiKeysTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       {:ok, key} =
-        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+        ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
 
       assert {:ok, %{oauth_backing_key_revocation: first}} =
                Ecto.Multi.new()
@@ -2704,7 +2693,7 @@ defmodule Emisar.ApiKeysTest do
                |> Repo.commit_multi()
 
       assert first.revoked?
-      assert %ApiKey{revoked_at: %DateTime{}, revoked_by_id: nil} = first.key
+      assert %ApiKey{revoked_at: %DateTime{}} = first.key
       assert is_nil(first.key.revoked_by_membership_id)
 
       assert {:ok, %{oauth_backing_key_revocation: second}} =
@@ -2757,7 +2746,7 @@ defmodule Emisar.ApiKeysTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       {:ok, key} =
-        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+        ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
 
       refute key.last_used_at
 
@@ -2783,7 +2772,7 @@ defmodule Emisar.ApiKeysTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       {:ok, backing} =
-        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+        ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
 
       # An expiring operator key is not a backing key, so it's never a candidate.
       {:ok, _raw, _operator_key} = ApiKeys.create_key(%{name: "prod"}, subject)
@@ -2807,7 +2796,7 @@ defmodule Emisar.ApiKeysTest do
       membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
       {:ok, backing} =
-        ApiKeys.create_backing_key(account.id, user.id, membership.id, "OAuth: Claude")
+        ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
 
       # An expiring operator key is NOT an OAuth backing key, so even with its id
       # passed the shape guard keeps it — a mis-passed id can't nuke a real key.
@@ -3036,7 +3025,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "approve_device_grant/2" do
     test "binds the approver's account + identity and writes the audit event" do
-      {user, account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
 
       {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3044,7 +3033,6 @@ defmodule Emisar.ApiKeysTest do
       assert {:ok, approved} = ApiKeys.approve_device_grant(grant, subject)
       assert approved.status == :approved
       assert approved.account_id == account.id
-      assert approved.approved_by_id == user.id
       assert approved.approved_by_membership_id == subject.membership_id
 
       {:ok, events, _meta} =
@@ -3114,7 +3102,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "deny_device_grant/2" do
     test "records the denier and writes the audit event" do
-      {user, account, subject} = owner_subject_pair()
+      {_user, account, subject} = owner_subject_pair()
 
       {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["cursor"], %RequestContext{})
@@ -3122,7 +3110,7 @@ defmodule Emisar.ApiKeysTest do
       assert {:ok, denied} = ApiKeys.deny_device_grant(grant, subject)
       assert denied.status == :denied
       assert denied.account_id == account.id
-      assert denied.approved_by_id == user.id
+      assert denied.approved_by_membership_id == subject.membership_id
 
       {:ok, events, _meta} =
         Audit.list_events(subject, filter: [event_type: ["api_key.device_grant_denied"]])

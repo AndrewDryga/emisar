@@ -686,11 +686,7 @@ defmodule Emisar.Approvals do
           Map.get(facts.labels, decision.decider_membership_id),
           decision.decision,
           decision.decided_at,
-          Audit.approval_decision_receipt(
-            facts.receipt.decisions,
-            decision.decider_membership_id,
-            decision.decider_id
-          )
+          Audit.approval_decision_receipt(facts.receipt.decisions, decision.decider_membership_id)
         )
       end)
       |> within_decisions_budget()

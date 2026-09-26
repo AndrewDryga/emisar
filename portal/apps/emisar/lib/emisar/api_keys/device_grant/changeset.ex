@@ -23,21 +23,19 @@ defmodule Emisar.ApiKeys.DeviceGrant.Changeset do
   end
 
   @doc "Binds the approver — their recorded identity authorizes the claim-time mint."
-  def approve(%DeviceGrant{} = grant, account_id, user_id, membership_id) do
+  def approve(%DeviceGrant{} = grant, account_id, membership_id) do
     change(grant,
       status: :approved,
       account_id: account_id,
-      approved_by_id: user_id,
       approved_by_membership_id: membership_id
     )
   end
 
   @doc "Records the denier for the audit trail; the poll reports access_denied."
-  def deny(%DeviceGrant{} = grant, account_id, user_id, membership_id) do
+  def deny(%DeviceGrant{} = grant, account_id, membership_id) do
     change(grant,
       status: :denied,
       account_id: account_id,
-      approved_by_id: user_id,
       approved_by_membership_id: membership_id
     )
   end

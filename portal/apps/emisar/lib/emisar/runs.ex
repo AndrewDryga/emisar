@@ -949,19 +949,6 @@ defmodule Emisar.Runs do
     end
   end
 
-  defp resolve_initiating_membership(
-         %{account_id: account_id, requested_by_id: requested_by_id} = attrs
-       )
-       when is_binary(account_id) and is_binary(requested_by_id) do
-    case Accounts.peek_sync_membership(account_id, requested_by_id) do
-      %Accounts.Membership{id: membership_id} ->
-        Map.put(attrs, :initiating_membership_id, membership_id)
-
-      nil ->
-        attrs
-    end
-  end
-
   defp resolve_initiating_membership(attrs), do: attrs
 
   defp compose_run_steps(multi, nil), do: multi
@@ -1881,23 +1868,10 @@ defmodule Emisar.Runs do
   # and the runner-scope membership. This keeps a boundary regression from
   # letting a user name another membership (or an API key another credential)
   # to widen its fleet reach or misattribute the run.
-  defp put_dispatcher_identity(
-         attrs,
-         %Subject{actor: %Users.User{id: user_id}, membership_id: membership_id}
-       ) do
-    attrs
-    |> Map.put(:requested_by_id, user_id)
-    |> Map.put(:requested_by_membership_id, membership_id)
-    |> Map.delete(:api_key_id)
-  end
-
-  defp put_dispatcher_identity(
-         attrs,
-         %Subject{actor: %Accounts.Membership{}, membership_id: membership_id}
-       ) do
+  defp put_dispatcher_identity(attrs, %Subject{actor: actor, membership_id: membership_id})
+       when is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership) do
     attrs
     |> Map.put(:requested_by_membership_id, membership_id)
-    |> Map.delete(:requested_by_id)
     |> Map.delete(:api_key_id)
   end
 
@@ -1908,7 +1882,6 @@ defmodule Emisar.Runs do
     attrs
     |> Map.put(:api_key_id, api_key_id)
     |> Map.put(:requested_by_membership_id, membership_id)
-    |> Map.delete(:requested_by_id)
   end
 
   defp put_dispatcher_identity(attrs, %Subject{membership_id: membership_id}),

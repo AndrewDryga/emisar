@@ -17,7 +17,6 @@ defmodule Emisar.Runbooks.Release do
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :runbook, Emisar.Runbooks.Runbook, where: [deleted_at: nil]
-    belongs_to :published_by, Emisar.Users.User, where: [deleted_at: nil]
     # Historical attribution includes offboarded Members; it grants no authority.
     belongs_to :published_by_membership, Emisar.Accounts.Membership
 

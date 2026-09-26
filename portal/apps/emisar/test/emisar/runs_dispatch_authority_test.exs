@@ -55,14 +55,11 @@ defmodule Emisar.RunsDispatchAuthorityTest do
       Fixtures.Runs.create_run(
         account_id: subject.account.id,
         runner_id: runner.id,
-        requested_by_id: subject.actor.id,
         initiating_membership_id: membership.id,
         status: :pending
       )
 
     assert authorize_initiator(run) == {:ok, :authorized}
-    # The initiating Member is the authority; no personal login is consulted.
-    assert authorize_initiator(%{run | requested_by_id: nil}) == {:ok, :authorized}
     foreign = Fixtures.Memberships.create_membership(role: "admin")
 
     assert authorize_initiator(%{run | initiating_membership_id: foreign.id}) ==
@@ -109,7 +106,6 @@ defmodule Emisar.RunsDispatchAuthorityTest do
       Fixtures.Runs.create_run(
         account_id: subject.account.id,
         runner_id: runner.id,
-        requested_by_id: subject.actor.id,
         initiating_membership_id: membership.id,
         status: :pending,
         pack_ref: "postgres@1.0.0/sha256:" <> String.duplicate("a", 64)

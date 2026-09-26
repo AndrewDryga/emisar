@@ -69,7 +69,6 @@ defmodule Emisar.Runbooks.Scheduler.Creation do
       runbook_id: runbook.id,
       runbook_version: runbook_version,
       initiating_membership_id: subject.membership_id,
-      requested_by_id: Subject.user_id(subject),
       api_key_id: Subject.api_key_id(subject),
       operation_id: Keyword.get(opts, :operation_id),
       mcp_operation_record_id: Keyword.get(opts, :mcp_operation_record_id),

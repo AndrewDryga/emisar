@@ -7,21 +7,20 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
 
   @doc """
   Validation-only changeset for the operator create form — the same casting,
-  normalization and operator-field validations `create/7` applies, but it mints
+  normalization and operator-field validations `create/6` applies, but it mints
   no secret and touches no DB, so the LiveView can drive `phx-change`
   validation and render inline field errors without generating a key on every
-  keystroke. Submitting the same params still goes through `create/7`.
+  keystroke. Submitting the same params still goes through `create/6`.
   """
   def form(attrs \\ %{}), do: cast_operator_input(%ApiKey{}, attrs)
 
   # `kind` is the sole capability discriminator (`:mcp` default; the audit page
   # passes `:audit_export`). The key carries no per-key authorization scope —
   # Policy + approval + the operator's own runner scope decide what it may do.
-  def create(account_id, user_id, membership_id, prefix, hash, attrs, opts \\ []) do
+  def create(account_id, membership_id, prefix, hash, attrs, opts \\ []) do
     %ApiKey{}
     |> cast_operator_input(attrs)
     |> put_change(:account_id, account_id)
-    |> put_change(:created_by_id, user_id)
     |> put_change(:created_by_membership_id, membership_id)
     |> put_change(
       :credential_lineage_id,
@@ -100,11 +99,10 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     end
   end
 
-  def mint_quick(account_id, user_id, membership_id, prefix, hash, attrs) do
+  def mint_quick(account_id, membership_id, prefix, hash, attrs) do
     %ApiKey{}
     |> cast(attrs, [:name])
     |> put_change(:account_id, account_id)
-    |> put_change(:created_by_id, user_id)
     |> put_change(:created_by_membership_id, membership_id)
     |> put_change(:credential_lineage_id, Ecto.UUID.generate())
     |> put_change(:key_prefix, prefix)
@@ -138,7 +136,6 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     key
     |> change(
       revoked_at: DateTime.utc_now(),
-      revoked_by_id: nil,
       revoked_by_membership_id: by_membership_id
     )
     |> foreign_key_constraint(:revoked_by_membership_id)

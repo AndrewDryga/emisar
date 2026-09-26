@@ -56,7 +56,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         reason: "needs review",
         args: %{},
         initiating_membership_id: initiating_membership.id,
-        requested_by_id: requested_by.id,
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
@@ -267,7 +266,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        requested_by_id: user.id,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         runner_id: runner.id,
         action_id: "linux.reboot",
         source: "operator",
@@ -292,7 +291,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        requested_by_id: user.id,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "mcp",
@@ -333,7 +332,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        requested_by_id: user.id,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -377,7 +376,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        requested_by_id: user.id,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         runner_id: runner.id,
         action_id: "linux.systemctl_restart",
         source: "operator",
@@ -416,7 +415,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        requested_by_id: user.id,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -453,7 +452,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        requested_by_id: user.id,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -488,7 +487,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        requested_by_id: user.id,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         runner_id: runner.id,
         action_id: "database.scale",
         source: "mcp",
@@ -518,7 +517,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        requested_by_id: user.id,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -563,7 +562,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        requested_by_id: user.id,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -778,7 +777,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ ~r/<option(?=[^>]*\bvalue="any_args")(?=[^>]*\bselected)[^>]*>/
     assert html =~ ~r/<input(?=[^>]*\bname="max_uses")(?=[^>]*\bvalue="0")[^>]*>/
 
-    assert %{status: :pending, decided_by_id: nil} = Repo.reload!(request)
+    assert %{status: :pending, decided_by_membership_id: nil} = Repo.reload!(request)
   end
 
   test "a crafted reuse window is refused before any decision is recorded", %{conn: conn} do
@@ -1098,7 +1097,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       Fixtures.Runs.create_signed_run(%{
         account_id: account.id,
         initiating_membership_id: requester.id,
-        requested_by_id: requester.user_id,
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "mcp",
@@ -1704,7 +1702,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         reason: "needs review",
         args: %{},
         initiating_membership_id: owner_membership.id,
-        requested_by_id: owner.id,
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
@@ -1809,7 +1806,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Decisions</h3>"
   end
 
-  test "a User-only historical final decision keeps its note without inventing a Member", %{
+  test "a final decision with no recorded Member keeps its note without naming anyone", %{
     conn: conn
   } do
     {conn, user, account} = register_and_log_in(conn)
@@ -1818,7 +1815,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       Fixtures.Approvals.create_request(%{
         account_id: account.id,
         status: :approved,
-        decided_by_id: user.id,
         decision_reason: "Reviewed the final plan."
       })
 
@@ -1917,7 +1913,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       Fixtures.Approvals.create_request(%{
         account_id: account.id,
         status: :approved,
-        decided_by_id: user.id,
+        decided_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
         decision_reason: "Reviewed the final plan."
       })
 

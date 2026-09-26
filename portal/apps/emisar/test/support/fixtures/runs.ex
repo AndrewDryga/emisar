@@ -54,7 +54,6 @@ defmodule Emisar.Fixtures.Runs do
       Map.merge(
         params,
         Map.take(attrs, [
-          :requested_by_id,
           :initiating_membership_id,
           :api_key_id,
           :operation_id,
@@ -80,7 +79,7 @@ defmodule Emisar.Fixtures.Runs do
   @doc "Sets the exact human initiator for approval and attribution fixture scenarios."
   def set_initiating_membership(%ActionRun{} = run, membership) do
     run
-    |> change(initiating_membership_id: membership.id, requested_by_id: membership.user_id)
+    |> change(initiating_membership_id: membership.id)
     |> Repo.update!()
   end
 

@@ -884,7 +884,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       subject = owner_subject(user, account)
 
       {:ok, _backing} =
-        ApiKeys.create_backing_key(account.id, user.id, subject.membership_id, "Claude (OAuth)")
+        ApiKeys.create_backing_key(account.id, subject.membership_id, "Claude (OAuth)")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
 
@@ -1189,7 +1189,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       subject = owner_subject(user, account)
 
       {:ok, backing} =
-        ApiKeys.create_backing_key(account.id, user.id, subject.membership_id, "Claude (OAuth)")
+        ApiKeys.create_backing_key(account.id, subject.membership_id, "Claude (OAuth)")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
 

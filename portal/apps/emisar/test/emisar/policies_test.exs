@@ -1014,10 +1014,8 @@ defmodule Emisar.PoliciesTest do
       assert created.scope_value == runner.id
       assert created.rules["defaults"]["low"] == "deny"
       assert created.updated_by_membership_id == subject.membership_id
-      assert is_nil(created.updated_by_id)
 
       # A second save of the same scope is an upsert: same row, bumped vsn.
-      created |> Ecto.Changeset.change(updated_by_id: subject.actor.id) |> Repo.update!()
 
       assert {:ok, updated} =
                Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, subject)
@@ -1026,7 +1024,6 @@ defmodule Emisar.PoliciesTest do
       assert updated.vsn == created.vsn + 1
       assert updated.rules["defaults"]["low"] == "allow"
       assert updated.updated_by_membership_id == subject.membership_id
-      assert is_nil(updated.updated_by_id)
     end
 
     test "rejects a blank scope_value for a runner/group scope" do

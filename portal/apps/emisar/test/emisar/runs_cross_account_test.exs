@@ -16,15 +16,13 @@ defmodule Emisar.RunsCrossAccountTest do
       account_b = Fixtures.Accounts.create_account()
       runner_b = Fixtures.Runners.create_runner(account_id: account_b.id)
       _ = Fixtures.Policies.create_policy(account_id: account_a.id)
-      user = Fixtures.Users.create_user()
 
       attrs = %{
         runner_id: runner_b.id,
         action_id: "linux.uptime",
         args: %{},
         reason: "cross-account guard test",
-        source: "operator",
-        requested_by_id: user.id
+        source: "operator"
       }
 
       subject_user = Fixtures.Users.create_user()
@@ -44,7 +42,6 @@ defmodule Emisar.RunsCrossAccountTest do
     test "rejects a missing runner_id" do
       account = Fixtures.Accounts.create_account()
       _ = Fixtures.Policies.create_policy(account_id: account.id)
-      user = Fixtures.Users.create_user()
       subject_user = Fixtures.Users.create_user()
 
       _membership =
@@ -59,8 +56,7 @@ defmodule Emisar.RunsCrossAccountTest do
       assert Runs.dispatch_run(
                %{
                  action_id: "linux.uptime",
-                 source: "operator",
-                 requested_by_id: user.id
+                 source: "operator"
                },
                subject
              ) == {:error, :runner_required}
@@ -88,8 +84,7 @@ defmodule Emisar.RunsCrossAccountTest do
                  runner_id: runner.id,
                  action_id: "linux.uptime",
                  reason: "disabled runner test",
-                 source: "operator",
-                 requested_by_id: user.id
+                 source: "operator"
                },
                subject
              ) == {:error, :runner_not_found}

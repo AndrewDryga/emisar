@@ -1144,8 +1144,7 @@ defmodule Emisar.RunbooksTest do
 
       Fixtures.Runbooks.create_execution(
         account_id: account.id,
-        initiating_membership_id: foreign_membership.id,
-        requested_by_id: user.id
+        initiating_membership_id: foreign_membership.id
       )
 
       assert {:ok, [execution]} = Runbooks.list_recent_executions(owner)
@@ -1280,12 +1279,10 @@ defmodule Emisar.RunbooksTest do
         runbook_attrs()
         |> Map.put("account_id", foreign.account_id)
         |> Map.put("created_by_membership_id", foreign.id)
-        |> Map.put("created_by_id", foreign.user_id)
 
       assert {:ok, runbook} = Runbooks.create_runbook(attrs, subject)
       assert runbook.account_id == account.id
       assert runbook.created_by_membership_id == subject.membership_id
-      refute runbook.created_by_id
     end
 
     test "refuses a second runbook on a slug the account already uses" do
@@ -1401,7 +1398,6 @@ defmodule Emisar.RunbooksTest do
 
       runbook = Repo.one!(Runbooks.Runbook)
       assert runbook.created_by_membership_id == owner.membership_id
-      refute runbook.created_by_id
 
       assert_receive {:list_changed, :runbook, "runbook.created", created_id}
       assert created_id == created.resource_id
@@ -1936,7 +1932,6 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, published} = Runbooks.publish_draft(runbook, publisher)
       release = Repo.one!(Runbooks.Release)
       assert release.published_by_membership_id == publisher.membership_id
-      refute release.published_by_id
 
       retired =
         account.id

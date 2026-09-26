@@ -226,7 +226,6 @@ defmodule Emisar.ApprovalGrantAuthorityTest do
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "operator",
-        requested_by_id: requester.actor.id,
         initiating_membership_id: requester.membership_id,
         args: %{},
         pack_ref: Fixtures.Catalog.default_pack_ref(),

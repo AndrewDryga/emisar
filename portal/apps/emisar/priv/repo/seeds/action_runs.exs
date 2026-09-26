@@ -139,14 +139,17 @@ defmodule Emisar.Seeds.ActionRuns do
   end
 
   defp insert_run(%{account: account, user: user, policy: policy} = ctx, attrs) do
+    requester = attrs[:requested_by] || user
+
     {:ok, run} =
       ctx
       |> contract_attrs(attrs.runner_id, attrs.action_id)
-      |> Map.merge(attrs)
+      |> Map.merge(Map.delete(attrs, :requested_by))
       |> Map.merge(%{
         account_id: account.id,
         source: attrs[:source] || "operator",
-        requested_by_id: attrs[:requested_by_id] || user.id,
+        initiating_membership_id:
+          Emisar.Accounts.peek_sync_membership(account.id, requester.id).id,
         policy_id: policy && policy.id,
         policy_decision: attrs[:policy_decision] || "allow",
         policy_reason:
@@ -308,7 +311,7 @@ defmodule Emisar.Seeds.ActionRuns do
           action_id: action_id,
           args: args,
           reason: reason,
-          requested_by_id: who.id,
+          requested_by: who,
           status: "running"
         })
         |> backdate(started_at)
@@ -326,7 +329,7 @@ defmodule Emisar.Seeds.ActionRuns do
           action_id: action_id,
           args: args,
           reason: reason,
-          requested_by_id: user.id,
+          requested_by: user,
           source: "mcp",
           api_key_id: agent_key.id,
           status: "running"
@@ -355,7 +358,7 @@ defmodule Emisar.Seeds.ActionRuns do
           action_id: action_id,
           args: args,
           reason: "manual investigation",
-          requested_by_id: who.id,
+          requested_by: who,
           status: "running"
         })
         |> backdate(started_at)
@@ -375,7 +378,7 @@ defmodule Emisar.Seeds.ActionRuns do
           action_id: "linux.systemctl_restart",
           args: %{"unit" => "checkout-api.service"},
           reason: "cancel after canary rollback completed elsewhere",
-          requested_by_id: jordan.id,
+          requested_by: jordan,
           status: "running"
         })
         |> backdate(cancelled_at)
@@ -428,7 +431,7 @@ defmodule Emisar.Seeds.ActionRuns do
         action_id: "caddy.reload_config",
         args: %{"file" => "/etc/caddy/Caddyfile"},
         reason: "Maya via Claude: apply the checked-in Caddyfile after certificate renewal",
-        requested_by_id: user.id,
+        requested_by: user,
         source: "mcp",
         api_key_id: agent_key.id,
         status: "pending_approval",
@@ -456,7 +459,7 @@ defmodule Emisar.Seeds.ActionRuns do
         action_id: "linux.systemctl_restart",
         args: %{"unit" => "checkout-api.service"},
         reason: "restart checkout-api after deploy smoke test",
-        requested_by_id: priya.id,
+        requested_by: priya,
         status: "pending_approval",
         requires_approval: true,
         policy_decision: "require_approval",
@@ -491,7 +494,7 @@ defmodule Emisar.Seeds.ActionRuns do
         action_id: "caddy.reload_config",
         args: %{"file" => "/etc/caddy/Caddyfile"},
         reason: "Maya via Claude: reload Caddy after config validation",
-        requested_by_id: user.id,
+        requested_by: user,
         source: "mcp",
         api_key_id: agent_key.id,
         status: "pending_approval",
@@ -563,7 +566,7 @@ defmodule Emisar.Seeds.ActionRuns do
         action_id: "postgres.reload_conf",
         args: %{},
         reason: "Maya via Claude: reload Postgres config before change ticket is approved",
-        requested_by_id: user.id,
+        requested_by: user,
         source: "mcp",
         api_key_id: agent_key.id,
         status: "pending_approval",
@@ -755,7 +758,8 @@ defmodule Emisar.Seeds.ActionRuns do
                   args: %{"file" => "/opt/northstar/docker-compose.yml"},
                   reason: typed_demo_reason,
                   source: "operator",
-                  requested_by_id: user.id,
+                  initiating_membership_id:
+                    Emisar.Accounts.peek_sync_membership(account.id, user.id).id,
                   pack_ref: pack_ref,
                   expected_pack_hash: typed_demo_action.pack_hash,
                   structured_output_expected: true,

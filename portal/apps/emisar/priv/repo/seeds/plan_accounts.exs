@@ -104,7 +104,7 @@ defmodule Emisar.Seeds.PlanAccounts do
             args: args,
             reason: reason,
             source: "operator",
-            requested_by_id: owner.id
+            initiating_membership_id: Emisar.Accounts.peek_sync_membership(acct.id, owner.id).id
           })
 
         run

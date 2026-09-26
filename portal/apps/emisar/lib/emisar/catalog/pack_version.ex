@@ -45,7 +45,6 @@ defmodule Emisar.Catalog.PackVersion do
     # Set when an admin explicitly re-trusts a RETIRED version (the deliberate
     # override that lets it dispatch again). Null means "no override".
     field :retirement_overridden_at, :utc_datetime_usec
-    field :retirement_overridden_by_id, :binary_id
     belongs_to :retirement_overridden_by_membership, Emisar.Accounts.Membership
     field :retirement_override_label, :string, virtual: true
 

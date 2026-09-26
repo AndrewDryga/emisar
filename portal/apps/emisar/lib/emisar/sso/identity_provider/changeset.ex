@@ -46,7 +46,6 @@ defmodule Emisar.SSO.IdentityProvider.Changeset do
     provider
     |> change(
       sign_in_verified_at: DateTime.utc_now(),
-      sign_in_verified_by_user_id: nil,
       sign_in_verified_by_membership_id: membership_id,
       sign_in_verified_configuration_digest: configuration_digest
     )

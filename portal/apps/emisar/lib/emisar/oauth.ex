@@ -311,7 +311,7 @@ defmodule Emisar.OAuth do
   defp mint_backing_key(%{account: account, membership: membership, client: client}) do
     name = "#{client.client_name || "MCP client"} (OAuth)"
 
-    ApiKeys.create_backing_key(account.id, membership.user_id, membership.id, name)
+    ApiKeys.create_backing_key(account.id, membership.id, name)
   end
 
   defp authorization_code_changeset(changes, params, raw) do

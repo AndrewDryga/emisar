@@ -166,7 +166,8 @@ defmodule Emisar.Widgets.Widget do
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
-    belongs_to :created_by, Emisar.Users.User, where: [deleted_at: nil]
+    # Attribution names the workspace Member, never a personal login.
+    belongs_to :created_by_membership, Emisar.Accounts.Membership
 
     timestamps()
   end
@@ -191,11 +192,11 @@ defmodule Emisar.Widgets.Widget.Changeset do
 
   @fields ~w[name slug status]a
 
-  def create(account_id, user_id, attrs) do
+  def create(account_id, membership_id, attrs) do
     %Widget{}
     |> cast(attrs, @fields)
     |> put_change(:account_id, account_id)
-    |> put_change(:created_by_id, user_id)
+    |> put_change(:created_by_membership_id, membership_id)
     |> changeset()
   end
 
@@ -205,7 +206,7 @@ defmodule Emisar.Widgets.Widget.Changeset do
 
   defp changeset(changeset) do
     changeset
-    |> validate_required([:account_id, :name, :slug])
+    |> validate_required([:account_id, :created_by_membership_id, :name, :slug])
     |> validate_format(:slug, ~r/^[a-z][a-z0-9_-]{0,79}$/)
     |> unique_constraint([:account_id, :slug])
   end

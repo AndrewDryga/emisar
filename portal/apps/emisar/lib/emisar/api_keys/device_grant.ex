@@ -47,7 +47,6 @@ defmodule Emisar.ApiKeys.DeviceGrant do
     field :expires_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
-    belongs_to :approved_by, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :approved_by_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
 
     timestamps()

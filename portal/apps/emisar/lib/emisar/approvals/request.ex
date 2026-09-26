@@ -42,8 +42,6 @@ defmodule Emisar.Approvals.Request do
     belongs_to(:account, Emisar.Accounts.Account, where: [deleted_at: nil])
     belongs_to(:run, Emisar.Runs.ActionRun)
     belongs_to(:runbook_execution, Emisar.Runbooks.RunbookExecution)
-    belongs_to(:requested_by, Emisar.Users.User, where: [deleted_at: nil])
-    belongs_to(:decided_by, Emisar.Users.User, where: [deleted_at: nil])
 
     # Historical attribution includes offboarded Members, never replacement seats.
     belongs_to(:requested_by_membership, Emisar.Accounts.Membership)

@@ -347,7 +347,6 @@ defmodule Emisar.ApprovalsConcurrencyTest do
           runner_id: runner.id,
           action_id: "linux.uptime",
           source: "operator",
-          requested_by_id: initiator.id,
           initiating_membership_id: initiator_membership.id,
           args: %{},
           pack_ref: Fixtures.Catalog.default_pack_ref(),

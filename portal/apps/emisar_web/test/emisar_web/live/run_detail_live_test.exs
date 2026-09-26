@@ -60,7 +60,6 @@ defmodule EmisarWeb.RunDetailLiveTest do
       Map.merge(
         %{
           runner_id: runner.id,
-          requested_by_id: requested_by.id,
           initiating_membership_id: initiating_membership.id,
           status: :pending_approval,
           requires_approval: true,
@@ -244,18 +243,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert has_element?(lv, "#run-approval", "Jordan Approver")
   end
 
-  test "a User-only historical finalization keeps its time and note without a Member label",
+  test "a finalization with no recorded Member keeps its time and note without naming anyone",
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
     run = gated_run(account, user)
     {:ok, request} = Approvals.create_request(run, "reload after validation")
-    jordan = reviewer(account, "Jordan Approver")
 
-    Fixtures.Approvals.approve_request(
-      request,
-      jordan.actor.id,
-      "validated config, deploy window open"
-    )
+    Fixtures.Approvals.approve_request(request, nil, "validated config, deploy window open")
 
     Fixtures.Runs.put_status(run, :sent)
 
@@ -422,7 +416,10 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, request} = Approvals.create_request(run, "needs one")
 
     request
-    |> Fixtures.Approvals.approve_request(user.id, "Emergency release.")
+    |> Fixtures.Approvals.approve_request(
+      Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+      "Emergency release."
+    )
     |> Fixtures.Approvals.clear_finalization_provenance()
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -514,7 +511,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
       run_with(account, %{
         status: :pending_approval,
         requires_approval: true,
-        requested_by_id: user.id
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id
       })
 
     {:ok, request} = Emisar.Approvals.create_request(run, "deploy")
@@ -552,7 +549,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
       run_with(account, %{
         status: :pending_approval,
         requires_approval: true,
-        requested_by_id: user.id
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id
       })
 
     {:ok, _request} = Emisar.Approvals.create_request(run, "deploy")
@@ -1150,7 +1147,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "an approval hold can be cancelled before it reaches the runner", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    run = run_with(account, %{status: :pending_approval, requested_by_id: user.id})
+
+    run =
+      run_with(account, %{
+        status: :pending_approval,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id
+      })
+
     {:ok, request} = Approvals.create_request(run, "please review")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1175,12 +1178,22 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "a stale held-run page reports a current in-flight cancellation truthfully", %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
-    run = run_with(account, %{status: :pending_approval, requested_by_id: user.id})
+
+    run =
+      run_with(account, %{
+        status: :pending_approval,
+        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id
+      })
+
     {:ok, request} = Approvals.create_request(run, "please review")
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    Fixtures.Approvals.approve_request(request, user.id)
+    Fixtures.Approvals.approve_request(
+      request,
+      Fixtures.Memberships.fetch_membership(account.id, user.id).id
+    )
+
     Fixtures.Runs.put_status(run, :sent)
 
     html = render_click(lv, "cancel", %{})

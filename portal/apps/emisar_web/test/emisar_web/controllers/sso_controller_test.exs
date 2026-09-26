@@ -937,7 +937,6 @@ defmodule EmisarWeb.SSOControllerTest do
       assert reloaded.enabled == false
       assert %DateTime{} = reloaded.sign_in_verified_at
       assert reloaded.sign_in_verified_by_membership_id == verification.membership.id
-      assert is_nil(reloaded.sign_in_verified_by_user_id)
     end
   end
 
