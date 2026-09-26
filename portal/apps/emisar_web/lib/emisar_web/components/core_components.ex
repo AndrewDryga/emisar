@@ -22,7 +22,7 @@ defmodule EmisarWeb.CoreComponents do
     router: EmisarWeb.Router,
     statics: EmisarWeb.static_paths()
 
-  alias EmisarWeb.Icons
+  alias EmisarWeb.{ConfirmDialog, Icons}
   alias Phoenix.LiveView.JS
 
   @doc """
@@ -3701,8 +3701,9 @@ defmodule EmisarWeb.CoreComponents do
 
   Gating is LiveView-state (verifiable in a test): the `<.input>` is
   `phx-change="confirm_typed"`, so the page holds the typed value in `@typed`
-  (via `EmisarWeb.ConfirmDialog`); the Confirm `<.button>` is
-  `disabled={@typed != @confirm_token}`. Once it enables, clicking it or pressing
+  (via `EmisarWeb.ConfirmDialog`); the Confirm `<.button>` stays disabled until
+  `ConfirmDialog.matches?(@typed, @confirm_token)`, which ignores case and
+  surrounding whitespace. Once it enables, clicking it or pressing
   Enter in the confirmation input runs the same `on_confirm` command. Open the
   dialog from the trigger with `show_confirm_dialog(id)`; it closes on Cancel,
   Escape, or backdrop click, resetting the typed value each time so a stale entry
@@ -3885,7 +3886,7 @@ defmodule EmisarWeb.CoreComponents do
               form={if is_nil(@confirm_token), do: nil, else: "#{@id}-form"}
               disabled={
                 @disabled or @confirm_token == "" or
-                  (not is_nil(@confirm_token) and @typed != @confirm_token)
+                  (not is_nil(@confirm_token) and not ConfirmDialog.matches?(@typed, @confirm_token))
               }
               phx-hook={if @pending_label, do: "PendingButton"}
               phx-click={if is_nil(@confirm_token), do: @on_confirm}
@@ -4028,16 +4029,17 @@ defmodule EmisarWeb.CoreComponents do
   defp hide_confirm_dialog(id), do: %JS{} |> fade_dialog_out(id) |> JS.push("confirm_reset")
 
   @doc """
-  The type-to-confirm field: a label naming the exact text, a copy control
-  beside it, and the mono input. The text keeps its own case inside an eyebrow
-  label (the comparison is exact), and the clipboard is `copyable_id`'s dim
-  glyph, so an operator pastes a long name instead of retyping it; the
-  deliberate step is still the paste and the Confirm. Rendered by
-  `confirm_dialog` and the OIDC unlink step-up.
+  The type-to-confirm field: "Type <text> [copy] to confirm" above the mono
+  input. The text keeps its own case inside an eyebrow label, and the copy
+  control (`copyable_id`'s dim clipboard) sits right after it, so an operator
+  pastes a long name instead of retyping it. The match ignores case and
+  surrounding whitespace (`EmisarWeb.ConfirmDialog.matches?/2`); the deliberate
+  step is the paste and the Confirm. Rendered by `confirm_dialog` and the OIDC
+  unlink step-up.
   """
   attr :id, :string, required: true, doc: "the input's id — the label points at it"
   attr :name, :string, default: "confirm_token"
-  attr :token, :string, required: true, doc: "the exact text the operator must type"
+  attr :token, :string, required: true, doc: "the text the operator must type"
   attr :value, :string, required: true, doc: "the live-typed value held by the page"
   attr :label_variant, :atom, default: :default, values: [:default, :eyebrow]
   attr :rest, :global, include: ~w(required)
@@ -4045,24 +4047,27 @@ defmodule EmisarWeb.CoreComponents do
   def typed_confirm_field(assigns) do
     ~H"""
     <div>
-      <div class="flex items-center gap-1.5">
-        <.label for={@id} variant={@label_variant}>
-          Type <span class="font-mono normal-case tracking-normal text-zinc-200">{@token}</span>
-          to confirm
-        </.label>
-        <%!-- A sibling of the label, not a child: the control's name stays out
-             of the input's accessible name. The copy listener stops the click. --%>
+      <%!-- The label holds only "Type <text>" so the copy control can follow
+           the text inside one sentence; the input takes its name from both
+           halves through aria-labelledby, which keeps "Copy" out of it. The
+           copy listener stops the click before the label sees it. --%>
+      <p class={label_variant(@label_variant)}>
+        <label id={"#{@id}-label"} for={@id}>
+          Type
+          <span class="break-words font-mono normal-case tracking-normal text-zinc-200">{@token}</span>
+        </label>
         <button
           type="button"
           data-copy-text={@token}
           data-copy-label-copied="✓"
           aria-label={"Copy #{@token}"}
           title={"Copy #{@token}"}
-          class="shrink-0 rounded-sm p-0.5 text-xs leading-none text-zinc-500 transition hover:text-zinc-200 focus-visible:text-zinc-200"
+          class="inline-flex size-4.5 items-center justify-center rounded-sm align-middle text-xs leading-none text-zinc-500 transition hover:text-zinc-200 focus-visible:text-zinc-200"
         >
           <.icon name="action.copy" class="h-3.5 w-3.5" />
         </button>
-      </div>
+        <span id={"#{@id}-label-tail"}>to confirm</span>
+      </p>
       <.input
         id={@id}
         type="text"
@@ -4071,6 +4076,7 @@ defmodule EmisarWeb.CoreComponents do
         class="font-mono"
         autocomplete="off"
         phx-debounce="50"
+        aria-labelledby={"#{@id}-label #{@id}-label-tail"}
         data-typed-confirm
         {@rest}
       />

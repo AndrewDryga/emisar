@@ -519,7 +519,8 @@ defmodule EmisarWeb.ProfileLive do
   def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}} = params, socket) do
     case socket.assigns.oidc_step do
       %{} = step ->
-        if step.purpose == :unlink and params["confirm_token"] != step.provider_name do
+        if step.purpose == :unlink and
+             not ConfirmDialog.matches?(params["confirm_token"], step.provider_name) do
           {:noreply,
            assign(socket, :oidc_step_error, "Enter the provider name to confirm removal.")}
         else

@@ -2116,6 +2116,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       # The exact name is one click away from the clipboard.
       assert has_element?(lv, ~s(##{dialog} button[data-copy-text="usable-bot"]))
       assert has_element?(lv, "##{dialog} button[disabled]", "Revoke key")
+
+      # Capitals and surrounding spaces never keep a matching name out.
+      type_confirm_token(lv, dialog, " USABLE-bot ")
+      refute has_element?(lv, "##{dialog} button[disabled]", "Revoke key")
     end
 
     # The browser drops any push chained after the confirm submit, so the submit

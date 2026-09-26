@@ -16,6 +16,7 @@ defmodule EmisarWeb.AuthComponents do
 
   import EmisarWeb.CoreComponents
   import EmisarWeb.MarketingComponents, only: [brand: 1]
+  alias EmisarWeb.ConfirmDialog
 
   @doc """
   iPhone-style one-box-per-character code entry, driven by the `CodeInput` JS
@@ -181,7 +182,9 @@ defmodule EmisarWeb.AuthComponents do
                 id={"#{@id}-continue"}
                 variant={if @purpose == :unlink, do: :secondary, else: :primary}
                 tone={if @purpose == :unlink, do: :rose, else: nil}
-                disabled={@purpose == :unlink && @typed != @step.provider_name}
+                disabled={
+                  @purpose == :unlink and not ConfirmDialog.matches?(@typed, @step.provider_name)
+                }
                 class="min-w-28 max-w-full break-words"
                 phx-hook="PendingButton"
                 phx-disable-with="Confirming..."

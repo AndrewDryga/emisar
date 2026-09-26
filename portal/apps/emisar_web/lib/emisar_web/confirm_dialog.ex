@@ -4,7 +4,7 @@ defmodule EmisarWeb.ConfirmDialog do
 
   The dialog's type-to-confirm field is a `phx-change="confirm_typed"` form, so
   the page holds the typed value in the `@typed` assign and the Confirm button
-  renders `disabled={@typed != confirm_token}`. This module is the one place
+  stays disabled until `matches?/2` accepts it. This module is the one place
   that state lives, so the pages wiring the dialog don't each re-implement
   it. It is **pure UX** — the typed value gates only whether Confirm dispatches
   the event in the browser; every destructive `handle_event` stays
@@ -51,4 +51,15 @@ defmodule EmisarWeb.ConfirmDialog do
 
   @doc "Clear the typed value — fired when the dialog opens, cancels, closes, or confirms."
   def reset(socket), do: Component.assign(socket, :typed, "")
+
+  @doc """
+  Whether the typed value is the token. Case and surrounding whitespace are
+  ignored: the friction is producing the name, not matching its capitals.
+  """
+  def matches?(typed, token) when is_binary(typed) and is_binary(token),
+    do: normalize(typed) == normalize(token)
+
+  def matches?(_typed, _token), do: false
+
+  defp normalize(value), do: value |> String.trim() |> String.downcase()
 end

@@ -942,8 +942,9 @@ defmodule EmisarWeb.ProfileLiveTest do
         refute_push_event(lv, "code:reset", %{id: "profile-oidc-step-code"})
       end
 
+      # Capitals don't matter, in the browser gate or the server check below.
       lv
-      |> form("#profile-oidc-step-form", %{"confirm_token" => provider.name})
+      |> form("#profile-oidc-step-form", %{"confirm_token" => String.upcase(provider.name)})
       |> render_change()
 
       refute has_element?(lv, "#profile-oidc-step-continue[disabled]")
@@ -959,7 +960,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       html =
         render_hook(lv, "confirm_oidc_step_up", %{
-          "confirm_token" => provider.name,
+          "confirm_token" => String.downcase(provider.name),
           "oidc_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
         })
 
