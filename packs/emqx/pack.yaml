@@ -2,7 +2,7 @@ schema_version: 1
 
 id: emqx
 name: EMQX MQTT broker
-version: 0.1.0
+version: 0.1.1
 description: >
   Operate an EMQX 5 or 6 MQTT broker over its REST API: node, listener,
   throughput, and alarm status; client sessions, subscriptions, topic

@@ -12,10 +12,23 @@ set -eu
 mode=$1
 shift
 
-# Name the missing variable before any request: an unset one usually means it
-# was not allowlisted in the runner's execution.inherit_env.
-: "${EMQX_API_KEY:?is not set; allowlist it in the runner execution.inherit_env}"
-: "${EMQX_API_SECRET:?is not set; allowlist it in the runner execution.inherit_env}"
+# Name a missing credential before any request. The runner passes an action
+# only the variables its execution.inherit_env lists, and passes a listed one
+# even when it is empty, so unset and empty need different fixes. A variable
+# name is never followed by ":" here: the runner's default redaction masks the
+# word after a secret-named field and a colon.
+require_credential() {
+  if [ -z "$2" ]; then
+    printf "%s did not reach this action. Allowlist it in the runner's execution.inherit_env.\n" "$1" >&2
+    exit 2
+  fi
+  if [ -z "$3" ]; then
+    printf "%s is empty. Set it to %s in the runner's environment.\n" "$1" "$4" >&2
+    exit 2
+  fi
+}
+require_credential EMQX_API_KEY "${EMQX_API_KEY+set}" "${EMQX_API_KEY:+full}" "an EMQX API key"
+require_credential EMQX_API_SECRET "${EMQX_API_SECRET+set}" "${EMQX_API_SECRET:+full}" "the API key's secret"
 
 api_base=${EMQX_URL:-http://127.0.0.1:18083}
 api_base=${api_base%/}

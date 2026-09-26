@@ -19,6 +19,16 @@ impossible; the action looks green in any test that only asserts a null
 cursor. Fail-closed redaction is correct — the fix is naming, never weakening
 the rules.
 
+**Messages too.** A script's own error text never puts a secret-named
+variable right before `:` or `=`, because `secret-assignment` masks the next
+word. `: "${EMQX_API_KEY:?is not set}"` makes sh print `EMQX_API_KEY: is not
+set`, which reached operators as `EMQX_API_KEY: [REDACTED] not set` (emqx
+0.1.0). Name the variable, then say what is wrong in a sentence
+(`EMQX_API_KEY is empty.`). The runner passes a variable that
+`execution.inherit_env` lists even when it is empty, so tell unset
+(`${VAR+set}` is empty: allowlist it) from empty (give it a value) instead of
+always blaming the allowlist.
+
 **✅ Good.**
 
 ```yaml
@@ -45,9 +55,13 @@ output keeps the secret-named key.
 
 **Sweep.** For every pack with a `parser: json` output schema, list property
 names matching the `secretField` regex in `runner/internal/redact/rules.go`
-and check each against a behavior case with a non-null value.
+and check each against a behavior case with a non-null value. For messages,
+list `${VAR:?…}` and `${VAR?…}` guards in pack scripts whose `VAR` matches the
+same regex (on 2026-09-26 only emqx had them).
 
 **Enforced.** Behavior cases that assert real cursor values fail on
-`[REDACTED]` (this is how the databricks suite caught it). Not yet a
+`[REDACTED]` (this is how the databricks suite caught it), and emqx's
+`nodes-missing-secret` case asserts its whole sentence. Not yet a
 mechanical authoring check — graduating it means scanning output-schema
-property names against the same vocabulary in the pack validator.
+property names and script guards against the same vocabulary in the pack
+validator.

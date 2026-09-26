@@ -28,12 +28,15 @@ cases:
       exit: [22]
       stderr_contains: ["curl: (22)"]
       stdout_contains: [BAD_API_KEY_OR_SECRET]
+  # The whole sentence, because redaction once masked its first word.
   - name: emqx.nodes-missing-secret
     action: emqx.nodes
     unset_env: [EMQX_API_SECRET]
     expect:
       status: failure
-      stderr_contains: [EMQX_API_SECRET]
+      exit: [2]
+      stderr_contains: ["EMQX_API_SECRET did not reach this action. Allowlist it in the runner's execution.inherit_env."]
+      stderr_not_contains: ["[REDACTED]"]
   - action: emqx.listeners
     expect:
       stdout_contains: ['"id":"tcp:default"', current_connections]
