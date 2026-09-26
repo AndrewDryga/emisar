@@ -1252,7 +1252,7 @@ defmodule EmisarWeb.ProfileLive do
           <:header>
             <.section_header title="Workspace profile">
               <:subtitle>
-                How you appear in {@current_account.name}. Other workspaces are unchanged.
+                How you appear in <span class="font-medium text-zinc-200">{@current_account.name}</span>. Other workspaces are unchanged.
               </:subtitle>
             </.section_header>
           </:header>
