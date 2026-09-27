@@ -1,50 +1,57 @@
 # RYKER.md
 
-> Repository knowledge generated from `783fc4801d274d5ee05feb3fbc5c70981b1bbd7a`. Facts below come from the linked files. Commands are detected, not executed, unless a later note says otherwise.
+Written by Ryker from `162c018` on 2026-09-27. This is only an outline from the file list: Ryker could not finish reading the repository, and replaces it on its next refresh.
 
 ## Purpose
 
-**Leave the agent working. Keep production authority bounded.**
+emisar gives MCP-capable agents a catalog of declared infrastructure actions instead of a shell. Policy decides what runs, what waits for a person, and what is denied. A small outbound-only runner checks the action again on the host before it executes anything From [README.md](README.md).
 
-## Repository map
+## Components
 
-- [`.agent/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/.agent)
-- [`.claude/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/.claude)
-- [`.codex/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/.codex)
-- [`.gemini/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/.gemini)
-- [`.githooks/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/.githooks)
-- [`.github/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/.github)
-- [`dev/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/dev)
-- [`dist/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/dist)
-- [`infra/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/infra)
-- [`mcp/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/mcp)
-- [`packs/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/packs)
-- [`portal/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/portal)
-- [`runner/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/runner)
-- [`skills/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/skills)
-- [`tools/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/tools)
+- [.github/](.github/)
+- [dev/](dev/)
+- [dist/](dist/)
+- [infra/](infra/)
+- [mcp/](mcp/)
+- [packs/](packs/)
+- [portal/](portal/)
+- [runner/](runner/)
+- [skills/](skills/)
+- [tools/](tools/)
 
-## Languages and dependencies
+## Files that describe it
 
-- Elixir: 1224 source files
-- Go: 494 source files
-- Shell: 115 source files
-- Python: 29 source files
-- JavaScript: 26 source files
+- [AGENTS.md](AGENTS.md)
+- [CLAUDE.md](CLAUDE.md)
+- [GEMINI.md](GEMINI.md)
+- [README.md](README.md)
+- [go.work](go.work)
+- [.agent/Dockerfile](.agent/Dockerfile)
+- [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md)
+- [dev/README.md](dev/README.md)
+- [infra/AGENTS.md](infra/AGENTS.md)
+- [infra/CLAUDE.md](infra/CLAUDE.md)
+- [infra/README.md](infra/README.md)
+- [mcp/AGENTS.md](mcp/AGENTS.md)
+- [mcp/CLAUDE.md](mcp/CLAUDE.md)
+- [mcp/README.md](mcp/README.md)
+- [mcp/go.mod](mcp/go.mod)
+- [packs/AGENTS.md](packs/AGENTS.md)
+- [packs/CLAUDE.md](packs/CLAUDE.md)
+- [packs/README.md](packs/README.md)
+- [portal/AGENTS.md](portal/AGENTS.md)
+- [portal/CLAUDE.md](portal/CLAUDE.md)
+- [portal/Dockerfile](portal/Dockerfile)
+- [portal/README.md](portal/README.md)
+- [portal/mix.exs](portal/mix.exs)
+- [runner/AGENTS.md](runner/AGENTS.md)
+- [runner/CLAUDE.md](runner/CLAUDE.md)
+- [runner/README.md](runner/README.md)
+- [runner/go.mod](runner/go.mod)
+- [skills/README.md](skills/README.md)
+- [tools/go.mod](tools/go.mod)
+- [.agent/kb/README.md](.agent/kb/README.md)
 
-## Setup, build and test
+## CI
 
-No standard setup or test command was identified. Confirm the expected workflow with the maintainers.
-
-## CI and release
-
-GitHub Actions workflows are under [`.github/workflows/`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/.github/workflows). Read the exact workflow before changing release or deployment behavior.
-
-## Conventions and operational notes
-
-Read [`AGENTS.md`](https://github.com/AndrewDryga/emisar/blob/783fc4801d274d5ee05feb3fbc5c70981b1bbd7a/AGENTS.md) before making changes. These files remain authoritative over this summary.
-
-## Unresolved questions
-
-- Confirm production deployment ownership and verification steps if they are not documented in the linked sources.
-- Confirm any required secrets, external services, or generated files before running the detected commands.
+The GitHub Actions workflows are in [.github/workflows/](.github/workflows/).
