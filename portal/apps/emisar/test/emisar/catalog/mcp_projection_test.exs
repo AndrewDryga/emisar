@@ -30,6 +30,33 @@ defmodule Emisar.Catalog.MCPProjectionTest do
     end)
   end
 
+  test "local denial preserves exact manifest matching and removes only its target" do
+    {trusted, action, runner} = deployment("custom", "1.0.0", @hash)
+    sibling = %{action | action_id: "custom.sibling", title: "Sibling"}
+    sibling = readvertise(sibling, [])
+    {:ok, manifest} = TrustedManifest.from_runner_actions([action, sibling])
+    trusted = %{trusted | trusted_manifest: manifest}
+    denied = %{action | local_admission_allowed: false}
+    snapshot = MCPProjection.build([trusted], [denied, sibling], [runner])
+    assert [pack] = snapshot.packs
+    assert pack.availability == "executable"
+    assert Enum.any?(pack.issues, &(&1.code == "local_admission_denied"))
+    refute Enum.any?(pack.issues, &(&1.code == "descriptor_mismatch"))
+
+    assert Enum.find(pack.actions, &(&1["action_id"] == action.action_id)).compatible_runner_ids ==
+             []
+
+    assert Enum.find(pack.actions, &(&1["action_id"] == sibling.action_id)).compatible_runner_ids ==
+             [runner.id]
+
+    drifted = readvertise(denied, title: "Tampered")
+
+    assert [%{availability: "unavailable", issues: issues}] =
+             MCPProjection.build([trusted], [drifted, sibling], [runner]).packs
+
+    assert Enum.any?(issues, &(&1.code == "descriptor_mismatch"))
+  end
+
   test "retirement hides a trusted ref until an operator override exists" do
     retired_entry =
       Enum.find(PackBaseline.retired_below(), fn {id, _watermark} ->

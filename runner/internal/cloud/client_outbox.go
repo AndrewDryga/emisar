@@ -262,7 +262,7 @@ func (c *Client) readvertiseLoop(
 func primaryExecutableAvailability(state RunnerStateMsg) string {
 	var b strings.Builder
 	for _, action := range state.Actions {
-		fmt.Fprintf(&b, "%s=%t:%s\n", action.ID, action.PrimaryExecutableAvailable, action.MissingExecutable)
+		fmt.Fprintf(&b, "%s=%t:%t:%s\n", action.ID, action.LocalAdmissionAllowed, action.PrimaryExecutableAvailable, action.MissingExecutable)
 	}
 	return b.String()
 }

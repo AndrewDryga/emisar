@@ -1027,7 +1027,7 @@ defmodule Emisar.Runs do
          {:ok, pack_ref} <-
            Catalog.MCPProjection.pack_ref(action.pack_id, action.pack_version, contract.pack_hash),
          :ok <- pack_in_membership_scope(action.pack_id, account_id, membership_id),
-         :ok <- ensure_primary_executable_available(action) do
+         :ok <- ensure_host_action_available(action) do
       attrs
       |> persist_initiating_membership()
       |> put_action_arguments(contract)
@@ -1564,7 +1564,7 @@ defmodule Emisar.Runs do
          {:ok, pack_ref} <-
            Catalog.MCPProjection.pack_ref(action.pack_id, action.pack_version, contract.pack_hash),
          :ok <- pack_in_membership_scope(action.pack_id, account_id, membership_id),
-         :ok <- ensure_primary_executable_available(action) do
+         :ok <- ensure_host_action_available(action) do
       attrs =
         attrs
         |> persist_initiating_membership()
@@ -1961,7 +1961,7 @@ defmodule Emisar.Runs do
              account_id,
              attrs[:requested_by_membership_id]
            ),
-         :ok <- ensure_primary_executable_available(contract.action),
+         :ok <- ensure_host_action_available(contract.action),
          :ok <- current_runbook_policy_allows?(attrs, account_id, contract.descriptor) do
       :ok
     else
@@ -2240,10 +2240,13 @@ defmodule Emisar.Runs do
   # Nil is a rolling-upgrade advertisement from an older runner. Only a
   # definite false removes an action; this host fact can never make an
   # untrusted or mismatched descriptor executable.
-  defp ensure_primary_executable_available(%{primary_executable_available: false}),
+  defp ensure_host_action_available(%{local_admission_allowed: false}),
     do: {:error, :action_unavailable}
 
-  defp ensure_primary_executable_available(_action), do: :ok
+  defp ensure_host_action_available(%{primary_executable_available: false}),
+    do: {:error, :action_unavailable}
+
+  defp ensure_host_action_available(_action), do: :ok
 
   # `%Attestation{}` is an ordinary Elixir struct, so holding one proves nothing
   # about who built it or what it was bound to. Only `preflight_attestation/3`
@@ -2888,7 +2891,7 @@ defmodule Emisar.Runs do
       {:error, :action_unavailable} = error ->
         mark_refused(
           run,
-          "the runner reports that this action's primary executable is missing — install it, reload the runner, and dispatch again"
+          "the runner reports this action is unavailable under its local admission rules or host prerequisites — check the runner configuration, reload it, and dispatch again"
         )
 
         error
@@ -2972,7 +2975,7 @@ defmodule Emisar.Runs do
              run.pack_ref,
              run
            ),
-         :ok <- ensure_primary_executable_available(contract.action),
+         :ok <- ensure_host_action_available(contract.action),
          :ok <- ensure_snapshotted_pack_hash(run, contract) do
       {:ok, contract.action}
     end

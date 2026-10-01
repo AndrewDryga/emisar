@@ -38,6 +38,7 @@ locals {
 
   admin_runner_start = templatefile("${path.module}/../../runtime/admin-runner/start.sh", {
     project_id                = local.common.project_id
+    diagnostics_image         = "registry.example.test/admin-diagnostics:test@sha256:0000000000000000000000000000000000000000000000000000000000000000"
     runner_version            = trimspace(file("${path.module}/../../runtime/admin-runner/runner-version.txt"))
     enrollment_secret_version = "1"
     tfe_secret_version        = "2"
@@ -59,16 +60,17 @@ locals {
   }
 
   cloud_init = templatefile("${path.module}/../../runtime/portal/cloud-init.yaml", {
-    ensure_image_script        = local.ensure_image
-    start_script               = local.start
-    admin_runner_config        = local.admin_runner_config
-    admin_runner_start_script  = local.admin_runner_start
-    admin_runner_gcloud_script = local.admin_runner_gcloud
-    admin_runner_beam_script   = local.admin_runner_beam
-    admin_runner_pack_files    = local.admin_runner_pack_files
-    cloud_sql_proxy_image      = local.common.cloud_sql_proxy_image
-    database_connection_name   = local.common.database_connection_name
-    app_port                   = local.common.app_port
+    ensure_image_script             = local.ensure_image
+    start_script                    = local.start
+    admin_runner_config             = local.admin_runner_config
+    admin_runner_start_script       = local.admin_runner_start
+    admin_runner_gcloud_script      = local.admin_runner_gcloud
+    admin_runner_beam_script        = local.admin_runner_beam
+    admin_runner_diagnostics_script = file("${path.module}/../../runtime/admin-runner/install-diagnostics.sh")
+    admin_runner_pack_files         = local.admin_runner_pack_files
+    cloud_sql_proxy_image           = local.common.cloud_sql_proxy_image
+    database_connection_name        = local.common.database_connection_name
+    app_port                        = local.common.app_port
   })
 
   livebook = {

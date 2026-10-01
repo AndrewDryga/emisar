@@ -76,6 +76,22 @@ resource "google_logging_log_view_iam_member" "vm_container_logs" {
   depends_on = [terraform_data.logging_view_policy_propagated]
 }
 
+# Inventory only: listing log names must not grant access to their entries.
+resource "google_project_iam_custom_role" "vm_log_inventory" {
+  project     = var.project_id
+  role_id     = "emisarLogInventory"
+  title       = "Emisar Log Inventory"
+  description = "List log names for diagnostics without reading log entries."
+  permissions = ["logging.logs.list"]
+  stage       = "GA"
+}
+
+resource "google_project_iam_member" "vm_log_inventory" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.vm_log_inventory.name
+  member  = "serviceAccount:${google_service_account.vm.email}"
+}
+
 resource "google_project_iam_member" "vm_monitoring" {
   project = var.project_id
   role    = "roles/monitoring.metricWriter"
@@ -134,9 +150,28 @@ resource "google_project_iam_custom_role" "vm_storage_policy_reader" {
 
 }
 
-resource "google_project_iam_member" "vm_storage_policy_reader" {
+resource "google_storage_bucket_iam_member" "vm_storage_policy_reader" {
+  for_each = toset([google_storage_bucket.pack_registry.name, google_storage_bucket.mta_sts.name])
+
+  bucket = each.value
+  role   = google_project_iam_custom_role.vm_storage_policy_reader.name
+  member = "serviceAccount:${google_service_account.vm.email}"
+}
+
+# Bucket-level grants cannot authorize the project's inventory endpoint. This
+# permission reveals bucket metadata, but grants neither object nor policy reads.
+resource "google_project_iam_custom_role" "vm_storage_inventory" {
+  project     = var.project_id
+  role_id     = "emisarStorageInventory"
+  title       = "Emisar Storage Inventory"
+  description = "List bucket metadata without object or bucket IAM access."
+  permissions = ["storage.buckets.list"]
+  stage       = "GA"
+}
+
+resource "google_project_iam_member" "vm_storage_inventory" {
   project = var.project_id
-  role    = google_project_iam_custom_role.vm_storage_policy_reader.name
+  role    = google_project_iam_custom_role.vm_storage_inventory.name
   member  = "serviceAccount:${google_service_account.vm.email}"
 }
 

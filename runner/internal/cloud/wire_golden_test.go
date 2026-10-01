@@ -518,6 +518,7 @@ func canonicalActionDescriptor() ActionDescriptor {
 			},
 		},
 		PackID:                     "database",
+		LocalAdmissionAllowed:      true,
 		PrimaryExecutableAvailable: true,
 	}
 }

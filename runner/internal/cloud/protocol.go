@@ -449,6 +449,7 @@ type PackInfo struct {
 type ActionDescriptor struct {
 	actionspec.ModelDescriptor
 	PackID                     string `json:"pack_id,omitempty"`
+	LocalAdmissionAllowed      bool   `json:"local_admission_allowed"`
 	PrimaryExecutableAvailable bool   `json:"primary_executable_available"`
 	MissingExecutable          string `json:"missing_executable,omitempty"`
 }

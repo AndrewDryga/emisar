@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+command=${0##*/}
+case "$command" in
+  bash|chronyc|curl|dmidecode|ethtool|findmnt|free|iostat|jq|last|lscpu|lvs|mdadm|ntpq|ping|ps|pvs|sar|sadc|slabtop|smartctl|ss|sysctl|uptime|vgs|vmstat) ;;
+  *) echo 'unsupported admin diagnostic command' >&2; exit 2 ;;
+esac
+bundle=$(dirname "$(readlink -f "$0")")
+unset LD_PRELOAD LD_LIBRARY_PATH PYTHONPATH PYTHONHOME
+# sysstat sar falls back to execvp("sadc") when the compiled helper path is
+# absent on COS. The helper must also pass through our private dynamic loader.
+export PATH="$bundle/bin:$PATH"
+if [ "$command" = ntpq ]; then
+  export PYTHONHOME="$bundle/python"
+  export PYTHONPATH="$bundle/python/lib/python3/dist-packages"
+  exec "$bundle/lib/loader" --library-path "$bundle/lib" \
+    "$bundle/libexec/python3" "$bundle/libexec/ntpq" "$@"
+fi
+exec "$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/$command" "$@"

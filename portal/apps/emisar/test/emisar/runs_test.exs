@@ -2106,6 +2106,27 @@ defmodule Emisar.RunsTest do
              ) == {:error, :action_not_found}
     end
 
+    test "rejects dispatch when local admission denies a trusted action" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      _ =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "linux.uptime",
+          risk: "low",
+          local_admission_allowed: false
+        )
+
+      _ = Fixtures.Policies.create_policy(account_id: account.id)
+      subject = owner_subject_for(account)
+
+      assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
+               {:error, :action_unavailable}
+
+      refute Repo.exists?(ActionRun)
+    end
+
     test "rejects dispatch when the runner reports the primary executable missing" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -3768,6 +3789,33 @@ defmodule Emisar.RunsTest do
       %{account: account, runner: runner}
     end
 
+    test "refuses an authorized run when local admission changes after authorization", %{
+      account: account,
+      runner: runner
+    } do
+      action =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "linux.uptime",
+          local_admission_allowed: true
+        )
+
+      {:ok, run} =
+        Runs.create_run(%{
+          account_id: account.id,
+          runner_id: runner.id,
+          action_id: "linux.uptime",
+          source: "operator",
+          args: %{}
+        })
+
+      action
+      |> Ecto.Changeset.change(local_admission_allowed: false)
+      |> Repo.update!()
+
+      assert Runs.recheck_run_pack_trust_for_approval(run.id) == {:error, :action_unavailable}
+    end
+
     test "refuses an authorized run when the executable becomes unavailable", %{
       account: account,
       runner: runner
@@ -4526,6 +4574,31 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       %{account: account, runner: runner}
+    end
+
+    test "local denial after authorization refuses delivery without claiming a missing executable",
+         %{
+           account: account,
+           runner: runner
+         } do
+      action =
+        Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
+
+      Emisar.Runners.subscribe_runner_transport(runner)
+
+      {:ok, run} =
+        Runs.create_run(
+          base_attrs(account.id, runner.id, %{expected_pack_hash: action.pack_hash})
+        )
+
+      action |> Ecto.Changeset.change(local_admission_allowed: false) |> Repo.update!()
+
+      assert Runs.dispatch_to_runner(run) == {:error, :action_unavailable}
+      refused = Runs.peek_run_by_id(run.id)
+      assert refused.status == :refused
+      assert refused.error_message =~ "local admission rules or host prerequisites"
+      refute refused.error_message =~ "executable is missing"
+      refute_receive {:cloud_to_runner, _generation, _}, 100
     end
 
     test "delivers a dispatchable (:pending) run and marks it :sent", %{

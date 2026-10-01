@@ -275,6 +275,18 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert flash["error"] == "Action not found."
   end
 
+  test "local admission denial bounces back before rendering a Run form", %{conn: conn} do
+    {conn, _user, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    action = Fixtures.Catalog.create_action(runner: runner, local_admission_allowed: false)
+
+    assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
+             live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert to == ~p"/app/#{account}/runners/#{runner.id}"
+    assert flash["error"] == "Local admission rules deny this action on this runner."
+  end
+
   test "an unavailable action bounces back with the host prerequisite", %{conn: conn} do
     {conn, _user, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -312,6 +324,19 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     assert flash["error"] ==
              "The tool required by this action isn't installed on the runner. Install it and reload the runner."
+  end
+
+  test "local admission changed while the form is open reports the current denial", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {runner, action} = action_with_required_arg(account)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+    action |> Ecto.Changeset.change(local_admission_allowed: false) |> Repo.update!()
+
+    html = submit_dispatch(lv)
+    assert html =~ "Local admission rules deny this action on this runner."
+    refute html =~ "Install it and reload the runner"
+    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
   end
 
   test "a tool removed while the form is open is named from current runner evidence", %{

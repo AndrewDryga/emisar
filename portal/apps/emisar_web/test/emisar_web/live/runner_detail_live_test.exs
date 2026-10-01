@@ -425,6 +425,17 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute html =~ "/runs/new/#{runner.id}/custom.inspect"
   end
 
+  test "local admission denial disables the action's Run affordance", %{
+    conn: conn,
+    account: account
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+    action = Fixtures.Catalog.create_action(runner: runner, local_admission_allowed: false)
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+    assert has_element?(lv, "#action-local-denial-#{action.id}-tt button[disabled]", "Run")
+    refute html =~ "/runs/new/#{runner.id}/#{action.action_id}"
+  end
+
   test "a missing primary executable disables only that action's Run affordance", %{
     conn: conn,
     account: account

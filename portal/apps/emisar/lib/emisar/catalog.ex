@@ -72,7 +72,7 @@ defmodule Emisar.Catalog do
   @upsert_replace_fields ~w[
     action_id pack_id pack_version pack_hash title summary kind risk description
     side_effects args_schema output_schema examples search_terms descriptor_digest
-    primary_executable_available missing_executable last_seen_at updated_at
+    local_admission_allowed primary_executable_available missing_executable last_seen_at updated_at
   ]a
 
   # Postgres caps a statement at 65,535 bindings and a row here spends about
@@ -1815,6 +1815,7 @@ defmodule Emisar.Catalog do
       output_schema: descriptor["output_schema"],
       examples: descriptor["examples"] || [],
       search_terms: descriptor["search_terms"] || [],
+      local_admission_allowed: local_admission_allowed(descriptor),
       primary_executable_available: primary_executable_available,
       missing_executable: missing_executable,
       first_seen_at: now,
@@ -1822,6 +1823,16 @@ defmodule Emisar.Catalog do
     }
 
     RunnerAction.Changeset.upsert(attrs)
+  end
+
+  # Local admission is subtractive host evidence, never manifest identity.
+  # Absence stays unknown; malformed present values fail closed.
+  defp local_admission_allowed(descriptor) do
+    case Map.fetch(descriptor, "local_admission_allowed") do
+      :error -> nil
+      {:ok, true} -> true
+      {:ok, _denied_or_malformed} -> false
+    end
   end
 
   # The field is additive: absence means an older runner and stays unknown.

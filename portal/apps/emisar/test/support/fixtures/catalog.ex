@@ -53,6 +53,7 @@ defmodule Emisar.Fixtures.Catalog do
       args_schema: attrs[:args_schema] || %{"args" => []},
       output_schema: Map.get(attrs, :output_schema),
       examples: attrs[:examples] || [],
+      local_admission_allowed: Map.get(attrs, :local_admission_allowed),
       primary_executable_available: Map.get(attrs, :primary_executable_available),
       missing_executable: attrs[:missing_executable],
       first_seen_at: DateTime.utc_now(),

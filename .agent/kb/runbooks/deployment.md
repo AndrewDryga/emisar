@@ -1,7 +1,7 @@
 ---
 name: deployment
 sources: [.github/workflows/ci.yml, .github/workflows/cd.yml, infra/iam.tf, infra/github_oidc.tf, infra/versions.tf, portal/config/runtime.exs, portal/apps/emisar/lib/emisar/release.ex]
-updated: 2026-09-16
+updated: 2026-10-01
 ---
 
 # CI/CD production setup
@@ -14,8 +14,12 @@ commit, then performs delivery:
 1. `Required - CI` completes for the exact commit.
 2. Every successful `main` push builds, smoke-tests, vulnerability-scans, and
    publishes a portal image for that exact commit. CD publishes it by digest and
-   attests it with its CI-produced SBOM. No second image is built for the private
-   admin runner; COS installs its pinned runner release.
+   attests it with its CI-produced SBOM. COS installs the private admin runner
+   from its pinned runner release. Its native diagnostic utilities are a separate
+   reviewed bundle: publish the exact image artifact tested by the infrastructure
+   gate, then set `admin_runner_diagnostics_image` to its immutable digest.
+   Boot copies utilities from that image without starting a container. This bundle
+   publication is an explicit prerequisite, not part of automatic portal CD.
 3. The same commit's `infra/` directory is uploaded as a provisional HCP
    Terraform configuration version and planned with that commit's immutable
    image digest. Production planning fails closed if publication does not finish.

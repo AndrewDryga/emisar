@@ -302,7 +302,7 @@ variable "emisar_runner_enrollment_key" {
 
 variable "emisar_tfe_token" {
   type        = string
-  description = "HCP Terraform API token for the private admin runners. Set as a sensitive HCP Terraform workspace variable; changing it automatically creates and deploys a new managed secret version."
+  description = "HCP Terraform user or team API token for the private admin runners. Plan JSON requires workspace admin access; organization tokens cannot read it. Set as a sensitive HCP Terraform workspace variable; changing it automatically creates and deploys a new managed secret version."
   sensitive   = true
 
   validation {
@@ -313,7 +313,7 @@ variable "emisar_tfe_token" {
 
 variable "emisar_sentry_auth_token" {
   type        = string
-  description = "Sentry auth token for the private admin runners — the internal integration's token, which carries the org scopes the sentry pack's reads and issue mutations need. Set as a sensitive HCP Terraform workspace variable; changing it automatically creates and deploys a new managed secret version."
+  description = "Sentry auth token for the private admin runners — an installed internal integration token with org:read, project:read, event:read and alerts:read for diagnostics; enabled issue mutations need event:write and key toggles need project:write. Verify the expected organization and projects are visible. Set as a sensitive HCP Terraform workspace variable; changing it automatically creates and deploys a new managed secret version."
   sensitive   = true
 
   validation {
@@ -513,5 +513,15 @@ variable "monthly_budget_amount" {
   validation {
     condition     = var.monthly_budget_amount > 0 || var.billing_account_id == ""
     error_message = "Set monthly_budget_amount above 0 whenever billing_account_id is set; a 0 budget pages on the first cent of spend."
+  }
+}
+
+variable "admin_runner_diagnostics_image" {
+  type        = string
+  description = "Published native admin diagnostics bundle built from runtime/admin-runner/diagnostics. Supply a reviewed image tag plus immutable sha256 digest after building, checking and publishing that artifact; there is intentionally no unreleased default. The VM must be able to pull it."
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9][a-zA-Z0-9._:/-]*:[a-zA-Z0-9._-]+@sha256:[a-f0-9]{64}$", var.admin_runner_diagnostics_image))
+    error_message = "admin_runner_diagnostics_image must include a version tag and immutable sha256 digest."
   }
 }

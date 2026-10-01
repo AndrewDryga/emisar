@@ -20,6 +20,7 @@ execution:
     - TFE_TOKEN
     - SENTRY_AUTH_TOKEN
     - SENTRY_URL
+    - DOCKER_CONFIG
 
 admission:
   allow:

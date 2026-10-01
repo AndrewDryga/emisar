@@ -1142,6 +1142,28 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(lv, "button", "Deny")
   end
 
+  test "local admission blocks approval without claiming an executable is missing", %{conn: conn} do
+    {conn, user, account} = register_and_log_in(conn)
+    request = pending_request(account, user)
+    subject = Fixtures.Subjects.subject_for(user, account)
+
+    assert {:ok, action} =
+             Emisar.Catalog.fetch_action_by_id(
+               "linux.uptime",
+               request.context["runner_id"],
+               subject
+             )
+
+    action |> Ecto.Changeset.change(local_admission_allowed: false) |> Repo.update!()
+
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+    assert html =~ "Action unavailable on runner"
+    assert html =~ "Local admission rules or missing prerequisites"
+    refute html =~ "Required executable missing"
+    refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
+    assert has_element?(lv, "button", "Deny")
+  end
+
   test "Recheck restores a missing action without losing the note, reuse choices, or override reason",
        %{conn: conn} do
     {conn, user, account} = register_and_log_in(conn)
