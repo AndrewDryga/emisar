@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -510,6 +511,7 @@ type terraformFixture struct {
 
 func terraformWorkspace(t *testing.T) terraformFixture {
 	t.Helper()
+	requireTerraformReadonlyHost(t)
 	root := t.TempDir()
 	fixture := terraformFixture{
 		dir:          filepath.Join(root, "workspace"),
@@ -526,6 +528,33 @@ func terraformWorkspace(t *testing.T) terraformFixture {
 	writeFixtureFile(t, filepath.Join(fixture.planDir, "review.tfplan"), "saved plan\n")
 	writeFixtureFile(t, filepath.Join(fixture.candidateDir, "candidate.tfstate"), tfCandidateState+"\n")
 	return fixture
+}
+
+// terraform-readonly declares `requires.os: linux`, and its scripts resolve
+// paths with `realpath -e` and size files with `stat -c` — GNU coreutils
+// spellings a stock macOS userland rejects. On such a host every row failed on
+// that rejection rather than on anything the scripts decide, so `./run gate
+// tooling` was red on a clean tree and read as noise. The rows skip there and
+// say what the host lacks; a Mac with GNU coreutils first on PATH still runs
+// them. Linux never skips: a missing tool on a host the pack targets is a real
+// failure, and skipping it would retire these rows in CI without a trace.
+func requireTerraformReadonlyHost(t *testing.T) {
+	t.Helper()
+	target := t.TempDir()
+	for _, probe := range [][]string{
+		{"realpath", "-e", "--", target},
+		{"stat", "-c", "%s", "--", target},
+	} {
+		if exec.Command(probe[0], probe[1:]...).Run() == nil {
+			continue
+		}
+		spelling := probe[0] + " " + probe[1]
+		if runtime.GOOS == "linux" {
+			t.Fatalf("this host cannot run `%s`, which the terraform-readonly scripts need", spelling)
+		}
+		t.Skipf("this host cannot run `%s`: the Linux-only terraform-readonly scripts need GNU coreutils; "+
+			"put it first on PATH as ./run bootstrap describes, or run these rows in the Coop box", spelling)
+	}
 }
 
 func (f terraformFixture) run(t *testing.T, script string, env []string, argv ...string) packScriptRun {
