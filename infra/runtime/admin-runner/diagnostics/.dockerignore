@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!debian.sources
+!build.sh
+!run-tool
+!commands.txt

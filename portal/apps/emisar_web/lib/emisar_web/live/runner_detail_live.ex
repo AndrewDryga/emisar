@@ -614,6 +614,23 @@ defmodule EmisarWeb.RunnerDetailLive do
                             Run
                           </.button>
                         </.tooltip>
+                      <% action.local_admission_allowed == false -> %>
+                        <.tooltip
+                          id={"action-local-denial-#{action.id}"}
+                          text="Local admission rules deny this action on this runner."
+                          class="shrink-0"
+                        >
+                          <.button
+                            size={:sm}
+                            variant={:secondary}
+                            disabled
+                            aria-disabled="true"
+                            icon="state.locked"
+                            class="cursor-not-allowed opacity-60"
+                          >
+                            Run
+                          </.button>
+                        </.tooltip>
                       <% action.primary_executable_available == false -> %>
                         <.tooltip
                           id={"action-missing-exec-#{action.id}"}

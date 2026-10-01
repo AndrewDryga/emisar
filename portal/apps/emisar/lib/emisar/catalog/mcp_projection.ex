@@ -291,6 +291,7 @@ defmodule Emisar.Catalog.MCPProjection do
           [
             descriptor_mismatch_issue(compatibility),
             primary_executable_missing_issue(compatibility),
+            local_admission_denied_issue(compatibility),
             no_connected_runner_issue(executable?),
             partially_deployed_issue(executable?, compatibility)
           ]
@@ -366,6 +367,13 @@ defmodule Emisar.Catalog.MCPProjection do
       |> MapSet.new()
       |> MapSet.intersection(expected_action_ids)
 
+    denied_action_ids =
+      rows
+      |> Enum.filter(&(&1.local_admission_allowed == false))
+      |> Enum.map(& &1.action_id)
+      |> MapSet.new()
+      |> MapSet.intersection(expected_action_ids)
+
     descriptor_match? =
       expected_action_ids == matching_action_ids and
         advertised_action_ids == expected_action_ids
@@ -374,6 +382,7 @@ defmodule Emisar.Catalog.MCPProjection do
       if descriptor_match? and deployment.runner_status == "connected" do
         matching_action_ids
         |> MapSet.difference(unavailable_action_ids)
+        |> MapSet.difference(denied_action_ids)
         |> MapSet.to_list()
         |> Enum.sort()
       else
@@ -382,6 +391,12 @@ defmodule Emisar.Catalog.MCPProjection do
 
     issues =
       [
+        if(
+          descriptor_match? and deployment.runner_status == "connected" and
+            MapSet.size(denied_action_ids) > 0,
+          do: issue("local_admission_denied", "Local admission rules deny one or more actions."),
+          else: nil
+        ),
         # Only a CONNECTED runner's advertisement can genuinely mismatch trust
         # — a disconnected/pending runner's stored advertisement is stale, and
         # raising a tamper-flavored alarm on it misled a real incident (the
@@ -443,6 +458,17 @@ defmodule Emisar.Catalog.MCPProjection do
       issue(
         "descriptor_mismatch",
         "At least one runner advertisement differs from the complete trusted manifest."
+      )
+    end
+  end
+
+  defp local_admission_denied_issue(compatibility) do
+    if Enum.any?(compatibility, fn {_runner_id, result} ->
+         Enum.any?(result.issues, &(&1.code == "local_admission_denied"))
+       end) do
+      issue(
+        "local_admission_denied",
+        "Local admission rules deny one or more actions on a connected runner."
       )
     end
   end

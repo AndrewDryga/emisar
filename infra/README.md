@@ -150,6 +150,114 @@ admission subtracts the run-mutating HCP actions (`tfc.apply_run`,
 plan-only runs, and the ordinary lock/unlock stay. Confirm & Apply in HCP
 remains the one deploy gate, reachable from no runner.
 
+For container diagnostics, run `gcp.log_entries` with the deployment's
+`project`, `view_id: emisar-vm-containers`, `resource_type: gce_instance`, and
+`log_id: cos_containers`. Add `minimum_severity: ERROR` for errors, or
+`json_message: recurrent_job.failed` for recurrent-job failures. Follow
+`next_page_cursor` with the same filters to read another bounded page.
+The pinned `gcp-monitoring` release supports this view target; 0.3.9 only
+queried the project and could not use the VM identity's view-only grant.
+An omitted view still requests project-wide logs and is intentionally denied.
+The view excludes audit, SQL, and network logs; no broader Logging reader role
+is needed. After deployment, verify the scoped read through Emisar and confirm
+that project-wide reads remain denied.
+
+The runner in this tree keeps complete descriptors for trusted-manifest
+verification and reports local admission separately. Portal subtracts denied
+actions only after exact manifest verification. The seven denials above remain
+in force. Published runner versions 0.28.0 and 0.29.0 do not implement this
+protocol; the current infrastructure runner pin must be replaced with a newly
+published, provenance-verified release containing this change before deployment.
+Do not claim restored compatibility from a pack-pin update alone.
+
+`gcp.log_names` receives only `logging.logs.list`, which exposes log names,
+not entries. Storage inventory receives only project-level
+`storage.buckets.list`. Bucket IAM and object reads remain confined to the
+registry and MTA-STS buckets; a newly created bucket does not inherit them.
+
+### Native diagnostics bundle and release prerequisites
+
+COS has no package manager. The admin runner installs a reviewed, immutable
+native utilities bundle from `runtime/admin-runner/diagnostics/`. Its Dockerfile
+uses the same signed Debian snapshot and base digest as the portal runtime,
+and checks both supported architecture hashes for Docker Compose 2.39.4.
+The image is copied with `docker create`/`docker cp` and never started on the VM.
+Executables and their library closure live on `/run` and run in the real host's
+namespaces with its existing identity. Native COS systemd and Docker remain in
+use; no privileged helper container, new time daemon, or package installation
+on the serving host is introduced. The native wrapper accepts only fixed
+command names, preserves argv, and provides the private loader, Python imports
+for NTPsec's client, and sysstat's `sadc` helper. Startup executes representative
+version checks and probes Docker Compose before replacing the existing bundle.
+Cached immutable images allow service restarts without a registry download.
+
+Before applying this change:
+
+1. Publish a runner release containing complete descriptors and separate local
+   admission evidence, verify its provenance, then update `runner-version.txt`
+   and its reviewed signer details in `compute.tf`. Deploy matching Portal code.
+2. On a trusted Docker machine, run `./run gate infra`. It builds the diagnostics
+   image as `emisar/admin-diagnostics:check`, verifies native relocation, Python
+   imports, sysstat sampling and Compose, and includes a minimal-image test where
+   a system `sadc` cannot hide a missing bundled helper. Publish that **same tested
+   image artifact**, without rebuilding it, to a registry the VM can read. Retain
+   its build provenance and dependency inventory. Test each architecture that
+   will be published; an amd64 check does not certify arm64.
+3. Set the required HCP workspace variable `admin_runner_diagnostics_image` to
+   the published `repository:version@sha256:digest`. There is no fabricated or
+   moving default. Automatic portal CD does not publish this separate bundle.
+4. Supply `emisar_tfe_token` as a user/team token authorized for the intended
+   workspace. Plan JSON needs workspace admin access; organization tokens do
+   not support that endpoint. Preserve the runner's apply/cancel/discard/retry/
+   force-unlock denials. HCP plan creation also requires a remote/agent workspace
+   with an existing usable configuration.
+5. Verify the installed Sentry internal integration belongs to the intended
+   organization and projects, and that `https://emisar.sentry.io` is their correct
+   API base. Set `emisar_sentry_auth_token` with `org:read`, `project:read`,
+   `event:read`, and `alerts:read`. Enabled issue mutations require `event:write`;
+   enabled ingest-key toggles require `project:write`. An empty organization list
+   is an access/installation verification gap, not proof that no errors exist.
+
+The credential-free gate explicitly skips image build/runtime tests when Docker
+is unavailable. Fixture and static success does not replace that pending check,
+artifact publication, rollout, or governed live verification.
+
+### Installed-pack verification after deployment
+
+The gate checks all 19 public pins against exact source hashes, plus the private
+pack, verifies every action remains advertised with the seven expected local
+denials, and checks declared binaries against provisioning and startup checks.
+It does not execute mutation actions or prove remote access. Run representative
+reads through the normal policy, approval, audit and redaction path on each
+replacement VM, using actual resource names returned by discovery:
+
+| Installed pack | Access/prerequisite and live read |
+|---|---|
+| `cloud-init` | Native cloud-init and journal; status and bounded logs. |
+| `debugging` | Bundled sysstat/procps and host `/proc`; iostat, sar, vmstat, slabtop; environment read stays denied. |
+| `docker` | Native Docker socket and bundled Compose plugin; version, containers, Compose listing; inspect stays denied. Compose-file actions require a real allowed project file. |
+| `elixir-beam` | Fixed BEAM bridge and existing container release; release targets, memory and debug-tools checks. Recon actions require recon in the release. |
+| `gcp-certificates` | Certificate Manager/Compute readers; certificate and map inventory. |
+| `gcp-cloudsql` | Cloud SQL viewer; instances, backups and operations. Failover/restart remain refused by Google. |
+| `gcp-compute` | Compute viewer; instances and groups. Mutations remain refused by Google. |
+| `gcp-dns` | DNS reader; managed zones and records. |
+| `gcp-iam` | Service-account and workload-identity viewers; projects and pool/service-account policy reads. |
+| `gcp-load-balancing` | Compute viewer; backends, health, forwarding rules and URL maps. |
+| `gcp-monitoring` | Monitoring viewer plus log-name inventory and exact log-view grant; metrics, policies, log names and scoped container errors. Confirm project log reads remain denied. |
+| `gcp-networking` | Compute viewer; routes, subnets, firewall and NAT/router inventory. |
+| `gcp-storage` | Project bucket inventory; describe, IAM, objects and metadata in the two granted buckets. Confirm unrelated bucket object/policy reads are denied. |
+| `hcp-terraform` | Authorized user/team token; organizations, workspaces, runs, plan log and plan JSON. Confirm the five denied actions remain unavailable. |
+| `linux-core` | Host files/devices and supplemental LVM/mdadm/SMART tools; memory, mounts and storage topology. A virtual disk may lack SMART; an empty LVM/RAID inventory is valid. |
+| `nic` | Native or bundled ethtool; actual host interface link and driver reads. Virtual devices may not support physical-NIC operations. |
+| `sentry` | Installed integration and correct region; expected organization, project and issue inventory. |
+| `systemd-deep` | Native COS systemd/journal/cgroups; failed units, timers and cgroup samples. |
+| `time-sync` | Native timedatectl plus Chrony/NTP clients; verify the daemon actually configured on the host. The alternative daemon's query is not expected to succeed. |
+| `emisar-admin` | Exact trusted private-pack hash and fixed colocated RPC; runtime status and an authorized account read. |
+
+Keep Livebook parked. Apply, production restart, mutation tests and end-to-end
+live verification are separate authorized operations; none is performed by the
+credential-free checks described here.
+
 Set the reusable runner enrollment credential as the sensitive HCP
 Terraform variable `emisar_runner_enrollment_key`. A regional MIG can create
 several runners and replaces their boot disks during rollouts, so a single-use
@@ -171,9 +279,8 @@ the management account advertise — the version travels with the pack, so read 
 off the advertisement rather than from here. Critical erasure actions remain
 subject to the management account's normal policy and approval rules.
 
-The pinned `runner-v0.28.0` release understands the current pack setup and
-structured output schemas; the private pack does not require a custom runner
-build.
+The private pack uses the standard runner release. The release and repin
+prerequisite above must be completed before this infrastructure change is applied.
 
 ## Portal VM operations
 

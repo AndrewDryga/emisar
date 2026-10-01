@@ -98,6 +98,8 @@ func ExitCode(err error) int {
 }
 
 type App struct {
+	// reviewBase is the resolved commit passed to dependency checks during a review.
+	reviewBase string
 	toolutil.Runner
 	Root   string
 	Portal string

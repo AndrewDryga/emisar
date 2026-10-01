@@ -16,10 +16,10 @@ contract.
 
 ## Good
 
-- Advertise every admitted action descriptor.
+- Advertise every loaded action descriptor, including locally denied actions.
 - Compare the complete descriptor set to the exact trusted manifest.
 - Filter an otherwise compatible action only when separate host evidence is
-  definitively unavailable.
+  definitively unavailable or local admission denies it.
 - Preserve unknown readiness from older runners as rolling-compatible.
 
 ## Bad

@@ -154,6 +154,14 @@ which CA a runner trusts. Ask the host: `emisar state` prints the exact
 dialer supports durable, operator-requested credential refresh. An absent or
 false value does not promise support for the `refresh_credentials` message.
 
+Every action descriptor also includes `local_admission_allowed`, reporting the
+host allow/deny rules and risk ceiling. Denied actions remain in the complete
+trusted-manifest comparison, but are excluded from executable targets and
+refused again during dispatch and approval. A malformed present value fails
+closed; an absent field is unknown, as older runners omit denied descriptors.
+This evidence never grants trust or overrides approval policy. The runner still
+enforces local admission independently on every execution.
+
 Every action descriptor includes `primary_executable_available`. A new runner
 sets it to `false` and includes the bounded `missing_executable` name when the
 program it would start does not resolve on the runner process's `PATH`. The

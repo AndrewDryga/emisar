@@ -98,8 +98,13 @@ install -m 0755 /var/lib/emisar-admin-runner/beam.sh "$runner_bin_dir/beam-runti
 ln -sfn beam-runtime "$runner_bin_dir/elixir"
 ln -sfn beam-runtime "$runner_bin_dir/erl"
 ln -sfn beam-runtime "$runner_bin_dir/epmd"
-export PATH="$runner_bin_dir:$PATH"
-declared_dependencies='bash cloud-init curl docker ethtool jq ps ss systemctl'
+bash /var/lib/emisar-admin-runner/install-diagnostics.sh "${diagnostics_image}"
+# Prefer native COS system utilities; the supplemental commands fill its gaps.
+# The sar wrapper itself prepends its bundle so its sadc helper is consistent.
+export PATH="$runner_bin_dir:$PATH:/run/emisar-admin-runner/diagnostics/bin"
+export DOCKER_CONFIG=/run/emisar-admin-runner/docker
+docker compose version >/dev/null
+declared_dependencies='bash chronyc cloud-init curl dmidecode docker ethtool findmnt free iostat journalctl jq last lscpu lvs mdadm ntpq ping ps pvs sar sadc shutdown slabtop smartctl ss sysctl systemctl systemd-analyze systemd-cgls systemd-cgtop timedatectl uptime vgs vmstat'
 for dependency in $declared_dependencies; do
   command -v "$dependency" >/dev/null || {
     echo "admin runner dependency is missing: $dependency" >&2

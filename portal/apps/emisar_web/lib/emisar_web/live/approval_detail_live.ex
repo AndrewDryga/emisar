@@ -669,8 +669,9 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
   defp approval_block_copy(:action_unavailable) do
     %{
-      title: "Required executable missing",
-      body: "A runner is missing an executable this request needs. Restore it, then recheck."
+      title: "Action unavailable on runner",
+      body:
+        "Local admission rules or missing prerequisites prevent this action from running. Check the runner configuration, then recheck."
     }
   end
 

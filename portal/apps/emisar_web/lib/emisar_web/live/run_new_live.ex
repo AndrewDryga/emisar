@@ -12,6 +12,12 @@ defmodule EmisarWeb.RunNewLive do
          |> put_flash(:error, "Action not found.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners/#{runner_id}")}
 
+      {:ok, %{local_admission_allowed: false}} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Local admission rules deny this action on this runner.")
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners/#{runner_id}")}
+
       {:ok, %{primary_executable_available: false} = action} ->
         {:ok,
          socket
@@ -237,7 +243,7 @@ defmodule EmisarWeb.RunNewLive do
              put_flash(
                socket,
                :error,
-               current_missing_tool_message(socket)
+               current_action_unavailable_message(socket)
              )}
 
           {:error, :action_contract_changed} ->
@@ -275,15 +281,25 @@ defmodule EmisarWeb.RunNewLive do
 
   # Host prerequisites can change while the form is open. Re-read through the
   # authorized catalog rather than naming a tool from stale host evidence.
-  defp current_missing_tool_message(socket) do
+  defp current_action_unavailable_message(socket) do
     case Catalog.fetch_action_by_id(
            socket.assigns.action.action_id,
            socket.assigns.runner_id,
            socket.assigns.current_subject
          ) do
-      {:ok, action} -> missing_tool_message(action)
-      {:error, _reason} -> missing_tool_message(nil)
+      {:ok, action} -> action_unavailable_message(action)
+      {:error, _reason} -> action_unavailable_message(nil)
     end
+  end
+
+  defp action_unavailable_message(%{local_admission_allowed: false}),
+    do: "Local admission rules deny this action on this runner."
+
+  defp action_unavailable_message(%{primary_executable_available: false} = action),
+    do: missing_tool_message(action)
+
+  defp action_unavailable_message(_action) do
+    "This action is currently unavailable on the runner. Recheck its local admission rules and prerequisites."
   end
 
   defp missing_tool_message(%{missing_executable: tool}) when is_binary(tool) and tool != "" do

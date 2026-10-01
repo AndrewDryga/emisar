@@ -89,6 +89,7 @@ locals {
   admin_runner_start_script = templatefile("${path.module}/runtime/admin-runner/start.sh", {
     project_id                = var.project_id
     runner_version            = local.admin_runner_version
+    diagnostics_image         = var.admin_runner_diagnostics_image
     enrollment_secret_version = google_secret_manager_secret_version.admin_runner["emisar-admin-runner-enrollment-key"].version
     tfe_secret_version        = google_secret_manager_secret_version.admin_runner["emisar-admin-runner-tfe-token"].version
     sentry_secret_version     = google_secret_manager_secret_version.admin_runner["emisar-admin-runner-sentry-token"].version
@@ -97,22 +98,24 @@ locals {
   admin_runner_gcloud_script = templatefile("${path.module}/runtime/admin-runner/gcloud.sh", {
     gcloud_image = local.gcloud_image
   })
-  admin_runner_beam_script = file("${path.module}/runtime/admin-runner/beam.sh")
+  admin_runner_diagnostics_script = file("${path.module}/runtime/admin-runner/install-diagnostics.sh")
+  admin_runner_beam_script        = file("${path.module}/runtime/admin-runner/beam.sh")
   admin_runner_pack_files = {
     for relative_path in fileset("${path.module}/packs/emisar-admin", "**") :
     "emisar-admin/${relative_path}" => filebase64("${path.module}/packs/emisar-admin/${relative_path}")
   }
   cloud_init = templatefile("${path.module}/runtime/portal/cloud-init.yaml", {
-    cloud_sql_proxy_image      = local.cloud_sql_proxy_image
-    app_port                   = local.portal_port
-    database_connection_name   = google_sql_database_instance.emisar.connection_name
-    ensure_image_script        = local.ensure_image_script
-    start_script               = local.start_script
-    admin_runner_config        = local.admin_runner_config
-    admin_runner_start_script  = local.admin_runner_start_script
-    admin_runner_gcloud_script = local.admin_runner_gcloud_script
-    admin_runner_beam_script   = local.admin_runner_beam_script
-    admin_runner_pack_files    = local.admin_runner_pack_files
+    cloud_sql_proxy_image           = local.cloud_sql_proxy_image
+    app_port                        = local.portal_port
+    database_connection_name        = google_sql_database_instance.emisar.connection_name
+    ensure_image_script             = local.ensure_image_script
+    start_script                    = local.start_script
+    admin_runner_config             = local.admin_runner_config
+    admin_runner_start_script       = local.admin_runner_start_script
+    admin_runner_gcloud_script      = local.admin_runner_gcloud_script
+    admin_runner_beam_script        = local.admin_runner_beam_script
+    admin_runner_diagnostics_script = local.admin_runner_diagnostics_script
+    admin_runner_pack_files         = local.admin_runner_pack_files
   })
 
   zone_reservation_counts = {

@@ -249,6 +249,13 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		}
 		validateCloudInitSchema = true
 	}
+	if dockerAvailable {
+		if err := a.validateAdminDiagnostics(ctx); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintln(a.Out, "skip: native admin diagnostics bundle build/runtime smoke; run the infra gate on a trusted Docker host or in CI")
+	}
 	if !dockerAvailable {
 		fmt.Fprintln(a.Out, "skip: Docker-only infrastructure image and runtime checks; run this gate on a trusted host or in CI")
 	}
@@ -404,7 +411,9 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		`ln -sfn beam-runtime "$runner_bin_dir/elixir"`,
 		`ln -sfn beam-runtime "$runner_bin_dir/erl"`,
 		`ln -sfn beam-runtime "$runner_bin_dir/epmd"`,
-		"declared_dependencies='bash cloud-init curl docker ethtool jq ps ss systemctl'",
+		`bash /var/lib/emisar-admin-runner/install-diagnostics.sh "`,
+		"export DOCKER_CONFIG=/run/emisar-admin-runner/docker",
+		"docker compose version >/dev/null",
 		`command -v "$dependency" >/dev/null`,
 		"elixir --version >/dev/null",
 		`erl -noshell -eval 'io:format("~s~n", [erlang:system_info(system_version)]), halt().' >/dev/null`,

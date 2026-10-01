@@ -285,7 +285,7 @@ func TestStateBuilder_Build_ReflectsSwappedVerifier(t *testing.T) {
 	}
 }
 
-func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
+func TestStateBuilder_AdmissionDenylistPreservesDescriptor(t *testing.T) {
 	reg := setupRegistry(t)
 	pol, err := admission.New(nil, []string{"t.echo"}, "")
 	if err != nil {
@@ -297,8 +297,8 @@ func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
 		GetAdmission: func() *admission.Policy { return pol },
 	}
 	msg := b.Build()
-	if len(msg.Actions) != 0 {
-		t.Fatalf("expected denied action to be hidden, got %d actions", len(msg.Actions))
+	if len(msg.Actions) != 1 || msg.Actions[0].LocalAdmissionAllowed {
+		t.Fatalf("expected complete denied descriptor, got %+v", msg.Actions)
 	}
 	// The pack itself still advertises (for hash tracking) — the
 	// filter is per-action, not per-pack.
@@ -329,9 +329,8 @@ output:
   max_stderr_bytes: 1024
 `
 
-// A risk ceiling hides actions above the tier from the advertised catalog,
-// exactly like an allow/deny rule — the read-only-demo switch.
-func TestStateBuilder_MaxRiskHidesActionsAboveCeiling(t *testing.T) {
+// A risk ceiling removes executable targets without dropping trusted descriptors.
+func TestStateBuilder_MaxRiskPreservesDescriptorsAboveCeiling(t *testing.T) {
 	root := t.TempDir()
 	must := func(err error) {
 		if err != nil {
@@ -364,8 +363,13 @@ actions:
 		GetAdmission: func() *admission.Policy { return pol },
 	}
 	msg := b.Build()
-	if len(msg.Actions) != 1 || msg.Actions[0].ID != "t.echo" {
-		t.Fatalf("expected only the low-risk t.echo under a medium ceiling, got %+v", msg.Actions)
+	if len(msg.Actions) != 2 {
+		t.Fatalf("expected complete descriptors, got %+v", msg.Actions)
+	}
+	for _, action := range msg.Actions {
+		if action.LocalAdmissionAllowed != (action.ID == "t.echo") {
+			t.Fatalf("incorrect local admission: %+v", action)
+		}
 	}
 }
 

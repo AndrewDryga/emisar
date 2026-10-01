@@ -437,6 +437,33 @@ defmodule Emisar.CatalogTest do
       refute updated.descriptor_digest == loaded.descriptor_digest
     end
 
+    test "local admission is subtractive evidence, malformed values fail closed", %{
+      runner: runner,
+      subject: subject
+    } do
+      descriptor = action("linux.uptime")
+      assert {:ok, _} = Catalog.observe_state(runner, state_payload(actions: [descriptor]))
+      assert {:ok, [original], _} = Catalog.list_actions_for_runner(runner.id, subject)
+
+      for value <- [false, "true", nil, 1, %{}] do
+        denied = Map.put(descriptor, "local_admission_allowed", value)
+        assert {:ok, _} = Catalog.observe_state(runner, state_payload(actions: [denied]))
+        assert {:ok, [updated], _} = Catalog.list_actions_for_runner(runner.id, subject)
+        assert updated.local_admission_allowed == false
+        assert updated.descriptor_digest == original.descriptor_digest
+      end
+
+      for {payload, expected} <- [
+            {Map.put(descriptor, "local_admission_allowed", true), true},
+            {descriptor, nil}
+          ] do
+        assert {:ok, _} = Catalog.observe_state(runner, state_payload(actions: [payload]))
+        assert {:ok, [updated], _} = Catalog.list_actions_for_runner(runner.id, subject)
+        assert updated.local_admission_allowed == expected
+        assert updated.descriptor_digest == original.descriptor_digest
+      end
+    end
+
     test "persists primary executable readiness and clears it for an older runner", %{
       runner: runner,
       subject: subject
