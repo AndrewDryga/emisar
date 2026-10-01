@@ -661,3 +661,177 @@ func TestPublish_DryRunUploadsNothing(t *testing.T) {
 		t.Errorf("dry-run must not contact the server, got %d requests", len(f.requests))
 	}
 }
+
+// recompressed returns the same archive as built under another gzip encoding,
+// which is what a registry holds for a tarball an earlier Go release wrote.
+func recompressed(t *testing.T, built []byte) []byte {
+	t.Helper()
+	archive, err := gunzipBytes(built)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&out, gzip.BestSpeed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := zw.Write(archive); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(out.Bytes(), built) {
+		t.Fatal("the fixture needs a stored object whose gzip bytes differ from the build")
+	}
+	return out.Bytes()
+}
+
+// isCatalogSnapshot picks the one immutable object a new catalog always adds.
+func isCatalogSnapshot(path string) bool { return strings.HasPrefix(path, "v1/catalog/") }
+
+// publishedRegistry is a bucket that already holds every immutable object of
+// the tree except its catalog snapshot — the state a registry is in when a
+// catalog changed and no pack did. Tarballs are stored re-encoded.
+func publishedRegistry(t *testing.T, dir string) *fakeGCS {
+	t.Helper()
+	f := newFakeGCS()
+	for _, obj := range readManifest(t, dir).Objects {
+		if !obj.Immutable || isCatalogSnapshot(obj.Path) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(obj.Path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasSuffix(obj.Path, "/pack.tar.gz") {
+			data = recompressed(t, data)
+		}
+		f.objects[obj.Path] = data
+	}
+	return f
+}
+
+// Check answers "would this publish go through?" from reads alone. Five CD runs
+// failed on an immutable object the registry already stored with other bytes,
+// and each was found by the publish itself, after main had moved.
+func TestPublish_CheckComparesWithTheBucketAndUploadsNothing(t *testing.T) {
+	dir := buildTree(t)
+	f := publishedRegistry(t, dir)
+	srv := f.server(t)
+
+	res, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Endpoint: srv.URL,
+		Check:    true,
+	})
+	if err != nil {
+		t.Fatalf("Check against a registry holding the same content: %v", err)
+	}
+
+	var wantUploaded, wantSkipped []string
+	for _, obj := range readManifest(t, dir).Objects {
+		if obj.Immutable && !isCatalogSnapshot(obj.Path) {
+			wantSkipped = append(wantSkipped, obj.Path)
+		} else {
+			wantUploaded = append(wantUploaded, obj.Path)
+		}
+	}
+	slices.Sort(wantUploaded)
+	slices.Sort(wantSkipped)
+	gotUploaded, gotSkipped := slices.Clone(res.Uploaded), slices.Clone(res.Skipped)
+	slices.Sort(gotUploaded)
+	slices.Sort(gotSkipped)
+	if !slices.Equal(gotUploaded, wantUploaded) {
+		t.Errorf("would upload %v, want the new snapshot and the mutable pointers %v", gotUploaded, wantUploaded)
+	}
+	if !slices.Equal(gotSkipped, wantSkipped) {
+		t.Errorf("already published %v, want every stored immutable object %v", gotSkipped, wantSkipped)
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.requests) != 0 {
+		t.Errorf("Check uploaded %d objects, want none", len(f.requests))
+	}
+	for name, authorization := range f.readAuth {
+		if authorization != "" {
+			t.Errorf("Check read %s with credentials %q on a public bucket", name, authorization)
+		}
+	}
+	for _, name := range wantUploaded {
+		if _, read := f.readAuth[name]; read && !isCatalogSnapshot(name) {
+			t.Errorf("Check read mutable pointer %s; a publish overwrites it without comparing", name)
+		}
+	}
+}
+
+func TestPublish_CheckFailsOnAnImmutableObjectStoredWithOtherBytes(t *testing.T) {
+	dir := buildTree(t)
+	f := publishedRegistry(t, dir)
+	// The schema was edited without a new SchemaArtifactVersion: the registry
+	// already serves other bytes at the path this tree would publish.
+	const name = "v1/schemas/action.v7.schema.json"
+	if _, ok := f.objects[name]; !ok {
+		t.Fatalf("fixture tree carries no %s", name)
+	}
+	f.objects[name] = []byte(`{"$id":"the schema published earlier"}`)
+	srv := f.server(t)
+
+	_, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Endpoint: srv.URL,
+		Check:    true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "different bytes") || !strings.Contains(err.Error(), name) {
+		t.Fatalf("expected the conflict on %s, got %v", name, err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.requests) != 0 {
+		t.Errorf("Check uploaded %d objects, want none", len(f.requests))
+	}
+}
+
+// A private bucket answers an anonymous read with 401 for every path, stored or
+// not, so without a credential Check cannot tell a new object from a published
+// one and has to say so rather than report a plan.
+func TestPublish_CheckOnAPrivateBucketNeedsACredential(t *testing.T) {
+	dir := buildTree(t)
+
+	f := publishedRegistry(t, dir)
+	f.privateReads = true
+	_, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Endpoint: f.server(t).URL,
+		Check:    true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "GOOGLE_OAUTH_ACCESS_TOKEN") {
+		t.Fatalf("expected a refusal naming the token, got %v", err)
+	}
+
+	withToken := publishedRegistry(t, dir)
+	withToken.privateReads = true
+	res, err := Publish(context.Background(), dir, PublishOptions{
+		Bucket:   "test-bucket",
+		Token:    "tok",
+		Endpoint: withToken.server(t).URL,
+		Check:    true,
+	})
+	if err != nil {
+		t.Fatalf("Check with a credential on a private bucket: %v", err)
+	}
+	if len(res.Skipped) == 0 {
+		t.Error("Check found no published object on a bucket that holds them")
+	}
+	withToken.mu.Lock()
+	defer withToken.mu.Unlock()
+	if len(withToken.requests) != 0 {
+		t.Errorf("Check uploaded %d objects, want none", len(withToken.requests))
+	}
+	for _, name := range res.Skipped {
+		if got := withToken.readAuth[name]; got != "Bearer tok" {
+			t.Errorf("private read of %s Authorization = %q, want the token", name, got)
+		}
+	}
+}

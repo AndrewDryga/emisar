@@ -134,6 +134,7 @@ func packCatalogPublishCmd() *cobra.Command {
 		dir    string
 		bucket string
 		dryRun bool
+		check  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -155,15 +156,22 @@ manifest itself.
 Authentication uses an OAuth2 access token from GOOGLE_OAUTH_ACCESS_TOKEN
 (in CI from Workload Identity; locally 'gcloud auth print-access-token').
 
+--dry-run prints the upload plan and contacts nothing. --check reads the bucket
+and writes nothing: it compares every immutable object with the copy already
+stored and fails on one stored with different content, which is the conflict
+that would stop the publish. A public bucket needs no token for --check.
+
   GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
     packctl catalog publish --dir ./dist --bucket my-pack-registry
-  packctl catalog publish --dir ./dist --bucket my-pack-registry --dry-run`,
+  packctl catalog publish --dir ./dist --bucket my-pack-registry --dry-run
+  packctl catalog publish --dir ./dist --bucket my-pack-registry --check`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts := catalog.PublishOptions{
 				Bucket: bucket,
 				Token:  os.Getenv("GOOGLE_OAUTH_ACCESS_TOKEN"),
 				DryRun: dryRun,
+				Check:  check,
 				Logf:   banner,
 			}
 			res, err := catalog.Publish(cmd.Context(), dir, opts)
@@ -180,6 +188,10 @@ Authentication uses an OAuth2 access token from GOOGLE_OAUTH_ACCESS_TOKEN
 				banner("dry run: %d objects would be uploaded", len(res.Uploaded))
 				return nil
 			}
+			if check {
+				banner("check: %d objects would be uploaded, %d already published", len(res.Uploaded), len(res.Skipped))
+				return nil
+			}
 			banner("published %d objects (%d skipped, already present)", len(res.Uploaded), len(res.Skipped))
 			return nil
 		},
@@ -187,6 +199,8 @@ Authentication uses an OAuth2 access token from GOOGLE_OAUTH_ACCESS_TOKEN
 	cmd.Flags().StringVar(&dir, "dir", "dist", "built artifact tree (from 'build') to upload")
 	cmd.Flags().StringVar(&bucket, "bucket", "emisar-pack-registry", "target GCS bucket")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the upload plan without contacting GCS")
+	cmd.Flags().BoolVar(&check, "check", false, "compare the tree with the bucket and upload nothing; fail on an immutable object stored with different content")
+	cmd.MarkFlagsMutuallyExclusive("dry-run", "check")
 	return cmd
 }
 

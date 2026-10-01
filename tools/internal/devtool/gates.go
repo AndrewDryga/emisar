@@ -71,7 +71,8 @@ const (
   portal --fix               reformat Portal sources instead of checking them
   staged                     validate staged migrations and source formatting
   infra-templates            render and validate production cloud-init
-  packs                      validate every pack and cross-language hash golden
+  packs                      validate every pack, the hash goldens, and the catalog, then
+                             rehearse its publication against the live registry
   agent-setup                validate manuals, skills, tasks, hooks, and Coop verbs
   deps [--base <git ref>]    enforce dependency release age and source policy
 `
@@ -97,7 +98,8 @@ const (
   runner                     format, boundaries, vet, staticcheck, tidy, attest
                              parity, race tests, cross-build, and the installer
   mcp                        the runner phases, plus the stdlib-only assertion
-  packs                      validate packs, hashes, catalog, and focused Portal tests
+  packs                      validate packs, hashes, and the catalog, rehearse its
+                             publication, and run the focused Portal tests
   infra                      format, initialize, validate, lint, test templates,
                              and schema-validate the private admin pack
   tooling                    the Go tooling phases, plus docs, workflow lint,
@@ -579,7 +581,10 @@ func (a *App) validatePacks(ctx context.Context) error {
 	if err := packhash.Check(a.Root, filepath.Join(a.Root, "bin", "emisar"), false, a.Out); err != nil {
 		return err
 	}
-	return a.checkCatalogReproduction(ctx)
+	if err := a.checkCatalogReproduction(ctx); err != nil {
+		return err
+	}
+	return a.checkPackRegistryPublish(ctx)
 }
 
 // checkCatalogReproduction proves the committed catalog artifact is what a

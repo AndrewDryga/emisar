@@ -120,4 +120,13 @@ func TestPackCatalogPublishCmd_DryRun(t *testing.T) {
 	if err := pub.Execute(); err != nil {
 		t.Fatalf("dry-run publish should succeed without a token: %v", err)
 	}
+
+	// --dry-run promises to contact nothing and --check exists to read the
+	// bucket, so asking for both has no honest answer.
+	both := packCatalogPublishCmd()
+	both.SilenceUsage, both.SilenceErrors = true, true
+	both.SetArgs([]string{"--dir", dist, "--bucket", "b", "--dry-run", "--check"})
+	if err := both.Execute(); err == nil {
+		t.Fatal("--dry-run with --check should be refused")
+	}
 }

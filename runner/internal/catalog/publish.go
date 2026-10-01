@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/andrewdryga/emisar/runner/internal/httpsecurity"
@@ -32,8 +33,8 @@ type PublishOptions struct {
 	// Bucket is the target GCS bucket (e.g. emisar-pack-registry).
 	Bucket string
 	// Token is the OAuth2 access token uploads authenticate with. Required
-	// unless DryRun. In CI it comes from Workload Identity; locally from
-	// `gcloud auth print-access-token`.
+	// unless DryRun or Check. In CI it comes from Workload Identity; locally
+	// from `gcloud auth print-access-token`.
 	Token string
 	// Endpoint defaults to DefaultGCSEndpoint.
 	Endpoint string
@@ -41,11 +42,17 @@ type PublishOptions struct {
 	HTTPClient *http.Client
 	// DryRun logs what would be uploaded without contacting GCS.
 	DryRun bool
+	// Check rehearses the publish against the bucket and uploads nothing. Every
+	// immutable object is compared with the copy already stored there, by the
+	// rule a real publish applies after its precondition fails, so a conflict is
+	// reported before any credential is used. A public bucket needs no Token.
+	Check bool
 	// Logf receives one progress line per object. Defaults to no-op.
 	Logf func(format string, args ...any)
 }
 
-// PublishResult summarizes a publish run.
+// PublishResult summarizes a publish run. Under DryRun or Check nothing is
+// written, and Uploaded lists what a real run would upload.
 type PublishResult struct {
 	Uploaded []string
 	// Skipped are immutable objects that already existed at their content-
@@ -63,7 +70,7 @@ func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResu
 	if opts.Bucket == "" {
 		return nil, fmt.Errorf("catalog: publish requires a bucket")
 	}
-	if opts.Token == "" && !opts.DryRun {
+	if opts.Token == "" && !opts.DryRun && !opts.Check {
 		return nil, fmt.Errorf("catalog: publish requires an access token (set GOOGLE_OAUTH_ACCESS_TOKEN)")
 	}
 	logf := opts.Logf
@@ -99,19 +106,15 @@ func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResu
 		return m.Objects[i].Immutable && !m.Objects[j].Immutable
 	})
 
+	if opts.Check && !opts.DryRun {
+		return checkObjects(ctx, client, endpoint, opts.Token, opts.Bucket, dir, m.Objects, logf)
+	}
+
 	res := &PublishResult{}
 	for _, obj := range m.Objects {
-		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(obj.Path)))
+		data, err := readObject(dir, obj)
 		if err != nil {
-			return nil, fmt.Errorf("catalog: read object %s: %w", obj.Path, err)
-		}
-		// Verify the bytes against the manifest before uploading — a stale or
-		// partial dist tree would otherwise write WRONG bytes to an immutable,
-		// content-addressed path that can never be corrected. Rebuild, don't push.
-		if got := hex.EncodeToString(sha256Sum(data)); got != obj.SHA256 {
-			return nil, fmt.Errorf(
-				"catalog: object %s sha256 mismatch (manifest=%s on-disk=%s) — stale or partial dist tree; rebuild before publishing",
-				obj.Path, obj.SHA256, got)
+			return nil, err
 		}
 		if opts.DryRun {
 			logf("would upload %s (%d bytes, immutable=%v)", obj.Path, len(data), obj.Immutable)
@@ -129,6 +132,74 @@ func Publish(ctx context.Context, dir string, opts PublishOptions) (*PublishResu
 			logf("skipped %s (already published, same content)", obj.Path)
 			res.Skipped = append(res.Skipped, obj.Path)
 		}
+	}
+	return res, nil
+}
+
+// readObject loads one object of the built tree.
+func readObject(dir string, obj Object) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(obj.Path)))
+	if err != nil {
+		return nil, fmt.Errorf("catalog: read object %s: %w", obj.Path, err)
+	}
+	// Verify the bytes against the manifest before uploading — a stale or
+	// partial dist tree would otherwise write WRONG bytes to an immutable,
+	// content-addressed path that can never be corrected. Rebuild, don't push.
+	if got := hex.EncodeToString(sha256Sum(data)); got != obj.SHA256 {
+		return nil, fmt.Errorf(
+			"catalog: object %s sha256 mismatch (manifest=%s on-disk=%s) — stale or partial dist tree; rebuild before publishing",
+			obj.Path, obj.SHA256, got)
+	}
+	return data, nil
+}
+
+// checkConcurrency bounds how many objects Check compares at once.
+const checkConcurrency = 8
+
+// checkObjects is Publish under Check. A registry stores one immutable object
+// per pack, and comparing them one request at a time made the rehearsal by far
+// the slowest part of a pack check, so the reads run concurrently. Nothing is
+// written, so the upload order a real publish must keep does not apply; the
+// result and the first error are still reported in that order.
+func checkObjects(ctx context.Context, client *http.Client, endpoint, token, bucket, dir string, objects []Object, logf func(string, ...any)) (*PublishResult, error) {
+	type outcome struct {
+		size      int
+		published bool
+		err       error
+	}
+	outcomes := make([]outcome, len(objects))
+	slots := make(chan struct{}, checkConcurrency)
+	var wg sync.WaitGroup
+	for i, obj := range objects {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			data, err := readObject(dir, obj)
+			if err != nil {
+				outcomes[i].err = err
+				return
+			}
+			outcomes[i].size = len(data)
+			outcomes[i].published, outcomes[i].err = alreadyPublished(ctx, client, endpoint, token, bucket, obj, data)
+		}()
+	}
+	wg.Wait()
+
+	for _, outcome := range outcomes {
+		if outcome.err != nil {
+			return nil, outcome.err
+		}
+	}
+	res := &PublishResult{}
+	for i, obj := range objects {
+		if outcomes[i].published {
+			res.Skipped = append(res.Skipped, obj.Path)
+			continue
+		}
+		logf("would upload %s (%d bytes)", obj.Path, outcomes[i].size)
+		res.Uploaded = append(res.Uploaded, obj.Path)
 	}
 	return res, nil
 }
@@ -206,32 +277,60 @@ func putObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		return true, nil
 	case resp.StatusCode == http.StatusPreconditionFailed && obj.Immutable:
-		// A plain object must match byte for byte, so its own size bounds the
-		// read. A tarball's stored copy may be another compressor's encoding of
-		// the same archive, so it is bounded by the pack ceiling instead.
-		expected := len(data)
-		if obj.ContentEncoding == "" && strings.HasSuffix(obj.Path, ".tar.gz") {
-			expected = packs.MaxPackBytes
-		}
-		stored, err := getObject(ctx, client, endpoint, "", bucket, obj.Path, expected)
-		if errors.Is(err, errPrivateRead) {
-			stored, err = getObject(ctx, client, endpoint, token, bucket, obj.Path, expected)
-		}
-		if err != nil {
-			return false, fmt.Errorf("catalog: verify existing immutable object %s: %w", obj.Path, err)
-		}
-		if !bytes.Equal(stored, data) && !sameArchive(stored, data) {
-			return false, fmt.Errorf(
-				"catalog: immutable object %s already exists with different bytes (expected sha256 %s, stored sha256 %s)",
-				obj.Path, hex.EncodeToString(sha256Sum(data)), hex.EncodeToString(sha256Sum(stored)))
-		}
-		return false, nil
+		return false, verifyStoredImmutable(ctx, client, endpoint, token, bucket, obj, data)
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 		return false, fmt.Errorf(
 			"catalog: upload %s: HTTP %d: %s; refresh local credentials with GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) and retry; if the error persists, verify bucket access",
 			obj.Path, resp.StatusCode, string(respBody))
 	default:
 		return false, fmt.Errorf("catalog: upload %s: HTTP %d: %s", obj.Path, resp.StatusCode, string(respBody))
+	}
+}
+
+// verifyStoredImmutable requires the bucket's copy of an immutable object to
+// carry the content about to be published. It is the one comparison both a
+// real publish and Check apply, so a rehearsal cannot pass a tree the publish
+// would then refuse.
+func verifyStoredImmutable(ctx context.Context, client *http.Client, endpoint, token, bucket string, obj Object, data []byte) error {
+	// A plain object must match byte for byte, so its own size bounds the
+	// read. A tarball's stored copy may be another compressor's encoding of
+	// the same archive, so it is bounded by the pack ceiling instead.
+	expected := len(data)
+	if obj.ContentEncoding == "" && strings.HasSuffix(obj.Path, ".tar.gz") {
+		expected = packs.MaxPackBytes
+	}
+	stored, err := getObject(ctx, client, endpoint, "", bucket, obj.Path, expected)
+	if errors.Is(err, errPrivateRead) && token != "" {
+		stored, err = getObject(ctx, client, endpoint, token, bucket, obj.Path, expected)
+	}
+	if err != nil {
+		return fmt.Errorf("catalog: verify existing immutable object %s: %w", obj.Path, err)
+	}
+	if !bytes.Equal(stored, data) && !sameArchive(stored, data) {
+		return fmt.Errorf(
+			"catalog: immutable object %s already exists with different bytes (expected sha256 %s, stored sha256 %s)",
+			obj.Path, hex.EncodeToString(sha256Sum(data)), hex.EncodeToString(sha256Sum(stored)))
+	}
+	return nil
+}
+
+// alreadyPublished reports whether a real publish would skip obj because the
+// bucket already stores the same immutable content. A mutable pointer is
+// overwritten on every publish, so it is never read.
+func alreadyPublished(ctx context.Context, client *http.Client, endpoint, token, bucket string, obj Object, data []byte) (bool, error) {
+	if !obj.Immutable {
+		return false, nil
+	}
+	err := verifyStoredImmutable(ctx, client, endpoint, token, bucket, obj, data)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, errObjectAbsent):
+		return false, nil
+	case errors.Is(err, errPrivateRead):
+		return false, fmt.Errorf("%w; set GOOGLE_OAUTH_ACCESS_TOKEN to check a private bucket", err)
+	default:
+		return false, err
 	}
 }
 
@@ -291,6 +390,11 @@ func gzipBytes(data []byte) ([]byte, error) {
 // errPrivateRead marks a collision read the bucket refused without credentials.
 var errPrivateRead = errors.New("catalog: bucket refuses unauthenticated reads")
 
+// errObjectAbsent marks a read of a path the bucket stores nothing at. Its text
+// is the message that status has always produced, so a publish that meets it
+// still reports the same error.
+var errObjectAbsent = errors.New("GET returned HTTP 404")
+
 func getObject(ctx context.Context, client *http.Client, endpoint, token, bucket, name string, expectedSize int) ([]byte, error) {
 	objectURL := fmt.Sprintf("%s/storage/v1/b/%s/o/%s?alt=media",
 		endpoint, url.PathEscape(bucket), url.PathEscape(name))
@@ -312,6 +416,10 @@ func getObject(ctx context.Context, client *http.Client, endpoint, token, bucket
 	defer resp.Body.Close()
 	if token == "" && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
 		return nil, errPrivateRead
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return nil, fmt.Errorf("%w: %s", errObjectAbsent, string(body))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))

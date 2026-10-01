@@ -82,6 +82,12 @@ export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)
 # Preview first — no network calls.
 packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry --dry-run
 
+# Rehearse against the bucket — reads only, and no token for a public bucket.
+# Every immutable object is compared with the stored copy by the rule the
+# upload applies (equal bytes, or the same archive under another gzip
+# encoding); one stored with different content fails here instead of mid-publish.
+packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry --check
+
 # Upload. Immutable objects use an if-generation-match:0 precondition, so an
 # existing object is never overwritten (a precondition failure = identical bytes
 # already published = skipped). The mutable pointers are overwritten last —
@@ -107,6 +113,23 @@ exact-head CI passes, `packs-publish` in `.github/workflows/cd.yml` builds
 against the live catalog and publishes through the protected-main
 `pack-registry-production` environment. Pushing the signed commit is the
 publication decision; the environment has no second reviewer.
+
+`./run check packs` rehearses that job before the push, and CI runs it on every
+pack or pack-toolchain change. It fetches the live catalog, builds against it,
+requires the result to be the committed catalog, and runs
+`packctl catalog publish --check` on the built tree. A missing or malformed
+live catalog is rehearsed against the committed one, as the job itself repairs
+that state; a registry that cannot be reached fails the check. Two failures it
+exists to catch before main moves:
+
+- `immutable object … already exists with different bytes` — the tree builds an
+  object the registry already serves with other content. For a schema, bump
+  `SchemaArtifactVersion` (`runner/internal/catalog/schema.go`) and the three
+  `$id`s; published schema bytes are never replaced.
+- `the registry tree built against the published catalog is not the committed
+  catalog` — the committed catalog was built from another history, or the
+  checkout is behind the registry. Bring the checkout up to date first; a sync
+  from behind writes a catalog that moves a published pack backwards.
 
 The drift probe makes publication level-triggered on registry state rather
 than edge-triggered on one push's diff: when a pack-changing push's CD run

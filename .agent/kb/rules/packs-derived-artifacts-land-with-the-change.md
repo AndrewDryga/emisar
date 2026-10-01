@@ -59,5 +59,9 @@ production re-bakes on the next deploy.
 
 **Enforced.** `./run gate packs` byte-compares a fresh catalog build with the
 committed artifact and runs the focused Portal catalog tests; `./run check packs`
-rejects non-numeric versions; the staged commit check runs the hash golden when
-`redis/` or `cassandra/` bytes change.
+rejects non-numeric versions, then rehearses the publication against the live
+registry — it builds with the live catalog as `--previous`, refuses a result
+that is not the committed artifact, and runs `packctl catalog publish --check`,
+which fails on an immutable object the registry already stores with different
+content; the staged commit check runs the hash golden when `redis/` or
+`cassandra/` bytes change.

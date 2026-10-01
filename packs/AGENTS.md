@@ -35,7 +35,8 @@ never substitutes a stub for vendor behavior.
 
 `./run gate packs` validates every pack with the runner's load-time checks,
 verifies the cross-language hash goldens, rebuilds the catalog into a temporary
-directory and byte-compares it with the committed artifact, then runs the
+directory and byte-compares it with the committed artifact, rehearses its
+publication against the live registry, then runs the
 focused Portal catalog tests — but it never executes a pack action, so the
 behavior cases are required too; the gate alone has shipped regressions. Use
 `./run pack check <name>` while editing one pack. A malformed pack breaks
