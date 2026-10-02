@@ -181,17 +181,23 @@ func (a *App) e2eSigning(ctx context.Context) error {
 	if err := compose(ctx, "up", "-d", "--wait", "--wait-timeout", "120", "portal"); err != nil {
 		return err
 	}
-	if err := compose(ctx, "up", "-d", "--force-recreate", "signing-init", "runner-signed", "runner-runbook"); err != nil {
-		return err
-	}
-	if err := a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/signing-e2e"); err != nil {
-		// Preserve the disposable fleet's failure evidence before the deferred
-		// down removes it. Bound diagnostics independently so a wedged Docker
-		// daemon cannot hide the original E2E error indefinitely.
+	// Preserve the disposable fleet's failure evidence before the deferred down
+	// removes it. Bound diagnostics independently so a wedged Docker daemon
+	// cannot hide the original E2E error indefinitely.
+	diagnose := func(services ...string) {
 		diagnosticCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = compose(diagnosticCtx, "ps", "-a")
-		_ = compose(diagnosticCtx, "logs", "--tail", "200", "runner-runbook", "runner-signed", "portal")
+		_ = compose(diagnosticCtx, append([]string{"logs", "--tail", "200"}, services...)...)
+	}
+	if err := compose(ctx, "up", "-d", "--force-recreate", "signing-init", "runner-signed", "runner-runbook"); err != nil {
+		// `up` reports only that the seeder "didn't complete successfully"; the
+		// real error is in the exited seeder container the teardown removes.
+		diagnose("seeder", "signing-init", "portal")
+		return err
+	}
+	if err := a.run(ctx, a.Root, env, "go", "run", "./tools/cmd/signing-e2e"); err != nil {
+		diagnose("runner-runbook", "runner-signed", "seeder", "portal")
 		return err
 	}
 	return nil
