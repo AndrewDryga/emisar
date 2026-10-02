@@ -113,3 +113,9 @@ updates:
       github-actions-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    # The repository's own reusable release workflows are pinned by commit on
+    # purpose: infra/github_oidc.tf trusts that exact SHA for workload identity,
+    # so a bump here without the Terraform rotation breaks the release at
+    # authentication (PR #82). The release runbook rotates both together.
+    ignore:
+      - dependency-name: "AndrewDryga/emisar/.github/workflows/*"
