@@ -20,4 +20,4 @@
 # fresh reason. An exemption also covers a DOWNGRADE, because a patched older
 # line is a real answer to an urgent advisory; the date is what keeps that a
 # decision rather than a permanent hole.
-hex lazy_html 0.1.13 2026-10-02 EEF-CVE-2026-92106 / CVE-2026-92106 / GHSA-8rqp-v692-v82q — lazy_html serializes SVG and MathML style and script text unescaped, allowing mutation XSS; a test-only dependency here, but the advisory fails mix hex.audit on 0.1.12 in every CI run, so the patch (published 2026-09-25) cannot wait out its 7-day window
+hex mint 1.10.2 2026-10-07 EEF-CVE-2026-91043 (HIGH) / EEF-CVE-2026-92103 / EEF-CVE-2026-94194 — a server the portal connects to can exhaust its memory over HTTP/2 (about 1 GB per response through HPACK-indexed cookie fields, 16 MiB per frame) or mis-frame an HTTP/1 response, and the OAuth client-metadata fetch dials URLs a client chooses; the advisories also fail mix hex.audit on 1.10.1 in every CI run, so the backport (published 2026-09-29 10:05 UTC) cannot wait out its 7-day window
