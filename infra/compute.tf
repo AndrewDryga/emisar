@@ -12,10 +12,16 @@ locals {
   # on COS — there is no gh or cosign and no package manager to add one — so the
   # signature check happens HERE, when a human changes this value, not at boot:
   #
-  #   gh attestation verify emisar-0.28.0-linux-amd64.tar.gz \
+  #   gh attestation verify SHA256SUMS --bundle SHA256SUMS.sigstore.jsonl \
   #     --repo andrewdryga/emisar \
   #     --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
-  #     --signer-digest a1876129e37e6d848622980a339c88a2a5ddaf46
+  #     --signer-digest a1876129e37e6d848622980a339c88a2a5ddaf46 \
+  #     --source-ref refs/tags/runner-v0.29.0 \
+  #     --source-digest 42b56dbfaaf9c95d053af7df4e9925f0d24ee65f \
+  #     --deny-self-hosted-runners
+  #
+  # Download these files from that exact release, then check both Linux archives
+  # against the verified SHA256SUMS before changing the pin.
   #
   # (the owner casing is the certificate's, not the lowercase repo spelling; the
   # attesting job runs inside the -trusted reusable workflow, so that ref — not

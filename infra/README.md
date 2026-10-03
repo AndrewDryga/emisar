@@ -171,9 +171,11 @@ the management account advertise — the version travels with the pack, so read 
 off the advertisement rather than from here. Critical erasure actions remain
 subject to the management account's normal policy and approval rules.
 
-The pinned `runner-v0.28.0` release understands the current pack setup and
+The pinned `runner-v0.29.0` release understands the current pack setup and
 structured output schemas; the private pack does not require a custom runner
-build.
+build. This version bump does not resolve the existing complete-manifest mismatch
+for `debugging`, `docker`, and `hcp-terraform`: local admission denies omit
+descriptors those trusted manifests require. Their denial rules remain in place.
 
 ## Portal VM operations
 
