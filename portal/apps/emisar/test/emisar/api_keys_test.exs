@@ -106,7 +106,7 @@ defmodule Emisar.ApiKeysTest do
         Fixtures.Memberships.create_membership(
           role: "owner",
           display_name: nil,
-          contact_email: nil
+          email: nil
         )
 
       subject = Fixtures.Subjects.membership_subject(member)
@@ -185,7 +185,7 @@ defmodule Emisar.ApiKeysTest do
         Fixtures.Memberships.create_membership(
           role: "owner",
           display_name: "Directory Operator",
-          contact_email: nil
+          email: nil
         )
 
       subject = Fixtures.Subjects.membership_subject(member)

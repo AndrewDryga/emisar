@@ -138,7 +138,7 @@ defmodule Emisar.Mailers.StyleTest do
 
     monthly =
       MonthlyReport.render(
-        %Accounts.Membership{display_name: "Olivia Owner", contact_email: "olivia@example.com"},
+        %Accounts.Membership{display_name: "Olivia Owner", email: "olivia@example.com"},
         %{name: "Fleet Ops", slug: "fleet-ops"},
         report,
         "https://emisar.dev/u"

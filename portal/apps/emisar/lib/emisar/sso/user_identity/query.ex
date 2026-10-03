@@ -69,7 +69,7 @@ defmodule Emisar.SSO.UserIdentity.Query do
   """
   def by_member_user_id_or_invited_back(queryable, user_id, %Emisar.Accounts.Membership{
         account_id: account_id,
-        contact_email: email
+        email: email
       })
       when is_binary(email) do
     own_seats =
@@ -81,7 +81,7 @@ defmodule Emisar.SSO.UserIdentity.Query do
       Emisar.Accounts.Membership.Query.removed()
       |> Emisar.Accounts.Membership.Query.without_personal_login()
       |> Emisar.Accounts.Membership.Query.by_account_id(account_id)
-      |> Emisar.Accounts.Membership.Query.by_contact_email(email)
+      |> Emisar.Accounts.Membership.Query.by_email(email)
       |> Emisar.Accounts.Membership.Query.select_ids()
 
     where(
@@ -306,7 +306,7 @@ defmodule Emisar.SSO.UserIdentity.Query do
           ?
         )) = lower(?)
         """,
-        m.contact_email,
+        m.email,
         i.claims,
         i.claims,
         i.scim_external_id,
@@ -379,7 +379,7 @@ defmodule Emisar.SSO.UserIdentity.Query do
            dynamic(
              [profile_membership: member],
              ilike(member.display_name, ^pattern) or
-               ilike(member.contact_email, ^pattern)
+               ilike(member.email, ^pattern)
            )}
         end
       }

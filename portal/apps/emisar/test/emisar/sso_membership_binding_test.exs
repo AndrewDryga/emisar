@@ -231,7 +231,7 @@ defmodule Emisar.SSOMembershipBindingTest do
     namesake =
       Fixtures.Memberships.create_unlinked_membership(
         account_id: account.id,
-        contact_email: email
+        email: email
       )
 
     claims = %{"sub" => identity.provider_identifier, "email" => email, "email_verified" => true}
@@ -239,12 +239,21 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert {:error, :membership_unavailable} =
              SSO.complete_auth(provider, %{"claims" => claims}, %{})
 
+    # One address is one live Member: the directory's re-POST is refused while
+    # the namesake holds it, and re-seats the person once the address is free.
+    assert SSO.scim_provision_user(provider, %{external_id: "unlinked-person", active: true}) ==
+             {:error, :member_email_taken}
+
+    assert Repo.reload!(identity).membership_id == member.id
+
+    assert {:ok, _removed} = Accounts.delete_membership(namesake, subject)
+
     assert {:ok, %{membership: reseated, identity: rebound}} =
              SSO.scim_provision_user(provider, %{external_id: "unlinked-person", active: true})
 
     refute reseated.id in [member.id, namesake.id]
     assert is_nil(reseated.user_id)
-    assert reseated.contact_email == email
+    assert reseated.email == email
     assert rebound.membership_id == reseated.id
   end
 

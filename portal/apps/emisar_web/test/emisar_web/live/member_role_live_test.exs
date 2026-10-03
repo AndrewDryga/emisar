@@ -11,7 +11,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
         account_id: account.id,
         role: "owner",
         display_name: nil,
-        contact_email: nil
+        email: nil
       )
 
     {:ok, _view, html} =

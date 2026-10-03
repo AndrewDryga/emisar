@@ -286,9 +286,9 @@
               href={~p"/app/team"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
             >Team → Pending access requests</a>. Once it is approved, the directory's next
-            retry reconciles that member. If several members use the email, the create is
-            refused with <code>409</code>
-            until the extra member is removed.
+            retry reconciles that member. Re-adding a removed person whose address another
+            member or a pending invitation now holds is refused with <code>409</code>
+            (<code>uniqueness</code>) until that address is free.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

@@ -203,7 +203,7 @@ defmodule Emisar.Audit.IdentityOption.Query do
         fragment(
           "COALESCE(NULLIF(BTRIM(?), ''), ?::text)",
           m.display_name,
-          m.contact_email
+          m.email
         )
     })
     |> wrap_labels()
@@ -218,7 +218,7 @@ defmodule Emisar.Audit.IdentityOption.Query do
         fragment(
           "COALESCE(NULLIF(BTRIM(?), ''), ?::text)",
           m.display_name,
-          m.contact_email
+          m.email
         )
     })
     |> wrap_labels()

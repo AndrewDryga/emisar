@@ -1305,7 +1305,7 @@ defmodule EmisarWeb.ProfileLive do
             <div class="pt-4">
               <dt class="mb-1 text-sm text-zinc-400">Workspace contact</dt>
               <dd class="break-words text-base text-zinc-100">
-                {@current_membership.contact_email || "No contact address"}
+                {@current_membership.email || "No contact address"}
               </dd>
             </div>
           </dl>

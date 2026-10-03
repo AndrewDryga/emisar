@@ -677,7 +677,7 @@ defmodule Emisar.Mailers.UserNotifier do
     # a throwaway workspace must not get to write our sender's subject line.
     # The names stay in the body, where they read as facts about the invitation.
     deliver_transactional(
-      %{membership | contact_email: membership.invitation_sent_to},
+      membership,
       "You've been invited to a workspace on emisar",
       "An invitation to join a workspace on emisar. It expires in 7 days.",
       [
@@ -958,7 +958,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
     rendered = MonthlyReport.render(recipient, account, report, unsubscribe_url)
 
-    deliver(recipient.contact_email, rendered.subject, rendered.text, rendered.html, [
+    deliver(recipient.email, rendered.subject, rendered.text, rendered.html, [
       {"List-Unsubscribe", "<#{unsubscribe_url}>"},
       {"List-Unsubscribe-Post", "List-Unsubscribe=One-Click"}
     ])
@@ -1009,7 +1009,7 @@ defmodule Emisar.Mailers.UserNotifier do
   defp recipient_name(%Users.User{} = user), do: user.full_name || user.email
   defp recipient_name(%Accounts.Membership{} = member), do: Accounts.member_display_name(member)
   defp recipient_email(%Users.User{email: email}), do: email
-  defp recipient_email(%Accounts.Membership{contact_email: email}), do: email
+  defp recipient_email(%Accounts.Membership{email: email}), do: email
 
   defp deliver(nil, _subject, _text, _html, _headers), do: {:error, :no_contact_email}
 

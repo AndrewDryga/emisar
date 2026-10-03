@@ -721,7 +721,7 @@ defmodule Emisar.Accounts do
           account_id: account.id,
           user_id: user.id,
           display_name: user.full_name,
-          contact_email: user.email,
+          email: user.email,
           role: :owner,
           runner_access_mode: :all
         })
@@ -1603,7 +1603,7 @@ defmodule Emisar.Accounts do
     # remains loaded only to construct the notifier's current authority Subject.
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.with_contact_email()
+    |> Membership.Query.with_email()
     |> Membership.Query.with_preloaded_user()
     |> Repo.list(Membership.Query, opts)
   end
@@ -1664,15 +1664,15 @@ defmodule Emisar.Accounts do
   Personal User attributes never supply an account-scoped label, including for
   a removed member whose local profile is no longer available.
   """
-  def member_display_name(%Membership{display_name: name, contact_email: email})
+  def member_display_name(%Membership{display_name: name, email: email})
       when is_binary(name),
       do: if(String.trim(name) == "", do: email, else: name)
 
-  def member_display_name(%Membership{contact_email: email}), do: email
+  def member_display_name(%Membership{email: email}), do: email
   def member_display_name(_membership), do: nil
 
   @doc "The local contact when it is distinct from the workspace display label."
-  def secondary_member_email(%Membership{contact_email: email} = membership)
+  def secondary_member_email(%Membership{email: email} = membership)
       when is_binary(email) do
     if member_display_name(membership) == email, do: nil, else: email
   end
@@ -1836,8 +1836,10 @@ defmodule Emisar.Accounts do
   The Member is created without a personal login; only a directory re-adding a
   linked person to a replacement seat passes that person's `:user_id`. Active
   creation includes the cross-account binding consequence; a directory row born
-  suspended has granted no access and deliberately skips it. The caller owns
-  the outer commit and `after_membership_activation_committed/1`.
+  suspended has granted no access and deliberately skips it. An address a live
+  Member of the account already holds fails the `:membership` step with
+  `:member_email_taken`. The caller owns the outer commit and
+  `after_membership_activation_committed/1`.
   """
   # Defense in depth: `:owner` is never assignable via sync (the provider
   # changeset rejects it as a default_role too) — owner is a deliberate human
@@ -1878,7 +1880,7 @@ defmodule Emisar.Accounts do
       account_id: account_id,
       user_id: Keyword.get(opts, :user_id),
       display_name: Keyword.get(opts, :display_name),
-      contact_email: Keyword.get(opts, :contact_email),
+      email: Keyword.get(opts, :email),
       role: role,
       directory_managed: directory_managed?,
       runner_access_mode: access.mode,
@@ -1889,7 +1891,9 @@ defmodule Emisar.Accounts do
     }
 
     multi
-    |> Multi.insert(:membership, sso_membership_changeset(attrs, active?))
+    |> Multi.run(:membership, fn repo, _changes ->
+      attrs |> sso_membership_changeset(active?) |> repo.insert() |> tag_member_email_taken()
+    end)
     |> Multi.run(:runner_access, fn repo, %{membership: membership} ->
       replace_runner_access_rows(repo, membership.id, access)
     end)
@@ -1908,6 +1912,18 @@ defmodule Emisar.Accounts do
 
   defp sso_membership_changeset(attrs, true), do: Membership.Changeset.create(attrs)
   defp sso_membership_changeset(attrs, false), do: Membership.Changeset.create_suspended(attrs)
+
+  # One address is one live Member of an account, and the unique index has the
+  # last word. A provisioning path that found the address free can still lose it:
+  # a re-added person's old address was given away since, or an invitation, which
+  # takes no account lock, landed after the contact match.
+  defp tag_member_email_taken({:error, %Ecto.Changeset{errors: errors} = changeset} = error) do
+    if Repo.Changeset.unique_constraint_error?(changeset) and Keyword.has_key?(errors, :email),
+      do: {:error, :member_email_taken},
+      else: error
+  end
+
+  defp tag_member_email_taken({:ok, %Membership{}} = created), do: created
 
   defp directory_provider_id(%SSO.IdentityProvider{id: id}, true), do: id
   defp directory_provider_id(_provider, _managed?), do: nil
@@ -2349,17 +2365,16 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — SSO provisioning's contact match: up to two live Members of this
-  account whose workspace contact is `email`, enough to tell one Member from an
-  ambiguous address. Only this account's own contacts are read, never a
-  personal login's address. Suspended Members and pending invitations count.
+  Internal — SSO provisioning's contact match: the live Member of this account
+  whose workspace contact is `email`, nil-or-struct; an account holds at most
+  one. Only this account's own contacts are read, never a personal login's
+  address. Suspended Members and pending invitations count.
   """
-  def list_sync_memberships_by_contact_email(account_id, email) when is_binary(email) do
+  def peek_sync_membership_by_email(account_id, email) when is_binary(email) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
-    |> Membership.Query.by_contact_email(email)
-    |> Membership.Query.limit_to(2)
-    |> Repo.all()
+    |> Membership.Query.by_email(email)
+    |> Repo.peek()
   end
 
   @doc "Internal - exact account-owned profile history; never an access grant."
@@ -4455,7 +4470,7 @@ defmodule Emisar.Accounts do
       |> Multi.insert(:membership, fn %{invitation: invitation} ->
         Membership.Changeset.create(%{
           account_id: account_id,
-          contact_email: invitation.email,
+          email: invitation.email,
           role: invitation.role,
           runner_access_mode: invitation.runner_access.mode,
           pack_access_mode: invitation.runner_access.pack_mode,
@@ -4463,8 +4478,7 @@ defmodule Emisar.Accounts do
           # Support/system work has no human Member; an API key's owner is not
           # the acting inviter either.
           invited_by_membership_id: Subject.human_membership_id(subject),
-          invitation_token_digest: token_digest,
-          invitation_sent_to: invitation.email
+          invitation_token_digest: token_digest
         })
       end)
       |> Multi.run(:runner_access, fn repo, %{membership: membership, invitation: invitation} ->
@@ -4492,7 +4506,7 @@ defmodule Emisar.Accounts do
     seated =
       Membership.Query.not_deleted()
       |> Membership.Query.by_account_id(account_id)
-      |> Membership.Query.by_contact_email(email)
+      |> Membership.Query.by_email(email)
 
     if repo.exists?(seated), do: {:error, :already_member}, else: {:ok, email}
   end
@@ -4668,7 +4682,7 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp ensure_invitation_addressed(%Membership{invitation_sent_to: sent_to})
+  defp ensure_invitation_addressed(%Membership{email: sent_to})
        when is_binary(sent_to),
        do: :ok
 
@@ -4779,7 +4793,7 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_invitation_token_digest(digest)
       |> Membership.Query.pending_invitation()
       |> Membership.Query.invitation_not_expired()
-      |> Membership.Query.with_invitation_sent_to()
+      |> Membership.Query.with_email()
       |> Membership.Query.with_joined_account()
       |> apply_membership_preloads(preloads)
 
@@ -4797,7 +4811,7 @@ defmodule Emisar.Accounts do
     queryable =
       Membership.Query.not_deleted()
       |> Membership.Query.by_invitation_token_digest(digest)
-      |> Membership.Query.with_invitation_sent_to()
+      |> Membership.Query.with_email()
       |> Membership.Query.with_joined_account()
 
     case Repo.peek(queryable) do
@@ -4867,7 +4881,7 @@ defmodule Emisar.Accounts do
   def prepare_invitation_acceptance(token, attrs) when is_binary(token) and is_map(attrs) do
     with {:ok, invitation} <- fetch_invitation_by_token(token),
          {:ok, profile} <- validate_invitation_profile(invitation, attrs) do
-      {:ok, invitation.invitation_sent_to,
+      {:ok, invitation.email,
        %{
          account_id: invitation.account_id,
          membership_id: invitation.id,
@@ -4936,7 +4950,7 @@ defmodule Emisar.Accounts do
   # invitation names an address, not a person: only the personal login that
   # owns it now (citext, so case-insensitively) is linked. The caller holds that
   # login's lock, so its address cannot move meanwhile.
-  defp address_owner?(%Membership{invitation_sent_to: address}, %Users.User{id: user_id}),
+  defp address_owner?(%Membership{email: address}, %Users.User{id: user_id}),
     do: match?({:ok, %Users.User{id: ^user_id}}, Users.fetch_user_by_email(address))
 
   # `:not_found` means the invitation is no longer pending (accepted, expired,
@@ -4950,7 +4964,7 @@ defmodule Emisar.Accounts do
     |> Membership.Query.by_invitation_token_digest(digest)
     |> Membership.Query.pending_invitation()
     |> Membership.Query.invitation_not_expired()
-    |> Membership.Query.with_invitation_sent_to()
+    |> Membership.Query.with_email()
     |> Membership.Query.lock_for_update()
     |> repo.one()
     |> case do
@@ -5083,7 +5097,7 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_account_id(account.id)
       |> Membership.Query.by_role(:owner)
       |> Membership.Query.with_confirmed_user_email()
-      |> Membership.Query.with_contact_email()
+      |> Membership.Query.with_email()
       |> Membership.Query.with_preloaded_user()
 
     query =
@@ -5141,7 +5155,7 @@ defmodule Emisar.Accounts do
       |> Membership.Query.by_account_id(account_id)
       |> Membership.Query.by_role(:owner)
       |> Membership.Query.with_confirmed_user_email()
-      |> Membership.Query.with_contact_email()
+      |> Membership.Query.with_email()
       |> Membership.Query.oldest()
       |> Repo.fetch(Membership.Query)
 

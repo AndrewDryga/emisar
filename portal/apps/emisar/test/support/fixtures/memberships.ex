@@ -27,7 +27,7 @@ defmodule Emisar.Fixtures.Memberships do
         account_id: account_id,
         user_id: user_id,
         display_name: Map.get(attrs, :display_name, user.full_name),
-        contact_email: Map.get(attrs, :contact_email, user.email),
+        email: Map.get(attrs, :email, user.email),
         role: attrs[:role] || "operator",
         runner_access_mode: attrs[:runner_access_mode] || "all"
       }
@@ -35,7 +35,6 @@ defmodule Emisar.Fixtures.Memberships do
         Map.take(attrs, [
           :invited_by_membership_id,
           :invitation_token_digest,
-          :invitation_sent_to,
           :directory_managed,
           :runner_access_directory_managed,
           :directory_provider_id,
@@ -60,7 +59,7 @@ defmodule Emisar.Fixtures.Memberships do
       %{
         account_id: account_id,
         display_name: Map.get(attrs, :display_name, "Unlinked Member #{unique}"),
-        contact_email: Map.get(attrs, :contact_email, "unlinked-#{unique}@example.test"),
+        email: Map.get(attrs, :email, "unlinked-#{unique}@example.test"),
         role: attrs[:role] || "operator",
         runner_access_mode: attrs[:runner_access_mode] || "all"
       }

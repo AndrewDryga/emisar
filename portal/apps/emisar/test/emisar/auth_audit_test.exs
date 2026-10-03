@@ -651,7 +651,7 @@ defmodule Emisar.AuthAuditTest do
         |> Ecto.Changeset.change(
           user_id: nil,
           invitation_token_digest: digest,
-          invitation_sent_to: member.email
+          email: member.email
         )
         |> Emisar.Repo.update()
 

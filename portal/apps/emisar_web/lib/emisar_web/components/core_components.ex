@@ -3725,7 +3725,7 @@ defmodule EmisarWeb.CoreComponents do
         id={"remove-#{m.id}"}
         title="Remove from team"
         confirm_label="Remove member"
-        confirm_token={m.contact_email || m.id}
+        confirm_token={m.email || m.id}
         typed={@typed}
         on_confirm={
           JS.push("remove", value: %{membership_id: m.id}) |> close_confirm("remove-#{m.id}")

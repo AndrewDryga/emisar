@@ -178,7 +178,7 @@ defmodule Emisar.Runners.EnrollmentKey.Query do
     end)
     |> select_merge([created_by_member: member], %{
       created_by_label:
-        coalesce(fragment("NULLIF(BTRIM(?), '')", member.display_name), member.contact_email)
+        coalesce(fragment("NULLIF(BTRIM(?), '')", member.display_name), member.email)
     })
   end
 

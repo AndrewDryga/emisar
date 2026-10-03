@@ -261,15 +261,17 @@ defmodule EmisarWeb.SCIM.UserController do
     )
   end
 
-  defp render_error(conn, :member_email_ambiguous) do
+  # One address is one live Member of an account. The address this create or
+  # re-add carries is held by another Member, or by an open invitation; RFC 7644
+  # section 3.3 answers that conflict with 409 `uniqueness`.
+  defp render_error(conn, :member_email_taken) do
     conn
     |> put_status(:conflict)
     |> json(
       Resource.error(
         409,
         "uniqueness",
-        "More than one member of this account uses that email address, so the " <>
-          "directory user cannot be matched to one of them."
+        "Another member of this workspace already uses that email address."
       )
     )
   end

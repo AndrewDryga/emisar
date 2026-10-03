@@ -3225,7 +3225,7 @@ defmodule Emisar.RunnersTest do
           user_id: creator.id,
           role: "admin",
           display_name: "Workspace Operator",
-          contact_email: "work@example.test"
+          email: "work@example.test"
         )
 
       creator_subject = Fixtures.Subjects.membership_subject(member)
@@ -3238,7 +3238,7 @@ defmodule Emisar.RunnersTest do
       Fixtures.Memberships.create_membership(
         user_id: creator.id,
         display_name: "Other Workspace",
-        contact_email: "elsewhere@example.test"
+        email: "elsewhere@example.test"
       )
 
       Fixtures.Users.update_email(creator, "new-private@example.test")
@@ -3258,7 +3258,7 @@ defmodule Emisar.RunnersTest do
         account_id: account.id,
         user_id: creator.id,
         display_name: "Replacement Seat",
-        contact_email: "replacement@example.test"
+        email: "replacement@example.test"
       )
 
       assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])

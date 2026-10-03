@@ -50,7 +50,7 @@ defmodule Emisar.Users.User.Query do
       {u.id,
        coalesce(
          fragment("NULLIF(BTRIM(?), '')", m.display_name),
-         m.contact_email
+         m.email
        )}
     )
   end

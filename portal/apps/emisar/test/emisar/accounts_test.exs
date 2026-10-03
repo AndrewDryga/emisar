@@ -3385,8 +3385,8 @@ defmodule Emisar.AccountsTest do
     end
 
     test "a blank or absent name falls back to the local contact" do
-      blank = %Membership{display_name: "  ", contact_email: "blank@example.com"}
-      unnamed = %Membership{contact_email: "unnamed@example.com"}
+      blank = %Membership{display_name: "  ", email: "blank@example.com"}
+      unnamed = %Membership{email: "unnamed@example.com"}
 
       assert Accounts.member_display_name(blank) == "blank@example.com"
       assert Accounts.member_display_name(unnamed) == "unnamed@example.com"
@@ -3397,10 +3397,10 @@ defmodule Emisar.AccountsTest do
     test "shows the local contact only when it differs from the name" do
       assert Accounts.secondary_member_email(%Membership{
                display_name: "Work Name",
-               contact_email: "work@example.test"
+               email: "work@example.test"
              }) == "work@example.test"
 
-      assert Accounts.secondary_member_email(%Membership{contact_email: "work@example.test"}) ==
+      assert Accounts.secondary_member_email(%Membership{email: "work@example.test"}) ==
                nil
 
       assert Accounts.secondary_member_email(%Membership{display_name: "No Email"}) == nil
@@ -3457,7 +3457,7 @@ defmodule Emisar.AccountsTest do
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           display_name: nil,
-          contact_email: nil
+          email: nil
         )
 
       foreign = Fixtures.Memberships.create_membership(user_id: user.id)
@@ -3648,13 +3648,13 @@ defmodule Emisar.AccountsTest do
                  Accounts.RunnerAccess.none(),
                  directory_managed?: false,
                  display_name: "Directory Person",
-                 contact_email: "directory-person@example.test"
+                 email: "directory-person@example.test"
                )
 
       assert membership.account_id == account.id
       assert is_nil(membership.user_id)
       assert membership.display_name == "Directory Person"
-      assert membership.contact_email == "directory-person@example.test"
+      assert membership.email == "directory-person@example.test"
       assert membership.runner_access_mode == :none
       refute membership.runner_access_directory_managed
     end
@@ -3674,6 +3674,40 @@ defmodule Emisar.AccountsTest do
 
       # Nothing was written — the user has no membership in the account.
       assert is_nil(Fixtures.Memberships.fetch_membership(account.id, user.id))
+    end
+
+    test "refuses an address a live Member of the account already holds" do
+      account = Fixtures.Accounts.create_account()
+
+      holder =
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          email: "held@example.test"
+        )
+
+      assert commit_sso_membership(
+               account.id,
+               :operator,
+               Accounts.RunnerAccess.none(),
+               email: "HELD@example.test"
+             ) == {:error, :member_email_taken}
+
+      assert Accounts.peek_sync_membership_by_email(account.id, "held@example.test") == holder
+    end
+
+    test "an address only another account's Member holds is free" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_unlinked_membership(email: "elsewhere@example.test")
+
+      assert {:ok, %Membership{} = membership} =
+               commit_sso_membership(
+                 account.id,
+                 :operator,
+                 Accounts.RunnerAccess.none(),
+                 email: "elsewhere@example.test"
+               )
+
+      assert membership.account_id == account.id
     end
   end
 
@@ -3833,43 +3867,33 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "list_sync_memberships_by_contact_email/2" do
-    test "matches only this account's live contacts, case-insensitively, up to two" do
+  describe "peek_sync_membership_by_email/2" do
+    test "matches only this account's live contact, case-insensitively" do
       account = Fixtures.Accounts.create_account()
       email = Fixtures.Random.unique_email()
 
-      first =
+      removed =
         Fixtures.Memberships.create_unlinked_membership(
           account_id: account.id,
-          contact_email: email
+          email: email
+        )
+
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
+
+      live =
+        Fixtures.Memberships.create_unlinked_membership(
+          account_id: account.id,
+          email: email
         )
 
       other_account = Fixtures.Accounts.create_account()
 
       Fixtures.Memberships.create_unlinked_membership(
         account_id: other_account.id,
-        contact_email: email
+        email: email
       )
 
-      removed =
-        Fixtures.Memberships.create_unlinked_membership(
-          account_id: account.id,
-          contact_email: email
-        )
-
-      Fixtures.Memberships.mark_membership_as_deleted(removed)
-
-      matched = Accounts.list_sync_memberships_by_contact_email(account.id, String.upcase(email))
-      assert Enum.map(matched, & &1.id) == [first.id]
-
-      for _member <- 1..2 do
-        Fixtures.Memberships.create_unlinked_membership(
-          account_id: account.id,
-          contact_email: email
-        )
-      end
-
-      assert length(Accounts.list_sync_memberships_by_contact_email(account.id, email)) == 2
+      assert Accounts.peek_sync_membership_by_email(account.id, String.upcase(email)) == live
     end
   end
 
@@ -6725,8 +6749,18 @@ defmodule Emisar.AccountsTest do
       actor_session_digest = Crypto.hash(actor_session)
       {:ok, actor_token} = Auth.fetch_session_by_token(actor_session)
 
+      # The invitation holds the actor's address in this workspace, so the seat
+      # the fixture rigs for the actor names another.
+      rigged_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          user_id: actor.id,
+          role: "owner",
+          email: Fixtures.Random.unique_email()
+        )
+
       pending_subject = %{
-        Fixtures.Subjects.subject_for(actor, account)
+        Fixtures.Subjects.subject_for(actor, account, membership: rigged_membership)
         | session_token_id: actor_token.id
       }
 
@@ -7803,7 +7837,7 @@ defmodule Emisar.AccountsTest do
       assert result.delivery == {:ok, :sent}
       assert %Membership{role: :operator} = result.membership
       assert result.membership.invited_by_membership_id == subject.membership_id
-      assert result.membership.invitation_sent_to == email
+      assert result.membership.email == email
       refute Map.has_key?(result, :invitation_token)
       refute Map.has_key?(result, :user)
 
@@ -7965,7 +7999,7 @@ defmodule Emisar.AccountsTest do
                Accounts.resend_account_invitation(membership, subject)
 
       assert updated.id == membership.id
-      assert updated.invitation_sent_to == email
+      assert updated.email == email
       assert is_nil(updated.user_id)
       refute new_token == old_token
       refute updated.invitation_token_digest == membership.invitation_token_digest

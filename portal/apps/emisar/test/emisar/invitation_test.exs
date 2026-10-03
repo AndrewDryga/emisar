@@ -112,8 +112,7 @@ defmodule Emisar.InvitationTest do
 
       refute Map.has_key?(result, :user)
       assert is_nil(membership.user_id)
-      assert membership.invitation_sent_to == "new@example.test"
-      assert membership.contact_email == "new@example.test"
+      assert membership.email == "new@example.test"
       assert Users.fetch_user_by_email("new@example.test") == {:error, :not_found}
       assert is_binary(token)
       assert byte_size(token) > 16
@@ -310,7 +309,7 @@ defmodule Emisar.InvitationTest do
                )
 
       # Stored as typed (whitespace trimmed) — no app-side downcase.
-      assert invitation.invitation_sent_to == "HELLO@Example.Test"
+      assert invitation.email == "HELLO@Example.Test"
 
       # A differently-cased address is the same one: the citext contact already
       # lists it, and the login that owns it accepts.
@@ -483,7 +482,7 @@ defmodule Emisar.InvitationTest do
 
       assert account_id == account_b.id
       # And nothing was written into A: no seat there names the address.
-      assert Accounts.list_sync_memberships_by_contact_email(account_a.id, email) == []
+      assert is_nil(Accounts.peek_sync_membership_by_email(account_a.id, email))
     end
   end
 
@@ -662,7 +661,7 @@ defmodule Emisar.InvitationTest do
       assert accepted.user_id == invitee.id
       assert accepted.invitation_accepted_at
       assert is_nil(accepted.invitation_token_digest)
-      assert is_nil(accepted.invitation_sent_to)
+      assert accepted.email == membership.email
 
       # The stale struct replayed: the fresh row is no longer pending.
       assert Accounts.mark_invitation_accepted(membership, token, invitee) ==
@@ -823,7 +822,7 @@ defmodule Emisar.InvitationTest do
         |> Ecto.Changeset.change(
           user_id: nil,
           invitation_token_digest: digest,
-          invitation_sent_to: user.email,
+          email: user.email,
           invitation_accepted_at: nil
         )
         |> Repo.update!()
@@ -894,7 +893,7 @@ defmodule Emisar.InvitationTest do
       assert Accounts.prepare_invitation_acceptance(new_token, %{"display_name" => "Late"}) ==
                {:error, :expired}
 
-      refreshed |> Ecto.Changeset.change(invitation_sent_to: nil) |> Repo.update!()
+      refreshed |> Ecto.Changeset.change(email: nil) |> Repo.update!()
 
       assert Accounts.prepare_invitation_acceptance(new_token, %{"display_name" => "Anyone"}) ==
                {:error, :not_found}
@@ -941,13 +940,13 @@ defmodule Emisar.InvitationTest do
       membership: membership,
       intent: intent
     } do
-      {:ok, user} = Users.fetch_or_create_user_by_email(membership.invitation_sent_to)
+      {:ok, user} = Users.fetch_or_create_user_by_email(membership.email)
 
       assert {:ok, %{accepted: accepted, invitation_audit: audit}} =
                accept_in_transaction(user, intent)
 
-      assert {accepted.id, accepted.user_id, accepted.display_name, accepted.contact_email} ==
-               {membership.id, user.id, "Carol", membership.invitation_sent_to}
+      assert {accepted.id, accepted.user_id, accepted.display_name, accepted.email} ==
+               {membership.id, user.id, "Carol", membership.email}
 
       assert is_nil(accepted.invitation_token_digest)
       assert accepted.invitation_accepted_at
@@ -972,7 +971,7 @@ defmodule Emisar.InvitationTest do
       membership: membership,
       intent: intent
     } do
-      {:ok, user} = Users.fetch_or_create_user_by_email(membership.invitation_sent_to)
+      {:ok, user} = Users.fetch_or_create_user_by_email(membership.email)
       {_other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, %{membership: other_invitation}} =
@@ -1003,13 +1002,13 @@ defmodule Emisar.InvitationTest do
       membership: membership,
       intent: intent
     } do
-      {:ok, owner} = Users.fetch_or_create_user_by_email(membership.invitation_sent_to)
+      {:ok, owner} = Users.fetch_or_create_user_by_email(membership.email)
 
       seat =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: owner.id,
-          contact_email: "work-#{System.unique_integer([:positive])}@example.test"
+          email: "work-#{System.unique_integer([:positive])}@example.test"
         )
 
       assert {:error, :linked, :invitation_invalid, _changes} =
@@ -1150,7 +1149,7 @@ defmodule Emisar.InvitationTest do
 
       membership =
         membership
-        |> Ecto.Changeset.change(invitation_sent_to: nil)
+        |> Ecto.Changeset.change(email: nil)
         |> Repo.update!()
 
       assert Accounts.fetch_invitation_by_token(old_token) == {:error, :not_found}

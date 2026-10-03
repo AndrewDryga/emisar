@@ -76,7 +76,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReports do
       limit,
       false,
       &list_recipients(account, &1, &2),
-      fn membership, found? -> found? or not Mail.suppressed?(membership.contact_email) end
+      fn membership, found? -> found? or not Mail.suppressed?(membership.email) end
     )
   end
 

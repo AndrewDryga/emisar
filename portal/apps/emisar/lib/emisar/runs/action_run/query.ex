@@ -473,7 +473,7 @@ defmodule Emisar.Runs.ActionRun.Query do
       {membership.id,
        coalesce(
          fragment("NULLIF(BTRIM(?), '')", membership.display_name),
-         membership.contact_email
+         membership.email
        )}
     )
   end

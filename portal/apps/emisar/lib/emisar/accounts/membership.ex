@@ -35,9 +35,16 @@ defmodule Emisar.Accounts.Membership do
     # Workspace profile and delivery facts, never personal sign-in proof. A
     # directory, team administrator or member edits only this account's copy.
     field :display_name, :string
-    field :contact_email, :string
+    # The Member's one address: where a pending invitation was sent, and where
+    # this workspace delivers mail.
+    field :email, :string
+    field :email_verified_at, :utc_datetime_usec
+    field :mfa_secret, :binary, redact: true
+    field :mfa_enabled_at, :utc_datetime_usec
+    field :mfa_last_used_at, :utc_datetime_usec
+    field :mfa_recovery_codes, {:array, :binary}, default: [], redact: true
+    field :staff, :boolean, default: false
     field :invitation_token_digest, :string, redact: true
-    field :invitation_sent_to, :string
     field :invitation_accepted_at, :utc_datetime_usec
     field :last_active_at, :utc_datetime_usec
     field :disabled_at, :utc_datetime_usec

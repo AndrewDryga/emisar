@@ -18,7 +18,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
         user_id: creator.id,
         role: "admin",
         display_name: "Workspace Operator",
-        contact_email: "work@example.test"
+        email: "work@example.test"
       )
 
     Fixtures.Runners.create_enrollment_key(membership: member)

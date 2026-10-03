@@ -1627,12 +1627,12 @@ defmodule Emisar.BillingTest do
     } do
       {:ok, %{owner: contact}} = Emisar.Accounts.fetch_billing_contact(account.id)
 
-      assert Billing.send_customer_link_code(account, subject) == {:ok, contact.contact_email}
+      assert Billing.send_customer_link_code(account, subject) == {:ok, contact.email}
 
       assert_received {:email, email}
       code = Fixtures.Auth.code_from_email(email)
       assert [{_name, address}] = email.to
-      assert address == contact.contact_email
+      assert address == contact.email
       refute email.subject =~ account.name
 
       pending = Repo.one(Billing.CustomerLinkCode.Query.by_account_id(account.id))
@@ -1754,7 +1754,7 @@ defmodule Emisar.BillingTest do
 
       contact
       |> Ecto.Changeset.change(
-        contact_email: "finance-#{System.unique_integer([:positive])}@example.test"
+        email: "finance-#{System.unique_integer([:positive])}@example.test"
       )
       |> Repo.update!()
 

@@ -39,7 +39,10 @@ config :emisar,
   # Signing secret for stateless emailed links (the monthly-report
   # unsubscribe token). Prod derives it from SECRET_KEY_BASE (runtime.exs);
   # this non-secret default is dev/test.
-  email_link_secret: "emisar-dev-email-link-secret-value"
+  email_link_secret: "emisar-dev-email-link-secret-value",
+  # The workspace whose Members may carry the staff flag. This default is the
+  # dev seed's staff workspace; production names its own (runtime.exs).
+  staff_account_slug: "emisar-staff"
 
 # Control-plane version-compatibility policy for runners and the
 # emisar-mcp bridge (Emisar.Compat). These targets are the coordinated releases

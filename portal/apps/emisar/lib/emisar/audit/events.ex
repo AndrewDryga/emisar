@@ -433,7 +433,7 @@ defmodule Emisar.Audit.Events do
         [
           target_kind: "membership",
           target_id: invited.id,
-          target_label: invited.invitation_sent_to,
+          target_label: invited.email,
           payload: %{role: role, runner_access: runner_access_payload(access)}
         ]
     )
@@ -451,7 +451,7 @@ defmodule Emisar.Audit.Events do
         [
           target_kind: "membership",
           target_id: membership.id,
-          target_label: membership.invitation_sent_to,
+          target_label: membership.email,
           payload: %{role: membership.role, runner_access: runner_access_payload(access)}
         ]
     )

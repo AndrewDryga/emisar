@@ -61,7 +61,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       member
       |> Ecto.Changeset.change(
         display_name: "Workspace Identity",
-        contact_email: "work-identity@example.test"
+        email: "work-identity@example.test"
       )
       |> Emisar.Repo.update!()
 

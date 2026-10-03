@@ -131,7 +131,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
       Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: user.id,
-        invitation_sent_to: user.email,
+        email: user.email,
         role: "owner"
       )
 

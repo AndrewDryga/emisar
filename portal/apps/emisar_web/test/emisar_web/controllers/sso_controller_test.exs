@@ -75,6 +75,19 @@ defmodule EmisarWeb.SSOControllerTest do
     def verify_callback(_provider, _params, _stashed), do: {:error, :missing_id_token}
   end
 
+  # Another Member took the callback's address between its contact match and
+  # its insert. That takes two transactions, which `Emisar.SSOPolicyConcurrencyTest`
+  # runs on real connections; this seam hands the controller the same refusal.
+  defmodule MemberEmailTakenOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts), do: {:error, :not_used}
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, _params, _stashed), do: {:error, :member_email_taken}
+  end
+
   # A stub whose BEGIN step fails — a misconfigured provider whose discovery
   # document can't be fetched. Drives the `begin/2` controller's `with` else.
   defmodule FailingBeginOIDC do
@@ -1064,36 +1077,10 @@ defmodule EmisarWeb.SSOControllerTest do
       assert auth.user_identity_id
       assert [membership_id] = Emisar.Auth.session_membership_ids(auth)
 
-      assert [%{id: ^membership_id, user_id: nil}] =
-               Emisar.Accounts.list_sync_memberships_by_contact_email(account.id, "cb@acme.test")
+      assert %{id: ^membership_id, user_id: nil} =
+               Emisar.Accounts.peek_sync_membership_by_email(account.id, "cb@acme.test")
 
       assert Emisar.Users.fetch_user_by_email("cb@acme.test") == {:error, :not_found}
-    end
-
-    test "an address two members here use is refused with an explanation", %{conn: conn} do
-      account = enterprise_account()
-      provider = provider_fixture(account)
-
-      for _member <- 1..2 do
-        Fixtures.Memberships.create_unlinked_membership(
-          account_id: account.id,
-          contact_email: "twice@acme.test"
-        )
-      end
-
-      claims = %{"sub" => "okta|twice", "email" => "twice@acme.test", "email_verified" => "true"}
-
-      conn =
-        conn
-        |> stash_callback(provider)
-        |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
-
-      assert redirected_to(conn) == ~p"/sign_in"
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
-               "More than one member of this workspace uses your email address"
-
-      refute get_session(conn, :user_token)
     end
 
     test "a removed identity cannot sign into a replacement seat and explains recovery", %{
@@ -1157,10 +1144,9 @@ defmodule EmisarWeb.SSOControllerTest do
       refute get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/sign_in"
 
-      assert Emisar.Accounts.list_sync_memberships_by_contact_email(
-               account.id,
-               "disabled@acme.test"
-             ) == []
+      assert is_nil(
+               Emisar.Accounts.peek_sync_membership_by_email(account.id, "disabled@acme.test")
+             )
     end
 
     test "a protected OAuth request resumes after SSO sign-in", %{conn: conn} do
@@ -1308,8 +1294,33 @@ defmodule EmisarWeb.SSOControllerTest do
       refute get_session(conn, :user_token)
     end
 
+    test "an address another member took during sign-in is refused with an explanation", %{
+      conn: conn
+    } do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, MemberEmailTakenOIDC)
+      provider = provider_fixture(enterprise_account())
+
+      log =
+        capture_log(fn ->
+          refused =
+            conn
+            |> stash_callback(provider)
+            |> get(~p"/sign_in/sso/callback", %{"code" => "AUTH_CODE_SENTINEL"})
+
+          assert redirected_to(refused) == ~p"/sign_in"
+
+          assert Phoenix.Flash.get(refused.assigns.flash, :error) ==
+                   "Another member of this workspace already uses your email address, so single sign-on could not add you. Try again, or ask your team admin."
+
+          refute get_session(refused, :user_token)
+          refute get_session(refused, @stash_key)
+        end)
+
+      assert log =~ "sso_callback_failed reason=member_email_taken"
+    end
+
     test "an unmapped complete_auth error gets the generic fallback copy", %{conn: conn} do
-      # every recognised failure (`:member_email_ambiguous`,
+      # every recognised failure (`:member_email_taken`,
       # `:identity_pending_approval`, `:email_domain_not_allowed`, missing stash)
       # has tailored copy; anything else (here an IdP/transport failure surfaced by
       # `complete_auth`) falls to one generic "try again, or contact your admin"

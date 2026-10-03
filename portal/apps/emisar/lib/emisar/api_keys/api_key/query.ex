@@ -177,7 +177,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
       {k.id,
        coalesce(
          fragment("NULLIF(BTRIM(?), '')", m.display_name),
-         m.contact_email
+         m.email
        )}
     )
   end
@@ -269,7 +269,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
        coalesce(
          fragment("NULLIF(BTRIM(?), '')", m.display_name),
          coalesce(
-           m.contact_email,
+           m.email,
            fragment(
              "CASE WHEN ? IS NULL THEN 'Account member' ELSE 'Former member' END",
              m.deleted_at

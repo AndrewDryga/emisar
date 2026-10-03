@@ -116,7 +116,7 @@ defmodule Emisar.SSOSCIMTest do
       # personal login exists or is reserved for the address.
       assert is_nil(membership.user_id)
       assert membership.display_name == "Dir User"
-      assert membership.contact_email == "prov@acme.test"
+      assert membership.email == "prov@acme.test"
       assert Users.fetch_user_by_email("prov@acme.test") == {:error, :not_found}
 
       assert identity.created_by == :provider
@@ -140,7 +140,7 @@ defmodule Emisar.SSOSCIMTest do
       assert {:ok, %{identity: identity, membership: membership}} =
                SSO.scim_provision_user(provider, attrs)
 
-      refute membership.contact_email
+      refute membership.email
       assert identity.scim_external_id == "okta|nomail"
     end
 
@@ -171,7 +171,7 @@ defmodule Emisar.SSOSCIMTest do
       member =
         Fixtures.Memberships.create_unlinked_membership(
           account_id: account.id,
-          contact_email: "Shared@Acme.test"
+          email: "Shared@Acme.test"
         )
 
       attrs = scim_attrs(%{external_id: "okta|shared", email: "shared@acme.test"})
@@ -185,26 +185,6 @@ defmodule Emisar.SSOSCIMTest do
 
       assert {:ok, [], 0} =
                SSO.scim_list_users(provider, scim_filter: {:external_id, "okta|shared"})
-    end
-
-    test "an address two live Members here use is refused as ambiguous", %{
-      provider: provider,
-      account: account
-    } do
-      for _member <- 1..2 do
-        Fixtures.Memberships.create_unlinked_membership(
-          account_id: account.id,
-          contact_email: "twice@acme.test"
-        )
-      end
-
-      attrs = scim_attrs(%{external_id: "okta|twice", email: "twice@acme.test"})
-
-      assert SSO.scim_provision_user(provider, attrs) == {:error, :member_email_ambiguous}
-      assert link_requests(provider) == []
-
-      assert {:ok, [], 0} =
-               SSO.scim_list_users(provider, scim_filter: {:external_id, "okta|twice"})
     end
 
     test "only this account's contacts match: another account's member or login never does", %{
@@ -293,7 +273,7 @@ defmodule Emisar.SSOSCIMTest do
       refute new_membership.id == membership.id
       refute new_membership.disabled_at
       assert is_nil(new_membership.user_id)
-      assert new_membership.contact_email == "removed@acme.test"
+      assert new_membership.email == "removed@acme.test"
       assert new_membership.display_name == "Dir User"
       assert rebound.id == identity.id
       assert rebound.membership_id == new_membership.id

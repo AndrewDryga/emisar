@@ -143,7 +143,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert {:ok, still_pending} = Accounts.fetch_invitation_by_token(token)
       assert is_nil(still_pending.user_id)
 
-      assert Emisar.Users.fetch_user_by_email(pending_membership.invitation_sent_to) ==
+      assert Emisar.Users.fetch_user_by_email(pending_membership.email) ==
                {:error, :not_found}
     end
 
@@ -160,13 +160,13 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       requested = request_invitation_code(build_conn(), token, account, "New Person")
       assert_received {:email, sent}
-      assert sent.to == [{"", invitation.invitation_sent_to}]
+      assert sent.to == [{"", invitation.email}]
       assert is_nil(Emisar.Repo.reload!(invitation).user_id)
       [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
       completed = get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}")
 
       assert get_session(completed, :user_token)
-      {:ok, user} = Emisar.Users.fetch_user_by_email(invitation.invitation_sent_to)
+      {:ok, user} = Emisar.Users.fetch_user_by_email(invitation.email)
       assert user.confirmed_at
       assert Emisar.Repo.reload!(invitation).user_id == user.id
       assert html_response(get(recycle(completed), ~p"/app/#{account}"), 200) =~ "New Person"
@@ -199,7 +199,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       {:ok, membership} = Accounts.fetch_invitation_by_token(token)
 
       invitee =
-        Fixtures.Users.create_user(email: membership.invitation_sent_to)
+        Fixtures.Users.create_user(email: membership.email)
         |> Fixtures.Users.confirm_user()
 
       {:ok, _} = Accounts.mark_invitation_accepted(membership, token, invitee)
@@ -263,7 +263,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       # The holder submits a name; the code goes to the invited mailbox.
       _holder = request_invitation_code(build_conn(), token, account, "Holder Name")
       assert_received {:email, holder_sent}
-      assert holder_sent.to == [{"", invitation.invitation_sent_to}]
+      assert holder_sent.to == [{"", invitation.email}]
 
       reloaded = Emisar.Repo.reload!(invitation)
       assert {reloaded.user_id, reloaded.display_name} == {nil, nil}
@@ -350,7 +350,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       token = invitation_token(account, owner)
 
       {:ok, invited} = Accounts.fetch_invitation_by_token(token)
-      invited_email = invited.invitation_sent_to
+      invited_email = invited.email
 
       {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
 
@@ -403,7 +403,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       {:ok, lv, html} = live(member_only, ~p"/accept_invitation/#{token}")
 
-      assert html =~ invitation.invitation_sent_to
+      assert html =~ invitation.email
       assert html =~ "without a personal login"
       assert html =~ "Sign out"
       refute has_element?(lv, "#accept_form")
@@ -417,7 +417,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
 
       assert Emisar.Repo.reload!(invitation) == invitation
 
-      assert Emisar.Users.fetch_user_by_email(invitation.invitation_sent_to) ==
+      assert Emisar.Users.fetch_user_by_email(invitation.email) ==
                {:error, :not_found}
     end
   end
@@ -574,7 +574,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       Fixtures.Memberships.create_membership(
         account_id: account.id,
         user_id: seated.id,
-        contact_email: "work-#{System.unique_integer([:positive])}@example.com"
+        email: "work-#{System.unique_integer([:positive])}@example.com"
       )
 
       {:ok, %{membership: invitation, invitation_token: token}} =
@@ -633,7 +633,7 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
       assert {:ok, _still_pending} = Accounts.fetch_invitation_by_token(token)
       assert Emisar.Repo.reload!(pending_membership) == pending_membership
 
-      assert Emisar.Users.fetch_user_by_email(pending_membership.invitation_sent_to) ==
+      assert Emisar.Users.fetch_user_by_email(pending_membership.email) ==
                {:error, :not_found}
     end
   end

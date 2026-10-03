@@ -436,6 +436,57 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
     end)
   end
 
+  test "an invitation that commits the address first refuses the waiting JIT sign-in" do
+    unboxed_sso(fn context ->
+      parent = self()
+      email = context.callback_claims["email"]
+      invitation = staged_invitation(context, email, parent)
+
+      try do
+        assert_receive {:invitation_staged, invitation_backend}, 5_000
+
+        callback =
+          unboxed_task(fn ->
+            Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
+            send(parent, {:callback_backend, backend_pid()})
+            SSO.complete_auth(context.provider, %{"_claims" => context.callback_claims}, %{})
+          end)
+
+        try do
+          assert_receive {:callback_backend, callback_backend}, 5_000
+          # The contact match read no seat at the address, so the callback is
+          # parked on the unique index entry the uncommitted invitation holds.
+          await_blocked_by(callback_backend, invitation_backend)
+
+          send(invitation.pid, :commit)
+          assert {:ok, %Membership{} = invited} = Task.await(invitation, 30_000)
+          assert Task.await(callback, 30_000) == {:error, :member_email_taken}
+
+          assert Accounts.peek_sync_membership_by_email(context.account.id, email).id ==
+                   invited.id
+
+          assert membership_count(context.account) == 2
+
+          refute UserIdentity.Query.not_deleted()
+                 |> UserIdentity.Query.by_provider_and_identifier(
+                   context.provider.id,
+                   context.callback_claims["sub"]
+                 )
+                 |> Repo.exists?()
+
+          refute LinkRequest.Query.all()
+                 |> LinkRequest.Query.by_provider_id(context.provider.id)
+                 |> Repo.exists?()
+        after
+          stop_tasks([callback])
+        end
+      after
+        send(invitation.pid, :commit)
+        stop_tasks([invitation])
+      end
+    end)
+  end
+
   test "downgrade-first makes a later session use current untrusted MFA policy" do
     unboxed_sso(fn context ->
       parent = self()
@@ -1491,6 +1542,31 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
         end
       end)
     end)
+  end
+
+  # Inviting takes no account lock, so the uncommitted seat is invisible to the
+  # callback's contact match and meets it only at the unique index.
+  defp staged_invitation(context, email, parent) do
+    unboxed_task(fn ->
+      Repo.transaction(fn ->
+        {:ok, %{membership: invitation}} =
+          Accounts.invite_user_to_account(
+            Fixtures.Accounts.invitation_attrs(email: email),
+            context.subject
+          )
+
+        send(parent, {:invitation_staged, backend_pid()})
+
+        receive do
+          :commit -> invitation
+        end
+      end)
+    end)
+  end
+
+  defp membership_count(account) do
+    from(membership in Membership, where: membership.account_id == ^account.id)
+    |> Repo.aggregate(:count)
   end
 
   defp matched_link_request(context, suffix) do

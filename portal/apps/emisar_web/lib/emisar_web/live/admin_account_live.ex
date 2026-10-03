@@ -144,9 +144,9 @@ defmodule EmisarWeb.AdminAccountLive do
                      stays reachable rather than ending in an ellipsis. --%>
                 <span
                   class="truncate text-sm font-medium text-zinc-100"
-                  title={membership.contact_email}
+                  title={membership.email}
                 >
-                  {membership.contact_email || "No contact address"}
+                  {membership.email || "No contact address"}
                 </span>
               </:title>
               <:chips>

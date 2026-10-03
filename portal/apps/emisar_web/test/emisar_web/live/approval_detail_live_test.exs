@@ -202,7 +202,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       account_id: account.id,
       user_id: requester.id,
       display_name: nil,
-      contact_email: nil
+      email: nil
     )
 
     request = pending_request(account, requester)

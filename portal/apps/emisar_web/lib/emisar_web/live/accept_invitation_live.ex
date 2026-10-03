@@ -80,7 +80,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
 
   # Both addresses are citext columns, which compare case-insensitively; so does this.
   defp invited_address?(%Users.User{email: email}, membership) when is_binary(email),
-    do: String.downcase(email) == String.downcase(membership.invitation_sent_to)
+    do: String.downcase(email) == String.downcase(membership.email)
 
   defp invited_address?(%Users.User{}, _membership), do: false
 
@@ -128,7 +128,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
           <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
             Joining as
           </div>
-          <div class="mt-1 font-mono text-sm text-zinc-200">{@membership.invitation_sent_to}</div>
+          <div class="mt-1 font-mono text-sm text-zinc-200">{@membership.email}</div>
         </div>
 
         <.input
@@ -157,8 +157,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
     ~H"""
     <.auth_layout title={"Join #{@membership.account.name}"}>
       <p class="mb-6 text-sm text-zinc-400">
-        You're signed in as
-        <span class="font-mono text-zinc-200">{@membership.invitation_sent_to}</span>
+        You're signed in as <span class="font-mono text-zinc-200">{@membership.email}</span>
         — accept your invitation to join
         <span class="font-semibold text-zinc-200">{@membership.account.name}</span>
         as <.chip>{Emisar.Auth.role_label(@membership.role)}</.chip>.
@@ -184,7 +183,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
     <.auth_layout title="Sign in with your invited email">
       <div class="space-y-4 text-sm text-zinc-300">
         <p>
-          This invitation is for <span class="font-mono text-zinc-100">{@membership.invitation_sent_to}</span>, but
+          This invitation is for <span class="font-mono text-zinc-100">{@membership.email}</span>, but
           you're signed in as <span class="font-mono text-zinc-100">{@current_user.email}</span>.
         </p>
         <p class="text-zinc-400">
@@ -211,7 +210,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
     <.auth_layout title="Sign in with your invited email">
       <div class="space-y-4 text-sm text-zinc-300">
         <p>
-          This invitation is for <span class="font-mono text-zinc-100">{@membership.invitation_sent_to}</span>, but
+          This invitation is for <span class="font-mono text-zinc-100">{@membership.email}</span>, but
           this browser is signed in to a workspace through single sign-on, without a personal login.
         </p>
         <p class="text-zinc-400">

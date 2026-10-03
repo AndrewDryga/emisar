@@ -328,7 +328,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
           user_id: other_admin.id,
           role: "admin",
           display_name: "Workspace Administrator",
-          contact_email: "local-admin@example.test"
+          email: "local-admin@example.test"
         )
 
       other_subject = Fixtures.Subjects.subject_for(other_admin, account, role: :admin)

@@ -154,13 +154,6 @@ defmodule Emisar.Accounts.Membership.Query do
     )
   end
 
-  @doc """
-  Invitations that name the address they were sent to. Only that address can
-  accept one; an invitation issued before invitations recorded it has none.
-  """
-  def with_invitation_sent_to(queryable),
-    do: where(queryable, [memberships: m], not is_nil(m.invitation_sent_to))
-
   # Invitation links lapse after a week — long enough for a weekend
   # inbox, short enough that a leaked link isn't a standing seat. The
   # row's inserted_at IS the invite time (fresh invites insert rows;
@@ -305,16 +298,20 @@ defmodule Emisar.Accounts.Membership.Query do
     |> where([user: u], not is_nil(u.confirmed_at) and not is_nil(u.email))
   end
 
-  def with_contact_email(queryable),
-    do: where(queryable, [memberships: m], not is_nil(m.contact_email))
+  @doc """
+  Members that name an address. Only the invited address can accept an
+  invitation; an invitation issued before invitations recorded it has none.
+  """
+  def with_email(queryable),
+    do: where(queryable, [memberships: m], not is_nil(m.email))
 
   @doc "Members whose workspace contact is `email`; the citext column compares case-insensitively."
-  def by_contact_email(queryable, email),
-    do: where(queryable, [memberships: m], m.contact_email == ^email)
+  def by_email(queryable, email),
+    do: where(queryable, [memberships: m], m.email == ^email)
 
   @doc "Select local contact addresses for the workspace deliverability overlay."
   def select_user_emails(queryable) do
-    select(queryable, [memberships: m], m.contact_email)
+    select(queryable, [memberships: m], m.email)
   end
 
   # -- Pagination + preloads -------------------------------------------
@@ -335,7 +332,7 @@ defmodule Emisar.Accounts.Membership.Query do
            dynamic(
              [memberships: m],
              ilike(m.display_name, ^pattern) or
-               ilike(m.contact_email, ^pattern)
+               ilike(m.email, ^pattern)
            )}
         end
       },

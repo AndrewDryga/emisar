@@ -36,14 +36,14 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     test "validates the display name without accepting authority or contact fields" do
       member = %Accounts.Membership{
         display_name: "Original",
-        contact_email: "work@example.test",
+        email: "work@example.test",
         role: :viewer
       }
 
       changeset =
         Accounts.change_member_profile(member, %{
           display_name: "New",
-          contact_email: "wrong@example.test",
+          email: "wrong@example.test",
           role: :owner
         })
 
@@ -63,7 +63,7 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
                Accounts.update_own_member_profile(
                  %{
                    display_name: "Work Name",
-                   contact_email: "stolen@example.test",
+                   email: "stolen@example.test",
                    user_id: Ecto.UUID.generate()
                  },
                  subject
@@ -71,7 +71,7 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
 
       assert updated.id == subject.membership_id
       assert updated.display_name == "Work Name"
-      assert updated.contact_email == person.email
+      assert updated.email == person.email
       assert Repo.reload!(person) == person
       assert Repo.reload!(elsewhere) == elsewhere
 
@@ -174,7 +174,7 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
       Fixtures.Memberships.create_membership(
         user_id: person.id,
         display_name: "Work Name",
-        contact_email: "work@example.test"
+        email: "work@example.test"
       )
 
     request = %{
@@ -192,7 +192,7 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
 
     assert {:error, :no_contact_email} =
              Emisar.Mailers.UserNotifier.deliver_approval_decision(
-               %{member | contact_email: nil},
+               %{member | email: nil},
                request
              )
 

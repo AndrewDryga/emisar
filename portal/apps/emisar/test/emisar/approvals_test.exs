@@ -3138,7 +3138,7 @@ defmodule Emisar.ApprovalsTest do
 
       assert [email] =
                Enum.filter(emails, fn email ->
-                 Enum.map(email.to, &elem(&1, 1)) == [requester.contact_email]
+                 Enum.map(email.to, &elem(&1, 1)) == [requester.email]
                end)
 
       assert email.subject == "Approval · linux.uptime · #{request.id}"
@@ -3172,7 +3172,7 @@ defmodule Emisar.ApprovalsTest do
       emails = notified_emails()
       recipients = Enum.flat_map(emails, &Enum.map(&1.to, fn {_name, email} -> email end))
 
-      refute requester.contact_email in recipients
+      refute requester.email in recipients
 
       assert Enum.any?(
                emails,
@@ -3204,7 +3204,7 @@ defmodule Emisar.ApprovalsTest do
                Approvals.deny_request(request, decider, "The requester no longer has access")
 
       recipients = notified_recipients()
-      refute membership.contact_email in recipients
+      refute membership.email in recipients
     end
 
     test "a decision emits [:emisar, :approval, :decided] tagged by the decision", %{

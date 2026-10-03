@@ -37,7 +37,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
   defp render(overrides \\ %{}) do
     recipient = %Accounts.Membership{
       display_name: "Olivia Owner",
-      contact_email: "olivia@example.com"
+      email: "olivia@example.com"
     }
 
     account = %{name: "Fleet Ops", slug: "fleet-ops"}
@@ -78,7 +78,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
     end
 
     test "greets the recipient by email when they have no name" do
-      recipient = %Accounts.Membership{display_name: nil, contact_email: "nameless@example.com"}
+      recipient = %Accounts.Membership{display_name: nil, email: "nameless@example.com"}
       account = %{name: "Fleet Ops", slug: "fleet-ops"}
 
       rendered = MonthlyReport.render(recipient, account, report(), "https://emisar.dev/u")
@@ -204,7 +204,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
     test "escapes account and recipient names in the HTML body" do
       recipient = %Accounts.Membership{
         display_name: ~s(Olivia "<script>" Owner),
-        contact_email: "olivia@example.com"
+        email: "olivia@example.com"
       }
 
       account = %{name: "<script>alert(1)</script>", slug: "fleet-ops"}

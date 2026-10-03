@@ -16,7 +16,7 @@ defmodule Emisar.Admin.Query do
     )
     |> where(
       [accounts: a, memberships: m],
-      ilike(a.name, ^pattern) or ilike(a.slug, ^pattern) or ilike(m.contact_email, ^pattern)
+      ilike(a.name, ^pattern) or ilike(a.slug, ^pattern) or ilike(m.email, ^pattern)
     )
     |> distinct([accounts: a], a.id)
     |> order_by([accounts: a], asc: a.name, asc: a.id)
@@ -41,7 +41,7 @@ defmodule Emisar.Admin.Query do
   def membership_by_email(account_id, email) do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
-    |> where([memberships: m], m.contact_email == ^email)
+    |> where([memberships: m], m.email == ^email)
     |> Accounts.Membership.Query.with_preloaded_user()
   end
 
@@ -51,7 +51,7 @@ defmodule Emisar.Admin.Query do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
     |> Accounts.Membership.Query.with_preloaded_user()
-    |> order_by([memberships: m], asc: m.role, asc: m.contact_email)
+    |> order_by([memberships: m], asc: m.role, asc: m.email)
   end
 
   # An account holds at most one provider per kind, so this is a list, not a

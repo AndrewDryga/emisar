@@ -590,7 +590,7 @@ defmodule Emisar.Admin do
     %{
       id: membership.id,
       user_id: membership.user_id,
-      email: membership.contact_email,
+      email: membership.email,
       role: membership.role,
       disabled: not is_nil(membership.disabled_at),
       invitation_pending: Accounts.membership_invitation_pending?(membership)

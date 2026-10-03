@@ -259,8 +259,7 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert directory_member(provider_a, "okta|scoped").account_id == account_a.id
 
-      assert Accounts.list_sync_memberships_by_contact_email(account_b.id, "scoped@acme.test") ==
-               []
+      assert is_nil(Accounts.peek_sync_membership_by_email(account_b.id, "scoped@acme.test"))
 
       assert body["externalId"] == "okta|scoped"
     end
@@ -299,7 +298,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       member = directory_member(provider, "okta|new")
       assert member.account_id == account.id
       assert is_nil(member.user_id)
-      assert member.contact_email == "new@acme.test"
+      assert member.email == "new@acme.test"
       assert Users.fetch_user_by_email("new@acme.test") == {:error, :not_found}
     end
 
@@ -344,7 +343,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Enum.count(scim_users, &(&1.external_id == "okta|dup")) == 1
     end
 
-    test "a removed person is re-added while an invitation to their address is pending", %{
+    test "a removed person is re-added once no invitation holds their address", %{
       conn: conn,
       token: token,
       provider: provider,
@@ -355,7 +354,8 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       # The person linked their own login to the directory's Member, then was
       # removed and their address invited back by hand. The invitation names only
-      # the address, so it is not the person's seat.
+      # the address, so it is not the person's seat, but one address is one
+      # Member here: the push is refused until the invitation is gone.
       user = Fixtures.Users.create_user(email: "reinvited@acme.test")
 
       {:ok, membership} =
@@ -364,7 +364,22 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert {:ok, _removed} = Accounts.delete_membership(membership, subject)
 
       invitation_attrs = Fixtures.Accounts.invitation_attrs(email: user.email)
-      assert {:ok, _invited} = Accounts.invite_user_to_account(invitation_attrs, subject)
+
+      assert {:ok, %{membership: invitation}} =
+               Accounts.invite_user_to_account(invitation_attrs, subject)
+
+      refused = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(409)
+
+      assert refused == %{
+               "schemas" => ["urn:ietf:params:scim:api:messages:2.0:Error"],
+               "status" => "409",
+               "scimType" => "uniqueness",
+               "detail" => "Another member of this workspace already uses that email address."
+             }
+
+      assert directory_member(provider, "okta|reinvited").deleted_at
+
+      assert {:ok, _revoked} = Accounts.delete_membership(invitation, subject)
 
       body = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(201)
 
@@ -373,14 +388,14 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert user_id == user.id
     end
 
-    test "an address members here use answers 409: one parks a link, two are ambiguous", %{
+    test "an address a member here uses answers 409 and parks a link", %{
       conn: conn,
       token: token,
       account: account
     } do
       Fixtures.Memberships.create_unlinked_membership(
         account_id: account.id,
-        contact_email: "shared@acme.test"
+        email: "shared@acme.test"
       )
 
       payload = user_payload("okta|shared", email: "shared@acme.test")
@@ -388,15 +403,6 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       assert pending["scimType"] == "uniqueness"
       assert pending["detail"] =~ "An admin must approve linking this user"
-
-      Fixtures.Memberships.create_unlinked_membership(
-        account_id: account.id,
-        contact_email: "shared@acme.test"
-      )
-
-      ambiguous = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(409)
-      assert ambiguous["scimType"] == "uniqueness"
-      assert ambiguous["detail"] =~ "More than one member of this account uses that email"
     end
 
     test "a payload with no externalId or userName → 400 SCIM error", %{conn: conn, token: token} do
@@ -1302,7 +1308,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       reloaded = Accounts.peek_sync_membership_by_id(account.id, member.id)
       assert reloaded.disabled_at
       assert reloaded.display_name == "Renamed By IdP"
-      assert reloaded.contact_email == "ignore@acme.test"
+      assert reloaded.email == "ignore@acme.test"
     end
 
     test "PUT with no `active` → 400 invalidValue", %{

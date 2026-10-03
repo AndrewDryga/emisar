@@ -72,7 +72,7 @@ defmodule Emisar.AdminTest do
     test "uses the workspace contact and never follows a private personal address", %{
       staff_user: staff_user
     } do
-      member = Fixtures.Memberships.create_membership(contact_email: "work-search@example.test")
+      member = Fixtures.Memberships.create_membership(email: "work-search@example.test")
       user = Emisar.Repo.get!(Emisar.Users.User, member.user_id)
       user |> Ecto.Changeset.change(email: "private-search@example.test") |> Emisar.Repo.update!()
       assert {:ok, [found]} = Admin.search_accounts("work-search@example.test", staff_user)

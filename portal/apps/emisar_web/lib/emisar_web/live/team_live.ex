@@ -1326,7 +1326,7 @@ defmodule EmisarWeb.TeamLive do
   defp member_action_label(%{action: "remove"}), do: "Remove member"
 
   defp member_action_confirm_token(%{action: "remove", facts: %{membership: membership}}),
-    do: membership.contact_email || membership.id
+    do: membership.email || membership.id
 
   defp member_action_confirm_token(_pending), do: nil
 
@@ -1448,7 +1448,7 @@ defmodule EmisarWeb.TeamLive do
         # inviter isn't dumped back onto the roster wondering if it worked.
         {:noreply,
          socket
-         |> assign(:invited_email, membership.invitation_sent_to)
+         |> assign(:invited_email, membership.email)
          |> assign(:invited_membership, membership)
          |> assign(:invited_access, access)
          |> assign(:invite_delivery, delivery)}
@@ -1493,7 +1493,7 @@ defmodule EmisarWeb.TeamLive do
       {:ok, %{membership: updated, delivery: delivery}} ->
         {:noreply,
          socket
-         |> flash_resend_invitation_outcome(updated.invitation_sent_to, delivery)
+         |> flash_resend_invitation_outcome(updated.email, delivery)
          |> reload()}
 
       {:error, reason} ->
@@ -2518,7 +2518,7 @@ defmodule EmisarWeb.TeamLive do
                          no un-suppress control; clearing it is a support action
                          (per the product call), hence the tooltip copy. --%>
                           <.chip
-                            :if={MapSet.member?(@suppressed_emails, membership.contact_email)}
+                            :if={MapSet.member?(@suppressed_emails, membership.email)}
                             tone={:rose}
                             title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
                           >

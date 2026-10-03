@@ -628,11 +628,10 @@ defmodule EmisarWeb.TeamLiveTest do
       refute approved =~ "Couldn't approve that request."
       assert Emisar.Repo.reload(request) == nil
 
-      assert [%{user_id: nil} = membership] =
-               Emisar.Accounts.list_sync_memberships_by_contact_email(
-                 account.id,
-                 "scoped-access@corp.test"
-               )
+      membership =
+        Emisar.Accounts.peek_sync_membership_by_email(account.id, "scoped-access@corp.test")
+
+      assert is_nil(membership.user_id)
 
       assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
                %Emisar.Accounts.RunnerAccess{
@@ -684,11 +683,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
       render_click(lv, "approve_request", %{"id" => request.id})
 
-      assert [%{user_id: nil} = membership] =
-               Emisar.Accounts.list_sync_memberships_by_contact_email(
-                 account.id,
-                 "packed@corp.test"
-               )
+      membership = Emisar.Accounts.peek_sync_membership_by_email(account.id, "packed@corp.test")
+      assert is_nil(membership.user_id)
 
       assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
                %Emisar.Accounts.RunnerAccess{
@@ -1077,8 +1073,8 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "db-primary"
       assert html =~ "postgres"
 
-      [membership] =
-        Emisar.Accounts.list_sync_memberships_by_contact_email(
+      membership =
+        Emisar.Accounts.peek_sync_membership_by_email(
           account.id,
           "scoped-receipt@example.com"
         )
@@ -1134,8 +1130,8 @@ defmodule EmisarWeb.TeamLiveTest do
       })
       |> render_submit()
 
-      [membership] =
-        Emisar.Accounts.list_sync_memberships_by_contact_email(account.id, "scoped@example.com")
+      membership =
+        Emisar.Accounts.peek_sync_membership_by_email(account.id, "scoped@example.com")
 
       assert Emisar.Accounts.runner_access_for_memberships([membership])[membership.id] ==
                %Emisar.Accounts.RunnerAccess{

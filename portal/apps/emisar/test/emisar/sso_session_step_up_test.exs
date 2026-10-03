@@ -323,7 +323,7 @@ defmodule Emisar.SSOSessionStepUpTest do
           account_id: account.id,
           user_id: user.id,
           role: :viewer,
-          contact_email: "returning@example.test"
+          email: "returning@example.test"
         )
 
       browser = browser(user, account, nil, replacement)
@@ -758,11 +758,11 @@ defmodule Emisar.SSOSessionStepUpTest do
     )
   end
 
-  defp removed_login_less_member(account, provider, contact_email) do
+  defp removed_login_less_member(account, provider, email) do
     former =
       Fixtures.Memberships.create_unlinked_membership(
         account_id: account.id,
-        contact_email: contact_email
+        email: email
       )
 
     identity =

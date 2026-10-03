@@ -291,7 +291,7 @@ defmodule Emisar.MailTest do
       )
 
       assert_email_sent(fn email ->
-        email.to == [{"", contact.contact_email}] and email.text_body =~ "Payroll Refund Desk" and
+        email.to == [{"", contact.email}] and email.text_body =~ "Payroll Refund Desk" and
           not (email.subject =~ "Payroll") and email.text_body =~ "123456"
       end)
     end
@@ -558,7 +558,7 @@ defmodule Emisar.MailTest do
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: invitee.id,
-          invitation_sent_to: invitee.email,
+          email: invitee.email,
           role: "operator"
         )
 
@@ -591,7 +591,7 @@ defmodule Emisar.MailTest do
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: invitee.id,
-          invitation_sent_to: invitee.email
+          email: invitee.email
         )
 
       UserNotifier.deliver_account_invitation(membership, "work@example.test", account, "tok")
@@ -606,7 +606,7 @@ defmodule Emisar.MailTest do
         Fixtures.Memberships.create_membership(
           account_id: account.id,
           user_id: invitee.id,
-          invitation_sent_to: invitee.email
+          email: invitee.email
         )
 
       {:ok, _} = Mail.suppress(invitee.email, :spam_complaint, "complaint")
@@ -1039,7 +1039,7 @@ defmodule Emisar.MailTest do
     end
 
     test "skips a suppressed requester", %{requester: requester} do
-      {:ok, _} = Mail.suppress(requester.contact_email, :hard_bounce, "bounce")
+      {:ok, _} = Mail.suppress(requester.email, :hard_bounce, "bounce")
 
       request = %{
         id: "r",

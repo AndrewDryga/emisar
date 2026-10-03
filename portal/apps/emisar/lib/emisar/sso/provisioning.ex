@@ -28,9 +28,9 @@ defmodule Emisar.SSO.Provisioning do
   Internal — compose one current-provider pending-link upsert into SSO's
   transaction. The request records the one live Member whose workspace contact
   the trusted email names, so approval links the identity to that Member — never
-  an auto-merge (C1): the admin's approval is still the gate. An email that names
-  two or more Members is refused as ambiguous. The display email is the raw value
-  (it helps the admin recognize who is asking); approval binds the captured id.
+  an auto-merge (C1): the admin's approval is still the gate. The display email
+  is the raw value (it helps the admin recognize who is asking); approval binds
+  the captured id.
   """
   def put_link_request(
         %Multi{} = multi,
@@ -42,23 +42,19 @@ defmodule Emisar.SSO.Provisioning do
         claims,
         source
       ) do
-    case member_contact_match(provider, link_match_email(provider, email, claims, source)) do
-      :ambiguous ->
-        Multi.error(multi, key, :member_email_ambiguous)
+    match = member_contact_match(provider, link_match_email(provider, email, claims, source))
 
-      match ->
-        attrs = %{
-          provider_identifier: identifier,
-          source: source,
-          namespace_fingerprint: namespace_fingerprint(provider),
-          email: email,
-          full_name: full_name,
-          claims: claims,
-          matched_membership_id: matched_membership_id(match)
-        }
+    attrs = %{
+      provider_identifier: identifier,
+      source: source,
+      namespace_fingerprint: namespace_fingerprint(provider),
+      email: email,
+      full_name: full_name,
+      claims: claims,
+      matched_membership_id: matched_membership_id(match)
+    }
 
-        insert_link_request(multi, key, provider, attrs)
-    end
+    insert_link_request(multi, key, provider, attrs)
   end
 
   defp matched_membership_id({:ok, %Accounts.Membership{id: id}}), do: id
@@ -115,13 +111,12 @@ defmodule Emisar.SSO.Provisioning do
 
   # Email is never identity: an inbound address is compared only with this
   # account's own workspace contacts, never with a personal login's address, so a
-  # provider can never match another account's members. One live Member is a link
-  # target for the admin; two or more are ambiguous; none is a new person.
+  # provider can never match another account's members. The live Member holding
+  # the address is a link target for the admin; none is a new person.
   def member_contact_match(%IdentityProvider{} = provider, email) when is_binary(email) do
-    case Accounts.list_sync_memberships_by_contact_email(provider.account_id, email) do
-      [] -> :none
-      [%Accounts.Membership{} = member] -> {:ok, member}
-      [_first, _second] -> :ambiguous
+    case Accounts.peek_sync_membership_by_email(provider.account_id, email) do
+      %Accounts.Membership{} = member -> {:ok, member}
+      nil -> :none
     end
   end
 

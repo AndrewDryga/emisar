@@ -455,7 +455,7 @@ defmodule Emisar.SSOIdentityLinkTest do
       Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
       |> Ecto.Changeset.change(
         display_name: "Workspace Linker",
-        contact_email: "local@example.test"
+        email: "local@example.test"
       )
       |> Repo.update!()
 
@@ -619,11 +619,7 @@ defmodule Emisar.SSOIdentityLinkTest do
          %{account: _account, provider: _provider, user: _user} = context do
       seat = Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
 
-      former =
-        Fixtures.Memberships.create_unlinked_membership(
-          account_id: context.account.id,
-          contact_email: seat.contact_email
-        )
+      former = Fixtures.Memberships.create_unlinked_membership(account_id: context.account.id)
 
       identity =
         Fixtures.SSO.create_user_identity(%{
@@ -633,7 +629,12 @@ defmodule Emisar.SSOIdentityLinkTest do
           provider_identifier: "workforce|returning-login-less"
         })
 
-      Fixtures.Memberships.mark_membership_as_deleted(former)
+      # Only a removed seat may carry an address a live Member of the workspace holds.
+      former
+      |> Fixtures.Memberships.mark_membership_as_deleted()
+      |> Ecto.Changeset.change(email: seat.email)
+      |> Repo.update!()
+
       proof = local_proof(context, :link)
 
       {:ok, begun} =
@@ -830,7 +831,7 @@ defmodule Emisar.SSOIdentityLinkTest do
       Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
       |> Ecto.Changeset.change(
         display_name: "Workspace Unlinker",
-        contact_email: "local@example.test"
+        email: "local@example.test"
       )
       |> Repo.update!()
 

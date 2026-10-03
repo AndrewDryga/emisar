@@ -603,7 +603,7 @@ defmodule Emisar.SSO do
       end
     end)
     |> Multi.run(:current_seat, fn repo, changes ->
-      with %Accounts.Membership{contact_email: contact} <- changes.seat,
+      with %Accounts.Membership{email: contact} <- changes.seat,
            {:ok, member} <-
              Accounts.fetch_and_lock_active_membership(
                repo,
@@ -612,7 +612,7 @@ defmodule Emisar.SSO do
              ),
            true <- member.user_id == changes.locked_user.id,
            # The identity was matched through this contact; it has to hold now.
-           true <- member.contact_email == contact,
+           true <- member.email == contact,
            true <-
              names_identity_owner?(
                changes.locked_provider,
@@ -2515,9 +2515,9 @@ defmodule Emisar.SSO do
   uses `oid` — and never by email. An unknown `sub` is captured as a pending link
   request, returning `{:pending, request}` for the web layer's pending-approval
   page, when the provider's `provisioner` is `:manual`, when directory sync is on,
-  or when its verified email names one live Member of this account; an email
-  naming two or more Members is refused with `:member_email_ambiguous`. Otherwise
-  `:jit` creates a new Member without a personal login. Returns
+  or when its verified email names a live Member of this account. Otherwise
+  `:jit` creates a new Member without a personal login; an address a Member took
+  since the match is refused with `{:error, :member_email_taken}`. Returns
   `{:ok, %{user, membership, identity, provider}}` for the web layer to log in;
   `user` is nil when the identity's Member has no personal login.
   """
@@ -2769,7 +2769,7 @@ defmodule Emisar.SSO do
   defp claims_name_the_same_person?(
          provider,
          _identity,
-         %Accounts.Membership{contact_email: contact},
+         %Accounts.Membership{email: contact},
          claims
        )
        when is_binary(contact) do
@@ -2809,10 +2809,10 @@ defmodule Emisar.SSO do
        ),
        do: pending_auth_writes(provider, identifier, claims)
 
-  # Email is never identity. A verified email naming one live Member of this
-  # account is held for an admin to link, exactly as `:manual` holds everyone;
-  # one naming two or more is refused as ambiguous there. Otherwise the person is
-  # new here: a Member without a personal login, whatever logins exist elsewhere.
+  # Email is never identity. A verified email naming a live Member of this
+  # account is held for an admin to link, exactly as `:manual` holds everyone.
+  # Otherwise the person is new here: a Member without a personal login,
+  # whatever logins exist elsewhere.
   defp unknown_identity_writes(
          %IdentityProvider{provisioner: :jit} = provider,
          identifier,
@@ -2825,7 +2825,7 @@ defmodule Emisar.SSO do
           {:ok, {:ok, auth_result(nil, changes, provider)}}
         end)
 
-      _member_or_ambiguous ->
+      {:ok, _member} ->
         pending_auth_writes(provider, identifier, claims)
     end
   end
@@ -2864,7 +2864,7 @@ defmodule Emisar.SSO do
       provider.default_role,
       runner_access,
       display_name: claims["name"],
-      contact_email: verified_email(provider, claims)
+      email: verified_email(provider, claims)
     )
     |> Multi.run(:identity, fn _repo, %{membership: member} ->
       create_identity(provider, member, identifier, claims, created_by, provisioned_via)

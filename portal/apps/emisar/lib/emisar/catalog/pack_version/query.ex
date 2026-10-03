@@ -209,7 +209,7 @@ defmodule Emisar.Catalog.PackVersion.Query do
     end)
     |> select_merge([retirement_override_member: member], %{
       retirement_override_label:
-        coalesce(fragment("NULLIF(BTRIM(?), '')", member.display_name), member.contact_email)
+        coalesce(fragment("NULLIF(BTRIM(?), '')", member.display_name), member.email)
     })
   end
 

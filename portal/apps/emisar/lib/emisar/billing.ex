@@ -1551,7 +1551,7 @@ defmodule Emisar.Billing do
   end
 
   defp create_paddle_customer(account, owner) do
-    attrs = %{email: owner.contact_email, name: account.name, account_id: account.id}
+    attrs = %{email: owner.email, name: account.name, account_id: account.id}
 
     case PaddleClient.create_customer(attrs) do
       {:ok, %{"id" => customer_id}} when is_binary(customer_id) ->
@@ -1613,17 +1613,15 @@ defmodule Emisar.Billing do
          :ok <-
            Throttle.check(
              :billing_customer_link_code_email,
-             String.downcase(owner.contact_email),
+             String.downcase(owner.email),
              @link_code_send_limit,
              @link_code_send_window_ms
            ),
-         {:ok, _customer_id} <- fetch_existing_customer_id(owner.contact_email),
+         {:ok, _customer_id} <- fetch_existing_customer_id(owner.email),
          {code, digest} = Crypto.credential_step_up_code(),
-         {:ok, _pending} <- issue_link_code(account, subject, owner.contact_email, digest) do
+         {:ok, _pending} <- issue_link_code(account, subject, owner.email, digest) do
       _ =
-        Audit.record(
-          Audit.Events.billing_customer_link_requested(subject, account, owner.contact_email)
-        )
+        Audit.record(Audit.Events.billing_customer_link_requested(subject, account, owner.email))
 
       case Mailers.UserNotifier.deliver_billing_customer_link_code(
              owner,
@@ -1631,7 +1629,7 @@ defmodule Emisar.Billing do
              account,
              subject.context
            ) do
-        {:ok, _sent} -> {:ok, owner.contact_email}
+        {:ok, _sent} -> {:ok, owner.email}
         {:error, reason} -> {:error, reason}
       end
     end
@@ -1661,7 +1659,7 @@ defmodule Emisar.Billing do
            ),
          {:ok, %{account: current, owner: owner}} <- Accounts.fetch_billing_contact(account.id),
          :ok <- ensure_unlinked(current),
-         {:ok, customer_id} <- fetch_existing_customer_id(owner.contact_email) do
+         {:ok, customer_id} <- fetch_existing_customer_id(owner.email) do
       commit_customer_link(current, owner, customer_id, code, subject)
     end
   end
@@ -1711,8 +1709,8 @@ defmodule Emisar.Billing do
         |> CustomerLinkCode.Query.lock_for_update()
         |> repo.one()
 
-      if contact.contact_email == owner.contact_email,
-        do: verify_link_code(pending, repo, subject, owner.contact_email, code),
+      if contact.email == owner.email,
+        do: verify_link_code(pending, repo, subject, owner.email, code),
         else: {:ok, {:error, :invalid_code}}
     end)
     |> Multi.run(:linked, fn _repo, %{account: locked, proof: proof} ->
@@ -1724,9 +1722,7 @@ defmodule Emisar.Billing do
     |> Multi.run(:audit, fn repo, %{linked: linked, contact: contact} ->
       case linked do
         %Accounts.Account{} ->
-          repo.insert(
-            Audit.Events.billing_customer_linked(subject, linked, contact.contact_email)
-          )
+          repo.insert(Audit.Events.billing_customer_linked(subject, linked, contact.email))
 
         :not_linked ->
           repo.insert(Audit.Events.billing_customer_link_failed(subject, account))

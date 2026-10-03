@@ -347,7 +347,7 @@ defmodule EmisarWeb.SSOController do
   defp failure_reason({:account_disabled, _account}), do: "account_disabled"
   defp failure_reason(:account_disabled), do: "account_disabled"
   defp failure_reason(:email_domain_not_allowed), do: "email_domain_not_allowed"
-  defp failure_reason(:member_email_ambiguous), do: "member_email_ambiguous"
+  defp failure_reason(:member_email_taken), do: "member_email_taken"
   defp failure_reason(:identity_pending_approval), do: "identity_pending_approval"
   defp failure_reason(:identity_namespace_changed), do: "provider_config_changed"
   defp failure_reason(:identity_already_linked), do: "identity_conflict"
@@ -661,8 +661,8 @@ defmodule EmisarWeb.SSOController do
     |> redirect(to: ~p"/sign_in/sso/pending")
   end
 
-  defp callback_error_message(:member_email_ambiguous) do
-    "More than one member of this workspace uses your email address, so single sign-on cannot tell which one you are. Ask your team admin."
+  defp callback_error_message(:member_email_taken) do
+    "Another member of this workspace already uses your email address, so single sign-on could not add you. Try again, or ask your team admin."
   end
 
   defp callback_error_message(:identity_pending_approval) do

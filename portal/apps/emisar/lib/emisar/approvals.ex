@@ -2469,7 +2469,7 @@ defmodule Emisar.Approvals do
   defp deliver_decision_email(%Request{} = request, approved_count, event_kind) do
     with %Accounts.Membership{} = membership <-
            Accounts.peek_active_membership(request.account_id, request.requested_by_membership_id),
-         true <- is_binary(membership.contact_email) do
+         true <- is_binary(membership.email) do
       # Preloaded here rather than at the call site: the email builds the
       # canonical slugged approval link, and a slug-less URL 404s.
       request = Repo.preload(request, :account)

@@ -141,12 +141,13 @@ defmodule Emisar.SSO.SCIM do
   SCIM resource id. An existing identity is reused (idempotent — a re-POST never
   duplicates), and a resource retired by `DELETE /Users` revives that same
   identity and person. Otherwise the directory's email is compared only with this
-  account's Member contacts, never a personal login's address: one live Member is
-  parked as a link request for an admin (`{:error, :identity_pending_approval}`),
-  two or more are refused (`{:error, :member_email_ambiguous}`), and none creates
-  a Member without a personal login plus its identity (`created_by: :provider`,
-  `provisioned_via: :scim`) at `provider.default_role` in one `Multi`.
-  `{:ok, %{identity, membership}}`.
+  account's Member contacts, never a personal login's address: the live Member
+  holding it is parked as a link request for an admin
+  (`{:error, :identity_pending_approval}`), and none creates a Member without a
+  personal login plus its identity (`created_by: :provider`,
+  `provisioned_via: :scim`) at `provider.default_role` in one `Multi`. A create
+  or re-add whose address another live Member holds by then is refused with
+  `{:error, :member_email_taken}`. `{:ok, %{identity, membership}}`.
   """
   def scim_provision_user(%IdentityProvider{} = provider, attrs),
     do: provision_or_load(provider, attrs, :may_retry)
@@ -450,7 +451,7 @@ defmodule Emisar.SSO.SCIM do
           access,
           user_id: user && user.id,
           display_name: profile && profile.display_name,
-          contact_email: profile && profile.contact_email,
+          email: profile && profile.email,
           directory_managed?: true,
           directory_provider: provider
         )
@@ -649,8 +650,8 @@ defmodule Emisar.SSO.SCIM do
 
   # Email is never identity: the directory's address is compared only with this
   # account's own contacts, under the account lock every provisioning path takes.
-  # One live Member is a link request for an admin and two or more are refused as
-  # ambiguous (`put_link_request/8`); none is a new Member without a personal login.
+  # The live Member holding it is a link request for an admin
+  # (`put_link_request/8`); none is a new Member without a personal login.
   defp build_scim_provision_multi(%IdentityProvider{} = provider, external_id, attrs) do
     Multi.new()
     |> put_active_account_lock(provider.account_id)
@@ -660,7 +661,7 @@ defmodule Emisar.SSO.SCIM do
         :none ->
           put_scim_member(locked_provider, external_id, attrs)
 
-        _member_or_ambiguous ->
+        {:ok, _member} ->
           put_link_request(
             Multi.new(),
             :link_request,
@@ -682,7 +683,7 @@ defmodule Emisar.SSO.SCIM do
       provider.default_role,
       provider_runner_access(provider),
       display_name: attrs[:full_name],
-      contact_email: attrs[:email],
+      email: attrs[:email],
       active?: scim_active_from(attrs),
       directory_managed?: true,
       directory_provider: provider
@@ -1257,7 +1258,7 @@ defmodule Emisar.SSO.SCIM do
       identity.provider_identifier
   end
 
-  defp scim_email(%Accounts.Membership{contact_email: email})
+  defp scim_email(%Accounts.Membership{email: email})
        when is_binary(email) and email != "",
        do: email
 
