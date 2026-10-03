@@ -27,9 +27,9 @@ defmodule EmisarWeb.AdminAccountLive do
   end
 
   defp load_account(socket, id) do
-    case Admin.account_overview(id, socket.assigns.current_user) do
+    case Admin.account_overview(id, socket.assigns.staff_session) do
       {:ok, overview} ->
-        {:ok, _event} = Admin.record_account_view(overview.account, socket.assigns.current_user)
+        {:ok, _event} = Admin.record_account_view(overview.account, socket.assigns.staff_session)
 
         {:ok, assign(socket, page_title: overview.account.name, overview: overview)}
 
@@ -39,19 +39,20 @@ defmodule EmisarWeb.AdminAccountLive do
          |> put_flash(:error, "Workspace not found.")
          |> push_navigate(to: ~p"/admin")}
 
-      # Staff was revoked mid-session (account_overview re-checks per call). Fail
-      # closed to the gate-protected front door rather than 500 on a CaseClauseError.
+      # The staff session ended between the mount gate and this read
+      # (account_overview re-checks per call). Fail closed to the staff sign-in
+      # rather than 500 on a CaseClauseError.
       {:error, :unauthorized} ->
         {:ok,
          socket
-         |> put_flash(:error, "You no longer have staff access.")
-         |> push_navigate(to: ~p"/admin")}
+         |> put_flash(:error, "Your staff session has ended. Sign in again.")
+         |> redirect(to: ~p"/admin/sign_in")}
     end
   end
 
   def render(assigns) do
     ~H"""
-    <.staff_shell current_user={@current_user}>
+    <.staff_shell staff={@staff_session.staff}>
       <:title>
         <.detail_header back="Workspaces" navigate={~p"/admin"} title={@page_title} />
       </:title>

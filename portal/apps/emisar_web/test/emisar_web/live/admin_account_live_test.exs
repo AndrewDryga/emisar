@@ -9,8 +9,8 @@ defmodule EmisarWeb.AdminAccountLiveTest do
   alias Emisar.{Audit, Repo}
 
   setup %{conn: conn} do
-    {conn, staff_user} = register_and_log_in_staff(conn)
-    %{conn: conn, staff_user: staff_user}
+    {conn, staff_session} = log_in_staff(conn)
+    %{conn: conn, staff_session: staff_session}
   end
 
   # Every fixture in here writes audit rows of its own, so the staff event has

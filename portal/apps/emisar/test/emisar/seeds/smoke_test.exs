@@ -27,7 +27,7 @@ defmodule Emisar.Seeds.SmokeTest do
     end
   end
 
-  test "reseed restores screenshot-account sign-in policy without changing staff or unrelated accounts" do
+  test "reseed restores screenshot-account sign-in policy without changing unrelated accounts" do
     seed = fn ->
       ExUnit.CaptureIO.capture_io(fn ->
         Code.eval_file(Application.app_dir(:emisar, "priv/repo/seeds.exs"))
@@ -55,12 +55,6 @@ defmodule Emisar.Seeds.SmokeTest do
         Fixtures.Accounts.set_account_settings(account, settings)
       end
 
-    staff =
-      Accounts.Account.Query.not_deleted()
-      |> Accounts.Account.Query.by_slug("emisar-staff")
-      |> Repo.one!()
-
-    Fixtures.Accounts.set_account_settings(staff, %{require_mfa: true})
     unrelated = Fixtures.Accounts.create_account()
     Fixtures.Accounts.set_account_settings(unrelated, %{require_mfa: true})
 
@@ -73,7 +67,6 @@ defmodule Emisar.Seeds.SmokeTest do
       assert settings.monthly_report_opt_out
     end
 
-    assert Repo.reload!(staff).settings.require_mfa
     assert Repo.reload!(unrelated).settings.require_mfa
     refute Repo.reload!(user).mfa_enabled_at
     refute Repo.exists?(Auth.UserToken.Query.by_context("session"))

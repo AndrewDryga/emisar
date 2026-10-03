@@ -595,7 +595,9 @@ const PortalPerformance = {
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
-let liveSocket = new LiveSocket("/live", Socket, {
+// The staff console names its own socket, whose session is the staff cookie.
+let liveSocketPath = document.querySelector("meta[name='live-socket-path']")?.getAttribute("content") || "/live"
+let liveSocket = new LiveSocket(liveSocketPath, Socket, {
   longPollFallbackMs: 2500,
   // Tab-resume reconnects often finish inside LiveView's 500ms default. The
   // neutral recovery notice should still acknowledge the interruption.

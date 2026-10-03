@@ -129,6 +129,8 @@ Related rule: `rules/<domain>-<slug>.md` <!-- link the real rule when applicable
   procedure
 - [deployment](runbooks/deployment.md) — how a tested main commit becomes the
   running portal: image publication, the HCP Terraform plan, and the manual apply
+- [staff access](runbooks/staff-access.md) — creating, resetting and removing
+  staff logins from a production node
 
 One-shot rollouts stay listed until their production apply is confirmed, then leave:
 

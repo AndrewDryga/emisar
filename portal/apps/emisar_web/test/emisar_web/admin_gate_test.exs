@@ -1,62 +1,53 @@
 defmodule EmisarWeb.AdminGateTest do
   @moduledoc """
-  The platform-admin gate on `/ops/live` (LiveDashboard) and the
-  dev-only `/dev/*` mounts — both are pure router/endpoint gate behaviour
-  for a security product, so they live together here.
+  The staff gate on `/admin` (the staff console) and `/ops/live` (LiveDashboard),
+  and the dev-only `/dev/*` mounts — pure router/endpoint gate behaviour for a
+  security product, so they live together here.
 
-  `/ops/live` rides `[:browser, :noindex, :require_authenticated_user,
-  :require_admin]`: three independent gates (signed in AND `is_admin` AND a
-  second factor this session proved against the CURRENT enrollment), plus the
-  `:ensure_admin` on_mount that re-decides all three on the socket. `is_admin` is
-  a global platform flag set out-of-band (no UI), distinct from per-account role.
-  The `/dev/*` mounts are compiled out entirely unless `:dev_routes` is set (dev
-  only), so in test they must 404.
+  Staff routes ride `[:staff_browser, :require_staff]`: the staff cookie is their
+  whole session, and only a live staff session row named by it opens them. A
+  workspace session, of any role, opens nothing. `:ensure_staff` re-decides on
+  the socket at mount, before every event and patch, and when the session
+  expires. The `/dev/*` mounts are compiled out entirely unless `:dev_routes` is
+  set (dev only), so in test they must 404.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.Auth
-  alias EmisarWeb.UserAuth
+  alias Emisar.{Admin, Repo}
+  alias EmisarWeb.StaffAuth
 
   # Read the compile-time flag in the module body (the macro can't run
   # inside a function) so the dev-routes-off assertion can check it.
   @dev_routes Application.compile_env(:emisar_web, :dev_routes)
 
-  # A real signed-in session stamped after clearing the MFA challenge. Call it
-  # after enrollment so the session changeset binds the exact local enrollment
-  # epoch the admin proved.
-  defp complete_mfa_challenge(conn, user) do
-    user = Emisar.Repo.reload!(user)
-    token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
-    put_session(conn, :user_token, token)
-  end
-
-  # The socket half of the gate can't be reached through a request (the plug
-  # denies the dead render first), so its tests drive `on_mount` directly against
-  # a socket carrying the flash assign `put_flash/3` writes into.
+  # The socket half of the gate is driven directly against a disconnected
+  # socket carrying the flash assign `put_flash/3` writes into.
   defp mount_socket, do: %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}}
 
-  describe "the /ops/live admin gate" do
-    test "an admin who verified a second factor this session reaches the LiveDashboard", %{
-      conn: conn
-    } do
-      {conn, user, account} = register_and_log_in(conn)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      Fixtures.Users.mark_user_as_staff(user)
+  describe "the staff gate" do
+    test "a live staff session reaches the console", %{conn: conn} do
+      staff = Fixtures.Admin.create_staff()
+      {conn, _staff_session} = log_in_staff(conn, staff)
 
-      conn = conn |> complete_mfa_challenge(user) |> get("/ops/live")
+      assert {:ok, _live, html} = live(conn, ~p"/admin")
+      assert html =~ "Emisar Admin"
+      assert html =~ staff.email
+    end
 
-      # LiveDashboard 302-redirects "/ops/live" to its first page
-      # ("/ops/live/home"); a denied user would be sent to "/app",
-      # "/app/mfa_setup", or "/sign_in" instead, so reaching a /ops/live/*
-      # page is the pass signal.
-      assert redirected_to(conn) =~ "/ops/live"
+    test "a live staff session reaches the LiveDashboard over the staff socket", %{conn: conn} do
+      {conn, _staff_session} = log_in_staff(conn)
+
+      # LiveDashboard 302-redirects "/ops/live" to its first page; a denied
+      # request goes to the staff sign-in instead.
+      assert redirected_to(get(conn, "/ops/live")) =~ "/ops/live/"
+
+      html = conn |> get("/ops/live/home") |> html_response(200)
+      assert html =~ ~s(phx-socket="/admin/live")
     end
 
     test "the dashboard reuses the CSP nonce and enables Ecto Stats", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      Fixtures.Users.mark_user_as_staff(user)
+      {conn, _staff_session} = log_in_staff(conn)
 
-      conn = conn |> complete_mfa_challenge(user) |> get("/ops/live/ecto_stats")
+      conn = get(conn, "/ops/live/ecto_stats")
       html = html_response(conn, 200)
       [csp] = get_resp_header(conn, "content-security-policy")
       [_, nonce] = Regex.run(~r/'nonce-([^']+)'/, csp)
@@ -67,326 +58,197 @@ defmodule EmisarWeb.AdminGateTest do
       assert html =~ "Ecto Stats"
     end
 
-    test "an admin who has not enrolled MFA is sent to set it up", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
-      Fixtures.Users.mark_user_as_staff(user)
+    test "staff pages connect their LiveViews to the staff socket", %{conn: conn} do
+      {conn, _staff_session} = log_in_staff(conn)
 
-      conn = get(conn, "/ops/live")
+      html = conn |> get(~p"/admin") |> html_response(200)
 
-      assert redirected_to(conn) == ~p"/app/mfa_setup"
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "Admin access requires multi-factor authentication. Set it up to continue."
+      assert html =~ ~s(<meta name="live-socket-path" content="/admin/live">)
     end
 
-    test "an admin whose session never proved the second factor is signed out", %{conn: conn} do
-      # Enrolling while already signed in leaves this session with no
-      # `mfa_verified_at`, and that column is fixed at mint — the only way to
-      # elevate is a fresh sign-in, so the gate ends the session rather than
-      # leaving the admin on a dead end.
-      {conn, user, account} = register_and_log_in(conn)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      Fixtures.Users.mark_user_as_staff(user)
-
-      conn = get(conn, "/ops/live")
-
-      assert redirected_to(conn) == ~p"/sign_in"
-      assert get_session(conn, :user_token) == nil
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "Admin access requires multi-factor authentication. Sign in again to continue."
-    end
-
-    test "a tenant IdP's satisfies_mfa stamp does not stand in for the staff second factor", %{
-      conn: conn
-    } do
-      {conn, user, account} = register_and_log_in(conn)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      Fixtures.Users.mark_user_as_staff(user)
-
-      # The session shape `Auth.complete_sso_account_sign_in/4` mints when the
-      # provider a customer configured says `satisfies_mfa: true`: `:sso` with
-      # `mfa_verified_at` set and no local enrollment proof. A real identity in
-      # the staff user's own account so the session resolves that account and
-      # the staff gate — not the tenant boundary — is what rejects it.
-      Fixtures.Accounts.create_subscription(account, "team")
-
-      provider =
-        Fixtures.SSO.create_identity_provider(%{
-          account_id: account.id,
-          name: "Okta",
-          satisfies_mfa: true
-        })
-
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id
-        })
-
-      user = Emisar.Repo.reload!(user)
-
-      token =
-        Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
-          user_identity_id: identity.id
-        )
-
-      {:ok, session} = Auth.fetch_session_by_token(token)
-      subject = Fixtures.Subjects.subject_for(user, account, session: session)
-      assert subject.mfa
-      assert is_nil(session.mfa_enrollment_verified_at)
-      conn = conn |> put_session(:user_token, token) |> get("/ops/live")
-
-      assert redirected_to(conn) == ~p"/sign_in"
-      assert get_session(conn, :user_token) == nil
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "Admin access requires multi-factor authentication. Sign in again to continue."
-    end
-
-    test "an authenticated non-admin is denied with a flash + redirect to /app", %{conn: conn} do
-      # /T02
-      {conn, _user, _account} = register_and_log_in(conn)
-
-      conn = get(conn, "/ops/live")
-
-      assert redirected_to(conn) == "/app"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
-      assert conn.halted
-    end
-
-    test "an account owner who is not is_admin is still denied", %{conn: conn} do
-      # register_and_log_in makes the user the account OWNER; platform admin
-      # is independent of tenant role, so the owner is denied just the same.
-      {conn, user, _account} = register_and_log_in(conn)
-      refute user.is_admin
-
-      conn = get(conn, "/ops/live")
-
-      assert redirected_to(conn) == "/app"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
-    end
-
-    test "an anonymous user is bounced to sign-in before the admin gate", %{conn: conn} do
-      # /T06
-      conn = get(conn, "/ops/live")
-
-      # :require_authenticated_user runs before :require_admin, so an
-      # unauthenticated request lands on sign-in, never the "Not authorized."
-      # path — the two gates are ordered and both required.
-      assert redirected_to(conn) == ~p"/sign_in"
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "You must sign in to access that page."
-    end
-
-    test "the admin mount rides the :noindex pipeline (platform observability isn't crawled)",
-         %{conn: conn} do
-      # /ops/live pipes through :noindex, which sets the conn assign the root
-      # layout turns into `<meta name="robots" content="noindex,nofollow">`.
-      # The assign is set before the dashboard 302s, so it's observable here.
-      {conn, user, account} = register_and_log_in(conn)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      Fixtures.Users.mark_user_as_staff(user)
-
-      conn = conn |> complete_mfa_challenge(user) |> get("/ops/live")
-
-      assert conn.assigns[:noindex] == true
-    end
-
-    test "a session that asserts is_admin: true does NOT bypass the gate", %{conn: conn} do
-      # The gate reads `current_user.is_admin`, which fetch_current_user loads
-      # from the DB by the session token — a forged/extra `is_admin` session key
-      # is never consulted, so a non-admin stays denied even after stuffing it in.
-      {conn, user, _account} = register_and_log_in(conn)
-      refute user.is_admin
-
-      # Add the forged key to the EXISTING signed-in session (don't reset it —
-      # that would drop the user_token and make this an anonymous request).
-      conn = conn |> put_session(:is_admin, true) |> get("/ops/live")
-
-      assert redirected_to(conn) == "/app"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
-    end
-
-    test "a session that asserts mfa_verified_at does NOT fake a verified second factor", %{
-      conn: conn
-    } do
-      # The proof is read off the session row behind the cookie, so an enrolled
-      # admin whose session never proved a factor stays denied even after
-      # stuffing the claim into the session.
-      {conn, user, account} = register_and_log_in(conn)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      Fixtures.Users.mark_user_as_staff(user)
-
-      conn = conn |> put_session(:mfa_verified_at, DateTime.utc_now()) |> get("/ops/live")
-
-      assert redirected_to(conn) == ~p"/sign_in"
-    end
-
-    test "a proof taken against a replaced enrollment stops opening the door", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
-
-      {_user, [recovery_code | _]} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
-
-      Fixtures.Users.mark_user_as_staff(user)
-
-      conn = complete_mfa_challenge(conn, user)
-      session_token = get_session(conn, :user_token)
-      assert redirected_to(get(conn, "/ops/live")) =~ "/ops/live"
-
-      {:ok, _disabled} = Auth.disable_mfa(recovery_code, subject)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
-
-      # Self-service disable deliberately keeps sessions alive, so this cookie is
-      # still a valid credential — the ONLY thing standing between it and the
-      # staff surface is its local proof naming the replaced enrollment.
-      assert {:ok, _session} = Auth.fetch_session_by_token(session_token)
-
-      conn = get(conn, "/ops/live")
-
-      assert redirected_to(conn) == ~p"/sign_in"
-      assert get_session(conn, :user_token) == nil
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "Admin access requires multi-factor authentication. Sign in again to continue."
-    end
-  end
-
-  describe "the /admin staff console gate" do
-    test "an admin who verified a second factor this session reaches the search", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      Fixtures.Users.mark_user_as_staff(user)
-
-      conn = complete_mfa_challenge(conn, user)
-
-      assert {:ok, _live, html} = live(conn, ~p"/admin")
-      assert html =~ "Emisar Admin"
-    end
-
-    test "an authenticated non-admin is denied with a flash + redirect to /app", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-
-      conn = get(conn, ~p"/admin")
-
-      assert redirected_to(conn) == "/app"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
-      assert conn.halted
-    end
-
-    test "an admin whose session never proved the second factor is signed out", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      Fixtures.Users.mark_user_as_staff(user)
-
-      conn = get(conn, ~p"/admin")
-
-      assert redirected_to(conn) == ~p"/sign_in"
-      assert get_session(conn, :user_token) == nil
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
-               "Admin access requires multi-factor authentication. Sign in again to continue."
-    end
-
-    test "the account detail route rides the same gate", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+    test "an anonymous request is sent to the staff sign-in", %{conn: conn} do
       account = Fixtures.Accounts.create_account()
 
-      conn = get(conn, ~p"/admin/accounts/#{account.id}")
+      for path <- [~p"/admin", ~p"/admin/accounts/#{account.id}", "/ops/live"] do
+        conn = get(conn, path)
 
-      assert redirected_to(conn) == "/app"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Not authorized."
+        assert redirected_to(conn) == ~p"/admin/sign_in"
+        assert conn.halted
+      end
     end
 
-    test "the staff console rides the :noindex pipeline", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
-      Fixtures.Users.mark_user_as_staff(user)
+    test "a workspace session token opens nothing, even inside the staff cookie", %{conn: conn} do
+      # An owner's real workspace session: platform staff is independent of any
+      # tenant role, and the staff gate only looks in the staff token table.
+      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
 
-      conn = conn |> complete_mfa_challenge(user) |> get(~p"/admin")
+      for session <- [%{"user_token" => token}, %{"staff_token" => token}] do
+        conn = conn |> put_staff_cookie(session) |> get(~p"/admin")
 
-      assert conn.assigns[:noindex] == true
+        assert redirected_to(conn) == ~p"/admin/sign_in"
+      end
+    end
+
+    test "staff routes never read or write the workspace session cookie", %{conn: conn} do
+      {conn, _staff_session} = log_in_staff(conn)
+
+      for path <- [~p"/admin", ~p"/admin/sign_in", "/ops/live"] do
+        conn = get(conn, path)
+
+        refute Map.has_key?(conn.resp_cookies, "_emisar_web_key")
+      end
+
+      conn = get(build_conn(), ~p"/admin/sign_in")
+      assert Map.has_key?(conn.resp_cookies, "_emisar_staff")
+      refute Map.has_key?(conn.resp_cookies, "_emisar_web_key")
+    end
+
+    test "the staff store refuses a request that already holds a session", %{conn: conn} do
+      conn = Phoenix.ConnTest.init_test_session(conn, %{"user_token" => "workspace"})
+
+      assert_raise ArgumentError, ~r/before the staff session store/, fn ->
+        StaffAuth.use_staff_session_cookie(conn, [])
+      end
+    end
+
+    test "the staff cookie is HttpOnly, same-site and lives 12 hours", %{conn: conn} do
+      conn = get(conn, ~p"/admin/sign_in")
+      cookie = conn.resp_cookies["_emisar_staff"]
+
+      assert cookie.http_only
+      assert cookie.same_site == "Lax"
+      assert cookie.max_age == 12 * 60 * 60
+      refute cookie[:secure]
+
+      Emisar.Config.put_override(:emisar_web, :force_secure_cookies, true)
+      cookie = get(build_conn(), ~p"/admin/sign_in").resp_cookies["_emisar_staff"]
+      assert cookie.secure
+    end
+
+    test "an expired session sends the browser to sign in again", %{conn: conn} do
+      staff = Fixtures.Admin.create_staff()
+      expired = DateTime.add(DateTime.utc_now(), -1)
+      {raw, _session} = Fixtures.Admin.create_staff_session(staff, expires_at: expired)
+
+      conn = conn |> put_staff_cookie(%{"staff_token" => raw}) |> get(~p"/admin")
+
+      assert redirected_to(conn) == ~p"/admin/sign_in"
+      assert get_session(conn, :staff_token) == nil
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
+               "Your staff session has ended. Sign in again."
+    end
+
+    test "a session whose staff login was reset or removed opens nothing", %{conn: conn} do
+      reset = Fixtures.Admin.create_staff()
+      {reset_conn, _session} = log_in_staff(conn, reset)
+      assert {:ok, _staff, _secret} = Admin.reset_staff(reset.email)
+
+      assert redirected_to(get(reset_conn, ~p"/admin")) == ~p"/admin/sign_in"
+
+      removed = Fixtures.Admin.create_staff()
+      {removed_conn, _session} = log_in_staff(build_conn(), removed)
+      assert Admin.remove_staff(removed.email) == :ok
+
+      assert redirected_to(get(removed_conn, "/ops/live")) == ~p"/admin/sign_in"
+    end
+
+    test "the staff pages ride the :noindex pipeline", %{conn: conn} do
+      {conn, _staff_session} = log_in_staff(conn)
+
+      assert get(conn, ~p"/admin").assigns[:noindex] == true
+      assert get(conn, "/ops/live").assigns[:noindex] == true
+      assert get(build_conn(), ~p"/admin/sign_in").assigns[:noindex] == true
     end
   end
 
-  describe "the /ops/live socket gate" do
-    test "an admin who verified a second factor this session mounts" do
-      {user, _account, subject} = Fixtures.Subjects.owner_subject()
-      {enrolled, _codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
-      staff = Fixtures.Users.mark_user_as_staff(enrolled)
-      token = Fixtures.Auth.create_session_token!(staff, :magic_link, DateTime.utc_now())
+  describe "the staff socket gate" do
+    test "each LiveView socket reads only its own realm's cookie" do
+      sockets = EmisarWeb.Endpoint.__sockets__()
+      assert sockets |> Enum.map(&elem(&1, 0)) |> Enum.sort() == ["/admin/live", "/live"]
+
+      for {path, _module, opts} <- sockets, transport <- [:websocket, :longpoll] do
+        {:session, session} =
+          opts
+          |> Keyword.fetch!(transport)
+          |> Keyword.fetch!(:connect_info)
+          |> List.keyfind(:session, 0)
+
+        expected = if path == "/admin/live", do: "_emisar_staff", else: "_emisar_web_key"
+
+        assert session[:key] == expected, "#{path} over #{transport} reads #{session[:key]}"
+      end
+    end
+
+    test "sign-out, a box reset and a removal each disconnect the session's sockets", %{
+      conn: conn
+    } do
+      signed_out = Fixtures.Admin.create_staff()
+      {raw, _session} = Fixtures.Admin.create_staff_session(signed_out)
+      topic = Admin.staff_session_socket_topic(raw)
+      EmisarWeb.Endpoint.subscribe(topic)
+
+      conn |> put_staff_cookie(%{"staff_token" => raw}) |> delete(~p"/admin/sign_out")
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
+
+      for revoke <- [&Admin.reset_staff/1, &Admin.remove_staff/1] do
+        staff = Fixtures.Admin.create_staff()
+        {raw, _session} = Fixtures.Admin.create_staff_session(staff)
+        topic = Admin.staff_session_socket_topic(raw)
+        EmisarWeb.Endpoint.subscribe(topic)
+
+        revoke.(staff.email)
+
+        assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
+      end
+    end
+
+    test "mounts a live staff session" do
+      staff = Fixtures.Admin.create_staff()
+      {raw, staff_session} = Fixtures.Admin.create_staff_session(staff)
 
       assert {:cont, socket} =
-               UserAuth.on_mount(:ensure_admin, %{}, %{"user_token" => token}, mount_socket())
+               StaffAuth.on_mount(:ensure_staff, %{}, %{"staff_token" => raw}, mount_socket())
 
-      assert socket.assigns.current_user.id == user.id
+      assert socket.assigns.staff_session.id == staff_session.id
+      assert socket.assigns.staff_session.staff.id == staff.id
     end
 
-    test "a proof taken against a replaced enrollment no longer mounts" do
-      # The socket half of the binding. A mount cannot clear the plug session, so
-      # it only REFUSES and sends the admin back to /app; the plug owns the
-      # forced step-up on their next full navigation.
-      {user, _account, subject} = Fixtures.Subjects.owner_subject()
-      {enrolled_user, _codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
-      Fixtures.Users.mark_user_as_staff(user)
+    test "refuses a token that names no live staff session" do
+      {raw, _session} = Fixtures.Admin.create_staff_session(Fixtures.Admin.create_staff())
+      assert Admin.delete_staff_session(raw) == :ok
 
-      stale_proof_at = DateTime.add(enrolled_user.mfa_enabled_at, -1, :second)
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, stale_proof_at)
+      for session <- [%{"staff_token" => raw}, %{"staff_token" => "forged"}] do
+        assert {:halt, socket} = StaffAuth.on_mount(:ensure_staff, %{}, session, mount_socket())
+        assert {:redirect, %{to: "/admin/sign_in"}} = socket.redirected
+        assert socket.assigns.flash["error"] == "Your staff session has ended. Sign in again."
+      end
 
-      assert {:halt, socket} =
-               UserAuth.on_mount(:ensure_admin, %{}, %{"user_token" => token}, mount_socket())
-
-      assert {:redirect, %{to: to}} = socket.redirected
-      assert to == ~p"/app"
-
-      assert Phoenix.Flash.get(socket.assigns.flash, :error) ==
-               "Admin access requires multi-factor authentication. Sign in again to continue."
+      assert {:halt, socket} = StaffAuth.on_mount(:ensure_staff, %{}, %{}, mount_socket())
+      assert {:redirect, %{to: "/admin/sign_in"}} = socket.redirected
+      assert socket.assigns.flash == %{}
     end
 
-    test "an admin who turned MFA off mid-session is halted to MFA setup" do
-      # A LiveView session stays verifiable for 14 days, so the socket must
-      # re-decide: this token proved a factor at sign-in, but the enrollment
-      # behind it is gone, and only the on_mount sees that on a reconnect.
-      user = Fixtures.Users.create_user()
-      Fixtures.Users.mark_user_as_staff(user)
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
+    test "an open console re-checks the session before every event", %{conn: conn} do
+      {conn, staff_session} = log_in_staff(conn)
+      {:ok, live, _html} = live(conn, ~p"/admin")
 
-      assert {:halt, socket} =
-               UserAuth.on_mount(:ensure_admin, %{}, %{"user_token" => token}, mount_socket())
+      Repo.delete!(staff_session)
+      render_change(form(live, "#account-search"), %{"query" => "acme"})
 
-      assert {:redirect, %{to: to}} = socket.redirected
-      assert to == ~p"/app/mfa_setup"
-
-      assert Phoenix.Flash.get(socket.assigns.flash, :error) ==
-               "Admin access requires multi-factor authentication. Set it up to continue."
+      flash = assert_redirect(live, ~p"/admin/sign_in")
+      assert flash["error"] == "Your staff session has ended. Sign in again."
     end
 
-    test "a non-admin is halted to /app" do
-      user = Fixtures.Users.create_user()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
+    test "an open console leaves when its session expires", %{conn: conn} do
+      {conn, staff_session} = log_in_staff(conn)
+      {:ok, live, _html} = live(conn, ~p"/admin")
 
-      assert {:halt, socket} =
-               UserAuth.on_mount(:ensure_admin, %{}, %{"user_token" => token}, mount_socket())
+      send(live.pid, {:staff_session_expired, staff_session.id})
 
-      assert {:redirect, %{to: to}} = socket.redirected
-      assert to == ~p"/app"
-      assert Phoenix.Flash.get(socket.assigns.flash, :error) == "Not authorized."
-    end
-  end
-
-  describe "the is_admin flag" do
-    test "defaults to false for a freshly registered user (closed by default)", %{conn: _conn} do
-      {:ok, user} =
-        Emisar.Users.register_user(%{
-          email: "fresh-#{System.unique_integer([:positive])}@example.com",
-          full_name: "Fresh User"
-        })
-
-      assert user.is_admin == false
+      flash = assert_redirect(live, ~p"/admin/sign_in")
+      assert flash["error"] == "Your staff session has ended. Sign in again."
     end
   end
 
@@ -398,7 +260,6 @@ defmodule EmisarWeb.AdminGateTest do
     end
 
     test "/dev/dashboard is not mounted — the branded 404, not a 403", %{conn: conn} do
-      # /T02
       # Compiled out, so it matches no route and falls to the :browser
       # catch-all → the branded 404 page (NOT a 403 — the route doesn't
       # exist to be forbidden), exactly like any other unrouted path.

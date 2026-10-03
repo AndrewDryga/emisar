@@ -1,7 +1,7 @@
 ---
 name: deployment
 sources: [.github/workflows/ci.yml, .github/workflows/cd.yml, infra/iam.tf, infra/github_oidc.tf, infra/versions.tf, portal/config/runtime.exs, portal/apps/emisar/lib/emisar/release.ex]
-updated: 2026-09-16
+updated: 2026-10-03
 ---
 
 # CI/CD production setup
@@ -218,7 +218,8 @@ change with an application rollback.
   repository is public, so the exact deployed Git SHA would map production to any
   known advisory in that tree).
 - `/metrics` on `METRICS_PORT` (default 9091) is private.
-- `/ops/live` is the admin-gated Phoenix LiveDashboard.
+- `/ops/live` is the Phoenix LiveDashboard behind the staff login
+  ([staff access](staff-access.md)).
 - Production logs use structured Google Cloud JSON with secret-shaped metadata
   keys redacted.
 - Sentry activates only when `SENTRY_DSN` is configured.

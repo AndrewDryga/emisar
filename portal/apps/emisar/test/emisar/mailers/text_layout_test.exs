@@ -153,6 +153,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
       {"OIDC identity step-up", oidc_identity_step_up},
       {"member link code", member_link_code},
       {"member linked notice", member_linked},
+      {"staff sign-in code", staff_sign_in_code_body()},
       {"billing link code", billing_link_code},
       {"invitation", invitation},
       {"approval request", approval_request_body(user, account)},
@@ -161,6 +162,16 @@ defmodule Emisar.Mailers.TextLayoutTest do
       {"approval update", approval_event_body(user, account)},
       {"monthly report", monthly_report_text(user, account)}
     ]
+  end
+
+  defp staff_sign_in_code_body do
+    UserNotifier.deliver_staff_sign_in_code(
+      Fixtures.Admin.create_staff(),
+      "ABC234",
+      request_context()
+    )
+
+    sent_text_body()
   end
 
   defp approval_request_body(user, account) do

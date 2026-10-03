@@ -6,8 +6,8 @@ defmodule EmisarWeb.AdminSearchLiveTest do
   use EmisarWeb.ConnCase, async: true
 
   setup %{conn: conn} do
-    {conn, staff_user} = register_and_log_in_staff(conn)
-    %{conn: conn, staff_user: staff_user}
+    {conn, staff_session} = log_in_staff(conn)
+    %{conn: conn, staff_session: staff_session}
   end
 
   describe "GET /admin" do

@@ -14,6 +14,7 @@ defmodule Emisar.Mailers.UserNotifier do
   """
   import Swoosh.Email
   alias Emisar.Accounts
+  alias Emisar.Admin
   alias Emisar.Crypto
   alias Emisar.Mail
   alias Emisar.Mailer
@@ -122,6 +123,31 @@ defmodule Emisar.Mailers.UserNotifier do
         {:pre, request_details(context)}
       ],
       {"Sign in", url}
+    )
+  end
+
+  @doc """
+  The emailed half of a staff sign-in. Code only, no link: a staff sign-in
+  finishes in the browser that asked, together with the authenticator code.
+  """
+  def deliver_staff_sign_in_code(
+        %Admin.Staff{} = staff,
+        code,
+        context \\ %RequestContext{}
+      ) do
+    deliver_transactional(
+      staff,
+      "Your emisar staff sign-in code",
+      "Your staff sign-in code expires in 15 minutes.",
+      [
+        {:paragraph, "Use this code to sign in to the emisar staff console."},
+        {:code, code},
+        {:paragraph,
+         "Enter it in the browser where you asked to sign in, together with the code from your authenticator app. It works once, only in that browser, and expires in 15 minutes."},
+        {:paragraph, "If you didn't ask to sign in, ignore this email. Do not share the code."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
+      ]
     )
   end
 
@@ -1007,8 +1033,10 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   defp recipient_name(%Users.User{} = user), do: user.full_name || user.email
+  defp recipient_name(%Admin.Staff{email: email}), do: email
   defp recipient_name(%Accounts.Membership{} = member), do: Accounts.member_display_name(member)
   defp recipient_email(%Users.User{email: email}), do: email
+  defp recipient_email(%Admin.Staff{email: email}), do: email
   defp recipient_email(%Accounts.Membership{email: email}), do: email
 
   defp deliver(nil, _subject, _text, _html, _headers), do: {:error, :no_contact_email}

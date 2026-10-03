@@ -81,27 +81,32 @@ defmodule EmisarWeb.ConnCase do
   end
 
   @doc """
-  Logs in a user who clears the whole `/admin` gate: `is_admin`, an enrolled
-  second factor, and a session stamped with the moment it proved that factor.
-  Returns `{conn, staff_user}`. Tests that drive one of those three conditions
-  build the conn themselves; this is for the surfaces behind the gate.
+  Signs a staff login in the way a browser carries it: the staff cookie holding a
+  live 12-hour session. Returns `{conn, staff_session}`; pass `staff` to reuse a
+  login, otherwise a fresh one is created.
   """
-  def register_and_log_in_staff(conn) do
-    {conn, user, account} = register_and_log_in(conn)
+  def log_in_staff(conn, staff \\ Fixtures.Admin.create_staff()) do
+    {raw, staff_session} = Fixtures.Admin.create_staff_session(staff)
 
-    {enrolled, _codes} =
-      Fixtures.Users.enable_mfa!(
-        Emisar.Auth.generate_mfa_secret(),
-        owner_subject(user, account)
-      )
+    conn =
+      put_staff_cookie(conn, %{
+        "staff_token" => raw,
+        "live_socket_id" => Emisar.Admin.staff_session_socket_topic(raw)
+      })
 
-    staff_user = Fixtures.Users.mark_user_as_staff(enrolled)
+    {conn, staff_session}
+  end
 
-    # Minted after enrolling, so the session changeset binds the exact local
-    # enrollment epoch the MFA challenge proved.
-    token = Fixtures.Auth.create_session_token!(staff_user, :magic_link, DateTime.utc_now())
-
-    {Plug.Conn.put_session(conn, :user_token, token), staff_user}
+  @doc """
+  Puts `session` in the staff cookie on `conn`, encoded exactly as the staff
+  routes' session store writes it. Staff routes refuse a test session from
+  `init_test_session/2`, so every staff request carries this cookie instead.
+  """
+  def put_staff_cookie(conn, session) when is_map(session) do
+    config = Plug.Session.init(EmisarWeb.Endpoint.staff_session_options())
+    signer = %{conn | secret_key_base: EmisarWeb.Endpoint.config(:secret_key_base)}
+    cookie = config.store.put(signer, nil, session, config.store_config)
+    Plug.Test.put_req_cookie(conn, config.key, cookie)
   end
 
   @doc """

@@ -1,11 +1,16 @@
 defmodule Emisar.Release do
   @moduledoc """
   Release-time tasks. Mix isn't available in a release, so anything
-  that needs to run inside the running release (migrations, seeds)
-  lives here and gets invoked via `bin/emisar eval`. There is no
-  rollback task on purpose: applied migrations are frozen and an
-  application rollback redeploys a prior image without reversing DB
-  changes (.agent/kb/runbooks/deployment.md).
+  that needs to run inside the release lives here. Migrations and seeds
+  are invoked via `bin/emisar eval`. There is no rollback task on
+  purpose: applied migrations are frozen and an application rollback
+  redeploys a prior image without reversing DB changes
+  (.agent/kb/runbooks/deployment.md).
+
+  The staff commands (`create_staff/1`, `reset_staff/1`, `remove_staff/1`,
+  `list_staff/0`) run on the live node, from `./run ops portal remsh`, and
+  are the only way a staff login is created or changed
+  (.agent/kb/runbooks/staff-access.md).
   """
 
   @app :emisar
@@ -81,6 +86,99 @@ defmodule Emisar.Release do
     # Trusted, app-bundled seeds file evaluated at deploy time — not request input.
     # credo:disable-for-next-line Emisar.Checks.NoUnsafeDeserialization
     Code.eval_file(Application.app_dir(@app, "priv/repo/seeds.exs"))
+  end
+
+  # The authenticator app lists staff entries under this issuer, apart from the
+  # `emisar` entries of workspace sign-ins.
+  @staff_issuer "emisar-admin"
+
+  @doc """
+  Creates the staff login for `email` and prints its authenticator key, once.
+  The only way a staff login comes to exist. Run it on the live node:
+  `./run ops portal remsh`, then `Emisar.Release.create_staff("you@example.com")`.
+  """
+  def create_staff(email) when is_binary(email) do
+    case Emisar.Admin.create_staff(email) do
+      {:ok, staff, secret} ->
+        IO.puts("Created the staff login for #{staff.email}.")
+        print_staff_key(staff, secret)
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        IO.puts("Not created: #{changeset_errors(changeset)}")
+        :error
+    end
+  end
+
+  @doc """
+  Gives the staff login for `email` a new authenticator key and prints it,
+  once. Signs the login out everywhere and unlocks it after wrong codes. Use it
+  for a lost device or a lockout.
+  """
+  def reset_staff(email) when is_binary(email) do
+    case Emisar.Admin.reset_staff(email) do
+      {:ok, staff, secret} ->
+        IO.puts("Reset the staff login for #{staff.email}. Its sessions have ended.")
+        print_staff_key(staff, secret)
+
+      {:error, :not_found} ->
+        IO.puts("No staff login uses #{email}.")
+        :error
+    end
+  end
+
+  @doc "Deletes the staff login for `email` and ends its sessions."
+  def remove_staff(email) when is_binary(email) do
+    case Emisar.Admin.remove_staff(email) do
+      :ok ->
+        IO.puts("Removed the staff login for #{email}. Its sessions have ended.")
+        :ok
+
+      {:error, :not_found} ->
+        IO.puts("No staff login uses #{email}.")
+        :error
+    end
+  end
+
+  @doc "Prints every staff login and whether wrong codes have locked it."
+  def list_staff do
+    case Emisar.Admin.list_staff() do
+      [] ->
+        IO.puts("No staff logins.")
+
+      staff ->
+        Enum.each(staff, fn login ->
+          locked = if Emisar.Admin.staff_locked?(login), do: " (locked: reset it)", else: ""
+          IO.puts("#{login.email}#{locked}")
+        end)
+    end
+
+    :ok
+  end
+
+  defp print_staff_key(staff, secret) do
+    key = Base.encode32(secret, padding: false)
+    label = URI.encode(staff.email, &URI.char_unreserved?/1)
+    uri = "otpauth://totp/#{@staff_issuer}:#{label}?secret=#{key}&issuer=#{@staff_issuer}"
+
+    uri |> EQRCode.encode() |> EQRCode.render()
+
+    IO.puts("""
+
+    Scan the code above with your authenticator app, or enter this key by hand.
+    It is shown only now; a lost key needs Emisar.Release.reset_staff/1.
+
+      Key: #{key}
+
+    Sign in at #{Emisar.PublicUrl.url("/admin/sign_in")}
+    """)
+
+    :ok
+  end
+
+  defp changeset_errors(changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
+    |> Enum.map_join("; ", fn {field, messages} -> "#{field} #{Enum.join(messages, ", ")}" end)
   end
 
   defp repos do

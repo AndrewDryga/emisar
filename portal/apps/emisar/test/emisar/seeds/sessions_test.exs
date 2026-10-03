@@ -1,6 +1,6 @@
 defmodule Emisar.Seeds.SessionsTest do
   use Emisar.DataCase, async: false
-  alias Emisar.{Auth, Fixtures, Repo}
+  alias Emisar.{Admin, Auth, Fixtures, Repo}
 
   setup_all do
     helpers = Emisar.Seeds.Helpers
@@ -29,21 +29,22 @@ defmodule Emisar.Seeds.SessionsTest do
     assert is_nil(Repo.reload!(user).mfa_enabled_at)
   end
 
-  test "reseed preserves the staff persona's MFA enrollment", %{helpers: helpers, staff: staff} do
-    user = Fixtures.Users.create_user(email: "admin@emisar.dev")
-    secret = Auth.generate_mfa_secret()
+  test "reseed keeps the staff login and its authenticator key", %{staff: staff} do
+    {:ok, created, secret} = Admin.create_staff("admin@emisar.dev")
 
-    user =
-      Fixtures.Users.set_mfa_state(user, mfa_secret: secret, mfa_enabled_at: DateTime.utc_now())
+    output = ExUnit.CaptureIO.capture_io(fn -> staff.run() end)
 
-    ExUnit.CaptureIO.capture_io(fn ->
-      helpers.with_temporary_sessions(fn -> staff.run() end)
-    end)
-
-    current = Repo.reload!(user)
-    assert current.mfa_enabled_at == user.mfa_enabled_at
+    assert output =~ "kept"
+    assert [current] = Admin.list_staff()
+    assert current.id == created.id
     assert current.mfa_secret == secret
-    assert current.is_admin
-    refute Repo.exists?(Auth.UserToken.Query.by_context("session"))
+  end
+
+  test "a first seed creates the staff login and prints its key once", %{staff: staff} do
+    output = ExUnit.CaptureIO.capture_io(fn -> staff.run() end)
+
+    assert [created] = Admin.list_staff()
+    assert created.email == "admin@emisar.dev"
+    assert output =~ Base.encode32(created.mfa_secret, padding: false)
   end
 end

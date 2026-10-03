@@ -1,7 +1,7 @@
 ---
 name: security-model
 sources: [runner/internal/engine, runner/internal/admission, runner/internal/validation, runner/internal/redact, runner/internal/packs, runner/internal/attest, portal/apps/emisar/lib/emisar/auth/authorizer.ex, portal/apps/emisar/lib/emisar/policies.ex, portal/apps/emisar/lib/emisar/runs.ex, portal/apps/emisar/lib/emisar/runners/runner.ex, portal/apps/emisar/lib/emisar/sso.ex]
-updated: 2026-09-24
+updated: 2026-10-03
 ---
 
 # Security model
@@ -235,24 +235,27 @@ The runner-side guarantees above pair with the control plane's own model:
 - Operator sign-in supports TOTP MFA with one-shot hashed recovery
   codes; approvals and credential lifecycles are all audited.
 - Emisar staff reach a customer workspace through a read-only console at
-  `/admin` — account search and an account detail view — gated on a
-  platform `is_admin` flag, an enrolled second factor, and a session that
-  proved that factor against the current enrollment. Staff hold no
-  membership in the accounts they inspect, so the gate is the whole
-  boundary. Every account detail view writes a `staff.account_viewed`
-  event into that account's own audit trail, which the customer reads:
-  access transparency, not an internal-only log. Support mutations are
-  not on that console at all — they run through a private, colocated
-  action pack over release RPC, so each one is an ordinary audited run.
+  `/admin` — account search and an account detail view. Staff sign in with a
+  staff login, never a workspace one: a row that only a release command run
+  on a production node creates, an emailed code bound to the requesting
+  browser plus the current authenticator code on every sign-in, and a 12-hour
+  session carried in a cookie and LiveView socket of its own. No workspace
+  session, role, SSO, SCIM, invitation, or configuration grants staff access,
+  and every console read re-checks the staff session row. Staff hold no
+  membership in the accounts they inspect, so that gate is the whole
+  boundary. Every account detail view writes a `staff.account_viewed` event
+  into that account's own audit trail, which the customer reads: access
+  transparency, not an internal-only log. Support mutations are not on that
+  console at all — they run through a private, colocated action pack over
+  release RPC, so each one is an ordinary audited run.
 - The BEAM operational dashboard at `/ops/live` is a separate surface
-  behind the same `is_admin` and proven-MFA gate, and it does not share
-  the staff console's two properties. It is not read-only: it can
-  terminate a process on the running node, which on this product may be a
-  customer's runner websocket or an in-flight approval transaction. And it
-  is not account-attributed: it reads live node state across every tenant
-  at once and writes no `staff.*` event, so nothing it shows or does
-  reaches a customer's audit trail. Treat reaching it as an insider-risk
-  action gated by the platform admin flag, not as customer-visible access.
+  behind the same staff login, and it is not account-attributed: it reads
+  live node state across every tenant at once and writes no `staff.*`
+  event, so nothing it shows reaches a customer's audit trail. Its
+  destructive actions stay disabled, so it cannot terminate a process (on
+  this product, possibly a customer's runner websocket or an in-flight
+  approval transaction). Treat reaching it as an insider-risk action gated
+  by the staff login, not as customer-visible access.
 
 Runbook definitions, typed inputs, bindings, extractor patterns, action output,
 and runner/catalog state are all untrusted input. Static validation happens

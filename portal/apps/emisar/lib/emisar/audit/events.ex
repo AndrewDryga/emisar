@@ -11,7 +11,7 @@ defmodule Emisar.Audit.Events do
   inserted with `Audit.record/1`; only an event with no fixed
   actor/subject shape falls back to raw `Audit.log/3`.
   """
-  alias Emisar.{Accounts, ApiKeys, Approvals, Catalog, OAuth, Policies}
+  alias Emisar.{Accounts, Admin, ApiKeys, Approvals, Catalog, OAuth, Policies}
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
@@ -189,10 +189,10 @@ defmodule Emisar.Audit.Events do
   employees who opened their workspace and correlate the same one across
   tenants. The acting employee is authenticated and stays accountable in
   Emisar's own logs. Staff hold no membership in the account, so there is no
-  `%Subject{}` to derive the actor from; the `%Users.User{}` head still holds so
-  a caller cannot record a view without a resolved staff user.
+  `%Subject{}` to derive the actor from; the `%Admin.Staff{}` head still holds
+  so a caller cannot record a view without a resolved staff login.
   """
-  def staff_account_viewed(%Users.User{}, %Accounts.Account{} = account) do
+  def staff_account_viewed(%Admin.Staff{}, %Accounts.Account{} = account) do
     Audit.changeset(account.id, "staff.account_viewed",
       actor_kind: "staff",
       actor_label: @staff_actor_label,

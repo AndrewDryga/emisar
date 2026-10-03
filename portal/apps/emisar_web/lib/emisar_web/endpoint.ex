@@ -19,6 +19,25 @@ defmodule EmisarWeb.Endpoint do
     http_only: true
   ]
 
+  # The staff realm's session cookie. The staff routes (`/admin`, `/ops/live`) use
+  # it as their WHOLE Plug session — `EmisarWeb.StaffAuth.use_staff_session_cookie/2`
+  # installs this store before anything fetches a session — so a staff request
+  # never reads or writes the workspace cookie above, and no workspace sign-in or
+  # sign-out can reach it. Lax, like the workspace cookie: no cross-site POST,
+  # fetch or websocket carries it. Strict would also withhold it from a link
+  # followed into the console, and the sign-in page that request lands on would
+  # then overwrite the live staff cookie with an empty one. Max-Age matches the
+  # 12-hour staff session it carries.
+  @staff_session_options [
+    store: :cookie,
+    key: "_emisar_staff",
+    signing_salt: "b9UzrtQv",
+    encryption_salt: "9X9JsrJc",
+    same_site: "Lax",
+    http_only: true,
+    max_age: 12 * 60 * 60
+  ]
+
   # `:peer_data` + `:user_agent` + `:x_headers` are surfaced so the LiveView
   # boundary (`EmisarWeb.RequestContext.from_socket/1`) can build the caller's
   # `%RequestContext{}` at mount and stamp it onto the subject. `:x_headers`
@@ -40,6 +59,18 @@ defmodule EmisarWeb.Endpoint do
       connect_info: [:peer_data, :user_agent, :x_headers, session: @session_options]
     ],
     longpoll: [connect_info: [:peer_data, :user_agent, :x_headers, session: @session_options]]
+
+  # The staff realm's LiveView socket. Its connect-time session is the staff
+  # cookie, so the staff console and LiveDashboard authenticate from that cookie
+  # alone (and its CSRF state), never from the workspace session.
+  socket "/admin/live", Phoenix.LiveView.Socket,
+    websocket: [
+      compress: true,
+      connect_info: [:peer_data, :user_agent, :x_headers, session: @staff_session_options]
+    ],
+    longpoll: [
+      connect_info: [:peer_data, :user_agent, :x_headers, session: @staff_session_options]
+    ]
 
   # Serve at "/" the static files from "priv/static" directory.
   #
@@ -144,7 +175,13 @@ defmodule EmisarWeb.Endpoint do
   end
 
   defp session_options do
-    secure? = Emisar.Config.get_env(:emisar_web, :force_secure_cookies, false)
-    Keyword.put(@session_options, :secure, secure?)
+    Keyword.put(@session_options, :secure, secure_cookies?())
   end
+
+  @doc "The staff cookie's `Plug.Session` options, `secure` from the runtime config."
+  def staff_session_options do
+    Keyword.put(@staff_session_options, :secure, secure_cookies?())
+  end
+
+  defp secure_cookies?, do: Emisar.Config.get_env(:emisar_web, :force_secure_cookies, false)
 end

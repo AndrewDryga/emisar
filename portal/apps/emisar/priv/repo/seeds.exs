@@ -2,7 +2,7 @@
 # docker stack). Idempotent — safe to re-run.
 # Reseeding restores the demo/acme/globex/blank/both-connected screenshot accounts
 # to email sign-in without required MFA/SSO, and clears their personas' MFA.
-# Staff MFA and sign-in policy, and unrelated accounts, are preserved.
+# The staff login and its authenticator key, and unrelated accounts, are preserved.
 #
 # Goal: produce a believable live-account state so the dashboard,
 # runs list, approvals, runners, audit, and grants pages all show

@@ -13,6 +13,8 @@ defmodule Emisar.SecretRedactionTest do
   # declare — so a new secret field can't be added without a leak guard.
   @redacted [
     {Emisar.Accounts.Membership, [:invitation_token_digest, :mfa_secret, :mfa_recovery_codes]},
+    {Emisar.Admin.Staff, [:mfa_secret]},
+    {Emisar.Admin.StaffToken, [:token]},
     {Emisar.ApiKeys.ApiKey, [:key_hash]},
     {Emisar.ApiKeys.DeviceGrant, [:device_code_digest, :user_code_digest]},
     {Emisar.Billing.CustomerLinkCode, [:code_digest]},

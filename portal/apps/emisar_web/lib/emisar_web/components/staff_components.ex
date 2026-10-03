@@ -21,12 +21,13 @@ defmodule EmisarWeb.StaffComponents do
 
   @doc """
   The staff console page frame: the staff top bar, the page title, and a
-  `:detail`-width content column.
+  `:detail`-width content column. The sign-in pages pass no `staff`, so the bar
+  shows only the brand: no doors and no sign-out before a staff session exists.
 
   Flash renders once from `EmisarWeb.Layouts` `app.html.heex`, so this shell
   deliberately does not repeat `<.flash_group>`.
   """
-  attr :current_user, :map, required: true
+  attr :staff, :map, default: nil, doc: "the signed-in staff login, nil on the sign-in pages"
   slot :title, required: true
   slot :inner_block, required: true
 
@@ -37,8 +38,10 @@ defmodule EmisarWeb.StaffComponents do
            deliberately puts its nav on the SAME plane as the work surface, so a
            banded top bar reads as another product at a glance — which is the
            whole job here. --%>
-      <header class="border-b border-zinc-800/70 bg-zinc-950">
-        <div class="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-8">
+      <%!-- Gutter outside the width cap, like the title and content below, so the
+           brand and the sign-out line up with the page column. --%>
+      <header class="border-b border-zinc-800/70 bg-zinc-950 px-4 sm:px-8">
+        <div class="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 py-3">
           <div class="flex items-center gap-2.5">
             <img src={~p"/images/brand/emisar-icon.svg"} alt="" class="h-6 w-6 shrink-0" />
             <span class="font-display text-sm font-bold tracking-tight text-zinc-100">
@@ -52,7 +55,7 @@ defmodule EmisarWeb.StaffComponents do
                constant, not a `section` attr nothing could vary. Active is the
                house white wash (never a brand fill: green means "passed the
                gate", not "selected"). --%>
-          <nav class="flex items-center gap-1 text-sm">
+          <nav :if={@staff} class="flex items-center gap-1 text-sm">
             <.link
               navigate={~p"/admin"}
               class="rounded-lg bg-white/[0.06] px-3 py-1.5 font-medium text-zinc-50"
@@ -69,10 +72,14 @@ defmodule EmisarWeb.StaffComponents do
             </.link>
           </nav>
 
-          <div class="ml-auto flex items-center gap-4 text-sm">
-            <span class="hidden truncate text-zinc-400 sm:inline">{@current_user.email}</span>
-            <.link href={~p"/app"} class="text-zinc-300 transition-colors hover:text-brand-300">
-              Exit staff console
+          <div :if={@staff} class="ml-auto flex items-center gap-4 text-sm">
+            <span class="hidden truncate text-zinc-400 sm:inline">{@staff.email}</span>
+            <.link
+              href={~p"/admin/sign_out"}
+              method="delete"
+              class="text-zinc-300 transition-colors hover:text-brand-300"
+            >
+              Sign out
             </.link>
           </div>
         </div>

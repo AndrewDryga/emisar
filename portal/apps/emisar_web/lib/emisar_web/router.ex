@@ -2,6 +2,7 @@ defmodule EmisarWeb.Router do
   use EmisarWeb, :router
   import Phoenix.LiveDashboard.Router
   import EmisarWeb.UserAuth
+  import EmisarWeb.StaffAuth
 
   @dev_routes Application.compile_env(:emisar_web, :dev_routes)
 
@@ -42,12 +43,22 @@ defmodule EmisarWeb.Router do
 
   defp put_noindex(conn, _opts), do: Plug.Conn.assign(conn, :noindex, true)
 
-  # Admin-only gate (separate from role-based perms). Used by /ops/live so a
-  # leaked operator session cannot reach the LiveDashboard. The plug lives in
-  # `UserAuth` (imported above) beside the `:ensure_admin` on_mount it shares its
-  # decision with, so the request and socket gates cannot drift.
-  pipeline :require_admin do
-    plug :require_admin_user
+  # The staff realm (`/admin`, `/ops/live`). Its first plug makes the staff cookie
+  # the request's whole session, so these pages never read or write the
+  # workspace cookie and no workspace sign-in can reach a staff session. No
+  # workspace user and no analytics here; LiveViews connect to the staff socket.
+  # The gates live in `EmisarWeb.StaffAuth` (imported above).
+  pipeline :staff_browser do
+    plug :accepts, ["html"]
+    plug :use_staff_session_cookie
+    plug :fetch_live_flash
+    plug :put_root_layout, html: {EmisarWeb.Layouts, :root}
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+    plug EmisarWeb.Plugs.ContentSecurityPolicy
+    plug :put_noindex
+    plug :put_staff_live_socket_path
+    plug :fetch_current_staff
   end
 
   pipeline :api do
@@ -678,41 +689,57 @@ defmodule EmisarWeb.Router do
     end
   end
 
-  # The Emisar staff console. Guarded by the regular auth pipeline AND
-  # `:is_admin` on the user record (separate from per-account role) AND a second
-  # factor this session verified — with `:ensure_admin` re-deciding all three on
-  # the socket, so the request and mount gates cannot drift. It reads across
-  # tenants and mutates nothing; every account view it renders writes a
-  # customer-visible `staff.account_viewed` audit row. Mutations stay on the
-  # private emisar-admin pack (release RPC), never here.
+  # The staff sign-in: the emailed code and the authenticator code, every time.
+  # Staff logins themselves are created only on the production node
+  # (`Emisar.Release.create_staff/1`), never through a route.
   scope "/admin", EmisarWeb do
-    pipe_through [:browser, :noindex, :require_authenticated_user, :require_admin]
+    pipe_through [:staff_browser, :redirect_if_staff]
 
-    live_session :admin_console,
-      on_mount: [{EmisarWeb.UserAuth, :ensure_admin}] do
+    get "/sign_in", StaffSessionController, :new
+    post "/sign_in", StaffSessionController, :create
+    get "/sign_in/code", StaffSessionController, :code
+    post "/sign_in/code", StaffSessionController, :verify
+  end
+
+  # The Emisar staff console. Guarded by a live staff session alone — no
+  # workspace session counts — with `:ensure_staff` re-checking it on the socket
+  # at mount and before every event and patch. It reads across tenants and
+  # mutates nothing; every account view it renders writes a customer-visible
+  # `staff.account_viewed` audit row. Mutations stay on the private
+  # emisar-admin pack (release RPC), never here.
+  scope "/admin", EmisarWeb do
+    pipe_through [:staff_browser, :require_staff]
+
+    delete "/sign_out", StaffSessionController, :delete
+
+    live_session :admin_console, on_mount: [{EmisarWeb.StaffAuth, :ensure_staff}] do
       live "/", AdminSearchLive
       live "/accounts/:id", AdminAccountLive
     end
   end
 
   # BEAM operational telemetry, behind the same gate but deliberately NOT under
-  # `/admin`: LiveDashboard can terminate a process on the running node — which
-  # here may be a customer's runner websocket — and writes no `staff.*` audit
-  # row, so it shares neither of the staff console's two published properties
-  # (read-only, account-attributed). Keeping it at its own path is what lets the
-  # security model state those two properties about `/admin` without qualifying
-  # them. See `.agent/kb/specs/security-model.md`.
+  # `/admin`: LiveDashboard reads live node state across every tenant and writes
+  # no `staff.*` audit row, so it lacks the staff console's account attribution.
+  # Keeping it at its own path is what lets the security model state that
+  # property about `/admin` without qualifying it. Its destructive actions
+  # (killing a process, which here may be a customer's runner websocket) stay
+  # off: they would run as LiveComponent events, which the staff hooks do not
+  # re-check. See `.agent/kb/specs/security-model.md`.
   scope "/ops" do
-    pipe_through [:browser, :noindex, :require_authenticated_user, :require_admin]
+    pipe_through [:staff_browser, :require_staff]
     pipe_through :live_dashboard_csp
 
     # A distinct `live_session_name` keeps the LiveDashboard isolated from the
-    # console mount above and from the dev-routes mount.
+    # console mount above and from the dev-routes mount; the staff socket path
+    # keeps its socket on the staff cookie.
     live_dashboard "/live",
       metrics: EmisarWeb.Telemetry,
       ecto_repos: [Emisar.Repo],
       csp_nonce_assign_key: :csp_nonce,
       live_session_name: :admin_dashboard,
-      on_mount: [{EmisarWeb.UserAuth, :ensure_admin}]
+      live_socket_path: "/admin/live",
+      allow_destructive_actions: false,
+      on_mount: [{EmisarWeb.StaffAuth, :ensure_staff}]
   end
 end

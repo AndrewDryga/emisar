@@ -4,6 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <%!-- Staff pages connect their LiveViews to the staff socket, whose session is
+          the staff cookie; every other page uses app.js's default "/live". --%>
+    <meta :if={assigns[:live_socket_path]} name="live-socket-path" content={@live_socket_path} />
     <%!-- Robots: noindex on every /app/* and auth route via the
           conn-level noindex assign; everything else indexable. --%>
     <meta :if={assigns[:noindex]} name="robots" content="noindex, nofollow" />

@@ -24,7 +24,6 @@ defmodule Emisar.Users.User do
     field :mfa_recovery_codes, {:array, :binary}, default: [], redact: true
 
     field :last_sign_in_at, :utc_datetime_usec
-    field :is_admin, :boolean, default: false
     field :deleted_at, :utc_datetime_usec
 
     has_many :memberships, Emisar.Accounts.Membership, where: [deleted_at: nil]

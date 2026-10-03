@@ -1,7 +1,14 @@
 defmodule Emisar.AdminTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts.Membership
-  alias Emisar.{Admin, Audit, Billing, Fixtures}
+  alias Emisar.{Admin, Audit, Billing, Crypto, Fixtures, RequestContext}
+
+  defmodule RecordingDisconnector do
+    def disconnect_live_sessions(topics) do
+      send(self(), {:staff_disconnect, topics, Emisar.Repo.in_transaction?()})
+      :ok
+    end
+  end
 
   describe "job_modules/0" do
     test "lists every recurrent job the application declares" do
@@ -43,98 +50,521 @@ defmodule Emisar.AdminTest do
     Code.ensure_loaded?(module) and function_exported?(module, :__config__, 0)
   end
 
-  # These reads are DELIBERATELY cross-account — staff see the whole platform —
-  # so §7's cross-account isolation path does not apply here. The denial path is
-  # the whole security surface: `is_admin` is the only thing between a signed-in
-  # customer and every other tenant's rows.
-  describe "search_accounts/2" do
-    setup do
-      %{staff_user: Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()}
+  describe "create_staff/1" do
+    test "creates a staff login and returns its authenticator secret once" do
+      assert {:ok, staff, secret} = Admin.create_staff("  ops@emisar.test ")
+
+      assert staff.email == "ops@emisar.test"
+      assert staff.mfa_secret == secret
+      assert staff.failed_mfa_attempts == 0
+      assert Repo.reload!(staff).mfa_secret == secret
     end
 
-    test "matches an account by slug", %{staff_user: staff_user} do
+    test "refuses an address another staff login uses, in any letter case" do
+      assert {:ok, _staff, _secret} = Admin.create_staff("ops@emisar.test")
+
+      assert {:error, changeset} = Admin.create_staff("OPS@emisar.test")
+      assert errors_on(changeset) == %{email: ["has already been taken"]}
+    end
+
+    test "refuses something that is not an address" do
+      assert {:error, changeset} = Admin.create_staff("not an address")
+      assert %{email: [_message]} = errors_on(changeset)
+      assert Admin.list_staff() == []
+    end
+  end
+
+  describe "reset_staff/1" do
+    setup do
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingDisconnector}
+      )
+    end
+
+    test "gives a new secret, unlocks the login, and ends its sessions and codes" do
+      staff =
+        Fixtures.Admin.create_staff()
+        |> Fixtures.Admin.update_staff(
+          failed_mfa_attempts: 5,
+          mfa_last_used_at: DateTime.utc_now()
+        )
+
+      {raw, _session} = Fixtures.Admin.create_staff_session(staff)
+      request_code(staff)
+
+      assert {:ok, reset, secret} = Admin.reset_staff(String.upcase(staff.email))
+
+      assert secret != staff.mfa_secret
+      assert reset.mfa_secret == secret
+      assert reset.failed_mfa_attempts == 0
+      assert is_nil(reset.mfa_last_used_at)
+      assert Admin.fetch_staff_session(raw) == {:error, :not_found}
+      refute Repo.exists?(Admin.StaffToken.Query.by_staff_id(staff.id))
+
+      topic = Admin.staff_session_socket_topic(raw)
+      assert_received {:staff_disconnect, [^topic], false}
+    end
+
+    test "an address with no staff login is not found" do
+      assert Admin.reset_staff("nobody@emisar.test") == {:error, :not_found}
+      refute_received {:staff_disconnect, _topics, _in_transaction?}
+    end
+  end
+
+  describe "remove_staff/1" do
+    setup do
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingDisconnector}
+      )
+    end
+
+    test "deletes the login with its sessions and codes, and disconnects its sockets" do
+      staff = Fixtures.Admin.create_staff()
+      {raw, _session} = Fixtures.Admin.create_staff_session(staff)
+      request_code(staff)
+
+      assert Admin.remove_staff(staff.email) == :ok
+
+      assert Admin.list_staff() == []
+      refute Repo.exists?(Admin.StaffToken.Query.all())
+      topic = Admin.staff_session_socket_topic(raw)
+      assert_received {:staff_disconnect, [^topic], false}
+    end
+
+    test "an address with no staff login is not found" do
+      assert Admin.remove_staff("nobody@emisar.test") == {:error, :not_found}
+    end
+  end
+
+  describe "list_staff/0" do
+    test "lists every staff login by address" do
+      assert {:ok, zed, _secret} = Admin.create_staff("zed@emisar.test")
+      assert {:ok, amy, _secret} = Admin.create_staff("amy@emisar.test")
+
+      assert Enum.map(Admin.list_staff(), & &1.id) == [amy.id, zed.id]
+    end
+  end
+
+  describe "staff_locked?/1" do
+    test "locks at five wrong authenticator codes in a row" do
+      staff = Fixtures.Admin.create_staff()
+
+      refute Admin.staff_locked?(staff)
+      refute Admin.staff_locked?(Fixtures.Admin.update_staff(staff, failed_mfa_attempts: 4))
+      assert Admin.staff_locked?(Fixtures.Admin.update_staff(staff, failed_mfa_attempts: 5))
+    end
+  end
+
+  describe "request_staff_sign_in/2" do
+    test "emails a staff address a code that only the returned nonce completes" do
+      staff = Fixtures.Admin.create_staff()
+
+      assert {:ok, %{token_id: token_id, nonce: nonce}} =
+               Admin.request_staff_sign_in(" #{String.upcase(staff.email)} ", %RequestContext{})
+
+      assert_received {:email, sent}
+      assert sent.to == [{"", staff.email}]
+      code = Fixtures.Auth.code_from_email(sent)
+      refute sent.text_body =~ token_id
+
+      token = Repo.get!(Admin.StaffToken, token_id)
+      assert token.context == :sign_in
+      assert token.remaining_attempts == 5
+      assert token.token == Crypto.magic_link_digest(nonce, code)
+    end
+
+    test "a new request leaves every other browser's pending code working" do
+      staff = Fixtures.Admin.create_staff()
+      {first_id, first_nonce, first_code} = request_code(staff)
+      {second_id, _nonce, _code} = request_code(staff)
+
+      assert Enum.sort([first_id, second_id]) ==
+               Admin.StaffToken.Query.by_staff_id(staff.id)
+               |> Repo.all()
+               |> Enum.map(& &1.id)
+               |> Enum.sort()
+
+      otp = Fixtures.Admin.totp_code(staff)
+      assert {:ok, _raw, _session} = sign_in(first_id, first_nonce, first_code, otp)
+
+      # A completed sign-in cancels the rest.
+      refute Repo.exists?(Admin.StaffToken.Query.by_context(:sign_in))
+    end
+
+    test "any other address gets the same shape, and nothing is written or sent" do
+      assert {:ok, %{token_id: token_id, nonce: nonce}} =
+               Admin.request_staff_sign_in("nobody@emisar.test", %RequestContext{})
+
+      assert Repo.valid_uuid?(token_id)
+      assert byte_size(nonce) > 20
+      refute_received {:email, _sent}
+      refute Repo.exists?(Admin.StaffToken.Query.all())
+    end
+
+    test "a sixth request from one client address inside 15 minutes sends nothing, and another address still gets a code" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      staff = Fixtures.Admin.create_staff()
+      flooding = %RequestContext{ip_address: "198.51.100.#{System.unique_integer([:positive])}"}
+
+      for _attempt <- 1..5 do
+        assert {:ok, _challenge} = Admin.request_staff_sign_in(staff.email, flooding)
+        assert_received {:email, _sent}
+      end
+
+      assert {:ok, %{token_id: token_id}} = Admin.request_staff_sign_in(staff.email, flooding)
+      refute_received {:email, _sent}
+      refute Repo.get(Admin.StaffToken, token_id)
+
+      # Somebody else asking for codes in staff's name cannot keep staff out.
+      assert {:ok, %{token_id: own_id}} =
+               Admin.request_staff_sign_in(staff.email, %RequestContext{})
+
+      assert_received {:email, _sent}
+      assert Repo.get(Admin.StaffToken, own_id)
+    end
+  end
+
+  describe "complete_staff_sign_in/5" do
+    setup do
+      staff = Fixtures.Admin.create_staff()
+      {token_id, nonce, code} = request_code(staff)
+      %{staff: staff, token_id: token_id, nonce: nonce, code: code}
+    end
+
+    test "both codes start a 12-hour session and use up the email code", %{
+      code: code,
+      nonce: nonce,
+      staff: staff,
+      token_id: token_id
+    } do
+      otp = Fixtures.Admin.totp_code(staff)
+
+      assert {:ok, raw, session} =
+               sign_in(token_id, nonce, " #{String.downcase(code)} ", otp)
+
+      assert session.context == :session
+      assert session.staff.id == staff.id
+      assert session.token == Crypto.hash(raw)
+      assert_in_delta DateTime.diff(session.expires_at, DateTime.utc_now()), 12 * 3600, 10
+      assert {:ok, %{id: session_id}} = Admin.fetch_staff_session(raw)
+      assert session_id == session.id
+      refute Repo.get(Admin.StaffToken, token_id)
+      assert Repo.reload!(staff).mfa_last_used_at
+    end
+
+    test "a wrong email code spends an attempt and never reaches the authenticator", %{
+      code: code,
+      nonce: nonce,
+      staff: staff,
+      token_id: token_id
+    } do
+      otp = Fixtures.Admin.totp_code(staff)
+
+      assert sign_in(token_id, nonce, other_code(code), otp) == {:error, :invalid}
+
+      assert Repo.get!(Admin.StaffToken, token_id).remaining_attempts == 4
+      assert Repo.reload!(staff).failed_mfa_attempts == 0
+      assert is_nil(Repo.reload!(staff).mfa_last_used_at)
+    end
+
+    test "the right code with another browser's nonce does not sign in", %{
+      code: code,
+      staff: staff,
+      token_id: token_id
+    } do
+      {other_nonce, _code, _digest} = Crypto.magic_link_token()
+      otp = Fixtures.Admin.totp_code(staff)
+
+      assert sign_in(token_id, other_nonce, code, otp) == {:error, :invalid}
+      assert Repo.get!(Admin.StaffToken, token_id).remaining_attempts == 4
+    end
+
+    test "a code with no attempts left stops working, even with both codes right", %{
+      code: code,
+      nonce: nonce,
+      staff: staff,
+      token_id: token_id
+    } do
+      Admin.StaffToken
+      |> Repo.get!(token_id)
+      |> Fixtures.Admin.update_staff_token(remaining_attempts: 0)
+
+      otp = Fixtures.Admin.totp_code(staff)
+      assert sign_in(token_id, nonce, code, otp) == {:error, :invalid}
+    end
+
+    test "an expired code stops working", %{
+      code: code,
+      nonce: nonce,
+      staff: staff,
+      token_id: token_id
+    } do
+      Admin.StaffToken
+      |> Repo.get!(token_id)
+      |> Fixtures.Admin.update_staff_token(expires_at: DateTime.add(DateTime.utc_now(), -1))
+
+      otp = Fixtures.Admin.totp_code(staff)
+      assert sign_in(token_id, nonce, code, otp) == {:error, :invalid}
+    end
+
+    test "a wrong authenticator code after the right email code counts against the login", %{
+      code: code,
+      nonce: nonce,
+      staff: staff,
+      token_id: token_id
+    } do
+      assert sign_in(token_id, nonce, code, wrong_otp(staff)) ==
+               {:error, :invalid}
+
+      assert Repo.reload!(staff).failed_mfa_attempts == 1
+      assert Repo.get!(Admin.StaffToken, token_id).remaining_attempts == 4
+
+      otp = Fixtures.Admin.totp_code(staff)
+      assert {:ok, _raw, _session} = sign_in(token_id, nonce, code, otp)
+      assert Repo.reload!(staff).failed_mfa_attempts == 0
+    end
+
+    test "five wrong authenticator codes lock the login until a reset", %{
+      code: code,
+      nonce: nonce,
+      staff: staff,
+      token_id: token_id
+    } do
+      for _attempt <- 1..4 do
+        assert sign_in(token_id, nonce, code, wrong_otp(staff)) ==
+                 {:error, :invalid}
+      end
+
+      assert sign_in(token_id, nonce, code, wrong_otp(staff)) ==
+               {:error, :locked}
+
+      {token_id, nonce, code} = request_code(staff)
+      otp = Fixtures.Admin.totp_code(staff)
+      assert sign_in(token_id, nonce, code, otp) == {:error, :locked}
+      refute Repo.exists?(Admin.StaffToken.Query.by_context(:session))
+    end
+
+    test "a locked login answers a wrong email code like any other", %{
+      code: code,
+      nonce: nonce,
+      staff: staff,
+      token_id: token_id
+    } do
+      Fixtures.Admin.update_staff(staff, failed_mfa_attempts: 5)
+      otp = Fixtures.Admin.totp_code(staff)
+
+      assert sign_in(token_id, nonce, other_code(code), otp) == {:error, :invalid}
+    end
+
+    test "an authenticator code works once", %{
+      code: code,
+      nonce: nonce,
+      staff: staff,
+      token_id: token_id
+    } do
+      otp = Fixtures.Admin.totp_code(staff)
+      assert {:ok, _raw, _session} = sign_in(token_id, nonce, code, otp)
+
+      {token_id, nonce, code} = request_code(staff)
+      assert sign_in(token_id, nonce, code, otp) == {:error, :invalid}
+      assert Repo.reload!(staff).failed_mfa_attempts == 1
+    end
+
+    test "a login removed after the code was sent cannot sign in", %{
+      code: code,
+      nonce: nonce,
+      staff: staff,
+      token_id: token_id
+    } do
+      assert Admin.remove_staff(staff.email) == :ok
+      otp = Fixtures.Admin.totp_code(staff)
+
+      assert sign_in(token_id, nonce, code, otp) == {:error, :invalid}
+    end
+
+    test "an id that names no code is refused", %{code: code, nonce: nonce, staff: staff} do
+      otp = Fixtures.Admin.totp_code(staff)
+
+      assert sign_in(Ecto.UUID.generate(), nonce, code, otp) == {:error, :invalid}
+      assert sign_in("not-an-id", nonce, code, otp) == {:error, :invalid}
+    end
+  end
+
+  describe "fetch_staff_session/1" do
+    test "finds a live session with its staff" do
+      staff = Fixtures.Admin.create_staff()
+      {raw, session} = Fixtures.Admin.create_staff_session(staff)
+
+      assert {:ok, found} = Admin.fetch_staff_session(raw)
+      assert found.id == session.id
+      assert found.staff.id == staff.id
+    end
+
+    test "an expired session is not found" do
+      expired = DateTime.add(DateTime.utc_now(), -1)
+
+      {raw, _session} =
+        Fixtures.Admin.create_staff_session(Fixtures.Admin.create_staff(), expires_at: expired)
+
+      assert Admin.fetch_staff_session(raw) == {:error, :not_found}
+    end
+
+    test "a value that is no session token is not found" do
+      assert Admin.fetch_staff_session(Crypto.random_secret()) == {:error, :not_found}
+    end
+  end
+
+  describe "refresh_staff_session/1" do
+    test "re-reads a held session" do
+      {_raw, session} = Fixtures.Admin.create_staff_session(Fixtures.Admin.create_staff())
+
+      assert {:ok, fresh} = Admin.refresh_staff_session(session)
+      assert fresh.id == session.id
+    end
+
+    test "a held session that was signed out since is not found" do
+      {raw, session} = Fixtures.Admin.create_staff_session(Fixtures.Admin.create_staff())
+      assert Admin.delete_staff_session(raw) == :ok
+
+      assert Admin.refresh_staff_session(session) == {:error, :not_found}
+    end
+
+    test "anything that is not a stored session is not found" do
+      assert Admin.refresh_staff_session(%Admin.StaffToken{id: "nope", context: :session}) ==
+               {:error, :not_found}
+
+      assert Admin.refresh_staff_session(nil) == {:error, :not_found}
+    end
+  end
+
+  describe "delete_staff_session/1" do
+    test "signs out that session and leaves the login's others" do
+      staff = Fixtures.Admin.create_staff()
+      {raw, _session} = Fixtures.Admin.create_staff_session(staff)
+      {other_raw, _other} = Fixtures.Admin.create_staff_session(staff)
+
+      assert Admin.delete_staff_session(raw) == :ok
+
+      assert Admin.fetch_staff_session(raw) == {:error, :not_found}
+      assert {:ok, _session} = Admin.fetch_staff_session(other_raw)
+      assert Admin.delete_staff_session(raw) == :ok
+    end
+  end
+
+  describe "staff_session_socket_topic/1" do
+    test "names the session by its stored digest" do
+      {raw, session} = Fixtures.Admin.create_staff_session(Fixtures.Admin.create_staff())
+
+      assert Admin.staff_session_socket_topic(raw) ==
+               "staff_sessions:" <> Crypto.encode_digest(session.token)
+    end
+  end
+
+  # These reads are DELIBERATELY cross-account — staff see the whole platform —
+  # so §7's cross-account isolation path does not apply here. The denial path is
+  # the whole security surface: a live staff session row is the only thing
+  # between a caller and every tenant's rows.
+  describe "search_accounts/2" do
+    setup do
+      %{staff_session: live_staff_session()}
+    end
+
+    test "matches an account by slug", %{staff_session: staff_session} do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_account()
 
-      assert {:ok, [found]} = Admin.search_accounts(account.slug, staff_user)
+      assert {:ok, [found]} = Admin.search_accounts(account.slug, staff_session)
       assert found.id == account.id
     end
 
-    test "matches an account by member email", %{staff_user: staff_user} do
+    test "matches an account by member email", %{staff_session: staff_session} do
       account = Fixtures.Accounts.create_account()
       member = Fixtures.Users.create_user()
       Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
 
-      assert {:ok, [found]} = Admin.search_accounts(member.email, staff_user)
+      assert {:ok, [found]} = Admin.search_accounts(member.email, staff_session)
       assert found.id == account.id
     end
 
     test "uses the workspace contact and never follows a private personal address", %{
-      staff_user: staff_user
+      staff_session: staff_session
     } do
       member = Fixtures.Memberships.create_membership(email: "work-search@example.test")
       user = Emisar.Repo.get!(Emisar.Users.User, member.user_id)
       user |> Ecto.Changeset.change(email: "private-search@example.test") |> Emisar.Repo.update!()
-      assert {:ok, [found]} = Admin.search_accounts("work-search@example.test", staff_user)
+      assert {:ok, [found]} = Admin.search_accounts("work-search@example.test", staff_session)
       assert found.id == member.account_id
-      assert {:ok, []} = Admin.search_accounts("private-search@example.test", staff_user)
+      assert {:ok, []} = Admin.search_accounts("private-search@example.test", staff_session)
     end
 
-    test "matches a typed LIKE wildcard literally", %{staff_user: staff_user} do
+    test "matches a typed LIKE wildcard literally", %{staff_session: staff_session} do
       account = Fixtures.Accounts.create_account(name: "Acme_One")
       Fixtures.Accounts.create_account(name: "AcmeXOne")
 
       # Unescaped, `_` matches any character and a bare `%` matches every row —
       # a support operator would act on the wrong tenant.
-      assert {:ok, [found]} = Admin.search_accounts("Acme_One", staff_user)
+      assert {:ok, [found]} = Admin.search_accounts("Acme_One", staff_session)
       assert found.id == account.id
 
-      assert Admin.search_accounts("%", staff_user) == {:ok, []}
+      assert Admin.search_accounts("%", staff_session) == {:ok, []}
     end
 
-    test "a blank query lists the most recently created accounts", %{staff_user: staff_user} do
+    test "a blank query lists the most recently created accounts", %{staff_session: staff_session} do
       account_one = Fixtures.Accounts.create_account()
       account_two = Fixtures.Accounts.create_account()
 
-      assert {:ok, accounts} = Admin.search_accounts("   ", staff_user)
+      assert {:ok, accounts} = Admin.search_accounts("   ", staff_session)
       assert Enum.map(accounts, & &1.id) == [account_two.id, account_one.id]
     end
 
-    test "finds a disabled account", %{staff_user: staff_user} do
+    test "finds a disabled account", %{staff_session: staff_session} do
       account = Fixtures.Accounts.create_account() |> Fixtures.Accounts.disable_account()
 
-      assert {:ok, [found]} = Admin.search_accounts(account.slug, staff_user)
+      assert {:ok, [found]} = Admin.search_accounts(account.slug, staff_session)
       assert found.id == account.id
       assert found.disabled_at == account.disabled_at
     end
 
-    test "denies a caller who is not staff" do
+    test "denies an expired session" do
       account = Fixtures.Accounts.create_account()
-      member = Fixtures.Users.create_user()
+      expired = DateTime.add(DateTime.utc_now(), -1, :second)
 
-      assert Admin.search_accounts(account.slug, member) == {:error, :unauthorized}
+      {_raw, session} =
+        Fixtures.Admin.create_staff_session(Fixtures.Admin.create_staff(), expires_at: expired)
+
+      assert Admin.search_accounts(account.slug, session) == {:error, :unauthorized}
     end
 
-    test "denies a stale struct whose staff flag has since been revoked" do
+    test "denies a held session after its staff login was reset" do
       account = Fixtures.Accounts.create_account()
-      stale_staff_user = Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()
-      Fixtures.Users.revoke_user_staff(stale_staff_user)
+      staff = Fixtures.Admin.create_staff()
+      {_raw, session} = Fixtures.Admin.create_staff_session(staff)
+      assert {:ok, _staff, _secret} = Admin.reset_staff(staff.email)
 
       # A connected staff LiveView holds exactly this struct — its mount-time
-      # snapshot — for the life of the socket, so the flag it carries outlives
-      # the revocation. The three staff reads share one gate, which reads the
-      # row instead of believing the argument.
-      assert stale_staff_user.is_admin
-      assert Admin.search_accounts(account.slug, stale_staff_user) == {:error, :unauthorized}
+      # snapshot — for the life of the socket. The three staff reads share one
+      # gate, which reads the row instead of believing the argument.
+      assert Admin.search_accounts(account.slug, session) == {:error, :unauthorized}
+    end
+
+    test "denies a session struct that was never stored" do
+      account = Fixtures.Accounts.create_account()
+      forged = %Admin.StaffToken{id: Ecto.UUID.generate(), context: :session}
+
+      assert Admin.search_accounts(account.slug, forged) == {:error, :unauthorized}
     end
   end
 
   describe "account_overview/2" do
     setup do
-      %{staff_user: Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()}
+      %{staff_session: live_staff_session()}
     end
 
-    test "each section carries the account's own rows", %{staff_user: staff_user} do
+    test "each section carries the account's own rows", %{staff_session: staff_session} do
       account = Fixtures.Accounts.create_account(plan: "team")
       owner = Fixtures.Users.create_user()
 
@@ -151,7 +581,7 @@ defmodule Emisar.AdminTest do
       Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.id)
       {:ok, event} = Audit.log(account.id, "policy.updated", actor_kind: "user")
 
-      assert {:ok, overview} = Admin.account_overview(account.slug, staff_user)
+      assert {:ok, overview} = Admin.account_overview(account.slug, staff_session)
 
       assert overview.account.id == account.id
       assert overview.billing.plan == "team"
@@ -175,7 +605,7 @@ defmodule Emisar.AdminTest do
     end
 
     test "the roster keeps suspended members and unaccepted invitations", %{
-      staff_user: staff_user
+      staff_session: staff_session
     } do
       account = Fixtures.Accounts.create_account()
 
@@ -186,7 +616,7 @@ defmodule Emisar.AdminTest do
       invited_membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      assert {:ok, overview} = Admin.account_overview(account.slug, staff_user)
+      assert {:ok, overview} = Admin.account_overview(account.slug, staff_session)
 
       assert Enum.map(overview.members, & &1.id) ==
                [suspended_membership.id, invited_membership.id]
@@ -194,10 +624,10 @@ defmodule Emisar.AdminTest do
       assert Enum.map(overview.members, &is_nil(&1.invitation_accepted_at)) == [true, true]
     end
 
-    test "an account with nothing in it returns empty sections", %{staff_user: staff_user} do
+    test "an account with nothing in it returns empty sections", %{staff_session: staff_session} do
       account = Fixtures.Accounts.create_account()
 
-      assert {:ok, overview} = Admin.account_overview(account.id, staff_user)
+      assert {:ok, overview} = Admin.account_overview(account.id, staff_session)
 
       assert overview.billing ==
                %{
@@ -223,29 +653,30 @@ defmodule Emisar.AdminTest do
       assert overview.audit_tail == []
     end
 
-    test "an unknown reference is not found", %{staff_user: staff_user} do
-      assert Admin.account_overview("no-such-account", staff_user) == {:error, :not_found}
+    test "an unknown reference is not found", %{staff_session: staff_session} do
+      assert Admin.account_overview("no-such-account", staff_session) == {:error, :not_found}
     end
 
-    test "denies a caller who is not staff" do
+    test "denies a session that was signed out" do
       account = Fixtures.Accounts.create_account()
-      member = Fixtures.Users.create_user()
+      {raw, session} = Fixtures.Admin.create_staff_session(Fixtures.Admin.create_staff())
+      assert Admin.delete_staff_session(raw) == :ok
 
-      assert Admin.account_overview(account.slug, member) == {:error, :unauthorized}
+      assert Admin.account_overview(account.slug, session) == {:error, :unauthorized}
     end
   end
 
   describe "record_account_view/2" do
     setup do
-      %{staff_user: Fixtures.Users.create_user() |> Fixtures.Users.mark_user_as_staff()}
+      %{staff_session: live_staff_session()}
     end
 
     test "records the view against the account, labelled by team not person", %{
-      staff_user: staff_user
+      staff_session: staff_session
     } do
       account = Fixtures.Accounts.create_account()
 
-      assert {:ok, event} = Admin.record_account_view(account, staff_user)
+      assert {:ok, event} = Admin.record_account_view(account, staff_session)
 
       assert event.account_id == account.id
       assert event.event_type == "staff.account_viewed"
@@ -264,13 +695,13 @@ defmodule Emisar.AdminTest do
     end
 
     test "the account's own owner reads it back from their audit trail", %{
-      staff_user: staff_user
+      staff_session: staff_session
     } do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       subject = Fixtures.Subjects.membership_subject(membership)
 
-      assert {:ok, event} = Admin.record_account_view(account, staff_user)
+      assert {:ok, event} = Admin.record_account_view(account, staff_session)
 
       assert {:ok, [read_back], _metadata} =
                Audit.list_events(subject, filter: [event_type: ["staff.account_viewed"]])
@@ -279,11 +710,13 @@ defmodule Emisar.AdminTest do
       assert read_back.actor_label == "Emisar staff"
     end
 
-    test "denies a caller who is not staff" do
+    test "denies a session whose staff login was removed, and records nothing" do
       account = Fixtures.Accounts.create_account()
-      member = Fixtures.Users.create_user()
+      staff = Fixtures.Admin.create_staff()
+      {_raw, session} = Fixtures.Admin.create_staff_session(staff)
+      assert Admin.remove_staff(staff.email) == :ok
 
-      assert Admin.record_account_view(account, member) == {:error, :unauthorized}
+      assert Admin.record_account_view(account, session) == {:error, :unauthorized}
       refute Repo.one(Audit.Event)
     end
   end
@@ -789,5 +1222,33 @@ defmodule Emisar.AdminTest do
     run
     |> Ecto.Changeset.change(attrs)
     |> Repo.update!()
+  end
+
+  defp live_staff_session do
+    {_raw, session} = Fixtures.Admin.create_staff_session(Fixtures.Admin.create_staff())
+    session
+  end
+
+  # The code only leaves Admin by email, so a sign-in test reads it back out of
+  # the delivered message, exactly as staff do.
+  defp request_code(staff) do
+    assert {:ok, %{token_id: token_id, nonce: nonce}} =
+             Admin.request_staff_sign_in(staff.email, %RequestContext{})
+
+    assert_received {:email, sent}
+    {token_id, nonce, Fixtures.Auth.code_from_email(sent)}
+  end
+
+  defp sign_in(token_id, nonce, code, otp),
+    do: Admin.complete_staff_sign_in(token_id, nonce, code, otp, %RequestContext{})
+
+  defp other_code("ZZZZZZ"), do: "YYYYYY"
+  defp other_code(_code), do: "ZZZZZZ"
+
+  defp wrong_otp(staff) do
+    case Fixtures.Admin.totp_code(staff) do
+      "000000" -> "111111"
+      _current -> "000000"
+    end
   end
 end
