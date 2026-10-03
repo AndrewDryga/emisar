@@ -11,8 +11,8 @@ defmodule Emisar.Repo.Migrations.GiveMembersTheirEmailAndFactor do
   """
 
   # A Member becomes the only person record: it gains one address, the proof of
-  # that address, its own MFA factor and the staff flag. The personal login
-  # (`users`) is only read here; later migrations re-key sessions and drop it.
+  # that address and its own MFA factor. The personal login (`users`) is only
+  # read here; later migrations re-key sessions and drop it.
   def up do
     alter table(:account_memberships) do
       add :email_verified_at, :utc_datetime_usec
@@ -20,7 +20,6 @@ defmodule Emisar.Repo.Migrations.GiveMembersTheirEmailAndFactor do
       add :mfa_enabled_at, :utc_datetime_usec
       add :mfa_last_used_at, :utc_datetime_usec
       add :mfa_recovery_codes, {:array, :binary}, null: false, default: []
-      add :staff, :boolean, null: false, default: false
     end
 
     rename table(:account_memberships), :contact_email, to: :email
@@ -73,23 +72,6 @@ defmodule Emisar.Repo.Migrations.GiveMembersTheirEmailAndFactor do
       ) = 1
     """
 
-    # The staff workspace is deployment configuration (`:staff_account_slug`),
-    # read when this migration runs: the dev seed's workspace by default, the
-    # production one from EMISAR_STAFF_ACCOUNT_SLUG.
-    execute fn ->
-      repo().query!(
-        """
-        UPDATE account_memberships m
-        SET staff = true
-        FROM users u, accounts a
-        WHERE u.id = m.user_id AND u.deleted_at IS NULL AND u.is_admin
-          AND a.id = m.account_id AND a.deleted_at IS NULL AND a.slug = $1
-          AND m.deleted_at IS NULL
-        """,
-        [Application.fetch_env!(:emisar, :staff_account_slug)]
-      )
-    end
-
     create unique_index(:account_memberships, [:account_id, :email],
              where: "deleted_at IS NULL AND email IS NOT NULL"
            )
@@ -119,7 +101,6 @@ defmodule Emisar.Repo.Migrations.GiveMembersTheirEmailAndFactor do
       remove :mfa_enabled_at
       remove :mfa_last_used_at
       remove :mfa_recovery_codes
-      remove :staff
     end
   end
 end

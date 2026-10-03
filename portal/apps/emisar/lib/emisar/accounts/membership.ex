@@ -43,7 +43,6 @@ defmodule Emisar.Accounts.Membership do
     field :mfa_enabled_at, :utc_datetime_usec
     field :mfa_last_used_at, :utc_datetime_usec
     field :mfa_recovery_codes, {:array, :binary}, default: [], redact: true
-    field :staff, :boolean, default: false
     field :invitation_token_digest, :string, redact: true
     field :invitation_accepted_at, :utc_datetime_usec
     field :last_active_at, :utc_datetime_usec

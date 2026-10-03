@@ -53,7 +53,6 @@ import Config
 #                            empty pins the bundled snapshot
 #   EMISAR_SSO_ALLOWED_IDP_HOSTS — extra IdP hosts the SSRF guard permits
 #   EMISAR_DISABLE_BILLING — "1" to run without Paddle (CI smoke, self-host)
-#   EMISAR_STAFF_ACCOUNT_SLUG — slug of the staff workspace (default "emisar")
 #   EMISAR_DEV_ROUTES      — build-time; exposes dev-only routes. Never prod.
 #   X_ADS_CONVERSIONS_JSON — enables server-side X signup conversion reporting;
 #                            JSON with consumer_key, consumer_secret, access_token,
@@ -197,8 +196,6 @@ if config_env() == :prod do
   public_url = [host: host, port: url_port, scheme: url_scheme]
 
   config :emisar, :public_url, public_url
-
-  config :emisar, :staff_account_slug, env.("EMISAR_STAFF_ACCOUNT_SLUG") || "emisar"
 
   endpoint_opts = [
     url: public_url,
