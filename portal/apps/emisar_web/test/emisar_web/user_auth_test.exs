@@ -1,210 +1,200 @@
 defmodule EmisarWeb.UserAuthTest do
+  @moduledoc """
+  `EmisarWeb.UserAuth`'s own contracts: the cookie's `"sessions"` entries, the
+  login captures, the slugless helpers and the bundle hook. The multi-workspace
+  cookie behaviour end to end is `EmisarWeb.WorkspaceSessionsTest`.
+  """
   use EmisarWeb.ConnCase, async: true
+  alias Emisar.Auth
   alias EmisarWeb.UserAuth
 
-  # Session provenance for an unauthenticated request — the miss/anonymous
-  # default the Subject build reads from. Mirrors `UserAuth`'s private @no_auth.
-  @no_auth %{
-    auth_method: nil,
-    mfa_verified_at: nil,
-    mfa_enrollment_verified_at: nil,
-    user_identity_id: nil
-  }
-
-  setup %{conn: conn} do
-    # secret_key_base is needed to sign the remember-me cookie; a bare test
-    # conn doesn't carry it until it's been through the endpoint.
-    conn =
-      conn
-      |> Plug.Test.init_test_session(%{})
-      |> Map.put(:secret_key_base, EmisarWeb.Endpoint.config(:secret_key_base))
-
-    %{conn: conn}
+  # A conn that went through the `:browser` pipeline: session, flash and the
+  # request facts a login capture reads.
+  defp browser_conn(conn) do
+    conn
+    |> Map.replace!(:secret_key_base, EmisarWeb.Endpoint.config(:secret_key_base))
+    |> bypass_through(EmisarWeb.Router, [:browser])
+    |> get("/")
   end
 
-  describe "on_mount :mount_current_user" do
-    test "with no token, assigns a nil user + @no_auth provenance and never halts" do
-      # the bundle hook is NOT a
-      # gate: a signed-out mount continues with `current_user: nil` and the
-      # anonymous `@no_auth` provenance, so a public/signed-out LiveView mounts
-      # cleanly (the actual gating is :ensure_authenticated, AUTH-021).
-      socket = %Phoenix.LiveView.Socket{}
+  describe "session_entries/1" do
+    test "keeps well-formed entries only, the newest per workspace, at most six" do
+      # Seven workspaces: the oldest one (b) no longer fits.
+      [a, b | rest] = for _ <- 1..7, do: Ecto.UUID.generate()
 
-      assert {:cont, socket} = UserAuth.on_mount(:mount_current_user, %{}, %{}, socket)
-      assert socket.assigns.current_user == nil
-      assert socket.assigns.current_auth == @no_auth
+      session = %{
+        "sessions" =>
+          [
+            {a, "a-old"},
+            {"not-a-uuid", "token"},
+            {b, nil},
+            :junk,
+            {b, "b"},
+            {a, "a-new"}
+          ] ++ Enum.map(rest, &{&1, "t-#{&1}"})
+      }
+
+      entries = UserAuth.session_entries(session)
+
+      assert length(entries) == 6
+      assert List.keyfind(entries, a, 0) == {a, "a-new"}
+      refute List.keyfind(entries, b, 0)
+      assert Enum.map(entries, &elem(&1, 0)) == [a | rest]
     end
 
-    test "with an undecodable/forged token, treats it as a miss — nil user, no raise" do
-      # a stale or tampered `user_token` resolves to no live
-      # session (the `with` falls to its else clause); the hook swallows it into the
-      # same anonymous default rather than crashing the mount.
-      socket = %Phoenix.LiveView.Socket{}
+    test "anything but a list is no entries" do
+      for value <- [nil, "string", %{}, {Ecto.UUID.generate(), "t"}] do
+        assert UserAuth.session_entries(%{"sessions" => value}) == []
+      end
+    end
+  end
 
-      assert {:cont, socket} =
-               UserAuth.on_mount(
-                 :mount_current_user,
-                 %{},
-                 %{"user_token" => "!!!not-a-real-token!!!"},
-                 socket
-               )
+  describe "the :browser pipeline" do
+    test "assigns signed_in? from the cookie's entries alone", %{conn: conn} do
+      refute get(conn, ~p"/").assigns.signed_in?
 
-      assert socket.assigns.current_user == nil
-      assert socket.assigns.current_auth == @no_auth
+      {conn, _owner, _account} = register_and_log_in(conn)
+      assert get(conn, ~p"/").assigns.signed_in?
+
+      # Even a dead entry says "signed in" to marketing pages; the pages that act
+      # on a session resolve it.
+      dead =
+        init_test_session(build_conn(), %{sessions: [{Ecto.UUID.generate(), "dead-token"}]})
+
+      assert get(dead, ~p"/").assigns.signed_in?
     end
   end
 
   describe "on_mount :assign_app_bundle" do
-    test "is a pure bundle flag — always {:cont} with app_js? true, no auth dependence" do
-      # the hook that flags "this render needs the full app.js"
-      # is NOT a gate and reads no session/user: a signed-out mount (empty session)
-      # gets the exact same `{:cont}` + `app_js?: true` as a signed-in one. Every
-      # LiveView render carries the flag up to root.html.heex; only controller-
-      # rendered marketing pages (which never run this hook) get the lean bundle.
+    test "is a pure bundle flag — always {:cont} with app_js? true, no session dependence" do
       socket = %Phoenix.LiveView.Socket{}
 
       assert {:cont, signed_out} = UserAuth.on_mount(:assign_app_bundle, %{}, %{}, socket)
       assert signed_out.assigns.app_js? == true
 
       assert {:cont, with_session} =
-               UserAuth.on_mount(:assign_app_bundle, %{}, %{"user_token" => "anything"}, socket)
+               UserAuth.on_mount(
+                 :assign_app_bundle,
+                 %{},
+                 %{"sessions" => [{Ecto.UUID.generate(), "anything"}]},
+                 socket
+               )
 
       assert with_session.assigns.app_js? == true
     end
-  end
 
-  describe "on_mount :assign_app_bundle drives the root-layout JS bundle" do
-    test "a LiveView page loads the full app.js bundle (LiveSocket + hooks)", %{conn: conn} do
-      # `:assign_app_bundle` (attached to every LiveView via
-      # EmisarWeb.live_view/0) sets `@app_js?`, which the root layout reads to load the
-      # full `/assets/app.js`. The dead render of an authed LV route carries that
-      # script tag — the LiveSocket + hooks the interactive page needs.
-      {conn, _user, account} = register_and_log_in(conn)
+    test "a workspace LiveView loads the full app.js; a marketing page only marketing.js", %{
+      conn: conn
+    } do
+      {conn, _owner, account} = register_and_log_in(conn)
 
       html = conn |> get(~p"/app/#{account}") |> html_response(200)
-
       assert html =~ ~s|src="/assets/app.js"|
       refute html =~ ~s|src="/assets/marketing.js"|
-    end
 
-    test "a controller-rendered marketing page loads only the lean marketing.js", %{conn: conn} do
-      # a marketing page is a plain controller render that never
-      # runs the LiveView on_mount, so `@app_js?` is absent and the root layout falls
-      # to the lean `/assets/marketing.js` — no LiveSocket weight on a static page.
-      html = conn |> get(~p"/") |> html_response(200)
-
+      html = build_conn() |> get(~p"/") |> html_response(200)
       assert html =~ ~s|src="/assets/marketing.js"|
       refute html =~ ~s|src="/assets/app.js"|
     end
   end
 
-  describe "redirect_if_user_is_authenticated guards the whole signed-out auth surface" do
-    setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
-    end
-
-    test "an already-signed-in visitor is bounced off EVERY guarded auth page to /app", %{
-      conn: conn,
-      account: account
-    } do
-      # the gate guards the full signed-out
-      # auth surface, not just /sign_in: sign_up, the magic-link step, and the
-      # branded per-account page all live under :redirect_if_user_is_authenticated,
-      # so a signed-in user GETting any of them is redirected to the app before the
-      # LiveView mounts.
-      for path <- [
-            ~p"/sign_up",
-            ~p"/sign_in",
-            ~p"/sign_in/magic",
-            ~p"/app/#{account}/sign_in"
-          ] do
-        assert redirected_to(get(conn, path)) == ~p"/app"
-      end
-    end
-
-    test "the auth POST endpoints bounce a signed-in visitor too", %{conn: conn, user: user} do
-      # (POST half) — the magic-link start POST is in the same
-      # guarded scope, so a signed-in user can't re-drive a sign-in request; the
-      # gate halts before the controller runs.
-      conn = post(conn, ~p"/sign_in/magic/start", user: %{"email" => user.email})
-
-      assert redirected_to(conn) == ~p"/app"
-    end
-  end
-
-  describe "sign-in form CSRF posture" do
-    test "the sign-in form carries a CSRF token for its POST to the magic-link start",
-         %{conn: conn} do
-      # the email form posts over the CSRF-protected
-      # :browser pipeline (`protect_from_forgery`). Because it renders with an
-      # `action`+`method=post`, `<.form>` emits the hidden `_csrf_token` input, so
-      # a legitimate browser submit is accepted and a forged cross-site one isn't.
-      {:ok, _lv, html} = live(conn, ~p"/sign_in")
-
-      assert html =~ "_csrf_token"
-      assert html =~ ~s|action="/sign_in/magic/start"|
-    end
-  end
-
-  describe "require_authenticated_user return_to" do
-    test "a signed-out GET stores return_to but a signed-out POST does not", %{conn: _conn} do
-      # the plug remembers where to send the user back ONLY
-      # for a GET (a navigable destination). A POST to a protected path while
-      # signed-out still redirects to /sign_in, but stores no `:user_return_to` —
-      # re-running the POST blindly after login would be wrong, so there's nothing
-      # to return to.
-      get_conn = build_conn() |> Plug.Test.init_test_session(%{}) |> get(~p"/app")
+  describe "the stored return path" do
+    test "a signed-out GET stores where to return; a POST does not", %{conn: _conn} do
+      get_conn = build_conn() |> init_test_session(%{}) |> get(~p"/app")
       assert redirected_to(get_conn) == ~p"/sign_in"
       assert get_session(get_conn, :user_return_to) == ~p"/app"
 
-      post_conn =
-        build_conn()
-        |> Plug.Test.init_test_session(%{})
-        |> post(~p"/app/accounts/switch", account_id: Ecto.UUID.generate())
-
+      post_conn = build_conn() |> init_test_session(%{}) |> post(~p"/app/billing/start", %{})
       assert redirected_to(post_conn) == ~p"/sign_in"
       refute get_session(post_conn, :user_return_to)
     end
   end
 
-  describe "log_in_sso_user_for_account/4" do
-    test "membership loss after callback returns a controlled denial instead of raising", %{
+  describe "log_in_magic_link_member/4" do
+    test "installs this workspace's entry and writes no auth cookie of its own", %{conn: conn} do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(owner)
+
+      conn =
+        conn
+        |> browser_conn()
+        |> UserAuth.log_in_magic_link_member(%{owner | account: account}, token, false)
+
+      assert redirected_to(conn) == ~p"/app/#{account}"
+      assert get_session(conn, :sessions) == [{account.id, token}]
+      # Sign-in is passwordless/SSO — no "keep me signed in" cookie; besides the
+      # session itself, the only cookie is the signed list of recent workspaces.
+      assert Map.keys(conn.resp_cookies) -- ["_emisar_web_key", "emisar_recent_accounts"] == []
+      assert Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
+    end
+  end
+
+  describe "log_in_sso_member/3" do
+    test "a Member removed after the callback gets a controlled denial and no session", %{
       conn: conn
     } do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
-      %{user: user, membership: member, identity: identity} =
-        Fixtures.SSO.create_directory_member(provider)
-
+      %{membership: member, identity: identity} = Fixtures.SSO.create_directory_member(provider)
       assert {:ok, _removed} = Emisar.Accounts.delete_membership(member, subject)
 
       assert {:error, :membership_unavailable} =
-               UserAuth.log_in_sso_user_for_account(conn, user, account.id,
-                 user_identity_id: identity.id,
-                 provider_identifier: identity.provider_identifier
+               UserAuth.log_in_sso_member(
+                 browser_conn(conn),
+                 %{membership: member, identity: identity, provider: provider},
+                 account
                )
 
-      assert Emisar.Auth.UserToken.Query.by_user_id(user.id)
+      assert Emisar.Auth.UserToken.Query.by_membership(account.id, member.id)
              |> Emisar.Repo.aggregate(:count) == 0
     end
   end
 
-  describe "log_in_magic_link_user/4" do
-    test "persists the session token + its live-socket topic, writes no other cookie", %{
-      conn: conn
-    } do
-      user = Fixtures.Users.create_user()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+  describe "subject_for_account/2" do
+    test "acts only through this browser's live session for an active workspace", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      {_other_owner, other, _other_subject} = Fixtures.Subjects.owner_subject()
+      conn = browser_conn(conn)
 
-      conn = UserAuth.log_in_magic_link_user(conn, user, token, false)
+      assert {:ok, subject} = UserAuth.subject_for_account(conn, account.slug)
+      assert subject.membership_id == owner.id
+      assert {:ok, _by_id} = UserAuth.subject_for_account(conn, account.id)
 
-      assert Plug.Conn.get_session(conn, :user_token)
-      assert Plug.Conn.get_session(conn, :live_socket_id)
-      # Sign-in is passwordless/SSO — there is no "keep me signed in" control, so
-      # only the session cookie ever carries auth; the install writes no other.
-      assert conn.resp_cookies == %{}
+      # No entry here, an unknown ref and a malformed one look the same.
+      assert UserAuth.subject_for_account(conn, other.id) == {:error, :not_found}
+      assert UserAuth.subject_for_account(conn, "no-such-workspace") == {:error, :not_found}
+      assert UserAuth.subject_for_account(conn, nil) == {:error, :not_found}
+
+      Fixtures.Accounts.disable_account(account)
+      assert UserAuth.subject_for_account(conn, account.id) == {:error, :not_found}
+    end
+
+    test "a token presented under another workspace is refused", %{conn: conn} do
+      {owner, _account, _subject} = Fixtures.Subjects.owner_subject()
+      {_other_owner, other, _other_subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(owner)
+
+      conn =
+        conn
+        |> init_test_session(%{sessions: [{other.id, token}]})
+        |> browser_conn()
+
+      assert UserAuth.subject_for_account(conn, other.id) == {:error, :not_found}
+    end
+  end
+
+  describe "signed_in_accounts/1" do
+    test "lists the live entries' workspaces by name and skips dead ones", %{conn: conn} do
+      {conn, _owner_z, zulu} = register_and_log_in(conn, %{account: %{name: "Zulu Ops"}})
+      {conn, _owner_a, alpha} = register_and_log_in(conn, %{account: %{name: "alpha Ops"}})
+      {conn, _owner_d, dead} = register_and_log_in(conn, %{account: %{name: "Dead Ops"}})
+      Fixtures.Auth.delete_session_token!(session_token(conn, dead))
+
+      session = %{"sessions" => get_session(conn, :sessions)}
+
+      assert UserAuth.signed_in_accounts(session) |> Enum.map(& &1.id) == [alpha.id, zulu.id]
+      assert {:ok, _live} = Auth.fetch_session_by_token(session_token(conn, zulu), zulu.id)
     end
   end
 end

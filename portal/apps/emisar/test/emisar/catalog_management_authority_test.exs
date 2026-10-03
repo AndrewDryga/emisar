@@ -15,7 +15,7 @@ defmodule Emisar.CatalogManagementAuthorityTest do
   setup do
     account = Fixtures.Accounts.create_account()
     membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-    admin = Fixtures.Subjects.membership_subject(membership)
+    admin = Fixtures.Subjects.subject_for(membership)
     runner = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
     %{account: account, membership: membership, admin: admin, runner: runner}
   end
@@ -115,27 +115,20 @@ defmodule Emisar.CatalogManagementAuthorityTest do
       end
     end
 
-    test "deleted users and a replacement membership cannot reuse a former manager subject",
+    test "a replacement Member at the same address cannot reuse a removed manager's subject",
          %{account: account, membership: membership, admin: admin, runner: runner} do
       versions = Enum.map(@operations, &{&1, version_for(&1, account, runner)})
-      membership |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
+      Fixtures.Memberships.mark_membership_as_deleted(membership)
 
-      replacement =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.actor.id,
-          role: "admin"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        email: membership.email,
+        role: "admin"
+      )
 
       for {operation, version} <- versions do
         assert apply(Catalog, operation, [version.id, admin]) == {:error, :unauthorized}
-      end
-
-      current = Fixtures.Subjects.membership_subject(replacement)
-      Fixtures.Users.mark_user_as_deleted(admin.actor)
-
-      for {operation, version} <- versions do
-        assert apply(Catalog, operation, [version.id, current]) == {:error, :unauthorized}
+        assert Repo.reload!(version) == version
       end
     end
 
@@ -250,7 +243,7 @@ defmodule Emisar.CatalogManagementAuthorityTest do
                  String.contains?(query, "LEFT OUTER JOIN")
              end) == 1
 
-      assert Enum.count(queries, &String.contains?(&1, "auth_member_grant_routes")) == 1
+      assert Enum.count(queries, &String.contains?(&1, "auth_user_tokens")) == 1
       assert Enum.count(queries, &String.contains?(&1, "catalog_runner_actions")) == 1
       assert length(queries) == 6
     end

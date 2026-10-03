@@ -16,7 +16,7 @@ defmodule Emisar.ApiKeys do
   """
   use Supervisor
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, RequestContext, Users}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, RequestContext}
   alias Emisar.ApiKeys.{ApiKey, Authorizer, DeviceGrant}
   alias Emisar.Auth.Subject
   require Logger
@@ -767,7 +767,7 @@ defmodule Emisar.ApiKeys do
   # locked, so a concurrent suspension, removal, or demotion either lands first
   # and refuses this request or lands second and revokes what this request made.
   defp put_current_subject(multi, %Subject{actor: actor} = subject)
-       when is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership) do
+       when is_struct(actor, Accounts.Membership) do
     Multi.run(multi, :current_subject, fn repo, %{active_account: account} ->
       with {:ok, membership} <-
              Accounts.fetch_and_lock_membership(
@@ -942,7 +942,7 @@ defmodule Emisar.ApiKeys do
          %Subject{membership_id: membership_id, actor: actor}
        )
        when is_binary(membership_id) and
-              (is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership)),
+              is_struct(actor, Accounts.Membership),
        do: permissions_for_kind(key.kind)
 
   defp manage_key_permissions(%ApiKey{}, %Subject{}),
@@ -1264,7 +1264,7 @@ defmodule Emisar.ApiKeys do
          %Subject{membership_id: membership_id, actor: actor}
        )
        when is_binary(membership_id) and
-              (is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership)),
+              is_struct(actor, Accounts.Membership),
        do: permissions_for_kind(:mcp)
 
   defp revoke_member_keys_permissions(_membership_id, %Subject{}),

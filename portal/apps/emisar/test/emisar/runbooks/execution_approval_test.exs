@@ -19,7 +19,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
   end
 
   setup do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     approver = approver_subject(account)
     runner = trusted_runner(account, subject)
     Runners.subscribe_runner_transport(runner)
@@ -298,7 +298,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     runbook = published_runbook(subject, required_definition(first.group))
 
     {:ok, one_runner} = RunnerAccess.restricted([], [first.id])
-    approver_membership = Fixtures.Memberships.fetch_membership(account.id, approver.actor.id)
+    approver_membership = Repo.reload!(approver.actor)
     _membership = Fixtures.Memberships.force_runner_access(approver_membership, one_runner)
 
     assert {:ok, _result} = Runbooks.dispatch_runbook(runbook, "scope approval", subject)
@@ -323,7 +323,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
     runbook = published_runbook(subject, required_definition(runner.group))
     assert {:ok, _result} = Runbooks.dispatch_runbook(runbook, "tenant boundary", subject)
 
-    {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+    {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
     assert {:ok, [], _metadata} =
              Approvals.list_pending_approval_requests(other_subject)
@@ -407,7 +407,7 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
              Approvals.list_pending_approval_requests(approver)
 
     membership =
-      Fixtures.Memberships.fetch_membership(subject.account.id, subject.actor.id)
+      Repo.reload!(subject.actor)
 
     _suspended = Fixtures.Memberships.suspend_membership(membership)
 
@@ -468,16 +468,9 @@ defmodule Emisar.Runbooks.ExecutionApprovalTest do
   end
 
   defp approver_subject(account) do
-    user = Fixtures.Users.create_user()
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "admin"
-      )
-
-    Fixtures.Subjects.membership_subject(membership)
+    Fixtures.Subjects.subject_for(membership)
   end
 
   test "a failed approval preflight records one receipt despite the locked cleanup recheck",

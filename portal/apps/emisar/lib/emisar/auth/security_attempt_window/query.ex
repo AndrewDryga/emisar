@@ -4,8 +4,8 @@ defmodule Emisar.Auth.SecurityAttemptWindow.Query do
 
   def all, do: from(windows in SecurityAttemptWindow, as: :windows)
 
-  def by_user_and_scope(queryable \\ all(), user_id, scope) do
-    where(queryable, [windows: w], w.user_id == ^user_id and w.scope == ^scope)
+  def by_membership_and_scope(queryable \\ all(), membership_id, scope) do
+    where(queryable, [windows: w], w.membership_id == ^membership_id and w.scope == ^scope)
   end
 
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")

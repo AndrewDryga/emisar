@@ -11,7 +11,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     runbook =
       Fixtures.Runbooks.create_runbook(
         account_id: account.id,
-        created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        created_by_membership_id: user.id,
         title: title,
         slug: String.downcase(String.replace(title, " ", "-"))
       )
@@ -24,18 +24,16 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   defp create_execution!(user, account, runbook, reason) do
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
     Fixtures.Runbooks.create_execution(
       account_id: account.id,
       runbook: runbook,
-      initiating_membership_id: membership.id,
+      initiating_membership_id: user.id,
       reason: reason
     )
   end
 
   test "renders the empty state with new and import actions for an owner", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
@@ -53,8 +51,8 @@ defmodule EmisarWeb.RunbooksLiveTest do
   test "the disconnected render loads instead of claiming a populated account is empty", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    create_runbook!(user, account, "Existing runbook")
+    {conn, owner, account} = register_and_log_in(conn)
+    create_runbook!(owner, account, "Existing runbook")
 
     dead = conn |> get(~p"/app/#{account}/runbooks") |> html_response(200)
 
@@ -64,7 +62,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "an empty *filtered* result keeps the filter bar, not the create-CTA", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     # Nothing has unpublished changes, but that filter is active. The operator
     # must still see the filter bar to clear it — not the "No runbooks yet"
@@ -79,9 +77,9 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "the live release rides the Run label; only never-published earns a chip", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    published = create_runbook!(user, account, "Deploy check", published?: true)
-    never_published = create_runbook!(user, account, "Half baked")
+    {conn, owner, account} = register_and_log_in(conn)
+    published = create_runbook!(owner, account, "Deploy check", published?: true)
+    never_published = create_runbook!(owner, account, "Half baked")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
@@ -114,9 +112,9 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "a runbook with unpublished changes still runs its live release", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = owner_subject(user, account)
-    runbook = create_runbook!(user, account, "Deploy check", published?: true)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
+    runbook = create_runbook!(owner, account, "Deploy check", published?: true)
     base_sha = Runbooks.definition_digest(runbook.definition)
     attrs = %{"title" => "Deploy check", "draft_definition" => runbook.definition}
 
@@ -140,13 +138,13 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "moves guidance and account-scoped recent runs into the reading rail", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    runbook = create_runbook!(user, account, "Deploy check", published?: true)
-    execution = create_execution!(user, account, runbook, "Deploy during change window")
+    {conn, owner, account} = register_and_log_in(conn)
+    runbook = create_runbook!(owner, account, "Deploy check", published?: true)
+    execution = create_execution!(owner, account, runbook, "Deploy during change window")
 
-    {other_user, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
-    other_runbook = create_runbook!(other_user, other_account, "Other account")
-    hidden = create_execution!(other_user, other_account, other_runbook, "Must stay hidden")
+    {other_owner, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
+    other_runbook = create_runbook!(other_owner, other_account, "Other account")
+    hidden = create_execution!(other_owner, other_account, other_runbook, "Must stay hidden")
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
@@ -171,9 +169,9 @@ defmodule EmisarWeb.RunbooksLiveTest do
   test "the recent-runs digest hands depth to the runs list, not a rail pager", %{conn: conn} do
     # The rail is five rows in a 20rem column; the full record of what runbooks
     # dispatched is the runs list filtered to them, which already pages.
-    {conn, user, account} = register_and_log_in(conn)
-    runbook = create_runbook!(user, account, "Deploy check", published?: true)
-    create_execution!(user, account, runbook, "Deploy during change window")
+    {conn, owner, account} = register_and_log_in(conn)
+    runbook = create_runbook!(owner, account, "Deploy check", published?: true)
+    create_execution!(owner, account, runbook, "Deploy during change window")
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks")
 
@@ -187,8 +185,8 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "an account with no executions yet offers no door to an empty list", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    create_runbook!(user, account, "Never run", published?: true)
+    {conn, owner, account} = register_and_log_in(conn)
+    create_runbook!(owner, account, "Never run", published?: true)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks")
 
@@ -198,17 +196,12 @@ defmodule EmisarWeb.RunbooksLiveTest do
 
   test "an empty list offers a viewer no unavailable authoring instructions", %{conn: conn} do
     account = Fixtures.Accounts.create_account()
-    viewer = Fixtures.Users.create_user()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: viewer.id,
-      role: "viewer"
-    )
+    viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
     {:ok, lv, _html} =
       conn
-      |> log_in_user(viewer)
+      |> log_in_member(viewer)
       |> live(~p"/app/#{account}/runbooks")
 
     assert has_element?(
@@ -222,21 +215,14 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "a viewer gets the list but no New action", %{conn: conn} do
-    {_owner_conn, user, account} = register_and_log_in(conn)
-    runbook = create_runbook!(user, account, "Visible to all")
+    {_owner_conn, owner, account} = register_and_log_in(conn)
+    runbook = create_runbook!(owner, account, "Visible to all")
 
-    viewer = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+    viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
     {:ok, _lv, html} =
       build_conn()
-      |> log_in_user(viewer)
+      |> log_in_member(viewer)
       |> live(~p"/app/#{account}/runbooks")
 
     assert html =~ "Visible to all"
@@ -248,13 +234,13 @@ defmodule EmisarWeb.RunbooksLiveTest do
   test "a runbook row shows its most-severe step risk so it's visible before opening", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     # The runbook's lone step is linux.uptime — advertise it as high-risk so its
     # list row carries a high (rose) risk pill, the headline cue before opening.
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "high")
-    create_runbook!(user, account, "Risky deploy", published?: true)
+    create_runbook!(owner, account, "Risky deploy", published?: true)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
@@ -264,11 +250,11 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "a runbook whose action isn't in the catalog shows no risk pill", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     # No Fixtures.Catalog.create_action for linux.uptime — the catalog hasn't observed it, so the
     # row renders without a risk pill (never a false-low) rather than guessing.
-    create_runbook!(user, account, "Unobserved")
+    create_runbook!(owner, account, "Unobserved")
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
@@ -278,20 +264,20 @@ defmodule EmisarWeb.RunbooksLiveTest do
   end
 
   test "refreshes when the account's runbook feed broadcasts", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
     refute html =~ "Late arrival"
 
-    late = create_runbook!(user, account, "Late arrival")
+    late = create_runbook!(owner, account, "Late arrival")
     send(lv.pid, {:list_changed, :runbook, "runbook.created", late.id})
 
     assert render(lv) =~ "Late arrival"
   end
 
   test "a hand-edited bogus state filter is dropped, not crashed on", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    published = create_runbook!(user, account, "Deploy check", published?: true)
+    {conn, owner, account} = register_and_log_in(conn)
+    published = create_runbook!(owner, account, "Deploy check", published?: true)
 
     # A state the whitelist doesn't know (never String.to_atom — IL-14). The
     # filter is dropped on a clean retry rather than raising, so the list still

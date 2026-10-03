@@ -6,7 +6,7 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
   describe "fetch_approval_requirements_summary/1" do
     test "a viewer reads the configured single-approver default" do
       membership = Fixtures.Memberships.create_membership(role: "viewer")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Policies.create_policy(account_id: membership.account_id)
 
       assert Policies.fetch_approval_requirements_summary(subject) ==
@@ -15,7 +15,7 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
 
     test "matching defaults and targeted rulesets keep a concrete requirement" do
       membership = Fixtures.Memberships.create_membership(role: "operator")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       rules = approval_rules(2, false)
       Fixtures.Policies.create_policy(account_id: membership.account_id, rules: rules)
 
@@ -32,7 +32,7 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
 
     test "different runner and group requirements are summarized independently" do
       membership = Fixtures.Memberships.create_membership()
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       runner = Fixtures.Runners.create_runner(account_id: membership.account_id)
       Fixtures.Policies.create_policy(account_id: membership.account_id)
 
@@ -61,7 +61,7 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
       membership = Fixtures.Memberships.create_membership(role: "viewer")
       {:ok, access} = RunnerAccess.restricted(["databases"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Runners.create_runner(account_id: membership.account_id, group: "databases")
       other = Fixtures.Runners.create_runner(account_id: membership.account_id, group: "web")
       Fixtures.Policies.create_policy(account_id: membership.account_id)
@@ -95,7 +95,7 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
 
     test "missing default does not borrow another account's settings or invent defaults" do
       membership = Fixtures.Memberships.create_membership()
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Policies.create_policy(rules: approval_rules(3, false))
 
       assert Policies.fetch_approval_requirements_summary(subject) == {:error, :not_found}
@@ -110,7 +110,7 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
 
     test "malformed default or targeted settings do not produce an optimistic summary" do
       membership = Fixtures.Memberships.create_membership()
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       default = Fixtures.Policies.create_policy(account_id: membership.account_id)
       Fixtures.Policies.corrupt_approval_settings(default, :missing)
 
@@ -142,13 +142,13 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
 
     test "the work bound counts distinct configurations, not policies" do
       membership = Fixtures.Memberships.create_membership()
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Policies.create_policy(account_id: membership.account_id)
 
       for index <- 1..101 do
         Fixtures.Policies.create_policy(
           account_id: membership.account_id,
-          created_by_id: membership.user_id,
+          updated_by_membership_id: membership.id,
           scope_type: :group,
           scope_value: "group-#{index}"
         )
@@ -160,7 +160,7 @@ defmodule Emisar.PoliciesApprovalRequirementsTest do
       for index <- 1..101 do
         Fixtures.Policies.create_policy(
           account_id: membership.account_id,
-          created_by_id: membership.user_id,
+          updated_by_membership_id: membership.id,
           scope_type: :group,
           scope_value: "group-#{index}",
           rules: approval_rules(index, true)

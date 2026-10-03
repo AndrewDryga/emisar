@@ -7,7 +7,7 @@ defmodule Emisar.Billing.SubscriptionRetirementsTest do
 
   setup do
     store = Fixtures.Billing.start_provider()
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     {:ok, _customer, account} = Billing.ensure_paddle_customer(account, subject)
     %{account: account, subject: subject, store: store}
   end

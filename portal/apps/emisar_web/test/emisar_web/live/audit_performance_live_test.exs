@@ -3,8 +3,8 @@ defmodule EmisarWeb.AuditPerformanceLiveTest do
   alias Emisar.{Audit, Fixtures}
 
   setup %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    %{conn: conn, user: user, account: account}
+    {conn, owner, account} = register_and_log_in(conn)
+    %{conn: conn, user: owner, account: account}
   end
 
   test "event-page navigation and broadcasts reuse open facet choices", %{

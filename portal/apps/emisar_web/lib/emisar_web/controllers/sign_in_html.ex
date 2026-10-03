@@ -1,27 +1,31 @@
-defmodule EmisarWeb.SSOSignInHTML do
+defmodule EmisarWeb.SignInHTML do
   use EmisarWeb, :html
 
   def new(assigns) do
     ~H"""
-    <.auth_layout title="Sign in with SSO">
+    <.auth_layout title="Sign in">
       <div :if={@recent != []} class="space-y-3">
         <p class="text-sm text-zinc-400">Choose a workspace you've used before:</p>
         <.button
-          :for={team <- @recent}
-          href={~p"/app/#{team["slug"]}/sign_in"}
+          :for={workspace <- @recent}
+          href={~p"/app/#{workspace["slug"]}/sign_in"}
           variant={:secondary}
-          class="w-full justify-between"
+          class="w-full"
         >
-          <span class="flex min-w-0 flex-col text-left">
-            <span class="truncate">{team["name"]}</span>
-            <span class="font-mono text-xs text-zinc-400">app/{team["slug"]}</span>
+          <%!-- A full-width inner row: the button centers its content and a
+               `justify-between` on it loses to that in CSS order. --%>
+          <span class="flex w-full min-w-0 items-center justify-between gap-3">
+            <span class="flex min-w-0 flex-col text-left">
+              <span class="truncate">{workspace["name"]}</span>
+              <span class="font-mono text-xs text-zinc-400">app/{workspace["slug"]}</span>
+            </span>
+            <span aria-hidden="true">→</span>
           </span>
-          <span aria-hidden="true">→</span>
         </.button>
       </div>
       <.or_separator :if={@recent != []} label="or enter a workspace address" />
 
-      <.simple_form for={@form} action={~p"/sign_in/sso"}>
+      <.simple_form for={@form} action={~p"/sign_in"}>
         <p class="text-sm leading-relaxed text-zinc-400">
           Enter your workspace address to open its sign-in page.
         </p>
@@ -44,11 +48,10 @@ defmodule EmisarWeb.SSOSignInHTML do
         </:actions>
       </.simple_form>
 
-      <div class="mt-8 text-center text-sm">
-        <.link href={~p"/sign_in"} class="font-medium text-brand-400 hover:text-brand-300">
-          Back to sign in
-        </.link>
-      </div>
+      <.auth_footer_link href={~p"/sign_up"}>
+        <:lead>New to emisar?</:lead>
+        Create a workspace
+      </.auth_footer_link>
     </.auth_layout>
     """
   end

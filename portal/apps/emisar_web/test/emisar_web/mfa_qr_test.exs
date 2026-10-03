@@ -6,19 +6,22 @@ defmodule EmisarWeb.MfaQrTest do
     secret = <<0, 1, 2, 255, 128, 0>>
     key = MfaQr.setup_key(secret)
     assert Base.decode32!(key, padding: false) == secret
-    assert MfaQr.provisioning_uri("op@example.com", secret) =~ "?secret=#{key}&issuer=emisar"
+
+    assert MfaQr.provisioning_uri("Acme", "op@example.com", secret) =~
+             "?secret=#{key}&issuer=emisar"
+
     refute key =~ "="
   end
 
-  test "encodes the account name in the provisioning URI" do
-    assert MfaQr.provisioning_uri("op@example.com", "ABC234") ==
-             "otpauth://totp/emisar:op%40example.com?secret=IFBEGMRTGQ&issuer=emisar"
+  test "names the workspace and the Member in the authenticator entry" do
+    assert MfaQr.provisioning_uri("Acme Ops", "op@example.com", "ABC234") ==
+             "otpauth://totp/emisar:Acme%20Ops%20%28op%40example.com%29?secret=IFBEGMRTGQ&issuer=emisar"
   end
 
-  test "email delimiters cannot alter the provisioning query" do
-    uri = MfaQr.provisioning_uri("ops&issuer=other@example.com", "ABC234")
+  test "workspace and email delimiters cannot alter the provisioning query" do
+    uri = MfaQr.provisioning_uri("Ops&issuer=evil", "ops&issuer=other@example.com", "ABC234")
 
     assert uri ==
-             "otpauth://totp/emisar:ops%26issuer%3Dother%40example.com?secret=IFBEGMRTGQ&issuer=emisar"
+             "otpauth://totp/emisar:Ops%26issuer%3Devil%20%28ops%26issuer%3Dother%40example.com%29?secret=IFBEGMRTGQ&issuer=emisar"
   end
 end

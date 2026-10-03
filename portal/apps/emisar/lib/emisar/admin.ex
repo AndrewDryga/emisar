@@ -27,7 +27,7 @@ defmodule Emisar.Admin do
   alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Mailers}
   alias Emisar.Admin.{Query, Staff, StaffToken}
   alias Emisar.Auth.Subject
-  alias Emisar.{Repo, RequestContext, Throttle, Users}
+  alias Emisar.{Repo, RequestContext, Throttle}
   require Logger
 
   @arg_name ~r/^[a-z][a-z0-9_]*$/
@@ -615,11 +615,12 @@ defmodule Emisar.Admin do
         {:ok, Map.put(account_result(account), :created, false)}
 
       {:error, :not_found} ->
-        with {:ok, user} <- Users.fetch_or_create_user_by_email(String.trim(email)),
-             {:ok, account} <- Accounts.create_account_with_owner(%{name: name, slug: slug}, user) do
-          if is_nil(user.confirmed_at),
-            do: Auth.deliver_confirmation_instructions(user, account)
-
+        with {:ok, %{account: account}} <-
+               Accounts.create_account_with_invited_owner(
+                 %{name: name, slug: slug},
+                 String.trim(email),
+                 inviter()
+               ) do
           {:ok, account |> account_result() |> Map.put(:created, true)}
         end
     end
@@ -680,8 +681,8 @@ defmodule Emisar.Admin do
        %{
          account: account_result(account),
          member: membership_result(membership),
-         confirmed: personal_login_fact?(membership.user, :confirmed_at),
-         mfa_enabled: personal_login_fact?(membership.user, :mfa_enabled_at),
+         email_verified: not is_nil(membership.email_verified_at),
+         mfa_enabled: not is_nil(membership.mfa_enabled_at),
          active_sessions: membership |> Query.member_session_count() |> Repo.one(),
          active_api_keys: Query.active_api_key_count(account.id, membership.id) |> Repo.one()
        }}
@@ -746,8 +747,7 @@ defmodule Emisar.Admin do
          {:ok, demotion} <- owner_demotion_plan(account, args),
          {:ok, promoted} <- Accounts.update_membership_role(next_owner, "owner", target_subject),
          :ok <- maybe_demote_previous_owner(demotion, target_subject) do
-      # Same as mutate_member: the written row carries no :user preload.
-      {:ok, membership_result(%{promoted | user: next_owner.user})}
+      {:ok, membership_result(promoted)}
     end
   end
 
@@ -874,14 +874,9 @@ defmodule Emisar.Admin do
     end
   end
 
-  # A mutation returns the row it wrote, which carries no :user preload — the
-  # fallback is the membership `mutate_member` fetched WITH its user, so carry
-  # that across rather than reporting a member with no email.
-  defp normalize_member_mutation({:ok, %Accounts.Membership{} = membership}, fallback),
-    do: {:ok, membership_result(%{membership | user: fallback.user})}
-
-  defp normalize_member_mutation({:ok, %Users.User{} = user}, membership),
-    do: {:ok, membership_result(%{membership | user: user})}
+  # A mutation returns the row it wrote, or `:ok` when it wrote none of its own.
+  defp normalize_member_mutation({:ok, %Accounts.Membership{} = membership}, _fetched),
+    do: {:ok, membership_result(membership)}
 
   defp normalize_member_mutation(:ok, membership), do: {:ok, membership_result(membership)}
   defp normalize_member_mutation({:error, reason}, _membership), do: {:error, reason}
@@ -991,7 +986,6 @@ defmodule Emisar.Admin do
   defp membership_result(membership) do
     %{
       id: membership.id,
-      user_id: membership.user_id,
       email: membership.email,
       role: membership.role,
       disabled: not is_nil(membership.disabled_at),
@@ -1000,10 +994,6 @@ defmodule Emisar.Admin do
   end
 
   defp inviter, do: %{full_name: "Emisar Support", email: "support@emisar.dev"}
-
-  # A Member without a personal login has no personal email or local factor.
-  defp personal_login_fact?(%Users.User{} = user, field), do: not is_nil(Map.fetch!(user, field))
-  defp personal_login_fact?(nil, _field), do: false
 
   defp analytics_executive(args) do
     since = since(args)

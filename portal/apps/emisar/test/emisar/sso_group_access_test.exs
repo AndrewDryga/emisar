@@ -195,7 +195,7 @@ defmodule Emisar.SSOGroupAccessTest do
   end
 
   test "independent mappings persist and reconcile members; removal restores no-pack reach" do
-    {_user, account, owner} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    {_owner, account, owner} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
 
     provider =
       Fixtures.SSO.create_identity_provider(account_id: account.id, default_role: :operator)
@@ -256,7 +256,7 @@ defmodule Emisar.SSOGroupAccessTest do
   end
 
   test "half-grants retain permission, account isolation and both nondelegation dimensions" do
-    {_user, account, owner} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    {_owner, account, owner} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
 
     provider =
       Fixtures.SSO.create_identity_provider(account_id: account.id) |> Fixtures.SSO.enable_scim()
@@ -265,20 +265,20 @@ defmodule Emisar.SSOGroupAccessTest do
 
     viewer =
       Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
-      |> Fixtures.Subjects.membership_subject()
+      |> Fixtures.Subjects.subject_for()
 
     attrs = %{directory_group_id: group.id, runner_access_mode: :none, pack_access_mode: :all}
 
     assert SSO.create_group_runner_access_mapping(provider, attrs, viewer) ==
              {:error, :unauthorized}
 
-    {_other_user, _other_account, other} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    {_other_owner, _other_account, other} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     assert SSO.create_group_runner_access_mapping(provider, attrs, other) == {:error, :not_found}
     runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
     admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
     {:ok, limited} = RunnerAccess.new(:restricted, [], [runner.id])
     Fixtures.Memberships.force_runner_access(admin, limited)
-    subject = Fixtures.Subjects.membership_subject(admin)
+    subject = Fixtures.Subjects.subject_for(admin)
 
     assert SSO.create_group_runner_access_mapping(provider, attrs, subject) ==
              {:error, :runner_access_exceeds_subject}
@@ -290,7 +290,7 @@ defmodule Emisar.SSOGroupAccessTest do
 
     {:ok, pack_limited} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
     Fixtures.Memberships.force_runner_access(admin, pack_limited)
-    pack_subject = Fixtures.Subjects.membership_subject(admin)
+    pack_subject = Fixtures.Subjects.subject_for(admin)
 
     runner_only = %{
       directory_group_id: group.id,

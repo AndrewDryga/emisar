@@ -4,7 +4,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   alias Emisar.Accounts.RunnerAccess
 
   test "an unnamed member still has a readable role-change confirmation", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     target =
       Fixtures.Memberships.create_membership(
@@ -21,7 +21,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   end
 
   test "Owner promotion describes the wider access without a reconnection warning", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
     Fixtures.Memberships.force_runner_access(target, RunnerAccess.none())
     {:ok, view, _html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -34,7 +34,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   test "Owner rows have no access editor and role changes lead to an explicit grant", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
     {:ok, view, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -52,7 +52,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   end
 
   test "Owner invitations display fixed account-wide access", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, view, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
     html = view |> form("#invite_form", invite: %{role: "owner"}) |> render_change()
@@ -65,7 +65,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   test "a demotion starts with no choice and saves only the explicitly selected access", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
     {:ok, view, _html} =
@@ -87,7 +87,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   end
 
   test "malformed selection values do not crash the editor or change the Owner", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
     {:ok, view, _html} =
@@ -106,7 +106,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   test "a forged restricted mode never attaches a runner picker to a billing-only role", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     Fixtures.Runners.create_runner(account_id: account.id)
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
@@ -131,7 +131,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   test "the admin demotion attaches the runner picker to the selected-runners card", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
@@ -150,7 +150,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   test "directory-owned Owners offer an explicit return to directory role and access", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
     target =
@@ -184,16 +184,11 @@ defmodule EmisarWeb.MemberRoleLiveTest do
 
   test "Admins cannot open an Owner demotion", %{conn: conn} do
     account = Fixtures.Accounts.create_account()
-    admin = Fixtures.Users.create_user()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: admin.id,
-      role: "admin"
-    )
+    admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-    conn = log_in_user(conn, admin)
+    conn = log_in_member(conn, admin)
 
     assert {:error, {:live_redirect, %{to: path}}} =
              live(conn, ~p"/app/#{account}/settings/team/#{target.id}/change-role/viewer")
@@ -203,7 +198,7 @@ defmodule EmisarWeb.MemberRoleLiveTest do
   end
 
   test "an Owner cannot open another account's demotion form", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     foreign = Fixtures.Memberships.create_membership(role: "owner")
 
     assert {:error, {:live_redirect, %{to: path}}} =

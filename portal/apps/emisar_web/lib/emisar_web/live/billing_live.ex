@@ -630,9 +630,9 @@ defmodule EmisarWeb.BillingLive do
   defp invoice_error(_reason), do: "Couldn't open the invoice. Try again."
 
   # Billing mailto context rides the authed page assigns so support can route
-  # the request without asking which account or user sent it.
-  defp billing_support_mailto(account, user) do
-    context = MailTo.context(%{current_account: account, current_user: user})
+  # the request without asking which workspace or Member sent it.
+  defp billing_support_mailto(account, membership) do
+    context = MailTo.context(%{current_account: account, current_membership: membership})
 
     MailTo.support(
       subject: "Billing question - #{account.name}",
@@ -640,8 +640,8 @@ defmodule EmisarWeb.BillingLive do
     )
   end
 
-  defp enterprise_sales_mailto(account, user) do
-    context = MailTo.context(%{current_account: account, current_user: user})
+  defp enterprise_sales_mailto(account, membership) do
+    context = MailTo.context(%{current_account: account, current_membership: membership})
 
     MailTo.sales(
       subject: "Enterprise plan - #{account.name}",
@@ -672,7 +672,6 @@ defmodule EmisarWeb.BillingLive do
       chrome={@shell_chrome}
       current_membership={@current_membership}
       current_subject={@current_subject}
-      current_user={@current_user}
       current_account={@current_account}
       section={:billing}
       width={:table}
@@ -699,7 +698,7 @@ defmodule EmisarWeb.BillingLive do
           }
           id="billing-contact-support"
           variant={:secondary}
-          href={billing_support_mailto(@current_account, @current_user)}
+          href={billing_support_mailto(@current_account, @current_membership)}
         >
           Contact support
         </.button>
@@ -759,7 +758,7 @@ defmodule EmisarWeb.BillingLive do
               :if={not @summary.keep_available? and not @summary.payment_method_updatable?}
               variant={:secondary}
               size={:sm}
-              href={billing_support_mailto(@current_account, @current_user)}
+              href={billing_support_mailto(@current_account, @current_membership)}
             >
               Contact support
             </.button>
@@ -997,7 +996,7 @@ defmodule EmisarWeb.BillingLive do
                   Slack support <.icon name="action.external_link" class="h-3.5 w-3.5" />
                 </.link>
                 <a
-                  href={billing_support_mailto(@current_account, @current_user)}
+                  href={billing_support_mailto(@current_account, @current_membership)}
                   class="group text-sm font-medium text-brand-400 hover:text-brand-300"
                 >
                   Email support&nbsp;<.cta_arrow />
@@ -1173,7 +1172,7 @@ defmodule EmisarWeb.BillingLive do
                         variant={:secondary}
                         class={if length(@offers) == 2, do: "w-full"}
                         size={:sm}
-                        href={enterprise_sales_mailto(@current_account, @current_user)}
+                        href={enterprise_sales_mailto(@current_account, @current_membership)}
                       >
                         Contact sales
                       </.button>
@@ -1181,7 +1180,7 @@ defmodule EmisarWeb.BillingLive do
                       <.button
                         variant={:secondary}
                         size={:sm}
-                        href={billing_support_mailto(@current_account, @current_user)}
+                        href={billing_support_mailto(@current_account, @current_membership)}
                       >
                         Contact support
                       </.button>

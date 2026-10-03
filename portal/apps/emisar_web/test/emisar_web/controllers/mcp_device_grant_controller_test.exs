@@ -10,16 +10,11 @@ defmodule EmisarWeb.MCPDeviceGrantControllerTest do
   alias Emisar.{Fixtures, Repo}
 
   defp approver_subject do
-    user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "owner"
-    )
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    Fixtures.Subjects.subject_for(user, account, role: :owner)
+    Fixtures.Subjects.subject_for(user)
   end
 
   describe "POST /api/mcp/device_authorization" do

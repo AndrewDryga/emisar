@@ -3,11 +3,25 @@ defmodule Emisar.Repo.Migrations.GiveMembersTheirEmailAndFactor do
 
   @pending "m.invitation_accepted_at IS NULL AND m.invitation_token_digest IS NOT NULL"
 
-  @directory """
-  (m.directory_managed OR EXISTS (
-    SELECT 1 FROM sso_user_identities i
-    WHERE i.membership_id = m.id AND i.deleted_at IS NULL AND i.scim_external_id IS NOT NULL
-  ))
+  # Members the directory or an SSO sign-in created sign in through SSO only, so
+  # they keep their directory address and stay unverified even when a personal
+  # login was later linked to them: a seat the directory manages or holds through
+  # SCIM, and a seat created together with an OIDC JIT, SCIM or admin-approved
+  # identity that never accepted an invitation (the definition 20261113 used to
+  # unlink such seats; a deleted identity still records how the seat began).
+  @sso_created """
+  (m.directory_managed
+    OR EXISTS (
+      SELECT 1 FROM sso_user_identities i
+      WHERE i.membership_id = m.id AND i.deleted_at IS NULL AND i.scim_external_id IS NOT NULL
+    )
+    OR (m.invitation_accepted_at IS NULL AND EXISTS (
+      SELECT 1 FROM sso_user_identities i
+      WHERE i.membership_id = m.id
+        AND (i.provisioned_via IN ('oidc_jit', 'scim')
+          OR (i.provisioned_via = 'manual' AND i.created_by = 'admin'))
+        AND abs(extract(epoch FROM (i.inserted_at - m.inserted_at))) < 10
+    )))
   """
 
   # A Member becomes the only person record: it gains one address, the proof of
@@ -25,20 +39,20 @@ defmodule Emisar.Repo.Migrations.GiveMembersTheirEmailAndFactor do
     rename table(:account_memberships), :contact_email, to: :email
 
     # One address per live Member. A pending invitation keeps the address it was
-    # sent to and a directory-managed Member keeps its directory address; any
-    # other Member linked to a live login takes the address that login signs in
-    # with. Only that last case can be verified: the address then equals the
-    # login's, so it carries the login's confirmation.
+    # sent to and an SSO-created Member keeps its directory address; any other
+    # Member linked to a live login takes the address that login signs in with.
+    # Only that last case can be verified: the address then equals the login's,
+    # so it carries the login's confirmation.
     execute """
     UPDATE account_memberships m
     SET email = CASE
           WHEN #{@pending} THEN m.invitation_sent_to
-          WHEN #{@directory} THEN m.email
+          WHEN #{@sso_created} THEN m.email
           ELSE COALESCE(u.email, m.email)
         END,
         display_name = COALESCE(m.display_name, u.full_name),
         email_verified_at = CASE
-          WHEN NOT (#{@pending}) AND NOT #{@directory} AND u.email IS NOT NULL
+          WHEN NOT (#{@pending}) AND NOT #{@sso_created} AND u.email IS NOT NULL
           THEN u.confirmed_at
         END
     FROM account_memberships self

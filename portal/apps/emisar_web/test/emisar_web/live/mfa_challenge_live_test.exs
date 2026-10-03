@@ -1,41 +1,40 @@
 defmodule EmisarWeb.MfaChallengeLiveTest do
   @moduledoc """
-  The second-factor challenge after a magic link verifies factor one. The
-  partial `:mfa_pending_user_id` session names the user but grants nothing; only
-  a correct TOTP or recovery code redirects to `:mfa_complete` with the handoff
-  the controller trades for the session cookie.
+  The second-factor challenge after an emailed code verifies factor one. The
+  partial-auth marker (`:mfa_pending_membership_id`) names the Member but grants
+  nothing; only a correct TOTP or recovery code redirects to `:mfa_complete`
+  with the handoff the controller trades for the session cookie.
   """
   use EmisarWeb.ConnCase, async: true
-  import Phoenix.LiveViewTest
   alias Emisar.{Auth, Fixtures}
+  alias EmisarWeb.MfaChallengeHandoff
 
   setup %{conn: conn} do
-    user = Fixtures.Users.create_user() |> Fixtures.Users.confirm_user()
-    account = Fixtures.Accounts.create_account()
-
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "owner"
-    )
-
+    {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
     secret = Auth.generate_mfa_secret()
-    {user, recovery_codes} = Fixtures.Users.enable_mfa!(secret, owner_subject(user, account))
+    {member, recovery_codes} = Fixtures.Memberships.enable_mfa!(secret, subject)
 
     conn =
       Plug.Test.init_test_session(conn, %{
-        "mfa_pending_user_id" => user.id,
+        "mfa_pending_membership_id" => member.id,
         "mfa_pending_at" => System.system_time(:second)
       })
 
-    %{conn: conn, user: user, secret: secret, recovery_codes: recovery_codes}
+    %{conn: conn, member: member, secret: secret, recovery_codes: recovery_codes}
   end
 
   describe "mount" do
-    test "no pending session redirects to the sign-in start", %{conn: _conn} do
+    test "no pending marker, or a stale one, redirects to the sign-in start", %{member: member} do
       conn = Plug.Test.init_test_session(build_conn(), %{})
+      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/sign_in/mfa")
 
-      assert {:error, {:redirect, %{to: "/sign_in/magic"}}} = live(conn, ~p"/sign_in/mfa")
+      stale =
+        Plug.Test.init_test_session(build_conn(), %{
+          "mfa_pending_membership_id" => member.id,
+          "mfa_pending_at" => System.system_time(:second) - 601
+        })
+
+      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(stale, ~p"/sign_in/mfa")
     end
 
     test "a pending session renders the authenticator prompt", %{conn: conn} do
@@ -47,13 +46,20 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   end
 
   describe "TOTP verification" do
-    test "a correct code redirects to completion with a handoff", %{conn: conn, secret: secret} do
+    test "a correct code redirects to completion with a proof for this Member", %{
+      conn: conn,
+      member: member,
+      secret: secret
+    } do
       {:ok, lv, _html} = live(conn, ~p"/sign_in/mfa")
 
       assert {:error, {:redirect, %{to: to}}} =
                render_hook(lv, "verify_totp", %{"otp" => Fixtures.Auth.totp_code(secret)})
 
-      assert to =~ "/sign_in/mfa/complete?handoff="
+      %URI{path: "/sign_in/mfa/complete", query: query} = URI.parse(to)
+      %{"handoff" => handoff} = URI.decode_query(query)
+      assert {:ok, proof} = MfaChallengeHandoff.verify(handoff)
+      assert Auth.mfa_proof_membership_id(proof) == member.id
     end
 
     test "a wrong code shows an inline error and stays put", %{conn: conn} do
@@ -70,7 +76,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   describe "recovery-code verification" do
     test "an attempt expiring after mount does not consume the recovery code", %{
       conn: conn,
-      user: user,
+      member: member,
       recovery_codes: [code | _]
     } do
       {:ok, lv, _html} = live(conn, ~p"/sign_in/mfa")
@@ -83,11 +89,9 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
 
       result = lv |> form("form[phx-submit=verify_recovery]", %{code: code}) |> render_submit()
 
-      assert {:error, {:redirect, %{to: "/sign_in/magic"}}} = result
-      {:ok, conn} = follow_redirect(result, conn)
-
-      assert html_response(conn, 200) =~ "Your sign-in attempt expired"
-      assert {:ok, _proof} = Auth.verify_mfa_challenge(user, {:recovery_code, code})
+      assert {:error, {:redirect, %{to: "/sign_in", flash: flash}}} = result
+      assert Phoenix.Flash.get(flash_map(flash), :error) =~ "Your sign-in attempt expired"
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(member.id, {:recovery_code, code})
     end
 
     test "a valid recovery code redirects to completion", %{
@@ -119,7 +123,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/sign_in/mfa")
 
-      # Exhaust the 5-attempt window (keyed by user, so a page reload couldn't
+      # Exhaust the 5-attempt window (keyed by Member, so a page reload couldn't
       # reset it), then the next attempt is capped rather than probed again.
       for _ <- 1..5, do: render_hook(lv, "verify_totp", %{"otp" => "000000"})
       html = render_hook(lv, "verify_totp", %{"otp" => "000000"})
@@ -142,4 +146,6 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
       assert html =~ "authenticator app"
     end
   end
+
+  defp flash_map(token), do: Phoenix.LiveView.Utils.verify_flash(EmisarWeb.Endpoint, token)
 end

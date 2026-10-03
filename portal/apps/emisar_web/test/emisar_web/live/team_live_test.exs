@@ -29,7 +29,7 @@ defmodule EmisarWeb.TeamLiveTest do
   describe "refresh and member capabilities" do
     test "roster and request refreshes preserve approval drafts, seed new requests, and prune settled ones",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Draft Member")
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
@@ -52,7 +52,7 @@ defmodule EmisarWeb.TeamLiveTest do
       ]
 
       before = Map.take(:sys.get_state(lv.pid).socket.assigns, draft_keys)
-      send(lv.pid, {:list_changed, :team, "membership.updated", user.id})
+      send(lv.pid, {:list_changed, :team, "membership.updated", owner.id})
       render(lv)
       assert Map.take(:sys.get_state(lv.pid).socket.assigns, draft_keys) == before
 
@@ -96,7 +96,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "a failed roster read shows unavailable security facts and cannot toggle enforcement", %{
       conn: conn
     } do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       :sys.replace_state(lv.pid, fn state ->
@@ -106,7 +106,7 @@ defmodule EmisarWeb.TeamLiveTest do
         )
       end)
 
-      send(lv.pid, {:list_changed, :team, "membership.updated", user.id})
+      send(lv.pid, {:list_changed, :team, "membership.updated", owner.id})
       render(lv)
 
       assert has_element?(lv, "#team-security-unavailable")
@@ -120,24 +120,18 @@ defmodule EmisarWeb.TeamLiveTest do
       conn: conn
     } do
       {_conn, owner, account} = register_and_log_in(conn)
-      owner_membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
-      admin = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       teammate = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      conn = build_conn() |> log_in_user(admin)
+      conn = build_conn() |> log_in_member(admin)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      row = "#member-row-#{owner_membership.id}"
+      row = "#member-row-#{owner.id}"
 
       assert has_element?(
                lv,
-               "#{row} a[href*='actor_kind=membership'][href*='actor_id=#{owner_membership.id}']",
+               "#{row} a[href*='actor_kind=membership'][href*='actor_id=#{owner.id}']",
                "View activity"
              )
 
@@ -146,7 +140,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       render_click(lv, "open_member_action", %{
         "action" => "suspend",
-        "membership_id" => owner_membership.id
+        "membership_id" => owner.id
       })
 
       refute has_element?(lv, "#member-action-confirm")
@@ -161,7 +155,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "the page header offers Invite member without duplicating it on the roster", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "header a#invite-member.text-sm[class~='py-1.5']", "Invite member")
@@ -173,41 +167,38 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "member controls stack with the identity until desktop width", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {conn, owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       assert has_element?(
                lv,
-               ~s|#member-row-#{membership.id}[class~="lg:flex-row"]|
+               ~s|#member-row-#{owner.id}[class~="lg:flex-row"]|
              )
 
       refute has_element?(
                lv,
-               ~s|#member-row-#{membership.id}[class~="sm:flex-row"]|
+               ~s|#member-row-#{owner.id}[class~="sm:flex-row"]|
              )
 
       assert has_element?(
                lv,
-               ~s|#member-controls-#{membership.id}[class~="justify-start"][class~="pl-14"][class~="lg:justify-end"][class~="lg:pl-0"]|
+               ~s|#member-controls-#{owner.id}[class~="justify-start"][class~="pl-14"][class~="lg:justify-end"][class~="lg:pl-0"]|
              )
     end
 
     test "the roster has one name-or-email search plus role and status filters", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      kept_user = Fixtures.Users.create_user(full_name: "Filter Finch")
-      gone_user = Fixtures.Users.create_user(full_name: "Hidden Harper")
+      {conn, _owner, account} = register_and_log_in(conn)
 
       kept =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: kept_user.id
+          display_name: "Filter Finch"
         )
 
       gone =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: gone_user.id
+          display_name: "Hidden Harper"
         )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -238,7 +229,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "role and status filters combine", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       suspended_viewer =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
@@ -263,7 +254,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a filter miss keeps the controls and clear action", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, lv, html} =
         live(conn, ~p"/app/#{account}/settings/team?name_or_email=missing-member")
@@ -284,18 +275,12 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "the pack-grant notice follows current access, not the mount snapshot", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      admin = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {:ok, lv, _html} =
         build_conn()
-        |> log_in_user(admin)
+        |> log_in_member(admin)
         |> live(~p"/app/#{account}/settings/team/invite")
 
       refute reveal_pack_grant(lv) =~ "You can grant only packs within your own access."
@@ -303,7 +288,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, restricted} =
         Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
 
-      Fixtures.Memberships.force_runner_access(membership, restricted)
+      Fixtures.Memberships.force_runner_access(admin, restricted)
       render_patch(lv, ~p"/app/#{account}/settings/team/invite")
 
       assert reveal_pack_grant(lv) =~ "You can grant only packs within your own access."
@@ -311,23 +296,17 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "pack grant fields explain when the admin's own pack access is limited", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      admin = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {:ok, restricted} =
         Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
 
-      Fixtures.Memberships.force_runner_access(membership, restricted)
+      Fixtures.Memberships.force_runner_access(admin, restricted)
 
       {:ok, lv, html} =
         build_conn()
-        |> log_in_user(admin)
+        |> log_in_member(admin)
         |> live(~p"/app/#{account}/settings/team/invite")
 
       refute html =~ "You can grant only packs within your own access."
@@ -353,7 +332,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "the Security rail is SSO's one console door (its nav item is gone)", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       # The setup action stays visible on Free, with the plan reason attached
       # to the disabled control rather than replacing it with passive prose.
@@ -391,7 +370,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "pending SSO access requests surface on Team, and approving clears one", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
 
       provider =
@@ -505,27 +484,26 @@ defmodule EmisarWeb.TeamLiveTest do
       provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Okta workforce")
 
-      member = Fixtures.Users.create_user(email: "linked@corp.test", full_name: "Linked Member")
-
-      membership =
+      member =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.id,
-          role: :admin
+          role: :admin,
+          email: "linked@corp.test",
+          display_name: "Linked Member"
         )
 
-      original_access = Emisar.Accounts.runner_access_for_membership(account.id, membership.id)
+      original_access = Emisar.Accounts.runner_access_for_membership(account.id, member.id)
 
       request =
         Fixtures.SSO.create_link_request(
           provider: provider,
           email: member.email,
-          full_name: member.full_name,
-          matched_membership_id: membership.id,
+          full_name: member.display_name,
+          matched_membership_id: member.id,
           claims: %{
             "email" => member.email,
             "email_verified" => true,
-            "name" => member.full_name
+            "name" => member.display_name
           }
         )
 
@@ -554,10 +532,9 @@ defmodule EmisarWeb.TeamLiveTest do
       })
 
       assert Emisar.Repo.reload(request) == nil
-      unchanged = Fixtures.Memberships.fetch_membership(account.id, member.id)
-      assert unchanged.role == :admin
+      assert member.role == :admin
 
-      assert Emisar.Accounts.runner_access_for_membership(account.id, unchanged.id) ==
+      assert Emisar.Accounts.runner_access_for_membership(account.id, member.id) ==
                original_access
     end
 
@@ -567,12 +544,12 @@ defmodule EmisarWeb.TeamLiveTest do
       {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      member = Fixtures.Users.create_user(email: "invited-sso@corp.test")
+      member = %{email: "invited-sso@corp.test"}
 
       {:ok, %{membership: invitation}} =
         Emisar.Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(email: member.email, role: "operator"),
-          Fixtures.Subjects.subject_for(owner, account, role: :owner)
+          Fixtures.Subjects.subject_for(owner)
         )
 
       request =
@@ -631,7 +608,8 @@ defmodule EmisarWeb.TeamLiveTest do
       membership =
         Emisar.Accounts.peek_sync_membership_by_email(account.id, "scoped-access@corp.test")
 
-      assert is_nil(membership.user_id)
+      # An approved IdP identity never proves the address for email sign-in.
+      assert is_nil(membership.email_verified_at)
 
       assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
                %Emisar.Accounts.RunnerAccess{
@@ -644,7 +622,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "a pack-restricted connection opens its approval already narrowed", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       Fixtures.Catalog.create_trusted_pack_version(account_id: account.id, pack_id: "postgres")
       Fixtures.Catalog.create_action(runner: runner, action_id: "pg.up", pack_id: "postgres")
@@ -684,7 +662,7 @@ defmodule EmisarWeb.TeamLiveTest do
       render_click(lv, "approve_request", %{"id" => request.id})
 
       membership = Emisar.Accounts.peek_sync_membership_by_email(account.id, "packed@corp.test")
-      assert is_nil(membership.user_id)
+      assert is_nil(membership.email_verified_at)
 
       assert Emisar.Accounts.runner_access_for_membership(account.id, membership.id) ==
                %Emisar.Accounts.RunnerAccess{
@@ -697,7 +675,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "clearing a pending request's runner access keeps its pack selection", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
@@ -739,9 +717,12 @@ defmodule EmisarWeb.TeamLiveTest do
       {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      member = Fixtures.Users.create_user(email: "unverified-match@corp.test")
 
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "unverified-match@corp.test"
+        )
 
       assert {:ok, %{request: request}} =
                Ecto.Multi.new()
@@ -764,7 +745,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "the pending-request form reaches the runner access change handler", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
@@ -781,7 +762,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "clearing the last pending-request runner scope keeps it cleared", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
@@ -811,7 +792,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "clearing the last pending-request pack scope names the error at the picker", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       request = Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
@@ -853,7 +834,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "the connection stays in Security and the header copies its account sign-in link", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Okta prod")
 
@@ -880,7 +861,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "SSO enforcement stays in Security while member actions live only in the page header", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       Fixtures.SSO.create_identity_provider(account_id: account.id)
 
@@ -907,7 +888,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "a configured but disabled connection keeps its enforcement prerequisite visible", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: false)
 
@@ -930,7 +911,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # The owner can no longer APPROVE these (that grants access, and the plan
       # gates it), but they must still see the queue to turn people away. Hiding
       # it left requests piling up where nobody could act on them.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
 
@@ -940,13 +921,12 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "pending requests stay hidden without manage_sso", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       Fixtures.SSO.create_link_request(provider: provider, full_name: "Dana Ops")
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "viewer")
+      Fixtures.Memberships.force_role(owner, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       refute html =~ "Pending access requests"
@@ -956,7 +936,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "GET /app/settings/team/invite" do
     test "renders the invite form with each role explained", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
       assert html =~ "Send invite"
@@ -972,7 +952,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "an invalid email renders inline on the field, not in a flash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
       html =
@@ -988,7 +968,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a successful invite lands on the success step with next actions", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
       html =
@@ -1020,7 +1000,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "the completion receipt reports the persisted selected runner and pack access", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "db-primary", group: "db")
@@ -1090,7 +1070,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "selected runner access is required and persisted with the invitation", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       _db = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       _web = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
@@ -1142,7 +1122,7 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a runner retired while composing fails inline, keeping the typed values", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
@@ -1170,13 +1150,12 @@ defmodule EmisarWeb.TeamLiveTest do
       assert html =~ "Choose at least one runner group or runner"
       assert html =~ "stale@example.com"
       refute html =~ "Invitation sent"
-      assert Emisar.Users.fetch_user_by_email("stale@example.com") == {:error, :not_found}
+      assert members_with_email("stale@example.com") == []
     end
 
     test "a viewer hitting the invite route directly is refused (IL-15)", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerInvite"}})
-      m = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(m, "viewer")
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ViewerInvite"}})
+      Fixtures.Memberships.force_role(owner, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/invite")
 
@@ -1191,55 +1170,15 @@ defmodule EmisarWeb.TeamLiveTest do
       assert render_submit(lv, "invite", %{"invite" => %{"email" => email, "role" => "owner"}}) =~
                "Only owners and admins can invite members."
 
-      assert Emisar.Users.fetch_user_by_email(email) == {:error, :not_found}
-    end
-  end
-
-  describe "resend confirmation (self)" do
-    setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
-    end
-
-    test "an unconfirmed user can resend their own confirmation email", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      # TeamLive defines no `resend_confirmation` handler — the row's button is
-      # served by the portal-wide `:email_confirmation` on_mount hook (the same
-      # one behind the verify-email banner), which owns the send + rate-limit. A
-      # successful click flashing the hook's copy proves the global handler, not
-      # TeamLive, fielded the event.
-      # Simulate the signed-up-but-unconfirmed state (register_and_log_in
-      # confirms by default).
-      {:ok, _} = user |> Ecto.Changeset.change(confirmed_at: nil) |> Emisar.Repo.update()
-
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert html =~ "Resend email"
-
-      # Scoped to the roster: the portal-wide verify-email strip offers the same
-      # remedy in the same words on this very page, so an unscoped selector
-      # matches two buttons.
-      roster_resend = "#members button.border-zinc-800[phx-click='resend_confirmation']"
-      assert has_element?(lv, roster_resend, "Resend email")
-
-      html = lv |> element(roster_resend) |> render_click()
-      assert html =~ "Confirmation email requested"
-    end
-
-    test "a confirmed user sees no resend button", %{conn: conn, account: account} do
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-      refute html =~ "Resend email"
+      assert members_with_email(email) == []
     end
   end
 
   describe "GET /app/settings/team as a viewer" do
     test "shows the read-only banner and no invite action", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})
 
-      m = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(m, "viewer")
+      Fixtures.Memberships.force_role(owner, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -1248,14 +1187,13 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "shows connection availability without exposing connection details", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
 
       _provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Private IdP")
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "viewer")
+      Fixtures.Memberships.force_role(owner, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -1272,10 +1210,9 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "an unconfigured account reads as Not configured, still locked", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "viewer")
+      Fixtures.Memberships.force_role(owner, "viewer")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -1292,16 +1229,14 @@ defmodule EmisarWeb.TeamLiveTest do
       {_owner_conn, _owner, account} =
         register_and_log_in(conn, %{account: %{name: "ReadOnlyOrg"}})
 
-      teammate = Fixtures.Users.create_user(%{full_name: "Teammate Tess"})
-
-      teammate_membership =
+      teammate =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: teammate.id,
-          role: "admin"
+          role: "admin",
+          display_name: "Teammate Tess"
         )
 
-      %{account: account, teammate: teammate, teammate_membership: teammate_membership}
+      %{account: account, teammate: teammate, teammate_membership: teammate}
     end
 
     for role <- ~w(operator viewer) do
@@ -1310,17 +1245,11 @@ defmodule EmisarWeb.TeamLiveTest do
         teammate: teammate,
         teammate_membership: teammate_membership
       } do
-        member = Fixtures.Users.create_user()
-
-        member_membership =
-          Fixtures.Memberships.create_membership(
-            account_id: account.id,
-            user_id: member.id,
-            role: unquote(role)
-          )
+        member =
+          Fixtures.Memberships.create_membership(account_id: account.id, role: unquote(role))
 
         {:ok, lv, html} =
-          build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
+          build_conn() |> log_in_member(member) |> live(~p"/app/#{account}/settings/team")
 
         # The roster IS visible.
         assert html =~ "Teammate Tess"
@@ -1348,7 +1277,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
         assert has_element?(
                  lv,
-                 "a[href*='actor_id=#{member_membership.id}']",
+                 "a[href*='actor_id=#{member.id}']",
                  "View activity"
                )
       end
@@ -1362,17 +1291,11 @@ defmodule EmisarWeb.TeamLiveTest do
       teammate: teammate,
       teammate_membership: teammate_membership
     } do
-      member = Fixtures.Users.create_user()
-
-      member_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "billing_manager"
-        )
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(member) |> live(~p"/app/#{account}/settings/team")
 
       assert html =~ "Teammate Tess"
       assert html =~ teammate.email
@@ -1386,7 +1309,7 @@ defmodule EmisarWeb.TeamLiveTest do
       refute html =~ "Your role:"
 
       refute has_element?(lv, "a[href*='actor_id=#{teammate_membership.id}']", "View activity")
-      refute has_element?(lv, "a[href*='actor_id=#{member_membership.id}']", "View activity")
+      refute has_element?(lv, "a[href*='actor_id=#{member.id}']", "View activity")
     end
 
     test "a teammate's activity facts are hidden; your own row keeps them", %{
@@ -1394,17 +1317,15 @@ defmodule EmisarWeb.TeamLiveTest do
       teammate: teammate,
       teammate_membership: teammate_membership
     } do
-      member = Fixtures.Users.create_user(%{full_name: "Reader Rae"})
-
-      membership =
+      member =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.id,
-          role: "operator"
+          role: "operator",
+          display_name: "Reader Rae"
         )
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(member) |> live(~p"/app/#{account}/settings/team")
 
       teammate_metadata =
         lv |> element("#member-metadata-#{teammate_membership.id}") |> render()
@@ -1416,7 +1337,7 @@ defmodule EmisarWeb.TeamLiveTest do
       refute teammate_metadata =~ "active"
       refute teammate_metadata =~ "·"
 
-      own_metadata = lv |> element("#member-metadata-#{membership.id}") |> render()
+      own_metadata = lv |> element("#member-metadata-#{member.id}") |> render()
 
       assert own_metadata =~ member.email
       assert own_metadata =~ "joined"
@@ -1426,16 +1347,10 @@ defmodule EmisarWeb.TeamLiveTest do
     test "the permission note opens the page, with the docs link still the intro's tail", %{
       account: account
     } do
-      member = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "operator"
-      )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(member) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(member) |> live(~p"/app/#{account}/settings/team")
 
       # The roster badge owns the read-only state; no redundant page introduction.
       refute html =~ "See who's on your team, their access"
@@ -1447,22 +1362,20 @@ defmodule EmisarWeb.TeamLiveTest do
     test "the read-only badge stays visible when filters hide the viewer's row", %{
       account: account
     } do
-      viewer = Fixtures.Users.create_user(full_name: "Reader Rae")
-
-      viewer_membership =
+      viewer =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
+          role: "viewer",
+          display_name: "Reader Rae"
         )
 
       {:ok, lv, html} =
         build_conn()
-        |> log_in_user(viewer)
+        |> log_in_member(viewer)
         |> live(~p"/app/#{account}/settings/team?role=owner")
 
       assert html =~ "Read-only"
-      refute has_element?(lv, "#member-name-#{viewer_membership.id}")
+      refute has_element?(lv, "#member-name-#{viewer.id}")
       assert has_element?(lv, "#members-filter option[value='owner'][selected]")
     end
   end
@@ -1473,24 +1386,11 @@ defmodule EmisarWeb.TeamLiveTest do
       {_owner_conn, _owner, account} =
         register_and_log_in(conn, %{account: %{name: "CraftedOrg"}})
 
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+      target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      target = Fixtures.Users.create_user()
-
-      target_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target.id,
-          role: "operator"
-        )
-
-      viewer_conn = build_conn() |> log_in_user(viewer)
+      viewer_conn = build_conn() |> log_in_member(viewer)
       {:ok, lv, _html} = live(viewer_conn, ~p"/app/#{account}/settings/team")
 
       %{
@@ -1498,7 +1398,7 @@ defmodule EmisarWeb.TeamLiveTest do
         lv: lv,
         account: account,
         target: target,
-        target_membership: target_membership
+        target_membership: target
       }
     end
 
@@ -1550,7 +1450,7 @@ defmodule EmisarWeb.TeamLiveTest do
         })
 
       assert html =~ "Only owners and admins can manage members."
-      assert Emisar.Repo.reload!(target).full_name == target.full_name
+      assert Emisar.Repo.reload!(target).display_name == target.display_name
     end
 
     test "end_sessions is refused", %{lv: lv, target_membership: target_membership} do
@@ -1616,7 +1516,7 @@ defmodule EmisarWeb.TeamLiveTest do
       conn: conn
     } do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "FinanceOrg"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       finance =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
@@ -1643,7 +1543,7 @@ defmodule EmisarWeb.TeamLiveTest do
                "A billing manager has no runner or pack access."
 
       assert Emisar.Accounts.update_membership_runner_access(
-               Fixtures.Memberships.fetch_membership(account.id, finance.user_id),
+               finance,
                Emisar.Accounts.RunnerAccess.all(),
                subject
              ) == {:error, :role_carries_no_runner_access}
@@ -1655,7 +1555,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # An invited admin we'll scope.
       email = "scoped-#{System.unique_integer([:positive])}@example.com"
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, %{membership: m}} =
         Emisar.Accounts.invite_user_to_account(
@@ -1700,7 +1600,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "an emptied pack selection is named at the picker, not in a flash", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackErrOrg"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       email = "packerr-#{System.unique_integer([:positive])}@example.com"
 
@@ -1762,7 +1662,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "the scope editor narrows the same grant to selected packs", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackScopeOrg"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       email = "packscope-#{System.unique_integer([:positive])}@example.com"
 
@@ -1844,7 +1744,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "clearing runner access and choosing it again keeps the pack selection", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "PackKeepOrg"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
       email = "packkeep-#{System.unique_integer([:positive])}@example.com"
 
       {:ok, %{membership: m}} =
@@ -1908,7 +1808,7 @@ defmodule EmisarWeb.TeamLiveTest do
       conn: conn
     } do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg3"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       email = "scoped3-#{System.unique_integer([:positive])}@example.com"
 
@@ -1946,7 +1846,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "clearing the last runner scope keeps it cleared", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg5"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
       email = "scoped5-#{System.unique_integer([:positive])}@example.com"
 
       {:ok, %{membership: membership}} =
@@ -1980,7 +1880,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "a runner past the first page can still be granted", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopePaged"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       email = "scoped-paged-#{System.unique_integer([:positive])}@example.com"
 
@@ -2025,7 +1925,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "the scope picker pre-selects the member's existing scopes", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg2"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       email = "scoped2-#{System.unique_integer([:positive])}@example.com"
 
@@ -2059,7 +1959,7 @@ defmodule EmisarWeb.TeamLiveTest do
       conn: conn
     } do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg4"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       email = "scoped4-#{System.unique_integer([:positive])}@example.com"
 
@@ -2096,7 +1996,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "a scoped runner chip names the runner without exposing its ID", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg5"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       email = "scoped5-#{System.unique_integer([:positive])}@example.com"
 
@@ -2124,7 +2024,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "a scoped runner that no longer resolves reads as unavailable without exposing its ID",
          %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ScopeOrg6"}})
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       email = "scoped6-#{System.unique_integer([:positive])}@example.com"
 
@@ -2158,14 +2058,9 @@ defmodule EmisarWeb.TeamLiveTest do
     test "a long pack allowlist clips to three chips and a +N toggle that expands in place",
          %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
-      member = Fixtures.Users.create_user()
 
       membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       packs = ~w[alpha bravo charlie delta echo]
 
@@ -2193,14 +2088,9 @@ defmodule EmisarWeb.TeamLiveTest do
     test "a long runner scope clips to three tags and expands independently of packs",
          %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
-      member = Fixtures.Users.create_user()
 
       membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       groups = ~w[alpha-fleet bravo-fleet charlie-fleet delta-fleet echo-fleet]
       packs = ~w[consul nginx postgres redis vault]
@@ -2235,14 +2125,9 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "a short allowlist renders every pack with no toggle", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
-      member = Fixtures.Users.create_user()
 
       membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, restricted} =
         Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ~w[alpha bravo])
@@ -2259,24 +2144,18 @@ defmodule EmisarWeb.TeamLiveTest do
   describe "member administration" do
     setup %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
-      member = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "viewer"
-        )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-      %{owner: owner, account: account, member: member, membership: membership, lv: lv}
+      %{owner: owner, account: account, member: member, membership: member, lv: lv}
     end
 
     test "a pending invitation row shows its lifecycle and can resend the invite", %{
       owner: owner,
       account: account
     } do
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
       email = "resend-web-#{System.unique_integer([:positive])}@example.com"
 
       {:ok, %{membership: membership, invitation_token: old_token}} =
@@ -2290,7 +2169,7 @@ defmodule EmisarWeb.TeamLiveTest do
         )
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(owner) |> live(~p"/app/#{account}/settings/team")
 
       assert html =~ "Resend invite"
 
@@ -2368,7 +2247,7 @@ defmodule EmisarWeb.TeamLiveTest do
       lv |> element(action, "Cancel name edit") |> render_click()
       refute has_element?(lv, "#edit-form-#{membership.id}")
       assert has_element?(lv, "#{action}[aria-expanded='false']", "Edit name")
-      assert Emisar.Repo.reload!(member).full_name == member.full_name
+      assert Emisar.Repo.reload!(member).display_name == member.display_name
 
       lv |> element(action) |> render_click()
       assert has_element?(lv, "#edit-form-#{membership.id}")
@@ -2411,7 +2290,7 @@ defmodule EmisarWeb.TeamLiveTest do
       other = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(owner) |> live(~p"/app/#{account}/settings/team")
 
       for {event, form_prefix} <- [
             {"start_edit", "edit-form"},
@@ -2454,16 +2333,10 @@ defmodule EmisarWeb.TeamLiveTest do
       account: account,
       membership: membership
     } do
-      admin = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(admin) |> live(~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "summary", "Actions")
       assert has_element?(lv, "details a[href*='actor_id=#{membership.id}']", "View activity")
@@ -2481,7 +2354,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, _} = Emisar.Mail.suppress(email, :hard_bounce)
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team/invite")
+        build_conn() |> log_in_member(owner) |> live(~p"/app/#{account}/settings/team/invite")
 
       html =
         lv
@@ -2504,7 +2377,7 @@ defmodule EmisarWeb.TeamLiveTest do
       Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/settings/team/invite")
+        build_conn() |> log_in_member(owner) |> live(~p"/app/#{account}/settings/team/invite")
 
       html =
         lv
@@ -2540,21 +2413,15 @@ defmodule EmisarWeb.TeamLiveTest do
       # The domain caps a promotion at the actor's own reach, so a scoped admin
       # can't manufacture a wider peer. That refusal has to reach the operator as
       # the fix — narrow them first — not as the generic "didn't apply".
-      admin = Fixtures.Users.create_user()
 
-      admin_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {:ok, db_access} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
-      Fixtures.Memberships.force_runner_access(admin_membership, db_access)
+      Fixtures.Memberships.force_runner_access(admin, db_access)
       Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(admin) |> live(~p"/app/#{account}/settings/team")
 
       html =
         render_click(lv, "change_role", %{"membership_id" => membership.id, "role" => "operator"})
@@ -2673,18 +2540,12 @@ defmodule EmisarWeb.TeamLiveTest do
       assert_team_broadcast(lv, "membership.reinstated", membership.id)
     end
 
-    test "account cautions use separate status lines and clear independently", %{
+    test "a suspension has its own status line naming its author and clears on reinstate", %{
       account: account,
       lv: lv,
-      member: member,
       owner: owner,
       membership: membership
     } do
-      {:ok, _unconfirmed} =
-        member
-        |> Ecto.Changeset.change(confirmed_at: nil)
-        |> Emisar.Repo.update()
-
       refute has_element?(lv, "#member-status-suspended-#{membership.id}")
 
       subscribe_team(account)
@@ -2699,26 +2560,10 @@ defmodule EmisarWeb.TeamLiveTest do
                "access suspended"
              )
 
-      refute has_element?(
-               lv,
-               "#member-status-suspended-#{membership.id} > .bg-amber-400"
-             )
-
       assert has_element?(
                lv,
                "#member-status-suspended-#{membership.id} #member-suspended-by-#{membership.id}",
-               "by #{Emisar.Accounts.user_display_name(owner)}"
-             )
-
-      assert has_element?(
-               lv,
-               "#member-status-unconfirmed-#{membership.id} #member-unconfirmed-#{membership.id}",
-               "Email unconfirmed"
-             )
-
-      assert has_element?(
-               lv,
-               "#member-status-unconfirmed-#{membership.id} > .bg-amber-400"
+               "by #{Emisar.Accounts.member_display_name(owner)}"
              )
 
       assert_team_broadcast(lv, "membership.suspended", membership.id)
@@ -2726,13 +2571,7 @@ defmodule EmisarWeb.TeamLiveTest do
       render_click(lv, "reinstate", %{"membership_id" => membership.id})
       refute has_element?(lv, "#member-status-suspended-#{membership.id}")
       refute has_element?(lv, "#member-suspended-by-#{membership.id}")
-      assert has_element?(lv, "#member-unconfirmed-#{membership.id}", "Email unconfirmed")
-
-      assert has_element?(
-               lv,
-               "#member-status-unconfirmed-#{membership.id} > .bg-amber-400"
-             )
-
+      refute has_element?(lv, "#member-statuses-#{membership.id}")
       assert_team_broadcast(lv, "membership.reinstated", membership.id)
     end
 
@@ -2741,19 +2580,13 @@ defmodule EmisarWeb.TeamLiveTest do
       owner: owner,
       membership: membership
     } do
-      owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
       assert {:ok, _suspended} = Emisar.Accounts.suspend_membership(membership, owner_subject)
 
-      viewer = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/settings/team")
 
       assert has_element?(lv, "#member-suspended-#{membership.id}", "access suspended")
       refute has_element?(lv, "#member-suspended-by-#{membership.id}")
@@ -2830,7 +2663,7 @@ defmodule EmisarWeb.TeamLiveTest do
       member: member,
       membership: membership
     } do
-      _member_conn = build_conn() |> log_in_user(member)
+      _member_conn = build_conn() |> log_in_member(member)
 
       render_click(lv, "open_member_action", %{
         "action" => "end_sessions",
@@ -3009,7 +2842,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "invite form live validation (phx-change)" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/invite")
       %{conn: conn, account: account, lv: lv}
     end
@@ -3083,7 +2916,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert html =~ "Send invite"
       refute html =~ "Invitation sent"
-      assert Emisar.Users.fetch_user_by_email(email) == {:error, :not_found}
+      assert members_with_email(email) == []
     end
   end
 
@@ -3091,16 +2924,10 @@ defmodule EmisarWeb.TeamLiveTest do
     setup %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
-      member = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      %{conn: conn, owner: owner, account: account, member: member, membership: membership}
+      %{conn: conn, owner: owner, account: account, member: member, membership: member}
     end
 
     test "the Reset MFA action is offered only when the member is enrolled", %{
@@ -3118,44 +2945,45 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert has_element?(lv, ~s|a[href="#{path}"]|, "Reset MFA")
 
-      invited = Fixtures.Users.create_user() |> enroll_mfa()
-
       pending =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: invited.id,
           invitation_token_digest: "pending-reset-invite"
         )
+        |> enroll_mfa()
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
       pending_path = ~p"/app/#{account}/settings/team/#{pending.id}/reset_mfa"
       refute has_element?(lv, ~s|a[href="#{pending_path}"]|, "Reset MFA")
     end
 
-    test "a member who belongs to another workspace gets a disabled action and no reset page", %{
+    test "a namesake in another workspace changes nothing: the reset clears only this Member", %{
       conn: conn,
+      owner: owner,
       account: account,
       member: member,
       membership: membership
     } do
+      secret = Emisar.Auth.generate_mfa_secret()
+
+      Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner),
+        session_token: session_token(conn, account)
+      )
+
       enroll_mfa(member)
-      other_account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: member.id)
+      elsewhere = Fixtures.Memberships.create_membership(email: member.email) |> enroll_mfa()
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
       path = ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa"
-      refute has_element?(lv, ~s|a[href="#{path}"]|, "Reset MFA")
-      assert has_element?(lv, "button[disabled]", "Reset MFA")
-      assert render(lv) =~ "also belongs to other workspaces"
+      assert has_element?(lv, ~s|a[href="#{path}"]|, "Reset MFA")
+      refute html =~ "other workspaces"
 
-      # The dialog route is not a back door: it returns to the roster with the reason.
-      {:ok, _lv, html} =
-        conn
-        |> live(path)
-        |> follow_redirect(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, _html} = live(conn, path)
+      render_hook(lv, "verify_reset_totp", %{"otp" => Fixtures.Auth.totp_code(secret)})
+      assert_redirect(lv, ~p"/app/#{account}/settings/team")
 
-      assert html =~ "also belongs to other workspaces"
-      assert Emisar.Repo.reload!(member).mfa_enabled_at != nil
+      assert is_nil(Emisar.Repo.reload!(member).mfa_enabled_at)
+      assert %DateTime{} = Emisar.Repo.reload!(elsewhere).mfa_enabled_at
     end
 
     test "an owner must prove their own current TOTP before the member is reset", %{
@@ -3166,11 +2994,11 @@ defmodule EmisarWeb.TeamLiveTest do
       membership: membership
     } do
       secret = Emisar.Auth.generate_mfa_secret()
-      session_token = get_session(conn, :user_token)
+      session_token = session_token(conn, account)
 
-      Fixtures.Users.enable_mfa!(
+      Fixtures.Memberships.enable_mfa!(
         secret,
-        Fixtures.Subjects.subject_for(owner, account),
+        Fixtures.Subjects.subject_for(owner),
         session_token: session_token
       )
 
@@ -3198,12 +3026,12 @@ defmodule EmisarWeb.TeamLiveTest do
       member: member,
       membership: membership
     } do
-      session_token = get_session(conn, :user_token)
+      session_token = session_token(conn, account)
 
       {_owner, [recovery_code | _]} =
-        Fixtures.Users.enable_mfa!(
+        Fixtures.Memberships.enable_mfa!(
           Emisar.Auth.generate_mfa_secret(),
-          Fixtures.Subjects.subject_for(owner, account),
+          Fixtures.Subjects.subject_for(owner),
           session_token: session_token
         )
 
@@ -3240,7 +3068,6 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "an MFA-satisfying SSO session gets a CSRF-protected reauthentication action", %{
-      conn: conn,
       owner: owner,
       account: account,
       member: member,
@@ -3257,17 +3084,18 @@ defmodule EmisarWeb.TeamLiveTest do
         Fixtures.SSO.create_user_identity(%{
           account_id: account.id,
           provider_id: provider.id,
-          user_id: owner.id,
+          membership: owner,
           provider_identifier: "team-reset-owner"
         })
 
-      session =
-        Fixtures.Auth.create_session_token!(owner, :sso, DateTime.utc_now(), %{},
-          user_identity_id: identity.id
-        )
-
       enroll_mfa(member)
-      conn = put_session(conn, :user_token, session)
+
+      conn =
+        log_in_member(build_conn(), owner,
+          auth_method: :sso,
+          user_identity_id: identity.id,
+          mfa: true
+        )
 
       {:ok, lv, html} =
         live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa")
@@ -3288,11 +3116,11 @@ defmodule EmisarWeb.TeamLiveTest do
       membership: membership
     } do
       secret = Emisar.Auth.generate_mfa_secret()
-      session_token = get_session(conn, :user_token)
+      session_token = session_token(conn, account)
 
-      Fixtures.Users.enable_mfa!(
+      Fixtures.Memberships.enable_mfa!(
         secret,
-        Fixtures.Subjects.subject_for(owner, account),
+        Fixtures.Subjects.subject_for(owner),
         session_token: session_token
       )
 
@@ -3340,10 +3168,10 @@ defmodule EmisarWeb.TeamLiveTest do
       account: account
     } do
       secret = Emisar.Auth.generate_mfa_secret()
-      session_token = get_session(conn, :user_token)
+      session_token = session_token(conn, account)
 
       {_user, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner, account),
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner),
           session_token: session_token
         )
 
@@ -3357,17 +3185,10 @@ defmodule EmisarWeb.TeamLiveTest do
     test "an operator is refused at the event level (IL-15 — owners + admins only)", %{
       account: account
     } do
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/settings/team")
 
       html = render_click(lv, "toggle_require_mfa", %{})
 
@@ -3377,10 +3198,10 @@ defmodule EmisarWeb.TeamLiveTest do
 
     test "enforcing MFA is a confirm-modal button (our modal) that fires the handler",
          %{conn: conn, owner: owner, account: account} do
-      Fixtures.Users.enable_mfa!(
+      Fixtures.Memberships.enable_mfa!(
         Emisar.Auth.generate_mfa_secret(),
-        Fixtures.Subjects.subject_for(owner, account),
-        session_token: get_session(conn, :user_token)
+        Fixtures.Subjects.subject_for(owner),
+        session_token: session_token(conn, account)
       )
 
       # Off: the trigger reads "Require MFA" and opens our confirm dialog.
@@ -3426,17 +3247,10 @@ defmodule EmisarWeb.TeamLiveTest do
     test "an operator is refused at the event level (IL-15 — owners + admins only)", %{
       account: account
     } do
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/settings/team")
 
       html = render_click(lv, "toggle_monthly_report", %{})
 
@@ -3460,14 +3274,9 @@ defmodule EmisarWeb.TeamLiveTest do
     test "renders account-wide enrollment, not just the visible page", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
 
-      member = Fixtures.Users.create_user()
-      member |> Ecto.Changeset.change(mfa_enabled_at: DateTime.utc_now()) |> Emisar.Repo.update()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "admin"
-      )
+      [account_id: account.id, role: "admin"]
+      |> Fixtures.Memberships.create_membership()
+      |> Fixtures.Memberships.set_mfa_state(mfa_enabled_at: DateTime.utc_now())
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -3479,8 +3288,8 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "deliverability (email suppression) badge" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, user: owner, account: account}
     end
 
     test "flags a member whose email is on the suppression list", %{
@@ -3505,7 +3314,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
   describe "member-row timestamps render through <.local_time>" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       %{conn: conn, account: account}
     end
 
@@ -3513,14 +3322,8 @@ defmodule EmisarWeb.TeamLiveTest do
       conn: conn,
       account: account
     } do
-      member = Fixtures.Users.create_user()
-
       membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
         |> Fixtures.Memberships.set_last_active_at(DateTime.utc_now())
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team")
@@ -3540,36 +3343,11 @@ defmodule EmisarWeb.TeamLiveTest do
       refute html =~ ~r/last active<time/
     end
 
-    test "falls back to the global sign-in until membership activity is recorded", %{
-      conn: conn,
-      account: account
-    } do
-      member =
-        Fixtures.Users.create_user() |> Fixtures.Users.set_last_sign_in_at(DateTime.utc_now())
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
-
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
-
-      assert html =~ ~r/last active\s<time[^>]+id="active-#{membership.id}"/
-    end
-
     test "a member with no activity evidence shows the static 'never active'", %{
       conn: conn,
       account: account
     } do
-      member = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "operator"
-      )
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/team")
 
@@ -3580,22 +3358,20 @@ defmodule EmisarWeb.TeamLiveTest do
       conn: conn,
       account: account
     } do
-      member = Fixtures.Users.create_user(%{full_name: nil})
-
-      membership =
+      member =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.id,
-          role: "operator"
+          role: "operator",
+          display_name: nil
         )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
-      assert has_element?(lv, "#member-name-#{membership.id}", member.email)
+      assert has_element?(lv, "#member-name-#{member.id}", member.email)
 
       metadata_html =
         lv
-        |> element("#member-metadata-#{membership.id}")
+        |> element("#member-metadata-#{member.id}")
         |> render()
 
       assert metadata_html =~ ~r/metadata-[^"]+"[^>]*>\s*<span[^>]*>\s*joined\s<time/
@@ -3609,7 +3385,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # The badge/fleet on_mount hooks forward account-topic broadcasts to every
       # LV, so TeamLive must carry the mandatory handle_info(_, socket) catch-all
       # (a missing one crashes the socket on the first stray message).
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
 
       send(lv.pid, {:some_unrelated_event, :payload})
@@ -3623,15 +3399,13 @@ defmodule EmisarWeb.TeamLiveTest do
       # connected?/1 (IL-18) — so the dead render a plain GET produces must show
       # <.loading_state>, with no member rows read or rendered. A teammate is
       # seeded precisely so "no roster on the dead render" is meaningful.
-      {conn, _user, account} = register_and_log_in(conn, %{account: %{name: "DeadRenderOrg"}})
-
-      teammate = Fixtures.Users.create_user(%{full_name: "Deadrender Teammate"})
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{name: "DeadRenderOrg"}})
 
       _ =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: teammate.id,
-          role: "operator"
+          role: "operator",
+          display_name: "Deadrender Teammate"
         )
 
       dead = conn |> get(~p"/app/#{account}/settings/team") |> html_response(200)
@@ -3647,15 +3421,13 @@ defmodule EmisarWeb.TeamLiveTest do
       # {:error, :invalid_cursor}; load/2 retries once with %{} (since the params
       # were non-empty), so the page recovers and renders the roster instead of
       # 500-ing or landing on the load-error empty state.
-      {conn, _user, account} = register_and_log_in(conn, %{account: %{name: "RecoverOrg"}})
-
-      teammate = Fixtures.Users.create_user(%{full_name: "Recover Teammate"})
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{name: "RecoverOrg"}})
 
       _ =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: teammate.id,
-          role: "operator"
+          role: "operator",
+          display_name: "Recover Teammate"
         )
 
       {:ok, _lv, html} =
@@ -3675,17 +3447,10 @@ defmodule EmisarWeb.TeamLiveTest do
       # them via can_manage?, never creating a membership.
       {_owner_conn, _owner, account} = register_and_log_in(conn, %{account: %{name: "ValOrg"}})
 
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/settings/team")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/settings/team")
 
       email = "valid-but-denied-#{System.unique_integer([:positive])}@example.com"
 
@@ -3694,7 +3459,7 @@ defmodule EmisarWeb.TeamLiveTest do
       # The denial is the membership-management flash, and no user/membership was
       # created from the forged event.
       assert html =~ "Only owners and admins can invite members."
-      assert Emisar.Users.fetch_user_by_email(email) == {:error, :not_found}
+      assert members_with_email(email) == []
     end
   end
 
@@ -3757,9 +3522,15 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
-  defp enroll_mfa(user) do
-    {:ok, user} =
-      user
+  defp members_with_email(email) do
+    Emisar.Accounts.Membership.Query.all()
+    |> Emisar.Accounts.Membership.Query.by_email(email)
+    |> Emisar.Repo.all()
+  end
+
+  defp enroll_mfa(member) do
+    {:ok, member} =
+      member
       |> Ecto.Changeset.change(
         mfa_secret: "JBSWY3DPEHPK3PXP",
         mfa_enabled_at: DateTime.utc_now(),
@@ -3767,7 +3538,7 @@ defmodule EmisarWeb.TeamLiveTest do
       )
       |> Emisar.Repo.update()
 
-    user
+    member
   end
 
   # Provision a member through a directory-sync (SCIM) provider so their role is the

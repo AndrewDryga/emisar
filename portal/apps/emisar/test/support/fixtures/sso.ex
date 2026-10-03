@@ -65,9 +65,11 @@ defmodule Emisar.Fixtures.SSO do
     provider |> Ecto.Changeset.change(enabled: false) |> Repo.update!()
   end
 
-  @doc "Retires an identity's provider identifier directly — the state an unlink leaves, minus its session sweeps."
+  @doc "Retires an identity's provider identifier directly — the state a retirement leaves, minus its session sweeps."
   def retire_identity(%UserIdentity{} = identity) do
-    identity |> UserIdentity.Changeset.retire_provider_identifier() |> Repo.update!()
+    identity
+    |> Ecto.Changeset.change(provider_identifier_retired_at: DateTime.utc_now())
+    |> Repo.update!()
   end
 
   @doc "Arranges the persisted result of a successful sign-in verification for this configuration."
@@ -102,7 +104,8 @@ defmodule Emisar.Fixtures.SSO do
   end
 
   @doc """
-  Binds a user to a provider. Defaults to an OIDC-created identity (a
+  Binds a Member to a provider. Pass the exact `:membership` and the
+  `:provider_id`. Defaults to an OIDC-created identity (a
   `provider_identifier`, no `scim_external_id`); pass `:scim_external_id` for a
   directory-provisioned one. Returns the identity.
   """
@@ -110,9 +113,7 @@ defmodule Emisar.Fixtures.SSO do
     attrs = Map.new(attrs)
 
     member =
-      attrs[:membership] ||
-        Emisar.Accounts.peek_sync_membership(attrs.account_id, attrs.user_id) ||
-        raise "create the membership before its SSO identity, or pass its exact :membership"
+      attrs[:membership] || raise ArgumentError, "pass the exact :membership the identity binds"
 
     identity_attrs =
       Map.merge(
@@ -121,11 +122,12 @@ defmodule Emisar.Fixtures.SSO do
           created_by: :provider,
           provisioned_via: :oidc_jit
         },
-        Map.drop(attrs, [:account_id, :provider_id, :user_id, :membership])
+        Map.drop(attrs, [:account_id, :provider_id, :membership])
       )
 
     {:ok, identity} =
-      attrs.account_id
+      attrs
+      |> Map.get(:account_id, member.account_id)
       |> UserIdentity.Changeset.create(attrs.provider_id, member, identity_attrs)
       |> Repo.insert()
 
@@ -138,33 +140,38 @@ defmodule Emisar.Fixtures.SSO do
     Repo.get!(Emisar.Accounts.Membership, membership_id)
   end
 
-  @doc "A directory-linked roster member, with optional existing user and membership."
+  @doc """
+  A directory-linked roster Member: a SCIM-provisioned identity on `provider`
+  bound to a new Member (or the exact `:membership` passed). `:email` and
+  `:display_name` shape a new Member; a directory never proves an address, so it
+  stays unverified. Returns `%{membership: membership, identity: identity}`.
+  """
   def create_directory_member(provider, attrs \\ %{}) do
     attrs = Map.new(attrs)
-
-    user =
-      attrs[:user] || Emisar.Fixtures.Users.create_user(Map.take(attrs, [:full_name, :email]))
 
     membership =
       attrs[:membership] ||
         Emisar.Fixtures.Memberships.create_membership(
-          account_id: provider.account_id,
-          user_id: user.id,
-          role: attrs[:role] || "operator"
+          Map.merge(
+            %{
+              account_id: provider.account_id,
+              role: attrs[:role] || "operator",
+              email_verified?: false
+            },
+            Map.take(attrs, [:email, :display_name])
+          )
         )
 
     identity =
       create_user_identity(%{
-        account_id: provider.account_id,
         provider_id: provider.id,
-        user_id: user.id,
         membership: membership,
         provisioned_via: :scim,
         scim_external_id: "scim-#{Emisar.Fixtures.Random.unique_int()}",
         scim_active: Map.get(attrs, :scim_active, true)
       })
 
-    %{user: user, membership: membership, identity: identity}
+    %{membership: membership, identity: identity}
   end
 
   @doc "A synced group and its explicit directory identity links, without reconciliation side effects."

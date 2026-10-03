@@ -6,8 +6,8 @@ defmodule Emisar.Marketing do
   conversion reporting is a non-tenant side effect. Neither requires a
   `%Subject{}` or an Authorizer.
   """
+  alias Emisar.{Accounts, Repo, RequestContext}
   alias Emisar.Marketing.{Conversions, Signup}
-  alias Emisar.{Repo, RequestContext, Users}
 
   @doc """
   Captures an early-access email. Idempotent: a repeat address updates the
@@ -29,13 +29,13 @@ defmodule Emisar.Marketing do
   @doc """
   Reports a completed account signup for advertising attribution — best effort
   and asynchronous. The provider receives only the click identifier, the
-  conversion time, and an opaque deduplication id; the user's email and id
-  never leave the system. Always returns `:ok`: attribution without an eligible
-  click identifier or an unconfigured provider sends nothing, and a delivery
-  failure is logged.
+  conversion time, and an opaque deduplication id; the owner Member's email and
+  id never leave the system. Always returns `:ok`: attribution without an
+  eligible click identifier or an unconfigured provider sends nothing, and a
+  delivery failure is logged.
   """
-  def account_signed_up(%Users.User{} = user, attribution),
-    do: Conversions.account_signed_up(user, attribution)
+  def account_signed_up(%Accounts.Membership{} = owner, attribution),
+    do: Conversions.account_signed_up(owner, attribution)
 
   @doc """
   Internal — erases the captured signup for `email`, for the user/account

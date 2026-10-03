@@ -189,6 +189,7 @@ defmodule Emisar.BillingTest do
   alias Emisar.BillingTest.ConflictingCustomerPaddleClient
   alias Emisar.BillingTest.ControlsPaddleClient
   alias Emisar.BillingTest.ErrorPaddleClient
+  alias Emisar.Crypto
   alias Emisar.Fixtures
 
   describe "plans/0" do
@@ -1050,7 +1051,7 @@ defmodule Emisar.BillingTest do
 
   describe "start_checkout/4" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -1127,15 +1128,9 @@ defmodule Emisar.BillingTest do
     end
 
     test "an operator (view, not manage) is refused with :unauthorized", %{account: account} do
-      operator = Fixtures.Users.create_user()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
 
       assert Billing.start_checkout(account, "team", :month, operator_subject) ==
                {:error, :unauthorized}
@@ -1147,8 +1142,8 @@ defmodule Emisar.BillingTest do
     test "the owner of another account is denied checkout AND subscription controls for A" do
       # Account-B's owner holds manage_billing on B, but the gate binds it to the
       # subject's own account — so acting on A is :unauthorized.
-      {_user_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Billing.start_checkout(account_a, "team", :month, subject_b) ==
                {:error, :unauthorized}
@@ -1157,9 +1152,43 @@ defmodule Emisar.BillingTest do
     end
   end
 
+  describe "verify_checkout_return/1" do
+    setup do
+      Fixtures.Billing.start_provider()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      {:ok, _customer, account} = Billing.ensure_paddle_customer(account, subject)
+      %{account: account, subject: subject}
+    end
+
+    test "names the workspace and the transaction the checkout URL pays", %{
+      account: account,
+      subject: subject
+    } do
+      assert {:ok, url} = Billing.start_checkout(account, "team", :month, subject)
+      query = URI.decode_query(URI.parse(url).query)
+
+      assert Billing.verify_checkout_return(query["emisar_return"]) ==
+               {:ok, %{account_id: account.id, transaction_id: query["_ptxn"]}}
+    end
+
+    test "refuses an edited, missing or foreign return", %{account: account, subject: subject} do
+      assert {:ok, url} = Billing.start_checkout(account, "team", :month, subject)
+      checkout_return = URI.decode_query(URI.parse(url).query)["emisar_return"]
+      {_owner_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
+
+      assert Billing.verify_checkout_return(checkout_return <> "x") == {:error, :invalid}
+      assert Billing.verify_checkout_return(nil) == {:error, :invalid}
+      assert Billing.verify_checkout_return(account_b.id) == {:error, :invalid}
+
+      # Another purpose's signature over the same pair is not a checkout return.
+      assert Billing.verify_checkout_return(Crypto.paddle_account_binding(account_b.id, "txn_x")) ==
+               {:error, :invalid}
+    end
+  end
+
   describe "payment_method_update_url/2" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -1172,8 +1201,11 @@ defmodule Emisar.BillingTest do
       assert {:ok, url} = Billing.payment_method_update_url(account, subject)
       uri = URI.parse(url)
       query = URI.decode_query(uri.query)
-      assert {uri.host, query["emisar_account_id"]} == {"stub.paddle.test", account.id}
+      assert uri.host == "stub.paddle.test"
       assert String.starts_with?(query["_ptxn"], "txn_stub_pm_")
+
+      assert Billing.verify_checkout_return(query["emisar_return"]) ==
+               {:ok, %{account_id: account.id, transaction_id: query["_ptxn"]}}
     end
 
     test "has nothing to open without an automatically collected subscription", %{
@@ -1213,7 +1245,7 @@ defmodule Emisar.BillingTest do
 
     test "an owner of another account is refused", %{account: account} do
       collected_subscription(account, "sub_foreign_payment")
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Billing.payment_method_update_url(account, subject_b) == {:error, :unauthorized}
     end
@@ -1221,7 +1253,7 @@ defmodule Emisar.BillingTest do
 
   describe "cancel_subscription/2" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -1283,16 +1315,10 @@ defmodule Emisar.BillingTest do
 
     test "an operator and another account's owner are refused", %{account: account} do
       collected_subscription(account, "sub_cancel_guarded")
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      operator = Fixtures.Users.create_user()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
 
       assert Billing.cancel_subscription(account, subject_b) == {:error, :unauthorized}
       assert Billing.cancel_subscription(account, operator_subject) == {:error, :unauthorized}
@@ -1302,7 +1328,7 @@ defmodule Emisar.BillingTest do
 
   describe "keep_subscription/2" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -1343,7 +1369,7 @@ defmodule Emisar.BillingTest do
 
     test "another account's owner is refused", %{account: account} do
       collected_subscription(account, "sub_keep_foreign", scheduled_change_action: "cancel")
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Billing.keep_subscription(account, subject_b) == {:error, :unauthorized}
     end
@@ -1351,7 +1377,7 @@ defmodule Emisar.BillingTest do
 
   describe "list_recent_invoices/3" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -1407,7 +1433,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "an owner of another account is refused", %{account: account} do
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       account =
         account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
@@ -1456,7 +1482,7 @@ defmodule Emisar.BillingTest do
 
   describe "invoice_pdf_url/3" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       account =
         account |> Ecto.Changeset.change(paddle_customer_id: "ctm_invoices_01") |> Repo.update!()
@@ -1498,7 +1524,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "an owner of another account is refused", %{account: account} do
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       assert Billing.invoice_pdf_url(account, "txn_stub_1", subject_b) == {:error, :unauthorized}
     end
 
@@ -1514,10 +1540,10 @@ defmodule Emisar.BillingTest do
       # The test stub derives the customer id from the email it receives,
       # so two owners with different emails must yield different customer
       # ids. Before the fix (email: nil) both produced the same id.
-      {_user_a, account_a, subject_a} =
+      {_owner_a, account_a, subject_a} =
         Fixtures.Subjects.owner_subject(%{name: "Acct A"})
 
-      {_user_b, account_b, subject_b} =
+      {_owner_b, account_b, subject_b} =
         Fixtures.Subjects.owner_subject(%{name: "Acct B"})
 
       assert {:ok, cid_a, _} = Billing.ensure_paddle_customer(account_a, subject_a)
@@ -1528,7 +1554,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "is idempotent — returns the existing customer id without re-creating" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       {:ok, account} = Emisar.Accounts.link_account_paddle_customer(account, "ctm_existing_01")
 
       assert {:ok, "ctm_existing_01", linked} = Billing.ensure_paddle_customer(account, subject)
@@ -1536,23 +1562,17 @@ defmodule Emisar.BillingTest do
     end
 
     test "an operator without manage_billing is refused" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
-      operator = Fixtures.Users.create_user()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
 
       assert Billing.ensure_paddle_customer(account, operator_subject) == {:error, :unauthorized}
     end
 
     test "an owner of another account is refused before returning an existing customer" do
-      {_user_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       account_a = %{account_a | paddle_customer_id: "ctm_existing_01"}
 
       assert Billing.ensure_paddle_customer(account_a, subject_b) == {:error, :unauthorized}
@@ -1572,16 +1592,15 @@ defmodule Emisar.BillingTest do
 
     test "refuses an account with no confirmed owner email" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user(confirmed?: false)
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
+          role: "owner",
+          email_verified?: false
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Billing.ensure_paddle_customer(account, subject) == {:error, :no_billing_contact}
     end
@@ -1671,7 +1690,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "an operator and another account's owner are refused", %{account: account} do
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       operator_subject = role_subject(account, "operator")
 
       assert Billing.send_customer_link_code(account, subject_b) == {:error, :unauthorized}
@@ -1763,7 +1782,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "another account's owner is refused", %{account: account, code: code} do
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Billing.link_existing_customer(account, code, subject_b) == {:error, :unauthorized}
       refute Repo.reload!(account).paddle_customer_id
@@ -1772,7 +1791,7 @@ defmodule Emisar.BillingTest do
 
   describe "ensure_paddle_customer/2 first-wins" do
     test "a stale struct cannot clobber an already-linked customer id" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, first_customer_id, linked} = Billing.ensure_paddle_customer(account, subject)
       assert linked.paddle_customer_id == first_customer_id
@@ -1780,16 +1799,9 @@ defmodule Emisar.BillingTest do
       # Simulate the race: a second checkout still holds the pre-link
       # snapshot (nil customer id) and a DIFFERENT acting user, so the
       # stub would mint a different vendor customer. The locked row wins.
-      other_owner = Fixtures.Users.create_user()
+      other_owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: other_owner.id,
-          role: "owner"
-        )
-
-      other_subject = Fixtures.Subjects.subject_for(other_owner, account, role: :owner)
+      other_subject = Fixtures.Subjects.subject_for(other_owner)
       stale_account = %{account | paddle_customer_id: nil}
 
       assert {:ok, ^first_customer_id, relinked} =
@@ -2882,7 +2894,7 @@ defmodule Emisar.BillingTest do
 
   describe "record_and_apply_event/3 subscription.canceled" do
     test "flips the mirrored status, and an unknown subscription id is a no-op" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, _} =
         Billing.upsert_subscription(account.id, %{
@@ -3366,7 +3378,7 @@ defmodule Emisar.BillingTest do
 
   describe "support_channels/2" do
     test "support follows the effective plan and uses fresh account settings" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       url = "https://workspace.slack.com/archives/C01234567"
       assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, url)
 
@@ -3390,7 +3402,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "scheduled expiry removes support before the status webhook arrives" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, _} =
                Emisar.Accounts.put_support_slack_url(
@@ -3407,7 +3419,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "permission and account gates protect channel reads" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       other = Fixtures.Accounts.create_account(plan: "enterprise")
 
       assert {:ok, _} =
@@ -3428,7 +3440,7 @@ defmodule Emisar.BillingTest do
 
   describe "billing_summary/2" do
     test "rolls plan limits + live counts + subscription mirror into one map" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _ = Fixtures.Runners.create_runner(account_id: account.id)
 
       assert {:ok, summary} = Billing.billing_summary(account, subject)
@@ -3447,7 +3459,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "an annual subscriber's summary is priced per year at the annual rate" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       for _ <- 1..2, do: Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Accounts.create_subscription(account, "team", billing_interval: "year")
 
@@ -3460,7 +3472,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "a complimentary plan retains its entitlements without a recurring charge" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Runners.create_runner(account_id: account.id)
       assert {:ok, _subscription} = Billing.grant_complimentary_plan(account, "team")
 
@@ -3478,7 +3490,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "offers subscription controls only for a subscription Paddle collects" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       assert {:ok, before} = Billing.billing_summary(account, subject)
 
       assert {before.invoices_available?, before.payment_method_updatable?,
@@ -3505,7 +3517,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "an existing provider subscription remains managed after losing paid access" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       for status <- ["paused", "some_unmodeled_status", "canceled"] do
         Fixtures.Accounts.create_subscription(account, "team",
@@ -3521,7 +3533,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "the mirrored Paddle price wins over the compiled catalog, currency and all" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       # Five live runners, but Paddle bills three seats at €20 — the summary must
       # read what Paddle charges, not catalog list price × live runner count.
       for _ <- 1..5, do: Fixtures.Runners.create_runner(account_id: account.id)
@@ -3539,7 +3551,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "a subscription with no mirrored price falls back to the USD catalog" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       for _ <- 1..2, do: Fixtures.Runners.create_runner(account_id: account.id)
       # A legacy row the reconciliation job has not backfilled yet.
       Fixtures.Accounts.create_subscription(account, "team")
@@ -3550,7 +3562,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "entitlement limits surface in the summary instead of the compiled plan defaults" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       entitlements = %{
         "runners_limit" => 250,
@@ -3571,7 +3583,7 @@ defmodule Emisar.BillingTest do
     end
 
     test "an unknown plan slug shows its capitalized name and no self-serve price" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       Fixtures.Accounts.create_subscription(account, "pro",
         entitlements: %{"runners_limit" => 50}
@@ -3589,8 +3601,8 @@ defmodule Emisar.BillingTest do
     end
 
     test "an owner of account B cannot read account A's summary (cross-account)" do
-      {_user_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Billing.billing_summary(account_a, subject_b) == {:error, :unauthorized}
     end
@@ -3598,7 +3610,7 @@ defmodule Emisar.BillingTest do
 
   describe "billing_summary/2 — view_billing role matrix" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -3609,16 +3621,8 @@ defmodule Emisar.BillingTest do
       # view_billing_permission is held by owner/admin/operator/viewer
       # (authorizer.ex:10-19), so every human role can read the dashboard.
       for role <- [:admin, :operator, :viewer] do
-        member = Fixtures.Users.create_user()
-
-        _ =
-          Fixtures.Memberships.create_membership(
-            account_id: account.id,
-            user_id: member.id,
-            role: to_string(role)
-          )
-
-        member_subject = Fixtures.Subjects.subject_for(member, account, role: role)
+        member = Fixtures.Memberships.create_membership(account_id: account.id, role: role)
+        member_subject = Fixtures.Subjects.subject_for(member)
 
         assert {:ok, %{plan: "free"}} = Billing.billing_summary(account, member_subject)
       end
@@ -3640,7 +3644,7 @@ defmodule Emisar.BillingTest do
 
   describe "subject_can_manage_billing?/1" do
     setup do
-      {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
       %{account: account, owner_subject: owner_subject}
     end
 
@@ -3666,7 +3670,7 @@ defmodule Emisar.BillingTest do
 
   describe "subject_can_view_invoices?/1" do
     setup do
-      {_user, account, owner_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
       %{account: account, owner_subject: owner_subject}
     end
 
@@ -3721,16 +3725,9 @@ defmodule Emisar.BillingTest do
   # A persisted member of `account` at `role` — billing gates read the role off
   # the membership row, so a struct-only subject would not exercise them.
   defp role_subject(account, role) when is_binary(role) do
-    user = Fixtures.Users.create_user()
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: role)
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: role
-      )
-
-    Fixtures.Subjects.membership_subject(membership)
+    Fixtures.Subjects.subject_for(membership)
   end
 
   defp processed_event?(event_id) do
@@ -3800,7 +3797,7 @@ defmodule Emisar.BillingVendorErrorTest do
       # The catalog read fails first on this client — its {:error, term}
       # propagates out of start_checkout unchanged (the LV turns it into a
       # flash, no redirect).
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       account = %{account | paddle_customer_id: "ctm_existing_01"}
 
       assert Billing.start_checkout(account, "team", :month, subject) ==
@@ -3811,7 +3808,7 @@ defmodule Emisar.BillingVendorErrorTest do
       # ensure_paddle_customer/2 runs first; when create_customer errors, the
       # `with` in start_checkout bails on it — no checkout session is attempted
       # and no customer id is ever persisted.
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       refute account.paddle_customer_id
 
       assert Billing.start_checkout(account, "team", :month, subject) ==
@@ -3825,7 +3822,7 @@ defmodule Emisar.BillingVendorErrorTest do
 
   describe "ensure_paddle_customer/2 — vendor failure" do
     test "a create_customer error returns {:error, term} and links nothing" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       assert Billing.ensure_paddle_customer(account, subject) == {:error, :paddle_unavailable}
 
@@ -3836,7 +3833,7 @@ defmodule Emisar.BillingVendorErrorTest do
 
   describe "cancel_subscription/2 — vendor failure" do
     test "a Paddle error is returned, and nothing is mirrored or audited" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       Fixtures.Accounts.create_subscription(account, "team",
         paddle_subscription_id: "sub_vendor_down",
@@ -4002,7 +3999,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
     # Team is per-runner pricing, so start_checkout passes
     # `quantity: current_count(account, :runners)` — the live billable count. Five
     # runners → quantity 5 on the created checkout session.
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_seat_count_01"}
     for _ <- 1..5, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
@@ -4016,7 +4013,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "a legacy checkout completed after closure is durably canceled without reactivation" do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     assert {:ok, _customer_id, account} = Billing.ensure_paddle_customer(account, subject)
     transaction = Fixtures.Billing.create_legacy_transaction(account)
     assert {:ok, closed} = Accounts.close_account(account.id, "No longer needed", subject)
@@ -4046,7 +4043,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "a late legacy checkout is retired when closure retained a canceled canonical mirror" do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     assert {:ok, _customer_id, account} = Billing.ensure_paddle_customer(account, subject)
     original_transaction = Fixtures.Billing.create_legacy_transaction(account)
     original = Fixtures.Billing.complete_transaction(original_transaction["id"])
@@ -4086,7 +4083,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "failed late-checkout cancellation preserves committed dedup and durable retry work" do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     assert {:ok, _customer_id, account} = Billing.ensure_paddle_customer(account, subject)
     transaction = Fixtures.Billing.create_legacy_transaction(account)
     assert {:ok, _closed} = Accounts.close_account(account.id, "No longer needed", subject)
@@ -4118,7 +4115,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
   test "the billing cycle selects the matching catalog price" do
     # :month picks the monthly price, :year the annual one — both off the same
     # product's `prices`, keyed on billing_cycle.interval.
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_cycle_price_01"}
 
     assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
@@ -4129,16 +4126,11 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "a missing requested cadence never falls back to the other active price" do
-    user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "owner"
-    )
+    member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(member)
     account = %{account | paddle_customer_id: "ctm_exact_cycle_01"}
 
     Emisar.Config.put_override(:emisar, :billing_test_catalog, [
@@ -4164,16 +4156,11 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "a multi-period price never satisfies a monthly or annual choice" do
-    user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "owner"
-    )
+    member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(member)
     account = %{account | paddle_customer_id: "ctm_exact_frequency_01"}
 
     for cycle <- [:month, :year] do
@@ -4203,7 +4190,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "a zero-runner account checks out at quantity 1 — Paddle rejects 0" do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_seat_floor_01"}
 
     assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
@@ -4216,7 +4203,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
     # (our /checkout Paddle.js page) + ?_ptxn=. A per-transaction checkout.url
     # override needs its own domain approval, and the post-payment redirect is
     # the page's successUrl setting — so nothing URL-ish rides on the transaction.
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     account = %{account | paddle_customer_id: "ctm_urls_01"}
 
     assert {:ok, _url} = Billing.start_checkout(account, "team", :month, subject)
@@ -4232,11 +4219,16 @@ defmodule Emisar.BillingCheckoutArgsTest do
     # (incl. special characters) straight onto the Paddle customer with no
     # mangling — invoices reach a real inbox and the customer is recognisable in
     # Paddle.
-    user = Fixtures.Users.create_user(%{email: "billing-owner@example.test"})
-    account_attrs = Fixtures.Accounts.account_attrs(%{name: "Acme & Co. (Ops)"})
-    {:ok, account} = Accounts.create_account_with_owner(account_attrs, user)
-    subject = Fixtures.Subjects.subject_for(user, account)
-    user |> Ecto.Changeset.change(email: "private-billing@example.test") |> Repo.update!()
+    account = Fixtures.Accounts.create_account(%{name: "Acme & Co. (Ops)"})
+
+    owner =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: :owner,
+        email: "billing-owner@example.test"
+      )
+
+    subject = Fixtures.Subjects.subject_for(owner)
 
     assert {:ok, "ctm_captured_01", _account} = Billing.ensure_paddle_customer(account, subject)
 
@@ -4247,11 +4239,14 @@ defmodule Emisar.BillingCheckoutArgsTest do
   end
 
   test "an existing customer is returned as it is, never rewritten" do
-    {user, account, subject} = Fixtures.Subjects.owner_subject()
+    {owner, account, subject} = Fixtures.Subjects.owner_subject()
     {:ok, account} = Accounts.link_account_paddle_customer(account, "ctm_existing_private")
 
-    user
-    |> Ecto.Changeset.change(email: "private-after-link@example.test", full_name: "Private Name")
+    owner
+    |> Ecto.Changeset.change(
+      email: "private-after-link@example.test",
+      display_name: "Private Name"
+    )
     |> Repo.update!()
 
     assert {:ok, "ctm_existing_private", _account} =
@@ -4268,7 +4263,7 @@ defmodule Emisar.BillingCheckoutArgsTest do
     # sensitive values never appear.
     Emisar.Config.put_override(:emisar, :paddle_api_key, "pdl_live_secret_key")
 
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     {:ok, account} = Accounts.link_account_paddle_customer(account, "ctm_logsafe_01")
 
     log =

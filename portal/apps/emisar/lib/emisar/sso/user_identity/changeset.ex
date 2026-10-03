@@ -53,17 +53,6 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     |> put_live_constraints()
   end
 
-  @doc "Record that the person proved this identity themselves: theirs, not an admin approval."
-  def mark_user_proved(%UserIdentity{} = identity), do: change(identity, created_by: :user)
-
-  @doc "Retire a self-verified OIDC binding while preserving a SCIM lifecycle row."
-  def retire_provider_identifier(%UserIdentity{} = identity),
-    do: change(identity, provider_identifier_retired_at: DateTime.utc_now())
-
-  @doc "Soft-delete an OIDC-only identity after its user removes the binding."
-  def delete(%UserIdentity{} = identity),
-    do: change(identity, deleted_at: DateTime.utc_now())
-
   @doc """
   Take directory ownership of an identity that arrived through OIDC first.
 

@@ -5,7 +5,11 @@ defmodule Emisar.AccountsAuditReceiptsTest do
   describe "account update receipts" do
     test "records the locked before value when the caller's account is stale" do
       account = Fixtures.Accounts.create_account(name: "Original")
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       assert {:ok, _} = Accounts.update_account(account, %{name: "Intermediate"}, subject)
       assert {:ok, _} = Accounts.update_account(account, %{name: "Final"}, subject)
@@ -28,10 +32,10 @@ defmodule Emisar.AccountsAuditReceiptsTest do
       Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
 
       user =
-        Fixtures.Users.create_user()
-        |> Fixtures.Users.set_mfa_state(mfa_enabled_at: DateTime.utc_now())
+        Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        |> Fixtures.Memberships.set_mfa_state(mfa_enabled_at: DateTime.utc_now())
 
-      subject = Fixtures.Subjects.subject_for(user, account, mfa: true)
+      subject = Fixtures.Subjects.subject_for(user, mfa: true)
 
       attrs = %{
         name: "Renamed",
@@ -56,7 +60,7 @@ defmodule Emisar.AccountsAuditReceiptsTest do
     test "owned cleanup settings record enabled and disabled periods" do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert {:ok, _} = Accounts.put_account_pack_retention_days(account.id, 30, subject)
 
@@ -86,7 +90,7 @@ defmodule Emisar.AccountsAuditReceiptsTest do
     test "unchanged account fields and cleanup settings create no event" do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       attrs = %{
         name: account.name,
@@ -124,9 +128,18 @@ defmodule Emisar.AccountsAuditReceiptsTest do
 
     test "denied and cross-account updates produce no receipts" do
       account = Fixtures.Accounts.create_account()
-      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+
+      viewer =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
+
       other_account = Fixtures.Accounts.create_account()
-      other_owner = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), other_account)
+
+      other_owner =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: other_account.id, role: :owner)
+        )
 
       assert Accounts.update_account(account, %{name: "Denied"}, viewer) ==
                {:error, :unauthorized}
@@ -146,7 +159,12 @@ defmodule Emisar.AccountsAuditReceiptsTest do
 
     test "a rejected update leaves neither changed settings nor a receipt" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       attrs = %{slug: "invalid slug", settings: %{monthly_report_opt_out: true}}
 
       assert {:error, changeset} = Accounts.update_account(account, attrs, subject)
@@ -171,7 +189,7 @@ defmodule Emisar.AccountsAuditReceiptsTest do
           display_name: "Olive Owner"
         )
 
-      subject = Fixtures.Subjects.membership_subject(owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       member =
         Fixtures.Memberships.create_membership(
@@ -240,9 +258,9 @@ defmodule Emisar.AccountsAuditReceiptsTest do
       assert {:ok, %{membership: membership}} = Accounts.invite_user_to_account(attrs, subject)
 
       viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
-      viewer_subject = Fixtures.Subjects.membership_subject(viewer)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
       foreign_owner = Fixtures.Memberships.create_membership(role: "owner")
-      foreign_subject = Fixtures.Subjects.membership_subject(foreign_owner)
+      foreign_subject = Fixtures.Subjects.subject_for(foreign_owner)
 
       assert Accounts.resend_account_invitation(membership, viewer_subject) ==
                {:error, :unauthorized}

@@ -29,10 +29,14 @@ type manifestEntry struct {
 
 type namedPath struct{ Name, Path string }
 
-var authPages = []namedPath{
-	{"auth-sign-in", "/sign_in"},
-	{"auth-sign-up", "/sign_up"},
-	{"auth-magic-link", "/sign_in/magic"},
+// authPages are the signed-out pages: the workspace picker, sign-up, and the workspace's own
+// sign-in page. The emailed-code page needs a pending request, so it has no bare capture.
+func authPages(slug string) []namedPath {
+	return []namedPath{
+		{"auth-sign-in", "/sign_in"},
+		{"auth-sign-up", "/sign_up"},
+		{"auth-workspace-sign-in", "/app/" + slug + "/sign_in"},
+	}
 }
 
 var consolePages = []namedPath{
@@ -112,7 +116,7 @@ func CaptureConsole(ctx context.Context, manager *Manager, config ConsoleConfig)
 	// idempotent, so the explicit close after the auth pages still sequences it.
 	defer auth.Close()
 	fmt.Fprintln(manager.Out, "auth pages (signed out):")
-	for _, item := range authPages {
+	for _, item := range authPages(config.Slug) {
 		entry, shotErr := navigateAndShoot(auth, config, item.Name, item.Path, "")
 		manifest = append(manifest, entry)
 		if shotErr != nil {
@@ -134,7 +138,7 @@ func CaptureConsole(ctx context.Context, manager *Manager, config ConsoleConfig)
 	}
 	current, _ := session.CurrentURL()
 	if strings.Contains(current, "/sign_in") {
-		if err := session.Login(config.Email); err != nil {
+		if err := session.Login(config.Slug, config.Email); err != nil {
 			return err
 		}
 	}

@@ -12,8 +12,8 @@ defmodule EmisarWeb.OAuthControllerTest do
   @resource EmisarWeb.Endpoint.url() <> "/api/mcp/rpc"
 
   setup do
-    {user, account, _subject} = Fixtures.Subjects.owner_subject()
-    %{user: user, account: account}
+    {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+    %{user: owner, account: account}
   end
 
   defp register_client!(name \\ "Claude", opts \\ []) do
@@ -33,9 +33,9 @@ defmodule EmisarWeb.OAuthControllerTest do
 
   # Mint a live access token end-to-end through the context (the browser
   # consent step is covered separately).
-  defp mint_access_token(user, account) do
+  defp mint_access_token(user) do
     {verifier, challenge} = pkce()
-    {client, code} = issue_code!(user, account, %{"code_challenge" => challenge})
+    {client, code} = issue_code!(user, %{"code_challenge" => challenge})
 
     {:ok, tokens} =
       OAuth.exchange_code(%{
@@ -51,8 +51,8 @@ defmodule EmisarWeb.OAuthControllerTest do
   # Issue a code through the context. The domain refuses a malformed request, so
   # a test that needs a non-conformant stored code (a "plain" method the HTTP
   # token path must still refuse) rewrites the row after issuance.
-  defp issue_code!(user, account, params) do
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+  defp issue_code!(user, params) do
+    subject = Fixtures.Subjects.subject_for(user)
     client = register_client!()
 
     request =
@@ -489,7 +489,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
@@ -523,17 +523,20 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
-      # The header still names the one account outright.
+      # The header still names the one workspace outright, and the footer the
+      # Member the grant would act as.
       assert html =~ account.name
       refute html =~ "<select"
       assert html =~ ~s(type="hidden" name="account_id" value="#{account.id}")
+      assert html =~ "Signed in as"
+      assert html =~ user.email
     end
 
-    test "a multi-account operator gets a picker preselecting the session account", %{
+    test "with several signed-in workspaces the picker is required and preselects nothing", %{
       conn: conn,
       user: user,
       account: account,
@@ -542,11 +545,16 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       second = Fixtures.Accounts.create_account(name: "Beta Workspace")
 
-      Fixtures.Memberships.create_membership(
-        account_id: second.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      second_member =
+        Fixtures.Memberships.create_membership(
+          account_id: second.id,
+          email: "beta-#{System.unique_integer([:positive])}@example.test",
+          role: "owner"
+        )
+
+      # A workspace this browser is not signed in to is never offered.
+      elsewhere = Fixtures.Accounts.create_account(name: "Gamma Workspace")
+      Fixtures.Memberships.create_membership(account_id: elsewhere.id, email: user.email)
 
       params = %{
         client_id: client.id,
@@ -561,22 +569,27 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
+        |> log_in_member(second_member)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
-      assert html =~ "Workspace"
-      assert html =~ ~s(name="account_id")
-      assert html =~ "Beta Workspace"
-      assert html =~ account.name
+      document = LazyHTML.from_document(html)
+      select = LazyHTML.query(document, "select[name='account_id'][required]")
+      assert Enum.count(select) == 1
 
-      # The session-current account is preselected — with no explicit session
-      # hint that's the user's LATEST membership, i.e. the second account — and
-      # the account no longer rides a hidden field (the select carries it).
-      assert html =~
-               ~r/<option[^>]*(?:selected[^>]*value="#{second.id}"|value="#{second.id}"[^>]*selected)/
+      options =
+        select
+        |> LazyHTML.query("option")
+        |> Enum.map(&{LazyHTML.attribute(&1, "value"), LazyHTML.text(&1)})
 
+      assert {[""], "Choose a workspace"} in options
+      assert {[account.id], "#{account.name} — #{user.email}"} in options
+      assert {[second.id], "Beta Workspace — #{second_member.email}"} in options
+      refute html =~ "Gamma Workspace"
+      assert document |> LazyHTML.query("option[selected]") |> Enum.count() == 0
       refute html =~ ~s(type="hidden" name="account_id")
+      refute html =~ "Signed in as"
     end
 
     test "CSP form-action permits sandboxed HTTPS navigation on the consent page", %{
@@ -600,7 +613,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         %{conn | host: "attacker.example"}
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
 
       [csp] = get_resp_header(conn, "content-security-policy")
@@ -632,7 +645,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
@@ -673,7 +686,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
@@ -716,7 +729,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
@@ -745,7 +758,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
 
       assert conn.assigns[:noindex] == true
@@ -772,7 +785,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
@@ -803,7 +816,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
@@ -837,7 +850,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       audit_before = Repo.aggregate(Emisar.Audit.Event, :count)
 
       conn
-      |> log_in_user(user)
+      |> log_in_member(user)
       |> get(~p"/oauth/authorize?#{params}")
       |> html_response(200)
 
@@ -863,7 +876,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
 
       assert redirected_to(conn, 302) =~ "error=invalid_target"
@@ -880,7 +893,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(400)
 
@@ -903,6 +916,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     test "an existing operator resumes the exact authorization request after sign-in", %{
       conn: conn,
       user: user,
+      account: account,
       client: client,
       challenge: challenge
     } do
@@ -923,15 +937,12 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert redirected_to(conn) == ~p"/sign_in"
       assert get_session(conn, :user_return_to) == authorize_path
 
-      {:ok, _live_view, html} = live(recycle(conn), ~p"/sign_in")
-      assert html =~ ~s(action="/sign_in/magic/start")
+      html = conn |> recycle() |> get(~p"/sign_in") |> html_response(200)
+      assert html =~ ~s(action="/sign_in")
       assert html =~ ~s(href="/sign_up")
 
-      conn = post(recycle(conn), ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r|/sign_in/magic/([^/]+)/([0-9A-Z]{6})|, sent.text_body)
-
-      conn = conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+      # The page names no workspace, so signing in to any one returns to it.
+      conn = conn |> recycle() |> email_link_sign_in(account, user.email)
       assert redirected_to(conn) == authorize_path
 
       html = conn |> recycle() |> get(authorize_path) |> html_response(200)
@@ -961,8 +972,11 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       form =
         form(live_view, "#registration_form", %{
-          "user" => %{"full_name" => "OAuth Operator", "email" => email},
-          "account_name" => "OAuth Workspace"
+          "sign_up" => %{
+            "full_name" => "OAuth Operator",
+            "email" => email,
+            "account_name" => "OAuth Workspace #{System.unique_integer([:positive])}"
+          }
         })
 
       assert render_submit(form) =~ "phx-trigger-action"
@@ -999,7 +1013,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
 
       location = redirected_to(conn, 302)
@@ -1025,7 +1039,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{missing}")
 
       assert redirected_to(conn, 302) =~ "error=invalid_request"
@@ -1034,7 +1048,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         build_conn()
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{empty}")
 
       assert redirected_to(conn, 302) =~ "error=invalid_request"
@@ -1059,7 +1073,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
 
       location = redirected_to(conn, 302)
@@ -1084,7 +1098,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
 
       assert html_response(conn, 400) =~ "authorize this connection"
@@ -1110,7 +1124,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
 
       assert html_response(conn, 400) =~ "authorize this connection"
@@ -1139,7 +1153,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
 
       assert html_response(conn, 400) =~ "authorize this connection"
@@ -1169,7 +1183,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1211,7 +1225,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       html =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> get(~p"/oauth/authorize?#{params}")
         |> html_response(200)
 
@@ -1219,7 +1233,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       location =
         build_conn()
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(
           ~p"/oauth/authorize",
           params
@@ -1264,7 +1278,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       approve_query =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(
           ~p"/oauth/authorize",
           params |> Map.put("account_id", account.id) |> Map.put("decision", "approve")
@@ -1278,7 +1292,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       deny_query =
         build_conn()
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", Map.put(params, "decision", "deny"))
         |> redirected_to(302)
         |> URI.parse()
@@ -1296,19 +1310,19 @@ defmodule EmisarWeb.OAuthControllerTest do
       client: client,
       challenge: challenge
     } do
-      # With no session hint the current account resolves to the user's LATEST
-      # membership — the second account — so choosing the FIRST proves the key
-      # landed there through the account_id param, not the session default.
-      _second_membership =
+      # The browser holds two workspace sessions; the key lands in the one the
+      # account_id param names, never another session's workspace.
+      second_member =
         Fixtures.Memberships.create_membership(
           account_id: Fixtures.Accounts.create_account(name: "Beta Workspace").id,
-          user_id: user.id,
+          email: user.email,
           role: "owner"
         )
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(second_member)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1343,7 +1357,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1375,7 +1389,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1401,7 +1415,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1426,19 +1440,21 @@ defmodule EmisarWeb.OAuthControllerTest do
       client: client,
       challenge: challenge
     } do
-      # Owner in the session account, viewer in the chosen one — the key-issue
-      # gate must run against the account receiving the grant.
+      # Owner in one signed-in workspace, viewer in the chosen one — the
+      # key-issue gate must run against the workspace receiving the grant.
       second = Fixtures.Accounts.create_account(name: "Beta Workspace")
 
-      Fixtures.Memberships.create_membership(
-        account_id: second.id,
-        user_id: user.id,
-        role: "viewer"
-      )
+      viewer =
+        Fixtures.Memberships.create_membership(
+          account_id: second.id,
+          email: user.email,
+          role: "viewer"
+        )
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
+        |> log_in_member(viewer)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1471,7 +1487,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1500,7 +1516,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1529,7 +1545,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1561,7 +1577,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1594,7 +1610,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => Ecto.UUID.generate(),
           "redirect_uri" => @redirect,
@@ -1626,7 +1642,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       assert_error_sent(403, fn ->
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> Plug.Conn.put_private(:plug_skip_csrf_protection, false)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
@@ -1655,7 +1671,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1697,7 +1713,7 @@ defmodule EmisarWeb.OAuthControllerTest do
 
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1735,7 +1751,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => "https://attacker.example/cb",
@@ -1762,7 +1778,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => "https://attacker.example/cb",
@@ -1789,7 +1805,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     } do
       conn =
         conn
-        |> log_in_user(user)
+        |> log_in_member(user)
         |> post(~p"/oauth/authorize", %{
           "client_id" => client.id,
           "redirect_uri" => @redirect,
@@ -1809,11 +1825,11 @@ defmodule EmisarWeb.OAuthControllerTest do
   end
 
   describe "POST /oauth/token" do
-    setup %{user: user, account: account} do
+    setup %{user: user} do
       {verifier, challenge} = pkce()
 
       {client, code} =
-        issue_code!(user, account, %{
+        issue_code!(user, %{
           "code_challenge" => challenge,
           "code_challenge_method" => "S256"
         })
@@ -1821,9 +1837,9 @@ defmodule EmisarWeb.OAuthControllerTest do
       {:ok, verifier: verifier, challenge: challenge, client: client, code: code}
     end
 
-    test "exchanges an authorization code for tokens", %{conn: conn, user: user, account: account} do
+    test "exchanges an authorization code for tokens", %{conn: conn, user: user} do
       {verifier, challenge} = pkce()
-      {client, code} = issue_code!(user, account, %{"code_challenge" => challenge})
+      {client, code} = issue_code!(user, %{"code_challenge" => challenge})
 
       body =
         conn
@@ -1873,8 +1889,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     # plain); the S256-only pkce_ok?/2 still rejects it as invalid_grant.
     test "code_challenge_method=plain is not honored (S256 only)", %{
       conn: conn,
-      user: user,
-      account: account
+      user: user
     } do
       # 43-char verifier so the RFC 7636 length guard passes — the failure must
       # come from the S256-only check, not the length pre-filter.
@@ -1882,7 +1897,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert byte_size(verifier) in 43..128
 
       {_stale_verifier, challenge} = pkce()
-      {client, code} = issue_code!(user, account, %{"code_challenge" => challenge})
+      {client, code} = issue_code!(user, %{"code_challenge" => challenge})
 
       # Issuance refuses `plain`, so rewrite the stored code into the shape a
       # legacy/hostile row would have: challenge == verifier under method=plain,
@@ -2076,8 +2091,7 @@ defmodule EmisarWeb.OAuthControllerTest do
     # is the length/charset pre-filter, not a PKCE mismatch.
     test "an over-long or bad-charset PKCE verifier is rejected with invalid_grant", %{
       conn: conn,
-      user: user,
-      account: account
+      user: user
     } do
       too_long = String.duplicate("a", 129)
       bad_charset = "bad+charset/verifier=with*illegal(chars)aaaaaaa"
@@ -2087,7 +2101,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         challenge = Base.url_encode64(:crypto.hash(:sha256, verifier), padding: false)
 
         {client, code} =
-          issue_code!(user, account, %{
+          issue_code!(user, %{
             "code_challenge" => challenge,
             "code_challenge_method" => "S256"
           })
@@ -2305,8 +2319,8 @@ defmodule EmisarWeb.OAuthControllerTest do
       |> post(~p"/api/mcp/rpc", Jason.encode!(%{jsonrpc: "2.0", id: 1, method: method}))
     end
 
-    test "an emo- access token authenticates", %{conn: conn, user: user, account: account} do
-      token = mint_access_token(user, account)
+    test "an emo- access token authenticates", %{conn: conn, user: user} do
+      token = mint_access_token(user)
 
       body =
         conn
@@ -2319,10 +2333,9 @@ defmodule EmisarWeb.OAuthControllerTest do
 
     test "an emo- access token for another resource returns 401", %{
       conn: conn,
-      user: user,
-      account: account
+      user: user
     } do
-      access_token = mint_access_token(user, account)
+      access_token = mint_access_token(user)
 
       token =
         Repo.get_by!(OAuth.Token, access_token_hash: Crypto.hash(access_token))

@@ -10,23 +10,26 @@ defmodule Emisar.Seeds.SessionsTest do
     %{helpers: helpers, staff: staff}
   end
 
-  test "persona MFA reset still proves the actual factor and leaves no seed credential", %{
+  test "persona MFA reset clears the whole factor and leaves no seed credential", %{
     helpers: helpers
   } do
-    user = Fixtures.Users.create_user()
+    member = Fixtures.Memberships.create_membership()
     secret = Auth.generate_mfa_secret()
 
-    user =
-      Fixtures.Users.set_mfa_state(user, mfa_secret: secret, mfa_enabled_at: DateTime.utc_now())
+    member =
+      Fixtures.Memberships.set_mfa_state(member,
+        mfa_secret: secret,
+        mfa_enabled_at: DateTime.utc_now()
+      )
 
     helpers.with_temporary_sessions(fn ->
-      updated = helpers.clear_seeded_mfa(user)
+      updated = helpers.clear_seeded_mfa(member)
       assert is_nil(updated.mfa_enabled_at)
       assert is_nil(updated.mfa_secret)
     end)
 
     refute Repo.exists?(Auth.UserToken.Query.by_context("session"))
-    assert is_nil(Repo.reload!(user).mfa_enabled_at)
+    assert is_nil(Repo.reload!(member).mfa_enabled_at)
   end
 
   test "reseed keeps the staff login and its authenticator key", %{staff: staff} do

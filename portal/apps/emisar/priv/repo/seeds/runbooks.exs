@@ -200,7 +200,7 @@ defmodule Emisar.Seeds.Runbooks do
     Map.merge(ctx, %{approval_runbook: approval_runbook, backlog_runbook: backlog_runbook})
   end
 
-  defp seed_live_runbook(%{account: account, owner_membership: membership}, slug, attrs) do
+  defp seed_live_runbook(%{account: account, owner: membership}, slug, attrs) do
     runbook =
       case Helpers.peek_account_runbook(account, slug) do
         nil ->

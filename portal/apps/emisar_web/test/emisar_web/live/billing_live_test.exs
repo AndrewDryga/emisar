@@ -115,15 +115,14 @@ defmodule EmisarWeb.BillingLiveTest do
   alias EmisarWeb.BillingIntent
   alias EmisarWeb.BillingLiveTest.{InvoicePaddleClient, KnownPayerPaddleClient}
 
-  defp downgrade_to(user, account, role) when is_binary(role) do
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    Fixtures.Memberships.force_role(membership, role)
+  defp downgrade_to(member, role) when is_binary(role) do
+    Fixtures.Memberships.force_role(member, role)
   end
 
   describe "as an owner" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, account: account, user: user}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, account: account, user: owner}
     end
 
     test "renders the current plan and usage without offering Free product support", %{
@@ -261,7 +260,7 @@ defmodule EmisarWeb.BillingLiveTest do
         user: user
       } do
         Fixtures.Billing.start_provider()
-        subject = Fixtures.Subjects.subject_for(user, account)
+        subject = Fixtures.Subjects.subject_for(user)
 
         assert {:ok, _customer_id, account} =
                  Emisar.Billing.ensure_paddle_customer(account, subject)
@@ -388,7 +387,7 @@ defmodule EmisarWeb.BillingLiveTest do
       assert html =~ "mailto:support@emisar.dev"
       assert html =~ "subject=Billing%20question%20-%20Test%20Co"
       assert html =~ "Account%20ID%3A%20#{account.id}"
-      assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"
+      assert html =~ "Member%3A%20#{String.replace(user.email, "@", "%40")}"
 
       # No self-serve downgrade off a custom plan: the lower tiers read "Contact
       # support", never a "Downgrade to …" routing to a Paddle portal
@@ -409,7 +408,7 @@ defmodule EmisarWeb.BillingLiveTest do
           {"enterprise", "canceled", false, false}
         ] do
       test "#{plan} / #{status} shows only its included support channels", %{conn: conn} do
-        {conn, user, account} = register_and_log_in(conn)
+        {conn, owner, account} = register_and_log_in(conn)
         url = "https://workspace.slack.com/archives/C01234567"
         assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, url)
         Fixtures.Accounts.create_subscription(account, unquote(plan), status: unquote(status))
@@ -434,7 +433,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
         if unquote(email?) do
           assert html =~ "subject=Support%20request%20-%20Test%20Co"
-          assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"
+          assert html =~ "Member%3A%20#{String.replace(owner.email, "@", "%40")}"
         end
 
         if unquote(slack?) do
@@ -451,7 +450,7 @@ defmodule EmisarWeb.BillingLiveTest do
     test "Enterprise without a configured channel offers email, not a broken Slack link", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "enterprise")
       other = Fixtures.Accounts.create_account(plan: "enterprise")
       other_url = "https://other.slack.com/archives/C98765432"
@@ -464,7 +463,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "Billing refreshes channel changes and removes support after downgrade", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "enterprise")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
       url = "https://workspace.slack.com/archives/C01234567"
@@ -487,7 +486,7 @@ defmodule EmisarWeb.BillingLiveTest do
     test "support navigation refreshes on other pages and ignores stale refresh ticks", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "enterprise")
       url = "https://workspace.slack.com/archives/C01234567"
       assert {:ok, _} = Emisar.Accounts.put_support_slack_url(account.id, url)
@@ -519,7 +518,7 @@ defmodule EmisarWeb.BillingLiveTest do
     test "Team estimates use enabled runner quantity and update with the selected cycle", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
@@ -545,7 +544,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "features stay visible through price selection and a billing refresh", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert has_element?(lv, "#billing-usage", "7 days")
@@ -558,7 +557,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "Enterprise offers only benefits not already granted to Team", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       Fixtures.Accounts.create_subscription(account, "team",
         entitlements: %{
@@ -586,7 +585,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # 3/3 billable runners on Free is 100% utilisation — a plan fact, not a
       # failure: amber says "look at your limits"; rose is reserved for a hard
       # lockout that the clamped pct can never render.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -599,7 +598,7 @@ defmodule EmisarWeb.BillingLiveTest do
     test "a Team account at 80% of its runner cap colours the meter amber", %{conn: conn} do
       # 80/100 billable runners on Team is 80% utilisation → the runners bar uses
       # the amber `usage_class` (≥80% and <100%), the pre-ceiling warning colour.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       insert_subscription(account, "active")
 
       for _ <- 1..80,
@@ -618,7 +617,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # On Free the only checkoutable step up is Team, so the hero CTA reads
       # "Upgrade to Team" — never "Upgrade to Enterprise" (enterprise is
       # contact-sales, surfaced by its own card, not a checkout CTA).
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -627,7 +626,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "an unknown custom plan keeps its identity and management surface", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       insert_subscription_with(account, %{plan: "legacy-pro", status: "active"})
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -646,7 +645,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # in Paddle, so it ranks ABOVE the self-serve tiers. Ranking it below Free
       # inverted every card comparison: the highest-value customer we have was
       # offered "Upgrade to Free" and shown Team's upsell chip.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       insert_subscription_with(account, %{plan: "enterprise-trial", status: "active"})
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -670,7 +669,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # would read as "Custom/mo"). Runner + member limits are :unlimited →
       # limit_label "Unlimited" and usage_pct nil, so the meters render the
       # gradient placeholder bar with no width/percentage.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       insert_subscription_with(account, %{plan: "enterprise", status: "active"})
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -690,7 +689,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # A team subscription mirrored as annual prices the strip at the annual
       # rate with a "/yr" suffix — one runner × $200/runner/yr (the strip total
       # carries cents via format_total) — never the monthly "/mo" suffix.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id)
 
       insert_subscription_with(account, %{
@@ -710,7 +709,7 @@ defmodule EmisarWeb.BillingLiveTest do
       # No prod path writes cancel_at_period_end/trial_end, and the apply path
       # leaves current_period_start null. With status set but those columns at
       # their defaults, none of the cycle-note chips render.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       insert_subscription_with(account, %{plan: "team", status: "active"})
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -724,8 +723,8 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "subscription controls" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, user: owner, account: account}
     end
 
     test "an owner opens a payment-method update for its own subscription", %{
@@ -742,7 +741,13 @@ defmodule EmisarWeb.BillingLiveTest do
 
       url = redirect[:to] || redirect[:external]
       assert url =~ "stub.paddle.test/checkout?_ptxn=txn_stub_pm_"
-      assert url =~ "emisar_account_id=#{account.id}"
+
+      # The return state is signed and names this workspace and this checkout.
+      %{"_ptxn" => transaction_id, "emisar_return" => return} =
+        url |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query()
+
+      assert Emisar.Crypto.verify_checkout_return(return) == {:ok, {account.id, transaction_id}}
+      refute url =~ "emisar_account_id"
     end
 
     test "an invoice's PDF link fetches a signed URL and redirects to it", %{
@@ -806,7 +811,7 @@ defmodule EmisarWeb.BillingLiveTest do
       user: user,
       account: account
     } do
-      downgrade_to(user, account, "admin")
+      downgrade_to(user, "admin")
       account = attach_customer(account, "ctm_admin_manage_01")
       insert_subscription(account, "active")
 
@@ -827,7 +832,7 @@ defmodule EmisarWeb.BillingLiveTest do
     } do
       # Every money event stops below the admin tier. The LV gate refuses a
       # crafted push before the context runs, so nothing reaches Paddle.
-      downgrade_to(user, account, "operator")
+      downgrade_to(user, "operator")
       account = attach_customer(account, "ctm_operator_manage_01")
       subscription = insert_subscription(account, "active")
 
@@ -844,7 +849,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "the controls are hidden for a viewer", %{conn: conn, user: user, account: account} do
-      downgrade_to(user, account, "viewer")
+      downgrade_to(user, "viewer")
       account = attach_customer(account, "ctm_viewer_manage_01")
       insert_subscription(account, "active")
 
@@ -859,9 +864,9 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "linking an existing Paddle billing account" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       Emisar.Config.put_override(:emisar, :paddle_client, KnownPayerPaddleClient)
-      %{conn: conn, user: user, account: account}
+      %{conn: conn, user: owner, account: account}
     end
 
     test "checkout waits for the code emailed to the billing email, then continues", %{
@@ -900,8 +905,8 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "as a viewer" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, user: owner, account: account}
     end
 
     test "reads the plan, its limits, and the catalogue, but buys nothing", %{
@@ -909,7 +914,7 @@ defmodule EmisarWeb.BillingLiveTest do
       user: user,
       account: account
     } do
-      downgrade_to(user, account, "viewer")
+      downgrade_to(user, "viewer")
       attach_customer(account, "ctm_viewer_no_ledger")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -937,7 +942,7 @@ defmodule EmisarWeb.BillingLiveTest do
       user: user,
       account: account
     } do
-      downgrade_to(user, account, "viewer")
+      downgrade_to(user, "viewer")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -953,9 +958,9 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "as an admin" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      downgrade_to(user, account, "admin")
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      downgrade_to(owner, "admin")
+      %{conn: conn, user: owner, account: account}
     end
 
     test "gets the whole billing surface — ledger, catalogue, and checkout", %{
@@ -994,9 +999,9 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "as an operator" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      downgrade_to(user, account, "operator")
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      downgrade_to(owner, "operator")
+      %{conn: conn, user: owner, account: account}
     end
 
     test "reads the plan, its limits, and the catalogue, not the invoices", %{
@@ -1032,15 +1037,11 @@ defmodule EmisarWeb.BillingLiveTest do
       # The finance seat sits BESIDE the owner (checkout needs an active owner
       # as the Paddle billing contact) — a second member holds the role.
       {_conn, _owner, account} = register_and_log_in(conn)
-      manager = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: manager.id,
-        role: "billing_manager"
-      )
+      manager =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
 
-      %{conn: log_in_user(build_conn(), manager), account: account}
+      %{conn: log_in_member(build_conn(), manager), account: account}
     end
 
     test "the money controls render and an upgrade starts checkout", %{
@@ -1066,8 +1067,8 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "recent invoices (async)" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, user: owner, account: account}
     end
 
     test "three recent invoices render, and Show more loads the rest", %{
@@ -1236,7 +1237,7 @@ defmodule EmisarWeb.BillingLiveTest do
     test "a past_due subscription shows the rose payment banner + a payment update", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       attach_customer(account, "ctm_past_due")
       insert_subscription(account, "past_due")
 
@@ -1253,7 +1254,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a canceled subscription shows the amber banner", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       insert_subscription(account, "canceled")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -1264,7 +1265,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a healthy account shows no failure banner", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -1273,7 +1274,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a scheduled cancellation keeps paid access and names its deadline", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       effective_at = DateTime.add(DateTime.utc_now(), 86_400, :second)
 
       insert_subscription_with(account, %{
@@ -1295,7 +1296,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a paused subscription shows the amber paused banner", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       insert_subscription(account, "paused")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -1309,7 +1310,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "an unknown status fails closed with a recovery-oriented banner", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       insert_subscription(account, "some_unmodeled_status")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -1328,7 +1329,7 @@ defmodule EmisarWeb.BillingLiveTest do
       ]
 
       for {status, advisory_body} <- cases do
-        {conn, _user, account} = register_and_log_in(build_conn())
+        {conn, _owner, account} = register_and_log_in(build_conn())
         insert_subscription(account, status)
 
         {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -1343,8 +1344,8 @@ defmodule EmisarWeb.BillingLiveTest do
       # The banner renders for everyone who can view billing, but its :cta slot is
       # gated on subject_can_manage_billing? — a viewer sees the nudge with no
       # payment update to act on.
-      {conn, user, account} = register_and_log_in(conn)
-      downgrade_to(user, account, "viewer")
+      {conn, owner, account} = register_and_log_in(conn)
+      downgrade_to(owner, "viewer")
       insert_subscription(account, "past_due")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
@@ -1356,7 +1357,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
   describe "billing refresh" do
     test "confirmed billing facts update an already-open Free page", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
       render_async(lv)
 
@@ -1376,8 +1377,7 @@ defmodule EmisarWeb.BillingLiveTest do
       )
 
       Fixtures.Runners.create_runner(account_id: account.id)
-      member = Fixtures.Users.create_user()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+      Fixtures.Memberships.create_membership(account_id: account.id)
 
       html = refresh_billing(lv)
       assert html =~ "€40.00/mo"
@@ -1406,7 +1406,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "complimentary changes refresh access without claiming recurring charges", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
 
@@ -1440,7 +1440,7 @@ defmodule EmisarWeb.BillingLiveTest do
       test "an elapsed scheduled #{action} refreshes access before a terminal webhook", %{
         conn: conn
       } do
-        {conn, _user, account} = register_and_log_in(conn)
+        {conn, _owner, account} = register_and_log_in(conn)
         attach_customer(account, "ctm_scheduled_#{unquote(action)}")
         deadline = DateTime.add(DateTime.utc_now(), 86_400, :second)
 
@@ -1475,7 +1475,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a nearer deadline shortens the timer and stale ticks cannot fork it", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/billing")
       {old_attempt, old_timer} = :sys.get_state(lv.pid).socket.assigns.billing_refresh
 
@@ -1497,7 +1497,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "periodic refresh leaves invoice failures for explicit retry", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       attach_customer(account, "ctm_refresh_invoice_failure")
       insert_subscription(account, "active")
       Emisar.Config.put_override(:emisar, :paddle_client, InvoicePaddleClient)
@@ -1518,7 +1518,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
     for status <- ["paused", "some_unmodeled_status"] do
       test "#{status} subscriptions do not offer another checkout", %{conn: conn} do
-        {conn, _user, account} = register_and_log_in(conn)
+        {conn, _owner, account} = register_and_log_in(conn)
 
         insert_subscription_with(account, %{
           plan: "team",
@@ -1547,7 +1547,7 @@ defmodule EmisarWeb.BillingLiveTest do
     end
 
     test "a canceled custom plan permits a new Team checkout", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       insert_subscription_with(account, %{
         plan: "enterprise",

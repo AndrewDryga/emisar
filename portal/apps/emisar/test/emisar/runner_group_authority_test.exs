@@ -6,7 +6,7 @@ defmodule Emisar.RunnerGroupAuthorityTest do
   setup do
     account = Fixtures.Accounts.create_account()
     membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     inside = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
 
     outside =

@@ -1,7 +1,7 @@
 defmodule Emisar.Admin.Query do
   @moduledoc false
   use Emisar, :query
-  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Runners, Runs, SSO, Users}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Runners, Runs, SSO, Users}
   alias Emisar.Repo.Like
 
   @non_success_outcome_statuses Runs.ActionRun.terminal_statuses() -- [:success]
@@ -35,14 +35,12 @@ defmodule Emisar.Admin.Query do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
     |> Accounts.Membership.Query.by_id(membership_id)
-    |> Accounts.Membership.Query.with_preloaded_user()
   end
 
   def membership_by_email(account_id, email) do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
-    |> where([memberships: m], m.email == ^email)
-    |> Accounts.Membership.Query.with_preloaded_user()
+    |> Accounts.Membership.Query.by_email(email)
   end
 
   # The whole roster, suspended members and unaccepted invitations included —
@@ -50,7 +48,6 @@ defmodule Emisar.Admin.Query do
   def account_memberships(account_id) do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
-    |> Accounts.Membership.Query.with_preloaded_user()
     |> order_by([memberships: m], asc: m.role, asc: m.email)
   end
 
@@ -258,26 +255,11 @@ defmodule Emisar.Admin.Query do
     |> limit(^limit)
   end
 
-  # A linked Member's person may be signed in anywhere; a Member without a
-  # personal login has only its member-only sessions, each granted this seat.
-  def member_session_count(%Accounts.Membership{user_id: nil} = membership) do
-    from(token in Emisar.Auth.UserToken,
-      as: :user_tokens,
-      join: grant in Emisar.Auth.MemberGrant,
-      on: grant.user_token_id == token.id,
-      where:
-        is_nil(token.user_id) and token.context == "session" and
-          grant.account_id == ^membership.account_id and grant.membership_id == ^membership.id,
-      select: count(token.id)
-    )
-  end
-
-  def member_session_count(%Accounts.Membership{user_id: user_id}) do
-    from(token in Emisar.Auth.UserToken,
-      as: :user_tokens,
-      where: token.user_id == ^user_id and token.context == "session",
-      select: count(token.id)
-    )
+  # Every session belongs to exactly one Member of one workspace.
+  def member_session_count(%Accounts.Membership{} = membership) do
+    Auth.UserToken.Query.by_membership(membership.account_id, membership.id)
+    |> Auth.UserToken.Query.by_context("session")
+    |> select([tokens: t], count(t.id))
   end
 
   def active_api_key_count(account_id),

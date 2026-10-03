@@ -13,8 +13,8 @@ defmodule EmisarWeb.GrantsLiveTest do
   @grant_pack_ref "linux-core@1.0.0/sha256:" <> String.duplicate("a", 64)
 
   defp seed_account(conn) do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = owner_subject(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, raw, _key} =
       ApiKeys.create_key(
@@ -37,7 +37,7 @@ defmodule EmisarWeb.GrantsLiveTest do
       |> Repo.insert()
 
     api_key = ApiKeys.peek_api_key_by_secret(raw)
-    {conn, user, account, api_key, runner}
+    {conn, owner, account, api_key, runner}
   end
 
   defp insert_grant!(account, key, opts) do
@@ -57,12 +57,14 @@ defmodule EmisarWeb.GrantsLiveTest do
     |> Repo.insert!()
   end
 
-  test "redirects anonymous users", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/approvals")
+  test "redirects anonymous users to the workspace sign-in", %{conn: conn} do
+    account = Fixtures.Accounts.create_account()
+    assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/approvals")
+    assert to == ~p"/app/#{account}/sign_in"
   end
 
   test "empty state when there are no grants", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals")
     assert html =~ "No active grants"
   end
@@ -113,7 +115,7 @@ defmodule EmisarWeb.GrantsLiveTest do
 
   test "hides revoked grants", %{conn: conn} do
     {conn, user, account, api_key, _runner} = seed_account(conn)
-    subject = owner_subject(user, account)
+    subject = Fixtures.Subjects.subject_for(user)
     g = insert_grant!(account, api_key, action_id: "x")
     {:ok, _} = Approvals.revoke_grant(g, subject)
 
@@ -154,7 +156,7 @@ defmodule EmisarWeb.GrantsLiveTest do
     assert reloaded.revoked_at != nil
 
     assert Enum.any?(
-             Audit.list_events(owner_subject(user, account), page: [limit: 50]) |> elem(1),
+             Audit.list_events(Fixtures.Subjects.subject_for(user), page: [limit: 50]) |> elem(1),
              &(&1.event_type == "approval.grant_revoked" and &1.target_id == g.id)
            )
   end

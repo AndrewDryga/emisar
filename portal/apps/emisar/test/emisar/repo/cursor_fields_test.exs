@@ -21,6 +21,7 @@ defmodule Emisar.Repo.CursorFieldsTest do
   """
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Audit, Catalog, Fixtures, Policies, Runners}
+  alias Emisar.Users.User
 
   test "every declared cursor field is NOT NULL on the rows a list can reach" do
     for {query_module, cursor_fields} <- cursor_field_declarations() do
@@ -57,32 +58,34 @@ defmodule Emisar.Repo.CursorFieldsTest do
            ]
 
     account = Fixtures.Accounts.create_account()
-    unnamed = Fixtures.Users.create_user(full_name: nil)
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: unnamed.id,
-      role: "owner"
-    )
+    unnamed =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "owner",
+        display_name: nil
+      )
 
-    subject = Fixtures.Subjects.subject_for(unnamed, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(unnamed)
+    unnamed_login = legacy_login(unnamed)
+    directory = Fixtures.Memberships.create_membership(account_id: account.id)
+    directory_login = legacy_login(directory, full_name: "Global name")
+    Fixtures.Memberships.sync_display_name(directory, "Same label")
 
-    directory = Fixtures.Users.create_user(full_name: "Global name")
+    deleted =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        display_name: "Deleted current name"
+      )
 
-    membership =
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: directory.id)
-
-    Fixtures.Memberships.sync_display_name(membership, "Same label")
-    deleted = Fixtures.Users.create_user(full_name: "Deleted current name")
-    Fixtures.Memberships.create_membership(account_id: account.id, user_id: deleted.id)
-    Fixtures.Users.mark_user_as_deleted(deleted)
+    deleted_login = legacy_login(deleted, deleted_at: DateTime.utc_now())
     historical_id = Ecto.UUID.generate()
     unknown_id = Ecto.UUID.generate()
     now = DateTime.utc_now()
 
-    identity_event(account, "user", unnamed.id, nil)
-    identity_event(account, "user", directory.id, "Old directory name")
-    identity_event(account, "user", deleted.id, "Old deleted name")
+    identity_event(account, "user", unnamed_login.id, nil)
+    identity_event(account, "user", directory_login.id, "Old directory name")
+    identity_event(account, "user", deleted_login.id, "Old deleted name")
     identity_event(account, "user", historical_id, "Old snapshot", DateTime.add(now, -3))
     identity_event(account, "user", historical_id, "Same label", DateTime.add(now, -2))
     identity_event(account, "user", historical_id, "   ", DateTime.add(now, -1))
@@ -94,9 +97,9 @@ defmodule Emisar.Repo.CursorFieldsTest do
 
     expected =
       Enum.sort([
-        [unnamed.email, unnamed.id],
-        ["Same label", directory.id],
-        ["Deleted current name", deleted.id],
+        [unnamed.email, unnamed_login.id],
+        ["Same label", directory_login.id],
+        ["Deleted current name", deleted_login.id],
         ["Same label", historical_id]
       ])
 
@@ -111,12 +114,12 @@ defmodule Emisar.Repo.CursorFieldsTest do
     {_raw, named_key} =
       Fixtures.Runners.create_enrollment_key(
         account_id: account.id,
-        user_id: unnamed.id,
+        membership: unnamed,
         description: "Current key"
       )
 
     {_raw, unnamed_key} =
-      Fixtures.Runners.create_enrollment_key(account_id: account.id, user_id: unnamed.id)
+      Fixtures.Runners.create_enrollment_key(account_id: account.id, membership: unnamed)
 
     assert unnamed_key.description == nil
     identity_event(account, "enrollment_key", named_key.id, nil)
@@ -141,7 +144,6 @@ defmodule Emisar.Repo.CursorFieldsTest do
     ])
 
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
     [first_blank, second_blank] =
       for name <- ["First blank", "Second blank"] do
@@ -166,7 +168,6 @@ defmodule Emisar.Repo.CursorFieldsTest do
     policy =
       Fixtures.Policies.create_policy(
         account_id: account.id,
-        created_by_id: user.id,
         scope_type: :runner,
         scope_value: grouped.id
       )
@@ -200,16 +201,9 @@ defmodule Emisar.Repo.CursorFieldsTest do
     assert cursor_fields == [{:runner_actions, :asc, :action_id}]
     assert_schema_cursor_fields(Catalog.RunnerAction.Query, cursor_fields)
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
 
     [first, second] =
       for _ <- 1..2 do
@@ -301,6 +295,14 @@ defmodule Emisar.Repo.CursorFieldsTest do
 
     assert first_cursor == nil
     rows
+  end
+
+  # Rows written before Members owned identity name a retired personal login
+  # ("user"); the reader labels it with the name of its Member in this workspace.
+  defp legacy_login(member, attrs \\ []) do
+    login = Repo.insert!(struct!(User, Keyword.put_new(attrs, :email, member.email)))
+    member |> Ecto.Changeset.change(user_id: login.id) |> Repo.update!()
+    login
   end
 
   defp identity_event(account, kind, id, label, occurred_at \\ DateTime.utc_now()) do

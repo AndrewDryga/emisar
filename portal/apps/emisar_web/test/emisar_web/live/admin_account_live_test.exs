@@ -24,13 +24,13 @@ defmodule EmisarWeb.AdminAccountLiveTest do
   describe "GET /admin/accounts/:id" do
     setup do
       account = Fixtures.Accounts.create_account(plan: "team")
-      owner = Fixtures.Users.create_user(full_name: "Dana Okafor")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          display_name: "Dana Okafor"
+        )
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "acme-db-01")
 
@@ -42,7 +42,7 @@ defmodule EmisarWeb.AdminAccountLiveTest do
           source: :mcp
         )
 
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.id)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: owner.id)
 
       %{account: account, owner: owner, runner: runner, run: run}
     end
@@ -102,11 +102,10 @@ defmodule EmisarWeb.AdminAccountLiveTest do
           invitation_token_digest: "pending-invitation"
         )
 
-      direct = Fixtures.Memberships.fetch_membership(account.id, owner.id)
       {:ok, live, _html} = live(conn, ~p"/admin/accounts/#{account.id}")
 
       assert has_element?(live, "#member-#{pending.id}", "Invitation pending")
-      refute has_element?(live, "#member-#{direct.id}", "Invitation pending")
+      refute has_element?(live, "#member-#{owner.id}", "Invitation pending")
     end
 
     test "the account can be reached by slug as well as id", %{conn: conn, account: account} do

@@ -12,7 +12,6 @@ defmodule Emisar.Auth.SubjectTest do
   alias Emisar.Fixtures
   alias Emisar.RequestContext
   alias Emisar.Runners.Runner
-  alias Emisar.Users.User
 
   describe "human_membership_id/1" do
     test "uses the exact human seat, never a machine's owner or a system actor" do
@@ -25,7 +24,7 @@ defmodule Emisar.Auth.SubjectTest do
              }) == subject.membership_id
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
       machine = Subject.for_api_key(key, account)
       assert machine.membership_id == subject.membership_id
@@ -36,18 +35,16 @@ defmodule Emisar.Auth.SubjectTest do
 
   describe "for_member/4" do
     setup do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-      %{user: user, account: account}
+      %{account: Fixtures.Accounts.create_account()}
     end
 
-    test "owner gets the full owner-role permission set", %{user: user, account: account} do
-      membership = %Membership{role: :owner, user_id: user.id, user: user, account_id: account.id}
+    test "owner gets the full owner-role permission set", %{account: account} do
+      membership = %Membership{role: :owner, account_id: account.id}
 
       subject = Subject.for_member(membership, account)
 
       assert subject.role == :owner
-      assert subject.actor == user
+      assert subject.actor == membership
       assert subject.account == account
       assert MapSet.size(subject.permissions) > 0
       # An owner-specific permission held by no other role.
@@ -57,9 +54,9 @@ defmodule Emisar.Auth.SubjectTest do
              )
     end
 
-    test "viewer holds strictly fewer permissions than admin", %{user: user, account: account} do
-      viewer = %Membership{role: :viewer, user_id: user.id, user: user, account_id: account.id}
-      admin = %Membership{role: :admin, user_id: user.id, user: user, account_id: account.id}
+    test "viewer holds strictly fewer permissions than admin", %{account: account} do
+      viewer = %Membership{role: :viewer, account_id: account.id}
+      admin = %Membership{role: :admin, account_id: account.id}
       viewer_subj = Subject.for_member(viewer, account)
       admin_subj = Subject.for_member(admin, account)
 
@@ -69,21 +66,16 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test "pending directory authorization is viewer-only except for a human owner", %{
-      user: user,
       account: account
     } do
       admin = %Membership{
         role: :admin,
-        user_id: user.id,
-        user: user,
         account_id: account.id,
         directory_authorization_pending_version: 3
       }
 
       owner = %Membership{
         role: :owner,
-        user_id: user.id,
-        user: user,
         account_id: account.id,
         directory_authorization_pending_version: 3
       }
@@ -97,14 +89,9 @@ defmodule Emisar.Auth.SubjectTest do
       assert pending_owner.permissions == Emisar.Auth.Permissions.for_role(:owner)
     end
 
-    test "an unresolved invitation has no role or permissions", %{
-      user: user,
-      account: account
-    } do
+    test "an unresolved invitation has no role or permissions", %{account: account} do
       invited = %Membership{
         role: :owner,
-        user_id: user.id,
-        user: user,
         account_id: account.id,
         invitation_token_digest: "pending-digest"
       }
@@ -116,10 +103,9 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test "a direct membership with no invitation fields remains authorized", %{
-      user: user,
       account: account
     } do
-      membership = %Membership{role: :admin, user_id: user.id, user: user, account_id: account.id}
+      membership = %Membership{role: :admin, account_id: account.id}
 
       direct = Subject.for_member(membership, account)
 
@@ -127,16 +113,14 @@ defmodule Emisar.Auth.SubjectTest do
       assert direct.permissions == Emisar.Auth.Permissions.for_role(:admin)
     end
 
-    test "a Member without a personal login is its own actor", %{account: account} do
-      membership = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+    test "a Member is its own actor", %{account: account} do
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
 
       subject = Subject.for_member(membership, account)
 
       assert subject.actor == membership
       assert Subject.actor_kind(subject) == "membership"
       assert Subject.human_membership_id(subject) == membership.id
-      assert Subject.user_id(subject) == nil
-      assert Subject.personal_denial(subject) == {:error, :personal_login_required}
     end
   end
 
@@ -148,13 +132,17 @@ defmodule Emisar.Auth.SubjectTest do
 
   describe "Authorizer.ensure_has_permissions/2" do
     setup do
-      account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-      %{account: account, user: user}
+      %{account: Fixtures.Accounts.create_account()}
     end
 
-    test ":ok when the subject holds the permission", %{account: account, user: user} do
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    defp role_subject(account, role) do
+      Fixtures.Subjects.subject_for(
+        Fixtures.Memberships.create_membership(account_id: account.id, role: role)
+      )
+    end
+
+    test ":ok when the subject holds the permission", %{account: account} do
+      subject = role_subject(account, "owner")
 
       assert Emisar.Auth.Authorizer.ensure_has_permissions(
                subject,
@@ -162,8 +150,8 @@ defmodule Emisar.Auth.SubjectTest do
              ) == :ok
     end
 
-    test "{:error, :unauthorized} when the subject lacks it", %{account: account, user: user} do
-      subject = Fixtures.Subjects.subject_for(user, account, role: :viewer)
+    test "{:error, :unauthorized} when the subject lacks it", %{account: account} do
+      subject = role_subject(account, "viewer")
 
       assert Emisar.Auth.Authorizer.ensure_has_permissions(
                subject,
@@ -171,11 +159,8 @@ defmodule Emisar.Auth.SubjectTest do
              ) == {:error, :unauthorized}
     end
 
-    test "{:one_of, [...]} succeeds if any one permission is held", %{
-      account: account,
-      user: user
-    } do
-      operator = Fixtures.Subjects.subject_for(user, account, role: :operator)
+    test "{:one_of, [...]} succeeds if any one permission is held", %{account: account} do
+      operator = role_subject(account, "operator")
 
       # Operator does NOT hold manage_runners but DOES hold view_runners.
       perms = [
@@ -186,8 +171,8 @@ defmodule Emisar.Auth.SubjectTest do
       assert Emisar.Auth.Authorizer.ensure_has_permissions(operator, {:one_of, perms}) == :ok
     end
 
-    test "rejects {:one_of, [...]} if the subject holds none", %{account: account, user: user} do
-      viewer = Fixtures.Subjects.subject_for(user, account, role: :viewer)
+    test "rejects {:one_of, [...]} if the subject holds none", %{account: account} do
+      viewer = role_subject(account, "viewer")
 
       perms = [
         Emisar.Accounts.Authorizer.manage_security_settings_permission(),
@@ -198,11 +183,8 @@ defmodule Emisar.Auth.SubjectTest do
                {:error, :unauthorized}
     end
 
-    test "a plain list requires ALL permissions — holding every one passes", %{
-      account: account,
-      user: user
-    } do
-      owner = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    test "a plain list requires ALL permissions — holding every one passes", %{account: account} do
+      owner = role_subject(account, "owner")
 
       # Owner holds both of these.
       perms = [
@@ -213,11 +195,8 @@ defmodule Emisar.Auth.SubjectTest do
       assert Emisar.Auth.Authorizer.ensure_has_permissions(owner, perms) == :ok
     end
 
-    test "a plain list is rejected when the subject lacks any one of them", %{
-      account: account,
-      user: user
-    } do
-      admin = Fixtures.Subjects.subject_for(user, account, role: :admin)
+    test "a plain list is rejected when the subject lacks any one of them", %{account: account} do
+      admin = role_subject(account, "admin")
 
       # Admin holds manage_team but NOT manage_owners (owner-only), so requiring
       # both fails — a permission list requires ALL of them.
@@ -231,10 +210,9 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test "an actor the gate cannot re-check is refused despite its permissions", %{
-      account: account,
-      user: user
+      account: account
     } do
-      owner = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      owner = role_subject(account, "owner")
       unknown = %{owner | actor: account}
 
       assert Emisar.Auth.Authorizer.ensure_has_permissions(
@@ -246,14 +224,13 @@ defmodule Emisar.Auth.SubjectTest do
     end
 
     test "a Member actor is re-read through its own grant and cannot borrow a linked one", %{
-      account: account,
-      user: user
+      account: account
     } do
       permission = Emisar.Runners.Authorizer.view_runners_permission()
-      owner = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      owner = role_subject(account, "owner")
       team = Fixtures.Accounts.create_account(plan: "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: team.id)
-      membership = Fixtures.Memberships.create_unlinked_membership(account_id: team.id)
+      membership = Fixtures.Memberships.create_membership(account_id: team.id)
 
       identity =
         Fixtures.SSO.create_user_identity(
@@ -262,9 +239,13 @@ defmodule Emisar.Auth.SubjectTest do
           membership: membership
         )
 
-      raw = Fixtures.Auth.create_member_session_token!(membership, identity)
-      member = Fixtures.Subjects.unlinked_member_subject(membership, raw)
-      borrowed = %{owner | actor: %Membership{id: owner.membership_id}}
+      raw =
+        Fixtures.Auth.create_session_token!(membership, :sso, nil, %{},
+          user_identity_id: identity.id
+        )
+
+      member = Fixtures.Subjects.subject_for(membership, session: raw)
+      borrowed = %{owner | actor: membership, membership_id: membership.id}
 
       assert Emisar.Auth.Authorizer.ensure_has_permissions(member, permission) == :ok
 
@@ -277,12 +258,14 @@ defmodule Emisar.Auth.SubjectTest do
                {:error, :unauthorized}
     end
 
-    test "API key and actorless support subjects keep their own authority", %{
-      account: account,
-      user: user
-    } do
+    test "API key and actorless support subjects keep their own authority", %{account: account} do
+      creator = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: creator.id
+        )
 
       support =
         Fixtures.Subjects.build_subject(
@@ -328,7 +311,7 @@ defmodule Emisar.Auth.SubjectTest do
 
   describe "actor_kind/1 + actor_id/1" do
     test "classify each actor, with system/nil fallbacks for an actor-less subject" do
-      user_subject = %Subject{actor: %User{id: "u1", email: "ops@example.test"}}
+      user_subject = %Subject{actor: %Membership{id: "u1", email: "ops@example.test"}}
       key_subject = %Subject{actor: %ApiKey{id: "k1"}}
       runner_subject = %Subject{actor: %Runner{id: "r1"}}
       actorless = %Subject{}
@@ -341,19 +324,6 @@ defmodule Emisar.Auth.SubjectTest do
       assert Subject.actor_id(user_subject) == "u1"
       assert Subject.actor_id(key_subject) == "k1"
       assert Subject.actor_id(actorless) == nil
-    end
-
-    test "user_id/1 is the user actor's id, nil for a key/runner/actor-less subject" do
-      user_subject = %Subject{actor: %User{id: "u1"}}
-      key_subject = %Subject{actor: %ApiKey{id: "k1"}}
-      runner_subject = %Subject{actor: %Runner{id: "r1"}}
-
-      # A user-FK attribution column takes user_id — an API key's actor_id is the
-      # KEY id, which would violate a users FK, so keys/runners resolve to nil.
-      assert Subject.user_id(user_subject) == "u1"
-      assert Subject.user_id(key_subject) == nil
-      assert Subject.user_id(runner_subject) == nil
-      assert Subject.user_id(%Subject{}) == nil
     end
   end
 

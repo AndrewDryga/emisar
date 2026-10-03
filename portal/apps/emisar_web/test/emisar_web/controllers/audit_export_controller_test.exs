@@ -19,14 +19,14 @@ defmodule EmisarWeb.AuditExportControllerTest do
   alias Emisar.{Accounts, Audit, PublicUrl, Repo}
 
   setup do
-    {user, account, subject} = Fixtures.Subjects.owner_subject()
+    {owner, account, subject} = Fixtures.Subjects.owner_subject()
     # Export is Team+ — these tests exercise the feed itself.
     Fixtures.Accounts.create_subscription(account, "team")
 
     {raw, _key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: account.id,
-        created_by_id: user.id,
+        created_by_membership_id: owner.id,
         kind: :audit_export
       )
 
@@ -36,13 +36,13 @@ defmodule EmisarWeb.AuditExportControllerTest do
   test "a key on a downgraded plan is refused with an upgrade pointer", %{} do
     # The mint itself is entitlement-gated, so the ineligible-plan key can only
     # exist via a downgrade: minted on Team, then the entitlement withdrawn.
-    {free_user, free_account, _subject} = Fixtures.Subjects.owner_subject()
+    {free_owner, free_account, _subject} = Fixtures.Subjects.owner_subject()
     Fixtures.Accounts.create_subscription(free_account, "team")
 
     {raw, _key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: free_account.id,
-        created_by_id: free_user.id,
+        created_by_membership_id: free_owner.id,
         kind: :audit_export
       )
 
@@ -117,7 +117,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       {raw, _} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: subject.actor.id,
+          created_by_membership_id: subject.actor.id,
           kind: :mcp
         )
 
@@ -149,24 +149,17 @@ defmodule EmisarWeb.AuditExportControllerTest do
       account: account,
       subject: owner_subject
     } do
-      member = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "admin"
-        )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {raw, _key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: member.id,
+          created_by_membership_id: member.id,
           kind: :audit_export
         )
 
       assert build_conn() |> bearer(raw) |> get(~p"/api/audit") |> response(200)
-      assert {:ok, _suspended} = Accounts.suspend_membership(membership, owner_subject)
+      assert {:ok, _suspended} = Accounts.suspend_membership(member, owner_subject)
 
       conn = build_conn() |> bearer(raw) |> get(~p"/api/audit")
       assert json_response(conn, 401) == %{"error" => "unauthorized"}
@@ -175,25 +168,18 @@ defmodule EmisarWeb.AuditExportControllerTest do
     test "401 while the key owner has not accepted their invitation", %{
       account: account
     } do
-      member = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "admin"
-        )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: member.id,
+          created_by_membership_id: member.id,
           kind: :audit_export
         )
 
       {_token, digest} = Emisar.Crypto.user_invite_token()
 
-      membership
+      member
       |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
       |> Emisar.Repo.update!()
 
@@ -493,8 +479,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
     } do
       # Build a separate account with its own events. The bearer-auth'd
       # key here belongs to `own_account` and must NEVER see the other.
-      {other_user, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
-      _ = other_user
+      {_other_owner, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
 
       insert_event(own_account, "user.signed_in")
       insert_event(other_account, "user.signed_in")
@@ -733,7 +718,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       {raw_b, _key_b} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: subject.actor.id,
+          created_by_membership_id: subject.actor.id,
           kind: :audit_export
         )
 
@@ -768,7 +753,7 @@ defmodule EmisarWeb.AuditExportControllerTest do
       {raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: subject.actor.id,
+          created_by_membership_id: subject.actor.id,
           kind: :audit_export
         )
 

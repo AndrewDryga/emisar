@@ -6,6 +6,7 @@ defmodule Emisar.Seeds.Fleet do
   """
 
   alias Emisar.Accounts
+  alias Emisar.Accounts.Membership
   alias Emisar.Audit
   alias Emisar.Catalog
   alias Emisar.Catalog.{PackBaseline, PackVersion}
@@ -13,9 +14,8 @@ defmodule Emisar.Seeds.Fleet do
   alias Emisar.Runners
   alias Emisar.Runners.Runner
   alias Emisar.Seeds.{DemoAccount, Helpers}
-  alias Emisar.Users.User
 
-  @doc "Adds `runners`, `sam`, and `wren` to the context."
+  @doc "Adds `runners` and the Members `sam` and `wren` to the context."
   def run(ctx) do
     runners =
       Enum.map(runner_specs(), fn spec ->
@@ -337,20 +337,17 @@ defmodule Emisar.Seeds.Fleet do
   end
 
   defp set_member_access(
-         %{account: account, owner_subject: owner_subject},
+         %{owner_subject: owner_subject},
          allowlist,
-         %User{} = member,
+         %Membership{} = member,
          mode,
          scope,
          pack_mode,
          pack_scope
        ) do
-    membership = Accounts.peek_sync_membership(account.id, member.id)
-
     {:ok, access} = Accounts.build_runner_access(mode, scope, allowlist, pack_mode, pack_scope)
 
-    {:ok, _membership} =
-      Accounts.update_membership_runner_access(membership, access, owner_subject)
+    {:ok, _membership} = Accounts.update_membership_runner_access(member, access, owner_subject)
   end
 
   # The roster orders newest-joined first, and "joined" is the membership row's
@@ -358,24 +355,18 @@ defmodule Emisar.Seeds.Fleet do
   # is the fixture showing through. Weeks-old, staggered joins put the standing
   # team in a sensible order; the SCIM directory batch (seeded near the end, when
   # enabled) backdates itself behind them.
-  defp backdate_joins(%{account: account, user: user, jordan: jordan, priya: priya}, sam, wren) do
+  defp backdate_joins(%{owner: owner, jordan: jordan, priya: priya}, sam, wren) do
     [
-      {user.id, Helpers.days_ago(42)},
-      {jordan.id, Helpers.days_ago(35)},
-      {priya.id, Helpers.days_ago(28)},
-      {sam.id, Helpers.days_ago(21)},
-      {wren.id, Helpers.days_ago(12)}
+      {owner, Helpers.days_ago(42)},
+      {jordan, Helpers.days_ago(35)},
+      {priya, Helpers.days_ago(28)},
+      {sam, Helpers.days_ago(21)},
+      {wren, Helpers.days_ago(12)}
     ]
-    |> Enum.each(fn {member_user_id, joined_at} ->
-      case Accounts.peek_sync_membership(account.id, member_user_id) do
-        nil ->
-          :ok
-
-        membership ->
-          membership
-          |> Ecto.Changeset.change(inserted_at: joined_at, invitation_accepted_at: joined_at)
-          |> Repo.update!()
-      end
+    |> Enum.each(fn {%Membership{} = member, joined_at} ->
+      member
+      |> Ecto.Changeset.change(inserted_at: joined_at, invitation_accepted_at: joined_at)
+      |> Repo.update!()
     end)
   end
 

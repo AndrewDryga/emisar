@@ -5,7 +5,7 @@ defmodule Emisar.OperationalReadAuthorityTest do
   for role <- ["admin", "operator", "viewer"] do
     test "#{role} reads history, output, audit and saved policies without action grants" do
       membership = Fixtures.Memberships.create_membership(role: unquote(role))
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.none())
       run = Fixtures.Runs.create_run(account_id: subject.account.id)
 
@@ -30,10 +30,10 @@ defmodule Emisar.OperationalReadAuthorityTest do
     end
   end
 
-  for invalidation <- [:suspended, :deleted_user, :disabled_account] do
+  for invalidation <- [:suspended, :removed_member, :disabled_account] do
     test "all operational read boundaries reject #{invalidation} live identity" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       run = Fixtures.Runs.create_run(account_id: subject.account.id)
 
       policy =
@@ -72,7 +72,7 @@ defmodule Emisar.OperationalReadAuthorityTest do
 
   test "demotion to Billing manager narrows a stale audit subject and its reference labels" do
     membership = Fixtures.Memberships.create_membership(role: "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     runner = Fixtures.Runners.create_runner(account_id: subject.account.id, connected?: false)
 
     {:ok, operational} =
@@ -92,7 +92,7 @@ defmodule Emisar.OperationalReadAuthorityTest do
 
   test "permission denials never query identity" do
     membership = Fixtures.Memberships.create_membership(role: "operator")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     denied = %{subject | permissions: MapSet.new()}
     handler = "operational-read-#{System.unique_integer([:positive])}"
     :ok = :telemetry.attach(handler, [:emisar, :repo, :query], &__MODULE__.query_event/4, self())
@@ -140,8 +140,8 @@ defmodule Emisar.OperationalReadAuthorityTest do
   defp invalidate(membership, _subject, :suspended),
     do: Fixtures.Memberships.suspend_membership(membership)
 
-  defp invalidate(_membership, subject, :deleted_user),
-    do: Fixtures.Users.mark_user_as_deleted(subject.actor)
+  defp invalidate(membership, _subject, :removed_member),
+    do: Fixtures.Memberships.mark_membership_as_deleted(membership)
 
   defp invalidate(_membership, subject, :disabled_account),
     do: Fixtures.Accounts.disable_account(subject.account)

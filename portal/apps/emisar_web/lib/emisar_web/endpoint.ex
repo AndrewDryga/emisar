@@ -165,7 +165,6 @@ defmodule EmisarWeb.Endpoint do
   # request line would write it to Cloud Logging. Each already emits its own
   # audit event, so nothing operational is lost by not logging the request.
   def endpoint_log_level(%Plug.Conn{path_info: ["sign_in", "magic" | _]}), do: false
-  def endpoint_log_level(%Plug.Conn{path_info: ["confirm", _]}), do: false
   def endpoint_log_level(%Plug.Conn{path_info: ["accept_invitation", _]}), do: false
   def endpoint_log_level(%Plug.Conn{}), do: :info
 

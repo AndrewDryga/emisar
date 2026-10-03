@@ -21,7 +21,7 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
   # Enterprise account + a SCIM-enabled provider. Returns the provider, its raw
   # bearer (shown once), the owner subject, and the account.
   defp scim_provider(provider_attrs \\ %{}) do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     provider = provider_fixture(account, provider_attrs)
     {:ok, provider, raw_token} = SSO.enable_scim(provider, subject)
     %{provider: provider, token: raw_token, subject: subject, account: account}

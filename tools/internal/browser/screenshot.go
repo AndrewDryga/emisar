@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,6 +162,23 @@ func (s *Session) runStep(step Step) error {
 	return chromedp.Run(s.Context, chromedp.Evaluate(fillScript+"("+string(field)+")", nil))
 }
 
+// signInSlug names the workspace a capture signs in to: the one whose sign-in page the
+// navigation landed on, else the one the capture's own path names, else demo. A slugless path
+// (`/app/runs`, `/oauth/authorize`) lands on the `/sign_in` picker instead; the segment after
+// `/app/` in such a path is a reserved shorthand, never a workspace, so from the picker the
+// capture signs in to demo.
+func signInSlug(current, path string) string {
+	if slug, rest := appSlug(current); slug != "" && rest == "sign_in" {
+		return slug
+	}
+	if parsed, err := url.Parse(current); err == nil && parsed.Path != "/sign_in" {
+		if slug, _ := appSlug(path); slug != "" {
+			return slug
+		}
+	}
+	return "demo"
+}
+
 func (s *Session) Shot(options ShotOptions) ([]string, error) {
 	if options.Width == 0 {
 		options.Width = 1440
@@ -179,7 +197,7 @@ func (s *Session) Shot(options ShotOptions) ([]string, error) {
 		return nil, err
 	}
 	if strings.Contains(current, "/sign_in") {
-		if err := s.Login(options.Email); err != nil {
+		if err := s.Login(signInSlug(current, options.Path), options.Email); err != nil {
 			return nil, err
 		}
 		if err := s.Navigate(options.Path); err != nil {

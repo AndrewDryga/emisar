@@ -1,12 +1,23 @@
 defmodule EmisarWeb.UserAuth do
   @moduledoc """
-  Authentication plug + LiveView hooks. Sessions are signed cookies
-  carrying a session-token; the token is looked up in `user_tokens` on
-  each request. Stale session tokens are rejected by the Auth token expiry check.
+  The workspace session boundary: the browser's workspace sessions in the
+  `_emisar_web_key` cookie, the plugs and LiveView hooks that resolve them, and
+  sign-in and sign-out.
 
-  `current_auth` is the live session and `current_membership` the workspace
-  Member it acts as. `current_user` is that session's personal login, nil for a
-  member-only SSO session whose Member has none.
+  The cookie's `"sessions"` key holds up to six `{account_id, raw_token}`
+  entries, one per workspace, oldest first. A request always names its
+  workspace — the URL, a signed flow state or an explicit pick — and uses only
+  that workspace's entry; `Emisar.Auth` refuses a token presented for a
+  workspace its row does not belong to. `"browser_id"` is this browser's own
+  random id: every sign-in hands it to the domain, so a sign-out ends every
+  session the browser minted, including one a concurrent tab left out of the
+  final cookie.
+
+  A sign-in renews the session id and CSRF token and carries the other
+  workspaces' entries over; the entry it replaces, and the oldest one a
+  seventh workspace pushes out, are revoked in the same request. Sign-out ends
+  every session in the cookie, in every workspace, and clears the cookie. The
+  staff realm (`EmisarWeb.StaffAuth`) never reads or writes this cookie.
   """
 
   use EmisarWeb, :verified_routes
@@ -14,130 +25,181 @@ defmodule EmisarWeb.UserAuth do
   import Phoenix.Controller
   alias Emisar.{Accounts, ApiKeys, Approvals, Auth}
   alias Emisar.Auth.Subject
-  alias Emisar.{Billing, Catalog, Marketing, Runners, SSO, Throttle, Users}
-  alias EmisarWeb.{Analytics, BillingIntent, MarketingAttribution, ShellChrome}
-  alias EmisarWeb.RequestContext
+  alias Emisar.{Billing, Catalog, Crypto, Marketing, Runners, SSO}
+  alias EmisarWeb.{Analytics, BillingIntent, MarketingAttribution, RecentAccounts}
+  alias EmisarWeb.{RequestContext, ShellChrome}
 
-  # Session provenance for an unauthenticated request — no method, no factor, no
-  # SSO identity. `fetch_session_by_token/1` returns the `%UserToken{}` on a
-  # hit; this is the miss/anonymous default the Subject build reads from;
-  # absent personal, local-factor and destination proof fails closed.
-  @no_auth %{
-    auth_method: nil,
-    mfa_verified_at: nil,
-    mfa_enrollment_verified_at: nil,
-    user_identity_id: nil
-  }
+  # Firezone's cap: six entries stay far under the 4 KB cookie limit.
+  @max_sessions 6
+  # The cookie session is ~4 KiB, so a stored return path is bounded.
+  @return_to_max_bytes 1024
+  # `Process.send_after/3` waits at most ~49.7 days, so a longer wait re-arms daily.
+  @session_expiry_check_ms 24 * 60 * 60 * 1000
 
-  # -- Public surface -------------------------------------------------
+  # -- The cookie -----------------------------------------------------
 
-  @doc "Recover lost workspace proof without redirecting a still-live bearer through the sign-in guard."
-  def reauthenticate(%Phoenix.LiveView.Socket{} = socket) do
-    path =
-      case Auth.fetch_current_session(socket.assigns.current_subject) do
-        {:ok, _session} -> ~p"/session/recover"
-        {:error, _reason} -> ~p"/app/#{socket.assigns.current_account}/sign_in"
-      end
+  @doc """
+  The browser's workspace sessions from its cookie, or from a LiveView session
+  map: `{account_id, raw_token}` pairs, oldest first, at most six, one per
+  workspace. Anything else in the key is ignored.
+  """
+  def session_entries(%Plug.Conn{} = conn), do: normalize_entries(get_session(conn, :sessions))
+  def session_entries(%{} = session), do: normalize_entries(session["sessions"])
 
-    socket
-    |> Phoenix.LiveView.put_flash(:error, EmisarWeb.MfaErrors.message(:session_not_found))
-    |> Phoenix.LiveView.redirect(to: path)
+  defp normalize_entries(entries) when is_list(entries) do
+    entries
+    |> Enum.filter(&valid_entry?/1)
+    |> Enum.reverse()
+    |> Enum.uniq_by(fn {account_id, _token} -> account_id end)
+    |> Enum.take(@max_sessions)
+    |> Enum.reverse()
   end
 
-  @doc "Install an already committed bound SSO rotation; no second mint or stale return destination."
-  def install_sso_step_up(conn, token, %Accounts.Account{} = account) do
-    conn
-    |> renew_session()
-    |> put_token_in_session(token)
-    |> put_session(:current_account_id, account.id)
-    |> redirect(to: ~p"/app/#{account}")
+  defp normalize_entries(_entries), do: []
+
+  defp valid_entry?({account_id, token}) when is_binary(account_id) and is_binary(token),
+    do: match?({:ok, _uuid}, Ecto.UUID.cast(account_id))
+
+  defp valid_entry?(_entry), do: false
+
+  defp entry_for_account(conn_or_session, account_id),
+    do: List.keyfind(session_entries(conn_or_session), account_id, 0)
+
+  @doc "This browser's random id from its cookie or a LiveView session map, or nil before its first sign-in."
+  def browser_id(%Plug.Conn{} = conn), do: valid_browser_id(get_session(conn, :browser_id))
+  def browser_id(%{} = session), do: valid_browser_id(session["browser_id"])
+
+  defp valid_browser_id(id) when is_binary(id) and byte_size(id) > 0, do: id
+  defp valid_browser_id(_id), do: nil
+
+  @doc """
+  This browser's random id, minted into its workspace session on first use.
+  Every sign-in passes it to the domain (each `complete_*`, both invitation SSO
+  calls), which stores only its digest on the session it mints, so a sign-out
+  from this browser ends every session the browser minted. Returns
+  `{conn, browser_id}`.
+  """
+  def fetch_browser_id(%Plug.Conn{} = conn) do
+    case browser_id(conn) do
+      nil ->
+        id = Crypto.random_secret()
+        {put_session(conn, :browser_id, id), id}
+
+      id ->
+        {conn, id}
+    end
   end
 
   @doc """
-  Installs the magic-link session `Emisar.Auth` already minted — factor one
-  only, so the analytics provenance is fixed here at `:magic_link` / `mfa:
-  false` and no caller can widen it. `user` and `token` are the pair the domain
-  returned from one locked transaction; the boundary only puts the token in the
-  cookie, renews the session ID (CSRF defence in depth), and redirects.
-  `registered?` is true for the FIRST sign-in after a registration, which fires
-  sign_up_completed.
+  The workspace whose invitation this browser is finishing through single
+  sign-on, or nil. The invitee's emailed code proved the invited address in a
+  workspace that refuses email sign-in, and the proof waits in the encrypted
+  session (never a URL) until the SSO step uses it; it counts only while it
+  verifies for this browser.
   """
-  def log_in_magic_link_user(conn, user, token, registered?),
-    do: finish_log_in(conn, user, token, :magic_link, false, registered?)
+  def invitation_sso_account_id(conn_or_session) do
+    with proof when is_binary(proof) <- session_value(conn_or_session, "invitation_sso_proof"),
+         browser_id when is_binary(browser_id) <- browser_id(conn_or_session),
+         {:ok, %{account_id: account_id}} <- Auth.verify_invitation_sso_proof(proof, browser_id) do
+      account_id
+    else
+      _ -> nil
+    end
+  end
+
+  defp session_value(%Plug.Conn{} = conn, key), do: get_session(conn, key)
+  defp session_value(%{} = session, key), do: session[key]
+
+  # -- Sign-in --------------------------------------------------------
 
   @doc """
-  Installs the magic-link session `Emisar.Auth` minted after the second factor
-  passed — same as `log_in_magic_link_user/4` but with `mfa: true` provenance,
-  fixed here so no caller can claim a factor it didn't verify.
+  Installs the email-code session `Emisar.Auth` minted for `membership` (its
+  workspace preloaded): factor one only, so the provenance is fixed here at
+  `:magic_link` with no second factor. `registered?` is true for the sign-up
+  that just created the workspace.
   """
-  def log_in_magic_link_mfa_user(conn, user, token, registered?),
-    do: finish_log_in(conn, user, token, :magic_link, true, registered?)
+  def log_in_magic_link_member(conn, %Accounts.Membership{} = membership, token, registered?),
+    do: finish_log_in(conn, membership, token, :magic_link, false, registered?)
 
   @doc """
-  Completes an SSO sign-in under the account and current-provider locks.
-  `actor` is the callback's person: a linked Member's `%Users.User{}`, or a
-  `%Accounts.Membership{}` without a personal login. `opts` carry the callback's
-  required `:user_identity_id` and exact `:provider_identifier`. SSO never
-  registers a personal login, so it records no signup. The domain returns the
-  committed MFA outcome used for analytics; no web caller chooses it.
+  Installs the email-code session `Emisar.Auth` minted after the second factor
+  passed — as `log_in_magic_link_member/4` with the second factor fixed here.
   """
-  def log_in_sso_user_for_account(conn, actor, account_id, opts \\ []) do
+  def log_in_magic_link_mfa_member(conn, %Accounts.Membership{} = membership, token, registered?),
+    do: finish_log_in(conn, membership, token, :magic_link, true, registered?)
+
+  @doc """
+  Completes an SSO sign-in: `auth` is `SSO.complete_auth/3`'s verified
+  `%{membership, identity, provider}` and `account` the provider's workspace.
+  The domain mints the session under its locks and decides the IdP MFA stamp;
+  no web caller chooses it. Returns `{:ok, conn}` or `{:error,
+  :account_disabled | :provider_disabled | :membership_unavailable}`.
+  """
+  def log_in_sso_member(
+        conn,
+        %{
+          membership: %Accounts.Membership{} = membership,
+          identity: identity,
+          provider: provider
+        },
+        %Accounts.Account{} = account
+      ) do
+    {conn, browser_id} = fetch_browser_id(conn)
     context = RequestContext.from_conn(conn)
 
-    case Auth.complete_sso_account_sign_in(actor, account_id, context, opts) do
+    case Auth.complete_sso_sign_in(membership, identity, provider, browser_id, context) do
       {:ok, token, mfa} ->
-        {:ok, finish_log_in(conn, personal_login(actor), token, :sso, mfa, false)}
+        {:ok, finish_log_in(conn, %{membership | account: account}, token, :sso, mfa, false)}
 
-      {:error, :account_disabled} = error ->
-        error
-
-      {:error, :provider_disabled} = error ->
-        error
-
-      {:error, :membership_unavailable} = error ->
-        error
+      {:error, reason}
+      when reason in [:account_disabled, :provider_disabled, :membership_unavailable] ->
+        {:error, reason}
 
       {:error, reason} ->
         raise "could not complete SSO sign-in: #{inspect(reason)}"
     end
   end
 
-  defp finish_log_in(conn, user, token, auth_method, mfa, registered?) do
-    user_return_to = get_session(conn, :user_return_to)
+  @doc """
+  Installs the SSO session `SSO.complete_invitation_sso_sign_in/4` minted when
+  an invitee joined through the workspace's identity provider.
+  """
+  def log_in_invitation_sso_member(conn, %Accounts.Membership{} = membership, token),
+    do: finish_log_in(conn, membership, token, :sso, false, false)
+
+  defp finish_log_in(
+         conn,
+         %Accounts.Membership{account: %Accounts.Account{} = account} = membership,
+         token,
+         auth_method,
+         mfa,
+         registered?
+       ) do
+    return_to = return_path_for(conn, account)
     billing_intent = verified_billing_intent(get_session(conn, :billing_intent))
     attribution = MarketingAttribution.current(conn)
-    :ok = record_sign_up(user, registered?, attribution)
+    :ok = record_sign_up(membership, registered?, attribution)
 
     conn
-    |> renew_session()
-    |> put_token_in_session(token)
-    |> maybe_restore_billing_intent(user_return_to, billing_intent)
-    |> maybe_flash_just_registered(user, registered?)
-    |> track_authentication(user, auth_method, mfa, registered?, attribution)
-    |> redirect(to: user_return_to || billing_intent_path(billing_intent) || signed_in_path(conn))
+    |> RecentAccounts.put(%{slug: account.slug, name: account.name})
+    |> put_workspace_session(account.id, token)
+    |> maybe_restore_billing_intent(return_to, billing_intent)
+    |> maybe_flash_just_registered(registered?)
+    |> Analytics.track_authentication(membership, auth_method, mfa, registered?, attribution)
+    |> redirect(to: return_to || billing_intent_path(billing_intent) || ~p"/app/#{account}")
   end
 
-  defp personal_login(%Users.User{} = user), do: user
-  defp personal_login(%Accounts.Membership{}), do: nil
-
-  # A Member without a personal login gets no analytics people profile and no
-  # signup conversion.
-  defp record_sign_up(%Users.User{} = user, true, attribution) do
-    _result = Marketing.account_signed_up(user, attribution)
+  defp record_sign_up(%Accounts.Membership{} = owner, true, attribution) do
+    _result = Marketing.account_signed_up(owner, attribution)
     :ok
   end
 
-  defp record_sign_up(_user, _registered?, _attribution), do: :ok
+  defp record_sign_up(_membership, false, _attribution), do: :ok
 
-  defp track_authentication(conn, nil, _auth_method, _mfa, _registered?, _attribution), do: conn
-
-  defp track_authentication(conn, user, auth_method, mfa, registered?, attribution),
-    do: Analytics.track_authentication(conn, user, auth_method, mfa, registered?, attribution)
-
-  # A branded account return is the operator's explicit authentication target
-  # and wins over a stale pricing choice. Otherwise renew_session/1 would clear
-  # the valid opaque intent before the protected workspace selector can consume
-  # it, so restore that one key after renewal.
+  # A return path the sign-in page or the workspace plug stored wins over a
+  # stale pricing choice. Otherwise the renewal would clear the valid opaque
+  # intent before the workspace selector can consume it, so restore that one
+  # key after renewal.
   defp maybe_restore_billing_intent(conn, nil, token) when is_binary(token),
     do: put_session(conn, :billing_intent, token)
 
@@ -153,305 +215,286 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # The first sign-in right after registering (the magic-link round-trip). The
-  # inbox proof has already completed, so this flash only welcomes the operator
-  # to the workspace that transaction just created.
-  defp maybe_flash_just_registered(conn, _user, true) do
-    put_flash(conn, :info, "Welcome to emisar! Your workspace is ready.")
+  defp maybe_flash_just_registered(conn, true),
+    do: put_flash(conn, :info, "Welcome to emisar! Your workspace is ready.")
+
+  defp maybe_flash_just_registered(conn, false), do: conn
+
+  # A sign-in returns only to a page that names no workspace (it picks among the
+  # browser's sessions itself) or to a page of the workspace it just signed in
+  # to; anything else lands on that workspace. Only this server stores the
+  # path, but it is checked against the router anyway.
+  defp return_path_for(conn, %Accounts.Account{} = account) do
+    with "/" <> _rest = path <- get_session(conn, :user_return_to),
+         %URI{host: nil, path: "/" <> _ = route_path} <- URI.parse(path),
+         %{} = route <- Phoenix.Router.route_info(EmisarWeb.Router, "GET", route_path, conn.host),
+         true <- return_route?(route, account) do
+      path
+    else
+      _ -> nil
+    end
   end
 
-  defp maybe_flash_just_registered(conn, _user, false), do: conn
+  defp return_route?(%{path_params: %{"account_id_or_slug" => ref}}, account),
+    do: ref in [account.slug, account.id]
 
-  defp renew_session(conn) do
+  defp return_route?(%{pipe_through: pipelines}, _account), do: :require_signed_in in pipelines
+
+  # The new entry replaces this workspace's entry, if any, and a seventh
+  # workspace pushes out the oldest; both displaced tokens are revoked in this
+  # request, so a copied cookie never keeps a credential this browser dropped.
+  defp put_workspace_session(conn, account_id, token) do
+    {replaced, others} = Enum.split_with(session_entries(conn), &(elem(&1, 0) == account_id))
+    {evicted, kept} = Enum.split(others ++ [{account_id, token}], -@max_sessions)
+    :ok = revoke_entries(conn, replaced, :replaced)
+    :ok = revoke_entries(conn, evicted, :evicted)
+    renew_session(conn, kept, browser_id(conn))
+  end
+
+  # A dead entry, or a session its workspace's policy no longer accepts, leaves
+  # the cookie and its row is deleted. No renewal: nothing new is trusted.
+  defp drop_workspace_session(conn, account_id) do
+    {dropped, kept} = Enum.split_with(session_entries(conn), &(elem(&1, 0) == account_id))
+    :ok = revoke_entries(conn, dropped, :dead_entry)
+    store_entries(conn, kept)
+  end
+
+  defp revoke_entries(_conn, [], _revocation), do: :ok
+
+  defp revoke_entries(conn, entries, revocation) do
+    tokens = Enum.map(entries, fn {_account_id, token} -> token end)
+
+    case Auth.revoke_session_tokens(tokens, revocation, RequestContext.from_conn(conn)) do
+      :ok -> :ok
+      {:error, reason} -> raise "could not revoke #{revocation} sessions: #{inspect(reason)}"
+    end
+  end
+
+  # Nothing from before the sign-in or sign-out — a pending code, a ceremony
+  # stash, the old CSRF token — survives into the renewed session; only the
+  # entries and the browser id are carried.
+  defp renew_session(conn, entries, browser_id) do
     delete_csrf_token()
 
     conn
     |> configure_session(renew: true)
     |> clear_session()
+    |> store_entries(entries)
+    |> store_browser_id(browser_id)
   end
 
-  defp put_token_in_session(conn, token) do
-    # `live_socket_id` is derived from the digest (NOT the raw token)
-    # so the server can re-derive the per-session disconnect topic
-    # without the cookie value — see `Emisar.Auth.live_socket_topic/1`.
-    # If we keyed on the raw token, an admin-side revocation could not
-    # broadcast to a session whose cookie it doesn't hold.
-    conn
-    |> put_session(:user_token, token)
-    |> put_session(:live_socket_id, Auth.live_socket_topic_for_session(token))
-  end
+  defp store_entries(conn, []), do: delete_session(conn, :sessions)
+  defp store_entries(conn, entries), do: put_session(conn, :sessions, entries)
+
+  defp store_browser_id(conn, nil), do: conn
+  defp store_browser_id(conn, browser_id), do: put_session(conn, :browser_id, browser_id)
+
+  # -- Sign-out -------------------------------------------------------
 
   @doc """
-  Voluntary sign-out: the domain ends the presented session (row delete + the
-  `user.signed_out` audit, one transaction), then the boundary clears the cookie
-  and drops the live sockets. The raw cookie value is the only attribution the
-  domain gets — `current_user` is this request's snapshot, not the credential
-  being revoked.
+  Voluntary sign-out of this browser: the domain ends every session in the
+  cookie and every session this browser minted, in every workspace, with one
+  `user.signed_out` row per session in its own workspace; then the cookie is
+  cleared, browser id included. Sockets disconnect after the commit. A
+  rolled-back sign-out raises rather than reach the browser as a completed one.
   """
   def log_out_user(conn, to \\ ~p"/") do
-    :ok = complete_sign_out(get_session(conn, :user_token), conn)
+    tokens = Enum.map(session_entries(conn), fn {_account_id, token} -> token end)
+    context = RequestContext.from_conn(conn)
 
-    if live_socket_id = get_session(conn, :live_socket_id) do
-      EmisarWeb.Endpoint.broadcast(live_socket_id, "disconnect", %{})
-    end
+    case Auth.complete_browser_sign_out(tokens, browser_id(conn), context) do
+      {:ok, members} ->
+        conn
+        |> Analytics.track_sign_out(members)
+        |> renew_session([], nil)
+        |> redirect(to: to)
 
-    conn
-    |> Analytics.track_sign_out()
-    |> renew_session()
-    |> redirect(to: to)
-  end
-
-  # A rolled-back sign-out must not reach the browser as a completed one, so the
-  # cookie clear, the socket disconnect, and the redirect are all downstream of
-  # this. No cookie value means there is nothing durable to end.
-  defp complete_sign_out(token, conn) when is_binary(token) do
-    case Auth.complete_session_sign_out(token, RequestContext.from_conn(conn)) do
-      :ok -> :ok
-      {:error, reason} -> raise "could not complete sign-out: #{inspect(reason)}"
+      {:error, reason} ->
+        raise "could not complete sign-out: #{inspect(reason)}"
     end
   end
-
-  defp complete_sign_out(_token, _conn), do: :ok
 
   # -- Plugs ----------------------------------------------------------
 
-  @doc "Fetch the current session, and its personal login when it has one, from the session token."
-  def fetch_current_user(conn, _opts) do
-    {user, auth} =
-      with token when is_binary(token) <- get_session(conn, :user_token),
-           {:ok, session} <- Auth.fetch_session_by_token(token) do
-        {session.user, session}
-      else
-        _ -> {nil, @no_auth}
-      end
+  @doc """
+  Used in `:browser`: assigns `:signed_in?`, whether the cookie holds any
+  workspace session. No database read; pages that act on a session resolve it.
+  """
+  def fetch_session_entries(conn, _opts),
+    do: assign(conn, :signed_in?, session_entries(conn) != [])
 
-    conn
-    |> assign(:current_user, user)
-    |> assign(:current_auth, auth)
+  @doc """
+  Used in router on every `/app/:account_id_or_slug/...` route: resolves the
+  workspace from the URL (unknown → 404) and authenticates this browser's entry
+  for it, assigning `:current_auth`, `:current_membership`, `:current_account`
+  and `:current_subject`. Without a live entry the request goes to that
+  workspace's sign-in; a dead entry, or a session the workspace's `require_sso`
+  no longer accepts, leaves the cookie first.
+  """
+  def fetch_workspace_session(conn, _opts) do
+    account = fetch_url_account!(conn.path_params["account_id_or_slug"])
+
+    with {_account_id, token} <- entry_for_account(conn, account.id),
+         {:ok, session} <- Auth.fetch_session_by_token(token, account.id) do
+      subject = Subject.for_session(session, RequestContext.from_conn(conn))
+
+      case Accounts.account_compliance_for_session(session.membership.account, subject) do
+        {:error, :sso_required} ->
+          conn |> drop_workspace_session(account.id) |> send_to_workspace_sign_in(account)
+
+        _compliant_or_mfa_owed ->
+          conn
+          |> assign(:current_auth, session)
+          |> assign(:current_membership, session.membership)
+          |> assign(:current_account, session.membership.account)
+          |> assign(:current_subject, subject)
+      end
+    else
+      nil ->
+        send_to_workspace_sign_in(conn, account)
+
+      {:error, :not_found} ->
+        conn |> drop_workspace_session(account.id) |> send_to_workspace_sign_in(account)
+    end
   end
 
-  # A live session is signed in, including a member-only SSO session.
-  defp authenticated?(%{current_auth: %Auth.UserToken{}}), do: true
-  defp authenticated?(_assigns), do: false
+  defp send_to_workspace_sign_in(conn, account) do
+    conn
+    |> put_flash(:error, "You must sign in to access that page.")
+    |> maybe_store_return_to()
+    |> redirect(to: ~p"/app/#{account}/sign_in")
+    |> halt()
+  end
 
-  @doc "Used in router/pipeline: redirects unauthenticated requests to login."
-  def require_authenticated_user(conn, _opts) do
-    if authenticated?(conn.assigns) do
-      assign_current_account(conn)
+  @doc """
+  Used in router on the pages that name no workspace (`/app`, its shorthands,
+  `/activate`, OAuth consent, the billing selector and the checkout return):
+  assigns `:signed_in_sessions`, this browser's live sessions sorted by
+  workspace name, each with its Member and workspace preloaded. Dead entries
+  leave the cookie. With none, the request goes to `/sign_in`.
+  """
+  def require_signed_in(conn, _opts) do
+    case live_workspace_sessions(conn) do
+      {conn, []} ->
+        conn
+        |> put_flash(:error, "You must sign in to access that page.")
+        |> maybe_store_return_to()
+        |> redirect(to: ~p"/sign_in")
+        |> halt()
+
+      {conn, sessions} ->
+        assign(conn, :signed_in_sessions, sessions)
+    end
+  end
+
+  defp live_workspace_sessions(conn) do
+    entries = session_entries(conn)
+    {:ok, sessions} = Auth.list_live_sessions(entries)
+    live = MapSet.new(sessions, & &1.account_id)
+    {kept, dead} = Enum.split_with(entries, &MapSet.member?(live, elem(&1, 0)))
+
+    conn =
+      if dead == [] do
+        conn
+      else
+        :ok = revoke_entries(conn, dead, :dead_entry)
+        store_entries(conn, kept)
+      end
+
+    {conn, Enum.sort_by(sessions, &String.downcase(&1.membership.account.name))}
+  end
+
+  @doc """
+  Used in router on `/app/:account_id_or_slug/sign_in`: a browser already
+  signed in to that workspace goes to it (or to the page that sent it to sign
+  in); a dead entry for it leaves the cookie. An invitee finishing its
+  invitation through the workspace's identity provider stays on the page.
+  """
+  def redirect_if_signed_in_to_workspace(conn, _opts) do
+    with {:ok, account} <-
+           Accounts.fetch_account_by_id_or_slug_including_disabled(
+             conn.path_params["account_id_or_slug"]
+           ),
+         true <- invitation_sso_account_id(conn) != account.id,
+         {_account_id, token} <- entry_for_account(conn, account.id) do
+      case Auth.fetch_session_by_token(token, account.id) do
+        {:ok, _session} ->
+          to = return_path_for(conn, account) || ~p"/app/#{account}"
+          conn |> delete_session(:user_return_to) |> redirect(to: to) |> halt()
+
+        {:error, :not_found} ->
+          drop_workspace_session(conn, account.id)
+      end
     else
-      conn
-      |> put_flash(:error, "You must sign in to access that page.")
-      |> maybe_store_return_to()
-      |> redirect(to: ~p"/sign_in")
-      |> halt()
+      _not_signed_in -> conn
     end
   end
 
   defp maybe_store_return_to(%{method: "GET"} = conn) do
-    path = current_path(conn)
-    # The cookie session is ~4 KiB; a long query string would overflow it and
-    # turn an anonymous GET into a 500. Keep only a path that fits, else drop
-    # the query and store the bare request path.
-    return_to = if byte_size(path) <= 1024, do: path, else: conn.request_path
-    put_session(conn, :user_return_to, return_to)
+    # A long query string would overflow the ~4 KiB cookie and turn an
+    # anonymous GET into a 500: keep the full path when it fits, else the bare
+    # request path, else nothing.
+    case Enum.find(
+           [current_path(conn), conn.request_path],
+           &(byte_size(&1) <= @return_to_max_bytes)
+         ) do
+      nil -> conn
+      path -> put_session(conn, :user_return_to, path)
+    end
   end
 
   defp maybe_store_return_to(conn), do: conn
 
-  @doc "Used in router: prevents already-logged-in users from hitting auth pages."
-  def redirect_if_user_is_authenticated(conn, _opts) do
-    if authenticated?(conn.assigns) do
-      conn
-      |> redirect(to: signed_in_path(conn))
-      |> halt()
+  defp fetch_url_account!(account_ref) when is_binary(account_ref) do
+    case Accounts.fetch_account_by_id_or_slug_including_disabled(account_ref) do
+      {:ok, account} -> account
+      {:error, :not_found} -> raise EmisarWeb.NotFoundError
+    end
+  end
+
+  @doc """
+  A `%Subject{}` for this browser's session in the workspace `account_ref` (id
+  or slug) names, for a page or ceremony that names its workspace explicitly
+  (OAuth consent, the billing selector, an SSO callback). Only an active
+  workspace and a live entry for it qualify; anything else is `{:error,
+  :not_found}`, the same as an unknown workspace.
+  """
+  def subject_for_account(%Plug.Conn{} = conn, account_ref) when is_binary(account_ref) do
+    with {:ok, account} <- Accounts.fetch_account_by_id_or_slug(account_ref),
+         {_account_id, token} <- entry_for_account(conn, account.id),
+         {:ok, session} <- Auth.fetch_session_by_token(token, account.id) do
+      {:ok, Subject.for_session(session, RequestContext.from_conn(conn))}
     else
-      conn
+      _ -> {:error, :not_found}
     end
+  end
+
+  def subject_for_account(%Plug.Conn{}, _account_ref), do: {:error, :not_found}
+
+  @doc """
+  The workspaces this browser is signed in to, from a LiveView session map,
+  sorted by name. One query; dead entries are skipped (the next HTTP request
+  removes them).
+  """
+  def signed_in_accounts(%{} = session) do
+    {:ok, sessions} = Auth.list_live_sessions(session_entries(session))
+    session_accounts(sessions)
+  end
+
+  defp session_accounts(sessions) do
+    sessions
+    |> Enum.map(& &1.membership.account)
+    |> Enum.sort_by(&String.downcase(&1.name))
   end
 
   @doc """
-  Used in router: the email proof pages (magic link and its second factor) send
-  a browser with a personal login to the app. A member-only SSO session has
-  none, so they stay open to it: linking one rides this same proof.
+  The page's session no longer proves what it needs: back to the workspace,
+  where the full page load re-decides (a dead entry goes to its sign-in).
   """
-  def redirect_if_personal_login(%{assigns: %{current_user: %Users.User{}}} = conn, _opts) do
-    conn
-    |> redirect(to: signed_in_path(conn))
-    |> halt()
-  end
-
-  def redirect_if_personal_login(conn, _opts), do: conn
-
-  defp assign_current_account(conn) do
-    account_ref = conn.path_params["account_id_or_slug"]
-    session_account_id = get_session(conn, :current_account_id)
-
-    case resolve_membership_for_request(conn, account_ref, session_account_id) do
-      {:error, :not_found} when not is_nil(account_ref) ->
-        # A slugged route whose ref isn't a (non-suspended) membership the user
-        # holds: 404, never a redirect — indistinguishable from a nonexistent
-        # tenant, so the URL never confirms one exists (IL-15, no leak).
-        raise EmisarWeb.NotFoundError
-
-      {:error, :not_found} ->
-        no_workspace(conn, conn.assigns.current_user)
-
-      {:ok, membership} ->
-        context = RequestContext.from_conn(conn)
-
-        conn
-        |> maybe_refresh_account_session(membership.account_id, session_account_id)
-        |> assign(:current_account, membership.account)
-        |> assign(:current_membership, membership)
-        |> assign(
-          :current_subject,
-          Subject.for_member(
-            membership,
-            membership.account,
-            context,
-            auth_opts(conn.assigns, membership)
-          )
-        )
-    end
-  end
-
-  # A member-only session's single grant is gone, and it can never gain another.
-  defp no_workspace(conn, nil) do
-    conn
-    |> log_out_user_with_flash("Your workspace access ended. Sign in again to continue.")
-    |> halt()
-  end
-
-  defp no_workspace(conn, %Users.User{} = user) do
-    if Accounts.has_membership_history?(user) do
-      conn
-      |> redirect(to: ~p"/session/recover")
-      |> halt()
-    else
-      message =
-        Phoenix.Flash.get(conn.assigns.flash, :error) ||
-          "You don't belong to any workspace. Create one to continue."
-
-      conn
-      |> put_flash(:error, message)
-      |> redirect(to: ~p"/onboarding")
-      |> halt()
-    end
-  end
-
-  # Slugged tenant route → resolve+authorize from the URL ref (id-or-slug);
-  # bare /app + the unslugged /app routes (switch, mfa_setup) → the session hint.
-  defp resolve_membership_for_request(conn, nil, session_account_id) do
-    Accounts.fetch_membership_for_session(session_account_id, conn.assigns[:current_auth])
-  end
-
-  defp resolve_membership_for_request(conn, account_ref, _session_account_id) do
-    Accounts.fetch_membership_by_account_id_or_slug(account_ref, conn.assigns[:current_auth])
-  end
-
-  @doc """
-  Builds a `%Subject{}` for the signed-in user against an explicit account ref
-  (id or slug), independent of the session's current account. The OAuth consent
-  screen lets the operator pick which account an MCP client is granted, so the
-  grant must be authorized against the CHOSEN account's membership — never the
-  session default the form rode in on. Resolves only non-suspended Members this
-  session holds a live grant for; anything else is `{:error, :not_found}`,
-  indistinguishable from a nonexistent tenant. Carries the same request context
-  and session auth provenance as `assign_current_account/1`.
-  """
-  def subject_for_account(conn, account_ref) do
-    with {:ok, membership} <-
-           Accounts.fetch_membership_by_account_id_or_slug(
-             account_ref,
-             conn.assigns[:current_auth]
-           ) do
-      context = RequestContext.from_conn(conn)
-
-      {:ok,
-       Subject.for_member(
-         membership,
-         membership.account,
-         context,
-         auth_opts(conn.assigns, membership)
-       )}
-    end
-  end
-
-  # Destination proof comes from this bearer's frozen grant, never its origin
-  # or today's membership list. The context rechecks the same anchors on use.
-  defp auth_opts(assigns, membership),
-    do: Auth.session_subject_options(membership, Map.get(assigns, :current_auth, @no_auth))
-
-  # If the session asked for an account the user can no longer reach
-  # (suspended, deleted) `fetch_membership_for_session/2` falls back to
-  # their primary. Overwrite the session value so subsequent requests
-  # don't keep re-resolving against the dead pointer.
-  defp maybe_refresh_account_session(conn, resolved_id, requested_id)
-       when resolved_id == requested_id,
-       do: conn
-
-  defp maybe_refresh_account_session(conn, resolved_id, _requested_id),
-    do: put_session(conn, :current_account_id, resolved_id)
-
-  @doc """
-  Pins an already-validated membership's account in the session. `membership`
-  comes from `Accounts.switch_account/2`, which owns the validation and the
-  audit row; the web boundary only carries the decision into the session.
-  """
-  def switch_account(conn, %Accounts.Membership{} = membership),
-    do: put_session(conn, :current_account_id, membership.account_id)
-
-  @doc "Pins an audited account switch and carries a valid plan choice to that workspace's Billing page."
-  def redirect_after_account_switch(conn, %Accounts.Membership{} = membership, token) do
-    conn = conn |> delete_session(:billing_intent) |> switch_account(membership)
-
-    case BillingIntent.verify(token) do
-      {:ok, _intent} ->
-        redirect(conn,
-          to: ~p"/app/#{membership.account}/settings/billing?billing_intent=#{token}"
-        )
-
-      {:error, :invalid} ->
-        redirect(conn, to: ~p"/app/#{membership.account}")
-    end
-  end
-
-  @doc """
-  FORCED invalidation (delete the token, disconnect live sockets, renew the
-  session) with an error flash and a redirect to `to`. Drives the
-  platform-admin factor bounce (default `/sign_in`). The operator didn't
-  choose to leave, so this rides `Auth.delete_session_token/1` and writes no
-  `user.signed_out` audit — `log_out_user/1` owns the voluntary sign-out. The
-  flash is set AFTER renew_session, so it survives to the next request.
-  """
-  def log_out_user_with_flash(conn, message, to \\ ~p"/sign_in") do
-    user_token = get_session(conn, :user_token)
-    user_token && Auth.delete_session_token(user_token)
-
-    if live_socket_id = get_session(conn, :live_socket_id) do
-      EmisarWeb.Endpoint.broadcast(live_socket_id, "disconnect", %{})
-    end
-
-    conn
-    |> renew_session()
-    |> put_flash(:error, message)
-    |> redirect(to: to)
-  end
-
-  defp signed_in_path(_conn), do: ~p"/app"
-
-  # Slugged routes resolve their own exact grant in the following hook. The
-  # unscoped MFA page must stop here if its static render lost the last grant
-  # before connection; policy hooks cannot operate on a nil account/Subject.
-  defp mount_authenticated_account(socket, _session, %{"account_id_or_slug" => _account_ref}),
-    do: {:cont, socket}
-
-  defp mount_authenticated_account(socket, session, _params) do
-    socket = mount_current_account(socket, session)
-
-    if socket.assigns.current_account,
-      do: {:cont, socket},
-      else: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/session/recover")}
+  def reauthenticate(%Phoenix.LiveView.Socket{} = socket) do
+    socket
+    |> Phoenix.LiveView.put_flash(:error, EmisarWeb.MfaErrors.message(:session_not_found))
+    |> Phoenix.LiveView.redirect(to: ~p"/app/#{socket.assigns.current_account}")
   end
 
   # -- LiveView on_mount hooks ----------------------------------------
@@ -502,7 +545,7 @@ defmodule EmisarWeb.UserAuth do
         touch_console_activity(socket.assigns[:current_subject])
 
         track_console_pageview(
-          socket.assigns[:current_user],
+          socket.assigns[:current_membership],
           socket.assigns[:current_account],
           uri,
           context
@@ -515,86 +558,35 @@ defmodule EmisarWeb.UserAuth do
     {:cont, Phoenix.LiveView.attach_hook(socket, :analytics_pageview, :handle_params, hook)}
   end
 
-  def on_mount(:mount_current_user, _params, session, socket) do
-    {:cont, mount_current_user(session, socket)}
-  end
+  # The workspace gate (IL-15) on every `/app/:account_id_or_slug` LiveView. The
+  # workspace comes from the URL on every mount (unknown → 404) and the session
+  # from this browser's entry for it; without a live one the socket goes to
+  # that workspace's sign-in. A connected socket listens on its own session's
+  # topic, so revoking exactly that session ends exactly its sockets, and leaves
+  # on its own when the session expires.
+  def on_mount(:ensure_authenticated, %{"account_id_or_slug" => account_ref}, session, socket) do
+    account = fetch_url_account!(account_ref)
+    {:ok, sessions} = Auth.list_live_sessions(session_entries(session))
 
-  def on_mount(:ensure_authenticated, params, session, socket) do
-    socket = mount_current_user(session, socket)
-
-    if authenticated?(socket.assigns) do
-      mount_authenticated_account(socket, session, params)
+    with %Auth.UserToken{} = auth <- Enum.find(sessions, &(&1.account_id == account.id)),
+         {:ok, auth} <- watch_workspace_session(socket, auth) do
+      {:cont, assign_workspace_session(socket, auth, sessions)}
     else
-      socket =
-        socket
-        |> Phoenix.LiveView.put_flash(:error, "You must sign in to access that page.")
-        |> Phoenix.LiveView.redirect(to: ~p"/sign_in")
-
-      {:halt, socket}
+      _no_live_session ->
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sign_in")}
     end
   end
 
-  # The slug gate (IL-15): composed AFTER :ensure_authenticated on every tenant
-  # route. Re-resolves current_account from the URL ref (id-or-slug) on EVERY
-  # mount — the session value is NOT trusted as the tenant key here — and
-  # overwrites the session-based account/subject :ensure_authenticated mounted.
-  # A ref the user has no (non-suspended) membership for raises NotFoundError →
-  # 404, never a redirect/leak (indistinguishable from a nonexistent tenant).
-  def on_mount(:ensure_account_slug, %{"account_id_or_slug" => account_ref}, _session, socket) do
-    with {:ok, membership} <-
-           Accounts.fetch_membership_by_account_id_or_slug(
-             account_ref,
-             socket.assigns[:current_auth]
-           ),
-         {:ok, membership} <- subscribe_and_refetch_account(socket, account_ref, membership) do
-      subject =
-        Subject.for_member(
-          membership,
-          membership.account,
-          RequestContext.from_socket(socket),
-          auth_opts(socket.assigns, membership)
-        )
-
-      switchable_accounts = load_switchable_accounts(subject)
-
-      {:cont,
-       socket
-       |> Phoenix.Component.assign(:current_account, membership.account)
-       |> Phoenix.Component.assign(:current_subject, subject)
-       |> Phoenix.Component.assign(:current_membership, membership)
-       |> ShellChrome.put(switchable_accounts: switchable_accounts)
-       |> Phoenix.LiveView.attach_hook(
-         :ensure_slug_unchanged,
-         :handle_params,
-         &ensure_slug_unchanged/3
-       )
-       |> Phoenix.LiveView.attach_hook(
-         :account_lifecycle,
-         :handle_info,
-         &handle_account_lifecycle/2
-       )
-       |> Phoenix.LiveView.attach_hook(
-         :membership_action_access,
-         :handle_info,
-         &refresh_membership_action_access/2
-       )}
-    else
-      {:error, :not_found} ->
-        raise EmisarWeb.NotFoundError
-    end
-  end
-
-  # SSO enforcement for the MFA-enrollment interstitial. Composed after
-  # :ensure_authenticated, so the session account and subject carrying its auth
-  # provenance are set. On a step-up it bounces to the /sso_required shim, which
-  # offers the Member's linked providers and starts the SSO step-up over plain
-  # HTTP (a LiveView on_mount can't rotate the plug session itself).
-  def on_mount(:ensure_sso_compliant, _params, _session, socket) do
-    account = socket.assigns[:current_account]
+  # Account compliance for the MFA setup page: it is where a non-compliant
+  # Member is sent, so it reads the posture instead of enforcing it. SSO
+  # precedes MFA, so a session `require_sso` no longer accepts goes back to the
+  # workspace, whose plug drops it, before it could enroll a factor.
+  def on_mount(:assign_account_compliance, _params, _session, socket) do
+    account = socket.assigns.current_account
 
     case Accounts.ensure_account_compliant(account, socket.assigns.current_subject) do
       {:error, :sso_required} ->
-        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sso_required")}
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}")}
 
       result when result in [:ok, {:error, :mfa_required}] ->
         {:cont, Phoenix.Component.assign(socket, :account_compliance, result)}
@@ -604,20 +596,20 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # Tenant routes enforce the account's SSO and MFA posture from one domain
-  # decision. Splitting this across two hooks repeated provider/identity reads
-  # whenever SSO enforcement was enabled. Enrollment and current-session proof
-  # happen only at the unscoped MFA interstitial.
+  # Tenant pages enforce the workspace's SSO and MFA posture from one domain
+  # decision. A session `require_sso` no longer accepts goes back to the
+  # workspace, whose plug drops its entry; one that owes MFA goes to enrollment
+  # or the current-factor challenge.
   def on_mount(:ensure_account_compliant, _params, _session, socket) do
     account = socket.assigns.current_account
     subject = socket.assigns.current_subject
 
     case Accounts.ensure_account_compliant(account, subject) do
       {:error, :sso_required} ->
-        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/sso_required")}
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}")}
 
       {:error, :mfa_required} ->
-        enforce_mfa_requirement(socket)
+        {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/#{account}/mfa_setup")}
 
       :ok ->
         {:cont, socket}
@@ -699,19 +691,106 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  # Wires a global "resend confirmation email" handler onto every
-  # authenticated LiveView so the unverified-email banner (rendered by
-  # `console_shell`) can re-send the link from any page without each
-  # host LV defining the event. The banner reads `@current_user.confirmed_at`
-  # directly, so this hook only needs to handle the button's event.
-  def on_mount(:email_confirmation, _params, _session, socket) do
-    {:cont,
-     Phoenix.LiveView.attach_hook(
-       socket,
-       :resend_confirmation,
-       :handle_event,
-       &resend_confirmation_email/3
-     )}
+  # A connected socket subscribes before it reads its session again, so a
+  # revocation that lands between the mount's first read and the subscription
+  # is not missed. The dead render subscribes to nothing.
+  defp watch_workspace_session(socket, %Auth.UserToken{} = auth) do
+    if Phoenix.LiveView.connected?(socket) do
+      :ok = Accounts.subscribe_account_lifecycle(auth.account_id)
+      :ok = Accounts.subscribe_account_team(auth.account_id)
+      :ok = Auth.subscribe_session(auth)
+
+      case Auth.fetch_current_session(
+             Subject.for_session(auth, RequestContext.from_socket(socket))
+           ) do
+        {:ok, current} ->
+          :ok = schedule_session_expiry(current)
+          {:ok, current}
+
+        {:error, :unauthorized} ->
+          {:error, :session_ended}
+      end
+    else
+      {:ok, auth}
+    end
+  end
+
+  defp assign_workspace_session(socket, %Auth.UserToken{membership: membership} = auth, sessions) do
+    subject = Subject.for_session(auth, RequestContext.from_socket(socket))
+
+    socket
+    |> Phoenix.Component.assign(:current_auth, auth)
+    |> Phoenix.Component.assign(:current_membership, membership)
+    |> Phoenix.Component.assign(:current_account, membership.account)
+    |> Phoenix.Component.assign(:current_subject, subject)
+    |> ShellChrome.put(switchable_accounts: session_accounts(sessions))
+    |> Phoenix.LiveView.attach_hook(
+      :ensure_slug_unchanged,
+      :handle_params,
+      &ensure_slug_unchanged/3
+    )
+    |> Phoenix.LiveView.attach_hook(:track_live_uri, :handle_params, &track_live_uri/3)
+    |> Phoenix.LiveView.attach_hook(:account_lifecycle, :handle_info, &handle_account_lifecycle/2)
+    |> Phoenix.LiveView.attach_hook(
+      :membership_action_access,
+      :handle_info,
+      &refresh_membership_action_access/2
+    )
+    |> Phoenix.LiveView.attach_hook(:session_revoked, :handle_info, &handle_session_revoked/2)
+    |> Phoenix.LiveView.attach_hook(:session_expiry, :handle_info, &handle_session_expiry/2)
+  end
+
+  defp track_live_uri(_params, uri, socket),
+    do: {:cont, Phoenix.Component.assign(socket, :live_uri, uri)}
+
+  # Revoking this exact session (sign-out, Profile, an admin, a policy change)
+  # broadcasts on its topic. Another session's broadcast continues.
+  defp handle_session_revoked(
+         %Phoenix.Socket.Broadcast{event: "disconnect", topic: topic},
+         socket
+       ) do
+    if topic == Auth.live_socket_topic(socket.assigns.current_auth.token),
+      do: {:halt, end_workspace_session(socket)},
+      else: {:cont, socket}
+  end
+
+  defp handle_session_revoked(_message, socket), do: {:cont, socket}
+
+  defp handle_session_expiry({:workspace_session_expiry, session_id}, socket) do
+    %Auth.UserToken{} = auth = socket.assigns.current_auth
+
+    cond do
+      session_id != auth.id ->
+        {:halt, socket}
+
+      DateTime.after?(Auth.session_expires_at(auth), DateTime.utc_now()) ->
+        :ok = schedule_session_expiry(auth)
+        {:halt, socket}
+
+      true ->
+        {:halt, end_workspace_session(socket)}
+    end
+  end
+
+  defp handle_session_expiry(_message, socket), do: {:cont, socket}
+
+  defp schedule_session_expiry(%Auth.UserToken{id: session_id} = auth) do
+    wait_ms = DateTime.diff(Auth.session_expires_at(auth), DateTime.utc_now(), :millisecond)
+    wait_ms = wait_ms |> max(0) |> min(@session_expiry_check_ms)
+    _timer = Process.send_after(self(), {:workspace_session_expiry, session_id}, wait_ms)
+    :ok
+  end
+
+  # A full page load re-decides: a dead entry leaves the cookie and the browser
+  # lands on that workspace's sign-in, returning here afterwards.
+  defp end_workspace_session(socket) do
+    case socket.assigns[:live_uri] do
+      uri when is_binary(uri) ->
+        Phoenix.LiveView.redirect(socket, external: uri)
+
+      nil ->
+        Phoenix.LiveView.redirect(socket, to: ~p"/app/#{socket.assigns.current_account}")
+    end
   end
 
   # Activity is a coarse operational hint the next navigation retries, never an
@@ -723,25 +802,10 @@ defmodule EmisarWeb.UserAuth do
 
   defp touch_console_activity(_subject), do: :ok
 
-  # A Member without a personal login gets no analytics people profile.
-  defp track_console_pageview(nil, _account, _uri, _context), do: :ok
+  defp track_console_pageview(%Accounts.Membership{} = membership, account, uri, context),
+    do: Analytics.track_console_pageview(membership, account, uri, context)
 
-  defp track_console_pageview(%Users.User{} = user, account, uri, context),
-    do: Analytics.track_console_pageview(user, account, uri, context)
-
-  defp enforce_mfa_requirement(socket),
-    do: {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/app/mfa_setup")}
-
-  defp subscribe_and_refetch_account(socket, account_ref, membership) do
-    if Phoenix.LiveView.connected?(socket) do
-      :ok = Accounts.subscribe_account_lifecycle(membership.account_id)
-      :ok = Accounts.subscribe_account_team(membership.account_id)
-
-      Accounts.fetch_membership_by_account_id_or_slug(account_ref, socket.assigns[:current_auth])
-    else
-      {:ok, membership}
-    end
-  end
+  defp track_console_pageview(_membership, _account, _uri, _context), do: :ok
 
   defp handle_account_lifecycle(
          {:account_disabled, account_id},
@@ -760,9 +824,7 @@ defmodule EmisarWeb.UserAuth do
            }
          } = socket
        ) do
-    with {:ok, membership} <-
-           Accounts.fetch_membership_by_account_id_or_slug(subject.account.id, subject),
-         true <- membership.id == subject.membership_id,
+    with {:ok, %Auth.UserToken{membership: membership}} <- Auth.fetch_current_session(subject),
          true <- is_nil(membership.directory_authorization_pending_version),
          true <- is_nil(previous_membership.directory_authorization_pending_version),
          true <- membership.role == previous_membership.role,
@@ -773,7 +835,6 @@ defmodule EmisarWeb.UserAuth do
 
       {:cont,
        socket
-       |> Phoenix.Component.assign(:current_user, membership.user)
        |> Phoenix.Component.assign(:current_membership, membership)
        |> Phoenix.Component.assign(:current_account, membership.account)
        |> Phoenix.Component.assign(:current_subject, subject)}
@@ -784,7 +845,7 @@ defmodule EmisarWeb.UserAuth do
 
   defp refresh_membership_action_access(_message, socket), do: {:cont, socket}
 
-  # Defense-in-depth for cross-slug `live_patch` (attached by :ensure_account_slug):
+  # Defense-in-depth for cross-slug `live_patch` (attached by :ensure_authenticated):
   # on_mount runs once, so a patch that changes the URL's account ref WITHOUT a
   # remount keeps the mount-time subject — the URL would say account B while the
   # socket is still scoped to A. No data crosses today (every context call uses
@@ -908,57 +969,6 @@ defmodule EmisarWeb.UserAuth do
     end
   end
 
-  defp resend_confirmation_email("resend_confirmation", _params, socket) do
-    socket =
-      case socket.assigns[:current_user] do
-        %{email: nil} ->
-          Phoenix.LiveView.put_flash(
-            socket,
-            :error,
-            "Your profile has no email address. Ask your workspace administrator for help, or contact support@emisar.dev."
-          )
-
-        %{confirmed_at: nil} = user ->
-          deliver_confirmation(socket, user)
-
-        %{} ->
-          Phoenix.LiveView.put_flash(socket, :info, "Your email is already confirmed.")
-
-        _ ->
-          socket
-      end
-
-    {:halt, socket}
-  end
-
-  defp resend_confirmation_email(_event, _params, socket), do: {:cont, socket}
-
-  # This was the one socket-reachable mail trigger with no budget: every push
-  # deletes the prior confirm token, mints a new one, and sends. A loop is real
-  # provider spend plus a bounce/complaint hit on the shared sending domain
-  # every OTHER email depends on. Same 5-per-15-minutes shape as the magic-link
-  # start, keyed on the recipient — a member can only resend to their own address.
-  defp deliver_confirmation(socket, user) do
-    case Throttle.check("confirmation_resend", user.id, 5, 900_000) do
-      :ok ->
-        subject = socket.assigns.current_subject
-        :ok = Auth.deliver_confirmation_instructions(user, subject.account, subject.context)
-
-        Phoenix.LiveView.put_flash(
-          socket,
-          :info,
-          "Confirmation email requested for #{user.email}. Check your inbox."
-        )
-
-      {:error, :rate_limited} ->
-        Phoenix.LiveView.put_flash(
-          socket,
-          :error,
-          "Too many confirmation emails. Wait up to 15 minutes, then try again."
-        )
-    end
-  end
-
   defp approval_count_for(nil), do: 0
   defp approval_count_for(subject), do: Approvals.count_pending_approval_requests(subject)
 
@@ -1033,78 +1043,5 @@ defmodule EmisarWeb.UserAuth do
       no_agents?: agent_missing? and has_runners?,
       onboarding_incomplete?: agent_missing? and not has_runners?
     }
-  end
-
-  defp mount_current_user(session, socket) do
-    # When a parent LiveView already mounted the user, inherit both assigns
-    # rather than re-hitting the DB (the assign_new contract). Otherwise
-    # resolve the session AND its optional personal login in ONE token lookup —
-    # the auth map rides onto the Subject so every audit row records how the
-    # operator signed in.
-    if Map.has_key?(socket.assigns, :current_user) do
-      Phoenix.Component.assign_new(socket, :current_auth, fn -> @no_auth end)
-    else
-      {user, auth} =
-        with token when is_binary(token) <- session["user_token"],
-             {:ok, current_session} <- Auth.fetch_session_by_token(token) do
-          {current_session.user, current_session}
-        else
-          _ -> {nil, @no_auth}
-        end
-
-      socket
-      |> Phoenix.Component.assign(:current_user, user)
-      |> Phoenix.Component.assign(:current_auth, auth)
-    end
-  end
-
-  # Slugged routes resolve their URL account in `:ensure_account_slug`; doing a
-  # session-account lookup here first only loaded an account the URL immediately
-  # replaced. The slug hook still subscribes and re-fetches on connect.
-  defp mount_current_account(socket, session) do
-    # Resolve everything in one shot so assign_new closures don't race
-    # against the outer pipe's socket reference (assign_new captures
-    # the socket at definition time, not at evaluation time).
-    requested_id = session["current_account_id"]
-
-    {account, membership, subject, switchable} =
-      case socket.assigns[:current_auth] do
-        %Auth.UserToken{} = current_auth ->
-          case Accounts.fetch_membership_for_session(requested_id, current_auth) do
-            {:error, :not_found} ->
-              {nil, nil, nil, []}
-
-            {:ok, membership} ->
-              subject =
-                Subject.for_member(
-                  membership,
-                  membership.account,
-                  RequestContext.from_socket(socket),
-                  auth_opts(socket.assigns, membership)
-                )
-
-              {membership.account, membership, subject, load_switchable_accounts(subject)}
-          end
-
-        _anonymous ->
-          {nil, nil, nil, []}
-      end
-
-    socket
-    |> Phoenix.Component.assign_new(:current_account, fn -> account end)
-    |> Phoenix.Component.assign_new(:current_membership, fn -> membership end)
-    |> Phoenix.Component.assign_new(:current_subject, fn -> subject end)
-    |> Phoenix.Component.assign_new(:switchable_accounts, fn -> switchable end)
-  end
-
-  # All non-suspended accounts the subject's session can mount. Used by the
-  # sidebar account switcher; cheap (one indexed lookup) so it's fine to
-  # fetch on every LV mount — `count: false` because the switcher renders the
-  # rows, never a total, and the default aggregate would double the cost.
-  defp load_switchable_accounts(subject) do
-    case Accounts.list_accounts_for_user(subject, page: [limit: 100], count: false) do
-      {:ok, accounts, _meta} -> accounts
-      _ -> []
-    end
   end
 end

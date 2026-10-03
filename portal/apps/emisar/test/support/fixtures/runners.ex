@@ -102,7 +102,7 @@ defmodule Emisar.Fixtures.Runners do
       attrs
       |> Map.take([:description, :group, :reusable, :max_uses, :expires_at])
 
-    subject = enrollment_creator(attrs) |> Fixtures.Subjects.membership_subject()
+    subject = enrollment_creator(attrs) |> Fixtures.Subjects.subject_for()
     {:ok, raw, key} = Runners.create_enrollment_key(create_attrs, subject)
     {raw, key}
   end
@@ -110,7 +110,7 @@ defmodule Emisar.Fixtures.Runners do
   @doc "Creates a console install key, with optional persisted lifecycle state for tests."
   def create_install_key(attrs \\ %{}) do
     attrs = Map.new(attrs)
-    subject = enrollment_creator(attrs) |> Fixtures.Subjects.membership_subject()
+    subject = enrollment_creator(attrs) |> Fixtures.Subjects.subject_for()
     {:ok, raw, key} = Runners.mint_install_key(subject)
     {raw, set_enrollment_key_state(key, attrs)}
   end
@@ -120,14 +120,7 @@ defmodule Emisar.Fixtures.Runners do
 
   defp enrollment_creator(attrs) do
     account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
-    user_id = attrs[:user_id] || Fixtures.Users.create_user().id
-
-    Fixtures.Memberships.fetch_membership(account_id, user_id) ||
-      Fixtures.Memberships.create_membership(
-        account_id: account_id,
-        user_id: user_id,
-        role: "owner"
-      )
+    Fixtures.Memberships.create_membership(account_id: account_id, role: "owner")
   end
 
   @doc "Sets enrollment lifecycle state without exercising an unrelated registration or revocation."

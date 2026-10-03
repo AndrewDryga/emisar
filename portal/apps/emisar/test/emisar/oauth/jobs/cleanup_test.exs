@@ -69,7 +69,7 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
   end
 
   test "execute/1 prunes expired authorization codes and returns :ok" do
-    {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
     issue_code!(subject)
 
     # A freshly-issued code (60s TTL) isn't expired — the sweep is a no-op.
@@ -85,7 +85,7 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
   end
 
   test "execute/1 prunes the orphaned backing key of an abandoned consent" do
-    {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
     issue_code!(subject)
 
     # Consent minted a backing key with no token; freshly minted (inside the
@@ -121,7 +121,7 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
   end
 
   test "execute/1 prunes OAuth tokens after their refresh grant expires" do
-    {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
     tokens = issue_tokens!(subject)
     token = Repo.get_by!(Token, access_token_hash: Crypto.hash(tokens.access_token))
 
@@ -163,7 +163,7 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
   end
 
   defp stale_backing_key! do
-    {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
     {:ok, client} =
       OAuth.register_client(%{"client_name" => "C", "redirect_uris" => [@redirect]})

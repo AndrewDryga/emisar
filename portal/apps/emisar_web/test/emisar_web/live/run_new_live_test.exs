@@ -86,7 +86,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "missing required arg renders inline on the field, not in a flash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} =
@@ -111,17 +111,16 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "scope changes preserve entered arguments and reason while updating dispatch controls", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    membership = Fixtures.Memberships.force_role(membership, "admin")
+    {conn, owner, account} = register_and_log_in(conn)
+    owner = Fixtures.Memberships.force_role(owner, "admin")
     {runner, action} = action_with_required_arg(account)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
     params = %{"args" => %{"path" => "/var/log/service.log"}, "reason" => "Investigate an error"}
     render_change(lv, "validate", params)
     assert has_element?(lv, "#dispatch_form button:not([disabled])", "Run on")
 
-    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
-    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
+    Fixtures.Memberships.force_runner_access(owner, Emisar.Accounts.RunnerAccess.none())
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", owner.id})
     assert render(lv) =~ "Outside your action access"
     assert has_element?(lv, "#dispatch_form button[disabled]", "Run on")
     assert has_element?(lv, ~s(input[name="args[path]"][value="/var/log/service.log"]))
@@ -130,8 +129,8 @@ defmodule EmisarWeb.RunNewLiveTest do
     render_click(lv, "dispatch", params)
     refute Repo.one(Runs.ActionRun)
 
-    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
-    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
+    Fixtures.Memberships.force_runner_access(owner, Emisar.Accounts.RunnerAccess.all())
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", owner.id})
     render(lv)
     assert has_element?(lv, "#dispatch_form button:not([disabled])", "Run on")
     assert has_element?(lv, "textarea[name=reason]", "Investigate an error")
@@ -141,7 +140,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # meta strip (risk / kind / pack) render, with one arg input per declared arg
   # plus the reason textarea.
   test "renders the action context panel + meta strip + an input per arg", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -187,7 +186,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # can mutate (risk above :low), so amber keeps meaning "caution". Backtick
   # spans in pack text render as inline mono, never literal backticks.
   test "renders the side-effects list, amber for a risky action", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -209,7 +208,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "a read-only action's side effects stay neutral and backticks render as code", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -229,7 +228,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "an enforcing runner replaces the Dispatch button with a signed-only notice", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     runner =
       Fixtures.Runners.create_runner(
@@ -249,7 +248,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "live validation surfaces an inline error once the field is touched", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} =
@@ -265,7 +264,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "an unknown action bounces back to the runner page", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
@@ -276,7 +275,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "an unavailable action bounces back with the host prerequisite", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -297,7 +296,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "an unavailable action without a reported tool keeps a useful fallback", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -317,8 +316,8 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "a tool removed while the form is open is named from current runner evidence", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -329,14 +328,14 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     html = submit_dispatch(lv)
     assert html =~ "The required tool tail isn&#39;t installed on the runner"
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # A blank reason is a validation of the operator's own input, so it renders
   # inline under the reason field (rose <.error>), never as a top-of-page flash.
   test "a blank reason renders inline at the field, not in a flash", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -353,12 +352,12 @@ defmodule EmisarWeb.RunNewLiveTest do
            )
 
     refute has_element?(lv, "#flash-error", "Enter a reason for running this action")
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   test "a valid dispatch navigates to the run detail page", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -377,8 +376,8 @@ defmodule EmisarWeb.RunNewLiveTest do
   # The form only ever submits text; the run the runner executes carries the
   # contract's typed values, and an exact number keeps the operator's digits.
   test "a typed dispatch persists the coerced argument values", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -414,7 +413,8 @@ defmodule EmisarWeb.RunNewLiveTest do
     {path, _flash} = assert_redirect(lv)
     assert path =~ ~r{^/app/#{account.slug}/runs/[0-9a-f-]+$}
 
-    assert {:ok, [run], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [run], _} =
+             Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
 
     assert %{"lines" => 200, "paths" => ["/var/log/app.log", "/var/log/syslog"]} =
              Jason.decode!(run.args_raw)
@@ -423,13 +423,13 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "a policy denial is a flash, and no run is dispatched", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     # Deny everything at every risk tier.
     _ =
       Fixtures.Policies.create_policy(
         account_id: account.id,
-        created_by_id: user.id,
+        updated_by_membership_id: owner.id,
         rules: %{
           "defaults" => %{
             "low" => "deny",
@@ -459,18 +459,11 @@ defmodule EmisarWeb.RunNewLiveTest do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)
 
-    viewer = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+    viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
     {:ok, lv, _html} =
       build_conn()
-      |> log_in_user(viewer)
+      |> log_in_member(viewer)
       |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     # The form's inputs are hidden for a viewer — submit a raw payload to
@@ -487,7 +480,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "a high-risk action's dispatch button asks for confirmation", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -502,7 +495,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "a high-risk confirm folds in the entered args (the blast radius)", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -535,7 +528,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "a low-risk action's dispatch button does not confirm", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -552,7 +545,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "a never-connected runner warns the run will queue and still offers Dispatch", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
     action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
@@ -568,7 +561,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   end
 
   test "a disabled runner reports the disabled remedy, not the signed-only one", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     runner =
       Fixtures.Runners.create_runner(
@@ -580,7 +573,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
     {:ok, _disabled} =
-      Emisar.Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user, account))
+      Emisar.Runners.disable_runner(runner, Fixtures.Subjects.subject_for(owner))
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
     html = render(lv)
@@ -598,18 +591,11 @@ defmodule EmisarWeb.RunNewLiveTest do
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
-    viewer = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+    viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
     {:ok, lv, html} =
       build_conn()
-      |> log_in_user(viewer)
+      |> log_in_member(viewer)
       |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     refute has_element?(lv, "button", "Run on")
@@ -638,8 +624,8 @@ defmodule EmisarWeb.RunNewLiveTest do
   # T05/T02 = "dispatch to a runner id that doesn't resolve" — one and the same
   # server check and flash.)
   test "a runner that's gone at dispatch time → :runner_not_found flash, no run", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -651,7 +637,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     html = submit_dispatch(lv)
 
     assert html =~ "This runner is no longer available."
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # an action de-advertised between mount and
@@ -660,8 +646,8 @@ defmodule EmisarWeb.RunNewLiveTest do
   # exists), so `fetch_advertised_action` is the gate that fires; the flash points
   # the operator at reloading for a current action.
   test "an action gone at dispatch time → :action_not_found flash, no run", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     {runner, action} = action_with_required_arg(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -673,12 +659,12 @@ defmodule EmisarWeb.RunNewLiveTest do
     html = submit_dispatch(lv)
 
     assert html =~ "This action is no longer available on the runner"
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   test "an action contract changed after mount tells the operator to reload", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     assert {:ok, _runner} = advertise_versioned_action(runner)
@@ -686,7 +672,7 @@ defmodule EmisarWeb.RunNewLiveTest do
     [pack_version] = Fixtures.Catalog.list_pack_versions(account.id)
 
     assert {:ok, _trusted} =
-             Catalog.trust_pack_version(pack_version.id, owner_subject(user, account))
+             Catalog.trust_pack_version(pack_version.id, Fixtures.Subjects.subject_for(owner))
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/linux.uptime")
 
@@ -700,16 +686,16 @@ defmodule EmisarWeb.RunNewLiveTest do
     assert html =~ "This action changed while you were editing"
     assert html =~ "Refresh the page and review its arguments"
     refute html =~ "action_contract_changed"
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   test "an unexpected dispatch reason gets bounded copy and diagnostic logging", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     policy =
       Fixtures.Policies.create_policy(
         account_id: account.id,
-        created_by_id: user.id,
+        updated_by_membership_id: owner.id,
         rules: %{
           "schema_version" => 2,
           "defaults" => %{
@@ -751,24 +737,17 @@ defmodule EmisarWeb.RunNewLiveTest do
   } do
     {_owner_conn, owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_required_arg(account)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: owner.id)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
 
-    operator = Fixtures.Users.create_user()
-
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+    operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     # Scope the operator to a group that ISN'T this runner's ("default").
     {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["locked-out"], [])
-    Fixtures.Memberships.force_runner_access(membership, access)
+    Fixtures.Memberships.force_runner_access(operator, access)
 
     assert {:ok, lv, html} =
              build_conn()
-             |> log_in_user(operator)
+             |> log_in_member(operator)
              |> live(~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     assert html =~ action.action_id
@@ -780,15 +759,15 @@ defmodule EmisarWeb.RunNewLiveTest do
       "reason" => "inspect"
     })
 
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(owner, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # an action from an untrusted (pending)
   # pack version → :pack_untrusted flash directing to Packs, no run. The action
   # is advertised so mount loads; `check_pack_trust` refuses at dispatch.
   test "an untrusted pack → :pack_untrusted flash, no run", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     # A custom (no-baseline) pack advertises an action and lands :pending —
@@ -819,7 +798,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     assert html =~ "This pack version isn&#39;t trusted"
     assert html =~ "Packs page"
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # an enforcing (signed-only) runner hides the Dispatch
@@ -828,8 +807,8 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "a forced submit to a signed-only runner → :runner_requires_attestation flash", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
 
     runner =
       Fixtures.Runners.create_runner(
@@ -850,19 +829,19 @@ defmodule EmisarWeb.RunNewLiveTest do
     html = submit_dispatch(lv, %{}, "forcing it anyway")
 
     assert html =~ "This runner requires signed actions"
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # a policy deny is a flash AND the engine records the
   # attempt as a :denied run (so operators see it in audit); the form does not
   # navigate to a run page.
   test "a policy deny flashes and the run is recorded as :denied (no navigate)", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     _ =
       Fixtures.Policies.create_policy(
         account_id: account.id,
-        created_by_id: user.id,
+        updated_by_membership_id: owner.id,
         rules: %{
           "schema_version" => 2,
           "defaults" => %{
@@ -886,19 +865,19 @@ defmodule EmisarWeb.RunNewLiveTest do
     # The engine writes the attempt as a :denied run, and the form stayed put
     # (no redirect to a run page).
     assert {:ok, [%{status: :denied, policy_decision: "deny"}], _} =
-             Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+             Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # an approval-required action creates a
   # :pending_approval run and navigates to its run page (the approval banner
   # lives there), unlike the deny path which stays on the form.
   test "an approval-required action creates a :pending_approval run and navigates", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     _ =
       Fixtures.Policies.create_policy(
         account_id: account.id,
-        created_by_id: user.id,
+        updated_by_membership_id: owner.id,
         rules: %{
           "schema_version" => 2,
           "defaults" => %{
@@ -923,7 +902,7 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     # …and that run is parked as :pending_approval.
     assert {:ok, [%{status: :pending_approval}], _} =
-             Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+             Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # `dispatch_run_permission` is owner/admin/operator/api_client; a subject
@@ -931,13 +910,13 @@ defmodule EmisarWeb.RunNewLiveTest do
   # a user subject, so this asserts the underlying capability predicate the
   # gate relies on.
   test "a subject without dispatch permission is excluded", %{conn: conn} do
-    {_conn, _user, account} = register_and_log_in(conn)
+    {_conn, _owner, account} = register_and_log_in(conn)
 
     refute Runs.subject_can_dispatch_run?(Fixtures.Subjects.permissionless_subject(account))
   end
 
   test "renders closed values and scalar bounds as real controls", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -1016,15 +995,17 @@ defmodule EmisarWeb.RunNewLiveTest do
       })
 
     assert html =~ "is not an allowed value"
-    assert {:ok, [], _page} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+
+    assert {:ok, [], _page} =
+             Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # a non-numeric integer arg renders an
   # inline parse error on the field ("expected integer"), not a flash, and no run
   # is dispatched.
   test "a bad integer arg renders an inline error on the field, no run", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     {runner, action} = action_with_two_int_args(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -1039,15 +1020,15 @@ defmodule EmisarWeb.RunNewLiveTest do
 
     assert html =~ "expected integer"
     refute html =~ "Dispatch failed"
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # a bound the browser cannot enforce (the contract's max) is caught by the
   # domain cast, so it renders on the field like a parse error and no run is
   # created.
   test "an out-of-bounds arg renders inline on the field, no run", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -1074,14 +1055,14 @@ defmodule EmisarWeb.RunNewLiveTest do
     |> render_submit()
 
     assert has_element?(lv, "#dispatch_form p.text-rose-400", "is above the maximum")
-    assert {:ok, [], _} = Runs.list_recent_runs(owner_subject(user, account), limit: 50)
+    assert {:ok, [], _} = Runs.list_recent_runs(Fixtures.Subjects.subject_for(owner), limit: 50)
   end
 
   # several bad args are collected and
   # rendered inline in ONE pass, not just the first: a blank required `pid`
   # ("pid is required") AND a non-numeric `signal` ("expected integer") both show.
   test "every bad arg is reported at once, not just the first", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {runner, action} = action_with_two_int_args(account)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
@@ -1103,7 +1084,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   # a zero-arg action's phx-change payload has no "args"
   # key; validate must default to the existing params, not FunctionClauseError.
   test "validate on a zero-arg action (no args key) doesn't crash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     action =
@@ -1130,7 +1111,7 @@ defmodule EmisarWeb.RunNewLiveTest do
   test "the arg form keeps arbitrary arg names as strings — no String.to_atom (IL-14)", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     # A deliberately weird arg name that is very unlikely to already exist as an

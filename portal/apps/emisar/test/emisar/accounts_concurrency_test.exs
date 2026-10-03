@@ -2,11 +2,10 @@ defmodule Emisar.AccountsConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Repo, Users}
-  alias Emisar.Accounts.Account
+  alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Repo, RequestContext}
+  alias Emisar.Accounts.{Account, Membership, RunnerAccess}
   alias Emisar.Audit.Event, as: AuditEvent
   alias Emisar.Auth.UserToken
-  alias Emisar.Users.User
 
   @moduletag timeout: 60_000
 
@@ -27,7 +26,9 @@ defmodule Emisar.AccountsConcurrencyTest do
           send(parent, {:disable_backend, backend_pid()})
 
           Repo.transaction(fn ->
-            {:ok, _locked_user} = Users.fetch_and_lock_user_by_id(owner.id, Repo)
+            {:ok, _locked_member} =
+              Accounts.fetch_and_lock_active_membership(Repo, owner.account_id, owner.id)
+
             send(parent, :actor_locked)
 
             receive do
@@ -49,7 +50,7 @@ defmodule Emisar.AccountsConcurrencyTest do
       await_blocked_by(enforce_backend, disable_backend)
 
       send(disable.pid, :disable)
-      assert {:ok, {:ok, %User{mfa_enabled_at: nil}}} = Task.await(disable, 30_000)
+      assert {:ok, {:ok, %Membership{mfa_enabled_at: nil}}} = Task.await(disable, 30_000)
 
       assert Task.await(enforce, 30_000) == {:error, :mfa_enrollment_required}
       refute Repo.reload!(account).settings.require_mfa
@@ -61,24 +62,33 @@ defmodule Emisar.AccountsConcurrencyTest do
     unboxed_owner(fn account, owner, subject, recovery_code ->
       parent = self()
 
-      enforce =
+      # Enforcement takes the owner's row after the account's; holding that row
+      # parks enforcement exactly where it has judged the enrollment and not
+      # yet committed, and queues the disable behind it.
+      blocker =
         unboxed_task(fn ->
-          send(parent, {:enforce_backend, backend_pid()})
-
           Repo.transaction(fn ->
-            result = Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject)
-            send(parent, {:enforcement_staged, result})
+            {:ok, _locked} =
+              Accounts.fetch_and_lock_active_membership(Repo, owner.account_id, owner.id)
+
+            send(parent, {:owner_locked, backend_pid()})
 
             receive do
-              :commit -> result
+              :release -> :ok
             end
           end)
         end)
 
-      assert_receive {:enforce_backend, enforce_backend}, 5_000
+      assert_receive {:owner_locked, blocker_backend}, 5_000
 
-      assert_receive {:enforcement_staged, {:ok, %Account{settings: %{require_mfa: true}}}},
-                     5_000
+      enforce =
+        unboxed_task(fn ->
+          send(parent, {:enforce_backend, backend_pid()})
+          Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject)
+        end)
+
+      assert_receive {:enforce_backend, enforce_backend}, 5_000
+      await_blocked_by(enforce_backend, blocker_backend)
 
       disable =
         unboxed_task(fn ->
@@ -89,12 +99,11 @@ defmodule Emisar.AccountsConcurrencyTest do
       assert_receive {:disable_backend, disable_backend}, 5_000
       await_blocked_by(disable_backend, enforce_backend)
 
-      send(enforce.pid, :commit)
+      send(blocker.pid, :release)
+      assert {:ok, :ok} = Task.await(blocker, 30_000)
 
-      assert {:ok, {:ok, %Account{settings: %{require_mfa: true}}}} =
-               Task.await(enforce, 30_000)
-
-      assert {:ok, %User{mfa_enabled_at: nil}} = Task.await(disable, 30_000)
+      assert {:ok, %Account{settings: %{require_mfa: true}}} = Task.await(enforce, 30_000)
+      assert {:ok, %Membership{mfa_enabled_at: nil}} = Task.await(disable, 30_000)
       assert Repo.reload!(account).settings.require_mfa
       refute Repo.reload!(owner).mfa_enabled_at
     end)
@@ -109,7 +118,9 @@ defmodule Emisar.AccountsConcurrencyTest do
           send(parent, {:revoker_backend, backend_pid()})
 
           Repo.transaction(fn ->
-            :ok = Auth.delete_session_token(reset.actor_session_token)
+            # The revocation's own transaction cannot nest; its delete is held
+            # open here the way an in-flight revocation holds the row.
+            :ok = Fixtures.Auth.delete_session_token!(reset.actor_session_token)
             send(parent, :actor_session_revocation_staged)
 
             receive do
@@ -132,10 +143,10 @@ defmodule Emisar.AccountsConcurrencyTest do
           assert {:ok, :ok} = Task.await(revoker, 30_000)
 
           assert Task.await(resetter, 30_000) == {:error, :mfa_reset_proof_stale}
-          refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+          refute is_nil(Repo.reload!(reset.target_membership).mfa_enabled_at)
 
           assert {:ok, _session} =
-                   Auth.fetch_session_by_token(reset.target_session_token)
+                   Auth.fetch_session_by_token(reset.target_session_token, reset.account.id)
 
           assert mfa_reset_audit_count(reset.account.id) == 0
           refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
@@ -165,7 +176,12 @@ defmodule Emisar.AccountsConcurrencyTest do
           revoker =
             unboxed_task(fn ->
               send(parent, {:waiting_revoker_backend, backend_pid()})
-              Auth.delete_session_token(reset.actor_session_token)
+
+              Auth.revoke_session_tokens(
+                [reset.actor_session_token],
+                :dead_entry,
+                %RequestContext{}
+              )
             end)
 
           try do
@@ -174,17 +190,17 @@ defmodule Emisar.AccountsConcurrencyTest do
 
             send(target_blocker.pid, :release)
             assert {:ok, :ok} = Task.await(target_blocker, 30_000)
-            assert {:ok, %User{mfa_enabled_at: nil}} = Task.await(resetter, 30_000)
+            assert {:ok, %Membership{mfa_enabled_at: nil}} = Task.await(resetter, 30_000)
             assert :ok = Task.await(revoker, 30_000)
 
-            expected_topic = Auth.live_socket_topic_for_session(reset.target_session_token)
+            expected_topic = Auth.live_socket_topic(Crypto.hash(reset.target_session_token))
             assert_receive {:mfa_reset_disconnect, [^expected_topic], false}, 5_000
             refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
 
-            assert Auth.fetch_session_by_token(reset.target_session_token) ==
+            assert Auth.fetch_session_by_token(reset.target_session_token, reset.account.id) ==
                      {:error, :not_found}
 
-            assert Auth.fetch_session_by_token(reset.actor_session_token) ==
+            assert Auth.fetch_session_by_token(reset.actor_session_token, reset.account.id) ==
                      {:error, :not_found}
 
             assert mfa_reset_audit_count(reset.account.id) == 1
@@ -201,81 +217,138 @@ defmodule Emisar.AccountsConcurrencyTest do
     end)
   end
 
-  # Two owners who each belong to both workspaces reset each other: the two
-  # transactions lock the same pair of user rows, so they must take them in one
-  # global order. Neither reset lands — a member of other workspaces keeps their
-  # factor — but the refusal is decided UNDER the locks, after the queueing this
-  # test observes, so the ordering is still what keeps them from deadlocking.
-  test "cross-account peer owners take globally ordered user locks" do
-    unboxed_cross_account_mfa_reset(fn lower_reset, higher_reset, higher_user, accounts ->
+  test "a demotion that commits first refuses the stale owner's self-promotion queued behind it" do
+    unboxed_stale_owner(fn %{demoting: demoting, stale_owner: stale_owner, stale: stale} ->
       parent = self()
-      user_blocker = user_blocker(higher_user, parent)
+
+      # Holding the stale owner's row parks the demotion right after it took the
+      # workspace lock — the lock the stale owner's own attempt then queues on.
+      blocker = membership_blocker(stale_owner, parent)
 
       try do
-        assert_receive {:user_locked, user_backend}, 5_000
-        lower_resetter = member_mfa_reset_task(lower_reset, parent, :lower_reset_backend)
+        assert_receive {:membership_locked, blocker_backend}, 5_000
+
+        demoter =
+          unboxed_task(fn ->
+            send(parent, {:demoter_backend, backend_pid()})
+
+            Accounts.update_membership_role(stale_owner, "admin", demoting,
+              runner_access: RunnerAccess.all()
+            )
+          end)
 
         try do
-          assert_receive {:lower_reset_backend, lower_backend}, 5_000
-          await_blocked_by(lower_backend, user_backend)
+          assert_receive {:demoter_backend, demoter_backend}, 5_000
+          await_blocked_by(demoter_backend, blocker_backend)
 
-          higher_resetter = member_mfa_reset_task(higher_reset, parent, :higher_reset_backend)
+          promoter =
+            unboxed_task(fn ->
+              send(parent, {:promoter_backend, backend_pid()})
+              Accounts.update_membership_role(stale_owner, "owner", stale)
+            end)
 
           try do
-            assert_receive {:higher_reset_backend, higher_backend}, 5_000
-            await_blocked_by(higher_backend, lower_backend)
+            assert_receive {:promoter_backend, promoter_backend}, 5_000
+            await_blocked_by(promoter_backend, demoter_backend)
 
-            send(user_blocker.pid, :release)
-            assert {:ok, :ok} = Task.await(user_blocker, 30_000)
-
-            assert Task.await(lower_resetter, 30_000) == {:error, :member_of_other_workspaces}
-            assert Task.await(higher_resetter, 30_000) == {:error, :member_of_other_workspaces}
-
-            refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
-            refute is_nil(Repo.reload!(higher_reset.actor).mfa_enabled_at)
-            refute is_nil(Repo.reload!(lower_reset.actor).mfa_enabled_at)
-
-            assert {:ok, _session} =
-                     Auth.fetch_session_by_token(higher_reset.actor_session_token)
-
-            assert {:ok, _session} =
-                     Auth.fetch_session_by_token(lower_reset.actor_session_token)
-
-            assert Enum.map(accounts, &mfa_reset_audit_count(&1.id)) |> Enum.sum() == 0
+            send(blocker.pid, :release)
+            assert {:ok, :ok} = Task.await(blocker, 30_000)
+            assert {:ok, %Membership{role: :admin}} = Task.await(demoter, 30_000)
+            assert Task.await(promoter, 30_000) == {:error, :cannot_self_promote}
+            assert Repo.reload!(stale_owner).role == :admin
           after
-            stop_tasks([higher_resetter])
+            stop_tasks([promoter])
           end
         after
-          stop_tasks([lower_resetter])
+          stop_tasks([demoter])
         end
       after
-        send(user_blocker.pid, :release)
-        stop_tasks([user_blocker])
+        send(blocker.pid, :release)
+        stop_tasks([blocker])
       end
+    end)
+  end
+
+  # Two owners, each with the Subject its session gives it; the second one's is
+  # taken before anything changes, the way a mounted Team page holds it.
+  defp unboxed_stale_owner(fun) do
+    Sandbox.unboxed_run(Repo, fn ->
+      suffix = Ecto.UUID.generate()
+
+      account =
+        Fixtures.Accounts.create_account(%{
+          name: "Stale owner concurrency #{suffix}",
+          slug: "stale-owner-#{suffix}"
+        })
+
+      demoting_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "stale-owner-demoter-#{suffix}@example.test"
+        )
+
+      stale_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "stale-owner-#{suffix}@example.test"
+        )
+
+      try do
+        fun.(%{
+          demoting: Fixtures.Subjects.subject_for(demoting_owner),
+          stale_owner: stale_owner,
+          stale: Fixtures.Subjects.subject_for(stale_owner)
+        })
+      after
+        Repo.delete_all(from(stored in Account, where: stored.id == ^account.id))
+      end
+    end)
+  end
+
+  defp membership_blocker(%Membership{} = membership, parent) do
+    unboxed_task(fn ->
+      Repo.transaction(fn ->
+        {:ok, _locked} =
+          Accounts.fetch_and_lock_active_membership(Repo, membership.account_id, membership.id)
+
+        send(parent, {:membership_locked, backend_pid()})
+
+        receive do
+          :release -> :ok
+        end
+      end)
     end)
   end
 
   defp unboxed_owner(fun) do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
-      user = Fixtures.Users.create_user(%{email: "accounts-concurrency-#{suffix}@example.test"})
 
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "Accounts concurrency #{suffix}", slug: "accounts-concurrency-#{suffix}"},
-          user
+      account =
+        Fixtures.Accounts.create_account(%{
+          name: "Accounts concurrency #{suffix}",
+          slug: "accounts-concurrency-#{suffix}"
+        })
+
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "accounts-concurrency-#{suffix}@example.test"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      {:ok, _policy} = Emisar.Policies.seed_policy(account.id, owner.id)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {owner, [recovery_code | _rest]} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
       try do
         fun.(account, owner, subject, recovery_code)
       after
         Repo.delete_all(from(account in Account, where: account.id == ^account.id))
-        Repo.delete_all(from(user in User, where: user.id == ^user.id))
       end
     end)
   end
@@ -283,38 +356,44 @@ defmodule Emisar.AccountsConcurrencyTest do
   defp unboxed_mfa_reset(fun) do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
-      actor = Fixtures.Users.create_user(%{email: "mfa-reset-actor-#{suffix}@example.test"})
 
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "MFA reset concurrency #{suffix}", slug: "mfa-reset-#{suffix}"},
-          actor
+      account =
+        Fixtures.Accounts.create_account(%{
+          name: "MFA reset concurrency #{suffix}",
+          slug: "mfa-reset-#{suffix}"
+        })
+
+      actor =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "mfa-reset-actor-#{suffix}@example.test"
         )
 
-      actor_subject = Fixtures.Subjects.subject_for(actor, account)
+      {:ok, _policy} = Emisar.Policies.seed_policy(account.id, actor.id)
+      actor_subject = Fixtures.Subjects.subject_for(actor)
 
       {actor, [recovery_code | _remaining_codes]} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), actor_subject)
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), actor_subject)
 
-      subject = Fixtures.Subjects.subject_for(actor, account)
       actor_session_token = Fixtures.Auth.create_session_token!(actor, :magic_link, nil)
+      subject = Fixtures.Subjects.subject_for(actor, session: actor_session_token)
 
-      target_user =
-        Fixtures.Users.create_user(%{email: "mfa-reset-target-#{suffix}@example.test"})
-        |> Fixtures.Users.set_mfa_state(
+      target_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "operator",
+          email: "mfa-reset-target-#{suffix}@example.test"
+        )
+        |> Fixtures.Memberships.set_mfa_state(
           mfa_secret: "JBSWY3DPEHPK3PXP",
           mfa_enabled_at: DateTime.utc_now(),
           mfa_recovery_codes: ["digest-a", "digest-b"]
         )
 
-      target_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
-          role: "operator"
-        )
+      target_session_token =
+        Fixtures.Auth.create_session_token!(target_membership, :magic_link, nil)
 
-      target_session_token = Fixtures.Auth.create_session_token!(target_user, :magic_link, nil)
       actor_session_token_digest = Crypto.hash(actor_session_token)
 
       {:ok, proof} =
@@ -334,130 +413,10 @@ defmodule Emisar.AccountsConcurrencyTest do
           proof: proof,
           subject: subject,
           target_membership: target_membership,
-          target_session_token: target_session_token,
-          target_user: target_user
+          target_session_token: target_session_token
         })
       after
         Repo.delete_all(from(stored in Account, where: stored.id == ^account.id))
-
-        Repo.delete_all(from(stored in User, where: stored.id in ^[actor.id, target_user.id]))
-      end
-    end)
-  end
-
-  defp unboxed_cross_account_mfa_reset(fun) do
-    Sandbox.unboxed_run(Repo, fn ->
-      suffix = Ecto.UUID.generate()
-      actor_a = Fixtures.Users.create_user(%{email: "peer-reset-a-#{suffix}@example.test"})
-      actor_b = Fixtures.Users.create_user(%{email: "peer-reset-b-#{suffix}@example.test"})
-
-      {:ok, account_a} =
-        Accounts.create_account_with_owner(
-          %{name: "Peer reset A #{suffix}", slug: "peer-reset-a-#{suffix}"},
-          actor_a
-        )
-
-      {:ok, account_b} =
-        Accounts.create_account_with_owner(
-          %{name: "Peer reset B #{suffix}", slug: "peer-reset-b-#{suffix}"},
-          actor_b
-        )
-
-      membership_b_in_a =
-        Fixtures.Memberships.create_membership(
-          account_id: account_a.id,
-          user_id: actor_b.id,
-          role: "owner"
-        )
-
-      membership_a_in_b =
-        Fixtures.Memberships.create_membership(
-          account_id: account_b.id,
-          user_id: actor_a.id,
-          role: "owner"
-        )
-
-      subject_a = Fixtures.Subjects.subject_for(actor_a, account_a)
-      subject_b = Fixtures.Subjects.subject_for(actor_b, account_b)
-
-      {actor_a, [recovery_a | _]} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject_a)
-
-      {actor_b, [recovery_b | _]} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject_b)
-
-      subject_a_in_a = Fixtures.Subjects.subject_for(actor_a, account_a)
-      subject_b_in_b = Fixtures.Subjects.subject_for(actor_b, account_b)
-      session_a = Fixtures.Auth.create_session_token!(actor_a, :magic_link, nil)
-      session_b = Fixtures.Auth.create_session_token!(actor_b, :magic_link, nil)
-      digest_a = Crypto.hash(session_a)
-      digest_b = Crypto.hash(session_b)
-
-      {:ok, local_proof_a} =
-        Auth.verify_current_session_mfa_challenge(
-          {:recovery_code, recovery_a},
-          subject_a_in_a
-        )
-
-      {:ok, local_proof_b} =
-        Auth.verify_current_session_mfa_challenge(
-          {:recovery_code, recovery_b},
-          subject_b_in_b
-        )
-
-      actor_a = Repo.reload!(actor_a)
-      actor_b = Repo.reload!(actor_b)
-      subject_a_in_a = Fixtures.Subjects.subject_for(actor_a, account_a)
-      subject_b_in_b = Fixtures.Subjects.subject_for(actor_b, account_b)
-
-      {:ok, proof_a} =
-        Auth.issue_member_mfa_reset_proof(
-          membership_b_in_a,
-          actor_b,
-          {:local, local_proof_a},
-          digest_a,
-          subject_a_in_a
-        )
-
-      {:ok, proof_b} =
-        Auth.issue_member_mfa_reset_proof(
-          membership_a_in_b,
-          actor_a,
-          {:local, local_proof_b},
-          digest_b,
-          subject_b_in_b
-        )
-
-      reset_a = %{
-        actor: actor_a,
-        actor_session_token: session_a,
-        actor_session_token_digest: digest_a,
-        proof: proof_a,
-        subject: subject_a_in_a,
-        target_membership: membership_b_in_a
-      }
-
-      reset_b = %{
-        actor: actor_b,
-        actor_session_token: session_b,
-        actor_session_token_digest: digest_b,
-        proof: proof_b,
-        subject: subject_b_in_b,
-        target_membership: membership_a_in_b
-      }
-
-      {lower_reset, higher_reset, higher_user} =
-        if actor_a.id < actor_b.id,
-          do: {reset_a, reset_b, actor_b},
-          else: {reset_b, reset_a, actor_a}
-
-      try do
-        fun.(lower_reset, higher_reset, higher_user, [account_a, account_b])
-      after
-        account_ids = [account_a.id, account_b.id]
-        Repo.delete_all(from(stored in Account, where: stored.id in ^account_ids))
-
-        Repo.delete_all(from(stored in User, where: stored.id in ^[actor_a.id, actor_b.id]))
       end
     end)
   end
@@ -492,23 +451,6 @@ defmodule Emisar.AccountsConcurrencyTest do
         |> Repo.fetch!(UserToken.Query)
 
         send(parent, {:session_token_locked, backend_pid()})
-
-        receive do
-          :release -> :ok
-        end
-      end)
-    end)
-  end
-
-  defp user_blocker(user, parent) do
-    unboxed_task(fn ->
-      Repo.transaction(fn ->
-        User.Query.not_deleted()
-        |> User.Query.by_id(user.id)
-        |> User.Query.lock_for_update()
-        |> Repo.fetch!(User.Query)
-
-        send(parent, {:user_locked, backend_pid()})
 
         receive do
           :release -> :ok

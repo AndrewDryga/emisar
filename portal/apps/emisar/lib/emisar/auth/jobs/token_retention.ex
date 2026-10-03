@@ -1,11 +1,10 @@
 defmodule Emisar.Auth.Jobs.TokenRetention do
   @moduledoc """
-  Daily sweep that deletes user tokens past their own context's validity window.
+  Daily sweep that deletes tokens past their own context's validity window.
 
   Expiry was enforced only on the read path, so the table kept every abandoned
-  magic link, every unconfirmed email change, and every session nobody signed
-  out of — rows that can never authenticate again but still carry a token digest
-  and a user reference.
+  emailed code and every session nobody signed out of — rows that can never
+  authenticate again but still carry a token digest and a Member reference.
   """
   use Emisar.Jobs.Job,
     otp_app: :emisar,

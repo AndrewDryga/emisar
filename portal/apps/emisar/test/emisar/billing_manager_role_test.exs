@@ -18,15 +18,14 @@ defmodule Emisar.BillingManagerRoleTest do
 
   setup do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "billing_manager"
-    )
+    member =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "billing_manager"
+      )
 
-    subject = Fixtures.Subjects.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(member)
     %{account: account, subject: subject}
   end
 
@@ -143,15 +142,9 @@ defmodule Emisar.BillingManagerRoleTest do
     end
 
     test "an owner's filter surface is untouched", %{account: account} do
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      owner_subject = Fixtures.Subjects.subject_for(owner, account)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
 
       assert Enum.map(Audit.event_filters(owner_subject), & &1.name) ==
                [
@@ -235,15 +228,9 @@ defmodule Emisar.BillingManagerRoleTest do
   # operations — role first, access first, directory sync — that leaves one.
   describe "no runner or pack scope, by any route" do
     setup %{account: account} do
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      %{owner_subject: Fixtures.Subjects.subject_for(owner, account)}
+      %{owner_subject: Fixtures.Subjects.subject_for(owner)}
     end
 
     test "assigning the role clears the scope the member already had", %{
@@ -327,16 +314,10 @@ defmodule Emisar.BillingManagerRoleTest do
 
   describe "delegation" do
     test "an owner assigns the role", %{account: account} do
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
-      owner_subject = Fixtures.Subjects.subject_for(owner, account)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
 
       assert {:ok, %Accounts.Membership{role: :billing_manager}} =
                Accounts.update_membership_role(member, "billing_manager", owner_subject)
@@ -345,16 +326,10 @@ defmodule Emisar.BillingManagerRoleTest do
     test "an admin assigns it too — admins hold the manage_billing it grants", %{
       account: account
     } do
-      admin = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
-      admin_subject = Fixtures.Subjects.subject_for(admin, account)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert {:ok, %Accounts.Membership{role: :billing_manager}} =
                Accounts.update_membership_role(member, "billing_manager", admin_subject)

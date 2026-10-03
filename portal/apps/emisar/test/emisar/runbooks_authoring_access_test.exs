@@ -6,7 +6,7 @@ defmodule Emisar.RunbooksAuthoringAccessTest do
   describe "definition_authoring_access/2" do
     setup do
       membership = Fixtures.Memberships.create_membership(role: "operator")
-      %{membership: membership, subject: Fixtures.Subjects.membership_subject(membership)}
+      %{membership: membership, subject: Fixtures.Subjects.subject_for(membership)}
     end
 
     test "checks grants independently of connectivity, trust and strict completeness", %{

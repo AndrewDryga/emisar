@@ -5,7 +5,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
   describe "GET /app/runners/install" do
     test "explains single-use and reusable enrollment keys beside the command", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       conn = local_conn(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/install")
 
@@ -24,7 +24,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
     end
 
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       %{conn: local_conn(conn), account: account}
     end
 
@@ -52,17 +52,10 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
     end
 
     test "public HTTP refuses before minting an install key", %{account: account} do
-      owner = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {:ok, _lv, html} =
-        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/runners/install")
+        build_conn() |> log_in_member(owner) |> live(~p"/app/#{account}/runners/install")
 
       assert html =~ "Open emisar over HTTPS"
       refute html =~ "Waiting for your runner"
@@ -187,19 +180,12 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
     # and gets a live install command: `issue_install_key` is owner/admin/operator,
     # so `mint_install_key` succeeds and the one-liner renders with a real key.
     test "an operator can mint the install key and gets a live command", %{account: account} do
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, _lv, html} =
         build_conn()
         |> local_conn()
-        |> log_in_user(operator)
+        |> log_in_member(operator)
         |> live(~p"/app/#{account}/runners/install")
 
       assert html =~ "curl -fsSL"
@@ -209,19 +195,14 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
     test "a viewer is redirected at mount — install is issue-tier", %{conn: conn} do
       {_conn, _owner, account} = register_and_log_in(conn)
-      viewer = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       dest = ~p"/app/#{account}/runners"
 
       assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
                build_conn()
-               |> log_in_user(viewer)
+               |> log_in_member(viewer)
                |> live(~p"/app/#{account}/runners/install")
 
       assert %{
@@ -245,7 +226,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
 
       assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
                build_conn()
-               |> log_in_user(Emisar.Repo.preload(membership, :user).user)
+               |> log_in_member(membership)
                |> live(~p"/app/#{account}/runners/install")
 
       assert flash["error"] =~ "and access to all runners"

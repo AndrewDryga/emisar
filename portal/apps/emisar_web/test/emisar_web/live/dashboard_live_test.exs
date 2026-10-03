@@ -6,81 +6,39 @@ defmodule EmisarWeb.DashboardLiveTest do
       assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app")
     end
 
-    test "offers recovery without destroying a fully-suspended user's browser", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
+    test "a suspended Member's entry leaves the cookie and /app goes to sign-in", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      token = session_token(conn, account)
+      Fixtures.Memberships.suspend_membership(owner)
 
-      # Suspend the user's only membership: the session can no longer resolve
-      # an account. Recovery must not pretend this is first-run onboarding or
-      # destroy the independent personal session.
-      {1, _} =
-        Emisar.Accounts.Membership.Query.all()
-        |> Emisar.Accounts.Membership.Query.by_user_id(user.id)
-        |> Emisar.Repo.update_all(set: [disabled_at: DateTime.utc_now()])
+      # The only entry no longer authenticates, so the slugless page prunes it
+      # (its row is deleted) and sends the browser to the sign-in picker.
+      conn = get(conn, ~p"/app")
 
-      assert {:error, {:redirect, %{to: "/session/recover"}}} =
-               live(conn, ~p"/app")
-
-      assert html_response(get(conn, ~p"/session/recover"), 200) =~ "Choose how to continue"
-
-      assert {:ok, _session} =
-               Emisar.Auth.fetch_session_by_token(get_session(conn, :user_token))
-    end
-
-    test "redirects a logged-in user with no account to onboarding", %{conn: conn} do
-      # A bare user (no membership at all) isn't locked out — they're sent to
-      # onboarding to create their first account.
-      conn = log_in_user(conn, Fixtures.Users.create_user())
-
-      assert {:error, {:redirect, %{to: "/onboarding"}}} = live(conn, ~p"/app")
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert get_session(conn, :sessions) == nil
+      assert Emisar.Auth.fetch_session_by_token(token, account.id) == {:error, :not_found}
     end
 
     test "an operator lands on the dashboard, not billing", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
 
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       # An operator can read runs, so the dashboard is theirs — the first-run
       # checklist (a fresh account has no runs), not a bounce to billing.
       {:ok, lv, html} =
         build_conn()
-        |> log_in_user(operator)
+        |> log_in_member(operator)
         |> live(~p"/app/#{account}")
 
       assert html =~ "Run your first action"
       assert has_element?(lv, "a[href='#{~p"/app/#{account}"}']", "Dashboard")
     end
 
-    test "unconfirmed users see the verify-email banner and can resend", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      # register_and_log_in confirms by default — simulate the unverified state.
-      {:ok, _} = user |> Ecto.Changeset.change(confirmed_at: nil) |> Emisar.Repo.update()
-
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}")
-      assert html =~ "Verify your email"
-      assert html =~ "Resend email"
-
-      # The button is wired to the global :email_confirmation on_mount hook,
-      # not to DashboardLive — clicking it still re-sends from any page.
-      html = lv |> element("button", "Resend email") |> render_click()
-      assert html =~ "Confirmation email requested"
-    end
-
-    test "confirmed users see no verify-email banner", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
-      refute html =~ "Verify your email"
-    end
-
     test "the shell's mobile drawer is a focus-contained dialog wired to its trigger",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
       # The hamburger announces what it controls and whether it's open; the
@@ -102,7 +60,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     test "a fresh account renders the setup checklist — ordered, one primary, team optional",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
       # The zero state is an ORDERED path to the first gated run: two
@@ -127,7 +85,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "a runner alone keeps the checklist — step 1 done, agent step current", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
@@ -141,7 +99,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     test "an installed but offline runner keeps step 1 incomplete with recovery copy",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
@@ -163,7 +121,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "a runner last seen an hour ago reads offline, not connected", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       Fixtures.Runners.mark_disconnected_at(runner, DateTime.add(DateTime.utc_now(), -3600))
 
@@ -177,11 +135,14 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     test "an issued key that never authenticated keeps the agent step incomplete",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id)
 
       {_raw, _key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -194,12 +155,15 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     test "an authenticated agent call completes step 2 and activates the first-action step",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Catalog.create_action(runner: runner)
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       Fixtures.ApiKeys.mark_used(key)
 
@@ -215,13 +179,16 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "actions advertised only by an offline runner don't count as ready", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id)
       offline_runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       Fixtures.Catalog.create_action(runner: offline_runner)
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       Fixtures.ApiKeys.mark_used(key)
 
@@ -234,9 +201,8 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "a viewer sees truthful setup state but no setup actions", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "viewer")
+      {conn, owner, account} = register_and_log_in(conn)
+      Fixtures.Memberships.force_role(owner, "viewer")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -250,18 +216,17 @@ defmodule EmisarWeb.DashboardLiveTest do
     test "a member with no runner access sees the operational dashboard, not runner onboarding",
          %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      member = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "operator",
-        runner_access_mode: "none"
-      )
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "operator",
+          runner_access_mode: "none"
+        )
 
       {:ok, lv, html} =
         build_conn()
-        |> log_in_user(member)
+        |> log_in_member(member)
         |> live(~p"/app/#{account}")
 
       refute html =~ "Run your first action"
@@ -275,21 +240,15 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     test "an empty restricted scope does not masquerade as an empty account", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      member = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
-      Fixtures.Memberships.force_runner_access(membership, restricted)
+      Fixtures.Memberships.force_runner_access(member, restricted)
 
       {:ok, _lv, html} =
         build_conn()
-        |> log_in_user(member)
+        |> log_in_member(member)
         |> live(~p"/app/#{account}")
 
       refute html =~ "Run your first action"
@@ -299,8 +258,8 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "renders the operational dashboard once a run exists", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
@@ -338,13 +297,13 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "describes pending approvals as shared review work", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, run} =
         Emisar.Runs.create_run(%{
           account_id: account.id,
-          initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          initiating_membership_id: owner.id,
           runner_id: runner.id,
           action_id: "linux.uptime",
           args: %{},
@@ -366,10 +325,10 @@ defmodule EmisarWeb.DashboardLiveTest do
       # A runbook_execution request carries no action_id, so reading one straight
       # off the context printed "—" as the row's whole identity — the operator
       # could not tell which of several held executions the row was.
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
       request =
-        Fixtures.Approvals.create_execution_request(account, user, %{
+        Fixtures.Approvals.create_execution_request(account, owner, %{
           runbook_title: "Rotate the edge certificates"
         })
 
@@ -385,8 +344,8 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "the Team pillar pitches SSO once a real team exists", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       # A landed run puts the account on the operational dashboard (not the
       # checklist), so its pillars render.
@@ -401,13 +360,8 @@ defmodule EmisarWeb.DashboardLiveTest do
       first_run(account, runner)
 
       # A second member turns "solo" into a team.
-      member = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "operator"
-      )
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -424,8 +378,8 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "the Team pillar flips to managing providers once SSO is live", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
@@ -437,13 +391,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       first_run(account, runner)
 
-      member = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "operator"
-      )
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: true)
 
@@ -461,8 +409,8 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "an operator's Team pillar reports the count and offers no SSO verb", %{conn: conn} do
-      {_owner_conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
@@ -474,18 +422,12 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       first_run(account, runner)
 
-      operator = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: true)
 
       {:ok, _lv, html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}")
 
       # The tile still reports where the team stands and still navigates to
       # Team; what it must not do is pitch a verb this role cannot perform.
@@ -499,8 +441,8 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "the operator's Team pillar counts every owner and admin", %{conn: conn} do
-      {_owner_conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
       {:ok, _raw, _key} = Emisar.ApiKeys.create_key(%{name: "Bot"}, subject)
       first_run(account, runner)
@@ -509,16 +451,10 @@ defmodule EmisarWeb.DashboardLiveTest do
       # The finance seat manages no team, so it is a member and not a manager.
       Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
 
-      operator = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, _lv, html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}")
 
       assert html =~ "4<span class=\"text-2xl text-zinc-400\"> members</span>"
       assert html =~ "2 owners and admins"
@@ -526,8 +462,8 @@ defmodule EmisarWeb.DashboardLiveTest do
 
     test "both connected but no advertised actions: the checklist requires a catalog pack first",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       {:ok, _raw, key} =
@@ -584,14 +520,13 @@ defmodule EmisarWeb.DashboardLiveTest do
     # both. (The foreign-slug 404 lives in account_slug_authz_test; this is the
     # in-account data scoping of the dashboard's own reads.)
     test "cross-account — the dashboard shows only this account's data", %{conn: conn} do
-      {conn, user_a, account_a} = register_and_log_in(conn)
+      {conn, owner_a, account_a} = register_and_log_in(conn)
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id)
 
       {:ok, run_a} =
         Emisar.Runs.create_run(%{
           account_id: account_a.id,
-          initiating_membership_id:
-            Fixtures.Memberships.fetch_membership(account_a.id, user_a.id).id,
+          initiating_membership_id: owner_a.id,
           runner_id: runner_a.id,
           action_id: "linux.alpha_dash",
           args: %{},
@@ -602,14 +537,13 @@ defmodule EmisarWeb.DashboardLiveTest do
       {:ok, _request_a} = Emisar.Approvals.create_request(run_a, "needs sign-off")
 
       # Account B (a different owner) has its own runner, run, and approval.
-      {user_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
+      {owner_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
       runner_b = Fixtures.Runners.create_runner(account_id: account_b.id)
 
       {:ok, run_b} =
         Emisar.Runs.create_run(%{
           account_id: account_b.id,
-          initiating_membership_id:
-            Fixtures.Memberships.fetch_membership(account_b.id, user_b.id).id,
+          initiating_membership_id: owner_b.id,
           runner_id: runner_b.id,
           action_id: "linux.bravo_dash",
           args: %{},
@@ -635,7 +569,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     # to abuse.
     test "setup checklist actions are plain navigation links to real routes (read-only)",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
@@ -659,7 +593,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "the empty agent pillar opens the app selector directly", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runs.create_run(account_id: account.id)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
@@ -669,7 +603,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "runner topology broadcasts schedule a debounced fleet refresh", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
       assert html =~ "Run your first action"
@@ -693,7 +627,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "a run event refreshes only the recent runs it renders", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
       # The header digest is DERIVED from the rows just read (so it can only ever
@@ -703,7 +637,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     end
 
     test "an approval event refreshes only the fixed five-row queue snippet", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
       # Current identity, two current action-access reads, and the bounded list.
@@ -713,7 +647,7 @@ defmodule EmisarWeb.DashboardLiveTest do
     test "a runner topology event refreshes only fleet and advertised-action facts", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
       event = %{
@@ -744,8 +678,8 @@ defmodule EmisarWeb.DashboardLiveTest do
 
   describe "billing-status banner" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, user: owner, account: account}
     end
 
     test "a past_due subscription surfaces the alert + a manage-billing link for an owner",
@@ -783,8 +717,7 @@ defmodule EmisarWeb.DashboardLiveTest do
         collection_mode: "automatic"
       )
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "viewer")
+      Fixtures.Memberships.force_role(user, "viewer")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}")
 
@@ -797,7 +730,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
   describe "plan / packs headroom banners" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       %{conn: conn, account: account}
     end
 
@@ -890,15 +823,10 @@ defmodule EmisarWeb.DashboardLiveTest do
     test "redirects to billing, where the nav offers only what the role can open", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
 
-      member = Emisar.Fixtures.Users.create_user() |> Emisar.Fixtures.Users.confirm_user()
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
 
-      Emisar.Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "billing_manager"
-      )
-
-      conn = log_in_user(Phoenix.ConnTest.build_conn(), member)
+      conn = log_in_member(Phoenix.ConnTest.build_conn(), member)
 
       # The dashboard is runner onboarding + dispatch a finance-only seat can't
       # perform (every tile reads :unauthorized), so /app bounces to billing —
@@ -945,7 +873,7 @@ defmodule EmisarWeb.DashboardLiveTest do
   # Rows the debounced runner refresh reads, for an account past its first run
   # whose fleet holds `runner_count` runners, each advertising one action.
   defp fleet_refresh_rows(conn, runner_count) do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     runners =
       for index <- 1..runner_count do

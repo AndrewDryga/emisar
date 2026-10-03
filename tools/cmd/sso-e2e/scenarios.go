@@ -396,7 +396,6 @@ func (d *driver) testRoleMapping() {
 	    |> Accounts.Membership.Query.by_account_id(provider.account_id)
 	    |> Accounts.Membership.Query.by_role(:owner)
 	    |> Accounts.Membership.Query.with_preloaded_account()
-	    |> Accounts.Membership.Query.with_preloaded_user()
 	    |> Accounts.Membership.Query.oldest()
 	    |> Repo.peek()
 	  # A trusted RPC has no browser session to prove, so it acts as the
@@ -644,12 +643,11 @@ func (d *driver) testOffboardingEndsAccess() {
 		    SSO.UserIdentity.Query.not_deleted()
 		    |> SSO.UserIdentity.Query.by_provider_and_scim_external_id("` + d.providerID + `", "` + d.aliceKCID + `")
 		    |> Repo.peek()
-		  # A directory-created member has no personal login; its sessions are
-		  # the grants that reach its seat.
+		  # Every session is one token row keyed to the Member it signed in.
 		  count =
-		    Auth.MemberGrant.Query.by_membership(identity.account_id, identity.membership_id)
-		    |> Repo.all()
-		    |> length()
+		    Auth.UserToken.Query.by_membership(identity.account_id, identity.membership_id)
+		    |> Auth.UserToken.Query.by_context("session")
+		    |> Repo.aggregate(:count)
 		  IO.puts(to_string(count))`)
 	}
 

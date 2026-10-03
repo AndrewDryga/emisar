@@ -1,19 +1,13 @@
 defmodule Emisar.AuditIdentityOptionsTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Audit, Fixtures}
+  alias Emisar.{Audit, Fixtures, Repo}
+  alias Emisar.Users.User
 
   setup do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
-
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "owner"
-    )
-
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    %{account: account, subject: subject, user: user}
+    owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    subject = Fixtures.Subjects.subject_for(owner)
+    %{account: account, subject: subject, owner: owner}
   end
 
   describe "list_actor_options/3" do
@@ -86,19 +80,20 @@ defmodule Emisar.AuditIdentityOptionsTest do
       assert empty_meta.previous_page_cursor == nil
     end
 
-    test "current account name wins over snapshots, including deleted users and suspended seats",
+    test "current account name wins over snapshots, including deleted logins and suspended seats",
          %{account: account, subject: subject} do
-      member = Fixtures.Users.create_user(full_name: "Current name")
-
       membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: "Current name"
+        )
 
-      event(account, member.id, "Old name")
-      Fixtures.Users.mark_user_as_deleted(member)
+      login = legacy_login(membership, deleted_at: DateTime.utc_now())
+      event(account, login.id, "Old name")
       Fixtures.Memberships.suspend_membership(membership)
 
       assert {:ok, [{id, "Current name"}], _} = Audit.list_actor_options("user", subject)
-      assert id == member.id
+      assert id == login.id
       assert {:ok, [], _} = Audit.list_actor_options("user", subject, search: "Old")
 
       Fixtures.Memberships.mark_membership_as_deleted(membership)
@@ -205,7 +200,7 @@ defmodule Emisar.AuditIdentityOptionsTest do
   describe "list_target_options/3" do
     test "projects pack, policy, grant and identity-provider labels with existing wording", %{
       account: account,
-      user: user,
+      owner: owner,
       subject: subject
     } do
       pack =
@@ -216,7 +211,10 @@ defmodule Emisar.AuditIdentityOptionsTest do
         )
 
       {_token, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       grant =
         Fixtures.Approvals.create_grant(
@@ -231,12 +229,15 @@ defmodule Emisar.AuditIdentityOptionsTest do
       Fixtures.SSO.mark_provider_deleted(provider)
 
       account_policy =
-        Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+        Fixtures.Policies.create_policy(
+          account_id: account.id,
+          updated_by_membership_id: owner.id
+        )
 
       group_policy =
         Fixtures.Policies.create_policy(
           account_id: account.id,
-          created_by_id: user.id,
+          updated_by_membership_id: owner.id,
           scope_type: :group,
           scope_value: "database"
         )
@@ -246,7 +247,7 @@ defmodule Emisar.AuditIdentityOptionsTest do
       runner_policy =
         Fixtures.Policies.create_policy(
           account_id: account.id,
-          created_by_id: user.id,
+          updated_by_membership_id: owner.id,
           scope_type: :runner,
           scope_value: runner_id
         )
@@ -270,26 +271,26 @@ defmodule Emisar.AuditIdentityOptionsTest do
       account: account,
       subject: subject
     } do
-      user = Fixtures.Users.create_user(full_name: "Global name")
-      local = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-      foreign = Fixtures.Memberships.create_membership(user_id: user.id)
+      local = Fixtures.Memberships.create_membership(account_id: account.id)
+      foreign = Fixtures.Memberships.create_membership()
+      login = legacy_login([local, foreign], full_name: "Global name")
       Fixtures.Memberships.sync_display_name(local, "Local directory")
       Fixtures.Memberships.sync_display_name(foreign, "Private foreign directory")
-      event(account, user.id, "Old snapshot")
+      event(account, login.id, "Old snapshot")
 
       assert {:ok, [{id, "Local directory"}], _} = Audit.list_target_options("user", subject)
-      assert id == user.id
+      assert id == login.id
       assert {:ok, [], _} = Audit.list_target_options("user", subject, search: "foreign")
       assert {:ok, [], _} = Audit.list_target_options("user", subject, search: "Global")
     end
 
     test "draft-test approval labels preserve the queue wording", %{
       account: account,
-      user: user,
+      owner: owner,
       subject: subject
     } do
       request =
-        Fixtures.Approvals.create_execution_request(account, user,
+        Fixtures.Approvals.create_execution_request(account, owner,
           execution_kind: :draft_test,
           runbook_title: "Review plan"
         )
@@ -306,18 +307,20 @@ defmodule Emisar.AuditIdentityOptionsTest do
       account: account,
       subject: subject
     } do
-      member = Fixtures.Users.create_user(full_name: "Quiet")
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+      login =
+        [account_id: account.id, display_name: "Quiet"]
+        |> Fixtures.Memberships.create_membership()
+        |> legacy_login()
 
       assert {:ok, [{id, "Quiet"}], _} =
-               Audit.list_actor_options("user", subject, ensure: member.id)
+               Audit.list_actor_options("user", subject, ensure: login.id)
 
-      assert id == member.id
-      assert {:ok, [], _} = Audit.list_target_options("user", subject, ensure: member.id)
-      event(account, member.id, nil)
+      assert id == login.id
+      assert {:ok, [], _} = Audit.list_target_options("user", subject, ensure: login.id)
+      event(account, login.id, nil)
 
       assert {:ok, [{^id, "Quiet"}], _} =
-               Audit.list_target_options("user", subject, ensure: member.id)
+               Audit.list_target_options("user", subject, ensure: login.id)
     end
 
     test "historical pages, selected fallbacks and searches never cross accounts", %{
@@ -346,7 +349,7 @@ defmodule Emisar.AuditIdentityOptionsTest do
     } do
       billing =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       id = Ecto.UUID.generate()
       hidden_id = Ecto.UUID.generate()
@@ -373,6 +376,18 @@ defmodule Emisar.AuditIdentityOptionsTest do
                  Fixtures.Subjects.permissionless_subject(account)
                )
     end
+  end
+
+  # Rows written before Members owned identity name a retired personal login
+  # ("user"); the reader labels it with the name of its Member in this workspace.
+  defp legacy_login(members, attrs \\ []) do
+    login =
+      Repo.insert!(struct!(User, Keyword.put_new(attrs, :email, Fixtures.Random.unique_email())))
+
+    for member <- List.wrap(members),
+        do: member |> Ecto.Changeset.change(user_id: login.id) |> Repo.update!()
+
+    login
   end
 
   defp event(account, id, label, opts \\ []) do

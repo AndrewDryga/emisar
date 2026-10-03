@@ -5,7 +5,6 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
   alias Emisar.{Accounts, Approvals, Catalog, Fixtures, Repo, Runbooks, Runners, Runs}
   alias Emisar.Accounts.Account
   alias Emisar.Runbooks.{ExecutionItem, ExecutionStage, RunbookExecution, Scheduler}
-  alias Emisar.Users.User
 
   @hash "sha256:" <> String.duplicate("d", 64)
 
@@ -360,7 +359,7 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
       _policy =
         Fixtures.Policies.create_policy(
           account_id: account.id,
-          created_by_id: subject.actor.id,
+          updated_by_membership_id: subject.actor.id,
           rules: %{
             "schema_version" => 2,
             "defaults" => %{
@@ -429,21 +428,26 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
 
-      user =
-        Fixtures.Users.create_user(%{
-          email: "scheduler-concurrency-#{suffix}@example.test"
-        })
-
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "Scheduler concurrency #{suffix}", slug: "scheduler-concurrency-#{suffix}"},
-          user
+      account =
+        Fixtures.Accounts.create_account(
+          name: "Scheduler concurrency #{suffix}",
+          slug: "scheduler-concurrency-#{suffix}"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "scheduler-concurrency-#{suffix}@example.test"
+        )
+
+      subject = Fixtures.Subjects.subject_for(owner)
 
       _policy =
-        Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+        Fixtures.Policies.create_policy(
+          account_id: account.id,
+          updated_by_membership_id: owner.id
+        )
 
       runner = trusted_runner(account, subject)
 
@@ -451,7 +455,6 @@ defmodule Emisar.Runbooks.SchedulerConcurrencyTest do
         fun.(account, subject, runner)
       after
         Repo.delete_all(from(account in Account, where: account.id == ^account.id))
-        Repo.delete_all(from(user in User, where: user.id == ^user.id))
       end
     end)
   end

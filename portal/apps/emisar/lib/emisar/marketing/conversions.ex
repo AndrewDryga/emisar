@@ -6,17 +6,18 @@ defmodule Emisar.Marketing.Conversions do
   and an opaque deduplication identifier.
   """
 
-  alias Emisar.{Config, Crypto, Users}
+  alias Emisar.{Accounts, Config, Crypto}
   alias Emisar.Marketing.XClient
   require Logger
 
   @doc "Reports a completed account signup attributed to an X ad click."
-  def account_signed_up(%Users.User{id: user_id}, %{x_click_id: x_click_id})
+  def account_signed_up(%Accounts.Membership{id: membership_id}, %{x_click_id: x_click_id})
       when is_binary(x_click_id) and byte_size(x_click_id) in 1..255 do
     case Config.get_env(:emisar, :x_ads_conversions) do
       %{} = config ->
         event = %{
-          conversion_id: Crypto.hash_hex("marketing-conversion:account-signed-up:" <> user_id),
+          conversion_id:
+            Crypto.hash_hex("marketing-conversion:account-signed-up:" <> membership_id),
           conversion_time: DateTime.utc_now(:millisecond) |> DateTime.to_iso8601(),
           x_click_id: x_click_id
         }
@@ -33,7 +34,7 @@ defmodule Emisar.Marketing.Conversions do
     :ok
   end
 
-  def account_signed_up(%Users.User{}, _attribution), do: :ok
+  def account_signed_up(%Accounts.Membership{}, _attribution), do: :ok
 
   defp dispatch(fun) do
     supervisor = Application.fetch_env!(:emisar, :task_supervisor)

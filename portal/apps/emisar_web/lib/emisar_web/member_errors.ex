@@ -35,8 +35,6 @@ defmodule EmisarWeb.MemberErrors do
       "Enable MFA on your own profile first — otherwise you'd lock yourself out.",
     deactivated_in_idp:
       "That member is deactivated in your identity provider — reactivate them there first.",
-    member_of_other_workspaces:
-      "That member also belongs to other workspaces, so only they can reset their MFA (with a recovery code), or Emisar support can.",
     rate_limited: "This workspace has sent its hourly invitation budget. Try again in an hour."
   }
 

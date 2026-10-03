@@ -2,7 +2,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
   use Emisar, :changeset
   alias Emisar.Accounts.{Membership, RunnerAccess}
 
-  @create_fields ~w[account_id user_id role display_name email directory_managed runner_access_mode runner_access_directory_managed
+  @create_fields ~w[account_id role display_name email directory_managed runner_access_mode runner_access_directory_managed
                     pack_access_mode pack_scope_pack_ids
                     directory_provider_id directory_authorization_pending_version
                     invited_by_membership_id invitation_token_digest
@@ -14,7 +14,6 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> cast(attrs, @create_fields)
     |> validate_required([:account_id, :role])
     |> validate_profile()
-    |> unique_constraint([:account_id, :user_id])
     |> unique_constraint(:email, name: :account_memberships_account_id_email_index)
     |> foreign_key_constraint(:invited_by_membership_id)
     |> put_access_the_role_carries()
@@ -113,18 +112,6 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   def delete(%Membership{} = membership), do: change(membership, deleted_at: DateTime.utc_now())
 
-  # A Member without a personal login gains the one that proved itself; the
-  # workspace profile stays the account's own.
-  def link_personal_login(%Membership{user_id: nil} = membership, user_id)
-      when is_binary(user_id) do
-    membership
-    |> change(user_id: user_id)
-    |> unique_constraint([:account_id, :user_id])
-  end
-
-  @doc "The personal login leaves this seat; the Member stays and signs in through workspace SSO."
-  def detach_personal_login(%Membership{} = membership), do: change(membership, user_id: nil)
-
   def suspend(%Membership{} = membership, disabled_by_membership_id) do
     membership
     |> change(
@@ -169,14 +156,67 @@ defmodule Emisar.Accounts.Membership.Changeset do
     )
   end
 
-  def accept_invitation(%Membership{} = membership),
-    do: membership |> change() |> put_invitation_accepted()
-
+  @doc """
+  Accept an invitation with the name the invitee gave. Acceptance follows a
+  proof of the invited inbox, so it also verifies the Member's address.
+  """
   def accept_invitation_with_profile(%Membership{} = membership, attrs) do
     membership
     |> profile(attrs)
     |> validate_required([:display_name])
     |> put_invitation_accepted()
+    |> put_change(:email_verified_at, DateTime.utc_now())
+  end
+
+  @doc """
+  The owner Member a proved sign-up creates. Its address is verified: the code
+  that creates it was proved at that address.
+  """
+  def sign_up_owner(attrs) do
+    attrs
+    |> Map.put(:role, :owner)
+    |> create()
+    |> validate_required([:email])
+    |> put_change(:email_verified_at, DateTime.utc_now())
+  end
+
+  @doc """
+  Turn the Member's TOTP on or off. `secret` and `enabled_at` both set enable
+  it; both nil disable it. `recovery_codes` is the digest list, replaced every
+  time so old codes never survive a toggle, and the replay stamp starts clean.
+  """
+  def mfa(%Membership{} = membership, secret, enabled_at, recovery_codes)
+      when is_list(recovery_codes) do
+    change(membership,
+      mfa_secret: secret,
+      mfa_enabled_at: enabled_at,
+      mfa_recovery_codes: recovery_codes,
+      mfa_last_used_at: nil
+    )
+  end
+
+  @doc "Stamp the most recent accepted TOTP — the replay guard's 30-second bucket."
+  def mfa_consumed(%Membership{} = membership, %DateTime{} = at),
+    do: change(membership, mfa_last_used_at: at)
+
+  @doc "Replace the stored recovery-code digests: one consumed, or a whole new set."
+  def mfa_recovery_codes(%Membership{} = membership, codes) when is_list(codes),
+    do: change(membership, mfa_recovery_codes: codes)
+
+  @doc "Replace every recovery-code digest and consume the proving TOTP bucket together."
+  def regenerated_mfa_recovery_codes(%Membership{} = membership, codes, %DateTime{} = at)
+      when is_list(codes),
+      do: change(membership, mfa_recovery_codes: codes, mfa_last_used_at: at)
+
+  @doc """
+  The pending owner a staff-created workspace starts with: an invitation to the
+  owner's address. The address is verified only when the invitation is accepted.
+  """
+  def invited_owner(attrs) do
+    attrs
+    |> Map.put(:role, :owner)
+    |> create()
+    |> validate_required([:email, :invitation_token_digest])
   end
 
   defp put_invitation_accepted(changeset) do

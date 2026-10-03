@@ -1,25 +1,21 @@
 defmodule EmisarWeb.AcceptInvitationLive do
   @moduledoc """
-  Endpoint of the team-invitation flow. An invitation names an email address;
-  whoever proves that address joins.
+  Endpoint of the team-invitation flow. An invitation names an email address
+  and a pending Member; whoever proves that address in this browser joins as
+  that Member.
 
-  Four render branches:
-
-    * Not signed in → a name form; submitting emails the invited address a
-      sign-in code (creating its personal login on first use). Using that code in
-      this browser accepts the invitation and signs in, in one step, so a
-      forwarded link changes nothing.
-    * Signed in AS the invited email → accept over HTTP, then explicitly sign
-      in again. Acceptance never adds the new membership to an old browser's proof.
-    * Signed in as a DIFFERENT email → "this invite is for X, sign out
-      first" with an explicit sign-out link. Previously the visitor was
-      silently bounced to /app and never saw the invite.
-    * Signed in to a workspace through single sign-on without a personal login
-      → nothing here can accept for it, so sign out first, then sign in or sign
-      up with the invited address.
+  Two states: the invitation is unavailable (expired, revoked, or already
+  used), or the name form. Submitting the form posts to
+  `UserSessionController.invitation_start`, which emails the invited address a
+  code; using that code in this browser accepts the invitation and signs in to
+  the workspace, in one step, so a forwarded link changes nothing. Where the
+  workspace signs in only through SSO, the code proves the address and the
+  workspace's sign-in page continues the acceptance at its identity provider.
+  Other workspace sessions in this browser are irrelevant: the invitation adds
+  one more.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Auth, Users}
+  alias Emisar.Accounts
   alias EmisarWeb.LiveForm
 
   def mount(%{"token" => token}, _session, socket) do
@@ -41,7 +37,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
          |> assign(:token, token)
          |> assign(:trigger_submit, false)
          |> assign_form(Accounts.change_member_profile(membership))
-         |> assign(:state, derive_state(socket.assigns, membership))}
+         |> assign(:state, :name_form)}
     end
   end
 
@@ -66,24 +62,6 @@ defmodule EmisarWeb.AcceptInvitationLive do
     |> assign(:state, :invitation_unavailable)
   end
 
-  # The page only chooses what to offer; acceptance re-checks the address.
-  defp derive_state(%{current_user: %Users.User{} = user}, membership) do
-    if invited_address?(user, membership),
-      do: :signed_in_match,
-      else: :signed_in_mismatch
-  end
-
-  # A member-only SSO session has no personal login to accept with, and this
-  # browser's email sign-in only links one to its own workspace Member.
-  defp derive_state(%{current_auth: %Auth.UserToken{}}, _membership), do: :member_only
-  defp derive_state(_assigns, _membership), do: :anonymous
-
-  # Both addresses are citext columns, which compare case-insensitively; so does this.
-  defp invited_address?(%Users.User{email: email}, membership) when is_binary(email),
-    do: String.downcase(email) == String.downcase(membership.email)
-
-  defp invited_address?(%Users.User{}, _membership), do: false
-
   def render(%{state: :invitation_unavailable} = assigns) do
     ~H"""
     <.auth_layout title={@error_title}>
@@ -98,7 +76,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
     """
   end
 
-  def render(%{state: :anonymous} = assigns) do
+  def render(%{state: :name_form} = assigns) do
     ~H"""
     <.auth_layout title={"Join #{@membership.account.name}"}>
       <p class="mb-6 text-sm text-zinc-400">
@@ -107,21 +85,18 @@ defmodule EmisarWeb.AcceptInvitationLive do
         as <.chip>{Emisar.Auth.role_label(@membership.role)}</.chip>.
       </p>
 
-      <%!-- On accept we flip `trigger_submit` and the form POSTs the invitation
-           token and name to the magic-link request, which emails the invited
-           address; the invitation is accepted when that code is used here. --%>
+      <%!-- On accept we flip `trigger_submit` and the form POSTs the name to the
+           invitation's code request, which emails the invited address; the
+           invitation is accepted when that code is used in this browser. --%>
       <.simple_form
         for={@form}
         id="accept_form"
-        action={~p"/sign_in/magic/start"}
+        action={~p"/accept_invitation/#{@token}"}
         method="post"
         phx-change="validate"
         phx-submit="accept"
         phx-trigger-action={@trigger_submit}
       >
-        <input type="hidden" name="invitation_token" value={@token} />
-        <input type="hidden" name="return_to" value={~p"/app/#{@membership.account}"} />
-
         <%!-- Naked meta field (the detail-page key+value grammar) — the box
              around it was an island (§8.1). --%>
         <div>
@@ -153,93 +128,15 @@ defmodule EmisarWeb.AcceptInvitationLive do
     """
   end
 
-  def render(%{state: :signed_in_match} = assigns) do
-    ~H"""
-    <.auth_layout title={"Join #{@membership.account.name}"}>
-      <p class="mb-6 text-sm text-zinc-400">
-        You're signed in as <span class="font-mono text-zinc-200">{@membership.email}</span>
-        — accept your invitation to join
-        <span class="font-semibold text-zinc-200">{@membership.account.name}</span>
-        as <.chip>{Emisar.Auth.role_label(@membership.role)}</.chip>.
-      </p>
-
-      <p class="mb-6 text-sm text-zinc-400">
-        After accepting, sign in again to open this workspace. Accepting does not sign you out.
-      </p>
-      <.form
-        for={%{}}
-        id="accept_existing_form"
-        action={~p"/accept_invitation/#{@token}"}
-        method="post"
-      >
-        <.button class="w-full">Accept invitation <span aria-hidden="true">→</span></.button>
-      </.form>
-    </.auth_layout>
-    """
-  end
-
-  def render(%{state: :signed_in_mismatch} = assigns) do
-    ~H"""
-    <.auth_layout title="Sign in with your invited email">
-      <div class="space-y-4 text-sm text-zinc-300">
-        <p>
-          This invitation is for <span class="font-mono text-zinc-100">{@membership.email}</span>, but
-          you're signed in as <span class="font-mono text-zinc-100">{@current_user.email}</span>.
-        </p>
-        <p class="text-zinc-400">
-          Sign out, then reopen this invitation from your email. To join with your current email
-          instead, ask the sender to invite that address.
-        </p>
-
-        <.button
-          variant={:secondary}
-          tone={:rose}
-          href={~p"/sign_out"}
-          method="delete"
-          class="mt-2 w-full"
-        >
-          Sign out
-        </.button>
-      </div>
-    </.auth_layout>
-    """
-  end
-
-  def render(%{state: :member_only} = assigns) do
-    ~H"""
-    <.auth_layout title="Sign in with your invited email">
-      <div class="space-y-4 text-sm text-zinc-300">
-        <p>
-          This invitation is for <span class="font-mono text-zinc-100">{@membership.email}</span>, but
-          this browser is signed in to a workspace through single sign-on, without a personal login.
-        </p>
-        <p class="text-zinc-400">
-          Sign out, then reopen this invitation from your email to sign in or sign up with that address.
-        </p>
-
-        <.button
-          variant={:secondary}
-          tone={:rose}
-          href={~p"/sign_out"}
-          method="delete"
-          class="mt-2 w-full"
-        >
-          Sign out
-        </.button>
-      </div>
-    </.auth_layout>
-    """
-  end
-
   # IL-15: the rendered branch is not the gate. A crafted push can name any
   # event from any state, so each handler declares the state it belongs to and
   # everything else is a no-op — an unavailable invitation has no `membership`,
-  # `token` or `form` assigned at all. Signed-in acceptance is an HTTP form;
-  # its controller and context recheck the invitation and same-user boundary.
+  # `token` or `form` assigned at all. The handlers write nothing; the code
+  # request and its completion recheck the invitation under their locks.
   def handle_event(
         "validate",
         %{"member" => params} = event,
-        %{assigns: %{state: :anonymous}} = socket
+        %{assigns: %{state: :name_form}} = socket
       ) do
     changeset =
       socket.assigns.membership
@@ -252,7 +149,7 @@ defmodule EmisarWeb.AcceptInvitationLive do
   # Checks the name and that the invitation is still pending, and writes
   # nothing: the form then asks for the invited address's code, and only using
   # that code in this browser accepts.
-  def handle_event("accept", %{"member" => attrs}, %{assigns: %{state: :anonymous}} = socket) do
+  def handle_event("accept", %{"member" => attrs}, %{assigns: %{state: :name_form}} = socket) do
     case Accounts.prepare_invitation_acceptance(socket.assigns.token, attrs) do
       {:ok, _address, _intent} ->
         {:noreply, assign(socket, :trigger_submit, true)}
@@ -270,10 +167,6 @@ defmodule EmisarWeb.AcceptInvitationLive do
   end
 
   def handle_event(_event, _params, socket), do: {:noreply, socket}
-
-  @doc "Copy for an invitation whose address already belongs to a member of that workspace."
-  def already_member_message,
-    do: "That email address already belongs to a member of this workspace. Sign in to open it."
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "member"))

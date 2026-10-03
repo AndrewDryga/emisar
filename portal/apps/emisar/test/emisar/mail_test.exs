@@ -14,7 +14,13 @@ defmodule Emisar.MailTest do
   alias Emisar.Runs
 
   defp member_for(subject),
-    do: Fixtures.Memberships.fetch_membership(subject.account.id, subject.actor.id)
+    do: Repo.reload!(subject.actor)
+
+  # A Member with its workspace, for the mails that name the workspace.
+  defp member_and_account do
+    {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+    %{member: owner, account: account}
+  end
 
   describe "suppressed?/1" do
     test "reports a suppressed address case-insensitively (citext key)" do
@@ -244,27 +250,42 @@ defmodule Emisar.MailTest do
 
   describe "the mailer skips suppressed recipients" do
     setup do
-      %{user: Fixtures.Users.create_user()}
+      member_and_account()
     end
 
-    test "a suppressed address is not sent to", %{user: user} do
-      {:ok, _} = Mail.suppress(user.email, :hard_bounce, "bounce")
+    test "a suppressed address is not sent to", %{member: member, account: account} do
+      {:ok, _} = Mail.suppress(member.email, :hard_bounce, "bounce")
 
-      assert {:ok, %{suppressed: true}} = UserNotifier.deliver_magic_link(user, "tok", "123456")
+      assert {:ok, %{suppressed: true}} =
+               UserNotifier.deliver_magic_link(
+                 member,
+                 "tok",
+                 "123456",
+                 %RequestContext{},
+                 account
+               )
     end
 
-    test "a normal address is delivered, not suppressed", %{user: user} do
-      assert {:ok, _sent} = UserNotifier.deliver_magic_link(user, "tok", "123456")
-      assert_email_sent(&(&1.to == [{"", user.email}]))
+    test "a normal address is delivered, not suppressed", %{member: member, account: account} do
+      assert {:ok, _sent} =
+               UserNotifier.deliver_magic_link(
+                 member,
+                 "tok",
+                 "123456",
+                 %RequestContext{},
+                 account
+               )
+
+      assert_email_sent(&(&1.to == [{"", member.email}]))
     end
   end
 
   describe "workspace-typed names" do
     test "lose bidirectional controls that could reorder the sentence around them" do
-      user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account(name: "Fleet\u202Eops\u2066 Team\u061C 2")
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      UserNotifier.deliver_member_link_code(user, "tok", "ABC234", account, %RequestContext{})
+      UserNotifier.deliver_magic_link(member, "tok", "ABC234", %RequestContext{}, account)
 
       assert_email_sent(fn email ->
         email.text_body =~ "Fleetops Team 2" and
@@ -273,15 +294,9 @@ defmodule Emisar.MailTest do
     end
 
     test "stay out of the billing link code's subject and preview" do
-      user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account(name: "Payroll Refund Desk")
 
-      contact =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
+      contact = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       UserNotifier.deliver_billing_customer_link_code(
         contact,
@@ -297,31 +312,15 @@ defmodule Emisar.MailTest do
     end
   end
 
-  describe "branded return_to threading" do
-    setup do
-      %{user: Fixtures.Users.create_user()}
-    end
-
-    test "deliver_magic_link appends an encoded return_to when given one", %{user: user} do
-      UserNotifier.deliver_magic_link(user, "tok", "ABC234", %RequestContext{}, "/app/acme")
-      assert_email_sent(&(&1.text_body =~ "/sign_in/magic/tok/ABC234?return_to=%2Fapp%2Facme"))
-    end
-
-    test "deliver_magic_link without a return_to is unchanged", %{user: user} do
-      UserNotifier.deliver_magic_link(user, "tok", "ABC234")
-
-      assert_email_sent(
-        &(&1.text_body =~ "/sign_in/magic/tok/ABC234" and not (&1.text_body =~ "return_to"))
-      )
-    end
-  end
-
   describe "magic-link request context" do
     setup do
-      %{user: Fixtures.Users.create_user()}
+      member_and_account()
     end
 
-    test "the sign-in email carries the time, IP, and a friendly device", %{user: user} do
+    test "the sign-in email carries the time, IP, and a friendly device", %{
+      member: member,
+      account: account
+    } do
       context = %RequestContext{
         ip_address: "203.0.113.7",
         user_agent:
@@ -329,7 +328,7 @@ defmodule Emisar.MailTest do
             "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
       }
 
-      UserNotifier.deliver_magic_link(user, "tok", "ABC234", context)
+      UserNotifier.deliver_magic_link(member, "tok", "ABC234", context, account)
 
       assert_email_sent(fn email ->
         email.text_body =~ "REQUEST DETAILS" and
@@ -339,8 +338,11 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    test "omits the lines it has no data for (no IP / unparseable device)", %{user: user} do
-      UserNotifier.deliver_magic_link(user, "tok", "ABC234", %RequestContext{})
+    test "omits the lines it has no data for (no IP / unparseable device)", %{
+      member: member,
+      account: account
+    } do
+      UserNotifier.deliver_magic_link(member, "tok", "ABC234", %RequestContext{}, account)
 
       assert_email_sent(fn email ->
         email.text_body =~ "Time" and not (email.text_body =~ "Device")
@@ -348,67 +350,21 @@ defmodule Emisar.MailTest do
     end
   end
 
-  describe "confirmation email" do
-    setup do
-      %{user: Fixtures.Users.create_user()}
-    end
-
-    test "carries the email, account origin, request context, confirm link, and expiry", %{
-      user: user
-    } do
-      account = Fixtures.Accounts.create_account(name: "Northstar")
-      context = %RequestContext{ip_address: "203.0.113.12"}
-      UserNotifier.deliver_account_confirmation(user, "tok-confirm", account, context)
-
-      assert_email_sent(fn email ->
-        assert email.subject == "Confirm your emisar email"
-        assert email.text_body =~ "/confirm/tok-confirm"
-        assert email.text_body =~ "expires in 7 days"
-        assert email.text_body =~ user.email
-        assert email.text_body =~ "Northstar"
-        assert email.text_body =~ "/app/#{account.slug}"
-        assert email.text_body =~ "203.0.113.12"
-        assert email.text_body =~ "If you didn't request this"
-        assert is_binary(email.html_body)
-        refute email.html_body =~ ">Confirm your emisar email</td>"
-        refute email.html_body =~ "This message was sent by emisar"
-        assert email.html_body =~ ~s(href="http://localhost/app/#{account.slug}")
-        refute email.html_body =~ ">Requested from<"
-
-        [message, details] = String.split(email.text_body, "REQUEST DETAILS", parts: 2)
-        assert message =~ "If you didn't request this"
-        assert details =~ "203.0.113.12"
-        true
-      end)
-    end
-
-    test "skips a suppressed recipient", %{user: user} do
-      {:ok, _} = Mail.suppress(user.email, :hard_bounce, "bounce")
-
-      assert {:ok, %{suppressed: true}} =
-               UserNotifier.deliver_account_confirmation(user, "tok")
-    end
-
-    test "escapes the linked account name", %{user: user} do
-      account = Fixtures.Accounts.create_account(name: "Northstar <script>alert(1)</script>")
-
-      UserNotifier.deliver_account_confirmation(user, "tok-confirm", account)
-
-      assert_email_sent(fn email ->
-        assert email.html_body =~ "Northstar &lt;script&gt;alert(1)&lt;/script&gt;"
-        refute email.html_body =~ "<script>alert(1)</script>"
-        true
-      end)
-    end
-  end
-
   describe "magic-link email content" do
-    test "carries the subject, link, the code, and a 15-minute expiry" do
-      user = Fixtures.Users.create_user()
-      UserNotifier.deliver_magic_link(user, "tok-magic", "ABC234")
+    setup do
+      member_and_account()
+    end
+
+    test "carries the subject, workspace, link, the code, and a 15-minute expiry", %{
+      member: member,
+      account: account
+    } do
+      UserNotifier.deliver_magic_link(member, "tok-magic", "ABC234", %RequestContext{}, account)
 
       assert_email_sent(fn email ->
         assert email.subject == "Your emisar sign-in code"
+        assert email.text_body =~ "Use this code to sign in to #{account.name}"
+        refute email.subject =~ account.name
         assert email.text_body =~ "/sign_in/magic/tok-magic/ABC234"
         assert email.text_body =~ "ABC234"
         assert email.text_body =~ "15 minutes"
@@ -423,9 +379,11 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    test "uses the shared multipart reply path without provider tracking" do
-      user = Fixtures.Users.create_user()
-      UserNotifier.deliver_magic_link(user, "tok-magic", "ABC234")
+    test "uses the shared multipart reply path without provider tracking", %{
+      member: member,
+      account: account
+    } do
+      UserNotifier.deliver_magic_link(member, "tok-magic", "ABC234", %RequestContext{}, account)
 
       assert_email_sent(fn email ->
         assert is_binary(email.text_body)
@@ -437,11 +395,10 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    test "escapes request context in the HTML alternative" do
-      user = Fixtures.Users.create_user()
+    test "escapes request context in the HTML alternative", %{member: member, account: account} do
       context = %RequestContext{ip_address: ~s|<script>alert("x")</script>|}
 
-      UserNotifier.deliver_magic_link(user, "tok-magic", "ABC234", context)
+      UserNotifier.deliver_magic_link(member, "tok-magic", "ABC234", context, account)
 
       assert_email_sent(fn email ->
         assert email.html_body =~ "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"
@@ -451,78 +408,60 @@ defmodule Emisar.MailTest do
     end
   end
 
+  describe "sign-up email content" do
+    test "greets the address alone and carries the code, the link and the expiry" do
+      context = %RequestContext{ip_address: "203.0.113.9"}
+
+      UserNotifier.deliver_sign_up_code(
+        "new-owner@example.test",
+        "tok-sign-up",
+        "ABC234",
+        context
+      )
+
+      assert_email_sent(fn email ->
+        assert email.to == [{"", "new-owner@example.test"}]
+        assert email.subject == "Your emisar sign-up code"
+        assert email.text_body =~ "finish creating your emisar workspace"
+        assert email.text_body =~ "/sign_in/magic/tok-sign-up/ABC234"
+        assert email.text_body =~ "ABC234"
+        assert email.text_body =~ "15 minutes"
+        assert email.text_body =~ "203.0.113.9"
+        assert email.text_body =~ "If you didn't sign up for emisar"
+        true
+      end)
+    end
+
+    test "skips a suppressed address" do
+      {:ok, _} = Mail.suppress("bounced@example.test", :hard_bounce, "bounce")
+
+      assert {:ok, %{suppressed: true}} =
+               UserNotifier.deliver_sign_up_code(
+                 "bounced@example.test",
+                 "tok",
+                 "ABC234",
+                 %RequestContext{}
+               )
+    end
+  end
+
   describe "security verification codes" do
     setup do
+      account = Fixtures.Accounts.create_account(name: "Northstar")
+
       %{
-        user: Fixtures.Users.create_user(),
-        account: Fixtures.Accounts.create_account(name: "Northstar"),
+        member: Fixtures.Memberships.create_membership(account_id: account.id),
+        account: account,
         context: %RequestContext{ip_address: "203.0.113.9", user_agent: "Firefox/140 Linux"}
       }
     end
 
-    test "new-address proof requires a code in the initiating browser, not an automatic link", %{
-      user: user,
-      account: account,
-      context: context
-    } do
-      UserNotifier.deliver_new_email_code(user, "ABC234", account, context)
-
-      assert_email_sent(fn email ->
-        assert email.text_body =~ "#{user.email}"
-        assert email.text_body =~ "Your sign-in email has not changed yet."
-        assert email.text_body =~ "works once and expires in 15 minutes"
-        assert email.text_body =~ "browser where you requested"
-        assert email.text_body =~ "ABC234"
-        refute email.text_body =~ "/confirm/"
-        true
-      end)
-    end
-
-    test "the email-change code names the proposed address and request context", %{
-      user: user,
-      account: account,
-      context: context
-    } do
-      UserNotifier.deliver_email_change_code(
-        user,
-        "ABC234",
-        "new@example.com",
-        context,
-        account
-      )
-
-      assert_email_sent(fn email ->
-        assert email.subject == "Confirm your sign-in email change"
-        assert email.text_body =~ "ABC234"
-        assert email.text_body =~ "new@example.com"
-        assert email.text_body =~ "203.0.113.9"
-        assert email.text_body =~ "Firefox on Linux"
-
-        assert email.text_body =~
-                 "change your emisar sign-in email for Northstar (http://localhost/app/#{account.slug})"
-
-        refute email.text_body =~ "Requested from:"
-        [message, details] = String.split(email.text_body, "REQUEST DETAILS", parts: 2)
-        assert message =~ "Your sign-in email will stay the same."
-        assert details =~ "203.0.113.9"
-        assert is_binary(email.html_body)
-
-        assert email.html_body =~
-                 ~s(href="http://localhost/app/#{account.slug}" target="_top" style="color:#{Style.brand()};font-weight:600;text-decoration:underline;text-underline-offset:2px;">Northstar</a>)
-
-        assert email.html_body =~
-                 ~s(New sign-in email: <strong style="font-weight:700;color:#{Style.ink()};">new@example.com</strong>.)
-
-        true
-      end)
-    end
-
     test "the authenticator code says what it authorizes and when it expires", %{
-      user: user,
+      member: member,
       account: account,
       context: context
     } do
-      UserNotifier.deliver_mfa_enrollment_code(user, "XYZ789", context, account)
+      UserNotifier.deliver_mfa_enrollment_code(member, "XYZ789", context, account)
 
       assert_email_sent(fn email ->
         assert email.subject == "Confirm authenticator setup"
@@ -546,19 +485,18 @@ defmodule Emisar.MailTest do
 
   describe "invitation email" do
     setup do
-      %{invitee: Fixtures.Users.create_user()}
+      %{invitee_email: Fixtures.Random.unique_email()}
     end
 
     test "names the inviter and workspace and carries role, scope, expiry, and accept link", %{
-      invitee: invitee
+      invitee_email: invitee_email
     } do
       account = Fixtures.Accounts.create_account(name: "Globex")
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: invitee.id,
-          email: invitee.email,
+          email: invitee_email,
           role: "operator"
         )
 
@@ -584,14 +522,13 @@ defmodule Emisar.MailTest do
       end)
     end
 
-    test "renders an explicitly supplied local contact label", %{invitee: invitee} do
+    test "renders an explicitly supplied local contact label", %{invitee_email: invitee_email} do
       account = Fixtures.Accounts.create_account(name: "Globex")
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: invitee.id,
-          email: invitee.email
+          email: invitee_email
         )
 
       UserNotifier.deliver_account_invitation(membership, "work@example.test", account, "tok")
@@ -599,17 +536,16 @@ defmodule Emisar.MailTest do
       assert_email_sent(&(&1.text_body =~ "work@example.test"))
     end
 
-    test "skips a suppressed invitee", %{invitee: invitee} do
+    test "skips a suppressed invitee", %{invitee_email: invitee_email} do
       account = Fixtures.Accounts.create_account()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: invitee.id,
-          email: invitee.email
+          email: invitee_email
         )
 
-      {:ok, _} = Mail.suppress(invitee.email, :spam_complaint, "complaint")
+      {:ok, _} = Mail.suppress(invitee_email, :spam_complaint, "complaint")
 
       assert {:ok, %{suppressed: true}} =
                UserNotifier.deliver_account_invitation(
@@ -623,20 +559,14 @@ defmodule Emisar.MailTest do
 
   describe "approval-needed email content" do
     setup do
-      approver = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: approver.id,
-          role: "owner"
-        )
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       %{
         account: account,
-        approver: approver,
-        subject: Fixtures.Subjects.membership_subject(membership)
+        approver: membership,
+        subject: Fixtures.Subjects.subject_for(membership)
       }
     end
 

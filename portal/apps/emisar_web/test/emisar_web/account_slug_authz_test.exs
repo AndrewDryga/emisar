@@ -1,25 +1,25 @@
 defmodule EmisarWeb.AccountSlugAuthzTest do
   @moduledoc """
-  The account slug in `/app/:account_id_or_slug/...` is a cross-account authz
-  input. Every authenticated mount resolves + authorizes it from the URL (the
-  conn plug for the dead render, the `:ensure_account_slug` on_mount for the live
-  view): a non-member or unknown slug 404s — indistinguishable, so a URL never
-  confirms a tenant exists (404, never 403, no leak). Bare `/app` forwards to the
-  user's account; a member's deep link opens.
+  The workspace in `/app/:account_id_or_slug/...` comes from the URL, and only
+  this browser's session for that workspace authenticates it (the plug for the
+  dead render, the `:ensure_authenticated` on_mount for the live view). An
+  unknown slug 404s; a real workspace without a live session here goes to that
+  workspace's sign-in — never to another workspace's data. Bare `/app` picks
+  among the signed-in workspaces.
   """
   use EmisarWeb.ConnCase, async: true
 
-  describe "slug-scoped tenant routes" do
-    test "a member reaches their own account's slugged pages", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+  describe "slug-scoped workspace routes" do
+    test "a Member reaches its own workspace's pages, by slug or id", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
 
       assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account}/runners")
-      # The slug also resolves by the account id (the API/SSO/redirect form).
+      # The slug also resolves by the workspace id (the API/SSO/redirect form).
       assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account.id}/runners")
     end
 
-    test "shared account topics have one subscription per live socket", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "shared workspace topics have one subscription per live socket", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       for path <- [
@@ -43,243 +43,165 @@ defmodule EmisarWeb.AccountSlugAuthzTest do
       end
     end
 
-    for change <- [:role, :directory_pending, :replacement_membership] do
-      test "a scope event remounts instead of accepting #{change}", %{conn: conn} do
-        {conn, user, account} = register_and_log_in(conn)
-        membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-        Fixtures.Memberships.force_role(membership, "admin")
+    for change <- [:role, :directory_pending, :removed] do
+      test "a scope event remounts instead of accepting a #{change} Member", %{conn: conn} do
+        {conn, owner, account} = register_and_log_in(conn)
+        Fixtures.Memberships.force_role(owner, "admin")
         {:ok, view, _html} = live(conn, ~p"/app/#{account}/runs")
 
         case unquote(change) do
           :role ->
-            Fixtures.Memberships.force_role(membership, "viewer")
+            Fixtures.Memberships.force_role(owner, "viewer")
 
           :directory_pending ->
-            membership
-            |> Ecto.Changeset.change(directory_authorization_pending_version: 1)
-            |> Emisar.Repo.update!()
+            Fixtures.Memberships.mark_directory_authorization_pending(owner, 1)
 
-          :replacement_membership ->
-            membership
-            |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
-            |> Emisar.Repo.update!()
-
+          :removed ->
+            Fixtures.Memberships.mark_membership_as_deleted(owner)
+            # A new seat for the same address is another Member, not this one.
             Fixtures.Memberships.create_membership(
               account_id: account.id,
-              user_id: user.id,
+              email: owner.email,
               role: "admin"
             )
         end
 
-        send(view.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
+        send(view.pid, {:list_changed, :team, "membership.runner_access_changed", owner.id})
         assert_redirect(view, ~p"/app/#{account}")
       end
     end
 
-    test "a non-member's slug 404s — same as an unknown slug, so neither leaks", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-
-      # A real, populated account the logged-in user has no membership in.
-      other = Fixtures.Accounts.create_account()
-
-      assert_error_sent 404, fn -> get(conn, ~p"/app/#{other}/runners") end
-      assert_error_sent 404, fn -> get(conn, ~p"/app/no-such-team/runners") end
-      # A deep link is no different — the gate runs on every mount, not just the index.
-      assert_error_sent 404, fn -> get(conn, ~p"/app/#{other}/audit/#{Ecto.UUID.generate()}") end
-    end
-
-    test "a member's slug 404s until this browser holds a grant for it", %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
-      later = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: later.id, user_id: user.id)
-
-      assert_error_sent 404, fn -> get(conn, ~p"/app/#{later}/runners") end
-      assert {:ok, _lv, _html} = conn |> log_in_user(user) |> live(~p"/app/#{later}/runners")
-    end
-
-    test "a signed-out mount of a slug LV redirects to sign-in BEFORE slug resolution", %{
+    test "a workspace without a session here goes to its sign-in; an unknown slug 404s", %{
       conn: conn
     } do
-      # `:ensure_account_slug` is composed AFTER
-      # `:ensure_authenticated`, so a signed-out visitor is bounced to /sign_in (with
-      # a return_to) before the slug is ever resolved. The result is a sign-in
-      # redirect, NOT the 404 a signed-in non-member would get — the gate order
-      # means an anonymous user never reaches the tenant-existence check.
+      {conn, _owner, _account} = register_and_log_in(conn)
+      # A real, populated workspace this browser has no session for.
+      {_conn_b, _owner_b, other} = register_and_log_in(build_conn())
+
+      for path <- [
+            ~p"/app/#{other}/runners",
+            ~p"/app/#{other}/runs",
+            # A deep link is no different: the gate runs on every request.
+            ~p"/app/#{other}/audit/#{Ecto.UUID.generate()}"
+          ] do
+        refused = get(conn, path)
+        assert redirected_to(refused) == ~p"/app/#{other}/sign_in"
+      end
+
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{other}/runners")
+      assert to == ~p"/app/#{other}/sign_in"
+
+      assert_error_sent 404, fn -> get(conn, ~p"/app/no-such-team/runners") end
+    end
+
+    test "the same person's Member elsewhere needs its own sign-in there", %{conn: conn} do
+      {conn, owner, _account} = register_and_log_in(conn)
+      later = Fixtures.Accounts.create_account()
+
+      later_member =
+        Fixtures.Memberships.create_membership(account_id: later.id, email: owner.email)
+
+      assert redirected_to(get(conn, ~p"/app/#{later}/runners")) == ~p"/app/#{later}/sign_in"
+
+      assert {:ok, _lv, _html} =
+               conn |> log_in_member(later_member) |> live(~p"/app/#{later}/runners")
+    end
+
+    test "an anonymous mount of a workspace page goes to that workspace's sign-in", %{
+      conn: conn
+    } do
       account = Fixtures.Accounts.create_account()
 
-      assert {:error, {:redirect, %{to: "/sign_in"}}} =
-               live(conn, ~p"/app/#{account}/runners")
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/runners")
+      assert to == ~p"/app/#{account}/sign_in"
     end
 
-    test "a member of account A cannot reach account B's slug (cross-account)", %{conn: conn} do
-      {conn, _user, _account_a} = register_and_log_in(conn)
-
-      # B belongs to someone else; A's member is not in it.
-      {_conn_b, _user_b, account_b} = register_and_log_in(build_conn())
-
-      assert_error_sent 404, fn -> get(conn, ~p"/app/#{account_b}/runs") end
-    end
-
-    test "bare /app forwards to the user's account slug", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+    test "bare /app forwards to the only signed-in workspace", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
 
       assert redirected_to(get(conn, ~p"/app")) == ~p"/app/#{account}"
     end
 
-    test "a cross-slug live_patch 404s — the mounted subject can't drift tenants", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      # B belongs to someone else; A's member is not in it.
-      {_conn_b, _user_b, account_b} = register_and_log_in(build_conn())
+    test "a cross-slug live_patch 404s — the mounted subject can't drift workspaces", %{
+      conn: conn
+    } do
+      {conn, _owner, account} = register_and_log_in(conn)
+      # B is signed in from the same browser, so only the guard stands between.
+      {conn, _owner_b, account_b} = register_and_log_in(conn)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
-
-      # A same-account patch (e.g. a filter change) is unaffected by the guard.
       assert render_patch(lv, ~p"/app/#{account}/runners") =~ "Runners"
 
-      # A patch swapping the URL's account ref without a remount keeps the
-      # account-A subject — the handle_params guard raises NotFoundError (a 404),
-      # crashing the view, rather than serve B's path under A's authorization.
+      # A patch swapping the URL's workspace without a remount keeps the A
+      # subject — the handle_params guard raises NotFoundError (a 404), crashing
+      # the view, rather than serve B's path under A's authorization.
       Process.flag(:trap_exit, true)
 
       assert {{%EmisarWeb.NotFoundError{}, _stacktrace}, _call} =
                catch_exit(render_patch(lv, ~p"/app/#{account_b}/runners"))
     end
 
-    test "a same-account live_patch by the id form continues — the alternate ref matches", %{
-      conn: conn
-    } do
-      # (id branch) — `ensure_slug_unchanged` accepts the ref
-      # whether it's the account slug OR its id (`ref == account.id or
-      # account.slug`). Mount by slug, patch to the id form of the SAME account:
-      # the guard's `account.id` branch matches, so the patch continues, no 404.
-      {conn, _user, account} = register_and_log_in(conn)
-
+    test "a same-workspace live_patch by the id form continues", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
 
       assert render_patch(lv, ~p"/app/#{account.id}/runners") =~ "Runners"
     end
 
-    test "the subject is re-scoped to the URL account, not the session-pinned one", %{conn: conn} do
-      # the slug gate re-resolves the tenant from the URL on
-      # every mount and OVERWRITES the session-pinned account/subject. A session
-      # pinned to A but a URL for held B mounts under B; the URL is the tenant key,
-      # the session pin is never trusted as authorization.
-      {conn, user, account_a} = register_and_log_in(conn)
+    test "with two workspaces in the cookie, the URL picks the session and the subject", %{
+      conn: conn
+    } do
+      {conn, owner_a, account_a} = register_and_log_in(conn)
+      {conn, owner_b, account_b} = register_and_log_in(conn, %{account: %{name: "Bravo"}})
 
-      account_b = Fixtures.Accounts.create_account(%{name: "Bravo Distinct Team"})
-      Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account_b}/runners")
 
-      # Pin the session to A, then request B's slugged page.
-      conn = conn |> log_in_user(user) |> put_session(:current_account_id, account_a.id)
-
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account_b}/runners")
-
-      # current_account drives every slugged nav link, so the active tenant is B
-      # (URL), not A (session pin): B's slug threads the sidebar nav, A's slug is
-      # nowhere. (A surfaces in the workspace switcher by NAME + id, but never as
-      # an /app/<slug> href — that's a POST switch, so its slug can't leak here.)
+      assigns = :sys.get_state(lv.pid).socket.assigns
+      assert assigns.current_membership.id == owner_b.id
+      assert assigns.current_subject.membership_id == owner_b.id
+      refute assigns.current_membership.id == owner_a.id
+      # Every workspace-scoped nav link is B's.
       assert html =~ "/app/#{account_b.slug}/"
       refute html =~ "/app/#{account_a.slug}/"
     end
 
-    test "a suspended membership on the URL slug 404s", %{conn: conn} do
-      # `fetch_membership_by_account_id_or_slug` requires a
-      # non-suspended membership (`not_disabled`), so once the member is suspended
-      # their own slug 404s just like a stranger's: no redirect, no leak.
-      {conn, user, account} = register_and_log_in(conn)
-
-      {1, _} =
-        Emisar.Accounts.Membership.Query.all()
-        |> Emisar.Accounts.Membership.Query.by_account_and_user(account.id, user.id)
-        |> Emisar.Repo.update_all(set: [disabled_at: DateTime.utc_now()])
-
-      assert_error_sent 404, fn -> get(conn, ~p"/app/#{account}/runners") end
-    end
-
-    test "slug refs are re-authorized every request — revoking access mid-session 404s", %{
-      conn: conn
-    } do
-      # the gate runs on every request, not once at sign-in.
-      # The first request to the member's own slug succeeds; after their
-      # membership is revoked the very next request to the same URL 404s.
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "a suspended or removed Member's own slug goes back to sign-in on the next request",
+         %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
       assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account}/runners")
+      Fixtures.Memberships.suspend_membership(owner)
 
-      # Revoke (soft-delete) the membership between the two requests.
-      {1, _} =
-        Emisar.Accounts.Membership.Query.all()
-        |> Emisar.Accounts.Membership.Query.by_account_and_user(account.id, user.id)
-        |> Emisar.Repo.update_all(set: [deleted_at: DateTime.utc_now()])
+      assert redirected_to(get(conn, ~p"/app/#{account}/runners")) == ~p"/app/#{account}/sign_in"
 
-      # The session token still authenticates the user, but the slug gate
-      # re-resolves membership on this request and finds none → 404.
-      assert_error_sent 404, fn -> get(conn, ~p"/app/#{account}/runners") end
+      {conn, removed, removed_account} = register_and_log_in(build_conn())
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
+
+      assert redirected_to(get(conn, ~p"/app/#{removed_account}/runners")) ==
+               ~p"/app/#{removed_account}/sign_in"
     end
   end
 
-  describe "require_authenticated_user plug (non-slug branches)" do
-    test "a no-membership user is redirected to onboarding (not locked out)", %{conn: conn} do
-      # the controller plug for the bare `/app` route, where
-      # the ref is nil: a user with no membership at all isn't a 404 and isn't
-      # logged out — they're steered to /onboarding to create their first
-      # workspace. (The on_mount counterpart is covered in dashboard_live_test.)
-      conn = log_in_user(conn, Fixtures.Users.create_user())
-
+  describe "slugless pages" do
+    test "with no session they go to /sign_in and remember a GET destination", %{conn: conn} do
       conn = get(conn, ~p"/app")
 
-      assert redirected_to(conn) == ~p"/onboarding"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "don't belong to any workspace"
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert get_session(conn, :user_return_to) == ~p"/app"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "You must sign in"
     end
 
-    test "a user whose every membership is suspended reaches recovery without losing their bearer",
-         %{conn: conn} do
-      {conn, user, _account} = register_and_log_in(conn)
-      token = get_session(conn, :user_token)
-
-      {1, _} =
-        Emisar.Accounts.Membership.Query.all()
-        |> Emisar.Accounts.Membership.Query.by_user_id(user.id)
-        |> Emisar.Repo.update_all(set: [disabled_at: DateTime.utc_now()])
+    test "a dead entry among several is pruned and /app forwards to the workspace left", %{
+      conn: conn
+    } do
+      {conn, suspended, _suspended_account} = register_and_log_in(conn)
+      {conn, _owner, live_account} = register_and_log_in(conn)
+      Fixtures.Memberships.suspend_membership(suspended)
 
       conn = get(conn, ~p"/app")
 
-      assert redirected_to(conn) == ~p"/session/recover"
-      assert get_session(conn, :user_token) == token
-      assert {:ok, session} = Emisar.Auth.fetch_session_by_token(token)
-      assert Emisar.Auth.session_membership_ids(session) == []
-
-      assert conn |> recycle() |> get(~p"/session/recover") |> html_response(200) =~
-               "Sign out and sign in again"
-    end
-
-    test "a session pinned to a now-suspended account is silently refreshed to the live primary",
-         %{conn: conn} do
-      # the session caches the active account id. If that
-      # membership is suspended out-of-band, `fetch_membership_for_session` falls
-      # back to the user's latest live membership and `maybe_refresh_account_session`
-      # OVERWRITES the dead session pointer with the resolved one — so subsequent
-      # requests stop re-resolving against the corpse. The user isn't bounced; they
-      # just land on the live account.
-      {conn, user, suspended_account} = register_and_log_in(conn)
-
-      # A second, later-joined account that stays live — the fallback target.
-      live_account = Fixtures.Accounts.create_account(%{name: "Live Fallback Team"})
-      Fixtures.Memberships.create_membership(account_id: live_account.id, user_id: user.id)
-
-      # Pin the session to the first account, then suspend that membership.
-      conn = conn |> log_in_user(user) |> put_session(:current_account_id, suspended_account.id)
-
-      {1, _} =
-        Emisar.Accounts.Membership.Query.all()
-        |> Emisar.Accounts.Membership.Query.by_account_and_user(suspended_account.id, user.id)
-        |> Emisar.Repo.update_all(set: [disabled_at: DateTime.utc_now()])
-
-      conn = get(conn, ~p"/app")
-
-      # Forwarded to the live account, and the stale pointer is rewritten to it.
       assert redirected_to(conn) == ~p"/app/#{live_account}"
-      assert get_session(conn, :current_account_id) == live_account.id
+      assert [{account_id, _token}] = get_session(conn, :sessions)
+      assert account_id == live_account.id
     end
   end
 end

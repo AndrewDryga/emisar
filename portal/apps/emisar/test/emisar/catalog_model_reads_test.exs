@@ -5,7 +5,7 @@ defmodule Emisar.CatalogModelReadsTest do
   setup do
     account = Fixtures.Accounts.create_account()
     membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     %{account: account, subject: subject, membership: membership}
   end
 
@@ -65,7 +65,7 @@ defmodule Emisar.CatalogModelReadsTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       advertise(runner, ["acme"])
       trust_all(subject)
-      {_user, _account, other} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other} = Fixtures.Subjects.owner_subject()
       assert {:ok, %{packs: [], runners: []}} = Catalog.model_inventory(other)
       denied = %{subject | permissions: MapSet.new()}
       observe_queries()
@@ -163,7 +163,7 @@ defmodule Emisar.CatalogModelReadsTest do
           ] do
         membership = Fixtures.Memberships.create_membership(account_id: account.id, role: role)
         Fixtures.Memberships.force_runner_access(membership, access)
-        reader = Fixtures.Subjects.membership_subject(membership)
+        reader = Fixtures.Subjects.subject_for(membership)
         expected = if role == "viewer", do: [], else: executable_packs
         assert {:ok, snapshot} = Catalog.model_catalog(reader)
         assert Enum.map(snapshot.runners, & &1.id) == [runner.id]
@@ -191,7 +191,7 @@ defmodule Emisar.CatalogModelReadsTest do
       end
     end
 
-    test "shared discovery still rejects a stale role and deleted identity", %{
+    test "shared discovery still rejects a stale role and a removed Member", %{
       account: account,
       subject: subject,
       membership: membership
@@ -202,8 +202,12 @@ defmodule Emisar.CatalogModelReadsTest do
       Fixtures.Memberships.force_role(membership, "billing_manager")
       assert Catalog.model_inventory(subject) == {:error, :unauthorized}
       assert Catalog.model_catalog(subject) == {:error, :unauthorized}
-      membership |> Repo.reload!() |> Fixtures.Memberships.force_role("admin")
-      Fixtures.Users.mark_user_as_deleted(subject.actor)
+
+      membership
+      |> Repo.reload!()
+      |> Fixtures.Memberships.force_role("admin")
+      |> Fixtures.Memberships.mark_membership_as_deleted()
+
       assert Catalog.model_inventory(subject) == {:error, :unauthorized}
       assert Catalog.model_catalog(subject) == {:error, :unauthorized}
     end

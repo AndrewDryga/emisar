@@ -13,17 +13,14 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
   setup %{conn: conn} do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "admin"
-      )
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-    subject = Fixtures.Subjects.membership_subject(membership)
-    _policy = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    subject = Fixtures.Subjects.subject_for(user)
+
+    _policy =
+      Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: user.id)
+
     {:ok, raw, key} = ApiKeys.create_key(%{name: "fixed-tools", kind: :mcp}, subject)
 
     {:ok,
@@ -31,7 +28,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
      account: account,
      user: user,
      subject: subject,
-     membership: membership,
+     membership: user,
      key: key,
      raw: raw}
   end
@@ -133,13 +130,13 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   } do
     Fixtures.Runbooks.create_runbook(
       account_id: account.id,
-      created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+      created_by_membership_id: user.id,
       slug: "alpha"
     )
 
     Fixtures.Runbooks.create_runbook(
       account_id: account.id,
-      created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+      created_by_membership_id: user.id,
       slug: "beta"
     )
 
@@ -195,7 +192,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     for slug <- ~w(alpha beta gamma) do
       Fixtures.Runbooks.create_runbook(
         account_id: account.id,
-        created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        created_by_membership_id: user.id,
         slug: slug
       )
     end
@@ -4024,7 +4021,7 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
     Fixtures.Policies.create_policy(
       account_id: account.id,
-      created_by_id: user.id,
+      updated_by_membership_id: user.id,
       rules: rules
     )
 
@@ -4075,16 +4072,14 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
   defp authorize(conn, raw), do: put_req_header(conn, "authorization", "Bearer " <> raw)
 
   defp named_reviewer(account, full_name) do
-    user = Fixtures.Users.create_user(full_name: full_name)
-
     membership =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: user.id,
-        role: "admin"
+        role: "admin",
+        display_name: full_name
       )
 
-    Fixtures.Subjects.membership_subject(membership)
+    Fixtures.Subjects.subject_for(membership)
   end
 
   defp call(conn, name, arguments, operation_id \\ nil) do
@@ -4415,15 +4410,10 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
 
   defp foreign_key_conn do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "owner"
-    )
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user)
     {:ok, raw, _key} = ApiKeys.create_key(%{name: "foreign-tools", kind: :mcp}, subject)
     authorize(build_conn(), raw)
   end

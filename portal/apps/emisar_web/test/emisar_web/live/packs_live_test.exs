@@ -2,12 +2,14 @@ defmodule EmisarWeb.PacksLiveTest do
   use EmisarWeb.ConnCase, async: true
 
   describe "GET /app/packs" do
-    test "redirects anonymous users", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/packs")
+    test "redirects anonymous users to the workspace sign-in", %{conn: conn} do
+      account = Fixtures.Accounts.create_account()
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/packs")
+      assert to == ~p"/app/#{account}/sign_in"
     end
 
     test "renders the empty state when the account has no pack observations", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/packs")
 
       assert html =~ "Packs"
@@ -21,7 +23,7 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "a crafted filter event with non-binary params does not crash the socket", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
       # `name[]=` / `risk[]=` post lists; String.trim/1 would crash the socket.
@@ -31,10 +33,9 @@ defmodule EmisarWeb.PacksLiveTest do
     test "lists workspace packs in full and disables controls outside pack authority", %{
       conn: conn
     } do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
-      account.id
-      |> Fixtures.Memberships.fetch_membership(user.id)
+      owner
       |> Fixtures.Memberships.force_role("admin")
 
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -68,12 +69,10 @@ defmodule EmisarWeb.PacksLiveTest do
           }
         })
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
       {:ok, access} =
         Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme-tools"])
 
-      Fixtures.Memberships.force_runner_access(membership, access)
+      Fixtures.Memberships.force_runner_access(owner, access)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render(lv)
@@ -104,10 +103,9 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "uses the same pack rows when every pack is outside action scope", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
-      account.id
-      |> Fixtures.Memberships.fetch_membership(user.id)
+      owner
       |> Fixtures.Memberships.force_role("admin")
 
       Fixtures.Catalog.create_trusted_pack_version(
@@ -115,12 +113,10 @@ defmodule EmisarWeb.PacksLiveTest do
         pack_id: "hidden-tools"
       )
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
       {:ok, access} =
         Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme-tools"])
 
-      Fixtures.Memberships.force_runner_access(membership, access)
+      Fixtures.Memberships.force_runner_access(owner, access)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
@@ -130,10 +126,9 @@ defmodule EmisarWeb.PacksLiveTest do
     end
 
     test "reading pack contents does not grant permission to trust them", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
-      account.id
-      |> Fixtures.Memberships.fetch_membership(user.id)
+      owner
       |> Fixtures.Memberships.force_role("admin")
 
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -172,12 +167,10 @@ defmodule EmisarWeb.PacksLiveTest do
         |> Emisar.Catalog.PackVersion.Query.by_pack_id("hidden-tools")
         |> Emisar.Repo.one!()
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
       {:ok, access} =
         Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["acme-tools"])
 
-      Fixtures.Memberships.force_runner_access(membership, access)
+      Fixtures.Memberships.force_runner_access(owner, access)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
@@ -199,20 +192,14 @@ defmodule EmisarWeb.PacksLiveTest do
 
   describe "trust decisions" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, user: owner, account: account}
     end
 
     defp persisted_owner_subject(account) do
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      Fixtures.Subjects.subject_for(user, account)
+      Fixtures.Subjects.subject_for(user)
     end
 
     defp observe_pending_pack!(account) do
@@ -357,7 +344,7 @@ defmodule EmisarWeb.PacksLiveTest do
     test "a trusted version exposes a View contents disclosure that lazily lists its actions",
          %{conn: conn, user: user, account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       {:ok, _} =
         Emisar.Catalog.observe_state(runner, %{
@@ -425,7 +412,7 @@ defmodule EmisarWeb.PacksLiveTest do
       account: account
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       {:ok, _} =
         Emisar.Catalog.observe_state(runner, %{
@@ -479,7 +466,7 @@ defmodule EmisarWeb.PacksLiveTest do
       account: account
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       {:ok, _} =
         Emisar.Catalog.observe_state(runner, %{
@@ -640,7 +627,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # advertises zero actions caches `[]` and renders the empty-set copy ("No
       # actions advertised for this version right now."), not a blank panel or a
       # crash. The runner pinned the pack with an empty actions list, then trust it.
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       pack_version = observe_pending_pack!(account)
       {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
@@ -823,7 +810,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # the "Override retirement" CTA all stay off. This locks the overlay
       # against false positives while exercising the `retired_notice` render
       # path on an ordinary row.
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       pack_version = observe_pending_pack!(account)
       {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
@@ -1246,7 +1233,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # Revoking trust in a retired version is the quiet path: rejected already
       # means dispatch-blocked, so stacking a RETIRED marker on it would be
       # noise — the alert (and chip) return only if it's trusted again.
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       {pack_id, _watermark} =
         Emisar.Catalog.PackBaseline.retired_below() |> Enum.sort() |> List.first()
@@ -1275,7 +1262,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # crafted event against a non-retired row still hits the
       # server-authz-gated handler, which stamps the audited override on the
       # trusted row and flashes the confirmation.
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       pack_version = observe_pending_pack!(account)
       {:ok, trusted} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
@@ -1288,17 +1275,10 @@ defmodule EmisarWeb.PacksLiveTest do
     test "a viewer's crafted override-retirement event is denied", %{account: account} do
       pack_version = observe_pending_pack!(account)
 
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/packs")
 
       html = render_click(lv, "override_retirement", %{"id" => pack_version.id})
 
@@ -1310,7 +1290,7 @@ defmodule EmisarWeb.PacksLiveTest do
       user: user,
       account: account
     } do
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       pack_version = observe_pending_pack!(account)
       {:ok, trusted} = Emisar.Catalog.trust_pack_version(pack_version.id, subject)
 
@@ -1340,17 +1320,10 @@ defmodule EmisarWeb.PacksLiveTest do
     test "a viewer's crafted revoke-trust event is denied", %{account: account} do
       pack_version = observe_pending_pack!(account)
 
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/packs")
 
       html = render_click(lv, "revoke_trust", %{"id" => pack_version.id})
 
@@ -1433,7 +1406,7 @@ defmodule EmisarWeb.PacksLiveTest do
       assert html =~ "Removed acme-tools (2 versions) from Packs."
       refute has_element?(lv, "#packs li", "acme-tools")
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       assert {:ok, [], _meta} = Emisar.Catalog.list_pack_versions(subject)
     end
 
@@ -1442,17 +1415,10 @@ defmodule EmisarWeb.PacksLiveTest do
     } do
       pack_version = observe_pending_pack!(account)
 
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/packs")
 
       refute has_element?(
                lv,
@@ -1484,7 +1450,7 @@ defmodule EmisarWeb.PacksLiveTest do
     test "a re-advertised hash shows the action-set DIFF (added critical action) on the re-trust card",
          %{conn: conn, user: user, account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       # Trust v1 (one low action) — snapshots the manifest.
       {:ok, _} =
@@ -1586,7 +1552,7 @@ defmodule EmisarWeb.PacksLiveTest do
     test "a changed row names the descriptor fields that moved, beyond risk and kind",
          %{conn: conn, user: user, account: account} do
       runner = Fixtures.Runners.create_runner(account_id: account.id)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       {:ok, _observed} =
         Emisar.Catalog.observe_state(
@@ -1641,16 +1607,9 @@ defmodule EmisarWeb.PacksLiveTest do
     test "a viewer sees the pack but no Trust/Reject controls", %{account: account} do
       _ = observe_pending_pack!(account)
 
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
-
-      {:ok, lv, _html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+      {:ok, lv, _html} = build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/packs")
       html = render(lv)
 
       assert html =~ "acme-tools"
@@ -1704,17 +1663,10 @@ defmodule EmisarWeb.PacksLiveTest do
       # Trust / Reject buttons are hidden (`subject_can_manage_packs?`).
       _ = observe_pending_pack!(account)
 
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/packs")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/packs")
 
       html = render(lv)
 
@@ -1729,7 +1681,7 @@ defmodule EmisarWeb.PacksLiveTest do
     test "another account's packs never appear on this page", %{conn: conn, account: account} do
       # `list_pack_versions` scopes to the subject's account
       # via `for_subject`, so a foreign account's pending pack is invisible here.
-      {_b_conn, _b_user, b_account} = register_and_log_in(build_conn())
+      {_b_conn, _b_owner, b_account} = register_and_log_in(build_conn())
       b_runner = Fixtures.Runners.create_runner(account_id: b_account.id)
 
       {:ok, _} =
@@ -1800,17 +1752,10 @@ defmodule EmisarWeb.PacksLiveTest do
       # The pending row is untouched.
       pack_version = observe_pending_pack!(account)
 
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/packs")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/packs")
 
       html = render_click(lv, "trust", %{"id" => pack_version.id})
 
@@ -1850,7 +1795,7 @@ defmodule EmisarWeb.PacksLiveTest do
           }
         })
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       {:ok, [pack_version], _meta} = Emisar.Catalog.list_pack_versions(subject)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
@@ -1864,17 +1809,10 @@ defmodule EmisarWeb.PacksLiveTest do
       # (crafted form) — same `manage_catalog` gate, laxest role.
       pack_version = observe_pending_pack!(account)
 
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/packs")
 
       html = render_click(lv, "trust", %{"id" => pack_version.id})
 
@@ -1977,17 +1915,10 @@ defmodule EmisarWeb.PacksLiveTest do
       # "Only owners and admins can reject contents." The pending row survives.
       pack_version = observe_pending_pack!(account)
 
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/packs")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/packs")
 
       html = render_click(lv, "reject", %{"id" => pack_version.id})
 
@@ -2023,8 +1954,8 @@ defmodule EmisarWeb.PacksLiveTest do
 
   describe "live catalog refresh" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, user: owner, account: account}
     end
 
     test "a pack advertised after mount appears without navigation", %{
@@ -2050,8 +1981,8 @@ defmodule EmisarWeb.PacksLiveTest do
 
   describe "automatic cleanup" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, user: owner, account: account}
     end
 
     defp stale_pack_version!(account) do
@@ -2146,7 +2077,7 @@ defmodule EmisarWeb.PacksLiveTest do
         Fixtures.Accounts.set_pack_retention_days(account, 30)
 
       _stale = stale_pack_version!(account)
-      _subject = Fixtures.Subjects.subject_for(user, account)
+      _subject = Fixtures.Subjects.subject_for(user)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
       html = render_click(lv, "cleanup_now", %{})
@@ -2170,17 +2101,10 @@ defmodule EmisarWeb.PacksLiveTest do
 
       stale = stale_pack_version!(account)
 
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/packs")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/packs")
 
       # The schedule they can't set is still ON the page as a value, with the
       # requirement on the lock's tooltip rather than a prose tail.
@@ -2203,22 +2127,15 @@ defmodule EmisarWeb.PacksLiveTest do
       _account =
         Fixtures.Accounts.set_pack_retention_days(account, 30)
 
-      admin = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {:ok, restricted} =
         Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
 
-      Fixtures.Memberships.force_runner_access(membership, restricted)
+      Fixtures.Memberships.force_runner_access(admin, restricted)
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/packs")
+        build_conn() |> log_in_member(admin) |> live(~p"/app/#{account}/packs")
 
       assert html =~ "After 30 days"
       assert html =~ "Only owners and admins with full pack access can change this."
@@ -2234,8 +2151,8 @@ defmodule EmisarWeb.PacksLiveTest do
 
   describe "filtering by action" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       # postgres carries a low + a high action; nginx is low-only — enough for the
@@ -2398,7 +2315,7 @@ defmodule EmisarWeb.PacksLiveTest do
   end
 
   test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
 
     # The payload is the operator's own socket, so this is self-inflicted — but

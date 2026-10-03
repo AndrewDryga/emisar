@@ -17,9 +17,9 @@ defmodule EmisarWeb.JsBundleTest do
     end
 
     test "LiveView pages load the full app.js bundle", %{conn: conn} do
-      # /sign_in is a public LiveView, so its disconnected (dead) render
+      # /sign_up is a public LiveView, so its disconnected (dead) render
       # exercises the on_mount hook → @app_js? → app.js.
-      html = conn |> get(~p"/sign_in") |> html_response(200)
+      html = conn |> get(~p"/sign_up") |> html_response(200)
       assert html =~ "/assets/app.js"
       refute html =~ "/assets/marketing.js"
     end

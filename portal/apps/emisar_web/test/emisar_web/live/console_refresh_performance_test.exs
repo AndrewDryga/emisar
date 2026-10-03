@@ -3,9 +3,9 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
   alias Emisar.Accounts
 
   setup %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-    %{conn: conn, user: user, account: account, runner: runner}
+    %{conn: conn, user: owner, account: account, runner: runner}
   end
 
   test "new runbook defers catalog work until connected and loads the fleet once", %{
@@ -94,13 +94,12 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
     runner: runner
   } do
     {:ok, view, _html} = live(conn, ~p"/app/#{account}/runs")
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
     run =
       Fixtures.Runs.create_run(
         account_id: account.id,
         runner_id: runner.id,
-        initiating_membership_id: membership.id
+        initiating_membership_id: user.id
       )
 
     request = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
@@ -140,8 +139,7 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
     runner: runner
   } do
     membership =
-      account.id
-      |> Fixtures.Memberships.fetch_membership(user.id)
+      user
       |> Fixtures.Memberships.force_role("admin")
 
     run =
@@ -160,8 +158,7 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
 
     {:ok, access} = Accounts.RunnerAccess.restricted(["inaccessible"], [])
 
-    account.id
-    |> Fixtures.Memberships.fetch_membership(user.id)
+    user
     |> Fixtures.Memberships.force_runner_access(access)
 
     send(view.pid, {:recompute_nav_badge, :approvals})
@@ -174,8 +171,7 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
     user: user,
     account: account
   } do
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    Fixtures.Memberships.force_role(membership, "admin")
+    Fixtures.Memberships.force_role(user, "admin")
     {:ok, view, _html} = live(conn, ~p"/app/#{account}/runs?source=operator")
     permission = Emisar.Runs.Authorizer.dispatch_run_permission()
 
@@ -184,7 +180,7 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
     end)
 
     original = :sys.get_state(view.pid).socket.assigns
-    Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.none())
+    Fixtures.Memberships.force_runner_access(user, Accounts.RunnerAccess.none())
 
     assert capture_queries(view.pid, fn ->
              send(
@@ -199,14 +195,17 @@ defmodule EmisarWeb.ConsoleRefreshPerformanceTest do
       capture_queries(view.pid, fn ->
         Emisar.PubSub.broadcast(
           "account:#{account.id}:team",
-          {:list_changed, :team, "membership.runner_access_changed", membership.id}
+          {:list_changed, :team, "membership.runner_access_changed", user.id}
         )
 
         render(view)
       end)
 
-    assert length(queries) == 2
-    assert Enum.count(queries, &String.contains?(&1, "auth_member_grant_routes")) == 1
+    # One read: the session row with its Member and workspace, re-checked by the
+    # per-request predicate.
+    assert [query] = queries
+    assert query =~ "auth_user_tokens"
+    assert query =~ "account_memberships"
     refreshed = :sys.get_state(view.pid).socket.assigns
     assert refreshed.current_subject == original.current_subject
     assert refreshed.current_membership.runner_access_mode == :none

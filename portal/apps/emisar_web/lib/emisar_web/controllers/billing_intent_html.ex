@@ -12,44 +12,34 @@ defmodule EmisarWeb.BillingIntentHTML do
         <form :for={account <- @accounts} action={~p"/app/billing/start"} method="post">
           <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
           <input type="hidden" name="account_id" value={account.id} />
-          <.button type="submit" variant={:secondary} class="w-full justify-between">
-            <span class="min-w-0 text-left">
-              <span class="block truncate">{account.name}</span>
-              <span class="block truncate font-mono text-xs font-normal text-zinc-500">
-                app/{account.slug}
+          <.button type="submit" variant={:secondary} class="w-full">
+            <%!-- A full-width inner row: the button centers its content and a
+                 `justify-between` on it loses to that in CSS order. --%>
+            <span class="flex w-full min-w-0 items-center justify-between gap-3">
+              <span class="min-w-0 text-left">
+                <span class="block truncate">{account.name}</span>
+                <span class="block truncate font-mono text-xs font-normal text-zinc-500">
+                  app/{account.slug}
+                </span>
               </span>
+              <span aria-hidden="true">→</span>
             </span>
-            <span aria-hidden="true">→</span>
           </.button>
         </form>
       </div>
 
       <.empty_state
-        :if={@accounts == [] and not @accounts_error?}
+        :if={@accounts == []}
         variant={:hint}
         icon="product.billing"
         title="No workspaces you can upgrade"
       >
-        You need billing access to upgrade an existing workspace. You can also create a new one.
-      </.empty_state>
-
-      <.empty_state
-        :if={@accounts_error?}
-        variant={:hint}
-        tone={:danger}
-        icon="state.warning"
-        title="Couldn't load your workspaces"
-      >
-        Try again to choose a workspace.
-        <:cta navigate={~p"/app/billing/start"}>Try again</:cta>
+        You need billing access in a workspace you're signed in to. Sign in to that workspace,
+        or create a new one.
       </.empty_state>
 
       <div class="mt-6 space-y-3">
-        <.button
-          href={~p"/onboarding?billing_intent=#{@token}"}
-          variant={:secondary}
-          class="w-full"
-        >
+        <.button href={~p"/sign_up?billing_intent=#{@token}"} variant={:secondary} class="w-full">
           Create a new workspace
         </.button>
         <form action={~p"/app/billing/start/cancel"} method="post">

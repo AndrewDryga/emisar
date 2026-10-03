@@ -5,26 +5,30 @@ defmodule Emisar.Billing.CheckoutsTest do
 
   setup do
     store = Fixtures.Billing.start_provider()
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     {:ok, _customer, account} = Billing.ensure_paddle_customer(account, subject)
     %{account: account, subject: subject, store: store}
   end
 
   test "same facts reuse one payable transaction", %{account: account, subject: subject} do
     assert {:ok, url} = Billing.start_checkout(account, "team", :month, subject)
-    assert URI.decode_query(URI.parse(url).query)["emisar_account_id"] == account.id
-    assert {:ok, ^url} = Billing.start_checkout(account, "team", :month, subject)
+
+    assert Billing.verify_checkout_return(checkout_return(url)) ==
+             {:ok, %{account_id: account.id, transaction_id: intent(account).transaction_id}}
+
+    assert {:ok, resumed} = Billing.start_checkout(account, "team", :month, subject)
+    assert without_checkout_return(resumed) == without_checkout_return(url)
     assert_received {:paddle, :create, _attrs, _caller}
     refute_received {:paddle, :create, _attrs, _caller}
     assert intent(account).state == :payable
   end
 
-  test "fresh and resumed URLs preserve provider parameters and replace only the origin hint", %{
+  test "fresh and resumed URLs preserve provider parameters and replace only the return state", %{
     account: account,
     subject: subject
   } do
     provider_url =
-      "https://checkout.example.test/?_ptxn=txn_review&extra=a%20b&extra=c&emisar_account_id=wrong&emisar%5Faccount_id=also-wrong#payment"
+      "https://checkout.example.test/?_ptxn=txn_review&extra=a%20b&extra=c&emisar_return=forged&emisar%5Freturn=also-forged#payment"
 
     Config.put_override(:emisar, :billing_test_after_call, fn
       :create, _args, {:ok, transaction} ->
@@ -39,11 +43,16 @@ defmodule Emisar.Billing.CheckoutsTest do
         result
     end)
 
-    expected =
-      "https://checkout.example.test/?_ptxn=txn_review&extra=a%20b&extra=c&emisar_account_id=#{account.id}#payment"
+    expected = "https://checkout.example.test/?_ptxn=txn_review&extra=a%20b&extra=c#payment"
 
-    assert {:ok, ^expected} = Billing.start_checkout(account, "team", :month, subject)
-    assert {:ok, ^expected} = Billing.start_checkout(account, "team", :month, subject)
+    for _attempt <- 1..2 do
+      assert {:ok, url} = Billing.start_checkout(account, "team", :month, subject)
+      assert without_checkout_return(url) == expected
+
+      assert Billing.verify_checkout_return(checkout_return(url)) ==
+               {:ok, %{account_id: account.id, transaction_id: intent(account).transaction_id}}
+    end
+
     assert intent(account).checkout_url == provider_url
     assert_received {:paddle, :create, _attrs, _caller}
     refute_received {:paddle, :create, _attrs, _caller}
@@ -158,7 +167,10 @@ defmodule Emisar.Billing.CheckoutsTest do
     })
 
     assert {:ok, url} = Billing.start_checkout(account, "team", :month, subject)
-    assert url == "https://checkout.example.test/recovered?emisar_account_id=#{account.id}"
+    assert without_checkout_return(url) == "https://checkout.example.test/recovered"
+
+    assert Billing.verify_checkout_return(checkout_return(url)) ==
+             {:ok, %{account_id: account.id, transaction_id: pending.transaction_id}}
 
     assert_received {:paddle, :create, _attrs, _caller}
     refute_received {:paddle, :create, _attrs, _caller}
@@ -435,5 +447,20 @@ defmodule Emisar.Billing.CheckoutsTest do
     |> CheckoutIntent.Query.by_account_id()
     |> CheckoutIntent.Query.pending()
     |> Repo.peek()
+  end
+
+  defp checkout_return(url), do: URI.decode_query(URI.parse(url).query)["emisar_return"]
+
+  # The signed return is minted per hand-out; the rest is the provider's URL.
+  defp without_checkout_return(url) do
+    uri = URI.parse(url)
+
+    query =
+      uri.query
+      |> String.split("&", trim: true)
+      |> Enum.reject(&String.starts_with?(&1, "emisar_return="))
+      |> Enum.join("&")
+
+    URI.to_string(%{uri | query: if(query == "", do: nil, else: query)})
   end
 end

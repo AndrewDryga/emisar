@@ -15,7 +15,7 @@ defmodule Emisar.Audit.Events do
   alias Emisar.Audit
   alias Emisar.Auth.Subject
   alias Emisar.RequestContext
-  alias Emisar.{Runbooks, Runners, Runs, SafeText, SSO, Users}
+  alias Emisar.{Runbooks, Runners, Runs, SafeText, SSO}
 
   # Staff access renders to the CUSTOMER as the team, never the employee: this
   # label keeps a support engineer's identity out of the customer's own audit
@@ -307,92 +307,6 @@ defmodule Emisar.Audit.Events do
       pack_mode: to_string(access.pack_mode),
       pack_ids: access.pack_ids
     }
-  end
-
-  # Self-service, but still subject-carried: the operator's session provenance
-  # and request context belong on the row like every other event. The row lives
-  # in the account they switched INTO, so its Member there is both actor and
-  # target — never the Member of the workspace they left.
-  # The row records how the destination was reached, its own route on this
-  # bearer, not how the workspace being left was.
-  def session_account_switched(
-        %Subject{} = subject,
-        %Accounts.Membership{} = membership,
-        destination
-      ) do
-    Audit.changeset(
-      membership.account_id,
-      "session.account_switched",
-      Keyword.merge(actor(subject),
-        actor_kind: "membership",
-        actor_id: membership.id,
-        auth_method: format_auth_method(destination[:auth_method]),
-        mfa: Keyword.get(destination, :mfa, false),
-        user_identity_id: destination[:user_identity_id]
-      ) ++
-        [
-          target_kind: "membership",
-          target_id: membership.id,
-          target_label: Accounts.member_display_name(membership),
-          payload: %{role: membership.role}
-        ]
-    )
-  end
-
-  # Self-service accept (no Subject): the accepting Member is both the actor
-  # and the target.
-  def membership_invitation_accepted(%Accounts.Membership{} = membership) do
-    Audit.changeset(membership.account_id, "membership.invitation_accepted",
-      actor_kind: "membership",
-      actor_id: membership.id,
-      target_kind: "membership",
-      target_id: membership.id,
-      payload: %{role: membership.role}
-    )
-  end
-
-  # A Member without a personal login linked one: from the Member's own SSO
-  # session the person proved the login's mailbox and any factor it already had.
-  # The Member is both the actor and the target.
-  def membership_personal_login_linked(
-        %Accounts.Membership{} = membership,
-        %RequestContext{} = context,
-        mfa?
-      )
-      when is_boolean(mfa?) do
-    Audit.changeset(membership.account_id, "membership.personal_login_linked",
-      actor_kind: "membership",
-      actor_id: membership.id,
-      target_kind: "membership",
-      target_id: membership.id,
-      target_label: Accounts.member_display_name(membership),
-      auth_method: "magic_link",
-      mfa: mfa?,
-      context: context
-    )
-  end
-
-  @doc """
-  A person detached their personal login from this Member, which now signs in
-  only through workspace SSO. Only the request id is kept from the request, so
-  the workspace learns nothing about where the person signed in from.
-  """
-  def membership_personal_login_detached(
-        %Accounts.Membership{} = membership,
-        %RequestContext{} = context,
-        mfa?
-      )
-      when is_boolean(mfa?) do
-    Audit.changeset(membership.account_id, "membership.personal_login_detached",
-      actor_kind: "membership",
-      actor_id: membership.id,
-      target_kind: "membership",
-      target_id: membership.id,
-      target_label: Accounts.member_display_name(membership),
-      auth_method: "magic_link",
-      mfa: mfa?,
-      context: %RequestContext{request_id: context.request_id}
-    )
   end
 
   # -- User ------------------------------------------------------------
@@ -1760,35 +1674,49 @@ defmodule Emisar.Audit.Events do
   # -- SSO -------------------------------------------------------------
 
   @doc """
-  An SSO proof signed this Member in to its workspace. One row per workspace the
-  proof granted, each naming that workspace's Member; the personal login and
-  workspaces the proof did not reach record nothing.
+  A security event of one Member's own sign-in or session — `user.signed_in`,
+  `user.signed_out`, `user.session_revoked`, a code issued or refused. No
+  Subject exists, or the Subject is the Member itself: the Member is both the
+  actor and the target, in its own workspace, and `context` is the request that
+  caused it. `payload` carries only facts safe for that workspace.
   """
-  def member_signed_in_via_sso(%Accounts.Membership{} = member, %RequestContext{} = context) do
-    Audit.changeset(member.account_id, "user.signed_in",
+  def member_security_event(
+        %Accounts.Membership{} = member,
+        event_type,
+        %RequestContext{} = context,
+        payload \\ %{}
+      )
+      when is_binary(event_type) and is_map(payload) do
+    Audit.changeset(member.account_id, event_type,
       actor_kind: "membership",
       actor_id: member.id,
       target_kind: "membership",
       target_id: member.id,
       target_label: Accounts.member_display_name(member),
       context: context,
-      payload: %{method: "sso"}
+      payload: payload
     )
   end
 
   @doc """
-  A member-only SSO session signed out. One row per Member the session held,
-  mirroring its sign-in; a session with a personal login audits through
-  `Audit.user_changesets/3`.
+  An invitee bound their identity at this provider to the invited Member while
+  accepting the invitation through it. No Subject exists yet: the invited Member
+  is both the actor and the target.
   """
-  def member_signed_out(%Accounts.Membership{} = member, %RequestContext{} = context) do
-    Audit.changeset(member.account_id, "user.signed_out",
+  def invitee_identity_linked(
+        %Accounts.Membership{} = member,
+        %SSO.IdentityProvider{} = provider,
+        %RequestContext{} = context
+      ) do
+    Audit.changeset(provider.account_id, "sso.identity_linked",
       actor_kind: "membership",
       actor_id: member.id,
       target_kind: "membership",
       target_id: member.id,
       target_label: Accounts.member_display_name(member),
-      context: context
+      auth_method: "sso",
+      context: context,
+      payload: %{provider_id: provider.id, provider_kind: to_string(provider.kind)}
     )
   end
 
@@ -2543,12 +2471,9 @@ defmodule Emisar.Audit.Events do
       context: subject.context
     ]
 
-  # A person is recorded as the exact Member they acted as, never the personal
-  # login behind it. An API key also carries its creator's Member for runner
-  # scope, but the key itself stays the actor.
-  defp audit_actor_id(%Subject{actor: %Users.User{}} = subject),
-    do: Subject.human_membership_id(subject)
-
+  # A person is recorded as the exact Member they acted as. An API key also
+  # carries its creator's Member for runner scope, but the key itself stays the
+  # actor.
   defp audit_actor_id(%Subject{actor: %Accounts.Membership{}} = subject),
     do: Subject.human_membership_id(subject)
 

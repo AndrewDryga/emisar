@@ -5,7 +5,6 @@ defmodule Emisar.ApiKeysDeviceGrantConcurrencyTest do
   alias Emisar.{Accounts, ApiKeys, Fixtures, Repo, RequestContext}
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.ApiKeys.{ApiKey, DeviceGrant}
-  alias Emisar.Users.User
 
   @moduletag timeout: 60_000
 
@@ -139,25 +138,29 @@ defmodule Emisar.ApiKeysDeviceGrantConcurrencyTest do
   defp unboxed_device_grant(fun) do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
-      owner = Fixtures.Users.create_user(%{email: "grant-owner-#{suffix}@example.test"})
 
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "Device grant #{suffix}", slug: "device-grant-#{suffix}"},
-          owner
+      account =
+        Fixtures.Accounts.create_account(
+          name: "Device grant #{suffix}",
+          slug: "device-grant-#{suffix}"
         )
 
-      member = Fixtures.Users.create_user(%{email: "grant-member-#{suffix}@example.test"})
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "grant-owner-#{suffix}@example.test"
+        )
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.id,
-          role: "operator"
+          role: "operator",
+          email: "grant-member-#{suffix}@example.test"
         )
 
-      owner_subject = Fixtures.Subjects.subject_for(owner, account)
-      member_subject = Fixtures.Subjects.membership_subject(membership)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
+      member_subject = Fixtures.Subjects.subject_for(membership)
 
       {:ok, device_code, _user_code, pending_grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -174,7 +177,6 @@ defmodule Emisar.ApiKeysDeviceGrantConcurrencyTest do
         })
       after
         Repo.delete_all(from(stored in Account, where: stored.id == ^account.id))
-        Repo.delete_all(from(stored in User, where: stored.id in ^[owner.id, member.id]))
         Repo.delete_all(from(stored in DeviceGrant, where: stored.id == ^grant.id))
       end
     end)

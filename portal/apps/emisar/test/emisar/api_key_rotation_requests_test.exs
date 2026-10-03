@@ -6,10 +6,13 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
 
   describe "request_api_key_rotation/2" do
     test "requested early rotation survives lost acknowledgment and completes on first use" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {old_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       key = Fixtures.ApiKeys.mark_rotation_supported(key)
       ApiKeys.subscribe_account_api_keys(account.id)
@@ -43,10 +46,13 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
     end
 
     test "losing support keeps a pending request until explicit manual fallback" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       key = Fixtures.ApiKeys.mark_rotation_supported(key)
       assert {:ok, requested} = ApiKeys.request_api_key_rotation(key, subject)
@@ -76,10 +82,13 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
     end
 
     test "automatic installation wins over a later manual fallback without a second successor" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       key = Fixtures.ApiKeys.mark_rotation_supported(key)
       assert {:ok, _} = ApiKeys.request_api_key_rotation(key, subject)
@@ -98,10 +107,13 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
     end
 
     test "unsupported, expired and over-age keys require manual setup" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       assert ApiKeys.request_api_key_rotation(key, subject) == {:error, :manual_required}
 
@@ -124,20 +136,20 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
       {user, account, owner} = Fixtures.Subjects.owner_subject()
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
       key = Fixtures.ApiKeys.mark_rotation_supported(key)
       viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      assert ApiKeys.request_api_key_rotation(key, Fixtures.Subjects.membership_subject(viewer)) ==
+      assert ApiKeys.request_api_key_rotation(key, Fixtures.Subjects.subject_for(viewer)) ==
                {:error, :unauthorized}
 
       foreign = Fixtures.Memberships.create_membership(role: "owner")
 
-      assert ApiKeys.request_api_key_rotation(key, Fixtures.Subjects.membership_subject(foreign)) ==
+      assert ApiKeys.request_api_key_rotation(key, Fixtures.Subjects.subject_for(foreign)) ==
                {:error, :not_found}
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = Repo.reload!(user)
       Fixtures.Memberships.force_role(membership, "viewer")
       assert ApiKeys.request_api_key_rotation(key, owner) == {:error, :unauthorized}
       assert Repo.reload!(key).rotation_requested_at == nil
@@ -166,7 +178,7 @@ defmodule Emisar.ApiKeyRotationRequestsTest do
     end
 
     test "refuses a subject that is not an MCP api key acting on itself" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       {_next_raw, prefix, hash} = Crypto.mint("emk-", 12)
 
       assert ApiKeys.record_auto_rotation_support(prefix, hash, subject) ==

@@ -1,15 +1,15 @@
 defmodule Emisar.AuthAuditTest do
   @moduledoc """
   Asserts that every security-relevant operation in the Auth + Accounts
-  contexts emits the expected `Audit.Event` row. Covers sign-in / out,
-  MFA, magic link, account/membership lifecycle, and per-user profile
-  edits.
+  contexts emits the expected `Audit.Event` row, in the Member's own
+  workspace. Covers sign-in / out, MFA, the emailed code, SSO sign-in, session
+  revocation, and the account and membership lifecycle.
 
-  Each test seeds an owner and asserts the matching event_type appears
-  in `Audit.list_events/1` scoped to that account.
+  Each test seeds an owner and asserts the matching event_type appears in
+  `Audit.list_events/1` scoped to that account.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Audit, Auth, Crypto, RequestContext, Users}
+  alias Emisar.{Accounts, Audit, Auth, Crypto, RequestContext}
   alias Emisar.Auth.SecurityAttemptWindow
   alias Emisar.Fixtures
 
@@ -18,7 +18,7 @@ defmodule Emisar.AuthAuditTest do
   # runner/group identity these assertions are about.
   defp events_of(account, event_type) do
     membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
 
     {:ok, events, _} =
       Audit.list_events(subject, filter: [event_type: [event_type]])
@@ -29,42 +29,51 @@ defmodule Emisar.AuthAuditTest do
   # The raw secret only leaves Auth by email, so a magic-link test drives the
   # real request workflow and reads the 6-character code back out of the
   # delivered message.
-  defp request_magic_link(user) do
+  defp request_magic_link(account, email) do
     assert {:ok, %{token_id: token_id, nonce: nonce, delivery: {:ok, :sent}}} =
-             Auth.request_magic_link(user, %RequestContext{})
+             Auth.request_magic_link(account, email, %RequestContext{})
 
     assert_received {:email, sent}
     [_, ^token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
     {token_id, nonce, secret}
   end
 
+  defp browser_id, do: Crypto.random_secret()
+
   describe "sign-out" do
-    setup do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, account: account}
-    end
+    test "complete_browser_sign_out audits each ended session in its workspace, once" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      browser = browser_id()
 
-    test "complete_session_sign_out audits", %{user: user, account: account} do
-      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      token =
+        Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{}, browser_id: browser)
 
-      assert Auth.complete_session_sign_out(token) == :ok
+      context = %RequestContext{ip_address: "198.51.100.7", request_id: "req-sign-out"}
+
+      assert {:ok, [%Accounts.Membership{id: owner_id}]} =
+               Auth.complete_browser_sign_out([token], browser, context)
+
+      assert owner_id == owner.id
       assert [event] = events_of(account, "user.signed_out")
-      assert event.actor_id == member.id
+      assert {event.actor_kind, event.actor_id} == {"membership", owner.id}
+      assert event.request_id == "req-sign-out"
+
+      # The second submit finds nothing live and records nothing.
+      assert {:ok, []} = Auth.complete_browser_sign_out([token], browser, context)
+      assert [_same] = events_of(account, "user.signed_out")
     end
   end
 
   describe "MFA lifecycle" do
     setup do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      session_token = Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
+      subject = Fixtures.Subjects.subject_for(owner, session: session_token)
       secret = Auth.generate_mfa_secret()
-      proof = Fixtures.Users.mfa_enrollment_proof(subject)
-      session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, session} = Auth.fetch_session_by_token(session_token)
-      subject = Fixtures.Subjects.subject_for(user, account, session: session)
+      proof = Fixtures.Memberships.mfa_enrollment_proof(subject)
 
       %{
-        user: user,
+        member: owner,
         account: account,
         secret: secret,
         subject: subject,
@@ -138,7 +147,7 @@ defmodule Emisar.AuthAuditTest do
           subject
         )
 
-      assert Auth.verify_mfa_challenge(enabled, {:totp, "000000"}) == {:error, :invalid}
+      assert Auth.verify_mfa_challenge(enabled.id, {:totp, "000000"}) == {:error, :invalid}
 
       assert [event] = events_of(account, "user.mfa_failed")
       assert event.payload["reason"] == "invalid_otp"
@@ -161,10 +170,7 @@ defmodule Emisar.AuthAuditTest do
         )
 
       assert {:ok, _proof} =
-               Auth.verify_mfa_challenge(
-                 enabled,
-                 {:totp, Fixtures.Auth.totp_code(secret)}
-               )
+               Auth.verify_mfa_challenge(enabled.id, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert [event] = events_of(account, "user.mfa_verified")
       assert event.actor_id == subject.membership_id
@@ -188,17 +194,10 @@ defmodule Emisar.AuthAuditTest do
         )
 
       assert {:ok, mfa_proof} =
-               Auth.verify_mfa_challenge(
-                 enabled,
-                 {:totp, Fixtures.Auth.totp_code(secret)}
-               )
+               Auth.verify_mfa_challenge(enabled.id, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert {:ok, _session} =
-               Auth.complete_current_session_mfa(
-                 mfa_proof,
-                 Crypto.hash(session_token),
-                 %{subject | actor: enabled}
-               )
+               Auth.complete_current_session_mfa(mfa_proof, Crypto.hash(session_token), subject)
 
       # Two rows: the factor was accepted, then the live session's assurance
       # was actually upgraded. The stamp lives on a session row the retention
@@ -224,7 +223,7 @@ defmodule Emisar.AuthAuditTest do
           subject
         )
 
-      assert {:ok, _proof} = Auth.verify_mfa_challenge(enabled, {:recovery_code, hd(codes)})
+      assert {:ok, _proof} = Auth.verify_mfa_challenge(enabled.id, {:recovery_code, hd(codes)})
 
       assert [event] = events_of(account, "user.mfa_recovery_code_used")
       assert event.payload["remaining"] == length(codes) - 1
@@ -246,7 +245,7 @@ defmodule Emisar.AuthAuditTest do
           subject
         )
 
-      assert Auth.verify_mfa_challenge(enabled, {:recovery_code, "not-a-real-code"}) ==
+      assert Auth.verify_mfa_challenge(enabled.id, {:recovery_code, "not-a-real-code"}) ==
                {:error, :invalid}
 
       assert [event] = events_of(account, "user.mfa_failed")
@@ -273,7 +272,7 @@ defmodule Emisar.AuthAuditTest do
         )
 
       for _ <- 1..5 do
-        assert Auth.verify_mfa_challenge(enabled, {:totp, "000000"}) == {:error, :invalid}
+        assert Auth.verify_mfa_challenge(enabled.id, {:totp, "000000"}) == {:error, :invalid}
       end
 
       assert length(events_of(account, "user.mfa_failed")) == 5
@@ -297,7 +296,7 @@ defmodule Emisar.AuthAuditTest do
 
       window =
         Repo.get_by!(SecurityAttemptWindow,
-          user_id: enabled.id,
+          membership_id: enabled.id,
           scope: :mfa_challenge
         )
 
@@ -366,45 +365,46 @@ defmodule Emisar.AuthAuditTest do
         assert Repo.reload!(enabled) == before
         assert Repo.aggregate(Audit.Event, :count) == audit_count
 
-        assert Repo.get_by!(SecurityAttemptWindow, user_id: enabled.id, scope: :mfa_challenge).attempt_count ==
-                 1
+        assert Repo.get_by!(SecurityAttemptWindow,
+                 membership_id: enabled.id,
+                 scope: :mfa_challenge
+               ).attempt_count == 1
 
         refute_received {:audit_event, _}
       end
     end
   end
 
-  describe "magic link + confirmation" do
+  describe "the emailed code" do
     setup do
-      {user, account, _} = Fixtures.Subjects.owner_subject()
-      %{user: user, account: account}
+      {owner, account, _} = Fixtures.Subjects.owner_subject()
+      %{member: owner, account: account}
     end
 
-    test "request_magic_link audits", %{user: user, account: account} do
-      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      request_magic_link(user)
+    test "request_magic_link audits", %{member: member, account: account} do
+      request_magic_link(account, member.email)
       assert [event] = events_of(account, "user.magic_link_issued")
       assert event.actor_id == member.id
     end
 
     test "verify_magic_link writes NO user.signed_in — session establishment owns it", %{
-      user: user,
+      member: member,
       account: account
     } do
-      {token_id, nonce, secret} = request_magic_link(user)
+      {token_id, nonce, secret} = request_magic_link(account, member.email)
 
-      assert {:ok, _u} = Auth.verify_magic_link(token_id, secret, nonce)
-      # Verifying a factor is not signing in — Users.put_sign_in (composed by
-      # the session layer) is the single writer, so a login audits exactly once
-      # and an MFA factor-one alone audits nothing.
+      assert {:ok, _membership_id} = Auth.verify_magic_link(token_id, secret, nonce)
+      # Verifying a factor is not signing in — the session transaction is the
+      # single writer, so a login audits exactly once and an MFA factor-one
+      # alone audits nothing.
       assert events_of(account, "user.signed_in") == []
     end
 
-    test "a wrong secret on a live token audits user.sign_in_failed for that user", %{
-      user: user,
+    test "a wrong secret on a live token audits user.sign_in_failed for that Member", %{
+      member: member,
       account: account
     } do
-      {token_id, nonce, _secret} = request_magic_link(user)
+      {token_id, nonce, _secret} = request_magic_link(account, member.email)
       context = %RequestContext{ip_address: "198.51.100.9", user_agent: "Firefox"}
 
       # Wrong secret on a valid, un-consumed token → digest mismatch → the token
@@ -413,7 +413,7 @@ defmodule Emisar.AuthAuditTest do
                {:error, :invalid_or_expired}
 
       assert [event] = events_of(account, "user.sign_in_failed")
-      assert event.actor_id == Fixtures.Memberships.fetch_membership(account.id, user.id).id
+      assert event.actor_id == member.id
       assert event.ip_address == "198.51.100.9"
       assert event.payload["reason"] == "invalid_or_expired"
     end
@@ -422,82 +422,57 @@ defmodule Emisar.AuthAuditTest do
       context = %RequestContext{ip_address: "203.0.113.1"}
       before = Repo.aggregate(Emisar.Audit.Event, :count)
 
-      # A random token id → no token → no user → nothing to hang an audit row on,
-      # and the SAME error a known-user failure returns (no enumeration oracle).
+      # A random token id → no token → no Member → nothing to hang an audit row
+      # on, and the SAME error a known-Member failure returns (no enumeration
+      # oracle).
       assert Auth.verify_magic_link(Ecto.UUID.generate(), "secret", "nonce", context) ==
                {:error, :invalid_or_expired}
 
       assert Repo.aggregate(Emisar.Audit.Event, :count) == before
     end
-
-    test "confirm_user_by_token audits user.email_confirmed", %{account: account} do
-      # Unconfirmed user — bypass Fixtures.Subjects.owner_subject which auto-confirms.
-      unconfirmed = Fixtures.Users.create_user(confirmed?: false)
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: unconfirmed.id,
-          role: "operator"
-        )
-
-      raw = Fixtures.Auth.create_confirmation_token!(unconfirmed)
-      assert {:ok, _} = Auth.confirm_user_by_token(raw)
-
-      assert [event] = events_of(account, "user.email_confirmed")
-      assert event.actor_id == membership.id
-    end
   end
 
   describe "SSO sign-in" do
-    test "records only the granted workspace's Member and leaves siblings and the User untouched" do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject()
-      Fixtures.Accounts.create_subscription(account, "team")
+    test "records the workspace's Member and leaves a Member elsewhere untouched" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = Fixtures.SSO.create_identity_provider(%{account_id: account.id})
 
       identity =
         Fixtures.SSO.create_user_identity(%{
           account_id: account.id,
           provider_id: provider.id,
-          user_id: user.id
+          membership: owner
         })
 
       sibling = Fixtures.Accounts.create_account()
 
       sibling_member =
-        Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: user.id)
+        Fixtures.Memberships.create_membership(account_id: sibling.id, email: owner.email)
 
-      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      personal = Repo.reload!(user)
       context = %RequestContext{ip_address: "203.0.113.20", request_id: "req-sso-sign-in"}
 
       assert {:ok, _token, false} =
-               Auth.complete_sso_account_sign_in(user, account.id, context,
-                 user_identity_id: identity.id,
-                 provider_identifier: identity.provider_identifier
-               )
+               Auth.complete_sso_sign_in(owner, identity, provider, browser_id(), context)
 
       assert [event] = events_of(account, "user.signed_in")
-      assert {event.actor_kind, event.actor_id} == {"membership", member.id}
-      assert {event.target_kind, event.target_id} == {"membership", member.id}
-      assert event.target_label == Accounts.member_display_name(member)
+      assert {event.actor_kind, event.actor_id} == {"membership", owner.id}
+      assert {event.target_kind, event.target_id} == {"membership", owner.id}
+      assert event.target_label == Accounts.member_display_name(owner)
       assert event.payload == %{"method" => "sso"}
       assert event.request_id == "req-sso-sign-in"
       assert events_of(sibling, "user.signed_in") == []
-      assert Repo.reload!(user) == personal
-      assert %DateTime{} = Repo.reload!(member).last_active_at
+      assert %DateTime{} = Repo.reload!(owner).last_active_at
       refute Repo.reload!(sibling_member).last_active_at
     end
   end
 
   describe "session self-revocation" do
     setup do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject()
-      _ = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      keep = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, session} = Auth.fetch_session_by_token(keep)
-      subject = Fixtures.Subjects.subject_for(user, account, session: session)
-      %{user: user, account: account, keep: keep, subject: subject}
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      _ = Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
+      keep = Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
+      subject = Fixtures.Subjects.subject_for(owner, session: keep)
+      %{member: owner, account: account, keep: keep, subject: subject}
     end
 
     test "revoke_and_disconnect_other_sessions audits user.other_sessions_revoked with the count",
@@ -516,9 +491,10 @@ defmodule Emisar.AuthAuditTest do
     test "revoke_session audits user.session_revoked", %{
       subject: subject,
       account: account,
-      keep: _keep
+      keep: keep
     } do
-      {:ok, [%{id: token_id} | _], _} = Auth.list_sessions_for_user(nil, subject)
+      {:ok, sessions, _} = Auth.list_sessions_for_member(Crypto.hash(keep), subject)
+      %{id: token_id} = Enum.find(sessions, &(not &1.current?))
 
       assert Auth.revoke_session(token_id, subject) == :ok
       assert [event] = events_of(account, "user.session_revoked")
@@ -526,64 +502,13 @@ defmodule Emisar.AuthAuditTest do
     end
   end
 
-  describe "Accounts profile / email" do
-    setup do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, account: account, subject: %{subject | auth_method: :magic_link}}
-    end
-
-    test "update_user_profile audits user.profile_updated", %{
-      account: account,
-      subject: subject
-    } do
-      {:ok, _} = Users.update_user_profile(%{full_name: "New Name"}, subject)
-
-      assert [event] = events_of(account, "user.profile_updated")
-      assert event.payload == %{}
-      assert event.target_label == "Test User"
-    end
-
-    test "a completed email change audits the security event without personal addresses", %{
-      user: user,
-      account: account
-    } do
-      new = "renamed-#{System.unique_integer()}@example.test"
-      raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, session} = Auth.fetch_session_by_token(raw)
-      subject = Fixtures.Subjects.subject_for(user, account, session: session)
-      digest = Crypto.hash(raw)
-
-      assert Auth.issue_email_change_code(new, subject) == {:ok, :sent}
-      assert_received {:email, email}
-      code = Fixtures.Auth.code_from_email(email)
-      assert {:ok, proof} = Auth.confirm_email_change(new, code, digest, subject)
-      assert_received {:email, new_mail}
-      assert events_of(account, "user.email_changed") == []
-
-      assert {:ok, _updated} =
-               Auth.complete_email_change(
-                 proof.token_id,
-                 proof.nonce,
-                 Fixtures.Auth.code_from_email(new_mail),
-                 digest,
-                 subject
-               )
-
-      assert [event] = events_of(account, "user.email_changed")
-      assert event.payload == %{}
-      assert event.target_label == "Test User"
-    end
-  end
-
   describe "Accounts membership lifecycle" do
     setup do
       {owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
-      member = Fixtures.Users.create_user()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.id,
           role: "operator"
         )
 
@@ -591,7 +516,6 @@ defmodule Emisar.AuthAuditTest do
         owner: owner,
         account: account,
         owner_subject: owner_subject,
-        member: member,
         membership: membership
       }
     end
@@ -637,34 +561,39 @@ defmodule Emisar.AuthAuditTest do
       assert event.payload["after"]["groups"] == ["prod", "stage"]
     end
 
-    test "mark_invitation_accepted (self-accept of existing user) audits", %{
-      account: account,
-      member: member,
-      membership: membership
+    test "accepting an invitation audits user.invitation_accepted with the role", %{
+      owner_subject: owner_subject,
+      account: account
     } do
-      # Stamp the membership as an invitation to the member's address — without
-      # a personal login, as every pending invitation is — then accept it.
-      {token, digest} = Crypto.user_invite_token()
+      email = Fixtures.Random.unique_email()
 
-      {:ok, with_token} =
-        membership
-        |> Ecto.Changeset.change(
-          user_id: nil,
-          invitation_token_digest: digest,
-          email: member.email
+      {:ok, %{membership: invitation, invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
+          owner_subject
         )
-        |> Emisar.Repo.update()
 
-      {:ok, _} = Accounts.mark_invitation_accepted(with_token, token, member)
+      {:ok, ^email, intent} =
+        Accounts.prepare_invitation_acceptance(token, %{"display_name" => "Accepted"})
 
-      assert [event] = events_of(account, "membership.invitation_accepted")
+      {:ok, _changes} =
+        Ecto.Multi.new()
+        |> Ecto.Multi.run(:account, fn repo, _changes ->
+          Accounts.fetch_and_lock_account(account.id, repo: repo)
+        end)
+        |> Accounts.put_invitation_acceptance(intent, email)
+        |> Repo.commit_multi()
+
+      assert [event] = events_of(account, "user.invitation_accepted")
+      assert {event.actor_kind, event.actor_id} == {"membership", invitation.id}
+      assert {event.target_kind, event.target_id} == {"membership", invitation.id}
       assert event.payload["role"] == "operator"
     end
   end
 
   describe "Runbook lifecycle" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -741,54 +670,65 @@ defmodule Emisar.AuthAuditTest do
   end
 
   describe "Accounts account lifecycle" do
-    test "completed owner registration records one signup and a replay records none" do
-      user = Fixtures.Users.create_user(confirmed?: false)
+    test "a completed sign-up records one signup and the creation; a replay records none" do
+      email = Fixtures.Random.unique_email()
       context = %RequestContext{}
-      registration = %{account_name: "New owner account", full_name: user.full_name}
+
+      attrs = %{
+        "email" => email,
+        "full_name" => "New Owner",
+        "account_name" => "New owner account #{System.unique_integer([:positive])}"
+      }
 
       assert {:ok, %{token_id: token_id, nonce: nonce, delivery: {:ok, :sent}}} =
-               Auth.request_magic_link(user, context, owner_registration: registration)
+               Auth.request_sign_up_code(attrs, context)
 
       assert_received {:email, sent}
       [_, ^token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      assert Auth.verify_magic_link(token_id, secret, nonce) == {:ok, nil}
 
-      assert {:ok, _user} = Auth.verify_magic_link(token_id, secret, nonce)
+      assert {:ok, %Accounts.Membership{account: account} = owner, _raw} =
+               Auth.complete_sign_up(token_id, browser_id(), context)
 
-      assert {:ok, registered, _session, :no_target, true} =
-               Auth.complete_magic_link_sign_in(user.id, token_id, nil, context)
-
-      signup = Audit.Event.Query.all() |> Audit.Event.Query.by_event_type("user.signed_up")
-      assert %Audit.Event{} = event = Repo.one(signup)
-      owner = Fixtures.Memberships.fetch_membership(event.account_id, registered.id)
-      assert {event.actor_kind, event.actor_id} == {"membership", owner.id}
-      assert {event.target_kind, event.target_id} == {"membership", owner.id}
-
-      assert Auth.complete_magic_link_sign_in(user.id, token_id, nil, context) ==
-               {:error, :invalid_or_expired}
-
-      assert Repo.one(signup).id == event.id
-    end
-
-    test "create_account_with_owner records account creation without another signup" do
-      user = Fixtures.Users.create_user()
-      slug = "tenant-#{System.unique_integer()}"
-
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "Tenant", slug: slug, plan: "free"},
-          user
-        )
+      assert [signup] = events_of(account, "user.signed_up")
+      assert {signup.actor_kind, signup.actor_id} == {"membership", owner.id}
+      assert {signup.target_kind, signup.target_id} == {"membership", owner.id}
 
       assert [created] = events_of(account, "account.created")
-      assert created.payload["plan"] == "free"
-      assert created.payload["slug"] == slug
+      assert created.actor_id == owner.id
+      assert created.payload == %{"plan" => "free", "slug" => account.slug}
+      assert [_signed_in] = events_of(account, "user.signed_in")
 
-      assert created.actor_id == Fixtures.Memberships.fetch_membership(account.id, user.id).id
+      assert Auth.complete_sign_up(token_id, browser_id(), context) ==
+               {:error, :invalid_or_expired}
+
+      assert [_same] = events_of(account, "user.signed_up")
+    end
+
+    test "create_account_with_invited_owner records the creation and the owner's invitation, no signup" do
+      slug = "tenant-#{System.unique_integer([:positive])}"
+      email = Fixtures.Random.unique_email()
+
+      assert {:ok, %{account: account, membership: owner, delivery: {:ok, :sent}}} =
+               Accounts.create_account_with_invited_owner(
+                 %{name: "Tenant", slug: slug},
+                 email,
+                 %{full_name: "Emisar Support"}
+               )
+
+      assert [created] = events_of(account, "account.created")
+      assert created.payload == %{"plan" => "free", "slug" => slug}
+      assert created.actor_id == owner.id
+
+      assert [invited] = events_of(account, "user.invited")
+      assert invited.target_id == owner.id
+      assert invited.payload["role"] == "owner"
+
       assert events_of(account, "user.signed_up") == []
     end
 
     test "update_account audits its changed fields with before and after values" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, updated} = Accounts.update_account(account, %{name: "Renamed"}, subject)
 
@@ -806,7 +746,7 @@ defmodule Emisar.AuthAuditTest do
   # the other).
   describe "transactional rollback semantics" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -859,8 +799,8 @@ defmodule Emisar.AuthAuditTest do
         )
         |> Ecto.Multi.insert(:audit, fn %{policy: p} ->
           Audit.changeset(p.account_id, "policy.updated",
-            actor_kind: "user",
-            actor_id: subject.actor.id,
+            actor_kind: "membership",
+            actor_id: subject.membership_id,
             target_kind: "policy",
             target_id: p.id,
             payload: %{noop: true}
@@ -892,7 +832,7 @@ defmodule Emisar.AuthAuditTest do
   # can refresh without each context having to remember to broadcast.
   describe "audit fan-out broadcast" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -928,54 +868,26 @@ defmodule Emisar.AuthAuditTest do
     end
   end
 
-  describe "identity-event fan-out across memberships" do
-    test "a user-scoped event lands one row in EACH of the user's active accounts" do
-      user = Fixtures.Users.create_user()
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
+  describe "Member-scoped security events" do
+    test "land only in the Member's own workspace — a same-address Member elsewhere sees nothing" do
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      elsewhere = Fixtures.Accounts.create_account()
 
-      member_a =
-        Fixtures.Memberships.create_membership(
-          account_id: account_a.id,
-          user_id: user.id,
-          role: "owner"
-        )
+      Fixtures.Memberships.create_membership(
+        account_id: elsewhere.id,
+        email: owner.email,
+        role: "owner"
+      )
 
-      member_b =
-        Fixtures.Memberships.create_membership(
-          account_id: account_b.id,
-          user_id: user.id,
-          role: "admin"
-        )
+      {_member, [code | _]} =
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-      subject = Fixtures.Subjects.subject_for(user, account_a)
-      {_user, [code | _]} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
-      assert {:ok, _user} = Auth.disable_mfa(code, subject)
+      assert {:ok, _disabled} = Auth.disable_mfa(code, subject)
 
-      # One row in each account…
-      assert [row_a] = events_of(account_a, "user.mfa_disabled")
-      assert [row_b] = events_of(account_b, "user.mfa_disabled")
-      # …and each account sees ONLY its own copy (cross-account isolation), each
-      # naming that account's own Member.
-      assert row_a.account_id == account_a.id
-      assert row_b.account_id == account_b.id
-      assert {row_a.actor_id, row_a.target_id} == {member_a.id, member_a.id}
-      assert {row_b.actor_id, row_b.target_id} == {member_b.id, member_b.id}
-    end
-
-    test "a single-account user still gets exactly one row (no duplicates)" do
-      {user, account, _} = Fixtures.Subjects.owner_subject()
-
-      assert Audit.log_for_user(user, "user.mfa_failed") == :ok
-      assert [_only] = events_of(account, "user.mfa_failed")
-    end
-
-    test "a user with no active membership produces no row (unchanged drop)" do
-      user = Fixtures.Users.create_user()
-      before = Repo.aggregate(Emisar.Audit.Event, :count)
-
-      assert Audit.log_for_user(user, "user.mfa_failed") == :ok
-      assert Repo.aggregate(Emisar.Audit.Event, :count) == before
+      assert [row] = events_of(account, "user.mfa_disabled")
+      assert row.account_id == account.id
+      assert {row.actor_id, row.target_id} == {owner.id, owner.id}
+      assert events_of(elsewhere, "user.mfa_disabled") == []
     end
   end
 end

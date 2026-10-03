@@ -1,24 +1,13 @@
 defmodule EmisarWeb.OIDCStepUp do
   @moduledoc """
-  The socket state an OIDC step-up walks through, shared by the two pages that
-  run one: `ProfileLive` when a member links or removes their own sign-in
-  method, `SSOSettingsLive` when an administrator proves a connection by
-  actually signing in through it.
+  The socket state the SSO connection verification step-up walks through on
+  `SSOSettingsLive`: an administrator proves a connection by actually signing
+  in through it, after a fresh local proof of their own credential (an
+  authenticator code, or a code emailed to their verified address).
 
-  Both drive the same `Emisar.Auth` functions in the same order over the same
-  `:oidc_step*` assigns, and each had grown its own copy of every step — `reset/1`
-  was byte-identical, and the wrong-code and resend sentences had been written
-  twice under two private names for the same words.
-
-  What stays with each page is what it is confirming: the purpose it proves,
-  what it spends the proof on, and the sentence naming its own action when the
-  step-up cannot start — which is why `begin/4` takes that sentence from the
-  caller instead of making the profile page borrow the administrator page's
-  "sign-in verification" wording.
-
-  The step map is the page's own record of what is being confirmed; `begin/4`
-  adds the purpose and the factor the domain chose, and the later transitions
-  read back `:provider_id`, `:provider_name`, `:purpose`, and `:factor`.
+  The step map is the page's own record of which connection is being verified;
+  `begin/3` adds the factor the domain chose, and the later transitions read
+  back `:provider_id`, `:provider_name` and `:factor`.
 
   The sentences a spent attempt budget shows live in `EmisarWeb.MfaErrors`.
   """
@@ -32,30 +21,25 @@ defmodule EmisarWeb.OIDCStepUp do
   Opens a step-up for `step`, asking the domain which factor proves it.
 
   `unavailable_message` is the flash for a refusal the operator cannot act on,
-  so each page names its own action there.
+  so the page names its own action there.
   """
-  def begin(socket, step, purpose, unavailable_message) do
+  def begin(socket, step, unavailable_message) do
     case Auth.begin_oidc_identity_step_up(
            step.provider_id,
            step.provider_name,
-           purpose,
            socket.assigns.current_subject
          ) do
       {:ok, factor} ->
         socket
-        |> assign(:oidc_step, Map.merge(step, %{purpose: purpose, factor: factor}))
+        |> assign(:oidc_step, Map.put(step, :factor, factor))
         |> assign(:oidc_step_error, nil)
         |> assign(:oidc_step_form, to_form(%{"code" => ""}, as: "oidc_step"))
         |> flash_issued_code(factor)
 
-      # The account email can't receive the confirmation code, so the step-up
+      # The Member's address can't receive the confirmation code, so the step-up
       # can't proceed — tell them plainly rather than showing a code prompt.
       {:error, :delivery_suppressed} ->
-        put_flash(
-          socket,
-          :error,
-          "We can't deliver a code to #{socket.assigns.current_user.email}."
-        )
+        put_flash(socket, :error, undeliverable_message(socket))
 
       {:error, :rate_limited} ->
         put_flash(socket, :error, MfaErrors.message(:email_rate_limited))
@@ -66,7 +50,7 @@ defmodule EmisarWeb.OIDCStepUp do
   end
 
   defp flash_issued_code(socket, :email),
-    do: put_flash(socket, :info, "We emailed a confirmation code to your current address.")
+    do: put_flash(socket, :info, "We emailed a confirmation code to your address.")
 
   defp flash_issued_code(socket, :mfa), do: socket
 
@@ -75,12 +59,7 @@ defmodule EmisarWeb.OIDCStepUp do
   to show under the code box.
   """
   def confirm(step, code, subject) do
-    case Auth.confirm_oidc_identity_step_up(
-           step.provider_id,
-           step.purpose,
-           String.trim(code || ""),
-           subject
-         ) do
+    case Auth.confirm_oidc_identity_step_up(step.provider_id, String.trim(code || ""), subject) do
       {:ok, proof} ->
         {:ok, proof}
 
@@ -103,24 +82,20 @@ defmodule EmisarWeb.OIDCStepUp do
     case Auth.resend_oidc_identity_step_up_code(
            step.provider_id,
            step.provider_name,
-           step.purpose,
            socket.assigns.current_subject
          ) do
       {:ok, :sent} ->
         socket
         |> assign(:oidc_step_error, nil)
         |> push_event("code:reset", %{id: code_input_id})
-        |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")
+        |> put_flash(:info, "We sent a new code to #{member_email(socket)}.")
 
-      # The account email won't accept mail, so no code can arrive — say so and
-      # drop back to the page instead of waiting for a code.
+      # The address won't accept mail, so no code can arrive — say so and drop
+      # back to the page instead of waiting for a code.
       {:ok, :suppressed} ->
         socket
         |> reset()
-        |> put_flash(
-          :error,
-          "We can't deliver a code to #{socket.assigns.current_user.email}."
-        )
+        |> put_flash(:error, undeliverable_message(socket))
 
       {:error, :rate_limited} ->
         assign(socket, :oidc_step_error, MfaErrors.message(:email_rate_limited))
@@ -133,18 +108,17 @@ defmodule EmisarWeb.OIDCStepUp do
   @doc """
   Arms the dialog's form to post a just-earned proof to the identity controller.
 
-  The proof only travels as a signed handoff, so the browser carries it to the
-  controller that can write the OIDC transaction without it ever being a value
-  the page could be tricked into re-using.
+  The proof only travels as a signed handoff bound to this Member, workspace and
+  session, so the browser carries it to the controller that can write the OIDC
+  transaction without it ever being a value the page could be tricked into
+  re-using.
   """
   def handoff(socket, step, proof) do
     payload = %{
-      actor_id: socket.assigns.current_user.id,
       actor_membership_id: socket.assigns.current_subject.membership_id,
       actor_session_token_digest: socket.assigns.current_auth.token,
       account_id: socket.assigns.current_account.id,
       provider_id: step.provider_id,
-      purpose: step.purpose,
       proof: proof
     }
 
@@ -168,4 +142,8 @@ defmodule EmisarWeb.OIDCStepUp do
     |> assign(:oidc_handoff, nil)
     |> assign(:oidc_trigger_submit, false)
   end
+
+  defp undeliverable_message(socket), do: "We can't deliver a code to #{member_email(socket)}."
+
+  defp member_email(socket), do: socket.assigns.current_membership.email || "your address"
 end

@@ -7,29 +7,21 @@ defmodule Emisar.ApiKeysTest do
   alias Emisar.Fixtures
 
   defp owner_subject_pair do
-    user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "owner"
-    )
+    member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    {user, account, Fixtures.Subjects.subject_for(user, account, role: :owner)}
+    {member, account, Fixtures.Subjects.subject_for(member)}
   end
 
   defp member_subject(account, role) do
-    user = Fixtures.Users.create_user()
-
     membership =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: user.id,
         role: Atom.to_string(role)
       )
 
-    Fixtures.Subjects.membership_subject(membership)
+    Fixtures.Subjects.subject_for(membership)
   end
 
   # The lifecycle classifiers read the struct only, so they're exercised on
@@ -55,7 +47,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list_api_keys_for_account/2" do
     test "lists the account's :mcp keys, hiding audit-export tokens" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, agent_key} =
@@ -69,14 +61,14 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "the exact creator profile is preloaded when asked for via :preload" do
-      {user, _account, subject} = owner_subject_pair()
+      {owner, _account, subject} = owner_subject_pair()
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
 
       assert {:ok, [preloaded], _} =
                ApiKeys.list_api_keys_for_account(subject, preload: [:created_by_membership])
 
       assert preloaded.created_by_membership.id == subject.membership_id
-      assert preloaded.created_by_membership.user_id == user.id
+      assert preloaded.created_by_membership.email == owner.email
     end
 
     test "a runner subject (no view_api_keys permission) is refused with :unauthorized" do
@@ -89,12 +81,12 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an owner of account B never sees account A's keys (cross-account isolation)" do
-      {_user_a, _account_a, subject_a} = owner_subject_pair()
+      {_owner_a, _account_a, subject_a} = owner_subject_pair()
 
       {:ok, _raw, _key} =
         ApiKeys.create_key(%{name: "a-key"}, subject_a)
 
-      {_user_b, _account_b, subject_b} = owner_subject_pair()
+      {_owner_b, _account_b, subject_b} = owner_subject_pair()
 
       assert {:ok, [], _} = ApiKeys.list_api_keys_for_account(subject_b)
     end
@@ -109,7 +101,7 @@ defmodule Emisar.ApiKeysTest do
           email: nil
         )
 
-      subject = Fixtures.Subjects.membership_subject(member)
+      subject = Fixtures.Subjects.subject_for(member)
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
       assert ApiKeys.list_key_owner_options(subject) == {:ok, [{member.id, "Account member"}]}
     end
@@ -124,35 +116,23 @@ defmodule Emisar.ApiKeysTest do
           display_name: "First Membership"
         )
 
-      person = Repo.preload(member, :user).user
-
       {:ok, _raw, old_key} =
-        ApiKeys.create_key(%{name: "old agent"}, Fixtures.Subjects.membership_subject(member))
+        ApiKeys.create_key(%{name: "old agent"}, Fixtures.Subjects.subject_for(member))
 
       assert {:ok, _} = Accounts.delete_membership(member, reader)
 
-      assert {:ok, invitation} =
-               Accounts.invite_user_to_account(
-                 Fixtures.Accounts.invitation_attrs(email: person.email, role: "operator"),
-                 reader
-               )
-
-      assert {:ok, accepted} =
-               Accounts.mark_invitation_accepted(
-                 invitation.membership,
-                 invitation.invitation_token,
-                 Fixtures.Users.confirm_user(person)
-               )
-
-      assert {:ok, rejoined} =
-               Accounts.update_member_profile_as_admin(
-                 accepted,
-                 %{display_name: "Rejoined Member"},
-                 reader
-               )
+      # The same address joins again as a new Member; the removed seat's keys
+      # keep naming the seat that minted them.
+      rejoined =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "operator",
+          email: member.email,
+          display_name: "Rejoined Member"
+        )
 
       {:ok, _raw, new_key} =
-        ApiKeys.create_key(%{name: "new agent"}, Fixtures.Subjects.membership_subject(rejoined))
+        ApiKeys.create_key(%{name: "new agent"}, Fixtures.Subjects.subject_for(rejoined))
 
       assert {:ok, options} = ApiKeys.list_key_owner_options(reader)
 
@@ -188,7 +168,7 @@ defmodule Emisar.ApiKeysTest do
           email: nil
         )
 
-      subject = Fixtures.Subjects.membership_subject(member)
+      subject = Fixtures.Subjects.subject_for(member)
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
 
       assert ApiKeys.list_key_owner_options(subject) ==
@@ -196,7 +176,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "returns the distinct creators of the account's visible (non-audit) keys" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, _k1} = ApiKeys.create_key(%{name: "a"}, subject)
@@ -210,7 +190,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "the owner filter narrows to a creator's keys; another account sees none" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine"}, subject)
 
       assert {:ok, [key], _} =
@@ -225,7 +205,7 @@ defmodule Emisar.ApiKeysTest do
                ApiKeys.list_api_keys_for_account(subject, filter: [owner: [Ecto.UUID.generate()]])
 
       # Cross-account: B's owner options never include A's creator.
-      {_user_b, _account_b, subject_b} = owner_subject_pair()
+      {_owner_b, _account_b, subject_b} = owner_subject_pair()
       assert ApiKeys.list_key_owner_options(subject_b) == {:ok, []}
     end
 
@@ -234,7 +214,7 @@ defmodule Emisar.ApiKeysTest do
     # `?owner[]=…` must come back as a bad filter, not as an `Ecto.Query.CastError`
     # 500 from a `binary_id` comparison.
     test "the owner filter rejects a non-UUID instead of raising" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       assert {:error, {:invalid_type, metadata}} =
                ApiKeys.list_api_keys_for_account(subject, filter: [owner: ["zzz"]])
@@ -252,7 +232,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list_key_options/1" do
     test "returns {id, name} for the account's agent keys, revoked included" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, live_key} =
@@ -274,21 +254,15 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "cross-account — B's options never include A's keys; a viewer can read" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "mine"}, subject)
 
-      {_user_b, _account_b, subject_b} = owner_subject_pair()
+      {_owner_b, _account_b, subject_b} = owner_subject_pair()
       assert ApiKeys.list_key_options(subject_b) == {:ok, []}
 
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
       assert {:ok, [{_id, "mine"}]} = ApiKeys.list_key_options(viewer_subject)
     end
 
@@ -302,7 +276,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list_key_usage_timestamps/2" do
     test "returns only id and last-used time for the requested visible agent keys" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, used_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {_raw, unused_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       used_key = Fixtures.ApiKeys.mark_used(used_key)
@@ -315,10 +289,10 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "cross-account ids and non-agent keys are omitted" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, agent_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
-      {_other_user, other_account, _other_subject} = owner_subject_pair()
+      {_other_owner, other_account, _other_subject} = owner_subject_pair()
       {_raw, foreign_key} = Fixtures.ApiKeys.create_api_key(account_id: other_account.id)
 
       assert ApiKeys.list_key_usage_timestamps([foreign_key.id], subject) == {:ok, []}
@@ -337,12 +311,12 @@ defmodule Emisar.ApiKeysTest do
   describe "list_member_key_expirations/2" do
     test "summarizes every key for each requested membership without loading credentials" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(user, account)
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user)
       now = DateTime.utc_now()
       early = DateTime.add(now, 3600, :second)
       late = DateTime.add(now, 7200, :second)
-      attrs = %{account_id: account.id, created_by_id: user.id}
+      attrs = %{account_id: account.id, created_by_membership_id: user.id}
       {_raw, first} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :expires_at, early))
       {_raw, hidden} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :expires_at, late))
       Fixtures.ApiKeys.mark_auto_generated(hidden)
@@ -384,9 +358,9 @@ defmodule Emisar.ApiKeysTest do
     test "excludes revoked, deleted, unbound, foreign-workspace and audit-export keys" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team")
-      user = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(user, account)
-      attrs = %{account_id: account.id, created_by_id: user.id}
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user)
+      attrs = %{account_id: account.id, created_by_membership_id: user.id}
       {_raw, revoked} = Fixtures.ApiKeys.create_api_key(attrs)
       {_raw, deleted} = Fixtures.ApiKeys.create_api_key(attrs)
       {_raw, unbound} = Fixtures.ApiKeys.create_api_key(attrs)
@@ -394,7 +368,7 @@ defmodule Emisar.ApiKeysTest do
       Fixtures.ApiKeys.mark_revoked(revoked)
       Fixtures.ApiKeys.mark_deleted(deleted)
       Fixtures.ApiKeys.force_membership_unbound(unbound)
-      {_raw, foreign} = Fixtures.ApiKeys.create_api_key(created_by_id: user.id)
+      {_raw, foreign} = Fixtures.ApiKeys.create_api_key()
       ids = [revoked.created_by_membership_id, foreign.created_by_membership_id, nil]
 
       assert ApiKeys.list_member_key_expirations(ids, subject) == {:ok, %{}}
@@ -402,11 +376,11 @@ defmodule Emisar.ApiKeysTest do
 
     test "keeps expired-only summaries so time-based availability can be evaluated" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(user, account)
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user)
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
       expired = Fixtures.ApiKeys.backdate_api_key_expiry(key)
 
@@ -422,7 +396,12 @@ defmodule Emisar.ApiKeysTest do
 
     test "validates, deduplicates and bounds membership ids before the read" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       {_raw, included} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {_raw, omitted} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       ids = [nil, "invalid", included.created_by_membership_id, included.created_by_membership_id]
@@ -460,7 +439,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list_audit_export_keys_for_account/2" do
     test "audit-export tokens land on the audit list, never the agents list" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, agent_key} =
@@ -488,11 +467,11 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an owner of account B never sees account A's export tokens (cross-account isolation)" do
-      {_user_a, account_a, subject_a} = owner_subject_pair()
+      {_owner_a, account_a, subject_a} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account_a, "team")
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "a-siem", kind: :audit_export}, subject_a)
 
-      {_user_b, _account_b, subject_b} = owner_subject_pair()
+      {_owner_b, _account_b, subject_b} = owner_subject_pair()
 
       assert {:ok, [], _} = ApiKeys.list_audit_export_keys_for_account(subject_b)
     end
@@ -500,7 +479,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list filters" do
     test "status filter separates live from revoked keys" do
-      {_u, _a, subject} = owner_subject_pair()
+      {_owner, _a, subject} = owner_subject_pair()
 
       {:ok, _raw, _live} =
         ApiKeys.create_key(%{name: "live-one"}, subject)
@@ -522,7 +501,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "name filter searches by case-insensitive substring" do
-      {_u, _a, subject} = owner_subject_pair()
+      {_owner, _a, subject} = owner_subject_pair()
 
       {:ok, _raw, _} =
         ApiKeys.create_key(%{name: "Claude Desktop"}, subject)
@@ -536,7 +515,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "fetch_api_key_by_id/3" do
     test "returns the key inside the subject's account" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
       assert {:ok, fetched} = ApiKeys.fetch_api_key_by_id(key.id, subject)
@@ -555,34 +534,33 @@ defmodule Emisar.ApiKeysTest do
       account_a = Fixtures.Accounts.create_account()
       {_raw, key_a} = Fixtures.ApiKeys.create_api_key(account_id: account_a.id)
 
-      {_user_b, _account_b, subject_b} = owner_subject_pair()
+      {_owner_b, _account_b, subject_b} = owner_subject_pair()
 
       assert ApiKeys.fetch_api_key_by_id(key_a.id, subject_b) == {:error, :not_found}
     end
 
     test "a malformed id is a clean :not_found, not a cast crash" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       assert ApiKeys.fetch_api_key_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
   end
 
   describe "owner_labels_for_ids/2" do
     test "names the minter the way the key's own account knows them" do
-      user = Fixtures.Users.create_user(full_name: "Ada Lovelace")
       account = Fixtures.Accounts.create_account()
       other_account = Fixtures.Accounts.create_account()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
-          role: "owner"
+          role: "owner",
+          display_name: "Ada Lovelace"
         )
 
       other_membership =
         Fixtures.Memberships.create_membership(
           account_id: other_account.id,
-          user_id: user.id,
+          email: membership.email,
           role: "owner"
         )
 
@@ -590,59 +568,78 @@ defmodule Emisar.ApiKeysTest do
       Fixtures.Memberships.sync_display_name(other_membership, "Ada from Staging")
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: membership.id
+        )
 
       assert ApiKeys.owner_labels_for_ids([key.id], account.id) == %{key.id => "Ada from Ops"}
     end
 
     test "a blank local name falls back only to the local contact" do
       account = Fixtures.Accounts.create_account()
-      named_user = Fixtures.Users.create_user(full_name: "Grace Hopper")
-      unnamed_user = Fixtures.Users.create_user(full_name: "   ")
+
+      unnamed_membership =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          display_name: "   "
+        )
 
       named_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: named_user.id,
-          role: "owner"
+          role: "owner",
+          display_name: "Grace Hopper"
         )
 
       Fixtures.Memberships.sync_display_name(named_membership, "   ")
 
       {_raw, named_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: named_user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: named_membership.id
+        )
 
       {_raw, unnamed_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: unnamed_user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: unnamed_membership.id
+        )
 
       assert ApiKeys.owner_labels_for_ids([named_key.id, unnamed_key.id], account.id) ==
-               %{named_key.id => named_user.email, unnamed_key.id => unnamed_user.email}
+               %{
+                 named_key.id => named_membership.email,
+                 unnamed_key.id => unnamed_membership.email
+               }
     end
 
     test "a soft-deleted or suspended membership resolves no owner label" do
       account = Fixtures.Accounts.create_account()
-      departed_user = Fixtures.Users.create_user()
-      suspended_user = Fixtures.Users.create_user()
 
       departed_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: departed_user.id,
           role: "owner"
         )
 
       suspended_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: suspended_user.id,
           role: "owner"
         )
 
       {_raw, departed_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: departed_user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: departed_membership.id
+        )
 
       {_raw, suspended_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: suspended_user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: suspended_membership.id
+        )
 
       Fixtures.Memberships.mark_membership_as_deleted(departed_membership)
       Fixtures.Memberships.suspend_membership(suspended_membership)
@@ -653,32 +650,43 @@ defmodule Emisar.ApiKeysTest do
     test "a key minted in another account resolves no label here" do
       account = Fixtures.Accounts.create_account()
       other_account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user(full_name: "Ada Lovelace")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          display_name: "Ada Lovelace"
+        )
 
-      Fixtures.Memberships.create_membership(
-        account_id: other_account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      namesake =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          email: member.email,
+          role: "owner",
+          display_name: "Ada Lovelace"
+        )
 
       {_raw, other_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: other_account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: other_account.id,
+          created_by_membership_id: namesake.id
+        )
 
       assert ApiKeys.owner_labels_for_ids([other_key.id], account.id) == %{}
     end
 
     test "nil and duplicate ids are normalized; no ids means no lookup" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user(full_name: "Ada Lovelace")
+
+      user =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          display_name: "Ada Lovelace"
+        )
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
       assert ApiKeys.owner_labels_for_ids([], account.id) == %{}
 
@@ -947,7 +955,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "create_key/2" do
     test "the prefix carries the kind: agent keys emk-, audit-export tokens emk-export-" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, agent_raw, _agent_key} = ApiKeys.create_key(%{name: "agent"}, subject)
@@ -968,7 +976,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "returns raw + persisted key" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       assert {:ok, raw, %ApiKey{} = key} =
                ApiKeys.create_key(
@@ -986,7 +994,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "the create form's raw browser params mint a key with a UTC expiry" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       params = %{
         "name" => "expiring-bot",
@@ -1002,7 +1010,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "blank browser values mean no description and the default expiry" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       params = %{"name" => "blank-bot", "description" => "   ", "expires_at" => ""}
 
       assert {:ok, _raw, %ApiKey{description: nil, expires_at: expires_at}} =
@@ -1015,7 +1023,7 @@ defmodule Emisar.ApiKeysTest do
     # A date the server can't read must come back to the operator, not fall
     # through to the 30-day default as a key they didn't ask for.
     test "a malformed expiry is a field error — no key, no audit row" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       params = %{"name" => "bad-date", "expires_at" => "25/12/2030"}
 
       assert {:error, changeset} = ApiKeys.create_key(params, subject)
@@ -1028,7 +1036,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an expiry at or before now is a field error — no key, no audit row" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       past = DateTime.add(DateTime.utc_now(), -60, :second)
 
       assert {:error, changeset} = ApiKeys.create_key(%{name: "dead", expires_at: past}, subject)
@@ -1041,7 +1049,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an attrs-supplied account_id cannot mint into another account" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       other_account = Fixtures.Accounts.create_account()
       attrs = %{"name" => "crafted", "account_id" => other_account.id}
 
@@ -1052,7 +1060,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "MCP keys default to a 30-day expiry when none is given (a leak self-heals)" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       assert {:ok, _raw, %ApiKey{expires_at: exp} = key} =
                ApiKeys.create_key(%{name: "mcp"}, subject)
@@ -1065,7 +1073,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an explicit expiry is honoured, never overridden by the default" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       explicit = DateTime.add(DateTime.utc_now(), 3600, :second)
 
       assert {:ok, _raw, %ApiKey{expires_at: exp}} =
@@ -1075,7 +1083,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "audit-export tokens never get a default expiry — it would break log shipping" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       assert {:ok, _raw, %ApiKey{expires_at: nil}} =
@@ -1083,7 +1091,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a free account cannot mint an audit-export token — export is the paid surface" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       assert ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject) ==
                {:error, :audit_export_not_available}
@@ -1092,7 +1100,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a withdrawn entitlement blocks the mint even on Team" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       Fixtures.Accounts.create_subscription(account, "team",
         entitlements: %{"features_audit_export_enabled?" => false}
@@ -1103,7 +1111,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a canceled subscription cannot mint a continuous-export token" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team", status: "canceled")
 
       assert ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject) ==
@@ -1113,7 +1121,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a granted entitlement enables the mint on an otherwise ineligible plan" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       Fixtures.Accounts.create_subscription(account, "starter-2027",
         entitlements: %{"features_audit_export_enabled?" => true}
@@ -1125,16 +1133,14 @@ defmodule Emisar.ApiKeysTest do
 
     test "an operator may mint an MCP key — the issue tier, same as a quick key" do
       account = Fixtures.Accounts.create_account()
-      operator = Fixtures.Users.create_user()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: operator.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert {:ok, _raw, %ApiKey{kind: :mcp} = key} = ApiKeys.create_key(%{name: "ci"}, subject)
 
@@ -1146,24 +1152,20 @@ defmodule Emisar.ApiKeysTest do
       # pack access at call time, so binding it to the minter is what stops a
       # key carrying more access than the member who minted it.
       account = Fixtures.Accounts.create_account()
-      operator = Fixtures.Users.create_user()
-      owner = Fixtures.Users.create_user()
 
       operator_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: operator.id,
           role: "operator"
         )
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.membership_subject(operator_membership)
+      subject = Fixtures.Subjects.subject_for(operator_membership)
       attrs = %{"name" => "crafted", "created_by_membership_id" => owner_membership.id}
 
       assert {:ok, _raw, %ApiKey{} = key} = ApiKeys.create_key(attrs, subject)
@@ -1175,17 +1177,15 @@ defmodule Emisar.ApiKeysTest do
       # `:audit_export` is a different capability — the account's whole audit
       # stream, not this member's runner scope — so it keeps `manage_api_keys`.
       account = Fixtures.Accounts.create_account()
-      operator = Fixtures.Users.create_user()
       Fixtures.Accounts.create_subscription(account, "team")
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: operator.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert ApiKeys.create_key(%{name: "siem", kind: :audit_export}, subject) ==
                {:error, :unauthorized}
@@ -1195,16 +1195,9 @@ defmodule Emisar.ApiKeysTest do
 
     test "a viewer holds only view_api_keys and cannot mint at all" do
       account = Fixtures.Accounts.create_account()
-      viewer = Fixtures.Users.create_user()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
-
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert ApiKeys.create_key(%{name: "peek"}, subject) == {:error, :unauthorized}
       refute Repo.one(ApiKey)
@@ -1227,7 +1220,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a stale subject cannot create a key after the account is disabled" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       assert {:ok, _account} =
                Accounts.set_account_disabled_for_support(
@@ -1245,7 +1238,7 @@ defmodule Emisar.ApiKeysTest do
     # new key as target + its kind in the payload. The mint of a log-shipping
     # credential is itself part of the log it ships.
     test "minting an audit-export token writes an api_key.created audit row" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       assert {:ok, _raw, key} =
@@ -1265,7 +1258,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "rotate_api_key/2" do
     test "mints a successor inheriting name + kind; the old key stays usable (overlap)" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       {:ok, _raw, original} = ApiKeys.create_key(%{name: "claude"}, subject)
 
@@ -1298,7 +1291,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an audit-export key rotates on an entitled plan" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
 
@@ -1309,7 +1302,7 @@ defmodule Emisar.ApiKeysTest do
     test "an audit-export key cannot mint a successor after the entitlement is withdrawn" do
       # Rotation mints a fresh export credential, so it is a mint path too — a
       # downgraded account keeps its existing token but cannot extend the line.
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
 
@@ -1321,7 +1314,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "rotation authorizes the persisted kind after the plan expires" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, subject)
 
@@ -1368,12 +1361,12 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "inherited"}, operator_subject)
 
       membership =
-        Fixtures.Memberships.fetch_membership(account.id, operator_subject.actor.id)
+        Repo.reload!(operator_subject.actor)
         |> Fixtures.Memberships.force_role("viewer")
 
       # A viewer can never mint a key, so the only way to hold one is a
       # demotion — and the own-key path asks for exactly what minting asked for.
-      viewer_subject = Fixtures.Subjects.membership_subject(membership)
+      viewer_subject = Fixtures.Subjects.subject_for(membership)
 
       assert ApiKeys.rotate_api_key(key, viewer_subject) == {:error, :unauthorized}
     end
@@ -1387,10 +1380,10 @@ defmodule Emisar.ApiKeysTest do
         ApiKeys.create_key(%{name: "SIEM", kind: :audit_export}, admin_subject)
 
       membership =
-        Fixtures.Memberships.fetch_membership(account.id, admin_subject.actor.id)
+        Repo.reload!(admin_subject.actor)
         |> Fixtures.Memberships.force_role("operator")
 
-      demoted_subject = Fixtures.Subjects.membership_subject(membership)
+      demoted_subject = Fixtures.Subjects.subject_for(membership)
 
       # Rotating mints a FRESH export credential and hands back its secret, so
       # owning the row must not buy back a capability the demotion took away.
@@ -1414,24 +1407,22 @@ defmodule Emisar.ApiKeysTest do
     test "a membership in another account cannot rotate the key its holder minted here" do
       account_one = Fixtures.Accounts.create_account()
       account_two = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
 
       membership_one =
         Fixtures.Memberships.create_membership(
           account_id: account_one.id,
-          user_id: user.id,
           role: "operator"
         )
 
       membership_two =
         Fixtures.Memberships.create_membership(
           account_id: account_two.id,
-          user_id: user.id,
+          email: membership_one.email,
           role: "operator"
         )
 
-      subject_one = Fixtures.Subjects.membership_subject(membership_one)
-      subject_two = Fixtures.Subjects.membership_subject(membership_two)
+      subject_one = Fixtures.Subjects.subject_for(membership_one)
+      subject_two = Fixtures.Subjects.subject_for(membership_two)
 
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "one"}, subject_one)
 
@@ -1467,8 +1458,8 @@ defmodule Emisar.ApiKeysTest do
       # The agents UI hides Rotate for OAuth rows; this proves a crafted event
       # can't get through either — a fresh emk- secret can't reach the OAuth
       # client, so a successor would only break the connection.
-      {user, account, subject} = owner_subject_pair()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, subject} = owner_subject_pair()
+      membership = Repo.reload!(owner)
 
       {:ok, backing} =
         ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
@@ -1505,7 +1496,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "install_auto_rotation_successor/3" do
     test "installs the exact client proposal once and acknowledges an idempotent retry" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
 
       {:ok, _raw, key} =
@@ -1547,7 +1538,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a stale key subject cannot install a successor after the account is disabled" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "paused", expires_at: soon}, subject)
       key_subject = Subject.for_api_key(key, account)
@@ -1587,7 +1578,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a different proposal cannot replace an already-installed successor" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude", expires_at: soon}, subject)
       key_subject = Subject.for_api_key(key, account)
@@ -1602,7 +1593,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "concurrent retries converge on one installed successor" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "claude", expires_at: soon}, subject)
       key_subject = Subject.for_api_key(key, account)
@@ -1628,7 +1619,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a quick key and a far-from-expiry key are not eligible" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, prefix, hash} = Crypto.mint("emk-", 12)
 
       {:ok, _raw, quick} = ApiKeys.mint_quick_key(subject)
@@ -1652,7 +1643,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a revoked or expired key and an audit-export token are not eligible" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       {_raw, prefix, hash} = Crypto.mint("emk-", 12)
@@ -1688,7 +1679,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "invalid material and a user subject are refused" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, prefix, hash} = Crypto.mint("emk-", 12)
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "expiring", expires_at: soon}, subject)
@@ -1710,9 +1701,9 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an API key cannot install a successor in another account" do
-      {_user_a, _account_a, subject_a} = owner_subject_pair()
+      {_owner_a, _account_a, subject_a} = owner_subject_pair()
       {:ok, _raw, key_a} = ApiKeys.create_key(%{name: "a"}, subject_a)
-      {_user_b, account_b, _subject_b} = owner_subject_pair()
+      {_owner_b, account_b, _subject_b} = owner_subject_pair()
       {_raw, prefix, hash} = Crypto.mint("emk-", 12)
       forged_subject = Subject.for_api_key(key_a, account_b)
 
@@ -1722,7 +1713,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "refuses a fresh successor once the lineage is older than the configured ceiling" do
       Emisar.Config.put_override(:emisar, :api_key_max_lineage_age_seconds, 60)
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "aged", expires_at: soon}, subject)
 
@@ -1742,7 +1733,7 @@ defmodule Emisar.ApiKeysTest do
 
     test "still rotates a lineage within the configured age ceiling" do
       Emisar.Config.put_override(:emisar, :api_key_max_lineage_age_seconds, 60)
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "young", expires_at: soon}, subject)
       key_subject = Subject.for_api_key(key, account)
@@ -1758,7 +1749,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "subscribe_account_api_keys/1" do
     test "the subscriber receives the account's api-key list broadcasts" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       assert ApiKeys.subscribe_account_api_keys(account.id) == :ok
 
@@ -1770,8 +1761,8 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a subscriber to account A does not receive account B's broadcasts" do
-      {_user_a, account_a, _subject_a} = owner_subject_pair()
-      {_user_b, _account_b, subject_b} = owner_subject_pair()
+      {_owner_a, account_a, _subject_a} = owner_subject_pair()
+      {_owner_b, _account_b, subject_b} = owner_subject_pair()
 
       assert ApiKeys.subscribe_account_api_keys(account_a.id) == :ok
 
@@ -1785,8 +1776,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "broadcast_backing_key_created/1" do
     test "announces the consent-minted key on the account topic" do
-      {user, account, _subject} = owner_subject_pair()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, _subject} = owner_subject_pair()
+      membership = Repo.reload!(owner)
 
       {:ok, key} =
         ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
@@ -1801,8 +1792,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "broadcast_backing_key_revoked/1" do
     test "announces an OAuth backing-key revocation on the account topic" do
-      {user, account, _subject} = owner_subject_pair()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, _subject} = owner_subject_pair()
+      membership = Repo.reload!(owner)
 
       {:ok, key} =
         ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
@@ -1817,7 +1808,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "mint_quick_key/2" do
     test "mints a pre-scoped auto key, hidden until first use" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       assert {:ok, raw, %ApiKey{} = key} = ApiKeys.mint_quick_key(subject)
       assert String.starts_with?(raw, "emk-")
@@ -1833,7 +1824,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "refuses to mint into a disabled account" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       assert {:ok, _account} =
                Accounts.set_account_disabled_for_support(
@@ -1848,16 +1839,16 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "refuses a held session whose grant ended before the mint took the lock" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       member = Repo.get!(Accounts.Membership, subject.membership_id)
-      assert {:ok, %{count: 1}} = Emisar.Auth.delete_membership_session_grants(member, Repo)
+      assert {:ok, %{count: 1}} = Emisar.Auth.delete_membership_sessions(member, Repo)
 
       assert ApiKeys.mint_quick_key(subject) == {:error, :unauthorized}
       refute Repo.one(ApiKey)
     end
 
     test "ring eviction drops the oldest auto-unused key past the cap, never a used one" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       Emisar.Config.put_override(:emisar, :api_key_quick_ring_cap, 1)
       Emisar.Config.put_override(:emisar, :api_key_quick_eviction_grace_seconds, 0)
 
@@ -1891,15 +1882,9 @@ defmodule Emisar.ApiKeysTest do
       # Operators CAN mint the quick key; only viewers are below the
       # `issue_quick` line, so the denial subject must be a viewer.
       account = Fixtures.Accounts.create_account()
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      subject = Fixtures.Subjects.subject_for(viewer)
 
       assert ApiKeys.mint_quick_key(subject) == {:error, :unauthorized}
     end
@@ -1920,7 +1905,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "revoke_api_key/2" do
     test "marks revoked_at" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
       assert {:ok, %ApiKey{revoked_at: %DateTime{}, revoked_by_membership_id: id}} =
@@ -1931,7 +1916,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "revokes every pending rotation descendant without touching unrelated keys" do
-      {user, account, subject} = owner_subject_pair()
+      {owner, account, subject} = owner_subject_pair()
       soon = DateTime.add(DateTime.utc_now(), 3, :day)
 
       {:ok, source_raw, source} =
@@ -1953,7 +1938,10 @@ defmodule Emisar.ApiKeysTest do
       assert {:ok, leaf_raw, leaf} = ApiKeys.rotate_api_key(pending, subject)
 
       {branch_raw, branch} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       branch = Fixtures.ApiKeys.force_replaces(branch, source.id)
       assert {:ok, unrelated_raw, unrelated} = ApiKeys.create_key(%{name: "unrelated"}, subject)
@@ -2017,10 +2005,10 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "inherited"}, operator_subject)
 
       membership =
-        Fixtures.Memberships.fetch_membership(account.id, operator_subject.actor.id)
+        Repo.reload!(operator_subject.actor)
         |> Fixtures.Memberships.force_role("viewer")
 
-      viewer_subject = Fixtures.Subjects.membership_subject(membership)
+      viewer_subject = Fixtures.Subjects.subject_for(membership)
 
       assert ApiKeys.revoke_api_key(key, viewer_subject) == {:error, :unauthorized}
       refute Repo.reload!(key).revoked_at
@@ -2029,24 +2017,22 @@ defmodule Emisar.ApiKeysTest do
     test "a membership in another account cannot revoke the key its holder minted here" do
       account_one = Fixtures.Accounts.create_account()
       account_two = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
 
       membership_one =
         Fixtures.Memberships.create_membership(
           account_id: account_one.id,
-          user_id: user.id,
           role: "operator"
         )
 
       membership_two =
         Fixtures.Memberships.create_membership(
           account_id: account_two.id,
-          user_id: user.id,
+          email: membership_one.email,
           role: "operator"
         )
 
-      subject_one = Fixtures.Subjects.membership_subject(membership_one)
-      subject_two = Fixtures.Subjects.membership_subject(membership_two)
+      subject_one = Fixtures.Subjects.subject_for(membership_one)
+      subject_two = Fixtures.Subjects.subject_for(membership_two)
 
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "one"}, subject_one)
 
@@ -2069,14 +2055,14 @@ defmodule Emisar.ApiKeysTest do
       account_a = Fixtures.Accounts.create_account()
       {_raw, key_a} = Fixtures.ApiKeys.create_api_key(account_id: account_a.id)
 
-      {_user_b, _account_b, subject_b} = owner_subject_pair()
+      {_owner_b, _account_b, subject_b} = owner_subject_pair()
 
       assert ApiKeys.revoke_api_key(key_a, subject_b) == {:error, :not_found}
       refute Repo.reload!(key_a).revoked_at
     end
 
     test "a different admin retrying a stale key preserves the original revocation receipt" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       :ok = ApiKeys.subscribe_account_api_keys(account.id)
       id = key.id
@@ -2102,7 +2088,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "revoking a rotation-retired ancestor still contains its live successor" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {:ok, _raw, source} = ApiKeys.create_key(%{name: "Source"}, subject)
       {:ok, raw, successor} = ApiKeys.rotate_api_key(source, subject)
       assert ApiKeys.peek_api_key_by_secret(raw)
@@ -2131,7 +2117,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "revoke_all_api_keys_for_member/2" do
     test "revokes every usable mcp key the member owns, chains included, with per-key audit" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       operator_subject = member_subject(account, :operator)
       membership_id = operator_subject.membership_id
 
@@ -2159,7 +2145,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "leaves other members' keys, audit-export tokens, and revoked keys alone" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
       operator_subject = member_subject(account, :operator)
       membership_id = operator_subject.membership_id
@@ -2213,7 +2199,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a manager passing another account's membership revokes nothing" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       other_account = Fixtures.Accounts.create_account()
       other_subject = member_subject(other_account, :operator)
       {:ok, _raw, other_key} = ApiKeys.create_key(%{name: "elsewhere"}, other_subject)
@@ -2228,33 +2214,28 @@ defmodule Emisar.ApiKeysTest do
   describe "revoke_credentials_for_membership/2" do
     test "revokes that membership's active keys only, idempotently" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {_r1, key1} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
-
-      {_r2, key2} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
-
-      # A key minted by a different member must be left alone.
-      other = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
+        Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          user_id: other.id,
-          role: "owner"
+          created_by_membership_id: membership.id
         )
 
+      {_r2, key2} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: membership.id
+        )
+
+      # A key minted by a different member must be left alone.
+      other = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
       {_r3, other_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: other.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: other.id
+        )
 
       assert ApiKeys.revoke_credentials_for_membership(Repo, membership.id) ===
                {:ok, %{api_keys: 2, device_grants: 0}}
@@ -2344,7 +2325,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "returns nil after the key is revoked" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {:ok, _} = ApiKeys.revoke_api_key(key, subject)
 
@@ -2352,8 +2333,8 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "disabling one account rejects its key without affecting another account's key" do
-      {_user_a, account_a, subject_a} = owner_subject_pair()
-      {_user_b, account_b, _subject_b} = owner_subject_pair()
+      {_owner_a, account_a, subject_a} = owner_subject_pair()
+      {_owner_b, account_b, _subject_b} = owner_subject_pair()
       {raw_a, key_a} = Fixtures.ApiKeys.create_api_key(account_id: account_a.id)
       {raw_b, key_b} = Fixtures.ApiKeys.create_api_key(account_id: account_b.id)
 
@@ -2387,9 +2368,9 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "rejects a stale credential when its membership is inactive" do
-      {user, account, subject} = owner_subject_pair()
+      {owner, _account, subject} = owner_subject_pair()
       {:ok, raw, key} = ApiKeys.create_key(%{name: "stale"}, subject)
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = Repo.reload!(owner)
 
       # Bypass Accounts' atomic revocation to model an inconsistent row left by
       # an older process that died after committing the membership change.
@@ -2402,9 +2383,9 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an unresolved invitation cannot mint or authenticate a surviving key" do
-      {user, account, subject} = owner_subject_pair()
+      {owner, _account, subject} = owner_subject_pair()
       {:ok, raw, key} = ApiKeys.create_key(%{name: "pre-invitation"}, subject)
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = Repo.reload!(owner)
       {_token, digest} = Crypto.user_invite_token()
 
       pending =
@@ -2412,7 +2393,7 @@ defmodule Emisar.ApiKeysTest do
         |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
         |> Repo.update!()
 
-      pending_subject = Fixtures.Subjects.membership_subject(pending)
+      pending_subject = Fixtures.Subjects.subject_for(pending)
 
       assert pending_subject.role == nil
 
@@ -2483,7 +2464,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a successor's first use fails quietly when its account is disabled" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {:ok, _raw, source} = ApiKeys.create_key(%{name: "Source"}, subject)
       {:ok, raw, successor} = ApiKeys.rotate_api_key(source, subject)
       Fixtures.Accounts.disable_account(account)
@@ -2515,7 +2496,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "first use of an auto key clears the flag and audits api_key.bound" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       {:ok, raw, _key} = ApiKeys.mint_quick_key(subject)
 
       assert %ApiKey{} = bound = ApiKeys.peek_api_key_by_secret(raw)
@@ -2532,7 +2513,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "the first call broadcasts api_key.first_used once; later calls don't" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {:ok, raw, key} = ApiKeys.create_key(%{name: "agent"}, subject)
       ApiKeys.subscribe_account_api_keys(account.id)
 
@@ -2546,7 +2527,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "first use of a rotation successor retires the replaced key and audits it" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_old_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {:ok, new_raw, successor} = ApiKeys.rotate_api_key(original, subject)
 
@@ -2568,7 +2549,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "later uses of the successor never re-run the retirement sweep" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_old_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {:ok, new_raw, _successor} = ApiKeys.rotate_api_key(original, subject)
 
@@ -2584,7 +2565,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a hand-revoked replaced key denies its successor without a retirement audit" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_old_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {:ok, new_raw, _successor} = ApiKeys.rotate_api_key(original, subject)
       {:ok, _revoked} = ApiKeys.revoke_api_key(original, subject)
@@ -2602,7 +2583,7 @@ defmodule Emisar.ApiKeysTest do
     test "first use retires the whole abandoned chain, walking through dead middles" do
       # Rotate twice without ever using the middle key (the lost-secret case):
       # the last successor's first use retires BOTH ancestors.
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, original} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
       {:ok, _middle_raw, middle} = ApiKeys.rotate_api_key(original, subject)
       {:ok, last_raw, _last} = ApiKeys.rotate_api_key(middle, subject)
@@ -2624,8 +2605,8 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "the retirement sweep never crosses accounts, even on a forged link" do
-      {_user_a, account_a, subject_a} = owner_subject_pair()
-      {_user_b, account_b, subject_b} = owner_subject_pair()
+      {_owner_a, account_a, subject_a} = owner_subject_pair()
+      {_owner_b, account_b, subject_b} = owner_subject_pair()
       {_raw_b, key_b} = Fixtures.ApiKeys.create_api_key(account_id: account_b.id)
 
       {raw_a, key_a} = Fixtures.ApiKeys.create_api_key(account_id: account_a.id)
@@ -2648,8 +2629,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "create_backing_key/3" do
     test "inserts a non-expiring MCP key scoped read+execute, owned by the membership" do
-      {user, account, _subject} = owner_subject_pair()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, _subject} = owner_subject_pair()
+      membership = Repo.reload!(owner)
 
       assert {:ok, %ApiKey{} = key} =
                ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
@@ -2668,8 +2649,8 @@ defmodule Emisar.ApiKeysTest do
       # create_backing_key DISCARDS the raw secret (the OAuth client never sees
       # it), so the resolution path under test is peek_api_key_by_id — the same
       # one the MCP auth plug uses for an OAuth access token.
-      {user, account, _subject} = owner_subject_pair()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, _subject} = owner_subject_pair()
+      membership = Repo.reload!(owner)
 
       {:ok, key} =
         ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Cursor")
@@ -2681,8 +2662,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "put_oauth_refresh_reuse_revocation/2" do
     test "revokes the exact OAuth backing key once inside the caller's transaction" do
-      {user, account, _subject} = owner_subject_pair()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, _subject} = owner_subject_pair()
+      membership = Repo.reload!(owner)
 
       {:ok, key} =
         ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
@@ -2706,7 +2687,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "rejects a non-OAuth key without mutating it" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "Operator key"}, subject)
 
       assert {:error, :not_found} =
@@ -2721,7 +2702,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "peek_api_key_by_id/1" do
     test "returns a usable key, nil for revoked or unknown" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
       assert %ApiKey{id: id} = ApiKeys.peek_api_key_by_id(key.id)
@@ -2742,8 +2723,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "record_backing_key_usage/1" do
     test "bumps last_used_at and broadcasts first use, then re-bumps without re-broadcasting" do
-      {user, account, _subject} = owner_subject_pair()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, _subject} = owner_subject_pair()
+      membership = Repo.reload!(owner)
 
       {:ok, key} =
         ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
@@ -2768,8 +2749,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "list_stale_oauth_backing_key_ids/1" do
     test "returns non-expiring, never-used MCP keys minted before the cutoff" do
-      {user, account, subject} = owner_subject_pair()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, subject} = owner_subject_pair()
+      membership = Repo.reload!(owner)
 
       {:ok, backing} =
         ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
@@ -2792,8 +2773,8 @@ defmodule Emisar.ApiKeysTest do
 
   describe "delete_backing_keys/1" do
     test "deletes the given OAuth backing keys but never a real operator key" do
-      {user, account, subject} = owner_subject_pair()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, subject} = owner_subject_pair()
+      membership = Repo.reload!(owner)
 
       {:ok, backing} =
         ApiKeys.create_backing_key(account.id, membership.id, "OAuth: Claude")
@@ -2815,7 +2796,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "api_key_usable_in_account?/3" do
     test "locks and accepts only a live key in its own account" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "delayed run"}, subject)
 
       assert ApiKeys.api_key_usable_in_account?(Repo, key.id, account.id)
@@ -2859,7 +2840,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "no_agents?/1" do
     test "is true when the account has no live MCP key, false once one exists" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       # No keys yet → nudge the operator to connect an agent.
       assert ApiKeys.no_agents?(subject)
@@ -2869,7 +2850,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "ignores audit-export and unused auto-generated keys until an MCP client connects" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _raw, _export_key} =
@@ -2885,7 +2866,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a fully-revoked account reads as no agents again (the nudge returns)" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
       refute ApiKeys.no_agents?(subject)
@@ -2898,7 +2879,7 @@ defmodule Emisar.ApiKeysTest do
       # "Live" has to mean what `key_usable?/2` and the Agents page mean by it,
       # expiry included. Counting an expired key as an agent left the nav silent
       # while the Agents page itself showed "Connect an agent".
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
 
       refute ApiKeys.no_agents?(subject)
@@ -2908,7 +2889,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "is account-scoped — another account's key doesn't clear this account's nudge" do
-      {_user_a, _account_a, subject_a} = owner_subject_pair()
+      {_owner_a, _account_a, subject_a} = owner_subject_pair()
       account_b = Fixtures.Accounts.create_account()
       {_raw, _key_b} = Fixtures.ApiKeys.create_api_key(account_id: account_b.id)
 
@@ -2979,7 +2960,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "fetch_pending_device_grant_by_user_code/2" do
     test "finds the pending grant, normalizing case and separators" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       {:ok, _device_code, user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -2992,7 +2973,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an expired or unknown code is :not_found" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       {:ok, _device_code, user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3008,15 +2989,9 @@ defmodule Emisar.ApiKeysTest do
 
     test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
       account = Fixtures.Accounts.create_account()
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      subject = Fixtures.Subjects.subject_for(viewer)
 
       assert ApiKeys.fetch_pending_device_grant_by_user_code("XXXX-XXXX", subject) ==
                {:error, :unauthorized}
@@ -3025,7 +3000,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "approve_device_grant/2" do
     test "binds the approver's account + identity and writes the audit event" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3046,7 +3021,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a grant approves exactly once — a second approve (or after deny) is :not_found" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3056,7 +3031,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an expired grant cannot be approved" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3068,26 +3043,20 @@ defmodule Emisar.ApiKeysTest do
 
     test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
       account = Fixtures.Accounts.create_account()
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      subject = Fixtures.Subjects.subject_for(viewer)
 
       assert ApiKeys.approve_device_grant(%DeviceGrant{}, subject) == {:error, :unauthorized}
     end
 
     test "an unresolved invitation cannot approve a device grant from a stale subject" do
-      {user, account, subject} = owner_subject_pair()
+      {owner, _account, subject} = owner_subject_pair()
 
       {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = Repo.reload!(owner)
       {_token, digest} = Crypto.user_invite_token()
 
       membership
@@ -3102,7 +3071,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "deny_device_grant/2" do
     test "records the denier and writes the audit event" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["cursor"], %RequestContext{})
@@ -3121,7 +3090,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a denied grant cannot then be approved" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["cursor"], %RequestContext{})
@@ -3132,26 +3101,20 @@ defmodule Emisar.ApiKeysTest do
 
     test "a viewer (no issue_quick_key permission) is refused with :unauthorized" do
       account = Fixtures.Accounts.create_account()
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      subject = Fixtures.Subjects.subject_for(viewer)
 
       assert ApiKeys.deny_device_grant(%DeviceGrant{}, subject) == {:error, :unauthorized}
     end
 
     test "an unresolved invitation cannot deny a device grant from a stale subject" do
-      {user, account, subject} = owner_subject_pair()
+      {owner, _account, subject} = owner_subject_pair()
 
       {:ok, _device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = Repo.reload!(owner)
       {_token, digest} = Crypto.user_invite_token()
 
       membership
@@ -3166,7 +3129,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "claim_device_grant/1" do
     test "an approved grant mints one auto key per client in the approver's account — once" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       # A second tenant proves account scoping: nothing may land there.
       other_account = Fixtures.Accounts.create_account()
 
@@ -3204,7 +3167,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "each minted key gets an api_key.created audit row naming the approver" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
       context = %RequestContext{ip_address: "203.0.113.9"}
 
       {:ok, device_code, _user_code, grant} =
@@ -3240,7 +3203,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a denied grant polls as :access_denied" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3251,7 +3214,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an expired grant polls as :expired_token — even after approval" do
-      {_user, _account, subject} = owner_subject_pair()
+      {_owner, _account, subject} = owner_subject_pair()
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3265,17 +3228,15 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a current viewer role kills a surviving approved grant at claim" do
-      user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3291,17 +3252,15 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "pending directory authorization fails closed at claim" do
-      user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3326,13 +3285,13 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "an unresolved invitation fails closed at claim" do
-      {user, account, subject} = owner_subject_pair()
+      {owner, _account, subject} = owner_subject_pair()
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
 
       {:ok, approved} = ApiKeys.approve_device_grant(grant, subject)
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = Repo.reload!(owner)
       {_token, digest} = Crypto.user_invite_token()
 
       pending =
@@ -3347,7 +3306,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "pending directory authorization does not demote a human owner at claim" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3369,17 +3328,15 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a current suspension kills a surviving approved grant at claim" do
-      user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3393,17 +3350,11 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a removed approver membership kills the claim" do
-      user = Fixtures.Users.create_user()
       account = Fixtures.Accounts.create_account()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3416,7 +3367,7 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a disabled account cannot claim, and re-enable preserves the approved grant" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
 
       {:ok, device_code, _user_code, grant} =
         ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -3478,11 +3429,13 @@ defmodule Emisar.ApiKeysTest do
       account = Fixtures.Accounts.create_account()
 
       viewer_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       billing_manager_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
-          role: :billing_manager
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :billing_manager)
         )
 
       assert ApiKeys.subject_can_view_api_keys?(viewer_subject)
@@ -3495,9 +3448,14 @@ defmodule Emisar.ApiKeysTest do
       account = Fixtures.Accounts.create_account()
 
       operator =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :operator)
+        )
 
-      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+      viewer =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       assert ApiKeys.subject_can_issue_quick_key?(operator)
       refute ApiKeys.subject_can_issue_quick_key?(viewer)
@@ -3507,15 +3465,9 @@ defmodule Emisar.ApiKeysTest do
   describe "subject_can_manage_api_keys?/1" do
     test "is true for an owner and an admin (they hold manage_api_keys)" do
       {_owner, account, owner_subject} = owner_subject_pair()
-      admin = Fixtures.Users.create_user()
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
-
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert ApiKeys.subject_can_manage_api_keys?(owner_subject)
       assert ApiKeys.subject_can_manage_api_keys?(admin_subject)
@@ -3523,23 +3475,12 @@ defmodule Emisar.ApiKeysTest do
 
     test "is false for an operator and a viewer" do
       {_owner, account, _owner_subject} = owner_subject_pair()
-      operator = Fixtures.Users.create_user()
-      viewer = Fixtures.Users.create_user()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
-      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
 
       refute ApiKeys.subject_can_manage_api_keys?(operator_subject)
       refute ApiKeys.subject_can_manage_api_keys?(viewer_subject)
@@ -3548,7 +3489,7 @@ defmodule Emisar.ApiKeysTest do
 
   describe "subject_can_revoke_member_keys?/2" do
     test "true for a manager on any member, and for a member on themselves" do
-      {_user, account, subject} = owner_subject_pair()
+      {_owner, account, subject} = owner_subject_pair()
       operator_subject = member_subject(account, :operator)
 
       assert ApiKeys.subject_can_revoke_member_keys?(operator_subject.membership_id, subject)
@@ -3597,12 +3538,12 @@ defmodule Emisar.ApiKeysTest do
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "inherited"}, operator_subject)
 
       membership =
-        Fixtures.Memberships.fetch_membership(account.id, operator_subject.actor.id)
+        Repo.reload!(operator_subject.actor)
         |> Fixtures.Memberships.force_role("viewer")
 
       refute ApiKeys.subject_can_manage_api_key?(
                key,
-               Fixtures.Subjects.membership_subject(membership)
+               Fixtures.Subjects.subject_for(membership)
              )
     end
   end

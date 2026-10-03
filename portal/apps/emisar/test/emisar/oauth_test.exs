@@ -77,9 +77,10 @@ defmodule Emisar.OAuthTest do
   end
 
   defp subject_from_session(account, raw_token) do
-    assert {:ok, %{user: user} = session} = Auth.fetch_session_by_token(raw_token)
+    assert {:ok, %{membership: member} = session} =
+             Auth.fetch_session_by_token(raw_token, account.id)
 
-    Fixtures.Subjects.subject_for(user, account, session: session)
+    Fixtures.Subjects.subject_for(member, session: session)
   end
 
   defp refute_oauth_mint(account) do
@@ -347,7 +348,7 @@ defmodule Emisar.OAuthTest do
 
   describe "issue_code/3 authorization gate" do
     test "a successful consent announces the backing key on the agents topic" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
 
@@ -364,16 +365,18 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       # A viewer has view_api_keys but not issue_quick_key, so they can't mint
       # an API key in-product — and must not be able to via consent either.
-      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+      viewer =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       assert OAuth.issue_code(client, authorization_params(challenge), viewer) ==
                {:error, :unauthorized}
     end
 
     test "a suspended membership cannot mint a backing key from a stale subject" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.suspend_membership(membership)
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Memberships.suspend_membership(owner)
       client = register!()
       {_verifier, challenge} = pkce()
 
@@ -386,9 +389,8 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a removed membership cannot mint a backing key from a stale subject" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.mark_membership_as_deleted(membership)
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Memberships.mark_membership_as_deleted(owner)
       client = register!()
       {_verifier, challenge} = pkce()
 
@@ -400,9 +402,8 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a fresh membership role must still have the key-issue permission" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "viewer")
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Memberships.force_role(owner, "viewer")
       client = register!()
       {_verifier, challenge} = pkce()
 
@@ -414,15 +415,10 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a membership held by another operator mints nothing" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      peer = Fixtures.Users.create_user()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       peer_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: peer.id,
-          role: "owner"
-        )
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       client = register!()
       {_verifier, challenge} = pkce()
@@ -438,15 +434,11 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a membership in another account mints nothing" do
-      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       other_account = Fixtures.Accounts.create_account()
 
       other_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: other_account.id,
-          user_id: user.id,
-          role: "owner"
-        )
+        Fixtures.Memberships.create_membership(account_id: other_account.id, role: "owner")
 
       client = register!()
       {_verifier, challenge} = pkce()
@@ -460,7 +452,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "an unregistered redirect_uri is refused with no trusted callback to report on" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge, %{"redirect_uri" => "https://attacker.example/cb"})
@@ -472,7 +464,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a caller cannot widen a persisted client's redirect registration" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       unregistered = "https://attacker.example/cb"
@@ -486,7 +478,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a missing redirect_uri is refused" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge) |> Map.delete("redirect_uri")
@@ -497,7 +489,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a response_type other than code is refused on the trusted callback" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge, %{"response_type" => "token"})
@@ -510,7 +502,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a missing or malformed PKCE challenge is refused" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
 
@@ -529,7 +521,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a non-S256 challenge method is refused (MCP mandates S256)" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge, %{"code_challenge_method" => "plain"})
@@ -542,7 +534,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a resource other than this MCP endpoint is refused" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge, %{"resource" => "https://other.example/mcp"})
@@ -555,7 +547,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "an account that requires SSO refuses a magic-link session" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Accounts.create_subscription(account, "team")
       Fixtures.SSO.create_identity_provider(account_id: account.id)
       Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
@@ -570,7 +562,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "an account that requires MFA refuses an un-enrolled operator" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
       client = register!()
       {_verifier, challenge} = pkce()
@@ -583,10 +575,10 @@ defmodule Emisar.OAuthTest do
     end
 
     test "an enrolled operator without current session proof mints nothing" do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {enrolled, _codes} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
       raw_token = Fixtures.Auth.create_session_token!(enrolled, :magic_link, nil)
       unproved = subject_from_session(account, raw_token)
@@ -594,7 +586,7 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert unproved.actor.id == user.id
+      assert unproved.actor.id == owner.id
 
       assert OAuth.issue_code(client, authorization_params(challenge), unproved) ==
                {:error, :mfa_required}
@@ -603,10 +595,10 @@ defmodule Emisar.OAuthTest do
     end
 
     test "a session bound to the current local enrollment can mint" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {enrolled, _codes} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
       raw_token =
         Fixtures.Auth.create_session_token!(enrolled, :magic_link, DateTime.utc_now())
@@ -632,10 +624,10 @@ defmodule Emisar.OAuthTest do
     end
 
     test "disable and re-enroll invalidates the consent snapshot before mint" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {enrolled, [disable_code | _]} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
       raw_token =
         Fixtures.Auth.create_session_token!(enrolled, :magic_link, DateTime.utc_now())
@@ -644,7 +636,7 @@ defmodule Emisar.OAuthTest do
       assert {:ok, disabled} = Auth.disable_mfa(disable_code, stale)
 
       {re_enrolled, _codes} =
-        Fixtures.Users.enable_mfa!(
+        Fixtures.Memberships.enable_mfa!(
           Auth.generate_mfa_secret(),
           %{subject | actor: disabled, mfa: false}
         )
@@ -661,20 +653,15 @@ defmodule Emisar.OAuthTest do
     end
 
     test "an SSO session stops minting when its current provider no longer satisfies MFA" do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
       provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: true)
 
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id
-        })
+      identity = Fixtures.SSO.create_user_identity(%{provider_id: provider.id, membership: owner})
 
       raw_token =
-        Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
+        Fixtures.Auth.create_session_token!(owner, :sso, DateTime.utc_now(), %{},
           user_identity_id: identity.id
         )
 
@@ -709,29 +696,23 @@ defmodule Emisar.OAuthTest do
              ) == 1
     end
 
-    test "an MFA-satisfying SSO origin cannot override the destination's weaker assurance" do
-      {user, identity_account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+    test "an MFA-proved SSO session of another workspace cannot consent for this one" do
+      {origin_owner, origin, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
       provider =
-        Fixtures.SSO.create_identity_provider(
-          account_id: identity_account.id,
-          satisfies_mfa: true
-        )
+        Fixtures.SSO.create_identity_provider(account_id: origin.id, satisfies_mfa: true)
 
       identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: identity_account.id,
-          provider_id: provider.id,
-          user_id: user.id
-        })
+        Fixtures.SSO.create_user_identity(%{provider_id: provider.id, membership: origin_owner})
 
       chosen = Fixtures.Accounts.create_account(plan: "team")
 
-      Fixtures.Memberships.create_membership(
-        account_id: chosen.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: chosen.id,
+          email: origin_owner.email,
+          role: "owner"
+        )
 
       Fixtures.Accounts.set_account_settings(chosen, %{require_mfa: true})
 
@@ -743,29 +724,31 @@ defmodule Emisar.OAuthTest do
         )
 
       Fixtures.SSO.create_user_identity(
-        account_id: chosen.id,
         provider_id: destination_provider.id,
-        user_id: user.id,
+        membership: member,
         provider_identifier: identity.provider_identifier
       )
 
       raw_token =
-        Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
+        Fixtures.Auth.create_session_token!(origin_owner, :sso, DateTime.utc_now(), %{},
           user_identity_id: identity.id
         )
 
-      foreign_sso = subject_from_session(chosen, raw_token)
+      assert Auth.fetch_session_by_token(raw_token, chosen.id) == {:error, :not_found}
+      foreign_sso = Fixtures.Subjects.subject_for(member, session: raw_token)
       client = register!()
       {_verifier, challenge} = pkce()
 
+      assert foreign_sso.mfa
+
       assert OAuth.issue_code(client, authorization_params(challenge), foreign_sso) ==
-               {:error, :mfa_required}
+               {:error, :unauthorized}
 
       refute_oauth_mint(chosen)
     end
 
     test "an active membership still mints a backing key" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
 
@@ -779,7 +762,7 @@ defmodule Emisar.OAuthTest do
 
   describe "exchange_code/1" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject, client: register!()}
     end
 
@@ -1123,7 +1106,7 @@ defmodule Emisar.OAuthTest do
 
   describe "refresh/1" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -1353,7 +1336,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "records the call on the backing key so the connection isn't 'never used'" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -1380,7 +1363,7 @@ defmodule Emisar.OAuthTest do
 
   describe "resolve_access_token/2 invalidation paths" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -1473,7 +1456,7 @@ defmodule Emisar.OAuthTest do
       # account_id + api_key_id are fixed at mint, so resolving account A's
       # token yields account A (never B), and vice versa — the backing-key
       # binding is the isolation boundary, not anything in the presented bearer.
-      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
       client_b = register!("Other Tenant")
       {verifier_b, challenge_b} = pkce()
       code_b = issue!(subject_b, client_b, challenge_b)
@@ -1509,7 +1492,7 @@ defmodule Emisar.OAuthTest do
 
   describe "delete_abandoned_backing_keys/1" do
     test "sweeps an abandoned consent — never exchanged, no token, past the grace window" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       _code = issue!(subject, client, challenge)
@@ -1528,7 +1511,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "keeps a live connection — a key with a token is never swept" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -1549,7 +1532,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "keeps a key whose only token is revoked — Token.Query.all() shields it, not just live tokens" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -1576,7 +1559,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "sweeps a lapsed connection whose token is gone and was never used" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -1601,7 +1584,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "keeps a key that ran a command — last_used_at set is not 'never used'" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -1626,7 +1609,7 @@ defmodule Emisar.OAuthTest do
     end
 
     test "never sweeps a quick-ring key — its default expiry keeps it off the backing-key filter" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       {:ok, _raw, quick} = Emisar.ApiKeys.mint_quick_key(subject)
 
       # Age it two hours past the 1h grace so grace isn't what protects it: a
@@ -1661,7 +1644,7 @@ defmodule Emisar.OAuthTest do
 
   describe "delete_expired_authorization_codes/1" do
     test "prunes codes past their expiry, keeps live ones" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {_verifier, challenge} = pkce()
       _code = issue!(subject, client, challenge)
@@ -1680,7 +1663,7 @@ defmodule Emisar.OAuthTest do
 
   describe "delete_expired_tokens/1" do
     test "prunes fully expired grants but keeps a live refresh grant" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
       {verifier, challenge} = pkce()
       code = issue!(subject, client, challenge)
@@ -1709,7 +1692,7 @@ defmodule Emisar.OAuthTest do
 
   describe "delete_unused_clients/1" do
     setup do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       %{subject: subject}
     end
 

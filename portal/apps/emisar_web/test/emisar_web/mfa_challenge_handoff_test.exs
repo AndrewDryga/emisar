@@ -9,25 +9,28 @@ defmodule EmisarWeb.MfaChallengeHandoffTest do
 
   describe "sign/1 + verify/1" do
     test "a verified proof round-trips unchanged" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       secret = Auth.generate_mfa_secret()
-      {user, _codes} = Fixtures.Users.enable_mfa!(secret, subject)
+      {member, _codes} = Fixtures.Memberships.enable_mfa!(secret, subject)
 
       assert {:ok, proof} =
-               Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
+               Auth.verify_mfa_challenge(member.id, {:totp, Fixtures.Auth.totp_code(secret)})
 
       assert {:ok, ^proof} = proof |> MfaChallengeHandoff.sign() |> MfaChallengeHandoff.verify()
-      assert Auth.mfa_proof_user_id(proof) == user.id
+      assert Auth.mfa_proof_membership_id(proof) == member.id
     end
 
     test "a forged, malformed, or non-binary handoff is refused" do
       assert MfaChallengeHandoff.verify("not-a-real-token") == {:error, :invalid}
       assert MfaChallengeHandoff.verify(nil) == {:error, :invalid}
-      assert MfaChallengeHandoff.verify(%{user_id: Ecto.UUID.generate()}) == {:error, :invalid}
+
+      assert MfaChallengeHandoff.verify(%{membership_id: Ecto.UUID.generate()}) ==
+               {:error, :invalid}
     end
 
     test "a handoff signed under a different salt does not verify" do
-      forged = Phoenix.Token.sign(EmisarWeb.Endpoint, "some other salt", %{user_id: "whoever"})
+      forged =
+        Phoenix.Token.sign(EmisarWeb.Endpoint, "some other salt", %{membership_id: "whoever"})
 
       assert MfaChallengeHandoff.verify(forged) == {:error, :invalid}
     end

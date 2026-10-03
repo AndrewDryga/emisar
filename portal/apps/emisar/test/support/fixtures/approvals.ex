@@ -119,10 +119,9 @@ defmodule Emisar.Fixtures.Approvals do
   end
 
   @doc "Persists one pending whole-execution request for approval UI tests."
-  def create_execution_request(account, requested_by, attrs \\ %{}) do
+  def create_execution_request(account, %Emisar.Accounts.Membership{} = membership, attrs \\ %{}) do
     attrs = Map.new(attrs)
     executable? = Map.get(attrs, :executable?, false)
-    membership = Fixtures.Memberships.fetch_membership(account.id, requested_by.id)
 
     runbook =
       Fixtures.Runbooks.create_runbook(
@@ -192,7 +191,7 @@ defmodule Emisar.Fixtures.Approvals do
     policy =
       Fixtures.Policies.create_policy(
         account_id: account.id,
-        created_by_id: requested_by.id
+        updated_by_membership_id: membership.id
       )
 
     targets =
@@ -341,16 +340,8 @@ defmodule Emisar.Fixtures.Approvals do
     attrs = Map.new(attrs)
 
     issuer_id =
-      cond do
-        attrs[:granted_by_membership_id] ->
-          attrs.granted_by_membership_id
-
-        attrs[:granted_by_id] ->
-          Fixtures.Memberships.fetch_membership(attrs.account_id, attrs.granted_by_id).id
-
-        true ->
-          Fixtures.Memberships.create_membership(account_id: attrs.account_id, role: "admin").id
-      end
+      attrs[:granted_by_membership_id] ||
+        Fixtures.Memberships.create_membership(account_id: attrs.account_id, role: "admin").id
 
     defaults = %{
       action_id: "linux.uptime",

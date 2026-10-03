@@ -276,8 +276,10 @@ defmodule Emisar.Billing.Checkouts do
     with_intent(intent, fn repo, account, subscription, current ->
       with :ok <- ensure_url_scope(account, subscription, current, intent),
            :ok <- ensure_no_retirements(intent.account_id, repo),
-           true <- current.state == :payable and valid_checkout_url?(current.checkout_url) do
-        {:ok, with_origin_account(current.checkout_url, current.account_id)}
+           true <- current.state == :payable and valid_checkout_url?(current.checkout_url),
+           true <- is_binary(current.transaction_id) do
+        {:ok,
+         with_checkout_return(current.checkout_url, current.account_id, current.transaction_id)}
       else
         false -> {:error, :checkout_pending}
         error -> error
@@ -291,30 +293,34 @@ defmodule Emisar.Billing.Checkouts do
   """
   def provider_checkout_url(transaction, account_id) when is_binary(account_id) do
     url = map_value(transaction, "checkout")["url"]
+    transaction_id = transaction["id"]
 
-    if valid_checkout_url?(url),
-      do: {:ok, with_origin_account(url, account_id)},
+    if valid_checkout_url?(url) and is_binary(transaction_id),
+      do: {:ok, with_checkout_return(url, account_id, transaction_id)},
       else: {:error, :invalid_provider_data}
   end
 
-  # Keep the provider URL intact in storage. The origin is only a return-path
-  # hint; the authenticated return independently authorizes this account.
-  defp with_origin_account(url, account_id) do
+  # Keep the provider URL intact in storage. The return state rides only the URL
+  # handed to the browser, signed over the workspace and the transaction it pays
+  # (`Crypto.checkout_return/2`), so the checkout page and its return route only
+  # to that workspace; the authenticated return still authorizes it.
+  defp with_checkout_return(url, account_id, transaction_id) do
     uri = URI.parse(url)
+    checkout_return = Crypto.checkout_return(account_id, transaction_id)
 
     query =
       uri.query
       |> to_string()
       |> String.split("&", trim: true)
-      |> Enum.reject(&origin_account_param?/1)
-      |> Enum.concat(["emisar_account_id=" <> account_id])
+      |> Enum.reject(&checkout_return_param?/1)
+      |> Enum.concat(["emisar_return=" <> URI.encode_www_form(checkout_return)])
       |> Enum.join("&")
 
     URI.to_string(%{uri | query: query})
   end
 
-  defp origin_account_param?(pair) do
-    pair |> String.split("=", parts: 2) |> hd() |> URI.decode_www_form() == "emisar_account_id"
+  defp checkout_return_param?(pair) do
+    pair |> String.split("=", parts: 2) |> hd() |> URI.decode_www_form() == "emisar_return"
   end
 
   defp ensure_url_scope(account, subscription, current, expected) do

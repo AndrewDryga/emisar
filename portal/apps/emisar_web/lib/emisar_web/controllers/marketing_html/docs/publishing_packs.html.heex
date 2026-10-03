@@ -4,7 +4,7 @@
 ============================================================ --%>
 
 <div class="bg-zinc-950 text-zinc-100">
-  <.marketing_nav current_user={@current_user} current={:docs} />
+  <.marketing_nav signed_in?={@signed_in?} current={:docs} />
 
   <section class="py-12 sm:py-16">
     <.docs_layout

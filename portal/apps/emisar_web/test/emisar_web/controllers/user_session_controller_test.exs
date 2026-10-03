@@ -1,1216 +1,902 @@
 defmodule EmisarWeb.UserSessionControllerTest do
+  @moduledoc """
+  The emailed-code flows (plan §3 "Sign-in", "Sign-up", "Invitations" and the
+  §3.1 "Email code" rows): every start sends one split code — the nonce in this
+  browser's signed cookie, the code in the inbox — and only this browser can
+  finish it. The code goes only to a verified, active Member of the workspace
+  the URL names; anything else gets the same page and a decoy. One budget per
+  address covers every flow in every workspace.
+  """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Auth, Repo, Users}
+  alias Emisar.{Accounts, Auth, Repo}
+  alias Emisar.Accounts.Membership
   alias Emisar.Audit.Event
-  alias EmisarWeb.{BillingIntent, MagicLinkHandoff, MemberLinkHandoff}
-  alias EmisarWeb.{MfaChallengeHandoff, RegistrationHandoff}
+  alias Emisar.Auth.UserToken
+  alias EmisarWeb.{BillingIntent, MagicLinkHandoff, MfaChallengeHandoff}
 
-  describe "split-code magic link" do
-    # Drive the real request, then pull token_id + the 6-char secret out of the
-    # email. The returned conn carries the signed nonce cookie (via recycle), so a
-    # follow-up confirm/code request is "the same browser" that requested.
-    defp request_magic_link(conn, email, extra_params \\ %{}) do
-      params = Map.put(extra_params, "user", %{"email" => email})
-      conn = post(conn, ~p"/sign_in/magic/start", params)
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      {recycle(conn), token_id, secret}
-    end
+  @code_link ~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})"
+  @magic_session_keys ~w(magic_link_token_id magic_link_nonce magic_link_email
+                         magic_link_expires_at magic_link_back_to browser_id)
 
-    defp verify_magic_factor(conn, user) do
-      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      nonce = get_session(conn, :magic_link_nonce)
-      assert {:ok, %Users.User{id: user_id}} = Auth.verify_magic_link(token_id, secret, nonce)
-      assert user_id == user.id
-      {recycle(conn), token_id}
-    end
+  defp start_sign_in(conn, account, email, extra \\ %{}) do
+    post(conn, ~p"/app/#{account}/sign_in/email", Map.put(extra, "user", %{"email" => email}))
+  end
 
-    setup do
-      %{user: Fixtures.Users.create_user()}
-    end
+  # The emailed code's token id and code, taken from the test mailbox.
+  defp code_from_mailbox do
+    assert_received {:email, %{text_body: body}}
+    [_, token_id, code] = Regex.run(@code_link, body)
+    {token_id, code}
+  end
 
-    test "POST /start sets the nonce cookie and lands on the check-email page", %{
-      conn: conn,
-      user: user
-    } do
-      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+  defp confirm_link(started) do
+    {token_id, code} = code_from_mailbox()
+    started |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{code}")
+  end
 
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      assert conn.resp_cookies["emisar_magic"]
-    end
+  # The typed-code path: `MagicLinkLive` verifies the code with the browser's
+  # nonce and hands the controller a signed `{membership_id, token_id}`.
+  defp typed_code_handoff(started) do
+    {token_id, code} = code_from_mailbox()
+    nonce = get_session(started, :magic_link_nonce)
+    {:ok, membership_id} = Auth.verify_magic_link(token_id, code, nonce, %Emisar.RequestContext{})
+    {token_id, MagicLinkHandoff.sign(membership_id, token_id)}
+  end
 
-    test "the split-factor cookie follows the runtime secure-cookie setting", %{
-      conn: conn,
-      user: user
-    } do
-      Emisar.Config.put_override(:emisar_web, :force_secure_cookies, true)
+  defp member(attrs \\ %{}) do
+    account = Fixtures.Accounts.create_account()
 
-      secure = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
-      assert secure.resp_cookies["emisar_magic"].secure
-      assert_received {:email, _}
-
-      Emisar.Config.put_override(:emisar_web, :force_secure_cookies, false)
-
-      local =
-        post(build_conn(), ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
-
-      refute local.resp_cookies["emisar_magic"].secure
-      assert_received {:email, _}
-    end
-
-    # A request branded to a team that isn't available mints and sends nothing —
-    # but the response is the same neutral sent page an unknown address gets, so
-    # /start never becomes an account- or tenant-existence oracle.
-    test "a disabled branded account issues nothing and still looks like a send", %{
-      conn: conn,
-      user: user
-    } do
-      account = Fixtures.Accounts.create_account()
-
+    member =
       Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
+        Map.merge(%{account_id: account.id, role: "admin"}, Map.new(attrs))
       )
 
-      Fixtures.Accounts.disable_account(account)
+    {member, account}
+  end
 
-      conn =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "return_to" => "/app/#{account.slug}"
-        })
+  defp entry(conn, account), do: List.keyfind(get_session(conn, :sessions) || [], account.id, 0)
+
+  defp audit_rows(account, event_type) do
+    Event.Query.all()
+    |> Event.Query.by_account_id(account.id)
+    |> Event.Query.by_event_type(event_type)
+    |> Repo.all()
+  end
+
+  defp token_row(token_id), do: UserToken.Query.by_id(token_id) |> Repo.one()
+
+  defp session_shape(conn) do
+    cookie = conn.resp_cookies["emisar_magic"]
+
+    %{
+      redirect: redirected_to(conn),
+      keys: Enum.filter(@magic_session_keys, &(get_session(conn, &1) != nil)),
+      cookie: Map.take(cookie, [:max_age, :http_only, :same_site, :sign])
+    }
+  end
+
+  describe "POST /app/:workspace/sign_in/email" do
+    test "sends a code to a verified Member of the workspace and lands on the sent page", %{
+      conn: conn
+    } do
+      {member, account} = member()
+
+      conn = start_sign_in(conn, account, member.email)
 
       assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
       assert conn.resp_cookies["emisar_magic"].max_age == 900
-      assert is_binary(get_session(conn, :magic_link_token_id))
-      assert is_binary(get_session(conn, :magic_link_nonce))
-      refute_received {:email, _}
-    end
-
-    # The sign-up form posts a signed registration handoff to /start; the
-    # verified user id rides the magic cookie through the round-trip so the FIRST
-    # sign-in fires sign_up_completed. The welcome flash is the observable proxy
-    # (same `registered?` signal drives both it and the analytics event), since
-    # the analytics seam is off in test.
-    test "a registration round-trip welcomes the new operator", %{conn: conn} do
-      user = Fixtures.Users.create_user(confirmed?: false)
-
-      conn =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" =>
-            RegistrationHandoff.sign(user.id, "Welcome Co", "Welcome Owner")
-        })
+      assert get_session(conn, :magic_link_email) == member.email
+      assert get_session(conn, :magic_link_back_to) == ~p"/app/#{account}/sign_in"
+      assert is_binary(get_session(conn, :browser_id))
 
       assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-
-      conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert get_session(conn, :user_token)
-      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "Welcome to emisar"
+      assert [{_name, address}] = sent.to
+      assert address == member.email
+      [_, token_id, _code] = Regex.run(@code_link, sent.text_body)
+      assert get_session(conn, :magic_link_token_id) == token_id
+      assert %UserToken{membership_id: membership_id} = token_row(token_id)
+      assert membership_id == member.id
     end
 
-    test "a Team choice survives owner registration and session renewal", %{conn: conn} do
-      user = Fixtures.Users.create_user(confirmed?: false)
-      intent = BillingIntent.sign("team", :year)
+    test "the split-factor cookie follows the runtime secure-cookie setting", %{conn: conn} do
+      {member, account} = member()
+      Emisar.Config.put_override(:emisar_web, :force_secure_cookies, true)
 
-      started =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" =>
-            RegistrationHandoff.sign(user.id, "Team Checkout Co", "Inbox Owner"),
-          "billing_intent" => intent
-        })
+      secure = start_sign_in(conn, account, member.email)
+      assert secure.resp_cookies["emisar_magic"].secure
+      assert_received {:email, _code}
 
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      Emisar.Config.put_override(:emisar_web, :force_secure_cookies, false)
 
-      completed = get(recycle(started), ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert redirected_to(completed) == ~p"/app/billing/start"
-      assert get_session(completed, :billing_intent) == intent
-      assert get_session(completed, :user_token)
+      local = start_sign_in(build_conn(), account, member.email)
+      refute local.resp_cookies["emisar_magic"].secure
+      assert_received {:email, _code}
     end
 
-    test "a returning-email decoy keeps billing intent but creates no workspace", %{
-      conn: conn,
-      user: user
-    } do
-      account = Fixtures.Accounts.create_account()
+    test "unknown, unproved, suspended, removed, pending and other-workspace addresses get the same page and a decoy",
+         %{conn: conn} do
+      {member, account} = member()
+      real = start_sign_in(conn, account, member.email)
+      assert_received {:email, _code}
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      {_other_member, other_account} = member(email: "elsewhere@example.test")
 
-      intent = BillingIntent.sign("team", :month)
+      refused_addresses = [
+        "nobody-#{System.unique_integer([:positive])}@example.test",
+        Fixtures.Memberships.create_membership(account_id: account.id, email_verified?: false).email,
+        account.id
+        |> then(&Fixtures.Memberships.create_membership(account_id: &1))
+        |> Fixtures.Memberships.suspend_membership()
+        |> Map.fetch!(:email),
+        account.id
+        |> then(&Fixtures.Memberships.create_membership(account_id: &1))
+        |> Fixtures.Memberships.mark_membership_as_deleted()
+        |> Map.fetch!(:email),
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          invitation_token_digest:
+            Emisar.Crypto.user_invite_token_digest("invitation-#{System.unique_integer()}")
+        ).email,
+        # A Member of another workspace is nobody here.
+        "elsewhere@example.test"
+      ]
 
-      started =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" => RegistrationHandoff.decoy("Decoy Co", "Decoy Owner"),
-          "billing_intent" => intent
-        })
+      for address <- refused_addresses do
+        refused = start_sign_in(build_conn(), account, address)
 
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      completed = get(recycle(started), ~p"/sign_in/magic/#{token_id}/#{secret}")
+        refute_received {:email, _code}, "#{address} was sent a code"
+        assert session_shape(refused) == session_shape(real)
+        assert get_session(refused, :magic_link_email) == address
+        assert token_row(get_session(refused, :magic_link_token_id)) == nil
+      end
 
-      assert redirected_to(completed) == ~p"/app/billing/start"
-      assert get_session(completed, :billing_intent) == intent
-      refute Repo.get_by(Accounts.Account, name: "Decoy Co")
+      assert other_account.id != account.id
     end
 
-    test "a resend inherits a still-live Team choice from the same browser factor", %{conn: conn} do
-      user = Fixtures.Users.create_user(confirmed?: false)
-      intent = BillingIntent.sign("team", :year)
-
-      started =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" => RegistrationHandoff.sign(user.id, "Resend Team", nil),
-          "billing_intent" => intent
-        })
-
-      assert_received {:email, _first}
-
-      resent =
-        post(recycle(started), ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email}
-        })
-
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      completed = get(recycle(resent), ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert redirected_to(completed) == ~p"/app/billing/start"
-      assert get_session(completed, :billing_intent) == intent
-    end
-
-    test "an ordinary sign-in clears an abandoned Team choice", %{conn: conn, user: user} do
-      intent = BillingIntent.sign("team", :month)
-      conn = Plug.Test.init_test_session(conn, %{billing_intent: intent})
-
-      started = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      completed = get(recycle(started), ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert redirected_to(completed) == ~p"/app"
-      refute get_session(completed, :billing_intent)
-    end
-
-    test "a resend with no posted handoff retains the server-side registration intent", %{
-      conn: conn
-    } do
-      user = Fixtures.Users.create_user(confirmed?: false, full_name: "Unproved Name")
-      handoff = RegistrationHandoff.sign(user.id, "Resend Co", "Inbox Owner")
-
-      started =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" => handoff
-        })
-
-      assert_received {:email, _first_sent}
-
-      resent =
-        post(recycle(started), ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email}
-        })
-
-      assert_received {:email, second_sent}
-
-      [_, token_id, secret] =
-        Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", second_sent.text_body)
-
-      completed = get(recycle(resent), ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert get_session(completed, :user_token)
-      assert Phoenix.Flash.get(completed.assigns.flash, :info) =~ "Welcome to emisar"
-      assert Repo.reload!(user).full_name == "Inbox Owner"
-      assert %Emisar.Accounts.Account{name: "Resend Co"} = Repo.one(Emisar.Accounts.Account)
-    end
-
-    test "a throttled resend preserves the exact registration factor and intent", %{conn: conn} do
-      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      user = Fixtures.Users.create_user(confirmed?: false)
-      handoff = RegistrationHandoff.sign(user.id, "Throttled Co", "Inbox Owner")
-
-      started =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" => handoff
-        })
-
-      assert_received {:email, _first}
-
-      {current, latest_email} =
-        Enum.reduce(1..4, {started, nil}, fn _, {prior, _email} ->
-          resent =
-            post(recycle(prior), ~p"/sign_in/magic/start", %{
-              "user" => %{"email" => user.email}
-            })
-
-          assert_received {:email, sent}
-          {resent, sent}
-        end)
-
-      preserved_id = get_session(current, :magic_link_token_id)
-      preserved_nonce = get_session(current, :magic_link_nonce)
-
-      throttled =
-        post(recycle(current), ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email}
-        })
-
-      refute_received {:email, _}
-      assert redirected_to(throttled) == ~p"/sign_in/magic?sent=1"
-      assert get_session(throttled, :magic_link_token_id) == preserved_id
-      assert get_session(throttled, :magic_link_nonce) == preserved_nonce
-
-      [_, ^preserved_id, secret] =
-        Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", latest_email.text_body)
-
-      completed = get(recycle(throttled), ~p"/sign_in/magic/#{preserved_id}/#{secret}")
-
-      assert get_session(completed, :user_token)
-      assert %Emisar.Accounts.Account{name: "Throttled Co"} = Repo.one(Emisar.Accounts.Account)
-      assert Repo.reload!(user).full_name == "Inbox Owner"
-    end
-
-    test "a throttled signup submission clears stale browser state and returns to signup", %{
-      conn: conn
-    } do
-      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      user = Fixtures.Users.create_user(confirmed?: false)
-      handoff = RegistrationHandoff.sign(user.id, "Retry Signup Co", "Inbox Owner")
-
-      started =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" => handoff
-        })
-
-      assert_received {:email, _first}
-
-      current =
-        Enum.reduce(1..4, started, fn _, prior ->
-          resent =
-            post(recycle(prior), ~p"/sign_in/magic/start", %{
-              "user" => %{"email" => user.email}
-            })
-
-          assert_received {:email, _sent}
-          resent
-        end)
-
-      throttled =
-        post(recycle(current), ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" => handoff
-        })
-
-      refute_received {:email, _}
-      assert redirected_to(throttled) == ~p"/sign_up"
-      assert get_session(throttled, :magic_link_token_id) == nil
-      assert get_session(throttled, :magic_link_nonce) == nil
-      assert throttled.resp_cookies["emisar_magic"].max_age == 0
-      assert Phoenix.Flash.get(throttled.assigns.flash, :error) =~ "try signup again"
-    end
-
-    test "a decoy signup handoff gives an existing operator the same neutral magic path", %{
-      conn: conn,
-      user: user
-    } do
-      handoff = RegistrationHandoff.decoy("Existing Co", "Existing Owner")
-
-      conn =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" => handoff
-        })
-
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      assert conn.resp_cookies["emisar_magic"]
-      refute get_session(conn, :magic_link_signup_handoff)
-
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-
-      conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert get_session(conn, :user_token)
-      refute (Phoenix.Flash.get(conn.assigns.flash, :info) || "") =~ "Welcome to emisar"
-    end
-
-    test "new and existing signup starts expose the same cookie and LiveView session shape", %{
-      conn: conn
-    } do
-      suffix = Ecto.UUID.generate()
-
-      new_user =
-        Fixtures.Users.create_user(%{
-          email: "new-#{suffix}@example.test",
-          full_name: "Neutral Owner",
-          confirmed?: false
-        })
-
-      existing = Fixtures.Users.create_user(%{email: "old-#{suffix}@example.test"})
-
-      new_handoff = RegistrationHandoff.sign(new_user.id, "Neutral Co", "Neutral Owner")
-      decoy_handoff = RegistrationHandoff.decoy("Neutral Co", "Neutral Owner")
-      assert byte_size(new_handoff) == byte_size(decoy_handoff)
-
-      new_conn =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => new_user.email},
-          "registration_handoff" => new_handoff
-        })
-
-      assert_received {:email, _}
-
-      existing_conn =
-        post(build_conn(), ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => existing.email},
-          "registration_handoff" => decoy_handoff
-        })
-
-      assert_received {:email, _}
-
-      assert response_cookie_lengths(new_conn) == response_cookie_lengths(existing_conn)
-
-      new_live_session = EmisarWeb.Router.auth_live_session(new_conn)
-      existing_live_session = EmisarWeb.Router.auth_live_session(existing_conn)
-
-      assert session_value_lengths(new_live_session) ==
-               session_value_lengths(existing_live_session)
-
-      refute Map.has_key?(new_live_session, "magic_link_signup_handoff")
-      refute Map.has_key?(existing_live_session, "magic_link_signup_handoff")
-
-      new_html = new_conn |> recycle() |> get(~p"/sign_in/magic?sent=1") |> html_response(200)
-
-      existing_html =
-        existing_conn |> recycle() |> get(~p"/sign_in/magic?sent=1") |> html_response(200)
-
-      refute new_html =~ new_handoff
-      refute existing_html =~ decoy_handoff
-    end
-
-    test "maximum attribution fits the cookie while signup values remain POST-only", %{
-      conn: conn
-    } do
-      email = String.duplicate("a", 241) <> "@example.test"
-      user = Fixtures.Users.create_user(%{email: email, confirmed?: false})
-      account_name = String.duplicate("🧭", 80)
-      full_name = String.duplicate("🧭", 255)
-      handoff = RegistrationHandoff.sign(user.id, account_name, full_name)
-
-      attribution =
-        ~w(utm_source utm_medium utm_campaign utm_term utm_content twclid)
-        |> Map.new(&{&1, String.duplicate("x", 255)})
-
-      conn =
-        conn
-        |> Plug.Test.init_test_session(%{analytics_campaign_attribution: attribution})
-        |> post(~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" => handoff
-        })
-
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      assert_received {:email, _}
-      assert Enum.all?(get_resp_header(conn, "set-cookie"), &(byte_size(&1) < 4_096))
-    end
-
-    test "a normal sign-in (no registration) shows no welcome", %{conn: conn, user: user} do
-      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
-
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-
-      conn = get(recycle(conn), ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert get_session(conn, :user_token)
-      refute (Phoenix.Flash.get(conn.assigns.flash, :info) || "") =~ "Welcome to emisar"
-    end
-
-    test "the email link signs in from the originating browser", %{conn: conn, user: user} do
-      {conn, token_id, secret} = request_magic_link(conn, user.email)
-
-      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert token = get_session(conn, :user_token)
-      assert {:ok, %{user: signed_in}} = Auth.fetch_session_by_token(token)
-      assert signed_in.id == user.id
-    end
-
-    test "a branded account disabled after the link was issued mints nothing", %{
-      conn: conn,
-      user: user
-    } do
-      account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      {conn, token_id, secret} = request_magic_link(conn, user.email)
+    test "a disabled workspace issues nothing and still looks like a send", %{conn: conn} do
+      {member, account} = member()
       Fixtures.Accounts.disable_account(account)
 
-      conn =
-        get(
-          conn,
-          ~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: "/app/#{account.slug}"]}"
-        )
-
-      refute get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
-    end
-
-    test "a sign-in branded for a workspace the person is not in says so", %{
-      conn: conn,
-      user: user
-    } do
-      account = Fixtures.Accounts.create_account()
-      {conn, token_id, secret} = request_magic_link(conn, user.email)
-
-      conn =
-        get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: "/app/#{account.slug}"]}")
-
-      assert get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/app"
-
-      assert get_session(conn, "phoenix_flash") == %{
-               "info" =>
-                 "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
-             }
-    end
-
-    test "a branded sign-in target wins over a leftover Team choice", %{conn: conn, user: user} do
-      account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      billing_intent = BillingIntent.sign("team", :year)
-
-      {conn, token_id, secret} =
-        request_magic_link(conn, user.email, %{"billing_intent" => billing_intent})
-
-      conn =
-        get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}?#{[return_to: "/app/#{account.slug}"]}")
-
-      assert redirected_to(conn) == ~p"/app/#{account}"
-      refute get_session(conn, :billing_intent)
-    end
-
-    test "one login audits user.signed_in exactly once per account", %{conn: conn, user: user} do
-      # Audit rows are membership-scoped, so create a membership.
-      account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      {conn, token_id, secret} = request_magic_link(conn, user.email)
-      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
-      assert get_session(conn, :user_token)
-
-      signed_in_events =
-        Event.Query.all()
-        |> Event.Query.by_event_type("user.signed_in")
-        |> Repo.all()
-
-      assert length(signed_in_events) == 1
-    end
-
-    # The typed code is verified in MagicLinkLive (tested there); it then redirects
-    # here with a handoff to establish the session. These cover the completion +
-    # its browser-binding — the handoff alone is never enough.
-    test "a valid handoff from the requesting browser completes sign-in", %{
-      conn: conn,
-      user: user
-    } do
-      {conn, token_id} = verify_magic_factor(conn, user)
-      handoff = MagicLinkHandoff.sign(user.id, token_id)
-
-      conn = get(conn, ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
-
-      assert token = get_session(conn, :user_token)
-      assert {:ok, %{user: signed_in}} = Auth.fetch_session_by_token(token)
-      assert signed_in.id == user.id
-    end
-
-    test "a handoff WITHOUT the requesting browser's cookie can't sign in (anti-hijack)", %{
-      conn: conn,
-      user: user
-    } do
-      {_conn, token_id, _secret} = request_magic_link(conn, user.email)
-      handoff = MagicLinkHandoff.sign(user.id, token_id)
-
-      # A leaked handoff URL opened in a DIFFERENT browser (fresh conn, no magic
-      # cookie) → no sign-in. The binding that makes the URL credential safe.
-      conn = get(build_conn(), ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
+      conn = start_sign_in(conn, account, member.email)
 
       assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      refute get_session(conn, :user_token)
+      assert conn.resp_cookies["emisar_magic"].max_age == 900
+      assert token_row(get_session(conn, :magic_link_token_id)) == nil
+      refute_received {:email, _code}
     end
 
-    test "a handoff bound to a different token than the cookie's flow is refused", %{
-      conn: conn,
-      user: user
-    } do
-      {conn, _token_id, _secret} = request_magic_link(conn, user.email)
-      handoff = MagicLinkHandoff.sign(user.id, "not-the-cookie-token-id")
-
-      conn = get(conn, ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
-
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      refute get_session(conn, :user_token)
+    test "an unknown workspace 404s", %{conn: conn} do
+      assert_error_sent 404, fn ->
+        post(conn, ~p"/app/no-such-workspace/sign_in/email", %{"user" => %{"email" => "a@b.co"}})
+      end
     end
 
-    test "a forged/garbage handoff is refused", %{conn: conn, user: user} do
-      {conn, _token_id, _secret} = request_magic_link(conn, user.email)
+    test "malformed and over-long address fields get the same neutral sent page", %{conn: conn} do
+      {_member, account} = member()
+      long = String.duplicate("a", 400) <> "@example.test"
 
-      conn = get(conn, ~p"/sign_in/magic/complete?#{[handoff: "not-a-real-token"]}")
-
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      refute get_session(conn, :user_token)
-    end
-
-    test "the link WITHOUT the requesting browser's cookie can't sign in (anti-hijack)",
-         %{conn: conn, user: user} do
-      {_conn, token_id, secret} = request_magic_link(conn, user.email)
-
-      # A DIFFERENT browser (fresh conn, no nonce cookie) clicking the intercepted
-      # link → no sign-in. The core web-level hijack guarantee.
-      conn = get(build_conn(), ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      refute get_session(conn, :user_token)
-    end
-
-    test "a wrong secret is uniformly invalid (no oracle)", %{conn: conn, user: user} do
-      {conn, token_id, _secret} = request_magic_link(conn, user.email)
-
-      # `tamper` can never hash-match the real secret, so it's uniformly invalid.
-      conn = get(conn, ~p"/sign_in/magic/#{token_id}/tamper")
-
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      refute get_session(conn, :user_token)
-    end
-
-    test "a soft-deleted user cannot sign in via the link", %{conn: conn, user: user} do
-      {conn, token_id, secret} = request_magic_link(conn, user.email)
-      {:ok, _} = user |> Users.User.Changeset.delete() |> Repo.update()
-
-      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      refute get_session(conn, :user_token)
-    end
-
-    test "known and unknown addresses expose the same browser state, while a decoy grants nothing",
-         %{conn: conn} do
-      suffix = Ecto.UUID.generate()
-      known_email = "known-#{suffix}@example.test"
-      unknown_email = "ghost-#{suffix}@example.test"
-      _user = Fixtures.Users.create_user(%{email: known_email})
-
-      known_conn =
-        post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => known_email}})
-
-      assert_received {:email, _}
-
-      unknown_conn =
-        post(build_conn(), ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => unknown_email}
-        })
-
-      refute_received {:email, _}
-      assert redirected_to(unknown_conn) == ~p"/sign_in/magic?sent=1"
-      assert unknown_conn.resp_cookies["emisar_magic"].max_age == 900
-      assert response_cookie_lengths(known_conn) == response_cookie_lengths(unknown_conn)
-
-      known_session = EmisarWeb.Router.auth_live_session(known_conn)
-      unknown_session = EmisarWeb.Router.auth_live_session(unknown_conn)
-      assert session_value_lengths(known_session) == session_value_lengths(unknown_session)
-      refute Map.has_key?(known_session, "magic_link_token_id")
-      refute Map.has_key?(known_session, "magic_link_nonce")
-      refute Map.has_key?(unknown_session, "magic_link_token_id")
-      refute Map.has_key?(unknown_session, "magic_link_nonce")
-
-      known_id = get_session(known_conn, :magic_link_token_id)
-      decoy_id = get_session(unknown_conn, :magic_link_token_id)
-      assert String.at(known_id, 14) == "7"
-      assert String.at(decoy_id, 14) == "7"
-
-      {:ok, live, _html} = live(recycle(unknown_conn), ~p"/sign_in/magic?sent=1")
-      assert render_hook(live, "verify_code", %{"code" => "ABC123"}) =~ "match or has expired"
-
-      completed = get(recycle(unknown_conn), ~p"/sign_in/magic/#{decoy_id}/ABC123")
-      refute get_session(completed, :user_token)
-    end
-
-    test "malformed magic-link email fields get the same neutral sent response", %{conn: conn} do
-      for params <- [
-            %{"user" => %{"email" => %{"nested" => "value"}}},
-            %{"user" => "not-a-map"},
-            %{}
-          ] do
-        response = post(conn, ~p"/sign_in/magic/start", params)
-
-        assert redirected_to(response) == ~p"/sign_in/magic?sent=1"
+      for params <- [%{}, %{"user" => "not-a-map"}, %{"user" => %{"email" => ["a"]}}] do
+        conn = post(conn, ~p"/app/#{account}/sign_in/email", params)
+        assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
+        assert conn.resp_cookies["emisar_magic"]
       end
 
-      refute_received {:email, _email}
-    end
-
-    test "the typed address + the code's expiry are stashed for the sent page", %{
-      conn: conn,
-      user: user
-    } do
-      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
-      assert get_session(conn, :magic_link_email) == user.email
-
-      assert {:ok, %DateTime{}, _} =
-               DateTime.from_iso8601(get_session(conn, :magic_link_expires_at))
-    end
-
-    test "a send under the throttle shows no error flash", %{conn: conn, user: user} do
-      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
-      conn = get(recycle(conn), ~p"/sign_in/magic?sent=1")
-      assert (Phoenix.Flash.get(conn.assigns.flash, :error) || "") == ""
-    end
-
-    test "a rate-limited send surfaces the same throttle error for an UNKNOWN address (no account leak)",
-         %{conn: conn} do
-      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-
-      # The throttle is checked BEFORE the user lookup, so the 6th request for an
-      # address that ISN'T an account is throttled and surfaces the SAME message a
-      # real account would — the error can never reveal whether the address exists.
-      params = %{"user" => %{"email" => "ghost@example.test"}}
-      for _ <- 1..5, do: post(conn, ~p"/sign_in/magic/start", params)
-      conn = post(conn, ~p"/sign_in/magic/start", params)
-
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      conn = get(recycle(conn), ~p"/sign_in/magic?sent=1")
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Wait a few minutes"
+      long_conn = start_sign_in(conn, account, long)
+      assert redirected_to(long_conn) == ~p"/sign_in/magic?sent=1"
+      # Too long to be anyone's address, and too long to keep in the cookie.
+      assert get_session(long_conn, :magic_link_email) == ""
+      refute_received {:email, _code}
     end
   end
 
-  describe "member personal-login link" do
-    # A member-only SSO browser: a Member without a personal login, its
-    # workspace identity, and the signed handoff its workspace page renders.
-    setup %{conn: conn} do
-      account = Fixtures.Accounts.create_account(plan: "team")
-      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      member = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
-
-      identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: account.id,
-          provider_id: provider.id,
-          membership: member
-        )
-
-      donor_raw = Fixtures.Auth.create_member_session_token!(member, identity)
-
-      %{
-        conn: conn |> init_test_session(%{}) |> put_session(:user_token, donor_raw),
-        account: account,
-        member: member,
-        identity: identity,
-        donor_raw: donor_raw,
-        handoff:
-          MemberLinkHandoff.sign(Fixtures.Subjects.unlinked_member_subject(member, donor_raw))
-      }
+  describe "completing an emailed code" do
+    setup do
+      {member, account} = member()
+      %{member: member, account: account}
     end
 
-    defp member_link_params(email, handoff, account) do
-      %{
-        "user" => %{"email" => email},
-        "member_link_handoff" => handoff,
-        "return_to" => "/app/#{account.slug}"
-      }
-    end
-
-    defp start_member_link(conn, email, handoff, account) do
-      conn = post(conn, ~p"/sign_in/magic/start", member_link_params(email, handoff, account))
-      assert redirected_to(conn) == ~p"/sign_in/magic?sent=1"
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      {recycle(conn), token_id, secret}
-    end
-
-    test "a new address becomes a personal login linked to the Member", %{
+    test "the emailed link signs in from the requesting browser and audits once", %{
       conn: conn,
-      account: account,
       member: member,
-      handoff: handoff,
-      donor_raw: donor_raw
+      account: account
     } do
-      email = "linked-#{System.unique_integer([:positive])}@example.test"
-      {conn, token_id, secret} = start_member_link(conn, email, handoff, account)
-      assert {:ok, %Users.User{confirmed_at: nil} = user} = Users.fetch_user_by_email(email)
-
-      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert redirected_to(conn) == ~p"/app/#{account}"
-      assert get_session(conn, "phoenix_flash") == %{"info" => "Personal login linked."}
-      assert {:ok, session} = Auth.fetch_session_by_token(get_session(conn, :user_token))
-      assert session.user.id == user.id
-      assert %DateTime{} = session.user.confirmed_at
-      assert Repo.reload!(member).user_id == user.id
-      assert Auth.fetch_session_by_token(donor_raw) == {:error, :not_found}
-    end
-
-    test "an existing login with MFA links only after its second factor", %{
-      conn: conn,
-      account: account,
-      member: member,
-      handoff: handoff,
-      donor_raw: donor_raw
-    } do
-      secret = Auth.generate_mfa_secret()
-
-      user =
-        Fixtures.Users.create_user()
-        |> Fixtures.Users.set_mfa_state(
-          mfa_secret: secret,
-          mfa_enabled_at: DateTime.utc_now(),
-          mfa_recovery_codes: []
-        )
-
-      {conn, token_id, code} = start_member_link(conn, user.email, handoff, account)
-
-      challenged = get(conn, ~p"/sign_in/magic/#{token_id}/#{code}")
-      assert redirected_to(challenged) == ~p"/sign_in/mfa"
-      assert get_session(challenged, :user_token) == donor_raw
-      assert is_nil(Repo.reload!(member).user_id)
-
-      {:ok, proof} =
-        Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
-
-      completed =
-        challenged
-        |> recycle()
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: MfaChallengeHandoff.sign(proof)]}")
+      completed = conn |> start_sign_in(account, member.email) |> confirm_link()
 
       assert redirected_to(completed) == ~p"/app/#{account}"
-      assert Repo.reload!(member).user_id == user.id
-      assert {:ok, session} = Auth.fetch_session_by_token(get_session(completed, :user_token))
-      assert %DateTime{} = session.mfa_verified_at
+      assert {_account_id, token} = entry(completed, account)
+
+      assert {:ok, %UserToken{membership_id: membership_id}} =
+               Auth.fetch_session_by_token(token, account.id)
+
+      assert membership_id == member.id
+      refute get_session(completed, :magic_link_token_id)
+      refute (Phoenix.Flash.get(completed.assigns.flash, :info) || "") =~ "Welcome to emisar"
+
+      assert [%Event{actor_id: actor_id, payload: %{"method" => "magic_link"}}] =
+               audit_rows(account, "user.signed_in")
+
+      assert actor_id == member.id
     end
 
-    test "a handoff from another or no browser session is refused before anything is sent", %{
-      account: account,
+    test "the link without the requesting browser's cookie can't sign in", %{
       member: member,
-      identity: identity,
-      handoff: handoff
+      account: account
     } do
-      other_raw = Fixtures.Auth.create_member_session_token!(member, identity)
-      email = "stranger-#{System.unique_integer([:positive])}@example.test"
+      _started = start_sign_in(build_conn(), account, member.email)
+      {token_id, code} = code_from_mailbox()
 
-      for conn <- [
-            build_conn() |> init_test_session(%{}) |> put_session(:user_token, other_raw),
-            build_conn()
+      refused = get(build_conn(), ~p"/sign_in/magic/#{token_id}/#{code}")
+
+      assert redirected_to(refused) == ~p"/sign_in/magic?sent=1"
+      refute get_session(refused, :sessions)
+    end
+
+    test "the link for another code than the browser's can't sign in", %{
+      conn: conn,
+      member: member,
+      account: account
+    } do
+      {other, _other_account} = member()
+      other_started = start_sign_in(build_conn(), account, other.email)
+      refute_received {:email, _decoy}
+      assert other_started.resp_cookies["emisar_magic"]
+
+      started = start_sign_in(conn, account, member.email)
+      {token_id, code} = code_from_mailbox()
+
+      # The browser holds the decoy's cookie, not this code's.
+      refused =
+        other_started |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{code}")
+
+      assert redirected_to(refused) == ~p"/sign_in/magic?sent=1"
+      refute get_session(refused, :sessions)
+      assert token_row(token_id)
+      assert started
+    end
+
+    test "a wrong code is uniformly invalid", %{conn: conn, member: member, account: account} do
+      started = start_sign_in(conn, account, member.email)
+      {token_id, _code} = code_from_mailbox()
+
+      refused = started |> recycle() |> get(~p"/sign_in/magic/#{token_id}/AAAAAA")
+
+      assert redirected_to(refused) == ~p"/sign_in/magic?sent=1"
+      assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "can't be used in this browser"
+      refute get_session(refused, :sessions)
+    end
+
+    test "a typed-code handoff completes only with the requesting browser's cookie", %{
+      conn: conn,
+      member: member,
+      account: account
+    } do
+      started = start_sign_in(conn, account, member.email)
+      {_token_id, handoff} = typed_code_handoff(started)
+
+      stolen = get(build_conn(), ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
+      assert redirected_to(stolen) == ~p"/sign_in/magic?sent=1"
+      refute get_session(stolen, :sessions)
+
+      completed = started |> recycle() |> get(~p"/sign_in/magic/complete?#{[handoff: handoff]}")
+      assert redirected_to(completed) == ~p"/app/#{account}"
+      assert entry(completed, account)
+    end
+
+    test "a typed-code handoff lives 30 seconds", %{
+      conn: conn,
+      member: member,
+      account: account
+    } do
+      started = start_sign_in(conn, account, member.email)
+      {token_id, _handoff} = typed_code_handoff(started)
+
+      stale =
+        Phoenix.Token.sign(EmisarWeb.Endpoint, "magic_link signin handoff", {member.id, token_id},
+          signed_at: System.system_time(:second) - 31
+        )
+
+      refused = started |> recycle() |> get(~p"/sign_in/magic/complete?#{[handoff: stale]}")
+
+      assert redirected_to(refused) == ~p"/sign_in/magic?sent=1"
+      refute get_session(refused, :sessions)
+    end
+
+    test "a handoff for another code, or a forged one, is refused", %{
+      conn: conn,
+      member: member,
+      account: account
+    } do
+      started = start_sign_in(conn, account, member.email)
+      _code = code_from_mailbox()
+      browser = recycle(started)
+
+      for handoff <- [
+            MagicLinkHandoff.sign(member.id, Ecto.UUID.generate()),
+            "not-a-real-handoff"
           ] do
-        conn = post(conn, ~p"/sign_in/magic/start", member_link_params(email, handoff, account))
-
-        assert redirected_to(conn) == ~p"/app"
-        assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "couldn't be linked"
+        refused = get(browser, ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
+        assert redirected_to(refused) == ~p"/sign_in/magic?sent=1"
+        refute get_session(refused, :sessions)
       end
-
-      refute_received {:email, _}
-      assert Users.fetch_user_by_email(email) == {:error, :not_found}
     end
 
-    test "a login already seated in the workspace is refused; the browser keeps its session", %{
+    test "a Member removed after the code was sent cannot sign in", %{
       conn: conn,
-      account: account,
       member: member,
-      handoff: handoff,
-      donor_raw: donor_raw
+      account: account
     } do
-      user = Fixtures.Users.create_user()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-      {conn, token_id, secret} = start_member_link(conn, user.email, handoff, account)
+      started = start_sign_in(conn, account, member.email)
+      Fixtures.Memberships.mark_membership_as_deleted(member)
 
-      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
+      refused = confirm_link(started)
 
-      assert redirected_to(conn) == ~p"/app"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "already a member of this workspace"
-      assert get_session(conn, :user_token) == donor_raw
-      assert is_nil(Repo.reload!(member).user_id)
+      refute get_session(refused, :sessions)
+      assert redirected_to(refused) == ~p"/sign_in/magic?sent=1"
     end
 
-    test "member-link requests share signup's hourly cap per source address", %{
+    test "a workspace disabled after the code was sent mints nothing", %{
       conn: conn,
-      account: account,
-      handoff: handoff
+      member: member,
+      account: account
     } do
-      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      conn = %{conn | remote_ip: {198, 51, 100, 21}}
+      started = start_sign_in(conn, account, member.email)
+      Fixtures.Accounts.disable_account(account)
 
-      for _ <- 1..20 do
-        email = "cap-#{System.unique_integer([:positive])}@example.test"
-        sent = post(conn, ~p"/sign_in/magic/start", member_link_params(email, handoff, account))
-        assert redirected_to(sent) == ~p"/sign_in/magic?sent=1"
-        assert_received {:email, _sent}
+      refused = confirm_link(started)
+
+      refute get_session(refused, :sessions)
+      assert redirected_to(refused) == ~p"/app/#{account}/sign_in"
+    end
+
+    test "a Team choice survives the sign-in renewal; an abandoned one does not", %{
+      conn: conn,
+      member: member,
+      account: account
+    } do
+      intent = BillingIntent.sign("team", :year)
+
+      chosen =
+        conn
+        |> start_sign_in(account, member.email, %{"billing_intent" => intent})
+        |> confirm_link()
+
+      assert redirected_to(chosen) == ~p"/app/billing/start"
+      assert get_session(chosen, :billing_intent) == intent
+
+      abandoned =
+        build_conn()
+        |> init_test_session(%{billing_intent: intent})
+        |> start_sign_in(account, member.email)
+        |> confirm_link()
+
+      assert redirected_to(abandoned) == ~p"/app/#{account}"
+      refute get_session(abandoned, :billing_intent)
+    end
+
+    test "returns to this workspace's page or a page naming no workspace, never another workspace's",
+         %{conn: conn, member: member, account: account} do
+      {_other_member, other} = member()
+
+      for {path, expected} <- [
+            {~p"/app/#{account}/runs?source=operator", ~p"/app/#{account}/runs?source=operator"},
+            {~p"/app/#{account.id}/approvals", ~p"/app/#{account.id}/approvals"},
+            {~p"/activate?code=ABCD-EFGH", ~p"/activate?code=ABCD-EFGH"},
+            {~p"/app/#{other}/runs", ~p"/app/#{account}"}
+          ] do
+        completed =
+          conn
+          |> init_test_session(%{user_return_to: path})
+          |> start_sign_in(account, member.email)
+          |> confirm_link()
+
+        assert redirected_to(completed) == expected
+        refute get_session(completed, :user_return_to)
       end
-
-      email = "cap-#{System.unique_integer([:positive])}@example.test"
-      refused = post(conn, ~p"/sign_in/magic/start", member_link_params(email, handoff, account))
-
-      assert redirected_to(refused) == ~p"/app"
-      assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "Too many sign-in emails"
-      assert Users.fetch_user_by_email(email) == {:error, :not_found}
-      refute_received {:email, _}
     end
 
-    test "a member-only browser's email requests always link, never sign in", %{
+    test "an external address is never the landing, stored or passed as a parameter", %{
       conn: conn,
-      account: account,
       member: member,
-      handoff: handoff
+      account: account
     } do
-      plain = %{
-        "user" => %{"email" => "plain-#{System.unique_integer([:positive])}@example.test"}
-      }
+      forged = "https://evil.test/phish"
 
-      refused = post(conn, ~p"/sign_in/magic/start", plain)
-      assert redirected_to(refused) == ~p"/app"
-      refute_received {:email, _}
+      for stored <- ["//evil.test/phish", forged, "/\\evil.test/phish"] do
+        started =
+          conn
+          |> init_test_session(%{user_return_to: stored})
+          |> start_sign_in(account, member.email, %{"return_to" => forged})
 
-      # Mid-link, another address (or a resend) rides the handoff the link began with.
-      first = "first-#{System.unique_integer([:positive])}@example.test"
-      {conn, _token_id, _secret} = start_member_link(conn, first, handoff, account)
-      second = "second-#{System.unique_integer([:positive])}@example.test"
-      conn = post(conn, ~p"/sign_in/magic/start", %{"user" => %{"email" => second}})
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+        {token_id, code} = code_from_mailbox()
 
-      linked = conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+        completed =
+          started
+          |> recycle()
+          |> get(~p"/sign_in/magic/#{token_id}/#{code}?#{[return_to: forged]}")
 
-      assert redirected_to(linked) == ~p"/app/#{account}"
-      assert {:ok, user} = Users.fetch_user_by_email(second)
-      assert Repo.reload!(member).user_id == user.id
+        assert redirected_to(completed) == ~p"/app/#{account}"
+      end
     end
   end
 
-  describe "MFA sign-in challenge" do
-    defp enrolled_mfa_user do
-      user = Fixtures.Users.create_user() |> Fixtures.Users.confirm_user()
-      account = Fixtures.Accounts.create_account()
+  describe "an invitation's code" do
+    setup do
+      {owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      email = "invitee-#{System.unique_integer([:positive])}@example.test"
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      {:ok, %{invitation_token: token, membership: invitation}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
+          subject
+        )
 
-      secret = Auth.generate_mfa_secret()
-      {user, codes} = Fixtures.Users.enable_mfa!(secret, owner_subject(user, account))
-      %{user: user, account: account, secret: secret, codes: codes}
+      %{owner: owner, account: account, token: token, invitation: invitation, email: email}
     end
 
-    defp verified_handoff(user, secret) do
+    test "goes only to the invited address and accepts the invitation in this browser", %{
+      conn: conn,
+      account: account,
+      token: token,
+      invitation: invitation,
+      email: email
+    } do
+      started =
+        post(conn, ~p"/accept_invitation/#{token}", %{
+          "member" => %{"display_name" => "Ines Invitee", "email" => "attacker@example.test"}
+        })
+
+      assert redirected_to(started) == ~p"/sign_in/magic?sent=1"
+      assert get_session(started, :magic_link_back_to) == ~p"/accept_invitation/#{token}"
+      assert_received {:email, %{to: [{_name, ^email}]} = sent}
+      send(self(), {:email, sent})
+
+      completed = confirm_link(started)
+
+      assert redirected_to(completed) == ~p"/app/#{account}"
+      assert {_account_id, _token} = entry(completed, account)
+      accepted = Repo.reload!(invitation)
+      assert accepted.display_name == "Ines Invitee"
+      assert %DateTime{} = accepted.email_verified_at
+      assert %DateTime{} = accepted.invitation_accepted_at
+    end
+
+    test "an unavailable invitation sends nothing", %{conn: conn} do
+      refused =
+        post(conn, ~p"/accept_invitation/not-a-token", %{"member" => %{"display_name" => "X"}})
+
+      assert redirected_to(refused) == ~p"/accept_invitation/not-a-token"
+      refute_received {:email, _code}
+    end
+  end
+
+  describe "POST /sign_up" do
+    defp sign_up(conn, extra \\ %{}) do
+      email = "founder-#{System.unique_integer([:positive])}@example.test"
+      name = "Founder Co #{System.unique_integer([:positive])}"
+
+      params =
+        Map.merge(
+          %{
+            "sign_up" => %{
+              "email" => email,
+              "full_name" => "Fran Founder",
+              "account_name" => name
+            }
+          },
+          extra
+        )
+
+      {post(conn, ~p"/sign_up", params), email, name}
+    end
+
+    test "the code creates the workspace and its owner, then welcomes them", %{conn: conn} do
+      {started, email, name} = sign_up(conn)
+
+      assert redirected_to(started) == ~p"/sign_in/magic?sent=1"
+      assert get_session(started, :magic_link_back_to) == ~p"/sign_up"
+      # Nothing exists before the inbox is proved.
+      assert Membership.Query.all() |> Membership.Query.by_email(email) |> Repo.all() == []
+
+      completed = confirm_link(started)
+
+      assert Phoenix.Flash.get(completed.assigns.flash, :info) =~ "Welcome to emisar"
+      [{account_id, token}] = get_session(completed, :sessions)
+
+      assert {:ok, %UserToken{membership: %Membership{} = owner}} =
+               Auth.fetch_session_by_token(token, account_id)
+
+      assert owner.email == email
+      assert owner.role == :owner
+      assert owner.display_name == "Fran Founder"
+      assert %DateTime{} = owner.email_verified_at
+      assert owner.account.name == name
+      assert redirected_to(completed) == ~p"/app/#{owner.account}"
+    end
+
+    test "a Team choice survives the sign-up and its session renewal", %{conn: conn} do
+      intent = BillingIntent.sign("team", :year)
+      {started, _email, _name} = sign_up(conn, %{"billing_intent" => intent})
+
+      completed = confirm_link(started)
+
+      assert redirected_to(completed) == ~p"/app/billing/start"
+      assert get_session(completed, :billing_intent) == intent
+      assert [_entry] = get_session(completed, :sessions)
+    end
+
+    test "an invalid submission returns to the form and sends nothing", %{conn: conn} do
+      refused =
+        post(conn, ~p"/sign_up", %{
+          "sign_up" => %{"email" => "not-an-email", "account_name" => ""}
+        })
+
+      assert redirected_to(refused) == ~p"/sign_up"
+      assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "Check your details"
+      refute_received {:email, _code}
+    end
+  end
+
+  describe "POST /sign_in/magic/resend" do
+    test "re-issues the code this browser holds, for the same Member", %{conn: conn} do
+      {member, account} = member()
+      started = start_sign_in(conn, account, member.email)
+      {first_id, _first_code} = code_from_mailbox()
+
+      resent = started |> recycle() |> post(~p"/sign_in/magic/resend")
+
+      assert redirected_to(resent) == ~p"/sign_in/magic?sent=1"
+      {token_id, code} = code_from_mailbox()
+      assert token_id != first_id
+      assert get_session(resent, :magic_link_token_id) == token_id
+
+      completed = resent |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{code}")
+      assert redirected_to(completed) == ~p"/app/#{account}"
+    end
+
+    test "a decoy gets a decoy again behind the same page", %{conn: conn} do
+      {_member, account} = member()
+      started = start_sign_in(conn, account, "nobody-#{System.unique_integer()}@example.test")
+
+      resent = started |> recycle() |> post(~p"/sign_in/magic/resend")
+
+      assert redirected_to(resent) == ~p"/sign_in/magic?sent=1"
+      refute_received {:email, _code}
+      assert token_row(get_session(resent, :magic_link_token_id)) == nil
+    end
+
+    test "with no code in this browser there is nothing to resend", %{conn: conn} do
+      assert redirected_to(post(conn, ~p"/sign_in/magic/resend")) == ~p"/sign_in"
+      refute_received {:email, _code}
+    end
+  end
+
+  describe "the shared address budget (review revision 10)" do
+    setup %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      # A client address of its own, so this test's per-IP windows are its own.
+      n = System.unique_integer([:positive])
+      ip = "198.18.#{rem(div(n, 256), 256)}.#{rem(n, 256)}"
+      %{conn: put_req_header(conn, "x-forwarded-for", "#{ip}, 8.233.97.247"), ip: ip}
+    end
+
+    defp from_ip(conn, ip), do: put_req_header(conn, "x-forwarded-for", "#{ip}, 8.233.97.247")
+
+    test "five codes per address in fifteen minutes, across workspaces and flows", %{
+      conn: conn,
+      ip: ip
+    } do
+      email = "busy-#{System.unique_integer([:positive])}@example.test"
+      {_one, account_one} = member(email: email)
+      {_two, account_two} = member(email: email)
+      {_owner, _account, owner_subject} = Fixtures.Subjects.owner_subject()
+
+      {:ok, %{invitation_token: invitation}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: email),
+          owner_subject
+        )
+
+      first = start_sign_in(conn, account_one, email)
+      _second = start_sign_in(from_ip(build_conn(), ip), account_two, email)
+
+      _invited =
+        post(from_ip(build_conn(), ip), ~p"/accept_invitation/#{invitation}", %{
+          "member" => %{"display_name" => "Busy"}
+        })
+
+      _resent = first |> recycle() |> from_ip(ip) |> post(~p"/sign_in/magic/resend")
+
+      _signed_up =
+        post(from_ip(build_conn(), ip), ~p"/sign_up", %{
+          "sign_up" => %{"email" => email, "account_name" => "Busy Co #{System.unique_integer()}"}
+        })
+
+      for _sent <- 1..5, do: assert_received({:email, _code})
+
+      # The sixth, by any flow in any workspace, is refused without mail.
+      sign_in = start_sign_in(from_ip(build_conn(), ip), account_one, email)
+      assert redirected_to(sign_in) == ~p"/sign_in/magic?sent=1"
+      assert Phoenix.Flash.get(sign_in.assigns.flash, :error) =~ "several sign-in emails"
+
+      invitation_refused =
+        post(from_ip(build_conn(), ip), ~p"/accept_invitation/#{invitation}", %{
+          "member" => %{"display_name" => "Busy"}
+        })
+
+      assert redirected_to(invitation_refused) == ~p"/accept_invitation/#{invitation}"
+
+      sign_up_refused =
+        post(from_ip(build_conn(), ip), ~p"/sign_up", %{
+          "sign_up" => %{"email" => email, "account_name" => "Busy Co #{System.unique_integer()}"}
+        })
+
+      assert redirected_to(sign_up_refused) == ~p"/sign_up"
+
+      resend_refused = first |> recycle() |> from_ip(ip) |> post(~p"/sign_in/magic/resend")
+      assert Phoenix.Flash.get(resend_refused.assigns.flash, :error) =~ "several sign-in emails"
+
+      refute_received {:email, _code}
+
+      # The address is normalized: case does not open a second budget.
+      upper = start_sign_in(from_ip(build_conn(), ip), account_one, String.upcase(email))
+      assert Phoenix.Flash.get(upper.assigns.flash, :error) =~ "several sign-in emails"
+      refute_received {:email, _code}
+    end
+
+    test "a refused start keeps the browser's live code instead of a decoy", %{conn: conn, ip: ip} do
+      {member, account} = member()
+
+      {browser, live_id} =
+        Enum.reduce(1..5, {conn, nil}, fn _n, {browser, _id} ->
+          started = start_sign_in(browser, account, member.email)
+          assert_received {:email, _code}
+          {started |> recycle() |> from_ip(ip), get_session(started, :magic_link_token_id)}
+        end)
+
+      throttled = start_sign_in(browser, account, member.email)
+
+      refute_received {:email, _code}
+      assert get_session(throttled, :magic_link_token_id) == live_id
+      assert token_row(live_id)
+    end
+
+    test "every start shares a per-IP cap of 30 a minute", %{conn: conn, ip: ip} do
+      {_member, account} = member()
+
+      for n <- 1..30 do
+        started = start_sign_in(from_ip(conn, ip), account, "nobody-#{n}-#{ip}@example.test")
+        assert redirected_to(started) == ~p"/sign_in/magic?sent=1"
+      end
+
+      limited = start_sign_in(from_ip(build_conn(), ip), account, "one-more@example.test")
+      assert limited.status == 429
+      refute_received {:email, _code}
+    end
+
+    test "sign-up keeps its own hourly cap per source address", %{conn: conn, ip: ip} do
+      for n <- 1..20 do
+        started =
+          post(from_ip(conn, ip), ~p"/sign_up", %{
+            "sign_up" => %{
+              "email" => "cap-#{n}-#{System.unique_integer([:positive])}@example.test",
+              "account_name" => "Cap Co #{n}"
+            }
+          })
+
+        assert redirected_to(started) == ~p"/sign_in/magic?sent=1"
+        assert_received {:email, _code}
+      end
+
+      refused =
+        post(from_ip(build_conn(), ip), ~p"/sign_up", %{
+          "sign_up" => %{"email" => "cap-last@example.test", "account_name" => "Cap Co last"}
+        })
+
+      assert redirected_to(refused) == ~p"/sign_up"
+      assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "Too many signup attempts"
+      refute_received {:email, _code}
+    end
+  end
+
+  describe "the MFA sign-in challenge" do
+    defp enrolled_member do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      secret = Auth.generate_mfa_secret()
+      {owner, codes} = Fixtures.Memberships.enable_mfa!(secret, subject)
+      %{member: owner, account: account, secret: secret, codes: codes, subject: subject}
+    end
+
+    defp verified_handoff(member, secret) do
       {:ok, proof} =
-        Auth.verify_mfa_challenge(user, {:totp, Fixtures.Auth.totp_code(secret)})
+        Auth.verify_mfa_challenge(member.id, {:totp, Fixtures.Auth.totp_code(secret)})
 
       MfaChallengeHandoff.sign(proof)
     end
 
-    defp pending_mfa_sign_in(conn, user, secret) do
-      {conn, token_id} = verify_magic_factor(conn, user)
-      {conn, token_id, verified_handoff(user, secret)}
+    # Factor one passed for `member`; the browser holds the partial-auth marker.
+    defp pending_challenge(conn, %{member: member, account: account}) do
+      challenged = conn |> start_sign_in(account, member.email) |> confirm_link()
+      assert redirected_to(challenged) == ~p"/sign_in/mfa"
+      challenged
     end
 
-    test "an mfa-enrolled user lands on the challenge, not a full session (email link)", %{
+    test "an enrolled Member lands on the challenge, not a session, by link or typed code", %{
       conn: conn
     } do
-      %{user: user} = enrolled_mfa_user()
-      {conn, token_id, secret} = request_magic_link(conn, user.email)
+      %{member: member, account: account} = enrolled = enrolled_member()
 
-      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
+      challenged = pending_challenge(conn, enrolled)
+      refute get_session(challenged, :sessions)
+      assert get_session(challenged, :mfa_pending_membership_id) == member.id
 
-      # No session token minted → not authenticated → no /app access. Only the
-      # non-granting pending marker is set.
-      refute get_session(conn, :user_token)
-      assert get_session(conn, :mfa_pending_user_id) == user.id
-      assert redirected_to(conn) == ~p"/sign_in/mfa"
+      started = start_sign_in(build_conn(), account, member.email)
+      {_token_id, handoff} = typed_code_handoff(started)
+      typed = started |> recycle() |> get(~p"/sign_in/magic/complete?#{[handoff: handoff]}")
+
+      assert redirected_to(typed) == ~p"/sign_in/mfa"
+      refute get_session(typed, :sessions)
     end
 
-    test "the typed-code completion also diverts an mfa user to the challenge", %{conn: conn} do
-      %{user: user} = enrolled_mfa_user()
-      {conn, token_id} = verify_magic_factor(conn, user)
-      handoff = MagicLinkHandoff.sign(user.id, token_id)
+    test "a Member without MFA signs straight in", %{conn: conn} do
+      {member, account} = member()
+      completed = conn |> start_sign_in(account, member.email) |> confirm_link()
 
-      conn = get(conn, ~p"/sign_in/magic/complete?#{[handoff: handoff]}")
-
-      refute get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/sign_in/mfa"
+      assert entry(completed, account)
+      refute get_session(completed, :mfa_pending_membership_id)
     end
 
-    test "a user without mfa still signs straight in (the branch doesn't over-fire)", %{
-      conn: conn
-    } do
-      user = Fixtures.Users.create_user()
-      {conn, token_id, secret} = request_magic_link(conn, user.email)
+    test "the second factor with the matching marker signs in with MFA proved", %{conn: conn} do
+      %{member: member, account: account, secret: secret} = enrolled = enrolled_member()
+      challenged = pending_challenge(conn, enrolled)
 
-      conn = get(conn, ~p"/sign_in/magic/#{token_id}/#{secret}")
+      completed =
+        challenged
+        |> recycle()
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
 
-      assert get_session(conn, :user_token)
-      refute get_session(conn, :mfa_pending_user_id)
+      assert redirected_to(completed) == ~p"/app/#{account}"
+      {_account_id, token} = entry(completed, account)
+
+      assert {:ok, %UserToken{membership_id: membership_id} = session} =
+               Auth.fetch_session_by_token(token, account.id)
+
+      assert membership_id == member.id
+      assert %DateTime{} = session.mfa_verified_at
+      refute get_session(completed, :mfa_pending_membership_id)
+
+      assert [%Event{payload: %{"method" => "magic_link"}}] =
+               audit_rows(account, "user.signed_in")
     end
 
-    test "mfa_complete with a valid handoff + matching pending session signs in with mfa:true", %{
-      conn: conn
-    } do
-      %{user: user, secret: secret} = enrolled_mfa_user()
-      {conn, token_id, handoff} = pending_mfa_sign_in(conn, user, secret)
+    test "a Team choice survives the challenge and the session renewal", %{conn: conn} do
+      %{member: member, secret: secret} = enrolled = enrolled_member()
+      intent = BillingIntent.sign("team", :year)
 
-      conn =
+      # The sign-in form carries the signed plan choice; the challenge keeps it.
+      challenged =
         conn
-        |> init_test_session(%{
-          mfa_pending_user_id: user.id,
-          mfa_pending_magic_link_token_id: token_id,
-          mfa_pending_registered?: false,
-          mfa_pending_at: System.system_time(:second)
-        })
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+        |> start_sign_in(enrolled.account, member.email, %{"billing_intent" => intent})
+        |> confirm_link()
 
-      assert token = get_session(conn, :user_token)
-      assert {:ok, %{user: signed_in} = session_token} = Auth.fetch_session_by_token(token)
-      assert signed_in.id == user.id
-      # The proof time is stamped onto the token, so the factor claim reaches every
-      # audit row bound to the enrollment it was taken against.
-      assert %DateTime{} = session_token.mfa_verified_at
-      refute get_session(conn, :mfa_pending_user_id)
-    end
+      assert redirected_to(challenged) == ~p"/sign_in/mfa"
 
-    test "a valid Team choice survives the MFA challenge and session renewal", %{conn: conn} do
-      %{user: user, secret: secret} = enrolled_mfa_user()
-      {conn, token_id, handoff} = pending_mfa_sign_in(conn, user, secret)
-      billing_intent = BillingIntent.sign("team", :year)
+      completed =
+        challenged
+        |> recycle()
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
 
-      conn =
-        conn
-        |> init_test_session(%{
-          mfa_pending_user_id: user.id,
-          mfa_pending_magic_link_token_id: token_id,
-          mfa_pending_registered?: false,
-          mfa_pending_at: System.system_time(:second),
-          billing_intent: billing_intent
-        })
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
-
-      assert get_session(conn, :user_token)
-      assert get_session(conn, :billing_intent) == billing_intent
-      assert redirected_to(conn) == ~p"/app/billing/start"
+      assert redirected_to(completed) == ~p"/app/billing/start"
+      assert get_session(completed, :billing_intent) == intent
     end
 
     test "a stale half-authentication cannot be completed later", %{conn: conn} do
-      %{user: user, secret: secret} = enrolled_mfa_user()
-      {conn, token_id, handoff} = pending_mfa_sign_in(conn, user, secret)
+      %{member: member, secret: secret} = enrolled = enrolled_member()
+      challenged = pending_challenge(conn, enrolled)
 
-      # The verified inbox factor remains server-side for the final atomic mint,
-      # but the browser's right to present factor two is independently bounded.
-      conn =
-        conn
-        |> init_test_session(%{
-          mfa_pending_user_id: user.id,
-          mfa_pending_magic_link_token_id: token_id,
-          mfa_pending_at: System.system_time(:second) - 3_600
-        })
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+      stale =
+        challenged
+        |> recycle()
+        |> init_test_session(%{mfa_pending_at: System.system_time(:second) - 3_600})
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
 
-      refute get_session(conn, :user_token)
-      refute get_session(conn, :mfa_pending_user_id)
+      assert redirected_to(stale) == ~p"/sign_in"
+      refute get_session(stale, :sessions)
+      refute get_session(stale, :mfa_pending_membership_id)
     end
 
-    test "mfa completion rechecks a disabled branded account before minting a session", %{
+    test "completion rechecks a workspace disabled during the challenge", %{conn: conn} do
+      %{member: member, account: account, secret: secret} = enrolled = enrolled_member()
+      challenged = pending_challenge(conn, enrolled)
+      Fixtures.Accounts.disable_account(account)
+
+      refused =
+        challenged
+        |> recycle()
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
+
+      refute get_session(refused, :sessions)
+      assert redirected_to(refused) == ~p"/app/#{account}/sign_in"
+    end
+
+    test "a proof without the marker, or for another Member, never mints a session", %{
       conn: conn
     } do
-      %{user: user, account: account, secret: secret} = enrolled_mfa_user()
-      {conn, token_id, handoff} = pending_mfa_sign_in(conn, user, secret)
+      %{member: member, secret: secret} = enrolled = enrolled_member()
+      %{member: other, secret: other_secret} = enrolled_member()
 
-      assert {:ok, _account} =
-               Accounts.set_account_disabled_for_support(
-                 account.id,
-                 true,
-                 "Temporary hold",
-                 owner_subject(user, account)
-               )
+      bare = get(conn, ~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
+      assert redirected_to(bare) == ~p"/sign_in"
+      refute get_session(bare, :sessions)
 
-      conn =
-        conn
-        |> init_test_session(%{
-          mfa_pending_user_id: user.id,
-          mfa_pending_magic_link_token_id: token_id,
-          mfa_pending_at: System.system_time(:second),
-          user_return_to: "/app/#{account.slug}"
-        })
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+      challenged = pending_challenge(build_conn(), enrolled)
 
-      refute get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
+      crossed =
+        challenged
+        |> recycle()
+        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(other, other_secret)]}")
+
+      assert redirected_to(crossed) == ~p"/sign_in"
+      refute get_session(crossed, :sessions)
     end
 
-    test "mfa_complete with a handoff but NO pending session is refused (the bypass)", %{
-      conn: conn
-    } do
-      %{user: user, secret: secret} = enrolled_mfa_user()
-      handoff = verified_handoff(user, secret)
+    test "a proof taken before the enrollment changed is refused", %{conn: conn} do
+      %{member: member, secret: secret, codes: [code | _], subject: subject} =
+        enrolled = enrolled_member()
 
-      conn = get(init_test_session(conn, %{}), ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+      challenged = pending_challenge(conn, enrolled)
+      handoff = verified_handoff(member, secret)
+      assert {:ok, _member} = Auth.disable_mfa(code, subject)
 
-      refute get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/sign_in/magic"
+      refused = challenged |> recycle() |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+
+      assert redirected_to(refused) == ~p"/sign_in"
+      refute get_session(refused, :sessions)
     end
 
-    test "mfa_complete refuses a handoff that doesn't match the pending user", %{conn: conn} do
-      %{user: user} = enrolled_mfa_user()
-      %{user: other_user, secret: other_secret} = enrolled_mfa_user()
-      other_handoff = verified_handoff(other_user, other_secret)
+    test "a forged handoff, or one carrying only a Member id, is refused", %{conn: conn} do
+      %{member: member} = enrolled = enrolled_member()
+      challenged = pending_challenge(conn, enrolled)
 
-      conn =
-        conn
-        |> init_test_session(%{
-          mfa_pending_user_id: user.id,
-          mfa_pending_at: System.system_time(:second)
-        })
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: other_handoff]}")
-
-      refute get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/sign_in/magic"
-    end
-
-    test "mfa_complete refuses a proof whose enrollment changed since the challenge", %{
-      conn: conn
-    } do
-      %{user: user, account: account, secret: secret, codes: [code | _]} = enrolled_mfa_user()
-      {conn, token_id, handoff} = pending_mfa_sign_in(conn, user, secret)
-
-      assert {:ok, _user} = Auth.disable_mfa(code, owner_subject(user, account))
-
-      conn =
-        conn
-        |> init_test_session(%{
-          mfa_pending_user_id: user.id,
-          mfa_pending_magic_link_token_id: token_id,
-          mfa_pending_at: System.system_time(:second)
-        })
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
-
-      refute get_session(conn, :user_token)
-      assert redirected_to(conn) == ~p"/sign_in/magic"
-    end
-
-    test "mfa_complete refuses a forged/garbage handoff, or one naming only a user", %{
-      conn: conn
-    } do
-      %{user: user} = enrolled_mfa_user()
-
-      for handoff <- ["not-a-real-token", MfaChallengeHandoff.sign(user.id)] do
-        conn =
-          conn
-          |> init_test_session(%{
-            mfa_pending_user_id: user.id,
-            mfa_pending_at: System.system_time(:second)
-          })
-          |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
-
-        refute get_session(conn, :user_token)
-        assert redirected_to(conn) == ~p"/sign_in/magic"
+      for handoff <- ["not-a-real-token", MfaChallengeHandoff.sign(member.id)] do
+        refused = challenged |> recycle() |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
+        assert redirected_to(refused) == ~p"/sign_in"
+        refute get_session(refused, :sessions)
       end
     end
 
-    test "a partial (mfa-pending) session cannot reach an app route", %{conn: conn} do
-      %{user: user, account: account} = enrolled_mfa_user()
+    test "the partial-auth marker opens no workspace page", %{conn: conn} do
+      %{account: account} = enrolled = enrolled_member()
+      challenged = pending_challenge(conn, enrolled)
 
-      conn =
-        conn
-        |> init_test_session(%{
-          mfa_pending_user_id: user.id,
-          mfa_pending_at: System.system_time(:second)
-        })
-        |> get(~p"/app/#{account}")
-
-      assert redirected_to(conn) =~ "/sign_in"
+      refused = challenged |> recycle() |> get(~p"/app/#{account}")
+      assert redirected_to(refused) == ~p"/app/#{account}/sign_in"
     end
   end
 
   describe "DELETE /sign_out" do
-    test "logs the user out, clears the session, and invalidates the token", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      token = Plug.Conn.get_session(conn, :user_token)
-      assert token
+    test "ends the session, clears the cookie, and the token is dead server-side", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      token = session_token(conn, account)
 
-      conn = delete(conn, ~p"/sign_out")
+      signed_out = delete(conn, ~p"/sign_out")
 
-      assert redirected_to(conn) == "/"
-      refute Plug.Conn.get_session(conn, :user_token)
-      # The token is actually killed server-side, not just dropped from the
-      # session — a stolen copy can't be replayed.
-      assert Emisar.Auth.fetch_session_by_token(token) == {:error, :not_found}
+      assert redirected_to(signed_out) == ~p"/"
+      assert Phoenix.Flash.get(signed_out.assigns.flash, :info) == "Signed out."
+      refute get_session(signed_out, :sessions)
+      assert Auth.fetch_session_by_token(token, account.id) == {:error, :not_found}
     end
 
     test "is a harmless redirect when no one is signed in", %{conn: conn} do
-      conn = delete(conn, ~p"/sign_out")
-      assert redirected_to(conn) == "/"
+      assert redirected_to(delete(conn, ~p"/sign_out")) == ~p"/"
     end
 
-    test "audits user.signed_out attributed to the signed-out user", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
-      conn = delete(conn, ~p"/sign_out")
-      assert redirected_to(conn) == "/"
-
-      events =
-        Event.Query.all()
-        |> Event.Query.by_account_id(account.id)
-        |> Event.Query.by_event_type("user.signed_out")
-        |> Event.Query.by_target_id(member.id)
-        |> Repo.all()
-
-      assert length(events) == 1
-    end
-
-    test "is CSRF-protected — a sign-out without a token is rejected by the browser pipeline",
-         %{conn: conn} do
-      # /sign_out runs the :browser pipeline (`protect_from_forgery`),
-      # so a cross-site forced logout (a DELETE with no CSRF token) is blocked. The
-      # test conn defaults to `plug_skip_csrf_protection: true`; clearing it exercises
-      # the real protection, which raises InvalidCSRFTokenError → a 403.
-      {conn, _user, _account} = register_and_log_in(conn)
-
+    test "is CSRF-protected: a forced cross-site sign-out is refused", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      token = session_token(conn, account)
       conn = Plug.Conn.put_private(conn, :plug_skip_csrf_protection, false)
 
       assert_error_sent(403, fn -> delete(conn, ~p"/sign_out") end)
+      assert {:ok, _live} = Auth.fetch_session_by_token(token, account.id)
     end
-  end
-
-  defp response_cookie_lengths(conn) do
-    conn
-    |> get_resp_header("set-cookie")
-    |> Enum.map(&byte_size/1)
-    |> Enum.sort()
-  end
-
-  defp session_value_lengths(session) do
-    Map.new(session, fn {key, value} -> {key, value |> to_string() |> byte_size()} end)
   end
 end

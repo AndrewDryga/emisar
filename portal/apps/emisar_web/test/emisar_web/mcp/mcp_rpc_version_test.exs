@@ -121,18 +121,7 @@ defmodule EmisarWeb.MCPRpcVersionTest do
   end
 
   defp mcp_key(_ctx) do
-    {:ok, user} =
-      Emisar.Users.register_user(%{
-        email: "owner-#{System.unique_integer([:positive])}@example.com"
-      })
-
-    {:ok, account} =
-      Emisar.Accounts.create_account_with_owner(
-        %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
-        user
-      )
-
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{name: "OwnerCo"})
     {:ok, raw, _key} = ApiKeys.create_key(%{name: "mcp-key", kind: :mcp}, subject)
     %{raw: raw}
   end

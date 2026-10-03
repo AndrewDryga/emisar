@@ -12,18 +12,12 @@ defmodule Emisar.RunnersTest do
   alias Emisar.Runners.{EnrollmentKey, Presence, Runner, Token}
 
   defp account_with_owner_subject do
-    user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+    member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    {account, user, subject}
+    subject = Fixtures.Subjects.subject_for(member)
+    {account, member, subject}
   end
 
   defp filter_names(subject, status) do
@@ -365,7 +359,7 @@ defmodule Emisar.RunnersTest do
       membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
       Fixtures.Runners.create_runner(account_id: account.id, group: "production")
       Fixtures.Runners.create_runner(group: "staging")
@@ -387,13 +381,13 @@ defmodule Emisar.RunnersTest do
 
   describe "ensure_runner_ids_in_action_scope/2" do
     test "checks the whole current scope without trusting supplied runner facts" do
-      {user, account, _owner} = Fixtures.Subjects.owner_subject()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {owner, account, _owner} = Fixtures.Subjects.owner_subject()
+      membership = Repo.reload!(owner)
 
       subject =
         membership
         |> Fixtures.Memberships.force_role("admin")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       allowed = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       hidden = Fixtures.Runners.create_runner(account_id: account.id, group: "web")
@@ -404,8 +398,8 @@ defmodule Emisar.RunnersTest do
 
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
 
-      account.id
-      |> Fixtures.Memberships.fetch_membership(user.id)
+      owner
+      |> Repo.reload!()
       |> Fixtures.Memberships.force_runner_access(access)
 
       assert :ok = Runners.ensure_runner_ids_in_action_scope([allowed.id], subject)
@@ -452,7 +446,7 @@ defmodule Emisar.RunnersTest do
 
   describe "list_pack_advertisement_facts/2" do
     test "returns each runner's identity and advertised packs, ordered by group then name" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       second =
         Fixtures.Runners.create_runner(
@@ -487,7 +481,7 @@ defmodule Emisar.RunnersTest do
     end
 
     test "a fleet past the limit is trimmed and reported as partial" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       for _ <- 1..3 do
         Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
@@ -507,7 +501,7 @@ defmodule Emisar.RunnersTest do
     end
 
     test "a soft-deleted runner is left out" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       Fixtures.Runners.mark_deleted(runner)
 
@@ -516,7 +510,7 @@ defmodule Emisar.RunnersTest do
     end
 
     test "never returns another account's runners" do
-      {_user, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       account_b = Fixtures.Accounts.create_account()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
       Fixtures.Runners.create_runner(account_id: account_b.id, connected?: false)
@@ -528,13 +522,13 @@ defmodule Emisar.RunnersTest do
     end
 
     test "action scope does not hide advertisements or make complete coverage partial" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
-      membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      membership = Repo.reload!(subject.actor)
 
       subject =
         membership
         |> Fixtures.Memberships.force_role("admin")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       visible =
         Fixtures.Runners.create_runner(
@@ -552,7 +546,7 @@ defmodule Emisar.RunnersTest do
           connected?: false
         )
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+      membership = Repo.reload!(subject.actor)
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
 
@@ -613,13 +607,13 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.create_runner(account_id: account.id, group: "web")
 
       membership =
-        account.id
-        |> Fixtures.Memberships.fetch_membership(user.id)
+        user
+        |> Repo.reload!()
         |> Fixtures.Memberships.force_role("admin")
 
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert {:ok, [%{selection: "all", runners: [_database]}]} =
                Runners.resolve_runbook_target_sets(
@@ -666,7 +660,7 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.mark_deleted(deleted)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
       Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       targets = [%{"selection" => "all", "refs" => ["group:db"]}]
 
       assert {:ok, [%{runners: readable}]} =
@@ -771,13 +765,13 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       membership =
-        account.id
-        |> Fixtures.Memberships.fetch_membership(user.id)
+        user
+        |> Repo.reload!()
         |> Fixtures.Memberships.force_role("admin")
 
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       {:ok, database_ref} = Runners.public_ref(database)
 
@@ -798,13 +792,13 @@ defmodule Emisar.RunnersTest do
       )
 
       membership =
-        account.id
-        |> Fixtures.Memberships.fetch_membership(user.id)
+        user
+        |> Repo.reload!()
         |> Fixtures.Memberships.force_role("admin")
 
       {:ok, access} = Accounts.RunnerAccess.restricted(["database"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Runners.refs_outside_runner_access(["group:database"], subject) == {:ok, []}
     end
@@ -814,12 +808,12 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.create_runner(account_id: account.id, group: "database")
 
       membership =
-        account.id
-        |> Fixtures.Memberships.fetch_membership(user.id)
+        user
+        |> Repo.reload!()
         |> Fixtures.Memberships.force_role("admin")
 
       Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.none())
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Runners.refs_outside_runner_access(["group:database"], subject) ==
                {:ok, ["group:database"]}
@@ -981,7 +975,7 @@ defmodule Emisar.RunnersTest do
 
   describe "fetch_runner_by_name/3" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -1638,7 +1632,7 @@ defmodule Emisar.RunnersTest do
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       {:ok, db_only} = RunnerAccess.restricted(["db"], [])
       Fixtures.Memberships.force_runner_access(admin, db_only)
-      admin_subject = Fixtures.Subjects.membership_subject(admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert Runners.update_inactive_retention_settings(
                account,
@@ -1652,7 +1646,7 @@ defmodule Emisar.RunnersTest do
 
     test "an admin with full runner access sets the schedule", %{account: account} do
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      admin_subject = Fixtures.Subjects.membership_subject(admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert {:ok, updated} =
                Runners.update_inactive_retention_settings(
@@ -1670,8 +1664,8 @@ defmodule Emisar.RunnersTest do
     } do
       # `account` is the caller's socket snapshot; the seam re-reads the row
       # under lock, so a setting changed since then survives the write.
-      user = Fixtures.Users.set_mfa_state(subject.actor, mfa_enabled_at: DateTime.utc_now())
-      subject = Fixtures.Subjects.subject_for(user, account, mfa: true)
+      user = Fixtures.Memberships.set_mfa_state(subject.actor, mfa_enabled_at: DateTime.utc_now())
+      subject = Fixtures.Subjects.subject_for(user, mfa: true)
       Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
 
       assert {:ok, updated} =
@@ -1773,7 +1767,7 @@ defmodule Emisar.RunnersTest do
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       {:ok, db_only} = RunnerAccess.restricted(["db"], [])
       Fixtures.Memberships.force_runner_access(admin, db_only)
-      admin_subject = Fixtures.Subjects.membership_subject(admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       # Composes scope_to_subject_membership just like delete_runner: the admin
       # reaches only its scoped group, so the out-of-scope host survives.
@@ -1850,21 +1844,14 @@ defmodule Emisar.RunnersTest do
     end
 
     test "a subject sweeps only the runners its access reaches", %{account: account} do
-      user = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "admin"
-        )
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       in_reach = offline_runner(account, 960, group: "db")
       out_of_reach = offline_runner(account, 960, group: "web")
 
       {:ok, restricted} = RunnerAccess.restricted(["db"], [])
       Fixtures.Memberships.force_runner_access(membership, restricted)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Runners.delete_inactive_runners(account.id, 720, subject) === {:ok, 1}
 
@@ -2068,15 +2055,9 @@ defmodule Emisar.RunnersTest do
     end
 
     test "refuses advertisements after the runner is disabled", %{account: account} do
-      user = Fixtures.Users.create_user()
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(member)
       runner = Fixtures.Runners.create_runner(account_id: account.id, hostname: "before")
       {:ok, _disabled} = Runners.disable_runner(runner, subject)
 
@@ -2974,18 +2955,15 @@ defmodule Emisar.RunnersTest do
         %{"pack" => "nginx", "reason" => "invalid manifest"}
       ])
 
-      operator = Fixtures.Users.create_user()
-
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: operator.id,
           role: "operator"
         )
 
       {:ok, access} = RunnerAccess.restricted([], [in_scope.id])
       Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert {:ok, status} = Runners.fetch_fleet_status(subject)
 
@@ -3090,16 +3068,13 @@ defmodule Emisar.RunnersTest do
       {account, _owner, _owner_subject} = account_with_owner_subject()
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
-      member = Fixtures.Users.create_user()
-
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Memberships.suspend_membership(membership)
 
       assert Runners.fetch_fleet_status(subject) == {:error, :unauthorized}
@@ -3125,16 +3100,9 @@ defmodule Emisar.RunnersTest do
       Fixtures.Runners.create_runner(account_id: account.id)
       assert Runners.any_runners?(subject)
 
-      viewer_user = Fixtures.Users.create_user()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer_user.id,
-          role: "viewer"
-        )
-
-      viewer = Fixtures.Subjects.membership_subject(membership)
+      viewer = Fixtures.Subjects.subject_for(membership)
       assert Runners.any_runners?(viewer)
     end
 
@@ -3159,18 +3127,15 @@ defmodule Emisar.RunnersTest do
       in_scope = Fixtures.Runners.create_runner(account_id: account.id, name: "visible")
       Fixtures.Runners.create_runner(account_id: account.id, name: "hidden")
 
-      operator = Fixtures.Users.create_user()
-
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: operator.id,
           role: "operator"
         )
 
       {:ok, access} = RunnerAccess.restricted([], [in_scope.id])
       Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Runners.any_runners?(subject)
 
@@ -3212,36 +3177,24 @@ defmodule Emisar.RunnersTest do
       assert keys |> Enum.map(& &1.id) |> Enum.sort() == Enum.sort([wizard.id, manual.id])
     end
 
-    test "creator labels stay local through personal edits and member removal or rejoin", %{
+    test "creator labels stay local through member removal or rejoin", %{
       account: account,
       subject: subject
     } do
-      creator =
-        Fixtures.Users.create_user(full_name: "Private Person", email: "private@example.test")
-
       member =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: creator.id,
           role: "admin",
           display_name: "Workspace Operator",
           email: "work@example.test"
         )
 
-      creator_subject = Fixtures.Subjects.membership_subject(member)
+      creator_subject = Fixtures.Subjects.subject_for(member)
 
       {:ok, manual_raw, manual} =
         Runners.create_enrollment_key(%{reusable: true}, creator_subject)
 
       {:ok, install_raw, install} = Runners.mint_install_key(creator_subject)
-
-      Fixtures.Memberships.create_membership(
-        user_id: creator.id,
-        display_name: "Other Workspace",
-        email: "elsewhere@example.test"
-      )
-
-      Fixtures.Users.update_email(creator, "new-private@example.test")
 
       assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])
 
@@ -3256,9 +3209,8 @@ defmodule Emisar.RunnersTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: creator.id,
         display_name: "Replacement Seat",
-        email: "replacement@example.test"
+        email: "work@example.test"
       )
 
       assert {:ok, keys, _} = Runners.list_enrollment_keys(subject, preload: [:created_by_label])
@@ -3435,7 +3387,7 @@ defmodule Emisar.RunnersTest do
       restricted =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
         |> Fixtures.Memberships.force_runner_access(production)
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       assert Runners.create_enrollment_key(%{reusable: true}, restricted) ==
                {:error, :unauthorized}
@@ -3448,7 +3400,6 @@ defmodule Emisar.RunnersTest do
     # TOGETHER, so a subject carrying another account's membership id reads as no
     # access at all rather than borrowing that membership's reach.
     test "cross-account — a subject carrying another account's membership is refused", %{
-      account: account,
       user: user
     } do
       other_membership =
@@ -3457,7 +3408,7 @@ defmodule Emisar.RunnersTest do
           role: "owner"
         )
 
-      owner_subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      owner_subject = Fixtures.Subjects.subject_for(user)
       spliced = %{owner_subject | membership_id: other_membership.id}
 
       assert Runners.create_enrollment_key(%{reusable: true}, spliced) == {:error, :unauthorized}
@@ -3766,11 +3717,11 @@ defmodule Emisar.RunnersTest do
       restricted =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
         |> Fixtures.Memberships.force_runner_access(production)
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       unrestricted =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       assert Runners.mint_install_key(restricted) == {:error, :unauthorized}
       assert {:ok, _raw, _key} = Runners.mint_install_key(unrestricted)
@@ -3805,7 +3756,7 @@ defmodule Emisar.RunnersTest do
 
       other_subject =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       # A different authorized member retrying a stale key cannot take credit.
       assert {:ok, %EnrollmentKey{} = again} = Runners.revoke_enrollment_key(key, other_subject)
@@ -3830,7 +3781,7 @@ defmodule Emisar.RunnersTest do
       restricted =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
         |> Fixtures.Memberships.force_runner_access(production)
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       assert {:ok, %EnrollmentKey{revoked_at: %DateTime{}}} =
                Runners.revoke_enrollment_key(key, restricted)
@@ -4146,11 +4097,13 @@ defmodule Emisar.RunnersTest do
       account = Fixtures.Accounts.create_account()
 
       viewer_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       billing_manager_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
-          role: :billing_manager
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :billing_manager)
         )
 
       assert Runners.subject_can_view_runners?(viewer_subject)
@@ -4165,7 +4118,7 @@ defmodule Emisar.RunnersTest do
       membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Runners.runner_access_facts_for_subject(subject) == %{
                has_access?: true,
@@ -4197,7 +4150,7 @@ defmodule Emisar.RunnersTest do
           role: "billing_manager",
           runner_access_mode: "all"
         )
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       assert Runners.runner_access_facts_for_subject(billing_manager) == %{
                has_access?: false,
@@ -4221,11 +4174,11 @@ defmodule Emisar.RunnersTest do
 
       operator =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       viewer =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       assert Runners.subject_can_install_runners?(operator)
       refute Runners.subject_can_install_runners?(viewer)
@@ -4240,7 +4193,7 @@ defmodule Emisar.RunnersTest do
       restricted =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
         |> Fixtures.Memberships.force_runner_access(production)
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       refute Runners.subject_can_install_runners?(restricted)
     end
@@ -4263,7 +4216,7 @@ defmodule Emisar.RunnersTest do
       restricted =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
         |> Fixtures.Memberships.force_runner_access(production)
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       assert Runners.subject_can_manage_enrollment_keys?(restricted)
       assert Runners.subject_can_revoke_enrollment_keys?(restricted)
@@ -4283,7 +4236,7 @@ defmodule Emisar.RunnersTest do
 
       operator =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       refute Runners.subject_can_create_enrollment_keys?(operator)
     end
@@ -4296,7 +4249,7 @@ defmodule Emisar.RunnersTest do
       restricted =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
         |> Fixtures.Memberships.force_runner_access(named)
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       refute Runners.subject_can_create_enrollment_keys?(restricted)
     end
@@ -4314,7 +4267,7 @@ defmodule Emisar.RunnersTest do
       restricted =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
         |> Fixtures.Memberships.force_runner_access(production)
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       # Containment needs no fleet reach — a scope-limited admin can still revoke.
       assert Runners.subject_can_revoke_enrollment_keys?(restricted)
@@ -4332,7 +4285,7 @@ defmodule Emisar.RunnersTest do
     test "false for an admin whose runner access is restricted" do
       {account, _user, _owner} = account_with_owner_subject()
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      admin_subject = Fixtures.Subjects.membership_subject(admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert Runners.subject_can_manage_inactive_retention?(admin_subject)
 
@@ -4346,12 +4299,12 @@ defmodule Emisar.RunnersTest do
   describe "register_via_enrollment_key/3" do
     test "mints an runner + token on success" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4372,12 +4325,12 @@ defmodule Emisar.RunnersTest do
       # the same row is reused (and the version is refreshed). This is the
       # path that used to 500 on the (account_id, name) unique index.
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4399,13 +4352,13 @@ defmodule Emisar.RunnersTest do
 
     test "marks a fresh seat dirty but a reconnect leaves the marker unchanged" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       subscription = quantity_subscription(account, "sub_registration")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4429,12 +4382,12 @@ defmodule Emisar.RunnersTest do
 
     test "an exhausted single-use key retries only its original runner identity" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: false
         )
 
@@ -4465,12 +4418,12 @@ defmodule Emisar.RunnersTest do
 
     test "a bound runner that has authenticated ends the exhausted-key retry" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: false
         )
 
@@ -4487,12 +4440,12 @@ defmodule Emisar.RunnersTest do
 
     test "a spent single-use key goes inert once its retry window closes" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: false
         )
 
@@ -4512,7 +4465,7 @@ defmodule Emisar.RunnersTest do
       {raw, key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: false
         )
 
@@ -4533,7 +4486,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4555,12 +4508,12 @@ defmodule Emisar.RunnersTest do
       # a real conflict: a different machine reusing the name gets a clean
       # error, never a silent takeover of a working runner.
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4582,12 +4535,12 @@ defmodule Emisar.RunnersTest do
       # No displacement magic: a live row holding the name, connected or
       # not, conflicts. The operator renames or deletes the holder.
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4614,7 +4567,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4641,12 +4594,12 @@ defmodule Emisar.RunnersTest do
 
     test "a declared runner.id names the runner; the hostname default still does otherwise" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4669,12 +4622,12 @@ defmodule Emisar.RunnersTest do
 
     test "rejects an invalid external_id before consuming the enrollment key" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4692,7 +4645,7 @@ defmodule Emisar.RunnersTest do
     test "returns :over_limit when the plan cap is exceeded" do
       # `free` plan caps runners at 3.
       account = Fixtures.Accounts.create_account(plan: "free")
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       _ = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Runners.create_runner(account_id: account.id)
@@ -4701,7 +4654,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4715,12 +4668,12 @@ defmodule Emisar.RunnersTest do
       # `free` caps runners at 3. Fill the account to the cap, with one runner
       # registered via a stable external_id so we can reconnect it.
       account = Fixtures.Accounts.create_account(plan: "free")
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4748,13 +4701,13 @@ defmodule Emisar.RunnersTest do
 
     test "threads the request context onto the runner.registered audit row" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-      {_owner_user, _acct, subject} = {user, account, owner_subject_for(account, user)}
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.subject_for(user)
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4784,12 +4737,12 @@ defmodule Emisar.RunnersTest do
       # so the parallel registrations all see the same DB state under
       # async: true. No explicit `Sandbox.allow` needed.
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: false
         )
 
@@ -4899,7 +4852,7 @@ defmodule Emisar.RunnersTest do
         collection_mode: "automatic"
       )
 
-      user = Fixtures.Users.create_user()
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       assert {:ok, %{plan: "team"}} = Billing.support_plan(account)
       # Two runners on a Team plan is well under the cap → check_limit is :ok.
@@ -4910,7 +4863,7 @@ defmodule Emisar.RunnersTest do
       {raw, _key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           reusable: true
         )
 
@@ -4954,27 +4907,9 @@ defmodule Emisar.RunnersTest do
     do: runner |> Ecto.Changeset.change(fields) |> Repo.update!()
 
   defp viewer_subject_for(account) do
-    viewer = Fixtures.Users.create_user()
+    viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-    Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
-  end
-
-  defp owner_subject_for(account, user) do
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-    Fixtures.Subjects.subject_for(user, account, role: :owner)
+    Fixtures.Subjects.subject_for(viewer)
   end
 
   defp quantity_subscription(account, paddle_id) do

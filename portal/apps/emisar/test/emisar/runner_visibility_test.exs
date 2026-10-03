@@ -30,7 +30,7 @@ defmodule Emisar.RunnerVisibilityTest do
           role: unquote(role)
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       {:ok, selected} = RunnerAccess.restricted(["staging"], [])
       {:ok, no_packs} = RunnerAccess.new(:all, [], [], :restricted, [])
 
@@ -49,7 +49,7 @@ defmodule Emisar.RunnerVisibilityTest do
     membership =
       Fixtures.Memberships.create_membership(account_id: context.account.id, role: "admin")
 
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     {:ok, selected} = RunnerAccess.restricted(["staging"], [])
     Fixtures.Memberships.force_runner_access(membership, selected)
 
@@ -82,17 +82,18 @@ defmodule Emisar.RunnerVisibilityTest do
 
   test "a held human subject loses reads on current identity or read-role loss",
        %{account: _, production: _} = context do
-    for change <- [:suspended, :deleted, :billing, :deleted_user] do
+    for change <- [:suspended, :deleted, :billing, :revoked_session] do
       membership =
         Fixtures.Memberships.create_membership(account_id: context.account.id, role: "admin")
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      session = Fixtures.Auth.create_session_token!(membership)
+      subject = Fixtures.Subjects.subject_for(membership, session: session)
 
       case change do
         :suspended -> Fixtures.Memberships.suspend_membership(membership)
         :deleted -> Fixtures.Memberships.mark_membership_as_deleted(membership)
         :billing -> Fixtures.Memberships.force_role(membership, "billing_manager")
-        :deleted_user -> Fixtures.Users.mark_user_as_deleted(subject.actor)
+        :revoked_session -> Fixtures.Auth.delete_session_token!(session)
       end
 
       assert_read_denied(subject, context.production)
@@ -107,7 +108,7 @@ defmodule Emisar.RunnerVisibilityTest do
     {_raw, key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: context.account.id,
-        created_by_id: membership.user_id
+        created_by_membership_id: membership.id
       )
 
     subject = Subject.for_api_key(key, context.account)
@@ -124,7 +125,7 @@ defmodule Emisar.RunnerVisibilityTest do
     membership =
       Fixtures.Memberships.create_membership(account_id: context.account.id, role: "viewer")
 
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     assert {:error, :not_found} = Runners.fetch_runner_by_id(context.foreign.id, subject)
     assert {:error, :not_found} = Runners.fetch_runner_by_name(context.foreign.name, subject)
     assert_read_denied(%{subject | membership_id: nil}, context.production)

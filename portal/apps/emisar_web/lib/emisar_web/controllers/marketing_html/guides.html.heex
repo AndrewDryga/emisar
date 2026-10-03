@@ -6,7 +6,7 @@
   into the product.
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
-  <.marketing_nav current_user={@current_user} current={:guides} />
+  <.marketing_nav signed_in?={@signed_in?} current={:guides} />
 
   <section class="border-b border-zinc-900 bg-[#07080a]">
     <div class="mx-auto max-w-4xl px-6 py-24 sm:py-32 lg:px-8">

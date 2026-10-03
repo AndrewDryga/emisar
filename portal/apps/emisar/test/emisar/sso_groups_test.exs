@@ -501,58 +501,43 @@ defmodule Emisar.SSOGroupsTest do
     end
   end
 
-  test "SCIM deletion retires its local grants while preserving bearers and other workspaces" do
+  test "SCIM deletion ends the identity's sessions while other Members and workspaces keep theirs" do
     %{provider: provider, account: account} = scim_provider()
     %{identity: identity} = provision(provider, "okta|sessions")
-
-    # The directory's Member, linked by its person to their own login.
-    user = Fixtures.Users.create_user()
-
-    {:ok, _linked} =
-      Accounts.link_personal_login(Repo, Fixtures.SSO.identity_membership(identity), user)
+    member = Fixtures.SSO.identity_membership(identity)
 
     mine =
-      Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
+      Fixtures.Auth.create_session_token!(member, :sso, nil, %{}, user_identity_id: identity.id)
 
     other_account = Fixtures.Accounts.create_account(plan: "team")
     other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
-    Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
+    other_member = Fixtures.Memberships.create_membership(account_id: other_account.id)
 
     other_identity =
       Fixtures.SSO.create_user_identity(
         account_id: other_account.id,
         provider_id: other_provider.id,
-        user_id: user.id
+        membership: other_member
       )
 
     theirs =
-      Fixtures.Auth.create_session_token!(user, :sso, nil, %{},
+      Fixtures.Auth.create_session_token!(other_member, :sso, nil, %{},
         user_identity_id: other_identity.id
       )
 
     assert {:ok, _deleted} = SSO.scim_delete_user(provider, identity.id)
 
-    assert {:ok, local_session} = Auth.fetch_session_by_token(mine)
-    assert Auth.session_membership_ids(local_session) == []
-    assert {:ok, other_session} = Auth.fetch_session_by_token(theirs)
-
-    assert {:ok, _member} =
-             Accounts.fetch_membership_by_account_id_or_slug(
-               other_account.id,
-               other_session
-             )
-
-    assert Accounts.fetch_membership_by_account_id_or_slug(account.id, local_session) ==
-             {:error, :not_found}
+    assert Auth.fetch_session_by_token(mine, account.id) == {:error, :not_found}
+    assert {:ok, _other_session} = Auth.fetch_session_by_token(theirs, other_account.id)
   end
 
-  test "SCIM deletion of an unknown identity leaves personal sessions intact" do
+  test "SCIM deletion of an unknown identity leaves other sessions intact" do
     %{provider: provider} = scim_provider()
-    user = Fixtures.Users.create_user()
-    token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    member = Fixtures.Memberships.create_membership()
+    token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
 
     assert SSO.scim_delete_user(provider, Ecto.UUID.generate()) == {:error, :not_found}
-    assert {:ok, _token} = Auth.fetch_session_by_token(token)
+    assert {:ok, _token} = Auth.fetch_session_by_token(token, member.account_id)
   end
 
   describe "externalId-less group authorization" do
@@ -1166,7 +1151,7 @@ defmodule Emisar.SSOGroupsTest do
     end
 
     test "a downgraded plan still reads its synced groups" do
-      {_u, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = provider_fixture(account, %{})
 
       assert {:ok, [], _metadata} = SSO.list_group_access(provider, subject)
@@ -1347,8 +1332,8 @@ defmodule Emisar.SSOGroupsTest do
 
     test "a downgraded plan can still read its groups and access" do
       account = Fixtures.Accounts.create_account(%{plan: "team"})
-      user = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(user, account)
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user)
       provider = provider_fixture(account, %{})
 
       assert {:ok, [], _metadata} = SSO.list_group_access(provider, subject)
@@ -1356,8 +1341,8 @@ defmodule Emisar.SSOGroupsTest do
 
     test "a viewer cannot read groups and access" do
       %{provider: provider, account: account} = scim_provider()
-      user = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(user, account, role: :viewer)
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+      subject = Fixtures.Subjects.subject_for(user)
 
       assert SSO.list_group_access(provider, subject) == {:error, :unauthorized}
     end
@@ -1365,8 +1350,8 @@ defmodule Emisar.SSOGroupsTest do
     test "another account's owner cannot read groups and access" do
       %{provider: provider} = scim_provider()
       account = Fixtures.Accounts.create_account(%{plan: "enterprise"})
-      user = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(user, account)
+      user = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user)
 
       assert SSO.list_group_access(provider, subject) == {:error, :not_found}
     end
@@ -1630,16 +1615,9 @@ defmodule Emisar.SSOGroupsTest do
       assert deleted.deleted_at
 
       # Denial: a viewer (no manage_sso) on the same enterprise account.
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: :viewer
-        )
-
-      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
 
       assert create_group_mapping(
                provider,
@@ -1650,7 +1628,7 @@ defmodule Emisar.SSOGroupsTest do
       assert SSO.list_group_access(provider, viewer_subject) == {:error, :unauthorized}
 
       # Denial: a Team plan can configure OIDC but not SCIM group mappings.
-      {_u, _team_account, team_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _team_account, team_subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
 
       assert create_group_mapping(
                provider,

@@ -7,17 +7,14 @@ defmodule EmisarWeb.MCPCancelRunTest do
 
   setup %{conn: conn} do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "admin"
-      )
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-    subject = Fixtures.Subjects.membership_subject(membership)
-    _policy = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    subject = Fixtures.Subjects.subject_for(user)
+
+    _policy =
+      Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: user.id)
+
     {:ok, raw, key} = ApiKeys.create_key(%{name: "cancel", kind: :mcp}, subject)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 

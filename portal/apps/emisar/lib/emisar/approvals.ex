@@ -1363,7 +1363,7 @@ defmodule Emisar.Approvals do
 
       {:error, reason} ->
         Logger.warning("approval_email_failed",
-          user_id: membership.user_id,
+          membership_id: membership.id,
           req_id: request.id,
           error: inspect(reason)
         )
@@ -1371,7 +1371,7 @@ defmodule Emisar.Approvals do
   rescue
     err ->
       Logger.warning("approval_email_crashed",
-        user_id: membership.user_id,
+        membership_id: membership.id,
         req_id: request.id,
         error: inspect(err)
       )

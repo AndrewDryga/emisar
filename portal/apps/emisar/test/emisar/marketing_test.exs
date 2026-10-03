@@ -1,6 +1,7 @@
 defmodule Emisar.MarketingTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Config, Users}
+  alias Emisar.Accounts.Membership
+  alias Emisar.Config
   alias Emisar.Marketing
   alias Emisar.Marketing.Signup
 
@@ -69,7 +70,7 @@ defmodule Emisar.MarketingTest do
         :ok
       end)
 
-      %{user: %Users.User{id: Ecto.UUID.generate(), email: "person@example.com"}}
+      %{user: %Membership{id: Ecto.UUID.generate(), email: "person@example.com"}}
     end
 
     test "sends only the click id, time, and opaque conversion id", %{user: user} do

@@ -1,24 +1,24 @@
 defmodule EmisarWeb.MfaChallengeLive do
   use EmisarWeb, :live_view
-  alias Emisar.{Auth, Users}
+  alias Emisar.Auth
   alias EmisarWeb.{MfaChallengeHandoff, MfaErrors, RequestContext}
 
-  # The second factor, after a magic link has verified email possession. The
-  # partial-auth session (`:mfa_pending_user_id`) names the user but grants no
-  # access — a full session is minted only once TOTP or a recovery code verifies
-  # HERE. The code is checked in handle_event (inline error, no reload); on a
-  # match we redirect to `:mfa_complete` with a signed handoff the controller
-  # trades — together with the still-matching pending session — for the session
-  # cookie a LiveView can't set. The brute-force cap is Auth's
-  # (`verify_mfa_challenge/3` — per-user, server-side, so it survives a page
+  # The second factor, after an emailed code has verified the inbox. The
+  # partial-auth marker (`:mfa_pending_membership_id`) names the Member but
+  # grants no access — a full session is minted only once TOTP or a recovery
+  # code verifies HERE. The code is checked in handle_event (inline error, no
+  # reload); on a match we redirect to `:mfa_complete` with a signed handoff the
+  # controller trades — together with the still-matching marker — for the
+  # session a LiveView can't set. The brute-force cap is Auth's
+  # (`verify_mfa_challenge/3` — per Member, server-side, so it survives a page
   # reload), on top of TOTP replay protection.
   def mount(_params, session, socket) do
-    case pending_user(session) do
-      {:ok, user} ->
+    case pending_membership_id(session) do
+      {:ok, membership_id} ->
         {:ok,
          socket
          |> assign(:page_title, "Multi-factor authentication")
-         |> assign(:user, user)
+         |> assign(:membership_id, membership_id)
          |> assign(:pending_at, session["mfa_pending_at"])
          |> assign(:mode, :totp)
          |> assign(:error, nil)
@@ -28,7 +28,7 @@ defmodule EmisarWeb.MfaChallengeLive do
       :error ->
         # No pending challenge (opened directly, or the marker was consumed /
         # expired) — nothing to verify, so send them to start a sign-in.
-        {:ok, redirect(socket, to: ~p"/sign_in/magic")}
+        {:ok, redirect(socket, to: ~p"/sign_in")}
     end
   end
 
@@ -57,14 +57,14 @@ defmodule EmisarWeb.MfaChallengeLive do
       {:noreply,
        socket
        |> put_flash(:error, "Your sign-in attempt expired. Sign in again to continue.")
-       |> redirect(to: ~p"/sign_in/magic")}
+       |> redirect(to: ~p"/sign_in")}
     end
   end
 
   defp verify_factor(socket, factor) do
-    user = socket.assigns.user
+    %{membership_id: membership_id, request_context: context} = socket.assigns
 
-    case Auth.verify_mfa_challenge(user, factor, socket.assigns.request_context) do
+    case Auth.verify_mfa_challenge(membership_id, factor, context) do
       {:ok, proof} ->
         handoff = MfaChallengeHandoff.sign(proof)
         {:noreply, redirect(socket, to: ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")}
@@ -81,11 +81,10 @@ defmodule EmisarWeb.MfaChallengeLive do
   # in a shared browser is not a standing invitation to finish signing in later.
   @pending_ttl_seconds 600
 
-  defp pending_user(session) do
-    with id when is_binary(id) <- session["mfa_pending_user_id"],
-         true <- pending_fresh?(session),
-         {:ok, %Users.User{mfa_enabled_at: %DateTime{}} = user} <- Users.fetch_user_by_id(id) do
-      {:ok, user}
+  defp pending_membership_id(session) do
+    with id when is_binary(id) <- session["mfa_pending_membership_id"],
+         true <- pending_fresh?(session) do
+      {:ok, id}
     else
       _ -> :error
     end
@@ -152,7 +151,7 @@ defmodule EmisarWeb.MfaChallengeLive do
         </.auth_footer_link>
       <% end %>
 
-      <.auth_footer_link navigate={~p"/sign_in/magic"}>
+      <.auth_footer_link href={~p"/sign_in"}>
         <:lead>Not you?</:lead>
         Start over
       </.auth_footer_link>

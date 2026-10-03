@@ -223,7 +223,7 @@ defmodule Emisar.CryptoTest do
     # replay defense is the CALLER's, not Crypto's: the
     # same code validates as many times as it's presented within its window.
     # Crypto only answers "is this a currently-valid code"; the stamped-bucket
-    # replay guard lives in Users.verify_and_consume_mfa under a row lock.
+    # replay guard lives in Accounts.verify_and_consume_member_mfa under a row lock.
     test "accepts the same code repeatedly — no replay guard here" do
       secret = Crypto.totp_secret()
       code = Emisar.Fixtures.Auth.totp_code(secret)
@@ -282,6 +282,30 @@ defmodule Emisar.CryptoTest do
       assert Crypto.verify_paddle_account_binding(token) == {:ok, {account_id, transaction_id}}
       assert Crypto.verify_paddle_account_binding(token <> "x") == {:error, :invalid}
       assert Crypto.verify_paddle_account_binding(nil) == {:error, :invalid}
+    end
+  end
+
+  describe "checkout_return/2 and verify_checkout_return/1" do
+    test "round-trips the workspace and transaction and rejects tampering or another purpose" do
+      account_id = Ecto.UUID.generate()
+      token = Crypto.checkout_return(account_id, "txn_return_test")
+
+      assert Crypto.verify_checkout_return(token) == {:ok, {account_id, "txn_return_test"}}
+      assert Crypto.verify_checkout_return(token <> "x") == {:error, :invalid}
+      assert Crypto.verify_checkout_return(nil) == {:error, :invalid}
+
+      binding = Crypto.paddle_account_binding(account_id, "txn_return_test")
+      assert Crypto.verify_checkout_return(binding) == {:error, :invalid}
+    end
+
+    test "expires after a day" do
+      secret = Application.fetch_env!(:emisar, :email_link_secret)
+      now = System.system_time(:second)
+
+      sign = &Phoenix.Token.sign(secret, "checkout return", {"acct", "txn_old"}, signed_at: &1)
+
+      assert Crypto.verify_checkout_return(sign.(now - 60)) == {:ok, {"acct", "txn_old"}}
+      assert Crypto.verify_checkout_return(sign.(now - 24 * 60 * 60 - 60)) == {:error, :invalid}
     end
   end
 end

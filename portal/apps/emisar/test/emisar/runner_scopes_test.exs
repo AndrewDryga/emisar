@@ -275,7 +275,7 @@ defmodule Emisar.RunnerAccessTest do
     setup do
       {account, owner, owner_subject} = account_with_owner()
       member = create_member(account, "operator")
-      member_subject = Fixtures.Subjects.membership_subject(member)
+      member_subject = Fixtures.Subjects.subject_for(member)
 
       %{
         account: account,
@@ -286,11 +286,24 @@ defmodule Emisar.RunnerAccessTest do
       }
     end
 
+    test "a stale owner Subject demoted to admin cannot edit an owner's access", %{
+      account: account,
+      owner: owner
+    } do
+      demoted = create_member(account, "owner")
+      # Snapshot taken before the demotion, as a mounted Team page holds it.
+      stale = Fixtures.Subjects.subject_for(demoted)
+      Fixtures.Memberships.force_role(demoted, "admin")
+
+      assert Accounts.update_membership_runner_access(owner, RunnerAccess.none(), stale) ==
+               {:error, :insufficient_privileges}
+    end
+
     test "new account owners explicitly receive all access", %{
       account: account,
       owner: owner
     } do
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
 
       assert membership.runner_access_mode == :all
 
@@ -486,7 +499,7 @@ defmodule Emisar.RunnerAccessTest do
       admin = create_member(account, "admin")
       {:ok, db_access} = RunnerAccess.restricted(["db"], [])
       {:ok, _admin} = Accounts.update_membership_runner_access(admin, db_access, owner_subject)
-      admin_subject = Fixtures.Subjects.membership_subject(admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert {:ok, _target} =
                Accounts.update_membership_runner_access(target, db_access, admin_subject)
@@ -603,9 +616,9 @@ defmodule Emisar.RunnerAccessTest do
   describe "runner_access_for_subject/1" do
     test "re-reads the current active membership instead of trusting subject state" do
       {account, owner, _owner_subject} = account_with_owner()
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
       membership = Fixtures.Memberships.force_role(membership, "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       assert Accounts.runner_access_for_subject(subject) == RunnerAccess.all()
 
       Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
@@ -618,7 +631,7 @@ defmodule Emisar.RunnerAccessTest do
     test "a membership id from another account resolves to no reach" do
       {account, _owner, _subject} = account_with_owner()
       {other_account, other_owner, _other_subject} = account_with_owner()
-      other_membership = Fixtures.Memberships.fetch_membership(other_account.id, other_owner.id)
+      other_membership = Repo.reload!(other_owner)
 
       assert Accounts.runner_access_for_membership(
                other_account.id,
@@ -641,7 +654,7 @@ defmodule Emisar.RunnerAccessTest do
   describe "runner_access_for_membership/2" do
     test "returns explicit access only for a current membership in that account" do
       {account, owner, _subject} = account_with_owner()
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
 
       assert Accounts.runner_access_for_membership(account.id, membership.id) ==
                RunnerAccess.all()
@@ -674,7 +687,7 @@ defmodule Emisar.RunnerAccessTest do
   describe "runner_access_for_locked_membership/2" do
     test "loads the explicit aggregate through the caller's transaction repo" do
       {account, owner, _subject} = account_with_owner()
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
 
       assert Accounts.runner_access_for_locked_membership(Repo, membership) ==
                RunnerAccess.all()
@@ -686,7 +699,7 @@ defmodule Emisar.RunnerAccessTest do
   describe "fetch_and_lock_active_membership/3" do
     test "returns only the active membership in the requested account" do
       {account, owner, _subject} = account_with_owner()
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
 
       assert {:ok, locked} =
                Accounts.fetch_and_lock_active_membership(Repo, account.id, membership.id)
@@ -792,7 +805,7 @@ defmodule Emisar.RunnerAccessTest do
       admin = create_member(account, "admin")
       {:ok, db_access} = RunnerAccess.restricted(["db"], [])
       {:ok, _admin} = Accounts.update_membership_runner_access(admin, db_access, owner_subject)
-      admin_subject = Fixtures.Subjects.membership_subject(admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert Accounts.ensure_runner_access_grant_allowed(admin_subject, db_access) == :ok
 
@@ -812,8 +825,8 @@ defmodule Emisar.RunnerAccessTest do
 
     test "a subject pointing at a foreign membership grants nothing" do
       {account, _owner, _subject} = account_with_owner()
-      {other_account, other_owner, _other_subject} = account_with_owner()
-      other_membership = Fixtures.Memberships.fetch_membership(other_account.id, other_owner.id)
+      {_other_account, other_owner, _other_subject} = account_with_owner()
+      other_membership = Repo.reload!(other_owner)
 
       # The other account's owner holds full reach; borrowing their membership
       # id must not lend it across the tenant boundary.
@@ -831,8 +844,8 @@ defmodule Emisar.RunnerAccessTest do
     # Both nils are the guard, so an ordinary member can never reach the
     # exemption: a caller holding either half is capped by its own reach.
     test "caps a subject carrying only half the platform shape" do
-      user = Fixtures.Users.create_user()
-      actor_only = Fixtures.Subjects.build_subject(user: user, role: :owner)
+      member = Fixtures.Memberships.create_membership(role: "owner")
+      actor_only = Fixtures.Subjects.build_subject(member: member, role: :owner)
 
       membership_only =
         Fixtures.Subjects.build_subject(role: :owner, membership_id: Ecto.UUID.generate())
@@ -868,7 +881,7 @@ defmodule Emisar.RunnerAccessTest do
 
     test "a human owner keeps the owner role and full access during directory sync" do
       {account, owner, _owner_subject} = account_with_owner()
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
       assert {:ok, updated} =
@@ -943,9 +956,9 @@ defmodule Emisar.RunnerAccessTest do
     test "the authenticated membership is re-read and forged attrs are ignored" do
       {account, owner, _owner_subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
       membership = Fixtures.Memberships.force_role(membership, "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       {:ok, restricted} = RunnerAccess.restricted(["db"], [])
 
       _membership = Fixtures.Memberships.force_runner_access(membership, restricted)
@@ -967,9 +980,9 @@ defmodule Emisar.RunnerAccessTest do
       {account, owner, _owner_subject} = account_with_owner()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
       _action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
       membership = Fixtures.Memberships.force_role(membership, "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -996,10 +1009,10 @@ defmodule Emisar.RunnerAccessTest do
       {account, owner, owner_subject} = account_with_owner()
 
       owner_subject =
-        account.id
-        |> Fixtures.Memberships.fetch_membership(owner_subject.actor.id)
+        owner_subject.actor
+        |> Repo.reload!()
         |> Fixtures.Memberships.force_role("admin")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "app")
 
@@ -1033,7 +1046,7 @@ defmodule Emisar.RunnerAccessTest do
       {:ok, [pack_version], _} = Emisar.Catalog.list_pack_versions(owner_subject)
       assert {:ok, _} = Emisar.Catalog.trust_pack_version(pack_version.id, owner_subject)
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
       {:ok, other_packs} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
       Fixtures.Memberships.force_runner_access(membership, other_packs)
 
@@ -1057,7 +1070,7 @@ defmodule Emisar.RunnerAccessTest do
         pack_id: "linux-core"
       )
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
       membership = Fixtures.Memberships.force_role(membership, "admin")
 
       {:ok, run} =
@@ -1089,7 +1102,7 @@ defmodule Emisar.RunnerAccessTest do
       )
 
       member = create_member(account, "operator")
-      member_subject = Fixtures.Subjects.membership_subject(member)
+      member_subject = Fixtures.Subjects.subject_for(member)
 
       {:ok, in_scope} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
       Fixtures.Memberships.force_runner_access(member, in_scope)
@@ -1119,7 +1132,7 @@ defmodule Emisar.RunnerAccessTest do
       db_run = Fixtures.Runs.create_run(account_id: account.id, runner_id: db.id)
       edge_run = Fixtures.Runs.create_run(account_id: account.id, runner_id: edge.id)
       member = create_member(account, "operator")
-      member_subject = Fixtures.Subjects.membership_subject(member)
+      member_subject = Fixtures.Subjects.subject_for(member)
 
       {:ok, restricted} = RunnerAccess.restricted(["db"], [])
 
@@ -1157,7 +1170,7 @@ defmodule Emisar.RunnerAccessTest do
       end
 
       member = create_member(account, "operator")
-      member_subject = Fixtures.Subjects.membership_subject(member)
+      member_subject = Fixtures.Subjects.subject_for(member)
 
       %{
         account: account,
@@ -1459,7 +1472,6 @@ defmodule Emisar.RunnerAccessTest do
   describe "mixed-revision database guard" do
     test "an old membership insert gets an explicit fail-closed mode" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
       membership_id = Ecto.UUID.generate()
       now = DateTime.utc_now()
 
@@ -1468,13 +1480,13 @@ defmodule Emisar.RunnerAccessTest do
                  Repo,
                  """
                  INSERT INTO account_memberships
-                   (id, account_id, user_id, role, inserted_at, updated_at)
+                   (id, account_id, email, role, inserted_at, updated_at)
                  VALUES ($1, $2, $3, 'operator', $4, $4)
                  """,
                  [
                    Ecto.UUID.dump!(membership_id),
                    Ecto.UUID.dump!(account.id),
-                   Ecto.UUID.dump!(user.id),
+                   Fixtures.Random.unique_email(),
                    now
                  ]
                )
@@ -1485,7 +1497,6 @@ defmodule Emisar.RunnerAccessTest do
 
     test "an old owner insert preserves the initial-owner all-access exception" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
       membership_id = Ecto.UUID.generate()
       now = DateTime.utc_now()
 
@@ -1494,13 +1505,13 @@ defmodule Emisar.RunnerAccessTest do
                  Repo,
                  """
                  INSERT INTO account_memberships
-                   (id, account_id, user_id, role, inserted_at, updated_at)
+                   (id, account_id, email, role, inserted_at, updated_at)
                  VALUES ($1, $2, $3, 'owner', $4, $4)
                  """,
                  [
                    Ecto.UUID.dump!(membership_id),
                    Ecto.UUID.dump!(account.id),
-                   Ecto.UUID.dump!(user.id),
+                   Fixtures.Random.unique_email(),
                    now
                  ]
                )
@@ -1577,25 +1588,13 @@ defmodule Emisar.RunnerAccessTest do
   defp fleet_sweep(events), do: Enum.find(events, &(&1.target_kind == "runner_fleet"))
 
   defp create_member(account, role, attrs \\ []) do
-    user = Fixtures.Users.create_user()
-
-    attrs =
-      attrs
-      |> Keyword.merge(account_id: account.id, user_id: user.id, role: role)
-
-    Fixtures.Memberships.create_membership(attrs)
+    attrs
+    |> Keyword.merge(account_id: account.id, role: role)
+    |> Fixtures.Memberships.create_membership()
   end
 
   defp account_with_owner do
-    user = Fixtures.Users.create_user()
-
-    {:ok, account} =
-      Accounts.create_account_with_owner(
-        %{name: "A", slug: "a-#{System.unique_integer()}", plan: "free"},
-        user
-      )
-
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    {account, user, subject}
+    {owner, account, subject} = Fixtures.Subjects.owner_subject()
+    {account, owner, subject}
   end
 end

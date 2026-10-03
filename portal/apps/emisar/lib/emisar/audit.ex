@@ -131,69 +131,6 @@ defmodule Emisar.Audit do
   defp retain_until(_account_id, _occurred_at), do: nil
 
   @doc """
-  Internal — sibling contexts (mostly Auth's pre-Subject flows) call this from
-  their already-authorized paths to audit-log a user-scoped security event
-  (sign-in, MFA, password change, profile edit); subject-less because the
-  acting user is captured in the event itself. The user might not have a direct
-  `account_id` in hand — most auth flows operate pre-Subject — so we look up the
-  user's active memberships and stamp one event per account, each naming that
-  workspace's Member and its own profile label. Callers supply only facts safe
-  for that audience.
-
-  Silently no-ops when the user has no active membership (brand-new
-  signup mid-account-creation, fully-suspended user) — the parent
-  action either already audited, or there's no admin yet who could
-  read it.
-
-  `attrs` accepts the same shape as `log/3` and overrides the defaults
-  (`actor_kind: "membership", actor_id: membership.id, target_kind:
-  "membership", target_id: membership.id` for each copy's Member). The local
-  target label cannot be overridden.
-  """
-  def log_for_user(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
-    case user_changesets(user, event_type, attrs) do
-      [] ->
-        :ok
-
-      # One row per account the user belongs to; commit them all-or-none. A
-      # deliberate per-row insert (N = a user's membership count, tiny), inside a
-      # txn — matching the prior no-broadcast standalone behaviour.
-      changesets ->
-        {:ok, _} = Repo.transaction(fn -> Enum.each(changesets, &Repo.insert!/1) end)
-        :ok
-    end
-  end
-
-  @doc """
-  Audit-event changesets for a user-scoped event — ONE per active membership the
-  user holds, since a row is `account_id`-scoped and each of the user's accounts
-  legitimately sees its own copy (an account's owners must be able to see that a
-  possibly-compromised member authenticated / disabled MFA / etc.). Build-only (no
-  insert) so it composes into a parent transaction — `Repo.fetch_and_update`'s
-  `:audit` and the `Audit.Multi` helpers insert the list atomically with the
-  mutation. Returns `[]` (treated as "skip") when the user has no active membership.
-  """
-  def user_changesets(%Emisar.Users.User{} = user, event_type, attrs \\ %{}) do
-    attrs = Map.new(attrs)
-
-    user
-    |> Emisar.Accounts.list_active_memberships_for_user()
-    |> Enum.map(fn membership ->
-      member_attrs =
-        %{
-          actor_kind: "membership",
-          actor_id: membership.id,
-          target_kind: "membership",
-          target_id: membership.id
-        }
-        |> Map.merge(attrs)
-        |> Map.put(:target_label, Emisar.Accounts.member_display_name(membership))
-
-      changeset(membership.account_id, event_type, member_attrs)
-    end)
-  end
-
-  @doc """
   Build the audit-event changeset for a run state transition. Use
   inside an `Ecto.Multi` so the audit row commits together with the
   parent `run` update — see `Runs.transition/3`.

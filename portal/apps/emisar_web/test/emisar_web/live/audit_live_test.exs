@@ -10,12 +10,14 @@ defmodule EmisarWeb.AuditLiveTest do
   alias Emisar.Runners.Runner
 
   describe "GET /app/audit" do
-    test "redirects anonymous users", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/audit")
+    test "redirects anonymous users to the workspace sign-in", %{conn: conn} do
+      account = Fixtures.Accounts.create_account()
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/audit")
+      assert to == ~p"/app/#{account}/sign_in"
     end
 
     test "renders rows as one-line events — label, meta with IP, detail link", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       # Make a runner so we have a real subject to look up.
       {:ok, runner} =
@@ -76,7 +78,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "strips hostile metadata from historical rows", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       event =
         %Audit.Event{
@@ -95,7 +97,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "renders stable copy instead of runner transport diagnostics", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       routine_runner =
         Fixtures.Runners.create_runner(
@@ -136,7 +138,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
     test "rows carry an outcome dot — rose failures, amber denials, brand passes, neutral routine",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       for {type, target_kind} <- [
             {"user.sign_in_failed", "user"},
@@ -156,7 +158,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "label updates reflect on next load (no stale snapshot)", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, runner} =
         Runner.Changeset.register(%{
@@ -187,21 +189,20 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "an api_key/MCP actor stacks the owner above the key", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
+      {conn, _owner, account} = register_and_log_in(conn)
 
-      _ =
+      owner =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
+          role: "owner",
+          display_name: "Jordan Vale"
         )
 
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
           name: "Claude Code",
-          created_by_id: owner.id
+          created_by_membership_id: owner.id
         )
 
       {:ok, event} =
@@ -222,7 +223,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "an unavailable actor name never falls back to an ID", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       ghost_id = Ecto.UUID.generate()
 
       {:ok, event} =
@@ -237,7 +238,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
     test "rows name the actor, and the date filters render in the facet panel",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       actor_id = Ecto.UUID.generate()
 
       {:ok, _} =
@@ -273,7 +274,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
     test "loads actor and target kind metadata only when the collapsed panel opens",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       test_pid = self()
       handler = {__MODULE__, test_pid, make_ref()}
 
@@ -302,7 +303,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
     test "an actor pivot (actor_kind + actor_id) filters the feed and shows a clearable chip",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       actor_id = Ecto.UUID.generate()
 
       {:ok, _} =
@@ -332,7 +333,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "the From date filter narrows to recent events", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       # Distinct actor_labels — event_type alone also appears in the filter
       # dropdown, so it can't tell a row apart from an option.
@@ -378,7 +379,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # — is locked here: every rendered <time> is keyed to its event and carries
     # that event's OWN datetime, before AND after a filter patch.
     test "each WHEN cell stays paired with its own event across a filter patch", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       connected_runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "nomad-hvn03")
@@ -439,7 +440,7 @@ defmodule EmisarWeb.AuditLiveTest do
     test "same-dimension quick filters render as separate accessible segmented groups", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
 
@@ -463,7 +464,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "Category refreshes Type choices even while Type stays All", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
       html = lv |> element("button[phx-click='toggle_filters']") |> render_click()
 
@@ -489,7 +490,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "changing Category in the form clears an incompatible Type", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, lv, _html} =
         live(conn, ~p"/app/#{account}/audit?category=access&event_type=user.sign_in_failed")
@@ -506,7 +507,7 @@ defmodule EmisarWeb.AuditLiveTest do
     test "a category shortcut clears an incompatible Type and preserves the time filter", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       from = "2026-01-01T00:00"
       filters = [category: "access", event_type: "user.sign_in_failed", from: from]
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?#{filters}")
@@ -521,7 +522,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "choosing and clearing a compatible Category preserves Type", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit?event_type=runner.connected")
 
       lv |> form("#audit-events-filter", %{category: "fleet"}) |> render_change()
@@ -540,7 +541,7 @@ defmodule EmisarWeb.AuditLiveTest do
     test "an incompatible shared Category and Type link remains an empty intersection", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, fleet_event} = Audit.log(account.id, "runner.connected", actor_kind: "runner")
       {:ok, access_event} = Audit.log(account.id, "user.sign_in_failed", actor_kind: "user")
 
@@ -555,7 +556,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
     test "a relative-range preset segment narrows to the window (sets From to now − window)",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, old} =
         Audit.log(account.id, "user.invited",
@@ -586,7 +587,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "a removed outcome URL filter does not hide audit events", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       routine_runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "routine-runner")
@@ -619,7 +620,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
     test "a subject 'View activity' pivot filters to that subject and shows a clearable chip",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       # A REAL runner row — the panel's Subject picker lists only live-resolvable
       # subjects, so a synthetic UUID would surface no picker.
@@ -659,8 +660,8 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "an actor pivot may name an account runner outside current scope", %{conn: conn} do
-      {_conn, owner_user, account} = register_and_log_in(conn)
-      owner_subject = owner_subject(owner_user, account)
+      {_conn, owner_owner, account} = register_and_log_in(conn)
+      owner_subject = Fixtures.Subjects.subject_for(owner_owner)
 
       in_fleet =
         Fixtures.Runners.create_runner(
@@ -686,7 +687,7 @@ defmodule EmisarWeb.AuditLiveTest do
       {:ok, _updated} =
         Emisar.Accounts.update_membership_runner_access(membership, restricted, owner_subject)
 
-      member_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+      member_conn = log_in_member(build_conn(), membership)
 
       {:ok, _lv, html} =
         live(
@@ -707,7 +708,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
     test "a crafted preset window is a no-op (whitelist), not a crash or an arbitrary bound",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, _} =
         Audit.log(account.id, "user.invited",
@@ -725,7 +726,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "filtering by a bare actor_id (no kind) still narrows the list", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       actor_a = Ecto.UUID.generate()
       actor_b = Ecto.UUID.generate()
 
@@ -751,7 +752,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "filtering by sign-in method narrows to that method's events", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, _} =
         Audit.log(account.id, "user.invited",
@@ -780,14 +781,14 @@ defmodule EmisarWeb.AuditLiveTest do
 
     test "selecting an actor kind surfaces a picker of that kind's resolved actors",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
       {:ok, _} =
         Audit.log(account.id, "user.invited",
-          actor_kind: "user",
-          actor_id: user.id,
-          target_kind: "user",
-          target_id: user.id
+          actor_kind: "membership",
+          actor_id: owner.id,
+          target_kind: "membership",
+          target_id: owner.id
         )
 
       # No kind selected → no actor picker rendered.
@@ -795,39 +796,42 @@ defmodule EmisarWeb.AuditLiveTest do
       refute html =~ ~s(name="actor_id")
 
       # One kind selected → the picker appears, listing the resolved actor.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_kind=user")
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?actor_kind=membership")
       assert html =~ ~s(name="actor_id")
-      assert html =~ "actor_id=#{user.id}"
+      assert html =~ "actor_id=#{owner.id}"
       # …and right after its Actor-type trigger — before the next (Subject)
       # filter, not tacked on at the end.
       assert :binary.match(html, ~s(name="actor_id")) <
                :binary.match(html, ~s(name="target_kind"))
 
-      assert html =~ user.email
+      assert html =~ owner.email
     end
 
     test "selecting a subject kind surfaces a picker of that kind's resolved subjects",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      {:ok, _} = Audit.log(account.id, "user.invited", target_kind: "user", target_id: user.id)
+      {conn, owner, account} = register_and_log_in(conn)
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited", target_kind: "membership", target_id: owner.id)
 
       # No subject kind selected → no subject picker rendered.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
       refute html =~ ~s(name="target_id")
 
-      # Pick "user" → the picker appears with the resolved subject (the user's
-      # email), right after its Subject trigger — same shape as the actor picker.
-      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=user")
+      # Pick "membership" → the picker appears with the resolved subject (the
+      # Member's email), right after its Subject trigger — same shape as the
+      # actor picker.
+      {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=membership")
       assert html =~ ~s(name="target_id")
-      assert html =~ "target_id=#{user.id}"
-      assert html =~ user.email
+      assert html =~ "target_id=#{owner.id}"
+      assert html =~ owner.email
 
       assert :binary.match(html, ~s(name="target_kind")) <
                :binary.match(html, ~s(name="target_id"))
     end
 
     test "missing subject rows show an explicit empty choice state", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       # Unresolved ids have no current or frozen label to offer.
       {:ok, _} =
@@ -855,13 +859,13 @@ defmodule EmisarWeb.AuditLiveTest do
     # invalidates the pick (its id belongs to the old kind), so actor_id is
     # dropped from the patched URL; the new kind's picker reads "All".
     test "switching the actor kind drops the now-invalid actor pick", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_id: user.id)
+      {conn, owner, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_id: owner.id)
       {:ok, _} = Audit.log(account.id, "action.dispatched", actor_kind: "api_key")
 
       # Land with a user actor picked (kind + id both in the params).
       {:ok, lv, _html} =
-        live(conn, ~p"/app/#{account}/audit?actor_kind=user&actor_id=#{user.id}")
+        live(conn, ~p"/app/#{account}/audit?actor_kind=user&actor_id=#{owner.id}")
 
       # Switch the actor kind to api_key — the stale user actor_id must not ride along.
       lv
@@ -874,12 +878,12 @@ defmodule EmisarWeb.AuditLiveTest do
     # same for the Subject picker: a changed subject kind
     # invalidates the previously-picked target_id, dropping it from the URL.
     test "switching the subject kind drops the stale subject pick", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      {:ok, _} = Audit.log(account.id, "user.invited", target_kind: "user", target_id: user.id)
+      {conn, owner, account} = register_and_log_in(conn)
+      {:ok, _} = Audit.log(account.id, "user.invited", target_kind: "user", target_id: owner.id)
       {:ok, _} = Audit.log(account.id, "runner.connected", target_kind: "runner")
 
       {:ok, lv, _html} =
-        live(conn, ~p"/app/#{account}/audit?target_kind=user&target_id=#{user.id}")
+        live(conn, ~p"/app/#{account}/audit?target_kind=user&target_id=#{owner.id}")
 
       lv
       |> form("#audit-events-filter", %{target_kind: "runner"})
@@ -892,7 +896,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # account-scoped to zero rows (no crash, rich empty state), and a blank one
     # is dropped so no chip renders.
     test "a crafted or blank actor_id is normalized, never a crash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "real")
 
       # A well-formed but unknown id → account-scoped to nothing, no crash.
@@ -909,7 +913,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
     # same normalization for a crafted/blank target_id.
     test "a crafted or blank target_id is normalized, never a crash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, _} =
         Audit.log(account.id, "user.invited", target_kind: "user", target_label: "real")
@@ -929,7 +933,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # previously-set To. Land with a To set, click "Last hour": the patched URL
     # carries a fresh `from` and no `to`.
     test "a preset is computed at click-time and clears a previously-set To", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
 
       # Arrive with an explicit To upper bound in the params.
@@ -960,7 +964,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # current filter so a new row appears without a refresh. Simulate the
     # broadcast the way Repo.commit_multi fans it out.
     test "a new committed event auto-reloads the feed via the audit broadcast", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit")
 
       refute html =~ "freshly-committed-actor"
@@ -982,7 +986,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # filtered-empty one-liner. A fresh account already has its `account.created`
     # row, so clear the log to reach the genuinely-empty state.
     test "an empty log with no filter shows the rich empty state", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       clear_audit_log(account.id)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit")
@@ -996,7 +1000,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # the terse one-liner, NOT the rich empty-account copy: over-filtering must
     # read differently from "this account has never done anything".
     test "a filter that matches nothing shows the terse filtered-empty copy", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "real")
 
       # Filter to a Type with no rows in this account (the single-select Type
@@ -1011,7 +1015,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # the params, restoring the full feed (the previously-filtered-out rows
     # return). The clear link patches to the URL without actor_id.
     test "clearing the filters drops an actor pivot and restores the full feed", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       actor_a = Ecto.UUID.generate()
 
       {:ok, _} =
@@ -1043,7 +1047,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # merges it back rather than silently dropping it when the form re-submits
     # without it.
     test "an active actor_id survives an unrelated filter change", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       actor_a = Ecto.UUID.generate()
 
       {:ok, _} =
@@ -1076,7 +1080,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # id filters to zero events) falls back to showing the RAW id, never a crash
     # or a blank chip: actor_label_for/2 returns the id when no event matches.
     test "a stale actor_id filters to the empty state, not a crash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "real")
 
       stale = Ecto.UUID.generate()
@@ -1089,7 +1093,7 @@ defmodule EmisarWeb.AuditLiveTest do
     test "an active preset segment highlights and a second click clears the range", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
@@ -1114,7 +1118,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # a quick-range preset only touches from/to; an
     # unrelated active filter (a Type pick) is preserved across the click.
     test "a preset preserves an unrelated active filter", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
 
       # Land with a Type filter already active (single-select → scalar value).
@@ -1132,7 +1136,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "an actor kind with no actors shows an empty searchable picker", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       # A user-actor row exists, but there are no runner-actor rows.
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
 
@@ -1142,7 +1146,7 @@ defmodule EmisarWeb.AuditLiveTest do
     end
 
     test "a subject kind with no subjects shows an empty searchable picker", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", target_kind: "user", target_label: "x")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/audit?target_kind=runner")
@@ -1154,7 +1158,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # identifying row in another table, so it renders a clean label ("System")
     # with NO colon-id pair (which would read the meaningless "system: —").
     test "a system actor renders a clean label, not a kind:id pair", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, _} =
         Audit.log(account.id, "action_run.denied",
@@ -1175,7 +1179,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # normalized: blank values are dropped (blank_to_nil) and unknown keys are
     # ignored by params_to_opts, so the feed loads cleanly instead of crashing.
     test "crafted / blank / unknown filter params are normalized, never a crash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "real")
 
       # Blank event_type + an unknown filter key the LV never declares.
@@ -1191,7 +1195,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # {:error, :invalid_cursor}; the LV retries once with empty params and loads
     # the feed cleanly rather than crashing or showing a broken page.
     test "a hand-edited bad page cursor retries once and loads the feed", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, _} =
         Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "still-here")
@@ -1239,7 +1243,7 @@ defmodule EmisarWeb.AuditLiveTest do
     # account A's events: every page is scoped by for_subject/2. Seed enough A
     # rows to span multiple pages, then confirm B's walk yields only B's rows.
     test "account B's cursor walk never pages in account A's events", %{conn: conn} do
-      {conn, _user, account_b} = register_and_log_in(conn)
+      {conn, _owner, account_b} = register_and_log_in(conn)
 
       # Account A (a separate tenant) has a full page-plus of events.
       other = Fixtures.Accounts.create_account()
@@ -1273,7 +1277,7 @@ defmodule EmisarWeb.AuditLiveTest do
   end
 
   test "actor and target kind filters list only kinds that have rows", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, _} =
       Audit.log(account.id, "user.invited",
@@ -1305,7 +1309,7 @@ defmodule EmisarWeb.AuditLiveTest do
 
   describe "GET /app/audit/:id" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       %{conn: conn, account: account}
     end
 
@@ -1386,7 +1390,7 @@ defmodule EmisarWeb.AuditLiveTest do
   # {"when-<event_id>" => datetime attr} for every relative WHEN cell in the
   # rendered list — the pairing the cross-row bleed test asserts on.
   test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit")
 
     # The payload is the operator's own socket, so this is self-inflicted — but
@@ -1421,13 +1425,8 @@ defmodule EmisarWeb.AuditLiveTest do
     setup %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
 
-      finance = Emisar.Fixtures.Users.create_user()
-
-      Emisar.Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: finance.id,
-        role: "billing_manager"
-      )
+      finance =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
 
       {:ok, _billing_event} =
         Audit.log(account.id, "subscription.changed",
@@ -1443,7 +1442,7 @@ defmodule EmisarWeb.AuditLiveTest do
           target_label: "db-prod-01"
         )
 
-      %{account: account, conn: build_conn() |> log_in_user(finance)}
+      %{account: account, conn: build_conn() |> log_in_member(finance)}
     end
 
     test "renders the billing events and none of the rest", %{account: account, conn: conn} do

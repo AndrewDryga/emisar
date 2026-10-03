@@ -63,7 +63,7 @@ defmodule EmisarWeb.ErrorHTMLTest do
       conn = Plug.Conn.put_private(conn, :plug_skip_csrf_protection, false)
 
       {403, _headers, body} =
-        assert_error_sent(403, fn -> post(conn, ~p"/sign_in/magic/start", %{}) end)
+        assert_error_sent(403, fn -> post(conn, ~p"/sign_in", %{}) end)
 
       assert body =~ "verify that request"
       assert body =~ "Your session may have expired"

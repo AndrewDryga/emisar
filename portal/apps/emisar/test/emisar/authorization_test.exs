@@ -9,19 +9,12 @@ defmodule Emisar.AuthorizationTest do
   alias Emisar.Auth.Subject
   alias Emisar.Fixtures
 
-  # A persisted Member and proved browser: denial cases must reach the intended
+  # A persisted Member with a live session: denial cases must reach the intended
   # role gate, not fail earlier for missing session authority.
   defp subject_with_role(account, role) do
-    user = Fixtures.Users.create_user()
-
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: Atom.to_string(role)
-      )
-
-    Fixtures.Subjects.membership_subject(membership)
+    [account_id: account.id, role: Atom.to_string(role)]
+    |> Fixtures.Memberships.create_membership()
+    |> Fixtures.Subjects.subject_for()
   end
 
   describe "Audit reads" do
@@ -228,16 +221,9 @@ defmodule Emisar.AuthorizationTest do
       # used to come back unscoped — every account's rows — for a subject that
       # passed the account match.
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Runbooks.create_runbook(account_id: account.id)
 
       # A queryable SSO.Authorizer has no clause for.

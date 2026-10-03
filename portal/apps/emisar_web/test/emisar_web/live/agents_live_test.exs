@@ -6,12 +6,14 @@ defmodule EmisarWeb.AgentsLiveTest do
   alias EmisarWeb.SandboxRisks
 
   describe "GET /app/agents" do
-    test "redirects anonymous users to /sign_in", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/agents")
+    test "redirects anonymous users to the workspace sign-in", %{conn: conn} do
+      account = Fixtures.Accounts.create_account()
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/agents")
+      assert to == ~p"/app/#{account}/sign_in"
     end
 
     test "mount renders the client picker but does NOT auto-mint a key", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
 
       assert html =~ "AI agents"
@@ -35,7 +37,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "the sandbox picker renders complete account-specific setup and mints once", %{
       conn: conn
     } do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
 
       labels =
@@ -87,12 +89,12 @@ defmodule EmisarWeb.AgentsLiveTest do
              ]
 
       assert Enum.all?(keys, &(&1.account_id == account.id))
-      membership_id = owner_subject(user, account).membership_id
+      membership_id = Fixtures.Subjects.subject_for(owner).membership_id
       assert Enum.all?(keys, &(&1.created_by_membership_id == membership_id))
     end
 
     test "sandbox setup separates dependency checks from bridge installation", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       conn = %{conn | host: "localhost", port: 4000}
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
 
@@ -167,7 +169,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "sandbox risks match the public guide and agent-specific setup is labeled as an example",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
 
       lv |> render_click("select_client", %{"client" => "coop"})
@@ -223,7 +225,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # Before any client is picked, the panel is just the picker — no mint,
     # no snippet, no reserved dead space below the tabs.
     test "no client picked → picker only, nothing minted", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
 
       # Empty account: the connect flow IS the page (inline, no detour) —
@@ -234,7 +236,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "select_client ignores a client the picker never rendered", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
 
       html = render_click(lv, "select_client", %{"client" => "bogus"})
@@ -245,7 +247,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "select_sandbox ignores an option the picker never rendered", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
 
       html = render_click(lv, "select_sandbox", %{"client" => "bogus"})
@@ -257,7 +259,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "the dedicated /connect page carries the flow; the index gets the title CTA once agents exist",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents/connect")
       assert html =~ "Connect your AI app to inspect your infrastructure"
@@ -280,7 +282,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # With a live key the index collapses to the list + a title-row CTA
       # into the flow (the Runners "Connect a runner" pattern).
-      subject = owner_subject(user, account)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, _key} =
         ApiKeys.create_key(%{name: "Bot"}, subject)
@@ -294,9 +296,9 @@ defmodule EmisarWeb.AgentsLiveTest do
     # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
     test "a below-minimum bridge keeps its status and offers a red update icon",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       conn = %{conn | host: "localhost", port: 4000}
-      subject = owner_subject(user, account)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "Bot"}, subject)
 
       {:ok, _} =
@@ -322,9 +324,9 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "an idle client on an unsupported bridge reads 'unsupported', not 'idle'",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       conn = %{conn | host: "localhost", port: 4000}
-      subject = owner_subject(user, account)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "StaleBot"}, subject)
 
       # Called 2 h ago (idle by recency) but on a below-minimum bridge — the
@@ -358,8 +360,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "a client on a current emisar-mcp bridge shows no staleness chip", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "Bot"}, subject)
 
       {:ok, _} =
@@ -373,8 +375,8 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "the same client clears its upgrade prompt after reconnecting on the current bridge",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "Bot"}, subject)
 
       {:ok, key} =
@@ -393,8 +395,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "a revoked client does not prompt the operator to upgrade its old bridge", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "Old bot"}, subject)
 
       {:ok, key} =
@@ -414,10 +416,10 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "the list has status/name filters + the custom tab opens the key-builder form",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       # The filter bar renders only once there's something to filter —
       # account-empty hides it (the pitch leads instead).
-      subject = owner_subject(user, account)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, _key} =
         ApiKeys.create_key(%{name: "Bot"}, subject)
@@ -440,8 +442,8 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "the default status filter is the baseline — no clear-× until moved off it",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, _live_key} = ApiKeys.create_key(%{name: "Live bot"}, subject)
       {:ok, _raw, revoked_key} = ApiKeys.create_key(%{name: "Retired bot"}, subject)
       {:ok, _revoked_key} = ApiKeys.revoke_api_key(revoked_key, subject)
@@ -476,8 +478,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "a search miss keeps the list controls without opening onboarding", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "Present bot"}, subject)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents?name=missing")
@@ -490,8 +492,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "a revoked-result filter does not treat dead rows as an empty account", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "Revoked bot"}, subject)
       {:ok, _key} = ApiKeys.revoke_api_key(key, subject)
 
@@ -504,7 +506,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "selecting Claude.ai (remote MCP) shows OAuth URL instead of bridge snippet",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       html = lv |> render_click("select_client", %{"client" => "claude_web"})
@@ -550,7 +552,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "selecting ChatGPT shows the remote MCP panel too", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       html = lv |> render_click("select_client", %{"client" => "chatgpt"})
@@ -571,7 +573,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "selecting a client mints nothing; the manual disclosure mints on reveal", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       conn = %{conn | host: "localhost", port: 4000}
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
@@ -664,12 +666,14 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # Auto-unused — operator's list is still empty until an MCP call
       # promotes it.
-      assert {:ok, [], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+      assert {:ok, [], _} =
+               ApiKeys.list_api_keys_for_account(Fixtures.Subjects.subject_for(owner))
+
       flush_key_broadcast(lv)
     end
 
     test "a local client on public HTTP shows the transport refusal", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       html = render_click(lv, "select_client", %{"client" => "claude_desktop"})
@@ -681,8 +685,8 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "the installer path flips waiting→connected on a grant-minted key's first call",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       # A pre-existing key minted BEFORE this page opened: its later first
       # call must never flip this page's watchdog (scoped-advance negative).
@@ -720,7 +724,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "local setup reveals troubleshooting after its two-minute timeout", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
       assert :sys.get_state(lv.pid).socket.assigns.connection_wait == nil
 
@@ -751,7 +755,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "switching apps cancels the timer and ignores the old attempt", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
       render_click(lv, "select_client", %{"client" => "claude_desktop"})
       {first_attempt, first_timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
@@ -774,7 +778,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "manual setup resets the delay and a late first call clears troubleshooting", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
       render_click(lv, "select_client", %{"client" => "claude_code"})
       {installer_attempt, _timer} = :sys.get_state(lv.pid).socket.assigns.connection_wait
@@ -801,7 +805,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "custom setup only starts waiting after a key is created", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
       render_click(lv, "select_client", %{"client" => "custom"})
       assert :sys.get_state(lv.pid).socket.assigns.connection_wait == nil
@@ -819,7 +823,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "an MCP call promotes the revealed-snippet key to a visible Connected LLM",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "claude_code"})
@@ -835,15 +839,15 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert promoted.last_used_at != nil
 
       assert {:ok, [%ApiKey{id: id}], _} =
-               ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+               ApiKeys.list_api_keys_for_account(Fixtures.Subjects.subject_for(owner))
 
       assert id == auto.id
       flush_key_broadcast(lv)
     end
 
     test "agents list shows the creator's email", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, _key} =
         ApiKeys.create_key(%{name: "manual-bot"}, subject)
@@ -851,12 +855,12 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")
 
       assert html =~ "manual-bot"
-      assert html =~ user.email
+      assert html =~ owner.email
     end
 
     test "each agent links to its run activity, including after it's revoked", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, key} =
         ApiKeys.create_key(
@@ -880,8 +884,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "an OAuth backing key row hides Rotate but keeps Revoke", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _backing} =
         ApiKeys.create_backing_key(account.id, subject.membership_id, "Claude (OAuth)")
@@ -903,18 +907,16 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "an owner bulk-revokes every key a member owns from the group header", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-
-      member = Fixtures.Users.create_user(full_name: "Jordan Lee")
+      {conn, _owner, account} = register_and_log_in(conn)
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.id,
-          role: "operator"
+          role: "operator",
+          display_name: "Jordan Lee"
         )
 
-      member_subject = Fixtures.Subjects.membership_subject(membership)
+      member_subject = Fixtures.Subjects.subject_for(membership)
       {:ok, _raw_one, key_one} = ApiKeys.create_key(%{name: "laptop"}, member_subject)
       {:ok, _raw_two, key_two} = ApiKeys.create_key(%{name: "desktop"}, member_subject)
 
@@ -942,10 +944,13 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "expired-only keys disable bulk revoke but keep individual cleanup available", %{
       conn: conn
     } do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       Fixtures.ApiKeys.backdate_api_key_expiry(key)
 
@@ -967,10 +972,13 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "a revoked-only member group has a disabled bulk action", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       Fixtures.ApiKeys.mark_revoked(key)
 
@@ -985,8 +993,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "a usable key outside the current name and status filters enables bulk revoke", %{
       conn: conn
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      attrs = %{account_id: account.id, created_by_id: user.id}
+      {conn, owner, account} = register_and_log_in(conn)
+      attrs = %{account_id: account.id, created_by_membership_id: owner.id}
       {_raw, old} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "shown"))
       {_raw, _live} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "elsewhere"))
       Fixtures.ApiKeys.mark_revoked(old)
@@ -1004,8 +1012,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "a usable key beyond the first page enables the member action", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      attrs = %{account_id: account.id, created_by_id: user.id}
+      {conn, owner, account} = register_and_log_in(conn)
+      attrs = %{account_id: account.id, created_by_membership_id: owner.id}
 
       {_raw, live_key} =
         Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "off-page-live-key"))
@@ -1033,8 +1041,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "an unused generated key still enables containment from a visible expired row", %{
       conn: conn
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      attrs = %{account_id: account.id, created_by_id: user.id}
+      {conn, owner, account} = register_and_log_in(conn)
+      attrs = %{account_id: account.id, created_by_membership_id: owner.id}
       {_raw, expired} = Fixtures.ApiKeys.create_api_key(attrs)
       Fixtures.ApiKeys.backdate_api_key_expiry(expired)
       {_raw, hidden} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "hidden-live-key"))
@@ -1053,13 +1061,13 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "off-filter lifecycle changes refresh bulk availability without moving the filter", %{
       conn: conn
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {_raw, expired} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: owner.id,
           name: "shown"
         )
 
@@ -1082,8 +1090,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "a tick disables bulk revoke when the cached off-filter expiry passes", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      attrs = %{account_id: account.id, created_by_id: user.id}
+      {conn, owner, account} = register_and_log_in(conn)
+      attrs = %{account_id: account.id, created_by_membership_id: owner.id}
       {_raw, expired} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "shown"))
       Fixtures.ApiKeys.backdate_api_key_expiry(expired)
       {_raw, active} = Fixtures.ApiKeys.create_api_key(Map.put(attrs, :name, "outside-filter"))
@@ -1107,10 +1115,13 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "an unavailable summary does not claim the member has no active keys", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
 
@@ -1141,30 +1152,26 @@ defmodule EmisarWeb.AgentsLiveTest do
     # without manage lands on the context's denial and revokes nothing.
     test "a crafted bulk revoke on another member's group is refused with a flash",
          %{conn: conn} do
-      {_owner_conn, _user, account} = register_and_log_in(conn)
-
-      target = Fixtures.Users.create_user(full_name: "Priya Shah")
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
 
       target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target.id,
-          role: "operator"
+          role: "operator",
+          display_name: "Priya Shah"
         )
 
-      target_subject = Fixtures.Subjects.membership_subject(target_membership)
+      target_subject = Fixtures.Subjects.subject_for(target_membership)
       {:ok, _raw, target_key} = ApiKeys.create_key(%{name: "target"}, target_subject)
 
-      operator = Fixtures.Users.create_user(full_name: "Sam Okafor")
-
-      _operator_membership =
+      operator =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
+          role: "operator",
+          display_name: "Sam Okafor"
         )
 
-      operator_conn = log_in_user(build_conn(), operator)
+      operator_conn = log_in_member(build_conn(), operator)
       {:ok, operator_lv, operator_html} = live(operator_conn, ~p"/app/#{account}/agents")
 
       # The operator sees no bulk revoke on Priya's group…
@@ -1185,8 +1192,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     # in a flash and the key is untouched (no successor minted).
     test "a crafted rotate event on an OAuth backing row is refused with a flash, key untouched",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, backing} =
         ApiKeys.create_backing_key(account.id, subject.membership_id, "Claude (OAuth)")
@@ -1203,8 +1210,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "revoked keys are hidden by default + an Owner filter is offered", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, _live} =
         ApiKeys.create_key(
@@ -1226,7 +1233,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "dead-bot"
       # The Owner filter is offered, with the creator as an option.
       assert html =~ ~s(name="owner")
-      assert html =~ user.email
+      assert html =~ owner.email
 
       # Revoked are reachable via the Status filter.
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents?status=revoked")
@@ -1235,8 +1242,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "agents list shows the MCP client a key reported (clientInfo)", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, key} =
         ApiKeys.create_key(
@@ -1262,8 +1269,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "the client seg is dropped when it just echoes the key name", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       # A quick-mint names the key after the client it connects; the client that
       # then reports in ("claude-code") only echoes the title, so the seg is
@@ -1277,8 +1284,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "the emisar-mcp bridge version shows inline in the agent's title", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "Bot"}, subject)
 
       # A supported bridge earns no staleness chip, but its version is still
@@ -1294,20 +1301,20 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "keys are grouped under the issuing human, off the per-row meta", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "Bot"}, subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
 
       # The owner heads their cluster once (an <h2> group header), instead of
       # "owner Test User" repeated down every row.
-      assert has_element?(lv, "h2", user.full_name)
+      assert has_element?(lv, "h2", owner.display_name)
     end
 
     test "status badge derives from last_used_at", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       # Active: last_used 2 min ago
       {:ok, _, active} =
@@ -1345,8 +1352,8 @@ defmodule EmisarWeb.AgentsLiveTest do
       test "a tick polls #{key_count} visible keys once without per-row authorization reads", %{
         conn: conn
       } do
-        {conn, user, account} = register_and_log_in(conn)
-        subject = owner_subject(user, account)
+        {conn, owner, account} = register_and_log_in(conn)
+        subject = Fixtures.Subjects.subject_for(owner)
         {:ok, _raw, key} = ApiKeys.create_key(%{name: "PollingBot"}, subject)
 
         for index <- 1..unquote(key_count), index > 1 do
@@ -1385,7 +1392,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "custom-key form shows validation errors inline on the field, not in a flash",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       # The custom-key builder form only renders after the Custom tab is
@@ -1408,8 +1415,8 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "an in-progress inline connect flow survives key broadcasts, ticks, and client switches",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       render_click(lv, "select_client", %{"client" => "custom"})
@@ -1443,7 +1450,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "custom flow begins with a complete create step", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "custom"})
@@ -1458,7 +1465,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # the new key is visible. The completed create state is covered separately
     # below ("custom create reveals the raw secret once").
     test "custom create persists an MCP key and reloads the list", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "custom"})
@@ -1478,7 +1485,10 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # It's a visible (non-auto) key → shows in the default live list.
       assert html =~ "my-custom-bot"
-      assert {:ok, [_], _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+
+      assert {:ok, [_], _} =
+               ApiKeys.list_api_keys_for_account(Fixtures.Subjects.subject_for(owner))
+
       flush_key_broadcast(lv)
     end
 
@@ -1487,18 +1497,12 @@ defmodule EmisarWeb.AgentsLiveTest do
     # operator may create one.
     test "an operator creates a custom key, bound to their own membership", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      operator = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
         build_conn()
-        |> log_in_user(operator)
+        |> log_in_member(operator)
         |> live(~p"/app/#{account}/agents/connect")
 
       lv |> render_click("select_client", %{"client" => "custom"})
@@ -1512,23 +1516,18 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert key.kind == :mcp
       # The key resolves THIS membership's runner and pack access at call time,
       # so it can never reach further than the operator who minted it.
-      assert key.created_by_membership_id == membership.id
+      assert key.created_by_membership_id == operator.id
       flush_key_broadcast(lv)
     end
 
     test "an operator cannot mint an audit-export token through the custom form", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      operator = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
         build_conn()
-        |> log_in_user(operator)
+        |> log_in_member(operator)
         |> live(~p"/app/#{account}/agents/connect")
 
       lv |> render_click("select_client", %{"client" => "custom"})
@@ -1550,7 +1549,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # wallclock, so "2099-12-25 at 10:30" persists as 10:30:00 UTC. (The
     # enrollment-keys form has the parallel; this is the agents path.)
     test "a custom key's expires_at is parsed from datetime-local as UTC", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "custom"})
@@ -1561,7 +1560,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       })
       |> render_submit()
 
-      {:ok, keys, _} = ApiKeys.list_api_keys_for_account(owner_subject(user, account))
+      {:ok, keys, _} = ApiKeys.list_api_keys_for_account(Fixtures.Subjects.subject_for(owner))
       key = Enum.find(keys, &(&1.name == "expiring-bot"))
 
       # The column is :utc_datetime_usec, so the stored value carries
@@ -1573,7 +1572,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # An expiry the server can't read, or one already in the past, comes back
     # under the field the operator typed it in — never a silently-defaulted key.
     test "a malformed expiry renders a field error and mints nothing", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "custom"})
@@ -1591,7 +1590,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "an expiry already in the past renders a field error and mints nothing", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "custom"})
@@ -1612,7 +1611,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # then advances to the connect step. The raw secret stays copyable before
     # the operator leaves the page.
     test "custom create reveals the raw secret once", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "custom"})
@@ -1638,8 +1637,8 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "rotating a key from its row mints a successor and reveals the new secret",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, key} =
         ApiKeys.create_key(%{name: "rotate-me"}, subject)
@@ -1660,10 +1659,13 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "Rotate requests automatic rotation without revealing a secret and allows manual fallback",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       key = Fixtures.ApiKeys.mark_rotation_supported(key)
       ApiKeys.subscribe_account_api_keys(account.id)
@@ -1693,8 +1695,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     # the shared <.tooltip> (focusable trigger + role=tooltip bubble), never a
     # raw title= a keyboard or touch operator can't reach (WCAG 1.4.13).
     test "activity and rotation-state explanations are accessible tooltips", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, key} = ApiKeys.create_key(%{name: "rotate-me"}, subject)
       {:ok, _new_raw, successor} = ApiKeys.rotate_api_key(key, subject)
@@ -1719,7 +1721,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # switching to the Custom tab clears that shown secret (one-time-secret
     # hygiene), and re-picking + re-revealing mints a fresh secret.
     test "switching to Custom clears a previously-shown quick secret", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       # Pick a local client and reveal its manual snippet → quick_secret shown.
@@ -1740,7 +1742,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "key-bearing shell snippets copy the exact command with its leading space", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
 
       for client <- ["claude_code", "grok"] do
@@ -1762,7 +1764,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "Claude Code setup offers the optional auto-permit step with the verified rule",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       html = lv |> render_click("select_client", %{"client" => "claude_code"})
@@ -1781,7 +1783,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "Codex setup uses the server-scoped MCP approval mode",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "codex"})
@@ -1795,7 +1797,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "each new local client tab reveals its exact config shape", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
 
       # One distinctive marker per verified upstream schema — a wrong key
@@ -1823,7 +1825,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "VS Code keeps its revealed key out of the syncable MCP config", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
 
       lv |> render_click("select_client", %{"client" => "vscode"})
@@ -1842,7 +1844,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       conn: conn
     } do
       conn = %{conn | host: "localhost", port: 4000}
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
       render_click(lv, "select_client", %{"client" => "claude_desktop"})
       render_click(element(lv, "button[data-os-select='windows']"))
@@ -1907,7 +1909,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     test "custom Unix paths and invalid Windows paths never alter the revealed credential", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents/connect")
       render_click(lv, "select_client", %{"client" => "cursor"})
       render_click(lv, "reveal_snippet", %{})
@@ -1954,15 +1956,10 @@ defmodule EmisarWeb.AgentsLiveTest do
       conn: conn
     } do
       account = Fixtures.Accounts.create_account()
-      viewer = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      {:ok, lv, _html} = conn |> log_in_user(viewer) |> live(~p"/app/#{account}/agents/connect")
+      {:ok, lv, _html} = conn |> log_in_member(viewer) |> live(~p"/app/#{account}/agents/connect")
 
       assert has_element?(lv, "h2", "You don't have permission to connect agents.")
       assert render(lv) =~ "Ask an owner or admin to grant you an operator role."
@@ -1986,7 +1983,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "Grok setup registers the bridge and offers its server-scoped allow rule",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       lv |> render_click("select_client", %{"client" => "grok"})
@@ -2004,12 +2001,12 @@ defmodule EmisarWeb.AgentsLiveTest do
     # keys and never B's, even with both present. (The foreign-slug 404 lives in
     # account_slug_authz_test; this asserts the in-account data scoping.)
     test "cross-account — A's admin sees only A's keys, never B's", %{conn: conn} do
-      {conn, user, account_a} = register_and_log_in(conn)
+      {conn, owner, account_a} = register_and_log_in(conn)
 
       {:ok, _raw, _key_a} =
         ApiKeys.create_key(
           %{name: "alpha-bot"},
-          owner_subject(user, account_a)
+          Fixtures.Subjects.subject_for(owner)
         )
 
       {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
@@ -2037,21 +2034,14 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _raw, key} =
         ApiKeys.create_key(
           %{name: "live-bot"},
-          owner_subject(owner, account)
+          Fixtures.Subjects.subject_for(owner)
         )
 
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
         build_conn()
-        |> log_in_user(operator)
+        |> log_in_member(operator)
         |> live(~p"/app/#{account}/agents")
 
       assert render_click(lv, "revoke", %{"id" => key.id}) =~
@@ -2065,12 +2055,12 @@ defmodule EmisarWeb.AgentsLiveTest do
     # key, `revoke_api_key` retires it, a "API key revoked." flash shows, and the
     # list reloads (the now-revoked key drops out of the default live view).
     test "an admin revokes a key → flash + list reloads", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
       {:ok, _raw, key} =
         ApiKeys.create_key(
           %{name: "doomed-bot"},
-          owner_subject(user, account)
+          Fixtures.Subjects.subject_for(owner)
         )
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
@@ -2087,8 +2077,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "expired-key revoke is plain while a usable key still requires its name", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, expired_key} = ApiKeys.create_key(%{name: "expired-bot"}, subject)
       expired_key = Fixtures.ApiKeys.backdate_api_key_expiry(expired_key)
@@ -2125,8 +2115,8 @@ defmodule EmisarWeb.AgentsLiveTest do
     # The browser drops any push chained after the confirm submit, so the submit
     # itself must clear the typed name before the next key's dialog renders.
     test "a confirmed typed revoke leaves the next key's dialog empty", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, first_key} = ApiKeys.create_key(%{name: "first-bot"}, subject)
       {:ok, _raw, second_key} = ApiKeys.create_key(%{name: "second-bot"}, subject)
@@ -2149,10 +2139,10 @@ defmodule EmisarWeb.AgentsLiveTest do
     # ghost buttons. The confirm ladder is unchanged behind the menu.
     test "an admin's key row carries the labeled Actions menu with all three verbs",
          %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
 
       {:ok, _raw, key} =
-        ApiKeys.create_key(%{name: "managed-bot"}, owner_subject(user, account))
+        ApiKeys.create_key(%{name: "managed-bot"}, Fixtures.Subjects.subject_for(owner))
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/agents")
 
@@ -2189,20 +2179,14 @@ defmodule EmisarWeb.AgentsLiveTest do
     # buttons stranded in the action slot.
     test "an operator's own key row carries the same labeled Actions menu", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      operator = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, _raw, key} =
-        ApiKeys.create_key(%{name: "my-bot"}, Fixtures.Subjects.membership_subject(membership))
+        ApiKeys.create_key(%{name: "my-bot"}, Fixtures.Subjects.subject_for(operator))
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/agents")
 
       assert has_element?(lv, "details summary", "Actions")
       assert has_element?(lv, "details a", "View activity")
@@ -2222,20 +2206,14 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "an operator rotates their own key and gets the new secret", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      operator = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, _raw, key} =
-        ApiKeys.create_key(%{name: "my-bot"}, Fixtures.Subjects.membership_subject(membership))
+        ApiKeys.create_key(%{name: "my-bot"}, Fixtures.Subjects.subject_for(operator))
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/agents")
 
       html = render_click(lv, "rotate", %{"id" => key.id})
 
@@ -2247,20 +2225,14 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "an operator revokes their own key", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      operator = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, _raw, key} =
-        ApiKeys.create_key(%{name: "my-bot"}, Fixtures.Subjects.membership_subject(membership))
+        ApiKeys.create_key(%{name: "my-bot"}, Fixtures.Subjects.subject_for(operator))
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/agents")
 
       assert render_click(lv, "revoke", %{"id" => key.id}) =~ "API key revoked."
       assert Repo.reload!(key).revoked_at
@@ -2274,18 +2246,12 @@ defmodule EmisarWeb.AgentsLiveTest do
       {_owner_conn, owner, account} = register_and_log_in(conn)
 
       {:ok, _raw, key} =
-        ApiKeys.create_key(%{name: "watch-bot"}, owner_subject(owner, account))
+        ApiKeys.create_key(%{name: "watch-bot"}, Fixtures.Subjects.subject_for(owner))
 
-      operator = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/agents")
 
       refute has_element?(lv, "details summary", "Actions")
       # Two verbs share this row, so both wear the bordered face rather than the
@@ -2316,20 +2282,13 @@ defmodule EmisarWeb.AgentsLiveTest do
       {:ok, _raw, key} =
         ApiKeys.create_key(
           %{name: "view-me-bot"},
-          owner_subject(owner, account)
+          Fixtures.Subjects.subject_for(owner)
         )
 
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/agents")
 
       # The page renders for the operator (they hold view_api_keys)…
       assert html =~ "AI agents"
@@ -2358,7 +2317,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # nothing: it's a pure UI-state toggle, so the DB stays empty until the form
     # is actually submitted.
     test "the Custom tile swaps the snippet for the key-builder form, no mint", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       render_click(lv, "select_client", %{"client" => "custom"})
@@ -2375,19 +2334,11 @@ defmodule EmisarWeb.AgentsLiveTest do
     # select_client event past the disabled tab is refused too (IL-15).
     test "an operator's Custom tab is live, a viewer's connect panel is absent", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      operator = Fixtures.Users.create_user()
-      viewer = Fixtures.Users.create_user()
-
-      for {user, role} <- [{operator, "operator"}, {viewer, "viewer"}] do
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: role
-        )
-      end
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, operator_lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/agents")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/agents")
 
       # No lock and no tooltip: the panel only renders for a member who may mint,
       # so every tab in it — Custom included — is a working control.
@@ -2403,7 +2354,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       # A viewer holds only view_api_keys — no panel, and a forced event denied.
       {:ok, viewer_lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/agents")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/agents")
 
       refute has_element?(viewer_lv, "button[phx-value-client='custom']")
 
@@ -2417,7 +2368,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     # account-scoped `fetch_api_key_by_id` returns not-found, so nothing is
     # revoked and no error leaks the foreign key's existence.
     test "a forged/foreign key id revoke is a quiet no-op", %{conn: conn} do
-      {conn, _user, account_a} = register_and_log_in(conn)
+      {conn, _owner, account_a} = register_and_log_in(conn)
 
       {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
@@ -2437,7 +2388,7 @@ defmodule EmisarWeb.AgentsLiveTest do
     end
 
     test "survives an account-topic broadcast it doesn't render", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents")
 
       # The pending-badge hooks subscribe every authenticated LV to the
@@ -2451,8 +2402,8 @@ defmodule EmisarWeb.AgentsLiveTest do
 
   test "the dead/pre-connect render shows a loading placeholder, not the onboarding pitch",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
     {:ok, _raw, _key} = ApiKeys.create_key(%{name: "already-here", kind: :mcp}, subject)
 
     # A plain GET is the disconnected render: the key list is deferred (IL-18),
@@ -2465,7 +2416,7 @@ defmodule EmisarWeb.AgentsLiveTest do
   end
 
   test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents")
 
     # The payload is the operator's own socket, so this is self-inflicted — but

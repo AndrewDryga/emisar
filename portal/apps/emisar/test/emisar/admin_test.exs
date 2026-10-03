@@ -483,22 +483,10 @@ defmodule Emisar.AdminTest do
 
     test "matches an account by member email", %{staff_session: staff_session} do
       account = Fixtures.Accounts.create_account()
-      member = Fixtures.Users.create_user()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
 
       assert {:ok, [found]} = Admin.search_accounts(member.email, staff_session)
       assert found.id == account.id
-    end
-
-    test "uses the workspace contact and never follows a private personal address", %{
-      staff_session: staff_session
-    } do
-      member = Fixtures.Memberships.create_membership(email: "work-search@example.test")
-      user = Emisar.Repo.get!(Emisar.Users.User, member.user_id)
-      user |> Ecto.Changeset.change(email: "private-search@example.test") |> Emisar.Repo.update!()
-      assert {:ok, [found]} = Admin.search_accounts("work-search@example.test", staff_session)
-      assert found.id == member.account_id
-      assert {:ok, []} = Admin.search_accounts("private-search@example.test", staff_session)
     end
 
     test "matches a typed LIKE wildcard literally", %{staff_session: staff_session} do
@@ -566,19 +554,22 @@ defmodule Emisar.AdminTest do
 
     test "each section carries the account's own rows", %{staff_session: staff_session} do
       account = Fixtures.Accounts.create_account(plan: "team")
-      owner = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, source: :mcp)
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.id)
+
+      Fixtures.ApiKeys.create_api_key(
+        account_id: account.id,
+        created_by_membership_id: owner_membership.id
+      )
+
       {:ok, event} = Audit.log(account.id, "policy.updated", actor_kind: "user")
 
       assert {:ok, overview} = Admin.account_overview(account.slug, staff_session)
@@ -587,7 +578,7 @@ defmodule Emisar.AdminTest do
       assert overview.billing.plan == "team"
 
       assert Enum.map(overview.members, & &1.id) == [owner_membership.id]
-      assert Enum.map(overview.members, & &1.user.email) == [owner.email]
+      assert Enum.map(overview.members, & &1.email) == [owner_membership.email]
       assert Enum.map(overview.sso, & &1.id) == [provider.id]
 
       assert overview.fleet.counts ==
@@ -699,7 +690,7 @@ defmodule Emisar.AdminTest do
     } do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert {:ok, event} = Admin.record_account_view(account, staff_session)
 
@@ -722,32 +713,36 @@ defmodule Emisar.AdminTest do
   end
 
   describe "execute/2" do
-    test "erases a user only when the confirmation matches the user id" do
-      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
+    test "erases a legacy login only when the confirmation matches its id" do
+      login = legacy_login()
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      owner |> Ecto.Changeset.change(user_id: login.id) |> Repo.update!()
 
       assert Admin.execute(
                "emisar.admin.user.erase",
                [
-                 "user_id=#{user.id}",
+                 "user_id=#{login.id}",
                  "confirmation=not-the-user-id",
                  "reason=typo in the confirmation"
                ]
              ) == {:error, {:unsupported_admin_action, "emisar.admin.user.erase"}}
 
-      assert {:ok, %{id: _}} = Emisar.Users.fetch_user_by_id(user.id)
+      assert Repo.reload(login)
 
       assert {:ok, %{erased_user_id: erased}} =
                Admin.execute(
                  "emisar.admin.user.erase",
                  [
-                   "user_id=#{user.id}",
-                   "confirmation=#{user.id}",
+                   "user_id=#{login.id}",
+                   "confirmation=#{login.id}",
                    "reason=verified erasure request"
                  ]
                )
 
-      assert erased == user.id
-      assert Emisar.Users.fetch_user_by_id(user.id) == {:error, :not_found}
+      assert erased == login.id
+      refute Repo.reload(login)
+      # The login's sole-owner workspace goes with it.
+      assert Emisar.Accounts.fetch_account_by_id(account.id) == {:error, :not_found}
     end
 
     test "dispatches a private RPC action from ordinary name-value argv" do
@@ -759,6 +754,32 @@ defmodule Emisar.AdminTest do
       assert result.id == account.id
       assert result.slug == account.slug
       assert result.billing.plan == "free"
+    end
+
+    test "account.create makes a workspace whose owner is an invitation, once" do
+      slug = "staff-made-#{System.unique_integer([:positive])}"
+      email = Fixtures.Random.unique_email()
+      args = ["email=#{email}", "name=Staff Made", "slug=#{slug}"]
+
+      assert {:ok, %{created: true} = result} = Admin.execute("emisar.admin.account.create", args)
+      assert result.slug == slug
+      assert_received {:email, invitation}
+      assert invitation.to == [{"", email}]
+
+      assert [%Membership{role: :owner} = owner] =
+               Membership.Query.not_deleted()
+               |> Membership.Query.by_account_id(result.id)
+               |> Repo.all()
+
+      assert owner.email == email
+      assert Emisar.Accounts.membership_invitation_pending?(owner)
+
+      # The same slug again reports the existing workspace and invites nobody.
+      assert {:ok, %{created: false, id: existing_id}} =
+               Admin.execute("emisar.admin.account.create", args)
+
+      assert existing_id == result.id
+      refute_received {:email, _}
     end
 
     test "records private support mutations as platform work" do
@@ -797,10 +818,10 @@ defmodule Emisar.AdminTest do
       assert {:ok, _account} = Emisar.Accounts.fetch_account_by_id(account.id)
     end
 
-    test "diagnoses a Member without a personal login from its member-only sessions" do
+    test "diagnoses a Member from its sessions" do
       account = Fixtures.Accounts.create_account(plan: "team")
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      membership = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id)
 
       identity =
         Fixtures.SSO.create_user_identity(
@@ -809,39 +830,33 @@ defmodule Emisar.AdminTest do
           membership: membership
         )
 
-      Fixtures.Auth.create_member_session_token!(membership, identity)
+      Fixtures.Auth.create_session_token!(membership, :sso, nil, %{},
+        user_identity_id: identity.id
+      )
+
       args = ["account=#{account.slug}", "member=#{membership.id}"]
 
       assert {:ok, diagnosis} = Admin.execute("emisar.admin.access.diagnose", args)
       assert diagnosis.member.id == membership.id
-      assert diagnosis.member.user_id == nil
-      refute diagnosis.confirmed
+      assert diagnosis.email_verified
       refute diagnosis.mfa_enabled
       assert diagnosis.active_sessions == 1
     end
 
     test "runs the member support verbs with a platform subject" do
       account = Fixtures.Accounts.create_account()
-      member = Fixtures.Users.create_user()
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      member =
-        member
-        |> Fixtures.Users.set_mfa_state(
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Memberships.set_mfa_state(
           mfa_secret: "JBSWY3DPEHPK3PXP",
           mfa_enabled_at: DateTime.utc_now(),
           mfa_recovery_codes: []
         )
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
-
-      session_token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
-      args = ["account=#{account.slug}", "member=#{member.email}"]
+      session_token = Fixtures.Auth.create_session_token!(membership, :magic_link, nil)
+      args = ["account=#{account.slug}", "member=#{membership.email}"]
 
       assert {:ok, suspended} =
                Admin.execute("emisar.admin.member.suspend", args)
@@ -851,15 +866,12 @@ defmodule Emisar.AdminTest do
 
       # The written row carries no :user preload, so the email has to come from
       # the membership the dispatcher already fetched.
-      assert suspended.email == member.email
+      assert suspended.email == membership.email
 
       assert {:ok, _} = Admin.execute("emisar.admin.member.reinstate", args)
       assert {:ok, _} = Admin.execute("emisar.admin.sessions.revoke", args)
 
-      assert {:ok, session} =
-               Emisar.Auth.fetch_session_by_token(session_token)
-
-      assert Emisar.Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
+      assert Emisar.Auth.fetch_session_by_token(session_token, account.id) ==
                {:error, :not_found}
 
       assert {:ok, _} =
@@ -870,7 +882,7 @@ defmodule Emisar.AdminTest do
 
       assert {:ok, _} = Admin.execute("emisar.admin.mfa.reset", args)
 
-      reset_member = Repo.reload!(member)
+      reset_member = Repo.reload!(membership)
       assert is_nil(reset_member.mfa_secret)
       assert is_nil(reset_member.mfa_enabled_at)
       assert reset_member.mfa_recovery_codes == []
@@ -923,44 +935,33 @@ defmodule Emisar.AdminTest do
     test "changes a member role" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      user = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "viewer"
-        )
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       assert {:ok, promoted} =
                Admin.execute(
                  "emisar.admin.member.set_role",
-                 ["account=#{account.slug}", "member=#{user.email}", "role=admin"]
+                 ["account=#{account.slug}", "member=#{membership.email}", "role=admin"]
                )
 
       assert promoted.id == membership.id
       assert promoted.role == :admin
-      assert promoted.email == user.email
+      assert promoted.email == membership.email
     end
 
     test "transfers ownership and demotes the previous owner" do
       account = Fixtures.Accounts.create_account()
-      previous_owner = Fixtures.Users.create_user()
 
       previous_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: previous_owner.id,
           role: "owner"
         )
 
-      next_owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: next_owner.id,
-        role: "operator"
-      )
+      next_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "operator"
+        )
 
       assert {:ok, promoted} =
                Admin.execute(
@@ -968,7 +969,7 @@ defmodule Emisar.AdminTest do
                  [
                    "account=#{account.slug}",
                    "new_owner=#{next_owner.email}",
-                   "previous_owner=#{previous_owner.email}",
+                   "previous_owner=#{previous_membership.email}",
                    "previous_owner_access=all"
                  ]
                )
@@ -979,7 +980,7 @@ defmodule Emisar.AdminTest do
     end
 
     test "Owner demotion requires an explicit access choice" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
       target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       args = ["account=#{account.slug}", "member=#{target.id}", "role=admin"]
 
@@ -998,7 +999,7 @@ defmodule Emisar.AdminTest do
     end
 
     test "ownership transfer checks the previous Owner's access choice before promotion" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
 
       previous_owner =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
@@ -1017,7 +1018,7 @@ defmodule Emisar.AdminTest do
     end
 
     test "Owner demotion cannot target a member in another account" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
       foreign_owner = Fixtures.Memberships.create_membership(role: "owner")
 
       assert Admin.execute("emisar.admin.member.set_role", [
@@ -1250,5 +1251,17 @@ defmodule Emisar.AdminTest do
       "000000" -> "111111"
       _current -> "000000"
     end
+  end
+
+  # The `users` table has no writer left: its rows are history until S3 drops
+  # it, so the erase RPC's input is inserted directly.
+  defp legacy_login do
+    %Emisar.Users.User{}
+    |> Ecto.Changeset.change(
+      email: Fixtures.Random.unique_email(),
+      full_name: "Legacy Login",
+      confirmed_at: DateTime.utc_now()
+    )
+    |> Repo.insert!()
   end
 end

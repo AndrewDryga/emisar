@@ -1,74 +1,77 @@
 defmodule EmisarWeb.MfaSetupLiveTest do
   @moduledoc """
-  Covers the enforced-MFA interstitial: a non-compliant member is forwarded
-  here from any /app mount, enrolls when needed, or proves an existing factor
-  for this browser before continuing to the dashboard.
+  The workspace's MFA page (`/app/:slug/mfa_setup`, plan §3 "MFA"): a Member
+  of a workspace that requires MFA is forwarded here from every page; without a
+  factor it enrolls, with one it proves the factor for this browser. Enrollment
+  needs a fresh proof of the Member's own credential — an emailed code to a
+  verified address, or a new sign-in at the workspace's identity provider for
+  an SSO-only Member — and session age alone never counts.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Auth, Mail}
+  alias Emisar.{Accounts, Auth, Mail, Repo}
+
+  # The IdP's protocol layer, stubbed as `EmisarWeb.SSOControllerTest` does:
+  # the callback's verified claims come from `params["_claims"]`.
+  defmodule StubOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts) do
+      {:ok, %{authorize_url: "https://idp.test/auth", state: "s", nonce: "n", pkce_verifier: "v"}}
+    end
+
+    @impl Emisar.SSO.OIDC
+    def verify_callback(_provider, %{"_claims" => claims}, _stashed) do
+      claims = Map.update(claims, "auth_time", nil, &String.to_integer/1)
+      {:ok, %{identifier: claims["sub"], claims: claims}}
+    end
+  end
 
   setup %{conn: conn} do
     {owner_conn, owner, account} = register_and_log_in(conn)
-    owner_token = get_session(owner_conn, :user_token)
-    {:ok, owner_auth} = Auth.fetch_session_by_token(owner_token)
-    owner_subject = Fixtures.Subjects.subject_for(owner, account, session: owner_auth)
+    owner_token = session_token(owner_conn, account)
+    owner_subject = Fixtures.Subjects.subject_for(owner, session: owner_token)
 
     {:ok, owner, _codes} =
-      Fixtures.Users.enroll_mfa(Auth.generate_mfa_secret(), owner_subject,
+      Fixtures.Memberships.enroll_mfa(Auth.generate_mfa_secret(), owner_subject,
         session_token: owner_token
       )
 
-    {:ok, owner_auth} = Auth.fetch_session_by_token(owner_token)
-    owner_subject = Fixtures.Subjects.subject_for(owner, account, session: owner_auth)
+    owner_subject = Fixtures.Subjects.subject_for(owner, session: owner_token)
 
     {:ok, account} =
-      Accounts.update_account(
-        account,
-        %{settings: %{require_mfa: true}},
-        owner_subject
-      )
+      Accounts.update_account(account, %{settings: %{require_mfa: true}}, owner_subject)
 
-    user = Fixtures.Users.create_user()
-
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "viewer"
-      )
-
-    conn = build_conn() |> log_in_user(user)
+    member = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+    conn = log_in_member(build_conn(), member)
 
     %{
       conn: conn,
-      user: user,
-      owner: owner,
+      member: member,
       owner_subject: owner_subject,
-      subject: Fixtures.Subjects.membership_subject(membership),
+      subject: Fixtures.Subjects.subject_for(member),
       account: account
     }
   end
 
-  test "a non-compliant member is forwarded from /app to the setup step", %{
+  defp setup_path(account), do: ~p"/app/#{account}/mfa_setup"
+
+  test "a non-compliant Member is forwarded from the workspace to its MFA page", %{
     conn: conn,
     account: account
   } do
-    assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} = live(conn, ~p"/app/#{account}")
+    assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}")
+    assert to == setup_path(account)
   end
 
-  @tag :step_up_review
-  test "revocation between the MFA page GET and socket connection reaches recovery", %{
-    conn: conn,
-    user: user,
-    account: account,
-    owner_subject: owner_subject
-  } do
-    shown = get(conn, ~p"/app/mfa_setup")
+  test "revocation between the page GET and the socket connection goes to the workspace sign-in",
+       %{conn: conn, member: member, account: account, owner_subject: owner_subject} do
+    shown = get(conn, setup_path(account))
     assert html_response(shown, 200) =~ "authentication"
-    member = Fixtures.Memberships.fetch_membership(account.id, user.id)
     assert Accounts.end_all_sessions_for(member, owner_subject) == :ok
-    assert {:error, {:redirect, %{to: "/session/recover"}}} = live(shown)
-    assert html_response(get(shown, ~p"/session/recover"), 200) =~ "Choose how to continue"
+
+    assert {:error, {:redirect, %{to: to}}} = live(shown)
+    assert to == ~p"/app/#{account}/sign_in"
   end
 
   for event <- [
@@ -79,18 +82,17 @@ defmodule EmisarWeb.MfaSetupLiveTest do
         "verify_recovery"
       ] do
     @event event
-    @tag :mfa_session_recovery
-    test "#{event} reauthenticates a revoked mounted browser through workspace sign-in", %{
+    test "#{event} on a revoked mounted page goes back to the workspace", %{
       conn: conn,
-      user: user,
+      member: member,
       account: account,
       subject: subject
     } do
       if @event in ["verify_totp", "verify_recovery"] do
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
       end
 
-      {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+      {:ok, lv, _html} = live(conn, setup_path(account))
 
       params =
         case @event do
@@ -109,26 +111,26 @@ defmodule EmisarWeb.MfaSetupLiveTest do
             %{}
         end
 
-      before = Emisar.Repo.reload!(user)
-      assert Auth.delete_session_token(get_session(conn, :user_token)) == :ok
+      before = Repo.reload!(member)
+      Fixtures.Auth.delete_session_token!(session_token(conn, account))
       render_hook(lv, @event, params)
-      flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
+      flash = assert_redirect(lv, ~p"/app/#{account}")
       assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
-      assert Emisar.Repo.reload!(user) == before
+      assert Repo.reload!(member) == before
       refute_received {:email, _}
     end
   end
 
   test "enrolls in place: scan, confirm, save recovery codes, continue", %{
     conn: conn,
-    user: user,
+    member: member,
     account: account
   } do
-    sibling_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, lv, html} = live(conn, ~p"/app/mfa_setup")
+    sibling_token = Fixtures.Auth.create_session_token!(member)
+    {:ok, lv, html} = live(conn, setup_path(account))
 
     assert html =~ account.name
-    assert html =~ "requires MFA."
+    assert html =~ "Set up an authenticator app to continue."
 
     html = begin_mfa_enrollment(lv)
 
@@ -136,19 +138,16 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     # the secret from it to play the authenticator's part.
     assert [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
     secret = Base.decode32!(encoded, padding: false)
-    otp = Fixtures.Auth.totp_code(secret)
-
-    # code_input's hidden field is client-owned, so render_submit can't set
-    # it — drive the submit event directly (same as the profile MFA tests).
-    html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => otp}})
+    html = submit_concurrent_mfa_enrollment(lv, secret)
 
     assert html =~ "Save your recovery codes"
     # The codes are downloadable as a file, not just copyable.
     assert html =~ "Download .txt"
 
-    assert {:ok, %{user: enrolled} = current_session} =
-             Auth.fetch_session_by_token(get_session(conn, :user_token))
+    assert {:ok, %{membership: enrolled} = current_session} =
+             Auth.fetch_session_by_token(session_token(conn, account), account.id)
 
+    assert enrolled.id == member.id
     assert current_session.mfa_enrollment_verified_at == enrolled.mfa_enabled_at
     assigns = :sys.get_state(lv.pid).socket.assigns
 
@@ -157,15 +156,11 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     assert assigns.current_subject.mfa
 
-    assert {:ok, %{user: sibling_user} = sibling_session} =
-             Auth.fetch_session_by_token(sibling_token)
-
-    assert sibling_user.id == enrolled.id
+    # Another session of the same Member did not prove the new factor.
+    assert {:ok, sibling_session} = Auth.fetch_session_by_token(sibling_token, account.id)
     assert sibling_session.mfa_enrollment_verified_at == nil
 
-    # Continue is gated until the operator acknowledges saving the codes —
-    # an MFA-required member who skips this can lock themselves out. The
-    # acknowledgement checkbox starts unchecked.
+    # Continue is gated until the operator acknowledges saving the codes.
     assert has_element?(lv, "button[disabled]", "Continue")
     refute has_element?(lv, "input[type=checkbox][checked]")
 
@@ -175,42 +170,43 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert has_element?(lv, "button[disabled]", "Continue")
 
     html = render_click(lv, "toggle_codes_saved", %{})
-    # The <.checkbox checked={@codes_saved?}> reflects the toggled state, and
-    # Continue un-gates.
     assert html =~ ~r/<input[^>]*type="checkbox"[^>]*checked/
     refute has_element?(lv, "button[disabled]", "Continue")
 
-    lv
-    |> element("button", "Continue")
-    |> render_click()
+    assert {:error, {:live_redirect, %{to: to}}} =
+             lv |> element("button", "Continue") |> render_click()
 
-    assert_redirect(lv, "/app")
+    assert to == ~p"/app/#{account}"
   end
 
-  test "the required-MFA exit signs out through DELETE and revokes this session", %{conn: conn} do
-    token = Plug.Conn.get_session(conn, :user_token)
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+  test "the required-MFA exit signs out through DELETE and ends this session", %{
+    conn: conn,
+    account: account
+  } do
+    token = session_token(conn, account)
+    {:ok, lv, _html} = live(conn, setup_path(account))
 
     assert has_element?(lv, "a[href='/sign_out'][data-method=delete]", "Sign out")
 
-    conn = delete(conn, ~p"/sign_out")
+    signed_out = delete(conn, ~p"/sign_out")
 
-    assert redirected_to(conn) == "/"
-    refute Plug.Conn.get_session(conn, :user_token)
-    assert Auth.fetch_session_by_token(token) == {:error, :not_found}
+    assert redirected_to(signed_out) == "/"
+    refute get_session(signed_out, :sessions)
+    assert Auth.fetch_session_by_token(token, account.id) == {:error, :not_found}
   end
 
-  test "resending enrollment verification confirms delivery and preserves the email step", %{
+  test "resending the enrollment code confirms delivery and keeps the email step", %{
     conn: conn,
-    user: user
+    member: member,
+    account: account
   } do
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+    {:ok, lv, _html} = live(conn, setup_path(account))
     render_click(lv, "start_mfa", %{})
     assert_received {:email, _first_email}
 
     html = lv |> element("button", "Resend code") |> render_click()
 
-    assert html =~ "A new verification code was sent to #{user.email}."
+    assert html =~ "A new verification code was sent to #{member.email}."
     assert has_element?(lv, "#mfa_enrollment_email_form")
     refute has_element?(lv, "#mfa_form")
     assert_received {:email, email}
@@ -222,9 +218,11 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     refute has_element?(lv, "#mfa_enrollment_email_form")
   end
 
-  test "a wrong code is rejected inline at the form, not as a flash", %{conn: conn} do
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
-
+  test "a wrong code is rejected inline at the form, not as a flash", %{
+    conn: conn,
+    account: account
+  } do
+    {:ok, lv, _html} = live(conn, setup_path(account))
     begin_mfa_enrollment(lv)
 
     render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "000000"}})
@@ -234,119 +232,115 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert_push_event(lv, "code:reset", %{id: "mfa-otp"})
   end
 
-  test "an enrolled member verifies TOTP for only this browser", %{
+  test "an enrolled Member verifies TOTP for only this browser", %{
     conn: conn,
-    user: user,
+    member: member,
+    account: account,
     subject: subject
   } do
     secret = Auth.generate_mfa_secret()
-    sibling_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    sibling_token = Fixtures.Auth.create_session_token!(member)
+    {:ok, enrolled, _codes} = Fixtures.Memberships.enroll_mfa(secret, subject)
 
-    {:ok, enrolled, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
-
-    {:ok, lv, html} = live(conn, ~p"/app/mfa_setup")
-
+    {:ok, lv, html} = live(conn, setup_path(account))
     assert html =~ "Enter an authenticator or recovery code to continue."
 
     render_hook(lv, "verify_totp", %{"otp" => Fixtures.Auth.totp_code(secret)})
-    assert_redirect(lv, "/app")
+    assert_redirect(lv, ~p"/app/#{account}")
 
-    assert {:ok, %{user: current_user} = current_session} =
-             Auth.fetch_session_by_token(get_session(conn, :user_token))
+    assert {:ok, current_session} =
+             Auth.fetch_session_by_token(session_token(conn, account), account.id)
 
-    assert current_user.id == enrolled.id
-    assert current_session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
+    assert current_session.membership_id == enrolled.id
+    assert current_session.mfa_enrollment_verified_at == Repo.reload!(enrolled).mfa_enabled_at
 
-    assert {:ok, %{user: sibling_user} = sibling_session} =
-             Auth.fetch_session_by_token(sibling_token)
-
-    assert sibling_user.id == enrolled.id
+    assert {:ok, sibling_session} = Auth.fetch_session_by_token(sibling_token, account.id)
     assert sibling_session.mfa_enrollment_verified_at == nil
   end
 
-  test "an enrolled member can use one recovery code for only this browser", %{
+  test "an enrolled Member can use one recovery code for only this browser", %{
     conn: conn,
-    user: user,
+    member: member,
+    account: account,
     subject: subject
   } do
-    sibling_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    sibling_token = Fixtures.Auth.create_session_token!(member)
 
     {enrolled, [recovery_code | _]} =
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+      Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+    {:ok, lv, _html} = live(conn, setup_path(account))
     render_click(lv, "use_recovery")
     render_hook(lv, "verify_recovery", %{"code" => recovery_code})
-    assert_redirect(lv, "/app")
+    assert_redirect(lv, ~p"/app/#{account}")
 
-    assert {:ok, %{user: current_user} = current_session} =
-             Auth.fetch_session_by_token(get_session(conn, :user_token))
+    assert {:ok, current_session} =
+             Auth.fetch_session_by_token(session_token(conn, account), account.id)
 
-    assert current_user.id == enrolled.id
-    assert current_session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
+    assert current_session.mfa_enrollment_verified_at == Repo.reload!(enrolled).mfa_enabled_at
 
-    assert {:ok, %{user: sibling_user} = sibling_session} =
-             Auth.fetch_session_by_token(sibling_token)
-
-    assert sibling_user.id == enrolled.id
+    assert {:ok, sibling_session} = Auth.fetch_session_by_token(sibling_token, account.id)
     assert sibling_session.mfa_enrollment_verified_at == nil
 
-    assert Auth.verify_mfa_challenge(enrolled, {:recovery_code, recovery_code}) ==
+    assert Auth.verify_mfa_challenge(enrolled.id, {:recovery_code, recovery_code}) ==
              {:error, :invalid}
   end
 
-  test "a stale setup view remounts into challenge when another session enables MFA", %{
+  test "a stale setup view remounts into the challenge when another session enrolls", %{
     conn: conn,
+    account: account,
     subject: subject
   } do
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+    {:ok, lv, _html} = live(conn, setup_path(account))
+    {_member, _codes} = Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-    {_user, _codes} =
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+    assert {:error, {:live_redirect, %{to: to}}} = render_click(lv, "start_mfa", %{})
+    assert to == setup_path(account)
 
-    render_click(lv, "start_mfa", %{})
-
-    assert_redirect(lv, "/app/mfa_setup")
-    {:ok, _challenge, html} = live(conn, ~p"/app/mfa_setup")
+    {:ok, _challenge, html} = live(conn, setup_path(account))
     assert html =~ "Enter an authenticator or recovery code to continue."
   end
 
-  test "a concurrent enrollment completion remounts into challenge", %{
+  test "a concurrent enrollment completion remounts into the challenge", %{
     conn: conn,
+    account: account,
     subject: subject
   } do
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+    {:ok, lv, _html} = live(conn, setup_path(account))
     html = begin_mfa_enrollment(lv)
     [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
     pending_secret = Base.decode32!(encoded, padding: false)
 
-    {_user, _codes} =
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+    {_member, _codes} = Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-    submit_concurrent_mfa_enrollment(lv, pending_secret)
+    assert {:error, {:live_redirect, %{to: to}}} =
+             submit_concurrent_mfa_enrollment(lv, pending_secret)
 
-    assert_redirect(lv, "/app/mfa_setup")
-    {:ok, _challenge, html} = live(conn, ~p"/app/mfa_setup")
+    assert to == setup_path(account)
+    {:ok, _challenge, html} = live(conn, setup_path(account))
     assert html =~ "Enter an authenticator or recovery code to continue."
   end
 
   test "a subject without account-view permission fails closed", %{
-    user: user,
+    member: member,
     account: account
   } do
-    subject = Fixtures.Subjects.build_subject(user: user, account: account)
+    subject = Fixtures.Subjects.build_subject(member: member, account: account)
 
     socket = %Phoenix.LiveView.Socket{
-      assigns: %{current_user: user, current_account: account, current_subject: subject}
+      assigns: %{__changed__: %{}, current_account: account, current_subject: subject}
     }
 
     assert_raise EmisarWeb.NotFoundError, fn ->
-      EmisarWeb.UserAuth.on_mount(:ensure_sso_compliant, %{}, %{}, socket)
+      EmisarWeb.UserAuth.on_mount(:assign_account_compliance, %{}, %{}, socket)
     end
   end
 
-  test "the secret is minted only after email proof and the QR keeps it", %{conn: conn} do
-    {:ok, lv, initial} = live(conn, ~p"/app/mfa_setup")
+  test "the secret is minted only after email proof and the QR keeps it", %{
+    conn: conn,
+    account: account
+  } do
+    {:ok, lv, initial} = live(conn, setup_path(account))
 
     refute initial =~ "mfa-setup-key"
     refute_received {:email, _}
@@ -354,319 +348,282 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     html = begin_mfa_enrollment(lv)
 
     assert [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
-    # The encoded secret is a real, decodable base32 TOTP secret (not a placeholder).
     assert {:ok, _secret} = Base.decode32(encoded, padding: false)
 
     # Re-rendering the SAME connected view keeps the same secret — minted once.
     assert [_, ^encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, render(lv))
   end
 
-  test "the disconnected render asks for an explicit email and sends nothing", %{
-    conn: conn
+  test "the disconnected render loads without sending anything", %{
+    conn: conn,
+    account: account
   } do
-    html = conn |> get(~p"/app/mfa_setup") |> html_response(200)
+    html = conn |> get(setup_path(account)) |> html_response(200)
 
-    assert html =~ "Email me a verification code"
+    assert html =~ "Loading"
     refute html =~ "mfa-setup-key"
     refute_received {:email, _}
   end
 
-  test "crafted recovery-code events before enrollment are harmless", %{conn: conn} do
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
-
-    html = render_click(lv, "toggle_codes_saved", %{})
-
+  test "a verified Member is offered the emailed code, and crafted events before it are harmless",
+       %{conn: conn, account: account} do
+    {:ok, lv, html} = live(conn, setup_path(account))
     assert html =~ "Email me a verification code"
-    refute html =~ "mfa-setup-key"
+
+    for {event, params} <- [
+          {"toggle_codes_saved", %{}},
+          {"confirm_mfa", %{"mfa" => %{"otp" => "123456"}}},
+          {"verify_mfa_enrollment_email", %{"mfa_enrollment" => %{"code" => "ABCDEF"}}}
+        ] do
+      render_hook(lv, event, params)
+      refute render(lv) =~ "mfa-setup-key"
+    end
+
+    refute_received {:email, _}
   end
 
-  test "the QR is a server-generated SVG, never attacker-influenced markup (IL-16)", %{conn: conn} do
-    # the only `raw/1` on this page renders `MfaQr.svg/1`,
-    # whose input is the server-minted provisioning URI (issuer + the operator's
-    # own email + a server-generated secret) — never runner/LLM/operator-supplied
-    # content. The rendered QR is the EQRCode inline <svg>, so the `raw` is safe by
-    # source: assert the page carries that server-built SVG (its distinctive 240px
-    # canvas + QR viewBox), not arbitrary markup.
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+  test "the QR is a server-generated SVG, never attacker-influenced markup (IL-16)", %{
+    conn: conn,
+    account: account
+  } do
+    {:ok, lv, _html} = live(conn, setup_path(account))
     html = begin_mfa_enrollment(lv)
 
     assert html =~ "<svg"
-    # The dimensions MfaQr.svg/1 sets (width: 240) + EQRCode's module grid viewBox —
-    # the fingerprint of the server-generated QR rather than a passthrough blob.
     assert html =~ ~s|width="240.0"|
     assert html =~ ~s|viewBox=|
   end
 
-  test "a no-email member fails closed with actionable profile guidance", %{account: account} do
-    user = Fixtures.Users.create_sso_user(full_name: "No Email")
+  test "an email-code session of a Member without a verified address cannot enroll", %{
+    account: account
+  } do
+    member =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "viewer",
+        email_verified?: false
+      )
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "viewer"
-    )
+    conn = log_in_member(build_conn(), member)
+    {:ok, lv, html} = live(conn, setup_path(account))
 
-    conn = build_conn() |> log_in_user(user)
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+    assert html =~ "We can&#39;t confirm it&#39;s you from this session"
+    refute html =~ "Email me a verification code"
+    refute html =~ "Verify with"
 
+    # A crafted start sends nothing: there is no proved address to send to.
     html = render_click(lv, "start_mfa", %{})
-
-    assert html =~ "Your profile has no email address"
-    assert html =~ "Ask your workspace administrator"
+    assert html =~ "We can&#39;t confirm it&#39;s you from this session"
     refute html =~ "mfa-setup-key"
     refute_received {:email, _}
   end
 
-  test "a mail-provider failure does not advance enforced enrollment", %{conn: conn} do
+  test "a mail-provider failure does not advance enforced enrollment", %{
+    conn: conn,
+    account: account
+  } do
     Emisar.Config.put_override(:emisar, :mailer_deliver_error, {:error, {:failed, :boom}})
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+    {:ok, lv, _html} = live(conn, setup_path(account))
 
     html = render_click(lv, "start_mfa", %{})
 
     assert html =~ "could not deliver the verification code"
     assert html =~ "contact support"
     assert html =~ "Email me a verification code"
-    refute html =~ "Email verification code"
     refute html =~ "mfa-setup-key"
     refute_received {:email, _}
   end
 
-  test "a suppressed current address does not claim or advance delivery", %{
+  test "a suppressed address does not claim or advance delivery", %{
     conn: conn,
-    user: user
+    member: member,
+    account: account
   } do
-    assert {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
-    {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
+    assert {:ok, _suppression} = Mail.suppress(member.email, :hard_bounce, "bounce")
+    {:ok, lv, _html} = live(conn, setup_path(account))
 
     html = render_click(lv, "start_mfa", %{})
 
-    assert html =~ "cannot deliver mail to your current address"
+    assert html =~ "cannot deliver mail to your address"
     assert html =~ "Contact support"
     assert html =~ "Email me a verification code"
-    refute html =~ "Email verification code"
     refute html =~ "mfa-setup-key"
     refute_received {:email, _}
   end
 
-  test "an account that stops requiring MFA mid-flow sends the member to the dashboard", %{
+  test "a workspace that stops requiring MFA sends the Member to the workspace", %{
     conn: conn,
     owner_subject: owner_subject,
     account: account
   } do
-    # the interstitial exists only to enforce `require_mfa`.
-    # If the account drops the requirement while a member sits on this page, a
-    # remount must NOT strand them in enrollment: the mount's first cond branch
-    # (`not account.require_mfa`) sends them straight to /app.
     {:ok, _account} =
-      Accounts.update_account(
-        account,
-        %{settings: %{require_mfa: false}},
-        owner_subject
-      )
+      Accounts.update_account(account, %{settings: %{require_mfa: false}}, owner_subject)
 
-    assert {:error, {:live_redirect, %{to: "/app"}}} = live(conn, ~p"/app/mfa_setup")
+    assert {:error, {:live_redirect, %{to: to}}} = live(conn, setup_path(account))
+    assert to == ~p"/app/#{account}"
   end
 
-  describe ":ensure_account_compliant gate allow-paths" do
-    test "require_mfa OFF — an un-enrolled member mounts a slugged page normally", %{
-      conn: conn,
-      user: user
+  describe "the compliance gate" do
+    test "a workspace without require_mfa mounts normally for an unenrolled Member", %{
+      conn: conn
     } do
-      # the gate only funnels when the account enforces MFA.
-      # A member who hasn't enrolled, mounting a NON-enforcing account's page, takes
-      # the `not account.require_mfa` cond branch and continues — no detour to setup.
-      no_mfa = Fixtures.Accounts.create_account(%{name: "Open Team"})
+      open = Fixtures.Accounts.create_account(%{name: "Open Team"})
+      open_member = Fixtures.Memberships.create_membership(account_id: open.id, role: "owner")
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: no_mfa.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      conn = log_in_user(conn, user)
-      assert {:ok, _lv, _html} = live(conn, ~p"/app/#{no_mfa}/runners")
+      conn = log_in_member(conn, open_member)
+      assert {:ok, _lv, _html} = live(conn, ~p"/app/#{open}/runners")
     end
 
-    test "require_mfa ON — an unproved member is redirected before profile", %{
+    test "an unproved Member is sent to the MFA page from every page, profile included", %{
       conn: conn,
-      account: account
+      account: account,
+      subject: subject
     } do
-      assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} =
-               live(conn, ~p"/app/#{account}/settings/profile")
-    end
+      for path <- [~p"/app/#{account}/runners", ~p"/app/#{account}/settings/profile"] do
+        assert {:error, {:redirect, %{to: to}}} = live(conn, path)
+        assert to == setup_path(account)
+      end
 
-    test "gate + setup page agree: enrollment without this session's proof is challenged", %{
-      conn: conn,
-      subject: subject,
-      account: account
-    } do
-      secret = Auth.generate_mfa_secret()
+      # Enrolled elsewhere, this session has still not proved the factor.
+      {:ok, _member, _codes} =
+        Fixtures.Memberships.enroll_mfa(Auth.generate_mfa_secret(), subject)
 
-      {:ok, _user, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
-
-      assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} =
-               live(conn, ~p"/app/#{account}/runners")
-
-      assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} =
-               live(conn, ~p"/app/#{account}/settings/profile")
-
-      assert {:ok, _lv, html} = live(conn, ~p"/app/mfa_setup")
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/runners")
+      assert to == setup_path(account)
+      assert {:ok, _lv, html} = live(conn, setup_path(account))
       assert html =~ "Enter an authenticator or recovery code to continue."
     end
   end
 
-  describe "magic-link sign-in funnels into enforced MFA setup" do
-    test "a magic-link session with no second factor on a require_mfa account is funnelled to setup",
-         %{
-           user: user,
-           account: account
-         } do
-      # a magic-link sign-in records no `mfa_verified_at` (the link
-      # proves email control, not a second factor). So on a require_mfa account the
-      # member is still un-enrolled, and the first /app mount's :ensure_account_compliant
-      # gate funnels them into TOTP setup — the magic link is not an MFA bypass.
-      magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-
-      conn =
-        Phoenix.ConnTest.build_conn()
-        |> Plug.Test.init_test_session(%{})
-        |> Plug.Conn.put_session(:user_token, magic_token)
-
-      # The slugged dashboard's :ensure_account_compliant on_mount redirects an
-      # un-enrolled member of a require_mfa account to /app/mfa_setup.
-      assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} =
-               live(conn, ~p"/app/#{account}")
-    end
-  end
-
-  test "provider-false SSO keeps its provenance while proving local TOTP", %{
-    user: user,
-    account: account,
-    subject: subject
-  } do
+  test "an IdP that does not satisfy MFA keeps its SSO provenance while the session proves local TOTP",
+       %{member: member, account: account, subject: subject} do
     Fixtures.Accounts.create_subscription(account, "team")
 
     {enrolled, [recovery_code | _]} =
-      Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+      Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
     provider =
       Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: false)
 
-    identity =
-      Fixtures.SSO.create_user_identity(%{
-        account_id: account.id,
-        provider_id: provider.id,
-        user_id: user.id
-      })
-
+    identity = Fixtures.SSO.create_user_identity(provider_id: provider.id, membership: member)
     Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
-    idp_verified_at = DateTime.utc_now()
-
-    token =
-      Fixtures.Auth.create_session_token!(enrolled, :sso, idp_verified_at, %{},
-        user_identity_id: identity.id
-      )
 
     conn =
-      build_conn()
-      |> init_test_session(%{})
-      |> put_session(:user_token, token)
+      log_in_member(build_conn(), enrolled,
+        auth_method: :sso,
+        user_identity_id: identity.id,
+        mfa: true
+      )
 
-    {:ok, lv, html} = live(conn, ~p"/app/mfa_setup")
+    token = session_token(conn, account)
+    {:ok, %{mfa_verified_at: idp_verified_at}} = Auth.fetch_session_by_token(token, account.id)
+
+    {:ok, lv, html} = live(conn, setup_path(account))
     assert html =~ "Enter an authenticator or recovery code to continue."
 
     render_click(lv, "use_recovery")
     render_hook(lv, "verify_recovery", %{"code" => recovery_code})
-    assert_redirect(lv, "/app")
+    assert_redirect(lv, ~p"/app/#{account}")
 
-    assert {:ok, %{user: current_user} = session} = Auth.fetch_session_by_token(token)
-    assert current_user.id == enrolled.id
+    assert {:ok, session} = Auth.fetch_session_by_token(token, account.id)
+    assert session.membership_id == enrolled.id
     assert session.auth_method == :sso
     assert session.user_identity_id == identity.id
     assert session.mfa_verified_at == idp_verified_at
-    assert session.mfa_enrollment_verified_at == current_user.mfa_enabled_at
-    assert is_nil(session.personal_proved_at)
-    assert is_nil(session.personal_expires_at)
+    assert session.mfa_enrollment_verified_at == Repo.reload!(enrolled).mfa_enabled_at
 
     assert {:ok, _dashboard, _html} = live(conn, ~p"/app/#{account}")
   end
 
-  describe "SSO precedes MFA on the enrollment interstitial" do
-    setup %{account: account} do
-      # require_sso + require_mfa, with an enabled connection so require_sso is live.
-      Fixtures.Accounts.create_subscription(account, "team")
-      Fixtures.SSO.create_identity_provider(account_id: account.id)
-      Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
-      :ok
-    end
+  test "SSO precedes MFA: an email-code session of a require_sso workspace never reaches enrollment",
+       %{conn: conn, account: account} do
+    Fixtures.Accounts.create_subscription(account, "team")
+    Fixtures.SSO.create_identity_provider(account_id: account.id)
+    Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
 
-    test "a magic-link member of a require_sso account is bounced to SSO before enrolling", %{
-      conn: conn,
-      account: account
-    } do
-      # A magic-link session must satisfy SSO BEFORE it can enroll a TOTP factor —
-      # else it could set an attacker-chosen second factor without ever passing
-      # the account's IdP. The :ensure_sso_compliant hook on the mfa_setup
-      # live_session bounces it to the step-up shim.
-      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/mfa_setup")
-      assert to == ~p"/app/#{account}/sso_required"
-    end
+    # The workspace gate drops the session the policy refuses before the page
+    # could offer a factor, so no factor is ever set without passing the IdP.
+    assert {:error, {:redirect, %{to: to}}} = live(conn, setup_path(account))
+    assert to == ~p"/app/#{account}/sign_in"
   end
 
-  describe "a Member without a personal login" do
-    test "links one from the interstitial, then sets up that login's authenticator" do
-      account = Fixtures.Accounts.create_account(plan: "team")
-      Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
-      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      member = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+  describe "an SSO-only Member" do
+    setup %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "team")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Acme IdP")
 
-      identity =
-        Fixtures.SSO.create_user_identity(
+      member =
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
-          provider_id: provider.id,
-          membership: member
+          role: "operator",
+          email_verified?: false
         )
 
-      donor_raw = Fixtures.Auth.create_member_session_token!(member, identity)
-      conn = build_conn() |> init_test_session(%{}) |> put_session(:user_token, donor_raw)
+      identity = Fixtures.SSO.create_user_identity(provider_id: provider.id, membership: member)
 
-      {:ok, _lv, html} = live(conn, ~p"/app/mfa_setup")
-      assert html =~ "Link one to set up an authenticator"
+      conn =
+        log_in_member(build_conn(), member, auth_method: :sso, user_identity_id: identity.id)
+
+      %{sso_conn: conn, sso_member: member, identity: identity}
+    end
+
+    test "is offered its IdP, never the email code; session age alone yields no factor", %{
+      sso_conn: conn,
+      sso_member: member,
+      account: account
+    } do
+      {:ok, lv, html} = live(conn, setup_path(account))
+
+      assert has_element?(
+               lv,
+               ~s(a[href="#{setup_path(account)}/sso"][data-method="post"]),
+               "Verify with Acme IdP"
+             )
+
       refute html =~ "Email me a verification code"
+      refute html =~ "mfa-setup-key"
 
-      [handoff] =
-        html
-        |> LazyHTML.from_document()
-        |> LazyHTML.query("#member-link-form input[name='member_link_handoff']")
-        |> LazyHTML.attribute("value")
+      for {event, params} <- [
+            {"start_mfa", %{}},
+            {"confirm_mfa", %{"mfa" => %{"otp" => "123456"}}}
+          ] do
+        render_hook(lv, event, params)
+      end
 
-      user = Fixtures.Users.create_user()
+      refute render(lv) =~ "mfa-setup-key"
+      assert is_nil(Repo.reload!(member).mfa_enabled_at)
+      refute_received {:email, _}
+    end
 
-      started =
-        post(conn, ~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "member_link_handoff" => handoff,
-          "return_to" => "/app/#{account.slug}"
+    test "enrolls after a fresh sign-in at its IdP", %{
+      sso_conn: conn,
+      sso_member: member,
+      identity: identity,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
+
+      completed =
+        conn
+        |> post(~p"/app/#{account}/mfa_setup/sso")
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => identity.provider_identifier,
+            "auth_time" => System.system_time(:second)
+          }
         })
 
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      linked = started |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
-      assert redirected_to(linked) == ~p"/app/#{account}"
-      assert_received {:email, %{subject: "A workspace member was linked to your emisar sign-in"}}
-      conn = recycle(linked)
+      assert redirected_to(completed) == setup_path(account)
 
-      # Linked, the Member meets the requirement with its personal login's own
-      # local factor.
-      assert {:error, {:redirect, %{to: "/app/mfa_setup"}}} = live(conn, ~p"/app/#{account}")
-      {:ok, lv, _html} = live(conn, ~p"/app/mfa_setup")
-      html = begin_mfa_enrollment(lv)
+      # The proof lands this page straight on the authenticator step.
+      {:ok, lv, _html} = live(recycle(completed), setup_path(account))
+      html = render(lv)
       assert [_, encoded] = Regex.run(~r/data-copy-text="([A-Z2-7]+)"/, html)
       secret = Base.decode32!(encoded, padding: false)
-      assert submit_concurrent_mfa_enrollment(lv, secret) =~ "Save your recovery codes"
 
-      assert {:ok, _lv, _html} = live(conn, ~p"/app/#{account}")
+      assert submit_concurrent_mfa_enrollment(lv, secret) =~ "Save your recovery codes"
+      assert %DateTime{} = Repo.reload!(member).mfa_enabled_at
     end
   end
 

@@ -6,14 +6,15 @@ defmodule EmisarWeb.SSOControllerTest do
   """
   use EmisarWeb.ConnCase, async: true
   import ExUnit.CaptureLog
-  alias Emisar.{Auth, Crypto, Fixtures, Repo}
-  alias Emisar.SSO.IdentityProvider
+  alias Emisar.{Accounts, Auth, Crypto, Fixtures, Repo}
+  alias Emisar.SSO.{IdentityProvider, UserIdentity}
   alias EmisarWeb.OIDCIdentityHandoff
 
   # The session key the controller stashes the OIDC transaction secrets under.
   @stash_key "sso_login"
   @member_mfa_reset_stash_key "member_mfa_reset_sso"
   @identity_link_stash_key "sso_identity_link"
+  @code_link ~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})"
 
   defmodule StubOIDC do
     @behaviour Emisar.SSO.OIDC
@@ -274,7 +275,7 @@ defmodule EmisarWeb.SSOControllerTest do
     end
 
     test "a provider on a disabled account cannot begin sign-in", %{conn: conn} do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       provider = provider_fixture(account)
 
       assert {:ok, _account} =
@@ -416,25 +417,24 @@ defmodule EmisarWeb.SSOControllerTest do
       conn =
         post(
           reset.conn,
-          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
+          ~p"/app/#{reset.account}/settings/team/#{reset.target.id}/reset_mfa/sso"
         )
 
       assert redirected_to(conn) == "https://idp.test/auth"
 
       stash = get_session(conn, @member_mfa_reset_stash_key)
-      assert stash.actor_membership_id == reset.actor_membership.id
+      assert stash.actor_membership_id == reset.actor.id
       assert stash.account_id == reset.account.id
       assert stash.identity_id == reset.identity.id
       assert stash.provider_identifier == reset.identity.provider_identifier
-      assert stash.target_membership_id == reset.target_membership.id
-      assert stash.target_user_id == reset.target.id
+      assert stash.target_membership_id == reset.target.id
       assert stash.target_mfa_enabled_at == reset.target.mfa_enabled_at
       assert stash.target_updated_at == reset.target.updated_at
       assert is_integer(stash.started_at)
       refute get_session(conn, @stash_key)
 
-      assert {:ok, %{user: %Emisar.Users.User{id: actor_id}}} =
-               Emisar.Auth.fetch_session_by_token(reset.session_token)
+      assert {:ok, %{membership_id: actor_id}} =
+               Emisar.Auth.fetch_session_by_token(reset.session_token, reset.account.id)
 
       assert actor_id == reset.actor.id
     end
@@ -443,7 +443,7 @@ defmodule EmisarWeb.SSOControllerTest do
       reset = member_mfa_reset_controller_fixture(conn)
 
       path =
-        ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
+        ~p"/app/#{reset.account}/settings/team/#{reset.target.id}/reset_mfa/sso"
 
       assert get(reset.conn, path).status == 404
 
@@ -478,11 +478,10 @@ defmodule EmisarWeb.SSOControllerTest do
       begun =
         post(
           reset.conn,
-          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
+          ~p"/app/#{reset.account}/settings/team/#{reset.target.id}/reset_mfa/sso"
         )
 
-      before_tokens =
-        Emisar.Auth.UserToken.Query.by_user_id(reset.actor.id) |> Repo.aggregate(:count)
+      before_tokens = actor_token_count(reset)
 
       completed =
         begun
@@ -496,18 +495,16 @@ defmodule EmisarWeb.SSOControllerTest do
 
       assert redirected_to(completed) == ~p"/app/#{reset.account}/settings/team"
       refute get_session(completed, @member_mfa_reset_stash_key)
-      assert get_session(completed, :user_token) == reset.session_token
+      assert session_token(completed, reset.account) == reset.session_token
       assert is_nil(Repo.reload!(reset.target).mfa_enabled_at)
 
-      assert {:ok, %{user: %Emisar.Users.User{id: actor_id}} = actor_session} =
-               Emisar.Auth.fetch_session_by_token(reset.session_token)
+      assert {:ok, %{membership_id: actor_id} = actor_session} =
+               Emisar.Auth.fetch_session_by_token(reset.session_token, reset.account.id)
 
       assert actor_id == reset.actor.id
       assert actor_session.auth_method == :sso
       assert actor_session.user_identity_id == reset.identity.id
-
-      assert Emisar.Auth.UserToken.Query.by_user_id(reset.actor.id) |> Repo.aggregate(:count) ==
-               before_tokens
+      assert actor_token_count(reset) == before_tokens
 
       refute Emisar.Audit.Event.Query.all()
              |> Emisar.Audit.Event.Query.by_event_type("user.signed_in")
@@ -523,7 +520,7 @@ defmodule EmisarWeb.SSOControllerTest do
         begun =
           post(
             reset.conn,
-            ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
+            ~p"/app/#{reset.account}/settings/team/#{reset.target.id}/reset_mfa/sso"
           )
 
         if revoke_trust? do
@@ -532,7 +529,7 @@ defmodule EmisarWeb.SSOControllerTest do
           |> Repo.update!()
         end
 
-        users_before = Repo.aggregate(Emisar.Users.User, :count)
+        members_before = Repo.aggregate(Emisar.Accounts.Membership, :count)
         identities_before = Repo.aggregate(Emisar.SSO.UserIdentity, :count)
         links_before = Repo.aggregate(Emisar.SSO.LinkRequest, :count)
 
@@ -551,12 +548,12 @@ defmodule EmisarWeb.SSOControllerTest do
         assert redirected_to(completed) == ~p"/app/#{reset.account.id}/settings/team"
         assert Phoenix.Flash.get(completed.assigns.flash, :error) =~ "reauthentication failed"
         refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
-        assert Repo.aggregate(Emisar.Users.User, :count) == users_before
+        assert Repo.aggregate(Emisar.Accounts.Membership, :count) == members_before
         assert Repo.aggregate(Emisar.SSO.UserIdentity, :count) == identities_before
         assert Repo.aggregate(Emisar.SSO.LinkRequest, :count) == links_before
 
-        assert {:ok, %{user: %Emisar.Users.User{}}} =
-                 Emisar.Auth.fetch_session_by_token(reset.session_token)
+        assert {:ok, _actor_session} =
+                 Emisar.Auth.fetch_session_by_token(reset.session_token, reset.account.id)
       end
     end
 
@@ -566,13 +563,13 @@ defmodule EmisarWeb.SSOControllerTest do
       begun =
         post(
           reset.conn,
-          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
+          ~p"/app/#{reset.account}/settings/team/#{reset.target.id}/reset_mfa/sso"
         )
 
       new_epoch = DateTime.add(reset.target.mfa_enabled_at, 1, :second)
 
       re_enrolled =
-        Fixtures.Users.set_mfa_state(reset.target,
+        Fixtures.Memberships.set_mfa_state(reset.target,
           mfa_secret: Emisar.Auth.generate_mfa_secret(),
           mfa_enabled_at: new_epoch,
           mfa_recovery_codes: ["new-recovery-digest"]
@@ -594,17 +591,19 @@ defmodule EmisarWeb.SSOControllerTest do
       assert Repo.reload!(reset.target).mfa_enabled_at == new_epoch
 
       assert {:ok, _session} =
-               Emisar.Auth.fetch_session_by_token(target_session)
+               Emisar.Auth.fetch_session_by_token(target_session, reset.account.id)
     end
 
-    test "an admin without a personal login resets through a fresh IdP reauthentication", %{
-      conn: conn
-    } do
+    test "an SSO-only admin resets through a fresh IdP reauthentication", %{conn: conn} do
       account = enterprise_account()
       provider = provider_fixture(account, satisfies_mfa: true)
 
       admin =
-        Fixtures.Memberships.create_unlinked_membership(account_id: account.id, role: "admin")
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "admin",
+          email_verified?: false
+        )
 
       identity =
         Fixtures.SSO.create_user_identity(
@@ -613,29 +612,11 @@ defmodule EmisarWeb.SSOControllerTest do
           membership: admin
         )
 
-      session_token = Fixtures.Auth.create_member_session_token!(admin, identity)
+      conn = log_in_member(conn, admin, auth_method: :sso, user_identity_id: identity.id)
+      token = session_token(conn, account)
+      target = enrolled_target(account)
 
-      target =
-        Fixtures.Users.create_user()
-        |> Fixtures.Users.set_mfa_state(
-          mfa_secret: Emisar.Auth.generate_mfa_secret(),
-          mfa_enabled_at: DateTime.utc_now(),
-          mfa_recovery_codes: []
-        )
-
-      target_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target.id,
-          role: "operator"
-        )
-
-      begun =
-        conn
-        |> init_test_session(%{})
-        |> put_session(:user_token, session_token)
-        |> post(~p"/app/#{account}/settings/team/#{target_membership.id}/reset_mfa/sso")
-
+      begun = post(conn, ~p"/app/#{account}/settings/team/#{target.id}/reset_mfa/sso")
       assert redirected_to(begun) == "https://idp.test/auth"
 
       completed =
@@ -651,7 +632,7 @@ defmodule EmisarWeb.SSOControllerTest do
       assert redirected_to(completed) == ~p"/app/#{account}/settings/team"
       assert Phoenix.Flash.get(completed.assigns.flash, :info) =~ "MFA reset."
       assert is_nil(Repo.reload!(target).mfa_enabled_at)
-      assert get_session(completed, :user_token) == session_token
+      assert session_token(completed, account) == token
     end
 
     test "a revoked actor session takes the controlled failure path", %{conn: conn} do
@@ -660,10 +641,10 @@ defmodule EmisarWeb.SSOControllerTest do
       begun =
         post(
           reset.conn,
-          ~p"/app/#{reset.account}/settings/team/#{reset.target_membership.id}/reset_mfa/sso"
+          ~p"/app/#{reset.account}/settings/team/#{reset.target.id}/reset_mfa/sso"
         )
 
-      :ok = Emisar.Auth.delete_session_token(reset.session_token)
+      :ok = Fixtures.Auth.delete_session_token!(reset.session_token)
 
       completed =
         begun
@@ -682,8 +663,8 @@ defmodule EmisarWeb.SSOControllerTest do
     end
   end
 
-  describe "POST /app/:account/settings/sso/identity/link" do
-    test "starts the signed identity-link ceremony and binds its session stash", %{conn: conn} do
+  describe "POST /app/:account/settings/sso/identity/link (connection verification)" do
+    test "starts the signed verification ceremony and binds its session stash", %{conn: conn} do
       link = identity_link_controller_fixture(conn)
 
       begun =
@@ -703,22 +684,18 @@ defmodule EmisarWeb.SSOControllerTest do
       assert body =~ ~s(<script nonce="#{nonce}">)
 
       stash = get_session(begun, @identity_link_stash_key)
-      assert stash.actor_id == link.user.id
       assert stash.actor_membership_id == link.membership.id
       assert stash.actor_session_token_digest == link.session_digest
       assert stash.account_id == link.account.id
       assert stash.provider_id == link.provider.id
-      assert stash.purpose == :link
-      assert stash.return_path == ~p"/app/#{link.account}/settings/profile"
       assert is_integer(stash.started_at)
+      refute Map.has_key?(stash, :purpose)
       refute get_session(begun, @stash_key)
       refute get_session(begun, @member_mfa_reset_stash_key)
-      assert get_session(begun, :user_token) == link.session_token
+      assert session_token(begun, link.account) == link.session_token
     end
 
-    test "refuses a non-HTTPS authorization target before rendering browser navigation", %{
-      conn: conn
-    } do
+    test "an unsafe authorization URL returns to the connection without a stash", %{conn: conn} do
       link = identity_link_controller_fixture(conn)
       Emisar.Config.put_override(:emisar, :sso_oidc_impl, UnsafeAuthorizeOIDC)
 
@@ -727,174 +704,152 @@ defmodule EmisarWeb.SSOControllerTest do
           "handoff" => link.handoff
         })
 
-      assert redirected_to(failed) == ~p"/app/#{link.account}/settings/profile"
+      assert redirected_to(failed) == ~p"/app/#{link.account}/settings/sso/#{link.provider.id}"
       assert Phoenix.Flash.get(failed.assigns.flash, :error) =~ "Couldn't start provider sign-in"
       refute get_session(failed, @identity_link_stash_key)
+      assert session_token(failed, link.account) == link.session_token
     end
 
-    test "verification startup failures return to the connection for enabled and disabled providers",
-         %{
-           conn: conn
-         } do
+    test "startup failures return to the connection for enabled and disabled providers", %{
+      conn: conn
+    } do
       Emisar.Config.put_override(:emisar, :sso_oidc_impl, FailingBeginOIDC)
 
       for enabled <- [true, false] do
-        verification =
-          identity_link_controller_fixture(conn, purpose: :verify_provider, enabled: enabled)
+        link = identity_link_controller_fixture(conn, enabled: enabled)
 
         failed =
-          post(verification.conn, ~p"/app/#{verification.account}/settings/sso/identity/link", %{
-            "handoff" => verification.handoff,
+          post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
+            "handoff" => link.handoff,
             "return_to" => "https://attacker.test/"
           })
 
         assert redirected_to(failed) ==
-                 ~p"/app/#{verification.account}/settings/sso/#{verification.provider.id}"
+                 ~p"/app/#{link.account}/settings/sso/#{link.provider.id}"
 
         assert Phoenix.Flash.get(failed.assigns.flash, :error) =~
                  "Couldn't start provider sign-in"
 
         refute get_session(failed, @identity_link_stash_key)
-        assert get_session(failed, :user_token) == verification.session_token
-        assert Repo.reload!(verification.provider).enabled == enabled
-        assert is_nil(Repo.reload!(verification.provider).sign_in_verified_at)
+        assert session_token(failed, link.account) == link.session_token
+        assert Repo.reload!(link.provider).enabled == enabled
+        assert is_nil(Repo.reload!(link.provider).sign_in_verified_at)
       end
     end
 
-    test "an unsafe verification authorization URL returns to the connection without a stash", %{
-      conn: conn
-    } do
-      verification = identity_link_controller_fixture(conn, purpose: :verify_provider)
-      Emisar.Config.put_override(:emisar, :sso_oidc_impl, UnsafeAuthorizeOIDC)
-
-      failed =
-        post(verification.conn, ~p"/app/#{verification.account}/settings/sso/identity/link", %{
-          "handoff" => verification.handoff
-        })
-
-      assert redirected_to(failed) ==
-               ~p"/app/#{verification.account}/settings/sso/#{verification.provider.id}"
-
-      refute get_session(failed, @identity_link_stash_key)
-      assert get_session(failed, :user_token) == verification.session_token
-    end
-
-    test "verification still rechecks management permission before provider work", %{conn: conn} do
-      verification = identity_link_controller_fixture(conn, purpose: :verify_provider)
-      Fixtures.Memberships.force_role(verification.membership, "viewer")
+    test "still rechecks management permission before provider work", %{conn: conn} do
+      link = identity_link_controller_fixture(conn)
+      Fixtures.Memberships.force_role(link.membership, "viewer")
       Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
 
       failed =
-        post(verification.conn, ~p"/app/#{verification.account}/settings/sso/identity/link", %{
-          "handoff" => verification.handoff
+        post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
+          "handoff" => link.handoff
         })
 
-      assert redirected_to(failed) ==
-               ~p"/app/#{verification.account}/settings/sso/#{verification.provider.id}"
-
+      assert redirected_to(failed) == ~p"/app/#{link.account}/settings/sso/#{link.provider.id}"
       refute get_session(failed, @identity_link_stash_key)
       refute_receive {:oidc_begin, _provider_id}
     end
 
-    test "verification callback failures also return to the connection", %{conn: conn} do
-      verification =
-        identity_link_controller_fixture(conn, purpose: :verify_provider, enabled: false)
-
+    test "callback failures also return to the connection", %{conn: conn} do
+      link = identity_link_controller_fixture(conn, enabled: false)
       Emisar.Config.put_override(:emisar, :sso_oidc_impl, FailingOIDC)
 
       begun =
-        post(verification.conn, ~p"/app/#{verification.account}/settings/sso/identity/link", %{
-          "handoff" => verification.handoff
+        post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
+          "handoff" => link.handoff
         })
 
       failed =
         begun |> recycle() |> get(~p"/sign_in/sso/callback", %{"state" => "s", "code" => "code"})
 
       assert redirected_to(failed) ==
-               ~p"/app/#{verification.account.id}/settings/sso/#{verification.provider.id}"
+               ~p"/app/#{link.account.id}/settings/sso/#{link.provider.id}"
 
       refute get_session(failed, @identity_link_stash_key)
-      assert get_session(failed, :user_token) == verification.session_token
-      refute Repo.reload!(verification.provider).enabled
-      assert is_nil(Repo.reload!(verification.provider).sign_in_verified_at)
+      assert session_token(failed, link.account) == link.session_token
+      refute Repo.reload!(link.provider).enabled
+      assert is_nil(Repo.reload!(link.provider).sign_in_verified_at)
     end
 
-    test "the callback links the identity without replacing the current session", %{conn: conn} do
-      link = identity_link_controller_fixture(conn)
+    test "the callback binds the identity and verifies a disabled connection without replacing the session",
+         %{conn: conn} do
+      link = identity_link_controller_fixture(conn, enabled: false)
+      token_count = Auth.UserToken.Query.by_membership(link.account.id, link.membership.id)
+      tokens_before = Repo.aggregate(token_count, :count)
 
       begun =
         post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
           "handoff" => link.handoff
         })
 
-      token_count_before = Auth.UserToken.Query.by_user_id(link.user.id) |> Repo.aggregate(:count)
-
       completed =
         begun
         |> recycle()
         |> get(~p"/sign_in/sso/callback", %{
           "_claims" => %{
-            "sub" => "workforce|linked-user",
-            "email" => link.user.email,
+            "sub" => "workforce|verifying-admin",
+            "email" => link.membership.email,
             "email_verified" => "true",
             "auth_time" => System.system_time(:second)
           }
         })
 
-      assert redirected_to(completed) == ~p"/app/#{link.account.id}/settings/profile"
-      assert Phoenix.Flash.get(completed.assigns.flash, :info) =~ "linked to your profile"
+      assert redirected_to(completed) ==
+               ~p"/app/#{link.account.id}/settings/sso/#{link.provider.id}"
+
+      assert Phoenix.Flash.get(completed.assigns.flash, :info) =~ "sign-in verified"
       refute get_session(completed, @identity_link_stash_key)
-      assert get_session(completed, :user_token) == link.session_token
+      assert session_token(completed, link.account) == link.session_token
 
       assert {:ok, %Auth.UserToken{auth_method: :magic_link, user_identity_id: nil}} =
-               Auth.fetch_session_by_token(link.session_token)
+               Auth.fetch_session_by_token(link.session_token, link.account.id)
 
-      assert Auth.UserToken.Query.by_user_id(link.user.id) |> Repo.aggregate(:count) ==
-               token_count_before
+      assert Repo.aggregate(token_count, :count) == tokens_before
 
       identity =
         Emisar.SSO.UserIdentity.Query.not_deleted()
         |> Emisar.SSO.UserIdentity.Query.by_provider_id(link.provider.id)
-        |> Emisar.SSO.UserIdentity.Query.by_member_user_id(link.user.id)
+        |> Emisar.SSO.UserIdentity.Query.by_membership_id(link.membership.id)
         |> Repo.one!()
 
-      assert identity.provider_identifier == "workforce|linked-user"
+      assert identity.provider_identifier == "workforce|verifying-admin"
       assert identity.created_by == :user
+
+      reloaded = Repo.reload!(link.provider)
+      assert reloaded.enabled == false
+      assert %DateTime{} = reloaded.sign_in_verified_at
+      assert reloaded.sign_in_verified_by_membership_id == link.membership.id
     end
 
-    test "a copied handoff cannot cross accounts or sessions", %{conn: conn} do
+    test "a copied handoff cannot cross workspaces or sessions", %{conn: conn} do
       Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
+      link = identity_link_controller_fixture(conn)
 
-      for purpose <- [:link, :verify_provider] do
-        other_account = Fixtures.Accounts.create_account(plan: "enterprise")
+      # The same browser also holds a session in another workspace.
+      {elsewhere, _other_owner, other_account} =
+        register_and_log_in(link.conn, %{account: %{plan: "enterprise"}})
 
-        link =
-          identity_link_controller_fixture(conn,
-            purpose: purpose,
-            additional_account: other_account
-          )
+      wrong_workspace =
+        post(elsewhere, ~p"/app/#{other_account}/settings/sso/identity/link", %{
+          "handoff" => link.handoff
+        })
 
-        wrong_account =
-          post(link.conn, ~p"/app/#{other_account}/settings/sso/identity/link", %{
-            "handoff" => link.handoff
-          })
+      assert redirected_to(wrong_workspace) == ~p"/app/#{other_account}/settings/sso"
+      refute get_session(wrong_workspace, @identity_link_stash_key)
 
-        assert redirected_to(wrong_account) == ~p"/app/#{other_account}/settings/profile"
-        refute get_session(wrong_account, @identity_link_stash_key)
+      # Another session of the same Member does not carry the digest it names.
+      wrong_session =
+        build_conn()
+        |> log_in_member(link.membership)
+        |> post(~p"/app/#{link.account}/settings/sso/identity/link", %{
+          "handoff" => link.handoff
+        })
 
-        replacement_session = Fixtures.Auth.create_session_token!(link.user, :magic_link, nil)
-
-        wrong_session =
-          link.conn
-          |> put_session(:user_token, replacement_session)
-          |> post(~p"/app/#{link.account}/settings/sso/identity/link", %{
-            "handoff" => link.handoff
-          })
-
-        assert redirected_to(wrong_session) == ~p"/app/#{link.account}/settings/profile"
-        refute get_session(wrong_session, @identity_link_stash_key)
-        refute_receive {:oidc_begin, _provider_id}
-      end
+      assert redirected_to(wrong_session) == ~p"/app/#{link.account}/settings/sso"
+      refute get_session(wrong_session, @identity_link_stash_key)
+      refute_receive {:oidc_begin, _provider_id}
     end
 
     test "an invalid handoff fails closed without beginning provider work", %{conn: conn} do
@@ -905,51 +860,314 @@ defmodule EmisarWeb.SSOControllerTest do
         post(link.conn, ~p"/app/#{link.account}/settings/sso/identity/link", %{
           "handoff" => "not-signed",
           "provider_id" => link.provider.id,
-          "purpose" => "verify_provider",
           "return_to" => "https://attacker.test/"
         })
 
-      assert redirected_to(failed) == ~p"/app/#{link.account}/settings/profile"
+      assert redirected_to(failed) == ~p"/app/#{link.account}/settings/sso"
       assert Phoenix.Flash.get(failed.assigns.flash, :error) =~ "Confirm your code"
       refute get_session(failed, @identity_link_stash_key)
       refute_receive {:oidc_begin, _provider_id}
     end
+  end
 
-    test "verifies a disabled saved provider without enabling it or replacing the session", %{
+  # An SSO-only workspace (require_sso, an enabled connection) and an
+  # invitation whose emailed code this browser has just proved: the browser
+  # holds the invitation's SSO proof and was sent to the workspace's sign-in.
+  defp proved_sso_invitation(conn) do
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    provider = provider_fixture(account)
+    email = "invitee-#{System.unique_integer([:positive])}@acme.test"
+
+    {:ok, %{membership: invitation, invitation_token: token}} =
+      Accounts.invite_user_to_account(
+        Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
+        subject
+      )
+
+    Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+
+    requested =
+      post(conn, ~p"/accept_invitation/#{token}", %{
+        "member" => %{"display_name" => "Invited Name"}
+      })
+
+    assert_received {:email, sent}
+    [_, code_id, code] = Regex.run(@code_link, sent.text_body)
+    proved = requested |> recycle() |> get(~p"/sign_in/magic/#{code_id}/#{code}")
+
+    %{account: account, provider: provider, invitation: invitation, email: email, proved: proved}
+  end
+
+  defp invitee_callback(conn, fixture, sub \\ "okta|invitee") do
+    get(conn, ~p"/sign_in/sso/callback", %{
+      "_claims" => %{
+        "sub" => sub,
+        "email" => fixture.email,
+        "email_verified" => "true",
+        "auth_time" => System.system_time(:second)
+      }
+    })
+  end
+
+  defp exported_live_session(html) do
+    [_, signed] = Regex.run(~r/data-phx-session="([^"]+)"/, html)
+    salt = EmisarWeb.Endpoint.config(:live_view)[:signing_salt]
+
+    {:ok, {_version, %{session: exported}}} =
+      Phoenix.Token.verify(EmisarWeb.Endpoint, salt, signed)
+
+    exported
+  end
+
+  describe "an invitation's continue-with-SSO step (review revision 3)" do
+    test "the code proves the inbox; the workspace's page continues at its IdP and the proof rides no URL or page",
+         %{conn: conn} do
+      fixture = proved_sso_invitation(conn)
+
+      assert redirected_to(fixture.proved) == ~p"/app/#{fixture.account}/sign_in"
+      proof = get_session(fixture.proved, :invitation_sso_proof)
+      assert is_binary(proof)
+      refute get_session(fixture.proved, :sessions)
+      # Nothing is accepted by the code alone.
+      assert is_nil(Repo.reload!(fixture.invitation).invitation_accepted_at)
+
+      html =
+        fixture.proved
+        |> recycle()
+        |> get(~p"/app/#{fixture.account}/sign_in")
+        |> html_response(200)
+
+      assert html =~ "Join #{fixture.account.name}"
+      assert html =~ ~s(action="/sign_in/sso/invitation")
+      assert html =~ ~s(value="#{fixture.provider.id}")
+      refute html =~ ~s(action="/app/#{fixture.account.slug}/sign_in/email")
+      refute html =~ proof
+      exported = exported_live_session(html)
+      refute Map.has_key?(exported, "invitation_sso_proof")
+      refute inspect(exported) =~ proof
+    end
+
+    test "the IdP step accepts, binds the identity and signs the invitee in, in this browser", %{
       conn: conn
     } do
-      verification =
-        identity_link_controller_fixture(conn, purpose: :verify_provider, enabled: false)
+      fixture = proved_sso_invitation(conn)
 
       begun =
-        post(
-          verification.conn,
-          ~p"/app/#{verification.account}/settings/sso/identity/link",
-          %{"handoff" => verification.handoff}
+        fixture.proved
+        |> recycle()
+        |> post(~p"/sign_in/sso/invitation", %{"provider_id" => fixture.provider.id})
+
+      assert redirected_to(begun) == "https://idp.test/auth"
+      assert get_session(begun, "invitation_sso")
+      refute get_session(begun, @stash_key)
+
+      completed = begun |> recycle() |> invitee_callback(fixture)
+
+      assert redirected_to(completed) == ~p"/app/#{fixture.account}"
+      refute get_session(completed, :invitation_sso_proof)
+      refute get_session(completed, "invitation_sso")
+
+      assert {:ok, session} =
+               Auth.fetch_session_by_token(
+                 session_token(completed, fixture.account),
+                 fixture.account.id
+               )
+
+      assert session.membership_id == fixture.invitation.id
+      assert session.auth_method == :sso
+
+      accepted = Repo.reload!(fixture.invitation)
+      assert %DateTime{} = accepted.invitation_accepted_at
+      assert accepted.display_name == "Invited Name"
+
+      assert %UserIdentity{provider_identifier: "okta|invitee"} =
+               UserIdentity.Query.not_deleted()
+               |> UserIdentity.Query.by_provider_id(fixture.provider.id)
+               |> UserIdentity.Query.by_membership_id(fixture.invitation.id)
+               |> Repo.one()
+    end
+
+    test "the step is offered only to the proof's browser and workspace", %{conn: conn} do
+      fixture = proved_sso_invitation(conn)
+      other_account = Fixtures.Accounts.create_account()
+
+      # Another browser sees the workspace's ordinary SSO-only sign-in.
+      elsewhere = build_conn() |> get(~p"/app/#{fixture.account}/sign_in") |> html_response(200)
+      refute elsewhere =~ "Join #{fixture.account.name}"
+      assert elsewhere =~ ~p"/sign_in/sso/#{fixture.provider.id}"
+
+      # This browser, on another workspace's page, signs in there as usual.
+      other_page =
+        fixture.proved
+        |> recycle()
+        |> get(~p"/app/#{other_account}/sign_in")
+        |> html_response(200)
+
+      refute other_page =~ "Join"
+      refute other_page =~ ~s(action="/sign_in/sso/invitation")
+
+      # Without the proof there is nothing to begin.
+      refused =
+        post(build_conn(), ~p"/sign_in/sso/invitation", %{"provider_id" => fixture.provider.id})
+
+      assert redirected_to(refused) == ~p"/sign_in"
+      refute get_session(refused, "invitation_sso")
+    end
+
+    test "an IdP failure keeps the proof for a retry; a gone invitation drops it", %{conn: conn} do
+      fixture = proved_sso_invitation(conn)
+      browser = recycle(fixture.proved)
+      begun = post(browser, ~p"/sign_in/sso/invitation", %{"provider_id" => fixture.provider.id})
+
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, FailingOIDC)
+      failed = begun |> recycle() |> invitee_callback(fixture)
+
+      assert redirected_to(failed) == ~p"/app/#{fixture.account.id}/sign_in"
+      assert get_session(failed, :invitation_sso_proof)
+      refute get_session(failed, :sessions)
+      assert is_nil(Repo.reload!(fixture.invitation).invitation_accepted_at)
+
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
+
+      retried =
+        failed
+        |> recycle()
+        |> post(~p"/sign_in/sso/invitation", %{"provider_id" => fixture.provider.id})
+
+      Fixtures.Memberships.mark_membership_as_deleted(fixture.invitation)
+      gone = retried |> recycle() |> invitee_callback(fixture)
+
+      assert redirected_to(gone) == ~p"/sign_in"
+      assert Phoenix.Flash.get(gone.assigns.flash, :error) =~ "can no longer be accepted"
+      refute get_session(gone, :invitation_sso_proof)
+      refute get_session(gone, :sessions)
+    end
+  end
+
+  describe "the callback's dispatch order" do
+    defp ceremony_stashes(account, provider) do
+      [
+        {"invitation_sso", %{account_id: account.id, provider_id: provider.id, state: "s"}},
+        {"mfa_enrollment_sso", %{account_id: account.id, provider_id: provider.id, state: "s"}},
+        {@identity_link_stash_key, %{account_id: account.id, provider_id: provider.id}},
+        {@member_mfa_reset_stash_key, %{account_id: account.id, target_membership_id: "x"}}
+      ]
+    end
+
+    test "each authenticated ceremony owns an invalid callback; none falls through to sign-in or JIT",
+         %{conn: conn} do
+      account = enterprise_account()
+      provider = provider_fixture(account)
+      email = "jit-#{System.unique_integer([:positive])}@acme.test"
+      claims = %{"sub" => "okta|jit-probe", "email" => email, "email_verified" => "true"}
+
+      for {key, stash} <- ceremony_stashes(account, provider) do
+        failed =
+          conn
+          |> stash_callback(provider)
+          |> put_session(key, stash)
+          |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
+
+        refute get_session(failed, key), "#{key} was not consumed"
+        assert get_session(failed, @stash_key), "#{key} let the callback reach sign-in"
+        refute get_session(failed, :sessions)
+        assert Accounts.peek_sync_membership_by_email(account.id, email) == nil
+      end
+    end
+
+    test "the first stash present in order owns each callback", %{conn: conn} do
+      account = enterprise_account()
+      provider = provider_fixture(account)
+      stashes = ceremony_stashes(account, provider)
+
+      conn =
+        Enum.reduce(stashes, stash_callback(conn, provider), fn {key, stash}, conn ->
+          put_session(conn, key, stash)
+        end)
+
+      Enum.reduce(stashes, conn, fn {key, _stash}, browser ->
+        after_callback = get(browser, ~p"/sign_in/sso/callback", %{"_claims" => %{"sub" => "x"}})
+        refute get_session(after_callback, key)
+        assert get_session(after_callback, @stash_key)
+        recycle(after_callback)
+      end)
+    end
+  end
+
+  describe "POST /app/:account/mfa_setup/sso (MFA enrollment proof)" do
+    defp sso_only_member(conn) do
+      account = enterprise_account()
+      provider = provider_fixture(account)
+
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "operator",
+          email_verified?: false
         )
+
+      identity =
+        Fixtures.SSO.create_user_identity(provider_id: provider.id, membership: member)
+
+      conn = log_in_member(conn, member, auth_method: :sso, user_identity_id: identity.id)
+      %{account: account, provider: provider, member: member, identity: identity, conn: conn}
+    end
+
+    test "a fresh IdP sign-in as the same identity leaves an enrollment proof for the MFA page",
+         %{conn: conn} do
+      fixture = sso_only_member(conn)
+
+      begun = post(fixture.conn, ~p"/app/#{fixture.account}/mfa_setup/sso")
+      assert redirected_to(begun) == "https://idp.test/auth"
+      assert get_session(begun, "mfa_enrollment_sso")
 
       completed =
         begun
         |> recycle()
         |> get(~p"/sign_in/sso/callback", %{
           "_claims" => %{
-            "sub" => "workforce|verifying-admin",
-            "email" => verification.user.email,
-            "email_verified" => "true",
+            "sub" => fixture.identity.provider_identifier,
             "auth_time" => System.system_time(:second)
           }
         })
 
-      assert redirected_to(completed) ==
-               ~p"/app/#{verification.account.id}/settings/sso/#{verification.provider.id}"
+      assert redirected_to(completed) == ~p"/app/#{fixture.account}/mfa_setup"
+      assert is_binary(get_session(completed, :mfa_enrollment_proof))
+      refute get_session(completed, "mfa_enrollment_sso")
+      # The ceremony proves; it signs nothing new in.
+      assert session_token(completed, fixture.account) ==
+               session_token(fixture.conn, fixture.account)
+    end
 
-      assert Phoenix.Flash.get(completed.assigns.flash, :info) =~ "sign-in verified"
-      assert get_session(completed, :user_token) == verification.session_token
+    test "another identity at the IdP yields no proof", %{conn: conn} do
+      fixture = sso_only_member(conn)
+      begun = post(fixture.conn, ~p"/app/#{fixture.account}/mfa_setup/sso")
 
-      reloaded = Repo.reload!(verification.provider)
-      assert reloaded.enabled == false
-      assert %DateTime{} = reloaded.sign_in_verified_at
-      assert reloaded.sign_in_verified_by_membership_id == verification.membership.id
+      refused =
+        begun
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => "okta|somebody-else",
+            "auth_time" => System.system_time(:second)
+          }
+        })
+
+      assert redirected_to(refused) == ~p"/app/#{fixture.account.id}/mfa_setup"
+      assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "couldn't confirm it was you"
+      refute get_session(refused, :mfa_enrollment_proof)
+    end
+
+    test "an email-code session cannot start it: session age is never a proof", %{conn: conn} do
+      fixture = sso_only_member(conn)
+      verified = Fixtures.Memberships.create_membership(account_id: fixture.account.id)
+      email_session = log_in_member(build_conn(), verified)
+
+      refused = post(email_session, ~p"/app/#{fixture.account}/mfa_setup/sso")
+
+      assert redirected_to(refused) == ~p"/app/#{fixture.account}/mfa_setup"
+      assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "Couldn't start single sign-on"
+      refute get_session(refused, "mfa_enrollment_sso")
     end
   end
 
@@ -1008,10 +1226,13 @@ defmodule EmisarWeb.SSOControllerTest do
       assert redirected_to(allowed) == ~p"/sign_in"
     end
 
-    test "a normal sign-in callback cannot replace an authenticated session", %{conn: conn} do
-      {conn, actor, _actor_account} = register_and_log_in(conn)
-      actor_token = get_session(conn, :user_token)
-      provider = provider_fixture(enterprise_account())
+    test "an SSO sign-in adds its workspace's session and keeps this browser's others", %{
+      conn: conn
+    } do
+      {conn, _owner, signed_in_account} = register_and_log_in(conn)
+      kept_token = session_token(conn, signed_in_account)
+      account = enterprise_account()
+      provider = provider_fixture(account)
 
       conn =
         conn
@@ -1024,26 +1245,25 @@ defmodule EmisarWeb.SSOControllerTest do
         })
         |> get(~p"/sign_in/sso/callback", %{
           "_claims" => %{
-            "sub" => "replacement-sub",
-            "email" => "replacement@example.test",
+            "sub" => "okta|second-workspace",
+            "email" => "second@acme.test",
             "email_verified" => "true"
           }
         })
 
-      assert redirected_to(conn) == ~p"/app"
-      assert get_session(conn, :user_token) == actor_token
+      assert redirected_to(conn) == ~p"/app/#{account}"
       refute get_session(conn, @stash_key)
-      assert Emisar.Users.fetch_user_by_email("replacement@example.test") == {:error, :not_found}
 
-      assert {:ok, %{user: %Emisar.Users.User{id: actor_id}}} =
-               Emisar.Auth.fetch_session_by_token(actor_token)
+      assert conn |> get_session(:sessions) |> Enum.map(&elem(&1, 0)) == [
+               signed_in_account.id,
+               account.id
+             ]
 
-      assert actor_id == actor.id
+      assert session_token(conn, signed_in_account) == kept_token
+      assert {:ok, _kept} = Auth.fetch_session_by_token(kept_token, signed_in_account.id)
     end
 
-    test "a first sign-in creates a Member without a personal login and signs it in", %{
-      conn: conn
-    } do
+    test "a first sign-in creates an SSO-only Member and signs it in", %{conn: conn} do
       account = enterprise_account()
       provider = provider_fixture(account)
       # Claims ride the callback as query params, so the provider's boolean
@@ -1059,28 +1279,22 @@ defmodule EmisarWeb.SSOControllerTest do
         |> stash_callback(provider)
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
-      # SSO lands on the account whose IdP this is (its slug), not bare /app.
+      # SSO lands on the workspace whose IdP this is (its slug), not bare /app.
       assert redirected_to(conn) == ~p"/app/#{account}"
-      # …and the account is remembered for the SSO landing page (signed cookie).
+      # …and the workspace is remembered for the sign-in picker (signed cookie).
       assert Map.has_key?(conn.resp_cookies, "emisar_recent_accounts")
-      # SSO registers no personal login, so there is no signup conversion.
       refute (Phoenix.Flash.get(conn.assigns.flash, :info) || "") =~ "Welcome to emisar"
-
-      # The session carries a real member-only token, the stash is cleared, and
-      # the persisted token row records the SSO sign-in method.
-      token = get_session(conn, :user_token)
-      assert token
       refute get_session(conn, @stash_key)
 
-      assert {:ok, %{user: nil} = auth} = Emisar.Auth.fetch_session_by_token(token)
+      token = session_token(conn, account)
+      assert {:ok, auth} = Auth.fetch_session_by_token(token, account.id)
       assert auth.auth_method == :sso
       assert auth.user_identity_id
-      assert [membership_id] = Emisar.Auth.session_membership_ids(auth)
 
-      assert %{id: ^membership_id, user_id: nil} =
-               Emisar.Accounts.peek_sync_membership_by_email(account.id, "cb@acme.test")
-
-      assert Emisar.Users.fetch_user_by_email("cb@acme.test") == {:error, :not_found}
+      member = Emisar.Accounts.peek_sync_membership_by_email(account.id, "cb@acme.test")
+      assert member.id == auth.membership_id
+      # An IdP's claim never proves the address for email sign-in.
+      assert is_nil(member.email_verified_at)
     end
 
     test "a removed identity cannot sign into a replacement seat and explains recovery", %{
@@ -1089,13 +1303,12 @@ defmodule EmisarWeb.SSOControllerTest do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       provider = provider_fixture(account)
 
-      %{user: user, membership: member, identity: identity} =
-        Fixtures.SSO.create_directory_member(provider)
+      %{membership: member, identity: identity} = Fixtures.SSO.create_directory_member(provider)
 
       assert {:ok, _removed} = Emisar.Accounts.delete_membership(member, subject)
 
       replacement =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+        Fixtures.Memberships.create_membership(account_id: account.id, email: member.email)
 
       conn =
         conn
@@ -1103,7 +1316,7 @@ defmodule EmisarWeb.SSOControllerTest do
         |> get(~p"/sign_in/sso/callback", %{
           "_claims" => %{
             "sub" => identity.provider_identifier,
-            "email" => user.email,
+            "email" => member.email,
             "email_verified" => "true"
           }
         })
@@ -1113,14 +1326,14 @@ defmodule EmisarWeb.SSOControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
                "accept the emailed invitation first"
 
-      refute get_session(conn, :user_token)
+      refute get_session(conn, :sessions)
       refute get_session(conn, @stash_key)
       assert Repo.reload!(identity).membership_id == member.id
       refute Repo.reload!(replacement).disabled_at
     end
 
     test "account disable between begin and callback prevents JIT side effects", %{conn: conn} do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       provider = provider_fixture(account)
 
       claims = %{
@@ -1141,7 +1354,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       conn = conn |> recycle() |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
-      refute get_session(conn, :user_token)
+      refute get_session(conn, :sessions)
       assert redirected_to(conn) == ~p"/sign_in"
 
       assert is_nil(
@@ -1211,9 +1424,8 @@ defmodule EmisarWeb.SSOControllerTest do
         |> stash_callback(provider)
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
-      token = get_session(conn, :user_token)
-      {:ok, session} = Emisar.Auth.fetch_session_by_token(token)
-      [membership_id] = Emisar.Auth.session_membership_ids(session)
+      {:ok, %{membership_id: membership_id}} =
+        Auth.fetch_session_by_token(session_token(conn, account), account.id)
 
       [event] =
         Emisar.Audit.Event.Query.all()
@@ -1241,10 +1453,10 @@ defmodule EmisarWeb.SSOControllerTest do
         |> stash_callback(provider)
         |> get(~p"/sign_in/sso/callback", %{"_claims" => claims})
 
-      token = get_session(logged_in, :user_token)
+      token = session_token(logged_in, account)
 
       assert {:ok, %Emisar.Auth.UserToken{mfa_verified_at: %DateTime{}}} =
-               Emisar.Auth.fetch_session_by_token(token)
+               Auth.fetch_session_by_token(token, account.id)
 
       # Follow both redirects into the protected account dashboard. Merely
       # reaching `/app` does not exercise the account compliance hook.
@@ -1291,7 +1503,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired"
-      refute get_session(conn, :user_token)
+      refute get_session(conn, :sessions)
     end
 
     test "an address another member took during sign-in is refused with an explanation", %{
@@ -1312,7 +1524,7 @@ defmodule EmisarWeb.SSOControllerTest do
           assert Phoenix.Flash.get(refused.assigns.flash, :error) ==
                    "Another member of this workspace already uses your email address, so single sign-on could not add you. Try again, or ask your team admin."
 
-          refute get_session(refused, :user_token)
+          refute get_session(refused, :sessions)
           refute get_session(refused, @stash_key)
         end)
 
@@ -1336,7 +1548,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       assert redirected_to(conn) == ~p"/sign_in"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Single sign-on failed"
-      refute get_session(conn, :user_token)
+      refute get_session(conn, :sessions)
     end
 
     test "a token response with no id_token is a shaped failure, not a crash", %{conn: conn} do
@@ -1352,7 +1564,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
           assert redirected_to(failed) == ~p"/sign_in"
           assert Phoenix.Flash.get(failed.assigns.flash, :error) =~ "Single sign-on failed"
-          refute get_session(failed, :user_token)
+          refute get_session(failed, :sessions)
         end)
 
       assert log =~ "sso_callback_failed reason=token_response_invalid"
@@ -1372,7 +1584,7 @@ defmodule EmisarWeb.SSOControllerTest do
             |> get(~p"/sign_in/sso/callback", %{"code" => "AUTH_CODE_SENTINEL"})
 
           assert redirected_to(failed) == ~p"/sign_in"
-          refute get_session(failed, :user_token)
+          refute get_session(failed, :sessions)
         end)
 
       assert log =~ "sso_callback_failed reason=idp_request_rejected"
@@ -1395,7 +1607,7 @@ defmodule EmisarWeb.SSOControllerTest do
             |> get(~p"/sign_in/sso/callback", %{"code" => "AUTH_CODE_SENTINEL"})
 
           assert redirected_to(failed) == ~p"/sign_in"
-          refute get_session(failed, :user_token)
+          refute get_session(failed, :sessions)
         end)
 
       assert log =~ "sso_callback_failed reason=redacted_failure"
@@ -1423,102 +1635,80 @@ defmodule EmisarWeb.SSOControllerTest do
 
   defp member_mfa_reset_controller_fixture(conn) do
     {actor, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
-    actor_membership = Fixtures.Memberships.fetch_membership(account.id, actor.id)
     provider = provider_fixture(account, satisfies_mfa: true)
 
     identity =
       Fixtures.SSO.create_user_identity(%{
         account_id: account.id,
         provider_id: provider.id,
-        user_id: actor.id,
+        membership: actor,
         provider_identifier: "reset-controller-sub"
       })
 
-    session_token =
-      Fixtures.Auth.create_session_token!(actor, :sso, DateTime.utc_now(), %{},
-        user_identity_id: identity.id
-      )
-
-    conn = conn |> init_test_session(%{}) |> put_session(:user_token, session_token)
-
-    target =
-      Fixtures.Users.create_user()
-      |> Fixtures.Users.set_mfa_state(
-        mfa_secret: Emisar.Auth.generate_mfa_secret(),
-        mfa_enabled_at: DateTime.utc_now(),
-        mfa_recovery_codes: []
-      )
-
-    target_membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: target.id,
-        role: "operator"
-      )
+    conn =
+      log_in_member(conn, actor, auth_method: :sso, user_identity_id: identity.id, mfa: true)
 
     %{
       account: account,
       actor: actor,
-      actor_membership: actor_membership,
       conn: conn,
       identity: identity,
       provider: provider,
-      session_token: session_token,
-      target: target,
-      target_membership: target_membership
+      session_token: session_token(conn, account),
+      target: enrolled_target(account)
     }
   end
 
+  defp actor_token_count(reset) do
+    Auth.UserToken.Query.by_membership(reset.account.id, reset.actor.id)
+    |> Repo.aggregate(:count)
+  end
+
+  defp enrolled_target(account) do
+    [account_id: account.id, role: "operator"]
+    |> Fixtures.Memberships.create_membership()
+    |> Fixtures.Memberships.set_mfa_state(
+      mfa_secret: Emisar.Auth.generate_mfa_secret(),
+      mfa_enabled_at: DateTime.utc_now(),
+      mfa_recovery_codes: []
+    )
+  end
+
   defp identity_link_controller_fixture(conn, opts \\ []) do
-    {user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
-
-    if additional_account = opts[:additional_account] do
-      Fixtures.Memberships.create_membership(
-        account_id: additional_account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-    end
-
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    purpose = Keyword.get(opts, :purpose, :link)
+    {owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     provider = provider_fixture(account, enabled: Keyword.get(opts, :enabled, true))
-    session_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    conn = log_in_member(conn, owner)
+    session_token = session_token(conn, account)
     session_digest = Crypto.hash(session_token)
+    subject = Fixtures.Subjects.subject_for(owner, session: session_token)
 
-    assert {:ok, :email} =
-             Auth.begin_oidc_identity_step_up(provider.id, provider.name, purpose, subject)
-
+    assert {:ok, :email} = Auth.begin_oidc_identity_step_up(provider.id, provider.name, subject)
     assert_received {:email, email}
 
     assert {:ok, proof} =
              Auth.confirm_oidc_identity_step_up(
                provider.id,
-               purpose,
                Fixtures.Auth.code_from_email(email),
                subject
              )
 
     handoff =
       OIDCIdentityHandoff.sign(%{
-        actor_id: user.id,
-        actor_membership_id: membership.id,
+        actor_membership_id: owner.id,
         actor_session_token_digest: session_digest,
         account_id: account.id,
         provider_id: provider.id,
-        purpose: purpose,
         proof: proof
       })
 
     %{
       account: account,
-      conn: conn |> init_test_session(%{}) |> put_session(:user_token, session_token),
+      conn: conn,
       handoff: handoff,
-      membership: membership,
+      membership: owner,
       provider: provider,
       session_digest: session_digest,
-      session_token: session_token,
-      user: user
+      session_token: session_token
     }
   end
 end

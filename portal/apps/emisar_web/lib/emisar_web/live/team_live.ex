@@ -642,12 +642,6 @@ defmodule EmisarWeb.TeamLive do
      |> assign(:mfa_reset_error, nil)}
   end
 
-  # The per-row "Resend confirmation" button (current user, unconfirmed)
-  # fires the `resend_confirmation` event, but it's handled globally by
-  # the `:email_confirmation` on_mount hook (UserAuth) — the same hook
-  # that powers the portal-wide verify-email banner — so there's no
-  # per-LV handler here.
-
   # The pack half unmounts while the chosen runner mode reaches nothing, so a
   # change event fired from that state carries NO pack params at all — reading
   # them as "all packs" there widened a grant the operator had already narrowed,
@@ -827,7 +821,7 @@ defmodule EmisarWeb.TeamLive do
 
   # The member MFA reset screen: verify the acting admin, then reset.
   attr :current_account, :any, required: true
-  attr :current_user, :any, required: true
+  attr :current_membership, :any, required: true
   attr :loading?, :any, required: true
   attr :mfa_reset_error, :any, required: true
   attr :mfa_reset_mode, :any, required: true
@@ -854,7 +848,7 @@ defmodule EmisarWeb.TeamLive do
         </.status_note>
 
         <div class="mt-7">
-          <%= if @current_user && @current_user.mfa_enabled_at do %>
+          <%= if @current_membership.mfa_enabled_at do %>
             <%= if @mfa_reset_mode == :totp do %>
               <.simple_form for={%{}} id="member-mfa-reset-totp" phx-submit="verify_reset_totp">
                 <.code_input
@@ -955,26 +949,6 @@ defmodule EmisarWeb.TeamLive do
               </div>
             <% else %>
               <.empty_state
-                :if={is_nil(@current_user)}
-                variant={:bare}
-                tone={:danger}
-                icon="state.locked"
-                title="A personal login is required"
-              >
-                Resetting a member's MFA needs your own second factor. Your identity provider
-                doesn't verify one here, and your membership in this workspace has no personal
-                login yet. Link one from your profile, then set up MFA.
-                <div class="mt-4">
-                  <.button
-                    navigate={~p"/app/#{@current_account}/settings/profile"}
-                    variant={:secondary}
-                  >
-                    Open profile
-                  </.button>
-                </div>
-              </.empty_state>
-              <.empty_state
-                :if={@current_user}
                 variant={:bare}
                 tone={:danger}
                 icon="state.locked"
@@ -1555,11 +1529,6 @@ defmodule EmisarWeb.TeamLive do
           |> assign(:mfa_reset_target, facts.membership)
           |> assign(:mfa_reset_sso_facts, sso_facts)
           |> assign(:mfa_reset_error, nil)
-
-        {:ok, %{member_of_other_workspaces?: true}} ->
-          socket
-          |> put_flash(:error, MemberErrors.message(:member_of_other_workspaces))
-          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/settings/team")
 
         {:ok, _facts} ->
           socket
@@ -2170,7 +2139,6 @@ defmodule EmisarWeb.TeamLive do
       chrome={@shell_chrome}
       current_membership={@current_membership}
       current_subject={@current_subject}
-      current_user={@current_user}
       current_account={@current_account}
       section={:team}
       width={:table}
@@ -2239,7 +2207,7 @@ defmodule EmisarWeb.TeamLive do
       <.mfa_reset_form
         :if={@live_action == :reset_mfa}
         current_account={@current_account}
-        current_user={@current_user}
+        current_membership={@current_membership}
         loading?={@loading?}
         mfa_reset_error={@mfa_reset_error}
         mfa_reset_mode={@mfa_reset_mode}
@@ -2557,22 +2525,15 @@ defmodule EmisarWeb.TeamLive do
                          after the email. --%>
                         <% show_activity? =
                           @can_manage_team? or membership.id == @current_membership.id %>
-                        <%!-- Exceptional account-access states get their own compact
-                       amber lines beneath identity. A pending invitation is ordinary
+                        <%!-- An exceptional account-access state gets its own compact
+                       amber line beneath identity. A pending invitation is ordinary
                        lifecycle metadata below, not a warning (§7.62). --%>
                         <div
-                          :if={
-                            member.disabled? or
-                              (member.confirmation_pending? and not member.pending_invitation?)
-                          }
+                          :if={member.disabled?}
                           id={"member-statuses-#{membership.id}"}
                           class="mb-1 text-xs leading-5"
                         >
-                          <div
-                            :if={member.disabled?}
-                            id={"member-status-suspended-#{membership.id}"}
-                            class="min-w-0"
-                          >
+                          <div id={"member-status-suspended-#{membership.id}"} class="min-w-0">
                             <p class="min-w-0 text-amber-300">
                               <span
                                 id={"member-suspended-#{membership.id}"}
@@ -2586,19 +2547,6 @@ defmodule EmisarWeb.TeamLive do
                               >
                                 {" "}by {suspended_by_label}
                               </span>
-                            </p>
-                          </div>
-                          <div
-                            :if={member.confirmation_pending? and not member.pending_invitation?}
-                            id={"member-status-unconfirmed-#{membership.id}"}
-                            class="flex min-w-0 items-start gap-1.5"
-                          >
-                            <.status_dot tone={:amber} class="mt-[0.4375rem]" />
-                            <p
-                              id={"member-unconfirmed-#{membership.id}"}
-                              class="font-medium text-amber-300"
-                            >
-                              Email unconfirmed
                             </p>
                           </div>
                         </div>
@@ -3188,9 +3136,8 @@ defmodule EmisarWeb.TeamLive do
     do: "#{provisioned_via_label(identity.provisioned_via)} · #{identity.provider_name}"
 
   # The roster row's action slot, in three shapes: your OWN row gets the audit
-  # jump (plus the email remedy while yours is unconfirmed), a manager gets the
-  # full Actions menu on everyone else's row, and a non-manager gets nothing on
-  # a teammate's row.
+  # jump, a manager gets the full Actions menu on everyone else's row, and a
+  # non-manager gets nothing on a teammate's row.
   attr :member, :map, required: true
   attr :current_membership_id, :string, required: true
   attr :can_manage?, :boolean, required: true
@@ -3214,9 +3161,8 @@ defmodule EmisarWeb.TeamLive do
              audit trail as a plain button: a teammate's trail is a MANAGER's
              affordance and lives in the Actions menu below, so the roster no
              longer hands every operator a one-click pivot into a colleague's
-             activity. Both verbs wear the bordered face of this cluster's
-             other occupants (§7.47), and the remedy verb keeps the exact
-             wording of the portal-wide unconfirmed-email strip. --%>
+             activity. The verb wears the bordered face of this cluster's
+             other occupants (§7.47). --%>
         <.button
           :if={@can_view_member_activity?}
           navigate={
@@ -3226,15 +3172,6 @@ defmodule EmisarWeb.TeamLive do
           size={:sm}
         >
           View activity
-        </.button>
-        <.button
-          :if={@member.resend_confirmation?}
-          variant={:secondary}
-          tone={:neutral}
-          size={:sm}
-          phx-click="resend_confirmation"
-        >
-          Resend email
         </.button>
       <% @can_manage_team? and not @can_manage? and @can_view_member_activity? -> %>
         <.button
@@ -3323,9 +3260,8 @@ defmodule EmisarWeb.TeamLive do
                authenticator and their recovery codes. It's an
                MFA-BYPASS action (it lets them enroll a NEW factor), so
                the screen spells out the account-takeover risk if the
-               admin is wrong about who's really asking. A member who
-               also belongs to other workspaces keeps the item, disabled
-               with the reason: their factor guards those workspaces too. --%>
+               admin is wrong about who's really asking. The factor belongs
+               to this Member in this workspace alone. --%>
           <.menu_item
             :if={@member.reset_mfa?}
             tone={:amber}
@@ -3333,13 +3269,6 @@ defmodule EmisarWeb.TeamLive do
           >
             Reset MFA
           </.menu_item>
-          <.tooltip
-            :if={@member.mfa_enrolled? and @member.member_of_other_workspaces?}
-            id={"reset-mfa-elsewhere-#{@membership.id}"}
-            text={MemberErrors.message(:member_of_other_workspaces)}
-          >
-            <.menu_item tone={:amber} disabled>Reset MFA</.menu_item>
-          </.tooltip>
           <.menu_item
             phx-click="open_member_action"
             phx-value-action="end_sessions"

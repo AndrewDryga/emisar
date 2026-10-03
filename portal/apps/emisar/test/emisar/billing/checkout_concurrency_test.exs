@@ -60,7 +60,14 @@ defmodule Emisar.Billing.CheckoutConcurrencyTest do
         assert Repo.aggregate(CheckoutIntent.Query.by_account_id(state.account.id), :count) == 1
         send(winner, :continue_post)
         assert {:ok, url} = Task.await(winning_task, 10_000)
-        assert Billing.start_checkout(state.account, "team", :month, state.subject) == {:ok, url}
+
+        assert {:ok, resumed} =
+                 Billing.start_checkout(state.account, "team", :month, state.subject)
+
+        # The same transaction; only the signed return state is minted per hand-out.
+        assert URI.decode_query(URI.parse(resumed).query)["_ptxn"] ==
+                 URI.decode_query(URI.parse(url).query)["_ptxn"]
+
         assert_received {:paddle, :create, _attrs, _caller}
         refute_received {:paddle, :create, _attrs, _caller}
       after
@@ -604,27 +611,20 @@ defmodule Emisar.Billing.CheckoutConcurrencyTest do
 
   defp unboxed_account(store, fun) do
     Sandbox.unboxed_run(Repo, fn ->
-      user = Fixtures.Users.create_user()
-      second_user = Fixtures.Users.create_user()
-
       account =
         Fixtures.Accounts.create_account(%{paddle_customer_id: "ctm_" <> Ecto.UUID.generate()})
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(member)
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: second_user.id,
-        role: "owner"
-      )
+      second_member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner"
+        )
 
-      second_subject = Fixtures.Subjects.subject_for(second_user, account)
+      second_subject = Fixtures.Subjects.subject_for(second_member)
 
       try do
         fun.(%{account: account, subject: subject, second_subject: second_subject, store: store})
@@ -632,8 +632,8 @@ defmodule Emisar.Billing.CheckoutConcurrencyTest do
         Fixtures.Billing.delete_checkout_test_receipts(account.id)
         Fixtures.Billing.delete_recovery_rows(account.id)
         Accounts.delete_by_id(account.id)
-        Users.delete_by_id(user.id)
-        Users.delete_by_id(second_user.id)
+        Users.delete_by_id(member.id)
+        Users.delete_by_id(second_member.id)
       end
     end)
   end

@@ -9,21 +9,21 @@ defmodule EmisarWeb.RunsLiveTest do
   alias Emisar.Runners.Runner
 
   test "shows only the accountable person's name beside the source icon", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
-    owner = Fixtures.Users.create_user(full_name: "Jordan Vale", email: "jordan@example.test")
+    {conn, _owner, account} = register_and_log_in(conn)
 
-    _ =
+    owner =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
+        role: "owner",
+        display_name: "Jordan Vale",
+        email: "jordan@example.test"
       )
 
     {_raw, key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: account.id,
         name: "Claude Code",
-        created_by_id: owner.id
+        created_by_membership_id: owner.id
       )
 
     {:ok, runner} =
@@ -65,7 +65,7 @@ defmodule EmisarWeb.RunsLiveTest do
   end
 
   test "a removed runner shows an honest label that keeps the full id", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
     {:ok, _run} =
@@ -89,21 +89,21 @@ defmodule EmisarWeb.RunsLiveTest do
   end
 
   test "falls back to the accountable person's email when no name exists", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
-    owner = Fixtures.Users.create_user(full_name: nil, email: "owner@example.test")
+    {conn, _owner, account} = register_and_log_in(conn)
 
-    _ =
+    owner =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
+        role: "owner",
+        display_name: nil,
+        email: "owner@example.test"
       )
 
     {_raw, key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: account.id,
         name: "Claude Code",
-        created_by_id: owner.id
+        created_by_membership_id: owner.id
       )
 
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
@@ -126,7 +126,7 @@ defmodule EmisarWeb.RunsLiveTest do
 
   test "a deep-linked api_key_id scopes runs to that agent and reads active in the Agent filter",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "Claude Code")
 
     {_raw2, other_key} =
@@ -171,7 +171,7 @@ defmodule EmisarWeb.RunsLiveTest do
 
   test "'Dispatched by' reveals its WHO picker; hidden children stay out of the bar",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
     {:ok, _} =
@@ -202,7 +202,7 @@ defmodule EmisarWeb.RunsLiveTest do
 
   test "a deep-linked runner_id scopes runs to that runner and reads active in the Runner filter",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, runner_a} =
       Runner.Changeset.register(%{
@@ -254,19 +254,21 @@ defmodule EmisarWeb.RunsLiveTest do
     assert html =~ "web-iad-1"
   end
 
-  test "redirects anonymous users", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/runs")
+  test "redirects anonymous users to the workspace sign-in", %{conn: conn} do
+    account = Fixtures.Accounts.create_account()
+    assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/runs")
+    assert to == ~p"/app/#{account}/sign_in"
   end
 
   test "the connected empty render shows the onboarding pitch", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
     assert html =~ "No runs yet"
   end
 
   test "empty history keeps punctuation adjacent to inline links", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
@@ -285,18 +287,17 @@ defmodule EmisarWeb.RunsLiveTest do
     conn: conn
   } do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
-    member = Fixtures.Users.create_user()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: member.id,
-      role: "operator",
-      runner_access_mode: "none"
-    )
+    member =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "operator",
+        runner_access_mode: "none"
+      )
 
     {:ok, _lv, html} =
       build_conn()
-      |> log_in_user(member)
+      |> log_in_member(member)
       |> live(~p"/app/#{account}/runs")
 
     assert html =~ "Runs will appear here"
@@ -308,7 +309,7 @@ defmodule EmisarWeb.RunsLiveTest do
   test "the filter bar hides at account-empty, stays live once a filter is active", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     # No runs + no active filter → dead controls would just push the pitch
     # down — the bar doesn't render at all.
@@ -324,7 +325,7 @@ defmodule EmisarWeb.RunsLiveTest do
 
   test "the dead/pre-connect empty render shows a loading placeholder, not the pitch",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     # A plain GET is the disconnected render — connected?/1 is false, so the
     # onboarding pitch is deferred behind a loading placeholder rather than
@@ -335,7 +336,7 @@ defmodule EmisarWeb.RunsLiveTest do
   end
 
   test "an account-runs broadcast reloads the current page", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs")
@@ -361,7 +362,7 @@ defmodule EmisarWeb.RunsLiveTest do
   end
 
   test "a bad cursor in the URL falls back to the first page", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs?page=garbage-cursor")
     assert html =~ "Runs"
@@ -373,7 +374,7 @@ defmodule EmisarWeb.RunsLiveTest do
   # status patches the URL to `?status=…` and re-renders from the patched
   # params, with no denial flash.
   test "the filter event reshapes the URL with no authz (no mutation)", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
     {:ok, _run} =
@@ -404,7 +405,7 @@ defmodule EmisarWeb.RunsLiveTest do
   # accounts have runs. (The foreign-account slug 404 lives in
   # account_slug_authz_test; this is the in-account data scoping.)
   test "cross-account — A's operator sees only A's runs, never B's", %{conn: conn} do
-    {conn, _user, account_a} = register_and_log_in(conn)
+    {conn, _owner, account_a} = register_and_log_in(conn)
     runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
 
     {:ok, _} =
@@ -442,7 +443,7 @@ defmodule EmisarWeb.RunsLiveTest do
 
   describe "no-LLM onboarding nudge" do
     test "the page-wide banner is GONE — the nav dot is the one nudge signal", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
 
@@ -453,7 +454,7 @@ defmodule EmisarWeb.RunsLiveTest do
     end
 
     test "the dot appears once there is a runner but still no agent", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
@@ -464,9 +465,9 @@ defmodule EmisarWeb.RunsLiveTest do
     end
 
     test "the dot is gone once an MCP key exists", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: owner.id)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs")
 
@@ -480,7 +481,7 @@ defmodule EmisarWeb.RunsLiveTest do
     # claim stand. Suppressing one nav dot per-page and not its sibling would be
     # the inconsistency, so this pins the behavior we actually want.
     test "still shows on the agents page — it is state, not a one-time prompt", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/agents")

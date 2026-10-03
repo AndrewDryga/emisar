@@ -1,98 +1,113 @@
 defmodule EmisarWeb.MfaSetupLive do
   @moduledoc """
-  Enforced-MFA interstitial. When an account requires MFA and this session has
-  not proved the current factor, `UserAuth.on_mount(:ensure_account_compliant)`
-  forwards every /app mount here. A fresh member enrolls; an already-enrolled
-  member verifies TOTP or a recovery code for this browser.
+  The workspace's MFA page at `/app/:slug/mfa_setup`. When a workspace requires
+  MFA and this session has not proved the current factor,
+  `UserAuth.on_mount(:ensure_account_compliant)` forwards every mount here. A
+  Member without a factor enrolls; an enrolled Member verifies TOTP or a
+  recovery code for this browser.
 
-  Enrollment first requires an explicit current-inbox verification, then
-  confirms a TOTP code, shows the recovery codes once, and continues to /app.
-  Voluntary management (disable, regenerate codes) stays on the profile page.
-  A Member without a personal login has no local factor: it links a personal
-  login first (the factor belongs to that login), or its identity provider
-  satisfies the requirement.
+  Enrollment needs a fresh proof of the Member's own credential before a factor
+  is added — session age never counts. A Member with a verified email proves its
+  inbox with an emailed code (`Auth.mfa_facts/1` says `:email`); an SSO-only
+  Member signs in again at its identity provider (`:sso`, `POST
+  /app/:slug/mfa_setup/sso`) and the callback hands this page a short-lived
+  proof in the session, which lands straight on the authenticator step. Then: a
+  TOTP code, the recovery codes once, and on to the workspace. Voluntary
+  management (disable, regenerate codes) stays on the profile page, which sends
+  an SSO-only Member here to finish a voluntary enrollment the same way.
   """
   use EmisarWeb, :live_view
   alias Emisar.Auth
-  alias EmisarWeb.{MemberLinkHandoff, MfaEnrollment, MfaErrors, UserAuth}
+  alias EmisarWeb.{MfaEnrollment, MfaErrors, UserAuth}
 
-  @email_unavailable_error "Your profile has no email address. Ask your workspace administrator for help, or contact support@emisar.dev."
-  @email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
+  @email_unavailable_error "Your email address isn't verified, so we can't send a code to it. Ask your workspace administrator for help, or contact support@emisar.dev."
+  @email_suppressed_error "Emisar cannot deliver mail to your address. Contact support to restore email delivery before setting up MFA."
   @email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
-  def mount(_params, _session, socket) do
-    user = socket.assigns.current_user
+  def mount(_params, session, socket) do
+    %{current_membership: membership, account_compliance: compliance} = socket.assigns
+    enrolled? = not is_nil(membership.mfa_enabled_at)
+    sso_proof = session["mfa_enrollment_proof"]
 
-    # The :ensure_sso_compliant on_mount already asked the shared domain policy
-    # (and bounced a non-SSO session), so its verdict is the enroll-or-leave
-    # decision — re-asking here would repeat the provider/identity reads.
-    case socket.assigns.account_compliance do
-      {:error, :mfa_required} ->
-        mount_required_mfa(socket, user)
+    # `:assign_account_compliance` already asked the shared domain policy (and
+    # bounced a session `require_sso` refuses), so its verdict is the
+    # enroll-or-verify decision. A compliant Member only belongs here to finish
+    # an enrollment its identity provider just proved; otherwise there is
+    # nothing to do, so don't strand them.
+    cond do
+      compliance == {:error, :mfa_required} and enrolled? ->
+        mount_challenge(socket)
 
-      # Already compliant (current local proof, not enforcing, or an
-      # MFA-satisfying SSO session FOR THIS account) — don't strand the user.
-      :ok ->
-        {:ok, push_navigate(socket, to: ~p"/app")}
+      compliance == {:error, :mfa_required} ->
+        mount_enrollment(socket, sso_proof, ~p"/app/#{socket.assigns.current_account}")
+
+      not enrolled? and is_binary(sso_proof) ->
+        mount_enrollment(
+          socket,
+          sso_proof,
+          ~p"/app/#{socket.assigns.current_account}/settings/profile"
+        )
+
+      true ->
+        {:ok, push_navigate(socket, to: ~p"/app/#{socket.assigns.current_account}")}
     end
   end
 
-  defp mount_required_mfa(socket, nil) do
+  defp mount_challenge(socket) do
     {:ok,
      socket
-     |> assign(:page_title, "Multi-factor authentication required")
-     |> assign(:mfa_mode, :no_personal_login)
-     |> assign(:member_link_handoff, MemberLinkHandoff.sign(socket.assigns.current_subject))}
-  end
-
-  defp mount_required_mfa(socket, user) do
-    mode = if is_nil(user.mfa_enabled_at), do: :enrollment, else: :challenge
-
-    title =
-      if mode == :enrollment,
-        do: "Set up multi-factor authentication",
-        else: "Verify multi-factor authentication"
-
-    {:ok,
-     socket
-     |> assign(:page_title, title)
-     |> assign(:mfa_mode, mode)
-     |> assign(:mfa_recovery_codes, nil)
+     |> assign(:page_title, "Verify multi-factor authentication")
+     |> assign(:mfa_mode, :challenge)
      |> assign(:mfa_challenge_mode, :totp)
      |> assign(:mfa_challenge_error, nil)
-     |> assign(:mfa_recovery_form, to_form(%{"code" => ""}))
-     |> MfaEnrollment.reset()
-     |> assign(:mfa_start_error, nil)
-     |> assign(:codes_saved?, false)
-     |> assign_mfa_enrollment_email_form()
-     |> assign_mfa_form()}
+     |> assign(:mfa_recovery_form, to_form(%{"code" => ""}))}
   end
+
+  # The proof kind (`@mfa_facts.enrollment_proof`) is read on the connected
+  # mount only (IL-18); the dead render shows the page while it loads. An SSO
+  # proof the callback left in the session skips straight to the authenticator
+  # step — also connected-only, so the QR code the operator scans is the one
+  # secret this socket holds.
+  defp mount_enrollment(socket, sso_proof, return_to) do
+    socket =
+      socket
+      |> assign(:page_title, "Set up multi-factor authentication")
+      |> assign(:mfa_mode, :enrollment)
+      |> assign(:return_to, return_to)
+      |> assign(:mfa_facts, nil)
+      |> assign(:mfa_recovery_codes, nil)
+      |> assign(:codes_saved?, false)
+      |> reset_enrollment()
+
+    if connected?(socket) do
+      {:ok, socket |> assign_mfa_facts() |> continue_sso_enrollment(sso_proof)}
+    else
+      {:ok, socket}
+    end
+  end
+
+  defp continue_sso_enrollment(socket, proof) when is_binary(proof) do
+    if socket.redirected,
+      do: socket,
+      else: socket |> MfaEnrollment.prepare_authenticator(proof) |> assign_mfa_form()
+  end
+
+  defp continue_sso_enrollment(socket, _proof), do: socket
 
   def render(assigns) do
     ~H"""
-    <.auth_layout title="Multi-factor authentication required">
+    <.auth_layout title="Multi-factor authentication">
       <p class="mb-6 text-sm text-zinc-400">
         <span class="font-semibold text-zinc-200">{@current_account.name}</span>
-        requires MFA.
         <%= case @mfa_mode do %>
           <% :enrollment -> %>
-            Set up an authenticator app to continue.
+            uses multi-factor authentication. Set up an authenticator app to continue.
           <% :challenge -> %>
-            Enter an authenticator or recovery code to continue.
-          <% :no_personal_login -> %>
-            Your identity provider sign-in did not verify a second factor, and your membership
-            in this workspace has no personal login yet. Link one to set up an authenticator,
-            or ask a workspace administrator to require MFA at your identity provider.
+            requires MFA. Enter an authenticator or recovery code to continue.
         <% end %>
       </p>
 
       <%= cond do %>
-        <% @mfa_mode == :no_personal_login -> %>
-          <.member_link_form
-            :if={@member_link_handoff}
-            handoff={@member_link_handoff}
-            return_to={~p"/app/#{@current_account}"}
-          />
         <% @mfa_mode == :challenge -> %>
           <%= if @mfa_challenge_mode == :totp do %>
             <.simple_form for={%{}} phx-submit="verify_totp">
@@ -159,7 +174,7 @@ defmodule EmisarWeb.MfaSetupLive do
         <% @mfa_enrollment_step == :email -> %>
           <.mfa_setup_progress step={1} />
           <.mfa_enrollment_email_verification
-            email={@current_user.email}
+            email={@current_membership.email}
             form={@mfa_enrollment_email_form}
             error={@mfa_enrollment_email_error}
           >
@@ -192,7 +207,9 @@ defmodule EmisarWeb.MfaSetupLive do
               <.button phx-disable-with="Enabling...">Enable MFA</.button>
             </:actions>
           </.mfa_enrollment>
-        <% true -> %>
+        <% is_nil(@mfa_facts) -> %>
+          <p role="status" class="text-sm text-zinc-400">Loading…</p>
+        <% @mfa_facts.enrollment_proof == :email -> %>
           <div class="space-y-4">
             <p class="text-sm text-zinc-300">
               First verify your email, then connect your authenticator app.
@@ -202,6 +219,29 @@ defmodule EmisarWeb.MfaSetupLive do
               Email me a verification code
             </.button>
           </div>
+        <% @mfa_facts.enrollment_proof == :sso -> %>
+          <div class="space-y-4">
+            <p class="text-sm text-zinc-300">
+              First sign in again with {sso_provider_name(@current_auth)} to confirm it's you,
+              then connect your authenticator app.
+            </p>
+            <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
+            <.button href={~p"/app/#{@current_account}/mfa_setup/sso"} method="post">
+              Verify with {sso_provider_name(@current_auth)}
+            </.button>
+          </div>
+        <% true -> %>
+          <.empty_state
+            variant={:bare}
+            tone={:danger}
+            icon="state.locked"
+            title="We can't confirm it's you from this session"
+          >
+            Setting up an authenticator needs a fresh proof of your own sign-in: a code to a
+            verified email address, or a new sign-in through this workspace's identity provider.
+            Neither is available here. Ask a workspace administrator to invite you again, or
+            contact support@emisar.dev.
+          </.empty_state>
       <% end %>
       <.auth_footer_link href={~p"/sign_out"} method="delete">
         Sign out
@@ -209,10 +249,6 @@ defmodule EmisarWeb.MfaSetupLive do
     </.auth_layout>
     """
   end
-
-  # A member-only session has nothing to enroll or verify here.
-  def handle_event(_event, _params, %{assigns: %{mfa_mode: :no_personal_login}} = socket),
-    do: {:noreply, socket}
 
   def handle_event("verify_totp", %{"otp" => otp}, socket),
     do: verify_current_session(socket, {:totp, otp})
@@ -248,7 +284,7 @@ defmodule EmisarWeb.MfaSetupLive do
         {:noreply, assign(socket, :mfa_start_error, @email_unavailable_error)}
 
       {:error, :mfa_already_enabled} ->
-        {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
+        {:noreply, remount(socket)}
 
       {:error, :unauthorized} ->
         {:noreply, UserAuth.reauthenticate(socket)}
@@ -283,16 +319,10 @@ defmodule EmisarWeb.MfaSetupLive do
 
         {:error, :email_unavailable} ->
           {:noreply,
-           socket
-           |> MfaEnrollment.reset()
-           |> assign(:mfa_start_error, nil)
-           |> assign(:codes_saved?, false)
-           |> assign_mfa_enrollment_email_form()
-           |> assign_mfa_form()
-           |> assign(:mfa_start_error, @email_unavailable_error)}
+           socket |> reset_enrollment() |> assign(:mfa_start_error, @email_unavailable_error)}
 
         {:error, :mfa_already_enabled} ->
-          {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
+          {:noreply, remount(socket)}
 
         {:error, :unauthorized} ->
           {:noreply, UserAuth.reauthenticate(socket)}
@@ -315,7 +345,7 @@ defmodule EmisarWeb.MfaSetupLive do
            |> assign(:mfa_enrollment_email_error, nil)
            |> put_flash(
              :info,
-             "A new verification code was sent to #{socket.assigns.current_user.email}."
+             "A new verification code was sent to #{socket.assigns.current_membership.email}."
            )
            |> push_event("code:reset", %{id: "mfa-enrollment-email-code"})}
 
@@ -327,7 +357,7 @@ defmodule EmisarWeb.MfaSetupLive do
            assign(socket, :mfa_enrollment_email_error, MfaErrors.message(:email_rate_limited))}
 
         {:error, :mfa_already_enabled} ->
-          {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
+          {:noreply, remount(socket)}
 
         {:error, :unauthorized} ->
           {:noreply, UserAuth.reauthenticate(socket)}
@@ -359,11 +389,7 @@ defmodule EmisarWeb.MfaSetupLive do
            |> MfaEnrollment.assign_current_proof(updated)
            |> assign(:mfa_recovery_codes, recovery_codes)
            |> assign(:codes_saved?, false)
-           |> MfaEnrollment.reset()
-           |> assign(:mfa_start_error, nil)
-           |> assign(:codes_saved?, false)
-           |> assign_mfa_enrollment_email_form()
-           |> assign_mfa_form()}
+           |> reset_enrollment()}
 
         {:error, :invalid_otp} ->
           {:noreply,
@@ -374,15 +400,11 @@ defmodule EmisarWeb.MfaSetupLive do
         {:error, :mfa_enrollment_proof_stale} ->
           {:noreply,
            socket
-           |> MfaEnrollment.reset()
-           |> assign(:mfa_start_error, nil)
-           |> assign(:codes_saved?, false)
-           |> assign_mfa_enrollment_email_form()
-           |> assign_mfa_form()
+           |> reset_enrollment()
            |> assign(:mfa_start_error, MfaErrors.message(:mfa_enrollment_proof_stale))}
 
         {:error, :mfa_already_enabled} ->
-          {:noreply, push_navigate(socket, to: ~p"/app/mfa_setup")}
+          {:noreply, remount(socket)}
 
         {:error, reason} when reason in [:unauthorized, :session_not_found] ->
           {:noreply, UserAuth.reauthenticate(socket)}
@@ -395,7 +417,7 @@ defmodule EmisarWeb.MfaSetupLive do
 
   def handle_event("continue", _params, socket) do
     if socket.assigns.mfa_recovery_codes && socket.assigns.codes_saved? do
-      {:noreply, push_navigate(socket, to: ~p"/app")}
+      {:noreply, push_navigate(socket, to: socket.assigns.return_to)}
     else
       {:noreply, put_flash(socket, :error, MfaErrors.message(:recovery_codes_unsaved))}
     end
@@ -423,7 +445,7 @@ defmodule EmisarWeb.MfaSetupLive do
              socket.assigns.current_auth.token,
              socket.assigns.current_subject
            ) do
-      {:noreply, push_navigate(socket, to: ~p"/app")}
+      {:noreply, push_navigate(socket, to: ~p"/app/#{socket.assigns.current_account}")}
     else
       {:error, :rate_limited} ->
         {:noreply, assign(socket, :mfa_challenge_error, MfaErrors.message(:rate_limited))}
@@ -435,7 +457,7 @@ defmodule EmisarWeb.MfaSetupLive do
         {:noreply,
          socket
          |> put_flash(:error, "Your MFA settings changed. Verify the current factor again.")
-         |> push_navigate(to: ~p"/app/mfa_setup")}
+         |> remount()}
 
       {:error, _reason} ->
         {:noreply,
@@ -446,6 +468,36 @@ defmodule EmisarWeb.MfaSetupLive do
          )}
     end
   end
+
+  # Facts come from the live session and the current Member row, never a held
+  # snapshot. Expiry during a mounted page is a sign-in step, not a crash.
+  defp assign_mfa_facts(socket) do
+    case Auth.mfa_facts(socket.assigns.current_subject) do
+      {:ok, facts} -> assign(socket, :mfa_facts, facts)
+      {:error, :unauthorized} -> UserAuth.reauthenticate(socket)
+    end
+  end
+
+  # The Member's state changed under this page (enrolled elsewhere, a factor
+  # reset): a fresh mount re-decides between enrollment and the challenge.
+  defp remount(socket),
+    do: push_navigate(socket, to: ~p"/app/#{socket.assigns.current_account}/mfa_setup")
+
+  defp reset_enrollment(socket) do
+    socket
+    |> MfaEnrollment.reset()
+    |> assign(:mfa_start_error, nil)
+    |> assign_mfa_enrollment_email_form()
+    |> assign_mfa_form()
+  end
+
+  # The identity provider behind this SSO session; `with_preloaded_authority/1`
+  # carries it on the session row.
+  defp sso_provider_name(%Auth.UserToken{user_identity: %{provider: %{name: name}}})
+       when is_binary(name),
+       do: name
+
+  defp sso_provider_name(_auth), do: "your identity provider"
 
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))

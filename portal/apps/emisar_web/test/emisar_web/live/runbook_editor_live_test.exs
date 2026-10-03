@@ -110,7 +110,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
                ]
              })
 
-    subject = owner_subject(user, account)
+    subject = Fixtures.Subjects.subject_for(user)
     versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(versions, fn version ->
@@ -125,8 +125,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   describe "structured authoring" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, user: owner, account: account}
     end
 
     test "exposes the complete v1 model without a raw definition editor", %{
@@ -1446,7 +1446,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         arrange_current_action(account, user)
 
         membership =
-          Fixtures.Memberships.fetch_membership(account.id, user.id)
+          user
           |> Fixtures.Memberships.force_role("admin")
 
         {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
@@ -1528,7 +1528,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       arrange_current_action(account, user)
 
       membership =
-        Fixtures.Memberships.fetch_membership(account.id, user.id)
+        user
         |> Fixtures.Memberships.force_role("admin")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/new")
@@ -1667,7 +1667,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1712,7 +1712,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       published =
         [
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1778,12 +1778,12 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       account: account
     } do
       arrange_current_action(account, user)
-      subject = owner_subject(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1815,7 +1815,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       published =
         [
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1867,7 +1867,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       published =
         [
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -1898,7 +1898,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       published =
         [
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: live_definition
@@ -1933,7 +1933,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft())
@@ -2245,7 +2245,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           definition: definition
         )
 
@@ -2343,7 +2343,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(draft)
@@ -2500,8 +2500,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       runbook =
         [
           account_id: account.id,
-          created_by_membership_id:
-            Fixtures.Memberships.fetch_membership(account.id, owner.id).id,
+          created_by_membership_id: owner.id,
           title: "Fleet health",
           slug: "fleet-health",
           definition: canonical_definition(valid_draft(inputs: [input]))
@@ -2509,17 +2508,11 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
         |> Fixtures.Runbooks.create_runbook()
         |> Fixtures.Runbooks.publish_runbook()
 
-      viewer = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, html} =
         build_conn()
-        |> log_in_user(viewer)
+        |> log_in_member(viewer)
         |> live(~p"/app/#{account}/runbooks/#{runbook.id}/edit")
 
       assert html =~ "Read-only runbook"
@@ -2624,7 +2617,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
   describe "resource isolation" do
     test "cross-account and malformed identifiers are indistinguishable", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       other = Fixtures.Runbooks.create_runbook()
       destination = ~p"/app/#{account}/runbooks"
 

@@ -1,9 +1,10 @@
 defmodule Emisar.Accounts.Membership do
   @moduledoc """
-  A workspace Member: one seat in an account with a role. A Member may be
-  linked to a personal login (`user_id`), which can hold seats in many
-  accounts, or exist without one and sign in only through its workspace SSO
-  identity.
+  A workspace Member: one seat in an account with a role, one address and its
+  own MFA factor. The same person in three workspaces is three Members. A
+  Member signs in through its workspace SSO identity, or by an emailed code
+  once joining proved its address (`email_verified_at`). `user_id` only links
+  the retired personal login for erasure until that table is dropped.
   """
   use Emisar, :schema
   alias Emisar.Auth

@@ -1,52 +1,40 @@
 defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
   @moduledoc """
   Role and directory-pending changes remount with current authority. Scope-only
-  changes refresh controls without losing open forms or output.
+  changes refresh controls without losing open forms or output. Retiring a
+  Member ends its own sessions only: the same person's Member of another
+  workspace keeps its session in the same browser.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Auth, Fixtures, SSO}
+  alias Emisar.{Accounts, Auth, Crypto, Fixtures, SSO}
   alias Emisar.Accounts.RunnerAccess
 
   setup do
     account = Fixtures.Accounts.create_account()
-    owner = Fixtures.Users.create_user()
+    owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    owner_subject = Fixtures.Subjects.subject_for(owner)
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-    _owner_membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-    owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-    member = Fixtures.Users.create_user()
-
-    # An older browser proved B before this person's A membership existed.
-    # Refreshing A must not disturb that independent same-User browser.
+    # The same person is also a Member of workspace B, signed in from the same
+    # browser. Changing or retiring the A Member must not disturb that session.
     sibling = Fixtures.Accounts.create_account()
-    Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: member.id)
-    other_token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
-    other_topic = Auth.live_socket_topic_for_session(other_token)
+
+    sibling_member =
+      Fixtures.Memberships.create_membership(account_id: sibling.id, email: membership.email)
+
+    other_token = Fixtures.Auth.create_session_token!(sibling_member)
+    other_topic = Auth.live_socket_topic(Crypto.hash(other_token))
     EmisarWeb.Endpoint.subscribe(other_topic)
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "operator"
-      )
-
-    token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
-    topic = Auth.live_socket_topic_for_session(token)
+    token = Fixtures.Auth.create_session_token!(membership)
+    topic = Auth.live_socket_topic(Crypto.hash(token))
     EmisarWeb.Endpoint.subscribe(topic)
 
-    {:ok, session} = Auth.fetch_session_by_token(token)
-    held = Fixtures.Subjects.subject_for(member, account, session: session)
+    held = Fixtures.Subjects.subject_for(membership, session: token)
     Accounts.subscribe_account_team(account.id)
 
     %{
       account: account,
-      member: member,
       membership: membership,
       owner_subject: owner_subject,
       token: token,
@@ -60,7 +48,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
 
   describe "broadcast_disconnect_for_membership/1" do
     test "a role promotion reconnects only the affected member and preserves the session", %{
-      member: member,
+      account: account,
       membership: membership,
       owner_subject: owner_subject,
       token: token,
@@ -72,8 +60,8 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
 
       assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
       refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
-      assert {:ok, %{user: %{id: member_id}}} = Auth.fetch_session_by_token(token)
-      assert member_id == member.id
+      assert {:ok, %{membership_id: member_id}} = Auth.fetch_session_by_token(token, account.id)
+      assert member_id == membership.id
     end
 
     test "a role reduction reconnects the affected member", %{
@@ -260,7 +248,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
 
   for operation <- [:suspend_membership, :delete_membership] do
     @operation operation
-    test "#{operation} retires A without interrupting a same-User B-only browser",
+    test "#{operation} retires A without interrupting the same person's B session",
          %{membership: _, owner_subject: _} = context do
       assert {:ok, _member} =
                apply(Accounts, @operation, [context.membership, context.owner_subject])
@@ -271,7 +259,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
 
   for operation <- [:disable, :close] do
     @operation operation
-    test "account #{@operation} preserves a same-User B-only browser",
+    test "account #{@operation} preserves the same person's B session",
          %{account: _, owner_subject: _} = context do
       result =
         case @operation do
@@ -294,8 +282,8 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
 
   for operation <- [:patch, :repost, :delete] do
     @operation operation
-    test "SCIM #{@operation} retires A without interrupting a same-User B-only browser",
-         %{account: _, owner_subject: _, member: _, membership: _, topic: _} = context do
+    test "SCIM #{@operation} retires A without interrupting the same person's B session",
+         %{account: _, owner_subject: _, membership: _, topic: _} = context do
       Fixtures.Accounts.create_subscription(context.account, "enterprise")
       provider = Fixtures.SSO.create_identity_provider(account_id: context.account.id)
       {:ok, provider, _raw} = SSO.enable_scim(provider, context.owner_subject)
@@ -304,7 +292,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
         Fixtures.SSO.create_user_identity(
           account_id: context.account.id,
           provider_id: provider.id,
-          user_id: context.member.id,
+          membership: context.membership,
           scim_external_id: "directory-person",
           provisioned_via: :scim
         )
@@ -350,15 +338,7 @@ defmodule EmisarWeb.MembershipAuthorizationSessionRefreshTest do
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
     refute_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}, 100
     assert Auth.fetch_current_subject([], context.held) == {:error, :unauthorized}
-
-    for raw <- [context.token, context.other_token] do
-      assert {:ok, session} = Auth.fetch_session_by_token(raw)
-
-      assert {:ok, _member} =
-               Accounts.fetch_membership_by_account_id_or_slug(sibling.id, session)
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
-               {:error, :not_found}
-    end
+    assert Auth.fetch_session_by_token(context.token, account.id) == {:error, :not_found}
+    assert {:ok, _live} = Auth.fetch_session_by_token(context.other_token, sibling.id)
   end
 end

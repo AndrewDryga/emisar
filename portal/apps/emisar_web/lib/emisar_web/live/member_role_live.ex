@@ -184,7 +184,6 @@ defmodule EmisarWeb.MemberRoleLive do
       chrome={@shell_chrome}
       current_membership={@current_membership}
       current_subject={@current_subject}
-      current_user={@current_user}
       current_account={@current_account}
       section={:team}
       width={:table}

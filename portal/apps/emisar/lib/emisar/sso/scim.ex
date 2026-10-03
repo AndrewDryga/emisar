@@ -11,7 +11,7 @@ defmodule Emisar.SSO.SCIM do
   """
   import Emisar.SSO.Provisioning
   alias Ecto.Multi
-  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo, Users}
+  alias Emisar.{Accounts, Audit, Auth, Billing, Crypto, Repo}
   alias Emisar.SSO.{DirectoryGroup, DirectoryGroupMember, GroupRoleMapping}
   alias Emisar.SSO.GroupRunnerAccessMapping
   alias Emisar.SSO.IdentityProvider
@@ -140,11 +140,12 @@ defmodule Emisar.SSO.SCIM do
   binding identifier and SCIM correlation value; the identity row's UUID is the
   SCIM resource id. An existing identity is reused (idempotent — a re-POST never
   duplicates), and a resource retired by `DELETE /Users` revives that same
-  identity and person. Otherwise the directory's email is compared only with this
-  account's Member contacts, never a personal login's address: the live Member
-  holding it is parked as a link request for an admin
-  (`{:error, :identity_pending_approval}`), and none creates a Member without a
-  personal login plus its identity (`created_by: :provider`,
+  identity and person. An identity an OIDC sign-in, an invitation's SSO step or
+  an approval already bound under the same identifier is adopted, never
+  duplicated. Otherwise the directory's email is compared only with this
+  account's Member contacts: the live Member holding it is parked as a link
+  request for an admin (`{:error, :identity_pending_approval}`), and none
+  creates a Member plus its identity (`created_by: :provider`,
   `provisioned_via: :scim`) at `provider.default_role` in one `Multi`. A create
   or re-add whose address another live Member holds by then is refused with
   `{:error, :member_email_taken}`. `{:ok, %{identity, membership}}`.
@@ -321,16 +322,6 @@ defmodule Emisar.SSO.SCIM do
   defp repost_group_ids(%UserIdentity{} = identity, :live),
     do: Map.get(group_ids_by_identity([identity]), identity.id, [])
 
-  # A detach can commit between this request's first read and its account lock.
-  # The seat must still hold the person that read found, or a re-POST would
-  # re-seat a person who just detached their login; the retry reads afresh.
-  defp seat_holds_user?(%UserIdentity{account_id: account_id, membership_id: id}, user) do
-    case Accounts.peek_membership_profile_by_id(account_id, id) do
-      %Accounts.Membership{user_id: user_id} -> user_id == (user && user.id)
-      nil -> false
-    end
-  end
-
   defp reconcile_provisioned(provider, identity, external_id, active, authorization, state) do
     expected_version =
       if authorization, do: authorization.authorization_version, else: :any
@@ -339,16 +330,11 @@ defmodule Emisar.SSO.SCIM do
       Multi.new()
       |> put_active_account_lock(provider.account_id)
       |> put_current_scim_provider(provider, expected_version)
-      # A re-POST may INSERT a new seat, whose User FK takes a key-share lock.
-      # Foreign invitation acceptance holds that User before retiring bindings;
-      # use the same User -> identity order, not identity -> FK wait. That User
-      # is the one linked to the identity's seat; the locked identity must still
-      # be on that seat. A seat without a personal login has no User to lock.
-      |> Multi.run(:user, fn repo, _changes -> lock_seat_user(repo, identity) end)
-      |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider, user: user} ->
+      # The locked identity must still be on the seat the first read found; a
+      # rebind since then retries with a fresh read.
+      |> Multi.run(:scim_identity, fn repo, %{locked_provider: locked_provider} ->
         with {:ok, locked} <- lock_repost_identity(locked_provider, identity.id, state, repo),
-             true <- locked.membership_id == identity.membership_id,
-             true <- seat_holds_user?(locked, user) do
+             true <- locked.membership_id == identity.membership_id do
           {:ok, locked}
         else
           false -> {:error, :not_found}
@@ -432,24 +418,25 @@ defmodule Emisar.SSO.SCIM do
   # active: true — reinstate a directory suspension (a MANUAL suspend still
   # holds, per reprovision_membership) and recompute mapped authorization.
   defp reconcile_provisioned_membership_multi(
-         %{locked_provider: provider, user: user, adopted_identity: identity},
+         %{locked_provider: provider, adopted_identity: identity},
          true,
          authorization
        ) do
-    case current_seat(provider, user, identity) do
+    case Accounts.peek_sync_membership_by_id(provider.account_id, identity.membership_id) do
       %Accounts.Membership{} = membership ->
         put_reconciled_membership_multi(provider, identity, membership)
 
       nil ->
         {role, access} = repost_authorization(provider, authorization)
-        profile = removed_seat_profile(provider, user, identity)
+
+        profile =
+          Accounts.peek_membership_profile_by_id(provider.account_id, identity.membership_id)
 
         Accounts.put_sso_membership(
           Multi.new(),
           provider.account_id,
           role,
           access,
-          user_id: user && user.id,
           display_name: profile && profile.display_name,
           email: profile && profile.email,
           directory_managed?: true,
@@ -483,21 +470,6 @@ defmodule Emisar.SSO.SCIM do
         end)
     end
   end
-
-  # A linked person's seat here may have been replaced (say, by a re-invite); a
-  # Member without a personal login has only the identity's own seat. With no live
-  # seat left, the re-POST re-adds the same person at their removed seat's profile.
-  defp current_seat(provider, %Users.User{id: user_id}, _identity),
-    do: Accounts.peek_sync_membership(provider.account_id, user_id)
-
-  defp current_seat(provider, nil, %UserIdentity{membership_id: membership_id}),
-    do: Accounts.peek_sync_membership_by_id(provider.account_id, membership_id)
-
-  defp removed_seat_profile(provider, %Users.User{id: user_id}, _identity),
-    do: Accounts.peek_membership_profile(provider.account_id, user_id)
-
-  defp removed_seat_profile(provider, nil, %UserIdentity{membership_id: membership_id}),
-    do: Accounts.peek_membership_profile_by_id(provider.account_id, membership_id)
 
   # Every seat read judges `Membership.authorizable?/1`, so an unresolved
   # invitation grants nothing: calling one an active seat answered the directory
@@ -651,7 +623,7 @@ defmodule Emisar.SSO.SCIM do
   # Email is never identity: the directory's address is compared only with this
   # account's own contacts, under the account lock every provisioning path takes.
   # The live Member holding it is a link request for an admin
-  # (`put_link_request/8`); none is a new Member without a personal login.
+  # (`put_link_request/8`); none is a new Member.
   defp build_scim_provision_multi(%IdentityProvider{} = provider, external_id, attrs) do
     Multi.new()
     |> put_active_account_lock(provider.account_id)
@@ -788,7 +760,7 @@ defmodule Emisar.SSO.SCIM do
       end)
       |> Multi.merge(&put_deleted_scim_authorization/1)
       |> Multi.run(:identity_sessions, fn repo, %{identity: identity} ->
-        Auth.delete_identity_session_routes([identity.id], repo)
+        Auth.delete_identity_sessions([identity.id], repo)
       end)
       |> Multi.run(:deleted_identity, fn repo,
                                          %{
@@ -901,8 +873,8 @@ defmodule Emisar.SSO.SCIM do
 
   defp apply_scim_rename(_provider, _identity, :keep), do: {:ok, :unchanged}
 
-  # Keep omitted components from this workspace's locked profile, never from
-  # the linked personal User. The member lock also serializes a local rename.
+  # Keep omitted components from this workspace's locked profile. The member
+  # lock also serializes a local rename.
   defp apply_scim_rename(%IdentityProvider{} = provider, identity, {:merge, components}) do
     sync_scim_name(provider, identity, &merged_name(&1, components))
   end

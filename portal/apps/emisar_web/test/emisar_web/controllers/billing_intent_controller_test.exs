@@ -19,7 +19,7 @@ defmodule EmisarWeb.BillingIntentControllerTest do
   end
 
   test "an authenticated Team choice opens a chooser without contacting Paddle", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     token = BillingIntent.sign("team", :month)
 
     captured = get(conn, ~p"/start/team/#{token}")
@@ -39,19 +39,19 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     refute account.paddle_customer_id
   end
 
-  test "a multi-account operator explicitly selects and pins the billed workspace", %{conn: conn} do
-    {conn, user, account_a} = register_and_log_in(conn)
+  test "with several signed-in workspaces the operator picks the billed one", %{conn: conn} do
+    {conn, owner, account_a} = register_and_log_in(conn)
     account_b = Fixtures.Accounts.create_account(%{name: "Billing Target"})
 
-    Fixtures.Memberships.create_membership(
-      account_id: account_b.id,
-      user_id: user.id,
-      role: "owner"
-    )
+    owner_b =
+      Fixtures.Memberships.create_membership(
+        account_id: account_b.id,
+        email: owner.email,
+        role: "owner"
+      )
 
     token = BillingIntent.sign("team", :year)
-    conn = conn |> log_in_user(user) |> put_session(:current_account_id, account_a.id)
-    captured = get(conn, ~p"/start/team/#{token}")
+    captured = conn |> log_in_member(owner_b) |> get(~p"/start/team/#{token}")
     chooser = get(recycle(captured), ~p"/app/billing/start")
     html = html_response(chooser, 200)
 
@@ -67,28 +67,30 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     assert redirected_to(selected) ==
              ~p"/app/#{account_b}/settings/billing?billing_intent=#{token}"
 
-    assert get_session(selected, :current_account_id) == account_b.id
     refute get_session(selected, :billing_intent)
+    # Nothing switches: both workspaces stay signed in.
+    assert length(get_session(selected, :sessions)) == 2
   end
 
-  test "a non-billing membership cannot select that workspace", %{conn: conn} do
-    {conn, user, account_a} = register_and_log_in(conn)
+  test "a signed-in workspace whose Member cannot manage billing is neither offered nor selectable",
+       %{conn: conn} do
+    {conn, owner, account_a} = register_and_log_in(conn)
     account_b = Fixtures.Accounts.create_account(%{name: "Viewer Space"})
 
-    Fixtures.Memberships.create_membership(
-      account_id: account_b.id,
-      user_id: user.id,
-      role: "viewer"
-    )
+    viewer_b =
+      Fixtures.Memberships.create_membership(
+        account_id: account_b.id,
+        email: owner.email,
+        role: "viewer"
+      )
 
     token = BillingIntent.sign("team", :month)
-    conn = conn |> log_in_user(user) |> put_session(:current_account_id, account_a.id)
-    captured = get(conn, ~p"/start/team/#{token}")
+    captured = conn |> log_in_member(viewer_b) |> get(~p"/start/team/#{token}")
 
     chooser = get(recycle(captured), ~p"/app/billing/start")
     html = html_response(chooser, 200)
     assert html =~ account_a.name
-    refute html =~ "Review Team for Viewer Space"
+    refute html =~ "Viewer Space"
 
     denied =
       captured
@@ -97,13 +99,12 @@ defmodule EmisarWeb.BillingIntentControllerTest do
 
     html = html_response(denied, 200)
     assert html =~ "Only an owner, admin, or billing manager"
-    assert get_session(denied, :current_account_id) == account_a.id
     assert get_session(denied, :billing_intent) == token
   end
 
-  test "a foreign account id is denied without changing the current workspace", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
-    foreign = Fixtures.Accounts.create_account()
+  test "a workspace this browser is not signed in to is denied", %{conn: conn} do
+    {conn, _owner, _account} = register_and_log_in(conn)
+    {_foreign_owner, foreign, _subject} = Fixtures.Subjects.owner_subject()
     token = BillingIntent.sign("team", :month)
     captured = get(conn, ~p"/start/team/#{token}")
 
@@ -113,21 +114,25 @@ defmodule EmisarWeb.BillingIntentControllerTest do
       |> post(~p"/app/billing/start", %{"account_id" => foreign.id})
 
     assert html_response(denied, 200) =~ "Only an owner, admin, or billing manager"
-    assert get_session(denied, :current_account_id) == account.id
+    assert get_session(denied, :billing_intent) == token
   end
 
-  test "a signed-in user with no membership reaches onboarding with intent intact", %{conn: conn} do
-    conn = log_in_user(conn, Fixtures.Users.create_user())
+  test "a browser whose only session is dead is sent to sign in, with the choice kept", %{
+    conn: conn
+  } do
+    {conn, _owner, account} = register_and_log_in(conn)
+    Fixtures.Auth.delete_session_token!(session_token(conn, account))
     token = BillingIntent.sign("team", :year)
     captured = get(conn, ~p"/start/team/#{token}")
 
     bounced = get(recycle(captured), ~p"/app/billing/start")
-    assert redirected_to(bounced) == ~p"/onboarding"
+    assert redirected_to(bounced) == ~p"/sign_in"
     assert get_session(bounced, :billing_intent) == token
+    refute get_session(bounced, :sessions)
   end
 
   test "cancel clears the choice without changing plan", %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
+    {conn, _owner, _account} = register_and_log_in(conn)
     token = BillingIntent.sign("team", :month)
     captured = get(conn, ~p"/start/team/#{token}")
     canceled = post(recycle(captured), ~p"/app/billing/start/cancel")
@@ -139,9 +144,8 @@ defmodule EmisarWeb.BillingIntentControllerTest do
   test "a viewer with a workspace sees a permission-empty chooser, not no workspaces", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    Fixtures.Memberships.force_role(membership, "viewer")
+    {conn, owner, _account} = register_and_log_in(conn)
+    Fixtures.Memberships.force_role(owner, "viewer")
     token = BillingIntent.sign("team", :month)
     captured = get(conn, ~p"/start/team/#{token}")
 
@@ -153,29 +157,10 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     refute html =~ "Choose a plan again"
   end
 
-  test "a workspace loading error stays distinct from an invalid plan choice" do
-    token = BillingIntent.sign("team", :month)
-    {:ok, intent} = BillingIntent.verify(token)
-
-    html =
-      render_component(&EmisarWeb.BillingIntentHTML.show/1,
-        accounts: [],
-        accounts_error?: true,
-        intent: intent,
-        token: token
-      )
-
-    assert html =~ "load your workspaces"
-    assert html =~ "Try again"
-    assert html =~ ~s(href="/app/billing/start")
-    refute html =~ "No workspaces you can upgrade"
-    refute html =~ "no longer valid"
-  end
-
   test "an invalid stored plan choice is cleared rather than shown as a workspace error", %{
     conn: conn
   } do
-    {conn, _user, _account} = register_and_log_in(conn)
+    {conn, _owner, _account} = register_and_log_in(conn)
     conn = Plug.Conn.put_session(conn, :billing_intent, "forged")
     conn = get(conn, ~p"/app/billing/start")
 

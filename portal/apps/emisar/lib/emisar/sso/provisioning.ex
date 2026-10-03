@@ -11,7 +11,7 @@ defmodule Emisar.SSO.Provisioning do
   `.agent/kb/rules/elixir-rejected-context-splits.md` carries the measurement.
   """
   alias Ecto.Multi
-  alias Emisar.{Accounts, Crypto, Repo, Users}
+  alias Emisar.{Accounts, Crypto, Repo}
   alias Emisar.SSO.{DirectoryGroupMember, GroupRoleMapping}
   alias Emisar.SSO.{GroupRunnerAccessMapping, IdentityProvider, LinkRequest, UserIdentity}
   require Logger
@@ -121,18 +121,6 @@ defmodule Emisar.SSO.Provisioning do
   end
 
   def member_contact_match(_provider, _email), do: :none
-
-  # The personal login linked to an identity's preloaded seat, locked. Callers
-  # take it before the identity, in membership activation's User -> identity order.
-  # A seat without a personal login has no User to lock.
-  def lock_seat_user(repo, %UserIdentity{membership: %Accounts.Membership{user_id: user_id}})
-      when is_binary(user_id),
-      do: Users.fetch_and_lock_user_by_id(user_id, repo)
-
-  def lock_seat_user(_repo, %UserIdentity{membership: %Accounts.Membership{user_id: nil}}),
-    do: {:ok, nil}
-
-  def lock_seat_user(_repo, %UserIdentity{}), do: {:error, :not_found}
 
   def put_active_account_lock(multi, account_id) do
     Multi.run(multi, :active_account, fn repo, _changes ->

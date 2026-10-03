@@ -4,8 +4,9 @@ defmodule EmisarWeb.Analytics do
   `Emisar.Analytics`. emisar tracks without an analytics identifier cookie: an
   anonymous visitor is a weekly-rotating salted hash of IP + User-Agent
   (`Emisar.Crypto.anonymous_visitor_id/1` — the Plausible/Fathom model: no
-  client storage, unlinkable across weeks), and an authenticated user is their
-  `user.id` (from the necessary auth session). The only cookie the site sets is
+  client storage, unlinkable across weeks), and an authenticated person is the
+  Member id of the workspace session the request resolved (one person in several
+  workspaces is several profiles). The only cookie the site sets is
   the functional CSRF/session cookie — never an analytics identifier. That
   encrypted session carries bounded first-touch attribution until sign-in so
   pageviews and conversions in the same browser session keep their traffic
@@ -22,7 +23,7 @@ defmodule EmisarWeb.Analytics do
   """
 
   import Plug.Conn
-  alias Emisar.{Analytics, Crypto}
+  alias Emisar.{Accounts, Analytics, Crypto}
   alias EmisarWeb.MarketingAttribution, as: WebAttribution
 
   @sign_up_started_session_key :analytics_sign_up_started
@@ -59,10 +60,10 @@ defmodule EmisarWeb.Analytics do
   LiveView app, so its in-app navigation never hits a controller — this is
   driven by the `:track_pageviews` `on_mount` hook (`handle_params`), with the
   `uri` + the mount-captured `%RequestContext{}`. Always authenticated
-  (distinct_id = the user id). The path is normalized (account slug + detail
+  (distinct_id = the Member id). The path is normalized (account slug + detail
   UUIDs collapsed to `/app/:account/…/:id`) so console pages aggregate.
   """
-  def track_console_pageview(user, account, uri, context) do
+  def track_console_pageview(%Accounts.Membership{} = member, account, uri, context) do
     %URI{path: path} = URI.parse(uri)
     ua = EmisarWeb.UserAgent.parse(context.user_agent)
 
@@ -78,28 +79,35 @@ defmodule EmisarWeb.Analytics do
       }
       |> put_account(account)
 
-    Analytics.track("page_viewed", user.id, props, user_id: user.id, ip: context.ip_address)
+    Analytics.track("page_viewed", member.id, props, user_id: member.id, ip: context.ip_address)
     set_account_group(account)
   end
 
   # -- Identity transitions (called from UserAuth) ---------------------
 
   @doc """
-  On a completed sign-in: refresh the user profile, then track
-  `sign_up_completed` (a brand-new registration) or `signed_in`, sending the
-  same-week anonymous `device_id` + the `user_id` so Mixpanel merges the
-  pre-signup journey to the user. Returns `conn` (pipeline-friendly).
+  On a completed sign-in: refresh the Member's people profile, then track
+  `sign_up_completed` (a brand-new workspace) or `signed_in`, sending the
+  same-week anonymous `device_id` + the Member id so Mixpanel merges the
+  pre-signup journey to the Member. Returns `conn` (pipeline-friendly).
   """
-  def track_authentication(conn, user, auth_method, mfa, registered?, attribution) do
+  def track_authentication(
+        conn,
+        %Accounts.Membership{} = member,
+        auth_method,
+        mfa,
+        registered?,
+        attribution
+      ) do
     method = to_string(auth_method)
     %{campaign: campaign} = attribution
     people_opts = people_attribution_opts(campaign, registered?)
 
     Analytics.set_people(
-      user.id,
+      member.id,
       %{
-        "$name" => user.full_name,
-        "$email" => user.email,
+        "$name" => Accounts.member_display_name(member),
+        "$email" => member.email,
         "auth_method" => method
       },
       people_opts
@@ -112,7 +120,7 @@ defmodule EmisarWeb.Analytics do
     props =
       Map.merge(%{"auth_method" => method, "mfa" => mfa, "$current_url" => nil}, campaign)
 
-    emit(conn, event, user.id, props, device_id: device_id(conn), user_id: user.id)
+    emit(conn, event, member.id, props, device_id: device_id(conn), user_id: member.id)
     conn
   end
 
@@ -133,13 +141,11 @@ defmodule EmisarWeb.Analytics do
 
   def track_sign_up_started(conn, false), do: conn
 
-  @doc "On logout: track `signed_out` for the still-current user. Returns `conn`."
-  def track_sign_out(conn) do
-    user = conn.assigns[:current_user]
-
-    if user do
-      emit(conn, "signed_out", user.id, %{}, user_id: user.id)
-    end
+  @doc "On sign-out: track `signed_out` once per Member whose session ended. Returns `conn`."
+  def track_sign_out(conn, members) when is_list(members) do
+    Enum.each(members, fn member ->
+      emit(conn, "signed_out", member.id, %{}, user_id: member.id)
+    end)
 
     conn
   end
@@ -148,16 +154,18 @@ defmodule EmisarWeb.Analytics do
 
   # distinct_id + merge opts. Anonymous = the cookieless weekly device hash,
   # `$device:`-prefixed so Mixpanel treats it as a mergeable device (not a
-  # separate identified user). Identified = the user id (+ the device hash, so
-  # the first post-login event merges the same-week anonymous journey).
+  # separate identified user). Identified = the Member id of the workspace
+  # session this request resolved (+ the device hash, so the first post-login
+  # event merges the same-week anonymous journey). Marketing pages resolve no
+  # workspace, so they stay anonymous even for a signed-in browser.
   defp identity(conn) do
-    case conn.assigns[:current_user] do
+    case conn.assigns[:current_membership] do
       nil ->
         id = device_id(conn)
         {"$device:" <> id, [device_id: id]}
 
-      user ->
-        {user.id, [user_id: user.id, device_id: device_id(conn)]}
+      %Accounts.Membership{id: member_id} ->
+        {member_id, [user_id: member_id, device_id: device_id(conn)]}
     end
   end
 
@@ -212,7 +220,7 @@ defmodule EmisarWeb.Analytics do
 
   defp current_url(conn), do: "#{conn.scheme}://#{conn.host}#{analytics_path(conn.request_path)}"
 
-  defp authenticated?(conn), do: conn.assigns[:current_user] != nil
+  defp authenticated?(conn), do: conn.assigns[:current_membership] != nil
 
   defp sanitize_referrer(nil), do: nil
 
@@ -228,7 +236,6 @@ defmodule EmisarWeb.Analytics do
   defp analytics_path(path) do
     case String.split(path, "/", trim: true) do
       ["accept_invitation", _token] -> "/accept_invitation/:token"
-      ["confirm", _token] -> "/confirm/:token"
       ["sign_in", "magic", _token_id, _secret] -> "/sign_in/magic/:token_id/:secret"
       _other -> path
     end

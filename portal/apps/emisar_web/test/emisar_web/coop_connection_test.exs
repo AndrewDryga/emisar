@@ -44,7 +44,7 @@ defmodule EmisarWeb.CoopConnectionTest do
   test "co:op shows its configuration on selection and keeps one member-bound key", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
     assert Repo.all(ApiKey) == []
     render_click(lv, "select_client", %{"client" => "coop"})
@@ -69,7 +69,7 @@ defmodule EmisarWeb.CoopConnectionTest do
     [key] = Repo.all(ApiKey)
     assert key.name == "co:op"
     assert key.account_id == account.id
-    assert key.created_by_membership_id == owner_subject(user, account).membership_id
+    assert key.created_by_membership_id == Fixtures.Subjects.subject_for(owner).membership_id
 
     config =
       lv
@@ -97,7 +97,7 @@ defmodule EmisarWeb.CoopConnectionTest do
   end
 
   test "co:op setup shows the complete procedure and filled configuration together", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
     render_click(lv, "select_client", %{"client" => "coop"})
 
@@ -154,15 +154,10 @@ defmodule EmisarWeb.CoopConnectionTest do
 
   test "a viewer cannot mint a co:op key through forged events", %{conn: conn} do
     account = Fixtures.Accounts.create_account()
-    viewer = Fixtures.Users.create_user()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: viewer.id,
-      role: "viewer"
-    )
+    viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-    {:ok, lv, _} = conn |> log_in_user(viewer) |> live(~p"/app/#{account}/agents/connect")
+    {:ok, lv, _} = conn |> log_in_member(viewer) |> live(~p"/app/#{account}/agents/connect")
 
     assert render_click(lv, "select_client", %{"client" => "coop"}) =~
              "You don&#39;t have permission to do that."
@@ -177,30 +172,23 @@ defmodule EmisarWeb.CoopConnectionTest do
   } do
     account = Fixtures.Accounts.create_account()
     other_account = Fixtures.Accounts.create_account()
-    operator = Fixtures.Users.create_user()
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+    operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-    {:ok, lv, _} = conn |> log_in_user(operator) |> live(~p"/app/#{account}/agents/connect")
+    {:ok, lv, _} = conn |> log_in_member(operator) |> live(~p"/app/#{account}/agents/connect")
 
     render_click(lv, "select_client", %{"client" => "coop", "account_id" => other_account.id})
 
     assert has_element?(lv, "#coop-config")
     [key] = Repo.all(ApiKey)
     assert key.account_id == account.id
-    assert key.created_by_membership_id == membership.id
+    assert key.created_by_membership_id == operator.id
   end
 
   test "failed configuration preparation stays inline and can be retried", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    {conn, owner, account} = register_and_log_in(conn)
     {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
-    downgraded = Fixtures.Memberships.force_role(membership, "viewer")
+    downgraded = Fixtures.Memberships.force_role(owner, "viewer")
 
     render_click(lv, "select_client", %{"client" => "coop"})
 

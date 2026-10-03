@@ -7,6 +7,7 @@ defmodule Emisar.AccountsTest do
   alias Emisar.Audit
   alias Emisar.Audit.Event, as: AuditEvent
   alias Emisar.Auth
+  alias Emisar.Auth.UserToken
   alias Emisar.Crypto
   alias Emisar.Fixtures
   alias Emisar.Mail
@@ -14,7 +15,6 @@ defmodule Emisar.AccountsTest do
   alias Emisar.RequestContext
   alias Emisar.Runbooks.Runbook
   alias Emisar.Runs.ActionRun
-  alias Emisar.Users
   alias Emisar.Users.User
 
   describe "action_in_runner_access?/3" do
@@ -137,240 +137,47 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "erase_user_and_owned_accounts/1" do
-    test "deletes an account when the user is its sole live owner" do
-      user = Fixtures.Users.create_user()
+    test "deletes an account when the legacy login is its sole live owner" do
+      login = legacy_login()
       account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      user_id = user.id
+      member = legacy_member(account, login, "owner")
+      login_id = login.id
       account_id = account.id
 
-      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
+      assert {:ok, %User{id: ^login_id}} = Accounts.erase_user_and_owned_accounts(login_id)
 
-      assert Repo.one(User.Query.all() |> User.Query.by_id(user_id)) == nil
+      assert Repo.one(User.Query.all() |> User.Query.by_id(login_id)) == nil
       assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)) == nil
-
-      assert Repo.one(
-               Membership.Query.all()
-               |> Membership.Query.by_account_and_user(account_id, user_id)
-             ) == nil
+      refute Repo.reload(member)
     end
 
     test "keeps an account when another live owner exists and removes this membership" do
-      user = Fixtures.Users.create_user()
-      other_owner = Fixtures.Users.create_user()
+      login = legacy_login()
       account = Fixtures.Accounts.create_account()
+      member = legacy_member(account, login, "owner")
+      other_owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      login_id = login.id
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      assert {:ok, %User{id: ^login_id}} = Accounts.erase_user_and_owned_accounts(login_id)
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: other_owner.id,
-        role: "owner"
-      )
-
-      user_id = user.id
-      account_id = account.id
-
-      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
-
-      assert Repo.one(User.Query.all() |> User.Query.by_id(user_id)) == nil
-      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)).id == account_id
-
-      assert Repo.one(
-               Membership.Query.all()
-               |> Membership.Query.by_account_and_user(account_id, user_id)
-             ) == nil
-
-      assert Repo.one(
-               Membership.Query.all()
-               |> Membership.Query.by_account_and_user(account_id, other_owner.id)
-             ).user_id == other_owner.id
+      assert Repo.one(User.Query.all() |> User.Query.by_id(login_id)) == nil
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account.id)).id == account.id
+      refute Repo.reload(member)
+      assert Repo.reload!(other_owner)
     end
 
-    test "keeps an account when the user is a non-owner member and removes this membership" do
-      user = Fixtures.Users.create_user()
+    test "keeps an account when the login is a non-owner member and removes this membership" do
+      login = legacy_login()
       account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      member = legacy_member(account, login, "operator")
+      login_id = login.id
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "operator"
-      )
+      assert {:ok, %User{id: ^login_id}} = Accounts.erase_user_and_owned_accounts(login_id)
 
-      user_id = user.id
-      account_id = account.id
-
-      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
-
-      assert Repo.one(User.Query.all() |> User.Query.by_id(user_id)) == nil
-      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)).id == account_id
-
-      assert Repo.one(
-               Membership.Query.all()
-               |> Membership.Query.by_account_and_user(account_id, user_id)
-             ) == nil
-    end
-
-    test "deletes the sole-owner account and keeps the co-owned account" do
-      user = Fixtures.Users.create_user()
-      other_owner = Fixtures.Users.create_user()
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account_a.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      Fixtures.Memberships.create_membership(
-        account_id: account_b.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      Fixtures.Memberships.create_membership(
-        account_id: account_b.id,
-        user_id: other_owner.id,
-        role: "owner"
-      )
-
-      user_id = user.id
-      account_a_id = account_a.id
-      account_b_id = account_b.id
-
-      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
-
-      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_a_id)) == nil
-      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_b_id)).id == account_b_id
-
-      assert Repo.one(
-               Membership.Query.all()
-               |> Membership.Query.by_account_and_user(account_b_id, user_id)
-             ) == nil
-
-      assert Repo.one(
-               Membership.Query.all()
-               |> Membership.Query.by_account_and_user(account_b_id, other_owner.id)
-             ).user_id == other_owner.id
-    end
-
-    test "audits the seat each SURVIVING account loses, and only those" do
-      user = Fixtures.Users.create_user()
-      other_owner = Fixtures.Users.create_user()
-      sole_owned = Fixtures.Accounts.create_account()
-      co_owned = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: sole_owned.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      lost_seat =
-        Fixtures.Memberships.create_membership(
-          account_id: co_owned.id,
-          user_id: user.id,
-          role: "operator"
-        )
-
-      Fixtures.Memberships.create_membership(
-        account_id: co_owned.id,
-        user_id: other_owner.id,
-        role: "owner"
-      )
-
-      user_id = user.id
-      co_owned_id = co_owned.id
-
-      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
-
-      # The erased account is gone, so its rows cascaded with it; only the account
-      # whose roster actually lost a seat keeps a record of it.
-      assert %AuditEvent{} = event = Repo.one(AuditEvent)
-      assert event.event_type == "membership.erased"
-      assert event.account_id == co_owned_id
-      assert event.actor_kind == "staff"
-      assert event.target_kind == "membership"
-      assert event.target_id == lost_seat.id
-      assert event.target_label == user.full_name
-      assert event.payload["role"] == "operator"
-    end
-
-    test "writes nothing when the user's only account is erased with them" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      assert {:ok, %User{}} = Accounts.erase_user_and_owned_accounts(user.id)
-
-      refute Repo.one(AuditEvent)
-    end
-
-    test "counts only non-deleted owner memberships" do
-      user = Fixtures.Users.create_user()
-      former_owner = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      former_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: former_owner.id,
-          role: "owner"
-        )
-
-      Fixtures.Memberships.mark_membership_as_deleted(former_membership)
-      user_id = user.id
-      account_id = account.id
-
-      assert {:ok, %User{id: ^user_id}} = Accounts.erase_user_and_owned_accounts(user_id)
-      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)) == nil
-    end
-
-    test "a pending owner invitation does not preserve an ownerless account" do
-      owner = Fixtures.Users.create_user()
-      invitee = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      owner_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
-
-      owner_subject = Fixtures.Subjects.membership_subject(owner_membership)
-
-      assert {:ok, %{membership: pending_owner}} =
-               Accounts.invite_user_to_account(
-                 Fixtures.Accounts.invitation_attrs(email: invitee.email, role: "owner"),
-                 owner_subject
-               )
-
-      assert Membership.invitation_pending?(pending_owner)
-      assert {:ok, %User{}} = Accounts.erase_user_and_owned_accounts(owner.id)
-      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account.id)) == nil
+      assert Repo.one(User.Query.all() |> User.Query.by_id(login_id)) == nil
+      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account.id)).id == account.id
+      refute Repo.reload(member)
     end
 
     test "returns not_found for malformed or unknown ids" do
@@ -411,24 +218,6 @@ defmodule Emisar.AccountsTest do
                |> Repo.transaction()
 
       assert id == account.id
-    end
-  end
-
-  describe "fetch_and_lock_session_accounts/2" do
-    test "returns distinct active destinations while fencing inactive and ignoring missing accounts" do
-      active = Fixtures.Accounts.create_account()
-      disabled = Fixtures.Accounts.create_account() |> Fixtures.Accounts.disable_account()
-      deleted = Fixtures.Accounts.create_account() |> Fixtures.Accounts.mark_account_as_deleted()
-      ids = [active.id, disabled.id, active.id, deleted.id, Ecto.UUID.generate(), "invalid"]
-
-      assert {:ok, %{accounts: accounts}} =
-               Multi.new()
-               |> Multi.run(:accounts, fn repo, _changes ->
-                 Accounts.fetch_and_lock_session_accounts(ids, repo)
-               end)
-               |> Repo.commit_multi()
-
-      assert accounts == %{active.id => active}
     end
   end
 
@@ -506,7 +295,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "tenant owners cannot replace or clear support settings, including the whole embed" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       url = "https://workspace.slack.com/archives/C01234567"
       assert {:ok, account} = Accounts.put_support_slack_url(account.id, url)
 
@@ -520,7 +309,7 @@ defmodule Emisar.AccountsTest do
         assert Repo.reload!(account).settings.support_slack_url == url
       end
 
-      {_other_user, _other_account, foreign_subject} = Fixtures.Subjects.owner_subject()
+      {_other_owner, _other_account, foreign_subject} = Fixtures.Subjects.owner_subject()
 
       assert {:error, :unauthorized} =
                Accounts.update_account(
@@ -556,100 +345,51 @@ defmodule Emisar.AccountsTest do
 
   describe "ensure_account_compliant/2" do
     setup do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, account: account, subject: subject}
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: owner, account: account, subject: subject}
     end
 
-    test "require_sso is not satisfied by another account's identity provider", %{
-      user: user,
+    test "require_sso is satisfied only by this workspace's own SSO session", %{
       account: account,
-      subject: subject
+      subject: email_subject
     } do
       Fixtures.Accounts.create_subscription(account, "team")
-      Fixtures.SSO.create_identity_provider(account_id: account.id)
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      identity =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: member
+        })
+
       account = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
 
-      other_account = Fixtures.Accounts.create_account()
-      other_provider = Fixtures.SSO.create_identity_provider(account_id: other_account.id)
+      sso_subject =
+        Fixtures.Subjects.subject_for(member, auth_method: :sso, user_identity_id: identity.id)
 
-      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: user.id)
-
-      foreign_identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: other_account.id,
-          provider_id: other_provider.id,
-          user_id: user.id
-        )
-
-      foreign_sso_subject = %{
-        subject
-        | auth_method: :sso,
-          user_identity_id: foreign_identity.id
-      }
-
-      assert Accounts.ensure_account_compliant(account, foreign_sso_subject) ==
-               {:error, :sso_required}
-    end
-
-    # The org's other workspace on the SAME IdP: one login must satisfy each
-    # workspace's require_sso, and each workspace applies its OWN MFA policy to
-    # that shared login. Without this, federation resolved the sibling only for
-    # the compliance gate to reject it.
-    test "require_sso and require_mfa are satisfied through a federated sibling's IdP", %{
-      user: user,
-      account: account
-    } do
-      issuer = "https://acme-federated.okta.test"
-      Fixtures.Accounts.create_subscription(account, "team")
-
-      own_provider =
-        Fixtures.SSO.create_identity_provider(
-          account_id: account.id,
-          issuer: issuer,
-          satisfies_mfa: true
-        )
-
-      own_identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: account.id,
-          provider_id: own_provider.id,
-          user_id: user.id
-        )
-
-      sibling = Fixtures.Accounts.create_account()
-      Fixtures.Accounts.create_subscription(sibling, "team")
-
-      sibling_provider =
-        Fixtures.SSO.create_identity_provider(account_id: sibling.id, issuer: issuer)
-
-      Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: user.id)
-
-      sibling_identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: sibling.id,
-          provider_id: sibling_provider.id,
-          user_id: user.id,
-          provider_identifier: own_identity.provider_identifier
-        )
-
-      # The session authenticated at the sibling, through the shared IdP.
-      sibling_sso_subject =
-        Fixtures.Subjects.subject_for(user, account,
-          auth_method: :sso,
-          user_identity_id: sibling_identity.id
-        )
-
-      account =
-        Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
-
-      assert Accounts.ensure_account_compliant(account, sibling_sso_subject) == :ok
+      assert Accounts.ensure_account_compliant(account, email_subject) == {:error, :sso_required}
+      assert Accounts.ensure_account_compliant(account, sso_subject) == :ok
 
       # This workspace stops trusting the IdP's second factor: SSO still
       # satisfied, MFA no longer waived.
-      own_provider |> Ecto.Changeset.change(satisfies_mfa: false) |> Repo.update!()
+      account =
+        Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
 
-      assert Accounts.ensure_account_compliant(account, sibling_sso_subject) ==
-               {:error, :mfa_required}
+      provider |> Ecto.Changeset.change(satisfies_mfa: true) |> Repo.update!()
+
+      trusted =
+        Fixtures.Subjects.subject_for(member,
+          auth_method: :sso,
+          user_identity_id: identity.id,
+          mfa: true
+        )
+
+      assert Accounts.ensure_account_compliant(account, trusted) == :ok
+
+      Repo.reload!(provider) |> Ecto.Changeset.change(satisfies_mfa: false) |> Repo.update!()
+      assert Accounts.ensure_account_compliant(account, trusted) == {:error, :mfa_required}
     end
 
     test "require_sso fails open when the retained provider's paid access has expired", %{
@@ -669,14 +409,16 @@ defmodule Emisar.AccountsTest do
       subject: subject
     } do
       account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
-      {user, _recovery_codes} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      {user, _recovery_codes} =
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
       enrolled_only = %{subject | actor: user, mfa: false}
 
       assert Accounts.ensure_account_compliant(account, enrolled_only) ==
                {:error, :mfa_required}
 
-      proved = Fixtures.Subjects.subject_for(user, account, mfa: true)
+      proved = Fixtures.Subjects.subject_for(user, mfa: true)
 
       assert Accounts.ensure_account_compliant(account, proved) == :ok
     end
@@ -686,20 +428,20 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
 
       {enrolled, [recovery_code | _]} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
 
-      proved_subject = Fixtures.Subjects.subject_for(enrolled, account, mfa: true)
+      proved_subject = Fixtures.Subjects.subject_for(enrolled, mfa: true)
 
       assert Accounts.ensure_account_compliant(account, proved_subject) == :ok
 
       {:ok, disabled} = Auth.disable_mfa(recovery_code, proved_subject)
-      disabled_subject = Fixtures.Subjects.subject_for(disabled, account)
+      disabled_subject = Fixtures.Subjects.subject_for(disabled)
 
       assert Accounts.ensure_account_compliant(account, disabled_subject) ==
                {:error, :mfa_required}
 
       {re_enrolled, _codes} =
-        Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), disabled_subject)
+        Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), disabled_subject)
 
       replayed_subject = %{proved_subject | actor: re_enrolled, mfa: true}
 
@@ -719,7 +461,7 @@ defmodule Emisar.AccountsTest do
         Fixtures.SSO.create_user_identity(
           account_id: account.id,
           provider_id: provider.id,
-          user_id: user.id
+          membership: user
         )
 
       account = Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
@@ -739,7 +481,7 @@ defmodule Emisar.AccountsTest do
       user: user,
       account: account
     } do
-      subject = Fixtures.Subjects.build_subject(user: user, account: account)
+      subject = Fixtures.Subjects.build_subject(member: user, account: account)
 
       assert Accounts.ensure_account_compliant(account, subject) == {:error, :unauthorized}
     end
@@ -753,8 +495,8 @@ defmodule Emisar.AccountsTest do
 
   describe "account_compliance_for_session/2" do
     setup do
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
-      %{user: user, account: account, subject: subject}
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      %{user: owner, account: account, subject: subject}
     end
 
     test "an account mandating neither control is compliant", %{
@@ -812,20 +554,44 @@ defmodule Emisar.AccountsTest do
         Fixtures.SSO.create_user_identity(
           account_id: account.id,
           provider_id: provider.id,
-          user_id: user.id
+          membership: user
         )
 
       account =
         Fixtures.Accounts.set_account_settings(account, %{require_sso: true, require_mfa: true})
 
       sso_subject =
-        Fixtures.Subjects.subject_for(user, account,
+        Fixtures.Subjects.subject_for(user,
           auth_method: :sso,
-          user_identity_id: identity.id
+          user_identity_id: identity.id,
+          mfa: true
         )
 
       assert Accounts.ensure_account_compliant(account, sso_subject) == :ok
       assert Accounts.account_compliance_for_session(account, sso_subject) == :ok
+    end
+  end
+
+  describe "email_sign_in_allowed?/1" do
+    test "refuses the emailed code only while require_sso has an enabled connection to point to" do
+      account = Fixtures.Accounts.create_account(plan: "team")
+      assert Accounts.email_sign_in_allowed?(account)
+
+      # The policy with no connection to point to fails open: a workspace that
+      # lost its last connection keeps a way in.
+      requiring = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+      assert Accounts.email_sign_in_allowed?(requiring)
+
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      refute Accounts.email_sign_in_allowed?(requiring)
+
+      Fixtures.SSO.disable_provider(provider)
+      assert Accounts.email_sign_in_allowed?(requiring)
+
+      # Only this workspace's connections count.
+      other = Fixtures.Accounts.create_account(plan: "team")
+      Fixtures.SSO.create_identity_provider(account_id: other.id)
+      assert Accounts.email_sign_in_allowed?(requiring)
     end
   end
 
@@ -971,17 +737,10 @@ defmodule Emisar.AccountsTest do
     end
 
     test "a member cannot close their own account" do
-      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
-      member = Fixtures.Users.create_user()
+      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: :viewer
-        )
-
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Accounts.close_account(account.id, "nope", subject) == {:error, :unauthorized}
     end
@@ -997,7 +756,7 @@ defmodule Emisar.AccountsTest do
       {_owner, account, owner_support} = Fixtures.Subjects.owner_subject()
 
       viewer =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
         )
 
@@ -1144,16 +903,16 @@ defmodule Emisar.AccountsTest do
              ) == {:error, :not_found}
     end
 
-    test "locks members out of the disabled account without touching their other accounts" do
+    test "locks members out of the disabled account without touching other workspaces" do
       {_actor, account, support_subject} = Fixtures.Subjects.owner_subject()
       other_account = Fixtures.Accounts.create_account()
-      member = Fixtures.Users.create_user()
-      outsider = Fixtures.Users.create_user()
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
-      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: member.id)
+      elsewhere =
+        Fixtures.Memberships.create_membership(account_id: other_account.id, email: member.email)
+
       member_token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
-      outsider_token = Fixtures.Auth.create_session_token!(outsider, :magic_link, nil)
+      elsewhere_token = Fixtures.Auth.create_session_token!(elsewhere, :magic_link, nil)
 
       assert {:ok, _account} =
                Accounts.set_account_disabled_for_support(
@@ -1163,26 +922,14 @@ defmodule Emisar.AccountsTest do
                  support_subject
                )
 
-      # The member stays signed in, and keeps the account that was NOT disabled —
-      # a session token is per-user, so revoking it here would sign them out of
-      # every tenant they belong to.
-      assert {:ok, %{user: %User{id: member_id}} = session} =
-               Emisar.Auth.fetch_session_by_token(member_token)
+      # The disabled workspace no longer authenticates its sessions; a Member of
+      # another workspace at the same address keeps its own.
+      assert Auth.fetch_session_by_token(member_token, account.id) == {:error, :not_found}
 
-      assert member_id == member.id
+      assert {:ok, %UserToken{membership_id: elsewhere_id}} =
+               Auth.fetch_session_by_token(elsewhere_token, other_account.id)
 
-      assert {:ok, %Membership{}} =
-               Accounts.fetch_membership_by_account_id_or_slug(other_account.id, session)
-
-      # ...but the disabled account itself is gone on the next navigation, which
-      # re-resolves the membership from the URL.
-      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
-               {:error, :not_found}
-
-      assert {:ok, %{user: %User{id: outsider_id}}} =
-               Emisar.Auth.fetch_session_by_token(outsider_token)
-
-      assert outsider_id == outsider.id
+      assert elsewhere_id == elsewhere.id
     end
   end
 
@@ -1204,410 +951,72 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "list_accounts_for_user/2" do
-    test "lists every account the user is a non-suspended member of, name-ordered" do
-      user = Fixtures.Users.create_user()
-      zebra = Fixtures.Accounts.create_account(name: "Zebra Co")
-      apple = Fixtures.Accounts.create_account(name: "Apple Co")
-      Fixtures.Memberships.create_membership(account_id: zebra.id, user_id: user.id)
-      Fixtures.Memberships.create_membership(account_id: apple.id, user_id: user.id)
+  describe "create_account_with_invited_owner/3" do
+    test "creates the workspace with a pending owner invitation, its policy and both audit rows, and delivers the invitation" do
+      slug = "staff-made-#{System.unique_integer([:positive])}"
+      email = Fixtures.Random.unique_email()
 
-      subject = Fixtures.Subjects.subject_for(user, apple)
-
-      assert {:ok, accounts, _meta} = Accounts.list_accounts_for_user(subject)
-      assert Enum.map(accounts, & &1.name) == ["Apple Co", "Zebra Co"]
-
-      assert MapSet.equal?(
-               MapSet.new(accounts, & &1.id),
-               MapSet.new([zebra.id, apple.id])
-             )
-    end
-
-    test "excludes a suspended membership's account" do
-      user = Fixtures.Users.create_user()
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-
-      membership_a =
-        Fixtures.Memberships.create_membership(
-          account_id: account_a.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      _membership_b =
-        Fixtures.Memberships.create_membership(
-          account_id: account_b.id,
-          user_id: user.id,
-          role: "owner"
-        )
-        |> Fixtures.Memberships.suspend_membership()
-
-      subject = Fixtures.Subjects.membership_subject(membership_a)
-
-      assert {:ok, accounts, _} = Accounts.list_accounts_for_user(subject)
-
-      ids = Enum.map(accounts, & &1.id)
-      assert account_a.id in ids
-      refute account_b.id in ids
-    end
-
-    test "returns an empty list for a user with no memberships" do
-      user = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.build_subject(user: user)
-
-      assert {:ok, [], _} = Accounts.list_accounts_for_user(subject)
-    end
-
-    test "never shows a workspace the actor is not a member of" do
-      user = Fixtures.Users.create_user()
-      mine = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: mine.id, user_id: user.id)
-
-      {_other_user, theirs, _their_subject} = Fixtures.Subjects.owner_subject()
-
-      # This read is the documented cross-account exception — it deliberately
-      # skips `for_subject/2` — so its isolation runs on the bearer's grants, and
-      # the subject's own account is not what narrows it.
-      subject = %{Fixtures.Subjects.subject_for(user, mine) | account: theirs}
-
-      assert {:ok, accounts, _meta} = Accounts.list_accounts_for_user(subject)
-      assert Enum.map(accounts, & &1.id) == [mine.id]
-    end
-  end
-
-  describe "begin_owner_registration/2" do
-    test "validates the workspace and creates only the resumable user" do
-      user_attrs = %{email: Fixtures.Random.unique_email(), full_name: "New Owner"}
-      account_attrs = Fixtures.Accounts.account_attrs()
-
-      assert {:ok, %User{} = user} =
-               Accounts.begin_owner_registration(user_attrs, account_attrs)
-
-      assert user.email == user_attrs.email
-      refute user.full_name
-      refute Repo.one(Account)
-      refute Repo.one(Membership)
-    end
-
-    test "an invitation before inbox proof neither names nor seats the pending signup" do
-      submitted_email = Fixtures.Random.unique_email()
-      signup = %{email: submitted_email, full_name: "Unproved Name"}
-
-      assert {:ok, %User{} = user} =
-               Accounts.begin_owner_registration(signup, Fixtures.Accounts.account_attrs())
-
-      {_inviter, _account, subject} = Fixtures.Subjects.owner_subject()
-
-      assert {:ok, %{membership: invitation}} =
-               Accounts.invite_user_to_account(
-                 Fixtures.Accounts.invitation_attrs(email: submitted_email),
-                 subject
+      assert {:ok, %{account: account, membership: owner, delivery: {:ok, :sent}}} =
+               Accounts.create_account_with_invited_owner(
+                 %{name: "Staff Made", slug: slug},
+                 email,
+                 %{full_name: "Emisar Support", email: "support@emisar.dev"}
                )
 
-      assert is_nil(invitation.user_id)
-      assert Repo.reload!(user) == user
+      assert account.slug == slug
+      assert account.name == "Staff Made"
+      assert owner.account_id == account.id
+      assert owner.role == :owner
+      assert owner.email == email
+      refute owner.email_verified_at
+      assert is_binary(owner.invitation_token_digest)
+      assert is_nil(owner.invitation_accepted_at)
+      assert Accounts.membership_invitation_pending?(owner)
+      # The seat carries an owner's access, which counts only once it is accepted.
+      assert owner.runner_access_mode == :all
+      assert Accounts.runner_access_for_membership(account.id, owner.id) == RunnerAccess.none()
+      assert Repo.get_by!(Policy, account_id: account.id)
 
-      # The signup resumes; the invitation never turns it into the neutral decoy.
-      assert Accounts.begin_owner_registration(signup, Fixtures.Accounts.account_attrs()) ==
-               {:ok, user}
+      assert_received {:email, sent}
+      assert sent.to == [{"", email}]
+      assert sent.text_body =~ "Emisar Support invited you to join Staff Made"
+
+      assert AuditEvent.Query.all()
+             |> AuditEvent.Query.by_account_id(account.id)
+             |> Repo.all()
+             |> Enum.map(& &1.event_type)
+             |> Enum.sort() == ["account.created", "user.invited"]
+
+      # Nobody holds the workspace until the invited inbox accepts.
+      assert is_nil(Accounts.peek_sign_in_membership(account.id, email))
     end
 
-    test "an invalid workspace tags the account changeset and creates no user" do
-      user_attrs = %{email: Fixtures.Random.unique_email(), full_name: "New Owner"}
-      account_attrs = Fixtures.Accounts.account_attrs(slug: "x")
+    test "a taken slug or an invalid address creates nothing" do
+      taken = Fixtures.Accounts.create_account()
+      accounts_before = Repo.aggregate(Account, :count)
 
-      assert {:error, {:account, changeset}} =
-               Accounts.begin_owner_registration(user_attrs, account_attrs)
-
-      assert "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars" in errors_on(
-               changeset
-             ).slug
-
-      refute Repo.one(User)
-      refute Repo.one(Account)
-      refute Repo.one(Membership)
-    end
-
-    test "an established email is neutral and writes no workspace" do
-      existing =
-        Fixtures.Users.create_user()
-        |> Fixtures.Users.set_last_sign_in_at(DateTime.utc_now())
-
-      user_attrs = %{email: existing.email, full_name: "Copy Cat"}
-
-      assert Accounts.begin_owner_registration(user_attrs, Fixtures.Accounts.account_attrs()) ==
-               {:error, :email_taken}
-
-      # `existing` is the only user; the signup's own row never committed.
-      assert Repo.one(User).id == existing.id
-      refute Repo.one(Account)
-      refute Repo.one(Membership)
-    end
-
-    test "a confirmed zero-membership user can resume after factor-one completion fails" do
-      existing = Fixtures.Users.create_user()
-      assert %DateTime{} = existing.confirmed_at
-
-      assert {:ok, resumed} =
-               Accounts.begin_owner_registration(
-                 %{email: existing.email, full_name: "Ignored"},
-                 Fixtures.Accounts.account_attrs()
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Accounts.create_account_with_invited_owner(
+                 %{name: "Dup", slug: taken.slug},
+                 Fixtures.Random.unique_email(),
+                 %{full_name: "Emisar Support"}
                )
 
-      assert resumed.id == existing.id
-      refute Repo.one(Account)
-      refute Repo.one(Membership)
-    end
+      assert %{slug: [_ | _]} = errors_on(changeset)
 
-    test "any live membership keeps a never-signed-in user on the neutral collision path" do
-      account = Fixtures.Accounts.create_account()
-      existing = Fixtures.Users.create_user(confirmed?: false)
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: existing.id)
+      assert {:error, %Ecto.Changeset{} = changeset} =
+               Accounts.create_account_with_invited_owner(
+                 %{
+                   name: "Bad Address",
+                   slug: "bad-address-#{System.unique_integer([:positive])}"
+                 },
+                 "not-an-address",
+                 %{full_name: "Emisar Support"}
+               )
 
-      assert Accounts.begin_owner_registration(
-               %{email: existing.email, full_name: "Ignored"},
-               Fixtures.Accounts.account_attrs()
-             ) == {:error, :email_taken}
-    end
-  end
-
-  describe "put_owner_registration_intent/2" do
-    test "retains the workspace name only while the locked user has never joined or signed in" do
-      user = Fixtures.Users.create_user(confirmed?: false)
-
-      assert {:ok,
-              %{
-                owner_registration: %{
-                  account_name: "First Workspace",
-                  full_name: "Final Name"
-                }
-              }} =
-               Multi.new()
-               |> Multi.run(:user, fn repo, _changes ->
-                 Users.fetch_and_lock_user_by_id(user.id, repo)
-               end)
-               |> Accounts.put_owner_registration_intent(%{
-                 account_name: "First Workspace",
-                 full_name: "Final Name"
-               })
-               |> Repo.transaction()
-    end
-
-    test "turns a replay into an ordinary sign-in once the user has signed in" do
-      user =
-        Fixtures.Users.create_user(confirmed?: false)
-        |> Fixtures.Users.set_last_sign_in_at(DateTime.utc_now())
-
-      assert {:ok, %{owner_registration: nil}} =
-               Multi.new()
-               |> Multi.run(:user, fn repo, _changes ->
-                 Users.fetch_and_lock_user_by_id(user.id, repo)
-               end)
-               |> Accounts.put_owner_registration_intent(%{
-                 account_name: "Second Workspace",
-                 full_name: "Final Name"
-               })
-               |> Repo.transaction()
-    end
-  end
-
-  describe "put_owner_registration/2" do
-    test "composes the workspace and owner membership into the caller's transaction" do
-      user = Fixtures.Users.create_user(confirmed?: false)
-
-      assert {:ok, %{account: account, membership: membership, registration: true}} =
-               Multi.new()
-               |> Multi.put(:registration_user, user)
-               |> Accounts.put_owner_registration(%{
-                 account_name: "Deferred Workspace",
-                 full_name: user.full_name
-               })
-               |> Repo.transaction()
-
-      assert account.name == "Deferred Workspace"
-      assert membership.role == :owner
-      assert membership.user_id == user.id
-      assert membership.account_id == account.id
-
-      signup =
-        AuditEvent.Query.all()
-        |> AuditEvent.Query.by_event_type("user.signed_up")
-        |> Repo.one()
-
-      assert signup.account_id == account.id
-      assert {signup.actor_kind, signup.actor_id} == {"membership", membership.id}
-      assert {signup.target_kind, signup.target_id} == {"membership", membership.id}
-    end
-
-    test "records an ordinary sign-in without creating workspace rows" do
-      assert {:ok, %{registration: false}} =
-               Multi.new()
-               |> Accounts.put_owner_registration(nil)
-               |> Repo.transaction()
-
-      refute Repo.one(Account)
-      refute Repo.one(Membership)
-      refute Repo.one(AuditEvent)
-    end
-
-    test "a failed final transaction rolls back account creation and signup receipts" do
-      user = Fixtures.Users.create_user(confirmed?: false)
-      registration = %{account_name: "Rolled back workspace", full_name: user.full_name}
-
-      assert {:error, :after_registration, :cancelled, _changes} =
-               Multi.new()
-               |> Multi.put(:registration_user, user)
-               |> Accounts.put_owner_registration(registration)
-               |> Multi.error(:after_registration, :cancelled)
-               |> Repo.transaction()
-
-      refute Repo.one(Account)
-      refute Repo.one(Membership)
-      refute Repo.one(AuditEvent)
-    end
-  end
-
-  describe "create_account_with_owner/2" do
-    test "persists account + owner membership in a single transaction" do
-      user = Fixtures.Users.create_user()
-      attrs = Fixtures.Accounts.account_attrs()
-
-      assert {:ok, %Account{} = account} = Accounts.create_account_with_owner(attrs, user)
-
-      assert membership = Repo.one(Membership)
-      assert membership.role == :owner
-      assert membership.user_id == user.id
-      assert membership.account_id == account.id
-    end
-
-    test "rolls back the whole transaction when the account changeset is invalid" do
-      user = Fixtures.Users.create_user()
-      invalid_attrs = Fixtures.Accounts.account_attrs(slug: "x")
-
-      assert {:error, changeset} = Accounts.create_account_with_owner(invalid_attrs, user)
-
-      assert "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars" in errors_on(
-               changeset
-             ).slug
-
-      refute Repo.one(Account)
-      refute Repo.one(Membership)
-    end
-  end
-
-  describe "create_account_with_owner_from_name/2" do
-    setup do
-      user = Fixtures.Users.create_user()
-      raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, session} = Auth.fetch_session_by_token(raw)
-
-      %{
-        user: user,
-        raw: raw,
-        session: session,
-        subject: %Auth.Subject{actor: user, session_token_id: session.id}
-      }
-    end
-
-    test "derives the slug and immediately grants this memberless browser its owner seat", %{
-      session: session,
-      subject: subject
-    } do
-      assert {:ok, %Account{} = account} =
-               Accounts.create_account_with_owner_from_name("Acme Co!", subject)
-
-      assert account.name == "Acme Co!"
-      assert account.slug =~ ~r/^acme-co/
-
-      assert membership = Repo.one(Membership)
-      assert membership.role == :owner
-      assert membership.account_id == account.id
-
-      assert {:ok, current} =
-               Accounts.fetch_membership_by_account_id_or_slug(account.id, session)
-
-      assert current.id == membership.id
-      assert Auth.session_membership_ids(session) == [membership.id]
-    end
-
-    test "reports a rejected derived slug on :name, the only field the form has", %{
-      subject: subject,
-      session: session
-    } do
-      # "x" passes the name validation but derives a 1-character slug the
-      # account slug format rejects — an error with no input of its own.
-      assert {:error, changeset} = Accounts.create_account_with_owner_from_name("x", subject)
-
-      assert "must be lowercase letters/numbers/hyphens, start with a letter, 3-64 chars" in errors_on(
-               changeset
-             ).name
-
-      refute Repo.one(Account)
-      refute Repo.one(Membership)
-      assert Auth.session_grant_account_ids(session.id) == []
-    end
-
-    test "leaves an existing :name error alone", %{subject: subject} do
-      assert {:error, changeset} = Accounts.create_account_with_owner_from_name("", subject)
-
-      assert "can't be blank" in errors_on(changeset).name
-      assert length(errors_on(changeset).name) == 1
-    end
-
-    test "creation does not discover unrelated late memberships or refresh personal proof", %{
-      user: user,
-      subject: subject,
-      session: session
-    } do
-      sibling = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: user.id)
-      other_raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, other_session} = Auth.fetch_session_by_token(other_raw)
-
-      assert {:ok, created} =
-               Accounts.create_account_with_owner_from_name("Personal Workspace", subject)
-
-      assert Auth.session_grant_account_ids(session.id) == [created.id]
-      assert Auth.session_grant_account_ids(other_session.id) == [sibling.id]
-      assert Repo.reload!(session).personal_expires_at == session.personal_expires_at
-
-      [route] =
-        Auth.MemberGrantRoute.Query.all()
-        |> Auth.MemberGrantRoute.Query.by_token_id(session.id)
-        |> Repo.all()
-
-      assert route.proved_at == session.personal_proved_at
-      assert route.expires_at == session.personal_expires_at
-    end
-
-    test "another User's session cannot create any workspace", %{subject: subject} do
-      other = %{subject | actor: Fixtures.Users.create_user()}
-
-      assert Accounts.create_account_with_owner_from_name("Forbidden Workspace", other) ==
-               {:error, :unauthorized}
-
-      refute Repo.exists?(Account)
-      refute Repo.exists?(Membership)
-      refute Repo.exists?(Auth.MemberGrant)
-    end
-
-    test "expired personal proof and a revoked bearer cannot create any workspace", %{
-      subject: subject,
-      raw: raw
-    } do
-      Fixtures.Auth.expire_session_independent_proofs!(raw)
-
-      assert Accounts.create_account_with_owner_from_name("Expired Workspace", subject) ==
-               {:error, :unauthorized}
-
-      assert :ok = Auth.delete_session_token(raw)
-
-      assert Accounts.create_account_with_owner_from_name("Revoked Workspace", subject) ==
-               {:error, :unauthorized}
-
-      refute Repo.exists?(Account)
-      refute Repo.exists?(Membership)
+      assert %{email: [_ | _]} = errors_on(changeset)
+      assert Repo.aggregate(Account, :count) == accounts_before
+      refute_received {:email, _}
     end
   end
 
@@ -1619,7 +1028,11 @@ defmodule Emisar.AccountsTest do
       # there it read providers outside the write's transaction, so a concurrent
       # disable could slip through.
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       assert Accounts.update_account(account, %{settings: %{require_sso: true}}, subject) ==
                {:error, :require_sso_without_provider}
@@ -1629,7 +1042,12 @@ defmodule Emisar.AccountsTest do
 
     test "a disabled connection is not a way in" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       Fixtures.SSO.create_identity_provider(account_id: account.id, enabled: false)
 
       assert Accounts.update_account(account, %{settings: %{require_sso: true}}, subject) ==
@@ -1638,7 +1056,11 @@ defmodule Emisar.AccountsTest do
 
     test "turning the requirement OFF never needs a provider" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       assert {:ok, _} =
                Accounts.update_account(account, %{settings: %{require_sso: false}}, subject)
@@ -1646,7 +1068,12 @@ defmodule Emisar.AccountsTest do
 
     test "an owner can enable require_sso" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       Fixtures.Accounts.create_subscription(account, "team")
 
       # require_sso needs a way in — enabling it with no enabled connection would
@@ -1660,15 +1087,9 @@ defmodule Emisar.AccountsTest do
     test "an admin can enable require_sso (owners + admins manage security settings)" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team")
-      admin = Fixtures.Users.create_user()
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
-
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       # require_sso needs a way in — enabling it with no enabled connection would
       # lock everyone out, owners included, so the domain refuses it.
@@ -1680,15 +1101,9 @@ defmodule Emisar.AccountsTest do
 
     test "an operator cannot change a security setting (no manage_security_settings)" do
       account = Fixtures.Accounts.create_account()
-      operator = Fixtures.Users.create_user()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
 
       assert Accounts.update_account(
                account,
@@ -1702,7 +1117,11 @@ defmodule Emisar.AccountsTest do
     test "an owner of another account can't toggle this account's require_sso (cross-account)" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      subject_b = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b)
+
+      subject_b =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account_b.id, role: :owner)
+        )
 
       assert Accounts.update_account(account_a, %{settings: %{require_sso: true}}, subject_b) ==
                {:error, :unauthorized}
@@ -1713,7 +1132,11 @@ defmodule Emisar.AccountsTest do
     test "an owner of another account can't toggle this account's require_mfa (cross-account)" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      subject_b = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b)
+
+      subject_b =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account_b.id, role: :owner)
+        )
 
       assert Accounts.update_account(account_a, %{settings: %{require_mfa: true}}, subject_b) ==
                {:error, :unauthorized}
@@ -1723,15 +1146,9 @@ defmodule Emisar.AccountsTest do
 
     test "an admin can rename the account — only the security flags need manage_security_settings" do
       account = Fixtures.Accounts.create_account()
-      admin = Fixtures.Users.create_user()
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
-
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert {:ok, %Account{name: "Renamed By Admin"}} =
                Accounts.update_account(account, %{name: "Renamed By Admin"}, admin_subject)
@@ -1741,8 +1158,8 @@ defmodule Emisar.AccountsTest do
   describe "update_account/3 — require_mfa self-lockout" do
     test "an unenrolled owner cannot enable MFA enforcement" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(owner, account)
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       assert Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject) ==
                {:error, :mfa_enrollment_required}
@@ -1753,8 +1170,8 @@ defmodule Emisar.AccountsTest do
 
     test "an enrolled owner can enable MFA enforcement with a stale subject" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(owner, account)
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       enroll_mfa(owner)
 
@@ -1762,13 +1179,14 @@ defmodule Emisar.AccountsTest do
                Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject)
     end
 
-    test "an actor whose user row is gone cannot enable MFA enforcement" do
+    test "an actor whose Member row is gone cannot enable MFA enforcement" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(owner, account)
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       enroll_mfa(owner)
-      Fixtures.Users.mark_user_as_deleted(owner)
+      Fixtures.Memberships.mark_membership_as_deleted(owner)
 
       assert Accounts.update_account(account, %{settings: %{require_mfa: true}}, subject) ==
                {:error, :unauthorized}
@@ -1780,13 +1198,7 @@ defmodule Emisar.AccountsTest do
     test "an IdP-proved owner can disable MFA enforcement without local enrollment" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team")
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: :owner
-      )
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
 
       provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: true)
@@ -1795,13 +1207,14 @@ defmodule Emisar.AccountsTest do
         Fixtures.SSO.create_user_identity(
           account_id: account.id,
           provider_id: provider.id,
-          user_id: owner.id
+          membership: owner
         )
 
       subject =
-        Fixtures.Subjects.subject_for(owner, account,
+        Fixtures.Subjects.subject_for(owner,
           auth_method: :sso,
-          user_identity_id: identity.id
+          user_identity_id: identity.id,
+          mfa: true
         )
 
       refute Repo.reload!(owner).mfa_enabled_at
@@ -1815,7 +1228,11 @@ defmodule Emisar.AccountsTest do
   describe "update_account/3 — max_grant_lifetime_seconds (owned by Approvals)" do
     test "an owner cannot set the standing-grant cap through the generic update" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       assert {:error, changeset} =
                Accounts.update_account(
@@ -1832,7 +1249,11 @@ defmodule Emisar.AccountsTest do
 
     test "the kill switch is refused here too — disabling grants is one domain use case" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       assert {:error, changeset} =
                Accounts.update_account(
@@ -1850,8 +1271,8 @@ defmodule Emisar.AccountsTest do
   describe "update_account/3 — multi-setting audit" do
     test "records each changed security setting" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-      subject = Fixtures.Subjects.subject_for(owner, account)
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
       enroll_mfa(owner)
       Fixtures.Accounts.create_subscription(account, "team")
 
@@ -1883,7 +1304,11 @@ defmodule Emisar.AccountsTest do
   describe "update_account/3 — monthly_report_opt_out (a non-security preference)" do
     test "an owner can opt out of the monthly report and back in" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       assert {:ok, %Account{settings: %{monthly_report_opt_out: true}}} =
                Accounts.update_account(
@@ -1902,7 +1327,11 @@ defmodule Emisar.AccountsTest do
 
     test "it is NOT a security change — audited as account.updated, not a security event" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       assert {:ok, _account} =
                Accounts.update_account(
@@ -1916,15 +1345,9 @@ defmodule Emisar.AccountsTest do
 
     test "an operator cannot toggle it (no manage_own_account)" do
       account = Fixtures.Accounts.create_account()
-      operator = Fixtures.Users.create_user()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
 
       assert Accounts.update_account(
                account,
@@ -1952,7 +1375,11 @@ defmodule Emisar.AccountsTest do
   describe "update_account/3 — runner_inactive_retention_hours (owned by Runners)" do
     test "an owner cannot arm the inactivity sweep through the generic update" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       assert {:error, changeset} =
                Accounts.update_account(
@@ -1968,43 +1395,17 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "change_account/2" do
-    test "builds an update changeset for the form (no DB write)" do
-      account = Fixtures.Accounts.create_account()
-
-      assert changeset = Accounts.change_account(account, %{name: "Renamed"})
-      assert changeset.valid?
-      assert changeset.changes == %{name: "Renamed"}
-    end
-
-    test "with no attrs, yields a valid, change-free changeset" do
-      account = Fixtures.Accounts.create_account()
-
-      assert changeset = Accounts.change_account(account)
-      assert changeset.valid?
-      assert changeset.changes == %{}
-    end
-
-    test "surfaces validation errors for the inline form" do
-      account = Fixtures.Accounts.create_account()
-
-      assert changeset = Accounts.change_account(account, %{name: ""})
-      refute changeset.valid?
-      assert "can't be blank" in errors_on(changeset).name
-    end
-  end
-
   describe "put_account_pack_retention_days/3" do
     setup do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       %{account: account, subject: subject}
     end
 
     test "rechecks the current manager and all-pack authority", %{account: account} do
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       {:ok, restricted} = RunnerAccess.restricted(["db"], [])
       Fixtures.Memberships.force_runner_access(membership, restricted)
       assert {:ok, _} = Accounts.put_account_pack_retention_days(account.id, 30, subject)
@@ -2063,7 +1464,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "leaves every other setting alone", %{account: account, subject: subject} do
-      subject = Fixtures.Subjects.subject_for(enroll_mfa(subject.actor), account, mfa: true)
+      subject = Fixtures.Subjects.subject_for(enroll_mfa(subject.actor), mfa: true)
 
       Fixtures.Accounts.set_account_settings(account, %{
         require_mfa: true,
@@ -2092,7 +1493,9 @@ defmodule Emisar.AccountsTest do
       other_account = Fixtures.Accounts.create_account()
 
       other_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), other_account)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: other_account.id, role: :owner)
+        )
 
       assert Accounts.put_account_pack_retention_days(account.id, 30, other_subject) ==
                {:error, :not_found}
@@ -2105,7 +1508,7 @@ defmodule Emisar.AccountsTest do
     setup do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       %{account: account, subject: subject}
     end
 
@@ -2127,7 +1530,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "leaves every other setting alone", %{account: account, subject: subject} do
-      subject = Fixtures.Subjects.subject_for(enroll_mfa(subject.actor), account, mfa: true)
+      subject = Fixtures.Subjects.subject_for(enroll_mfa(subject.actor), mfa: true)
 
       account
       |> Fixtures.Accounts.set_account_settings(%{require_mfa: true})
@@ -2157,7 +1560,9 @@ defmodule Emisar.AccountsTest do
       other_account = Fixtures.Accounts.create_account()
 
       other_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), other_account)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: other_account.id, role: :owner)
+        )
 
       assert Accounts.put_account_runner_inactive_retention_hours(account.id, 24, other_subject) ==
                {:error, :not_found}
@@ -2172,7 +1577,7 @@ defmodule Emisar.AccountsTest do
     setup do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       %{account: account, subject: subject}
     end
 
@@ -2180,8 +1585,8 @@ defmodule Emisar.AccountsTest do
       account: account,
       subject: subject
     } do
-      account.id
-      |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+      subject.actor
+      |> Repo.reload!()
       |> Fixtures.Memberships.force_role("operator")
 
       assert Accounts.put_account_max_grant_lifetime_seconds(account.id, 0, subject) ==
@@ -2220,7 +1625,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "leaves every other setting alone", %{account: account, subject: subject} do
-      subject = Fixtures.Subjects.subject_for(enroll_mfa(subject.actor), account, mfa: true)
+      subject = Fixtures.Subjects.subject_for(enroll_mfa(subject.actor), mfa: true)
 
       account
       |> Fixtures.Accounts.set_account_settings(%{require_mfa: true})
@@ -2250,7 +1655,9 @@ defmodule Emisar.AccountsTest do
       other_account = Fixtures.Accounts.create_account()
 
       other_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), other_account)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: other_account.id, role: :owner)
+        )
 
       assert Accounts.put_account_max_grant_lifetime_seconds(account.id, 0, other_subject) ==
                {:error, :not_found}
@@ -2276,16 +1683,14 @@ defmodule Emisar.AccountsTest do
   describe "list_memberships_for_account/3" do
     test "lists the account's members for a member subject" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.membership_subject(owner_membership)
+      subject = Fixtures.Subjects.subject_for(owner_membership)
       _other_membership = Fixtures.Memberships.create_membership(account_id: account.id)
 
       assert {:ok, memberships, _} = Accounts.list_memberships_for_account(account, subject)
@@ -2317,8 +1722,8 @@ defmodule Emisar.AccountsTest do
 
   describe "touch_membership_activity/1" do
     test "touches once per five-minute window and leaves updated_at alone" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject()
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      membership = Repo.reload!(owner)
 
       assert is_nil(membership.last_active_at)
       assert Accounts.touch_membership_activity(subject) == {:ok, :touched}
@@ -2339,11 +1744,11 @@ defmodule Emisar.AccountsTest do
 
     test "requires the account-view permission" do
       {owner, account, _subject} = Fixtures.Subjects.owner_subject()
-      membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      membership = Repo.reload!(owner)
 
       no_view =
         Fixtures.Subjects.build_subject(
-          user: owner,
+          member: owner,
           account: account,
           membership_id: membership.id,
           role: :runner,
@@ -2356,7 +1761,7 @@ defmodule Emisar.AccountsTest do
 
     test "only touches the actor's current membership" do
       {owner, account, subject} = Fixtures.Subjects.owner_subject()
-      owner_membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
+      owner_membership = Repo.reload!(owner)
       target = Fixtures.Memberships.create_membership(account_id: account.id)
       forged = %{subject | membership_id: target.id}
 
@@ -2366,8 +1771,8 @@ defmodule Emisar.AccountsTest do
     end
 
     test "a cross-account membership id is unauthorized without writing activity" do
-      {owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
-      membership_a = Fixtures.Memberships.fetch_membership(account_a.id, owner_a.id)
+      {owner_a, _account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      membership_a = Repo.reload!(owner_a)
       {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       forged = %{subject_b | actor: owner_a, membership_id: membership_a.id}
 
@@ -2376,17 +1781,17 @@ defmodule Emisar.AccountsTest do
     end
 
     test "suspended and deleted memberships are unauthorized without writing activity" do
-      {owner_suspended, account_suspended, suspended_subject} =
+      {owner_suspended, _account_suspended, suspended_subject} =
         Fixtures.Subjects.owner_subject()
 
       suspended =
-        Fixtures.Memberships.fetch_membership(account_suspended.id, owner_suspended.id)
+        Repo.reload!(owner_suspended)
         |> Fixtures.Memberships.suspend_membership()
 
-      {owner_deleted, account_deleted, deleted_subject} = Fixtures.Subjects.owner_subject()
+      {owner_deleted, _account_deleted, deleted_subject} = Fixtures.Subjects.owner_subject()
 
       deleted =
-        Fixtures.Memberships.fetch_membership(account_deleted.id, owner_deleted.id)
+        Repo.reload!(owner_deleted)
         |> Fixtures.Memberships.mark_membership_as_deleted()
 
       assert Accounts.touch_membership_activity(suspended_subject) == {:error, :unauthorized}
@@ -2396,14 +1801,14 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "record_sso_sign_in_activity/2" do
-    test "stamps exactly the granted Members, never the same person's other seats" do
+  describe "record_sign_in_activity/2" do
+    test "stamps exactly the signing-in Member, never a teammate or a namesake elsewhere" do
       account = Fixtures.Accounts.create_account()
       granted = Fixtures.Memberships.create_membership(account_id: account.id)
       teammate = Fixtures.Memberships.create_membership(account_id: account.id)
-      elsewhere = Fixtures.Memberships.create_membership(user_id: granted.user_id)
+      elsewhere = Fixtures.Memberships.create_membership(email: granted.email)
 
-      assert Accounts.record_sso_sign_in_activity(Repo, [granted.id]) == {:ok, 1}
+      assert Accounts.record_sign_in_activity(Repo, granted) == {:ok, 1}
       assert %DateTime{} = Repo.reload!(granted).last_active_at
       assert is_nil(Repo.reload!(teammate).last_active_at)
       assert is_nil(Repo.reload!(elsewhere).last_active_at)
@@ -2438,8 +1843,7 @@ defmodule Emisar.AccountsTest do
       assert status.values == [
                {"active", "Active"},
                {"pending_invitation", "Pending invitation"},
-               {"suspended", "Suspended"},
-               {"email_unconfirmed", "Email unconfirmed"}
+               {"suspended", "Suspended"}
              ]
     end
   end
@@ -2447,63 +1851,70 @@ defmodule Emisar.AccountsTest do
   describe "list_team_member_facts/3" do
     setup do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
       %{
         account: account,
-        owner: owner,
+        owner: owner_membership,
         owner_membership: owner_membership,
-        subject: Fixtures.Subjects.membership_subject(owner_membership)
+        subject: Fixtures.Subjects.subject_for(owner_membership)
       }
     end
 
-    test "returns one fact per member with its user preloaded", %{
+    test "returns one fact per member, naming each Member's own address", %{
       account: account,
       owner: owner,
       subject: subject
     } do
-      Fixtures.Memberships.create_membership(account_id: account.id)
+      other = Fixtures.Memberships.create_membership(account_id: account.id)
 
       assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
       assert length(facts) == 2
-      assert Enum.all?(facts, &match?(%User{}, &1.membership.user))
-      assert owner.id in Enum.map(facts, & &1.membership.user_id)
+      assert Enum.sort(Enum.map(facts, & &1.membership.id)) == Enum.sort([owner.id, other.id])
+
+      assert Enum.sort(Enum.map(facts, & &1.membership.email)) ==
+               Enum.sort([owner.email, other.email])
+
+      # The roster never carries a Member's TOTP seed or recovery-code digests.
+      assert Enum.all?(
+               facts,
+               &(is_nil(&1.membership.mfa_secret) and &1.membership.mfa_recovery_codes == [])
+             )
     end
 
     test "searches account-local name, user name, and email case-insensitively", %{
       account: account,
       subject: subject
     } do
-      directory_user = Fixtures.Users.create_user(full_name: "Personal Name")
-
       directory_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: directory_user.id
+          display_name: "Personal Name"
         )
         |> Fixtures.Memberships.sync_display_name("Platform Rowan")
 
-      named_user = Fixtures.Users.create_user(full_name: "Casey Search")
-
       named_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: named_user.id)
-
-      email_user = Fixtures.Users.create_user(email: "needle.team@example.com")
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: "Casey Search"
+        )
 
       email_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: email_user.id)
-
-      percent_user = Fixtures.Users.create_user(full_name: "Percent % Person")
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "needle.team@example.com"
+        )
 
       percent_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: percent_user.id)
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: "Percent % Person"
+        )
 
       for {term, expected_id} <- [
             {"platform ROW", directory_membership.id},
@@ -2524,43 +1935,33 @@ defmodule Emisar.AccountsTest do
       subject: subject
     } do
       active = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      unlinked = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
 
-      pending_user = Fixtures.Users.create_user(confirmed?: false)
+      unverified =
+        Fixtures.Memberships.create_membership(account_id: account.id, email_verified?: false)
 
       pending =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: pending_user.id,
           role: "viewer",
-          invitation_token_digest: "pending"
-        )
-
-      unconfirmed_user = Fixtures.Users.create_user(confirmed?: false)
-
-      unconfirmed =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: unconfirmed_user.id,
-          role: "viewer"
+          invitation_token_digest: "pending",
+          email_verified?: false
         )
 
       suspended =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
         |> Fixtures.Memberships.suspend_membership()
 
-      suspended_pending_user = Fixtures.Users.create_user(confirmed?: false)
-
       suspended_pending =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: suspended_pending_user.id,
-          invitation_token_digest: "suspended-pending"
+          invitation_token_digest: "suspended-pending",
+          email_verified?: false
         )
         |> Fixtures.Memberships.suspend_membership()
 
+      # An unverified address is still an active Member: it signs in through SSO.
       assert filtered_membership_ids(account, subject, status: ["active"]) ==
-               MapSet.new([owner_membership.id, active.id, unlinked.id])
+               MapSet.new([owner_membership.id, active.id, unverified.id])
 
       assert filtered_membership_ids(account, subject, status: ["pending_invitation"]) ==
                MapSet.new([pending.id, suspended_pending.id])
@@ -2568,13 +1969,10 @@ defmodule Emisar.AccountsTest do
       assert filtered_membership_ids(account, subject, status: ["suspended"]) ==
                MapSet.new([suspended.id, suspended_pending.id])
 
-      assert filtered_membership_ids(account, subject, status: ["email_unconfirmed"]) ==
-               MapSet.new([unconfirmed.id])
-
       assert filtered_membership_ids(account, subject,
                role: ["viewer"],
-               status: ["email_unconfirmed"]
-             ) == MapSet.new([unconfirmed.id])
+               status: ["pending_invitation"]
+             ) == MapSet.new([pending.id])
     end
 
     test "never hands the web an invitation token digest", %{account: account, subject: subject} do
@@ -2625,11 +2023,8 @@ defmodule Emisar.AccountsTest do
       owner_membership: owner_membership,
       subject: subject
     } do
-      enrolled = Fixtures.Users.create_user()
-      enroll_mfa(enrolled)
-
       enrolled_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: enrolled.id)
+        Fixtures.Memberships.create_membership(account_id: account.id) |> enroll_mfa()
 
       assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
       facts_by_id = Map.new(facts, &{&1.membership.id, &1})
@@ -2640,53 +2035,23 @@ defmodule Emisar.AccountsTest do
       refute facts_by_id[owner_membership.id].reset_mfa?
     end
 
-    test "a member who also belongs to another workspace cannot have MFA reset from here", %{
+    test "MFA facts are this Member's alone: a namesake elsewhere does not change them", %{
       account: account,
       subject: subject
     } do
-      elsewhere = Fixtures.Users.create_user()
-      enroll_mfa(elsewhere)
-      other_account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: elsewhere.id)
-
-      elsewhere_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: elsewhere.id)
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
+      enroll_mfa(member)
+      elsewhere = Fixtures.Memberships.create_membership(email: member.email)
 
       assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
       facts_by_id = Map.new(facts, &{&1.membership.id, &1})
 
-      assert facts_by_id[elsewhere_membership.id].mfa_enrolled?
-      assert facts_by_id[elsewhere_membership.id].member_of_other_workspaces?
-      refute facts_by_id[elsewhere_membership.id].reset_mfa?
+      assert facts_by_id[member.id].mfa_enrolled?
+      assert facts_by_id[member.id].reset_mfa?
+      refute Map.has_key?(facts_by_id, elsewhere.id)
 
-      assert {:ok, %{member_of_other_workspaces?: true, reset_mfa?: false}} =
-               Accounts.fetch_team_member_facts(elsewhere_membership.id, subject)
-    end
-
-    test "confirmation state drives the badge and only the actor's resend action", %{
-      account: account,
-      subject: subject
-    } do
-      unconfirmed = Fixtures.Users.create_user(confirmed?: false)
-
-      unconfirmed_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: unconfirmed.id
-        )
-
-      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
-      facts_by_id = Map.new(facts, &{&1.membership.id, &1})
-
-      assert facts_by_id[unconfirmed_membership.id].confirmation_pending?
-      refute facts_by_id[unconfirmed_membership.id].resend_confirmation?
-
-      unconfirmed_subject = Fixtures.Subjects.membership_subject(unconfirmed_membership)
-
-      assert {:ok, self_facts, _metadata} =
-               Accounts.list_team_member_facts(account, unconfirmed_subject)
-
-      assert Enum.find(self_facts, &(&1.membership.id == unconfirmed_membership.id)).resend_confirmation?
+      assert {:ok, %{mfa_enrolled?: true, reset_mfa?: true}} =
+               Accounts.fetch_team_member_facts(member.id, subject)
     end
 
     test "self_owner? is true only for the ACTOR's own owner row", %{
@@ -2697,16 +2062,13 @@ defmodule Emisar.AccountsTest do
       other_owner =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      self_admin = Fixtures.Users.create_user()
-
       admin_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: self_admin.id,
           role: "admin"
         )
 
-      admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
+      admin_subject = Fixtures.Subjects.subject_for(admin_membership)
 
       assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
       facts_by_id = Map.new(facts, &{&1.membership.id, &1})
@@ -2737,7 +2099,7 @@ defmodule Emisar.AccountsTest do
       refute Accounts.subject_can_manage_member?(foreign, subject)
 
       viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
-      viewer_subject = Fixtures.Subjects.membership_subject(viewer)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
       refute Accounts.subject_can_assign_member_role?(:viewer, viewer_subject)
       refute Accounts.subject_can_manage_member?(admin_membership, viewer_subject)
     end
@@ -2780,16 +2142,13 @@ defmodule Emisar.AccountsTest do
     end
 
     test "a viewer of the account can read the roster", %{account: account} do
-      viewer = Fixtures.Users.create_user()
-
       viewer_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: viewer.id,
           role: "viewer"
         )
 
-      viewer_subject = Fixtures.Subjects.membership_subject(viewer_membership)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer_membership)
 
       assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, viewer_subject)
       assert length(facts) == 2
@@ -2813,16 +2172,13 @@ defmodule Emisar.AccountsTest do
 
       assert is_nil(manager_fact.membership.disabled_by_membership_id)
 
-      viewer = Fixtures.Users.create_user()
-
       viewer_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: viewer.id,
           role: "viewer"
         )
 
-      viewer_subject = Fixtures.Subjects.membership_subject(viewer_membership)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer_membership)
 
       assert {:ok, viewer_facts, _metadata} =
                Accounts.list_team_member_facts(account, viewer_subject)
@@ -2836,23 +2192,21 @@ defmodule Emisar.AccountsTest do
       account: account,
       subject: subject
     } do
-      admin = Fixtures.Users.create_user(full_name: "Former Admin")
-
       admin_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
+          role: "admin",
+          display_name: "Former Admin"
         )
 
       target = Fixtures.Memberships.create_membership(account_id: account.id)
-      admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
+      admin_subject = Fixtures.Subjects.subject_for(admin_membership)
       assert {:ok, _suspended} = Accounts.suspend_membership(target, admin_subject)
       Fixtures.Memberships.mark_membership_as_deleted(admin_membership)
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: admin.id,
+        email: admin_membership.email,
         role: "admin",
         display_name: "Replacement Admin"
       )
@@ -2885,7 +2239,7 @@ defmodule Emisar.AccountsTest do
       %{
         account: account,
         owner_membership: owner_membership,
-        subject: Fixtures.Subjects.membership_subject(owner_membership)
+        subject: Fixtures.Subjects.subject_for(owner_membership)
       }
     end
 
@@ -2920,12 +2274,7 @@ defmodule Emisar.AccountsTest do
       account: account,
       owner_membership: owner_membership
     } do
-      stranger =
-        Fixtures.Subjects.build_subject(
-          account: account,
-          user: Fixtures.Users.create_user(),
-          role: :runner
-        )
+      stranger = Fixtures.Subjects.permissionless_subject(account)
 
       assert Accounts.fetch_team_member_facts(owner_membership.id, stranger) ==
                {:error, :unauthorized}
@@ -2986,14 +2335,13 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "list_memberships_by_ids/3" do
-    test "returns the given live memberships, user preloaded" do
+    test "returns the given live memberships" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       second = Fixtures.Memberships.create_membership(account_id: account.id)
       ids = [subject.membership_id, second.id]
 
       assert {:ok, memberships} = Accounts.list_memberships_by_ids(account, ids, subject)
       assert memberships |> Enum.map(& &1.id) |> Enum.sort() == Enum.sort(ids)
-      assert Enum.all?(memberships, &match?(%Emisar.Users.User{}, &1.user))
     end
 
     test "ignores removed members and other accounts' members" do
@@ -3023,34 +2371,25 @@ defmodule Emisar.AccountsTest do
   describe "fetch_team_security_facts/1" do
     test "counts members and MFA enrollment account-wide (not per page)" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.membership_subject(owner_membership)
-      enroll_mfa(owner)
+      subject = Fixtures.Subjects.subject_for(owner_membership)
+      enroll_mfa(owner_membership)
 
-      enrolled_member = Fixtures.Users.create_user()
-      enroll_mfa(enrolled_member)
+      _enrolled_member =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> enroll_mfa()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: enrolled_member.id,
-        role: "admin"
-      )
-
-      unenrolled_member = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: unenrolled_member.id,
-        role: "viewer"
-      )
+      _unenrolled_member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "viewer"
+        )
 
       assert {:ok, %{mfa_total: 3, mfa_enrolled: 2, mfa_missing: 1}} =
                Accounts.fetch_team_security_facts(subject)
@@ -3062,7 +2401,7 @@ defmodule Emisar.AccountsTest do
       owner_membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      subject = Fixtures.Subjects.membership_subject(owner_membership)
+      subject = Fixtures.Subjects.subject_for(owner_membership)
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -3080,27 +2419,19 @@ defmodule Emisar.AccountsTest do
 
     test "counts only the subject's own account" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.membership_subject(owner_membership)
-      enroll_mfa(owner)
+      subject = Fixtures.Subjects.subject_for(owner_membership)
+      enroll_mfa(owner_membership)
 
       # A separate account with its own enrolled member must not leak in.
-      other_member = Fixtures.Users.create_user()
-      enroll_mfa(other_member)
       other_account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: other_account.id,
-        user_id: other_member.id
-      )
+      Fixtures.Memberships.create_membership(account_id: other_account.id) |> enroll_mfa()
 
       assert {:ok, %{mfa_total: 1, mfa_enrolled: 1}} =
                Accounts.fetch_team_security_facts(subject)
@@ -3112,7 +2443,7 @@ defmodule Emisar.AccountsTest do
       owner_membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      subject = Fixtures.Subjects.membership_subject(owner_membership)
+      subject = Fixtures.Subjects.subject_for(owner_membership)
 
       Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
@@ -3131,7 +2462,7 @@ defmodule Emisar.AccountsTest do
       owner_membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      subject = Fixtures.Subjects.membership_subject(owner_membership)
+      subject = Fixtures.Subjects.subject_for(owner_membership)
 
       other_account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: other_account.id, role: "owner")
@@ -3142,23 +2473,21 @@ defmodule Emisar.AccountsTest do
 
     test "the enforcement state and SSO requirement come from the CURRENT account row" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.membership_subject(owner_membership)
+      subject = Fixtures.Subjects.subject_for(owner_membership)
 
       assert {:ok, %{mfa_enforcement: :actor_not_enrolled, sso_required?: false}} =
                Accounts.fetch_team_security_facts(subject)
 
       # The subject still carries the pre-enrollment user and the pre-update
       # account; both answers have to come from the rows, not that snapshot.
-      enroll_mfa(owner)
+      enroll_mfa(owner_membership)
 
       assert {:ok, %{mfa_enforcement: :available}} = Accounts.fetch_team_security_facts(subject)
 
@@ -3175,11 +2504,11 @@ defmodule Emisar.AccountsTest do
         Fixtures.SSO.create_user_identity(
           account_id: account.id,
           provider_id: provider.id,
-          user_id: owner.id
+          membership: owner_membership
         )
 
       subject =
-        Fixtures.Subjects.subject_for(Repo.reload!(owner), account,
+        Fixtures.Subjects.subject_for(Repo.reload!(owner_membership),
           auth_method: :sso,
           user_identity_id: identity.id,
           mfa: true
@@ -3199,12 +2528,7 @@ defmodule Emisar.AccountsTest do
     test "refuses a subject with no account permission" do
       account = Fixtures.Accounts.create_account()
 
-      runner_subject =
-        Fixtures.Subjects.build_subject(
-          account: account,
-          user: Fixtures.Users.create_user(),
-          role: :runner
-        )
+      runner_subject = Fixtures.Subjects.permissionless_subject(account)
 
       assert Accounts.fetch_team_security_facts(runner_subject) == {:error, :unauthorized}
     end
@@ -3222,9 +2546,18 @@ defmodule Emisar.AccountsTest do
   describe "suppressed_member_emails/2" do
     test "returns the account's member emails that are on the suppression list" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-      bouncing = Fixtures.Users.create_user(email: "bouncing@example.com")
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: bouncing.id)
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
+      _bouncing =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "bouncing@example.com"
+        )
+
       _fine = Fixtures.Memberships.create_membership(account_id: account.id)
 
       {:ok, _} = Mail.suppress("bouncing@example.com", :hard_bounce, "bounce")
@@ -3235,7 +2568,12 @@ defmodule Emisar.AccountsTest do
 
     test "is empty when no member email is suppressed" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       Fixtures.Memberships.create_membership(account_id: account.id)
 
       assert {:ok, suppressed} = Accounts.suppressed_member_emails(account, subject)
@@ -3244,12 +2582,21 @@ defmodule Emisar.AccountsTest do
 
     test "never surfaces a suppression that belongs only to another account" do
       account_a = Fixtures.Accounts.create_account()
-      subject_a = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a)
+
+      subject_a =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account_a.id, role: :owner)
+        )
+
       account_b = Fixtures.Accounts.create_account()
 
       # An address suppressed globally, but a member only of account B.
-      b_member = Fixtures.Users.create_user(email: "b-only@example.com")
-      Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: b_member.id)
+      _b_member =
+        Fixtures.Memberships.create_membership(
+          account_id: account_b.id,
+          email: "b-only@example.com"
+        )
+
       {:ok, _} = Mail.suppress("b-only@example.com", :hard_bounce, "bounce")
 
       # Account A asks for ITS suppressed emails — B's bouncing address must not leak.
@@ -3267,7 +2614,7 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "list_account_memberships/2" do
-    test "lists every membership in the account with :user preloaded (the notifier's contract)" do
+    test "lists every membership in the account with its own address (the notifier's contract)" do
       account = Fixtures.Accounts.create_account()
       membership_one = Fixtures.Memberships.create_membership(account_id: account.id)
       membership_two = Fixtures.Memberships.create_membership(account_id: account.id)
@@ -3276,9 +2623,7 @@ defmodule Emisar.AccountsTest do
 
       ids = memberships |> Enum.map(& &1.id) |> Enum.sort()
       assert ids == Enum.sort([membership_one.id, membership_two.id])
-      # `user` is this helper's contract — the approval notifier addresses the
-      # email off it, so it must be preloaded, not an unloaded assoc.
-      assert Enum.all?(memberships, &match?(%User{}, &1.user))
+      assert Enum.all?(memberships, &is_binary(&1.email))
     end
 
     test "is scoped to the given account (no cross-account fan-out leak)" do
@@ -3315,7 +2660,7 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: other.id,
-        user_id: member.user_id,
+        email: member.email,
         role: "viewer"
       )
 
@@ -3365,7 +2710,7 @@ defmodule Emisar.AccountsTest do
     end
 
     test "an unknown member is not found", %{account: account, provider: provider} do
-      stranger = Fixtures.Users.create_user()
+      stranger = Fixtures.Memberships.create_membership()
       audit = &Emisar.Audit.Events.membership_renamed_via_scim(&1, provider, &2)
 
       assert Accounts.sync_member_display_name(account.id, stranger.id, "Nobody", audit: audit) ==
@@ -3435,12 +2780,10 @@ defmodule Emisar.AccountsTest do
   describe "member_labels_for_ids/2" do
     test "keeps exact local history without resolving a replacement or foreign seat" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user(full_name: "Private personal name")
 
       original =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
           display_name: "Original local name"
         )
 
@@ -3449,7 +2792,7 @@ defmodule Emisar.AccountsTest do
       replacement =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
+          email: original.email,
           display_name: "Replacement local name"
         )
 
@@ -3460,8 +2803,8 @@ defmodule Emisar.AccountsTest do
           email: nil
         )
 
-      foreign = Fixtures.Memberships.create_membership(user_id: user.id)
-      ids = [original.id, replacement.id, blank.id, foreign.id, user.id, nil, original.id]
+      foreign = Fixtures.Memberships.create_membership(email: original.email)
+      ids = [original.id, replacement.id, blank.id, foreign.id, original.id, nil, original.id]
 
       assert Accounts.member_labels_for_ids(ids, account.id) == %{
                original.id => "Original local name",
@@ -3475,170 +2818,23 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "list_active_memberships_for_user/1" do
-    test "returns one membership per account the user actively belongs to" do
-      user = Fixtures.Users.create_user()
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
-      Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
-
-      account_ids =
-        user
-        |> Accounts.list_active_memberships_for_user()
-        |> Enum.map(& &1.account_id)
-        |> Enum.sort()
-
-      assert account_ids == Enum.sort([account_a.id, account_b.id])
-    end
-
-    test "returns [] for a user with no memberships" do
-      user = Fixtures.Users.create_user()
-
-      assert Accounts.list_active_memberships_for_user(user) == []
-    end
-  end
-
-  describe "fetch_and_lock_active_memberships_for_user/2" do
-    test "returns the same rows as the unlocked read" do
-      user = Fixtures.Users.create_user()
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
-      Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
-
-      assert {:ok, memberships} = Accounts.fetch_and_lock_active_memberships_for_user(user, Repo)
-
-      assert Enum.map(memberships, & &1.account_id) |> Enum.sort() ==
-               Enum.sort([account_a.id, account_b.id])
-    end
-
-    test "includes a disabled membership in what it locks" do
-      # It returns only ACTIVE memberships, but it has to LOCK the disabled ones
-      # too: a membership disabled in another account can be reinstated
-      # concurrently, and filtering before the lock left exactly that row unheld.
-      user = Fixtures.Users.create_user()
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
-
-      disabled =
-        Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
-
-      Fixtures.Memberships.suspend_membership(disabled)
-
-      assert {:ok, memberships} = Accounts.fetch_and_lock_active_memberships_for_user(user, Repo)
-
-      assert Enum.map(memberships, & &1.account_id) == [account_a.id]
-    end
-
-    test "takes a row lock, which is the whole reason it exists" do
-      # The SSO link approval decides whether an approver outranks the person they
-      # are binding a credential to. An unlocked read makes that decision on rows a
-      # concurrent promotion can change before the binding commits — so the lock is
-      # the behaviour, and it is asserted where a race cannot be staged reliably.
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      {sql, _params} =
-        Ecto.Adapters.SQL.to_sql(
-          :all,
-          Repo,
-          Membership.Query.not_deleted()
-          |> Membership.Query.by_user_id(user.id)
-          |> Membership.Query.not_disabled()
-          |> Membership.Query.lock_for_update()
-        )
-
-      assert sql =~ "FOR NO KEY UPDATE"
-    end
-  end
-
-  describe "put_membership_activation_consequence/2" do
-    test "retires an admin-bound credential when this membership adds foreign access" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-      Fixtures.Accounts.create_subscription(account, "team")
-      foreign_account = Fixtures.Accounts.create_account()
-      provider = provider_fixture(account)
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id,
-          created_by: :admin,
-          provisioned_via: :manual
-        })
-
-      session =
-        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
-
-      activated =
-        Fixtures.Memberships.create_membership(
-          account_id: foreign_account.id,
-          user_id: user.id
-        )
-
-      assert {:ok, %{retired_bindings: %{count: 1, socket_topics: [topic]}}} =
-               Multi.new()
-               |> Accounts.put_membership_activation_consequence(activated)
-               |> Repo.commit_multi()
-
-      assert topic == Auth.live_socket_topic_for_session(session)
-      assert Repo.reload!(identity).deleted_at
-      assert {:ok, token} = Auth.fetch_session_by_token(session)
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, token) ==
-               {:error, :not_found}
-    end
-  end
-
-  describe "link_personal_login/3" do
-    test "binds a Member without a personal login to the proved User" do
-      member = Fixtures.Memberships.create_unlinked_membership()
-      user = Fixtures.Users.create_user()
-
-      assert {:ok, %Membership{user_id: user_id}} =
-               Accounts.link_personal_login(Repo, member, user)
-
-      assert user_id == user.id
-      assert Repo.reload!(member).user_id == user.id
-    end
-
-    test "refuses a User already seated in the workspace" do
-      member = Fixtures.Memberships.create_unlinked_membership()
-      user = Fixtures.Users.create_user()
-      Fixtures.Memberships.create_membership(account_id: member.account_id, user_id: user.id)
-
-      assert Accounts.link_personal_login(Repo, member, user) == {:error, :already_member}
-      assert is_nil(Repo.reload!(member).user_id)
-    end
-  end
-
   describe "after_membership_activation_committed/1" do
-    test "delivers only the exact topics carried out of the transaction" do
-      Emisar.Config.put_override(
-        :session_disconnect_handler,
-        {:emisar, RecordingSessionDisconnector}
-      )
+    test "announces an accepted invitation to the team topic and ignores other transactions" do
+      account = Fixtures.Accounts.create_account()
+      accepted = Fixtures.Memberships.create_membership(account_id: account.id)
+      :ok = Accounts.subscribe_account_team(account.id)
 
-      topics = ["users_sessions:one", "users_sessions:two"]
+      assert Accounts.after_membership_activation_committed(%{accepted: accepted}) == :ok
+      assert_receive {:list_changed, :team, "membership.invitation_accepted", membership_id}
+      assert membership_id == accepted.id
 
-      assert Accounts.after_membership_activation_committed(%{
-               retired_bindings: %{socket_topics: topics}
-             }) == :ok
-
-      assert_receive {:membership_activation_disconnect, ^topics}
       assert Accounts.after_membership_activation_committed(%{}) == :ok
-      refute_receive {:membership_activation_disconnect, _topics}
+      refute_receive {:list_changed, :team, _event, _id}
     end
   end
 
   describe "put_sso_membership/5" do
-    test "creates a Member without a personal login at the given role" do
+    test "creates an unverified Member at the given role" do
       account = Fixtures.Accounts.create_account()
 
       assert {:ok, %Membership{role: :operator} = membership} =
@@ -3652,7 +2848,7 @@ defmodule Emisar.AccountsTest do
                )
 
       assert membership.account_id == account.id
-      assert is_nil(membership.user_id)
+      refute membership.email_verified_at
       assert membership.display_name == "Directory Person"
       assert membership.email == "directory-person@example.test"
       assert membership.runner_access_mode == :none
@@ -3661,26 +2857,25 @@ defmodule Emisar.AccountsTest do
 
     test "refuses :owner — owner is never assignable via sync (defense in depth)" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
 
       assert commit_sso_membership(
                account.id,
                :owner,
                Accounts.RunnerAccess.none(),
                directory_managed?: true,
-               user_id: user.id
+               email: "would-be-owner@example.test"
              ) ==
                {:error, :owner_not_assignable}
 
-      # Nothing was written — the user has no membership in the account.
-      assert is_nil(Fixtures.Memberships.fetch_membership(account.id, user.id))
+      # Nothing was written — the workspace has no Member at the address.
+      assert Accounts.count_memberships(account.id) == 0
     end
 
     test "refuses an address a live Member of the account already holds" do
       account = Fixtures.Accounts.create_account()
 
       holder =
-        Fixtures.Memberships.create_unlinked_membership(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           email: "held@example.test"
         )
@@ -3697,7 +2892,7 @@ defmodule Emisar.AccountsTest do
 
     test "an address only another account's Member holds is free" do
       account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_unlinked_membership(email: "elsewhere@example.test")
+      Fixtures.Memberships.create_membership(email: "elsewhere@example.test")
 
       assert {:ok, %Membership{} = membership} =
                commit_sso_membership(
@@ -3722,15 +2917,13 @@ defmodule Emisar.AccountsTest do
 
     test "returns nil when the membership is suspended (the engine halts mid-run)" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-      user = Fixtures.Users.create_user()
 
-      member =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "operator"
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
         )
+
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, _} = Accounts.suspend_membership(member, owner_subject)
 
@@ -3784,44 +2977,6 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "peek_sync_membership/2" do
-    test "returns the membership joining the account + user" do
-      account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-      member = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      assert %Membership{id: id} = Accounts.peek_sync_membership(account.id, user.id)
-      assert id == member.id
-    end
-
-    test "returns a deprovisioned (disabled) row too — a SCIM reconcile reads it back" do
-      account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-      user = Fixtures.Users.create_user()
-
-      member =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "operator"
-        )
-
-      {:ok, _} = Accounts.suspend_membership(member, owner_subject)
-
-      # peek_sync_membership ignores disabled_at — a deprovisioned member still
-      # has a row the reconcile must resolve.
-      assert %Membership{disabled_at: %DateTime{}} =
-               Accounts.peek_sync_membership(account.id, user.id)
-    end
-
-    test "returns nil when there is no membership for the pair" do
-      account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-
-      assert is_nil(Accounts.peek_sync_membership(account.id, user.id))
-    end
-  end
-
   describe "peek_sync_membership_by_id/2" do
     test "includes a suspension but never a removed, replacement or foreign seat" do
       member = Fixtures.Memberships.create_membership()
@@ -3837,7 +2992,7 @@ defmodule Emisar.AccountsTest do
       replacement =
         Fixtures.Memberships.create_membership(
           account_id: member.account_id,
-          user_id: member.user_id
+          email: member.email
         )
 
       refute Accounts.peek_sync_membership_by_id(member.account_id, member.id)
@@ -3867,13 +3022,63 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "peek_sign_in_membership/2" do
+    test "finds the workspace's verified, authorized Member by address, case-insensitively" do
+      account = Fixtures.Accounts.create_account()
+
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "Signer@Example.test"
+        )
+
+      assert %Membership{id: member_id} =
+               Accounts.peek_sign_in_membership(account.id, "signer@example.test")
+
+      assert member_id == member.id
+
+      assert is_nil(
+               Accounts.peek_sign_in_membership(
+                 Fixtures.Accounts.create_account().id,
+                 member.email
+               )
+             )
+
+      assert is_nil(Accounts.peek_sign_in_membership("not-a-uuid", member.email))
+      assert is_nil(Accounts.peek_sign_in_membership(account.id, "nobody@example.test"))
+    end
+
+    test "an unverified address, a pending invitee, a suspended or a removed Member cannot sign in by email" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      unverified =
+        Fixtures.Memberships.create_membership(account_id: account.id, email_verified?: false)
+
+      assert is_nil(Accounts.peek_sign_in_membership(account.id, unverified.email))
+
+      {:ok, %{membership: invitation}} =
+        Accounts.invite_user_to_account(Fixtures.Accounts.invitation_attrs(), subject)
+
+      assert is_nil(Accounts.peek_sign_in_membership(account.id, invitation.email))
+
+      suspended = Fixtures.Memberships.create_membership(account_id: account.id)
+      assert %Membership{} = Accounts.peek_sign_in_membership(account.id, suspended.email)
+      Fixtures.Memberships.suspend_membership(suspended)
+      assert is_nil(Accounts.peek_sign_in_membership(account.id, suspended.email))
+
+      removed = Fixtures.Memberships.create_membership(account_id: account.id)
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
+      assert is_nil(Accounts.peek_sign_in_membership(account.id, removed.email))
+    end
+  end
+
   describe "peek_sync_membership_by_email/2" do
     test "matches only this account's live contact, case-insensitively" do
       account = Fixtures.Accounts.create_account()
       email = Fixtures.Random.unique_email()
 
       removed =
-        Fixtures.Memberships.create_unlinked_membership(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           email: email
         )
@@ -3881,14 +3086,14 @@ defmodule Emisar.AccountsTest do
       Fixtures.Memberships.mark_membership_as_deleted(removed)
 
       live =
-        Fixtures.Memberships.create_unlinked_membership(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           email: email
         )
 
       other_account = Fixtures.Accounts.create_account()
 
-      Fixtures.Memberships.create_unlinked_membership(
+      Fixtures.Memberships.create_membership(
         account_id: other_account.id,
         email: email
       )
@@ -3904,7 +3109,7 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: member.account_id,
-        user_id: member.user_id,
+        email: member.email,
         display_name: "Replacement"
       )
 
@@ -3919,18 +3124,11 @@ defmodule Emisar.AccountsTest do
   describe "list_sync_memberships_by_id/2" do
     test "returns the exact requested memberships in one query" do
       account = Fixtures.Accounts.create_account()
-      user_one = Fixtures.Users.create_user()
-      user_two = Fixtures.Users.create_user()
-      user_three = Fixtures.Users.create_user()
+      membership_one = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      membership_one =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user_one.id)
+      membership_two = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      membership_two =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user_two.id)
-
-      _membership_three =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user_three.id)
+      _membership_three = Fixtures.Memberships.create_membership(account_id: account.id)
 
       memberships =
         Accounts.list_sync_memberships_by_id(account.id, [membership_one.id, membership_two.id])
@@ -3939,16 +3137,16 @@ defmodule Emisar.AccountsTest do
       assert ids == Enum.sort([membership_one.id, membership_two.id])
     end
 
-    test "is scoped to the account — a same-user membership in another account is excluded" do
+    test "is scoped to the account — a same-address membership in another account is excluded" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-
-      membership_a =
-        Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
+      membership_a = Fixtures.Memberships.create_membership(account_id: account_a.id)
 
       membership_b =
-        Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user.id)
+        Fixtures.Memberships.create_membership(
+          account_id: account_b.id,
+          email: membership_a.email
+        )
 
       memberships =
         Accounts.list_sync_memberships_by_id(account_a.id, [membership_a.id, membership_b.id])
@@ -3963,356 +3161,15 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "an SSO session is authority in the accounts that federate with its IdP" do
-    # A provider may create the global user row for any email it asserts as
-    # verified; the person behind that address later signs up, creates a
-    # workspace, or accepts an invitation elsewhere. Every resolver keeps the
-    # provider's session inside the accounts that federate with that same IdP
-    # identity — the org's own workspaces — so whoever runs that IdP inherits
-    # nothing the person joins or creates elsewhere.
-    setup do
-      {_owner, provider_account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
-
-      provider =
-        Fixtures.SSO.create_identity_provider(%{
-          account_id: provider_account.id,
-          name: "Corp IdP"
-        })
-
-      user = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: provider_account.id,
-        user_id: user.id,
-        role: "operator"
-      )
-
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: provider_account.id,
-          provider_id: provider.id,
-          user_id: user.id
-        })
-
-      {:ok, other_account} =
-        Accounts.create_account_with_owner(%{name: "Their own", slug: "their-own"}, user)
-
-      sso_token =
-        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
-
-      {:ok, sso_session} = Auth.fetch_session_by_token(sso_token)
-      magic_token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, magic_session} = Auth.fetch_session_by_token(magic_token)
-
-      %{
-        user: user,
-        identity: identity,
-        provider: provider,
-        provider_account: provider_account,
-        other_account: other_account,
-        sso_session: sso_session,
-        magic_session: magic_session
-      }
-    end
-
-    test "the switch row records how the destination was reached, not the origin", %{
-      user: user,
-      identity: identity,
-      provider: provider,
-      provider_account: provider_account
-    } do
-      sibling_account = federated_sibling(user, provider.issuer, identity.provider_identifier)
-
-      sibling_identity =
-        Emisar.SSO.UserIdentity.Query.not_deleted()
-        |> Emisar.SSO.UserIdentity.Query.by_account_id(sibling_account.id)
-        |> Repo.one!()
-
-      sso_subject =
-        Fixtures.Subjects.subject_for(user, provider_account,
-          auth_method: :sso,
-          user_identity_id: identity.id
-        )
-
-      assert {:ok, %Membership{} = member} =
-               Accounts.switch_account(sibling_account.id, sso_subject)
-
-      assert [event] =
-               Audit.Event.Query.all()
-               |> Audit.Event.Query.by_account_id(sibling_account.id)
-               |> Audit.Event.Query.by_event_type("session.account_switched")
-               |> Repo.all()
-
-      assert {event.actor_id, event.auth_method, event.user_identity_id} ==
-               {member.id, "sso", sibling_identity.id}
-    end
-
-    test "the switcher lists, and the switch reaches, a sibling workspace on the same IdP", %{
-      user: user,
-      identity: identity,
-      provider: provider,
-      provider_account: provider_account,
-      other_account: other_account,
-      sso_session: sso_session
-    } do
-      # The same org runs a second workspace on the same identity provider and
-      # provisioned the person there too: one SSO login reaches both. A workspace
-      # on a DIFFERENT IdP, and the person's self-created workspace, stay out.
-      sibling_account = federated_sibling(user, provider.issuer, identity.provider_identifier)
-
-      foreign_idp_account =
-        federated_sibling(user, "https://elsewhere.okta.test", identity.provider_identifier)
-
-      # The older browser cannot gain a later destination. A new SSO proof can.
-      assert Accounts.fetch_membership_by_account_id_or_slug(
-               sibling_account.id,
-               sso_session
-             ) ==
-               {:error, :not_found}
-
-      sso_subject =
-        Fixtures.Subjects.subject_for(user, provider_account,
-          auth_method: :sso,
-          user_identity_id: identity.id
-        )
-
-      {:ok, sso_session} = Auth.fetch_current_session(sso_subject)
-
-      assert {:ok, accounts, _meta} = Accounts.list_accounts_for_user(sso_subject)
-
-      assert Enum.map(accounts, & &1.id) |> Enum.sort() ==
-               Enum.sort([provider_account.id, sibling_account.id])
-
-      assert {:ok, %Membership{account_id: switched}} =
-               Accounts.switch_account(sibling_account.id, sso_subject)
-
-      assert switched == sibling_account.id
-
-      assert {:ok, %Membership{account_id: resolved}} =
-               Accounts.fetch_membership_by_account_id_or_slug(
-                 sibling_account.id,
-                 sso_session
-               )
-
-      assert resolved == sibling_account.id
-
-      assert Accounts.switch_account(foreign_idp_account.id, sso_subject) == {:error, :not_found}
-      assert Accounts.switch_account(other_account.id, sso_subject) == {:error, :not_found}
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(
-               foreign_idp_account.id,
-               sso_session
-             ) == {:error, :not_found}
-    end
-
-    test "the slug and session resolvers reach the other workspace by magic link only", %{
-      provider_account: provider_account,
-      other_account: other_account,
-      sso_session: sso_session,
-      magic_session: magic_session
-    } do
-      assert {:ok, %Membership{role: :owner}} =
-               Accounts.fetch_membership_by_account_id_or_slug(
-                 other_account.id,
-                 magic_session
-               )
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(other_account.id, sso_session) ==
-               {:error, :not_found}
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(
-               other_account.slug,
-               sso_session
-             ) ==
-               {:error, :not_found}
-
-      assert {:ok, %Membership{account_id: provider_id}} =
-               Accounts.fetch_membership_by_account_id_or_slug(
-                 provider_account.id,
-                 sso_session
-               )
-
-      assert provider_id == provider_account.id
-
-      # Bare /app: the newest membership is the other workspace, but the SSO
-      # session's fallback stays inside the provider's account.
-      assert {:ok, %Membership{account_id: ^provider_id}} =
-               Accounts.fetch_membership_for_session(nil, sso_session)
-
-      assert {:ok, %Membership{account_id: ^provider_id}} =
-               Accounts.fetch_membership_for_session(other_account.id, sso_session)
-
-      other_id = other_account.id
-
-      assert {:ok, %Membership{account_id: ^other_id}} =
-               Accounts.fetch_membership_for_session(nil, magic_session)
-    end
-
-    test "the switcher lists, and the switch reaches, only the provider's account", %{
-      user: user,
-      identity: identity,
-      provider_account: provider_account,
-      other_account: other_account
-    } do
-      sso_subject =
-        Fixtures.Subjects.subject_for(user, provider_account,
-          auth_method: :sso,
-          user_identity_id: identity.id
-        )
-
-      assert {:ok, [%Account{id: listed}], _meta} = Accounts.list_accounts_for_user(sso_subject)
-      assert listed == provider_account.id
-      assert Accounts.switch_account(other_account.id, sso_subject) == {:error, :not_found}
-
-      magic_subject =
-        Fixtures.Subjects.subject_for(user, provider_account, auth_method: :magic_link)
-
-      assert {:ok, accounts, _meta} = Accounts.list_accounts_for_user(magic_subject)
-
-      assert Enum.map(accounts, & &1.id) |> Enum.sort() ==
-               Enum.sort([provider_account.id, other_account.id])
-
-      assert {:ok, %Membership{account_id: switched}} =
-               Accounts.switch_account(other_account.id, magic_subject)
-
-      assert switched == other_account.id
-    end
-
-    test "an SSO session whose identity was retired reaches nothing", %{
-      identity: identity,
-      provider_account: provider_account,
-      sso_session: sso_session
-    } do
-      identity |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(
-               provider_account.id,
-               sso_session
-             ) ==
-               {:error, :not_found}
-
-      assert Accounts.fetch_membership_for_session(nil, sso_session) == {:error, :not_found}
-    end
-  end
-
-  describe "fetch_membership_for_session/2" do
-    setup do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      %{
-        user: user,
-        account: account
-      }
-    end
-
-    test "with no account_id, returns the most-recent non-disabled membership", %{
-      user: user,
-      account: first_account
-    } do
-      second_account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: first_account.id, user_id: user.id)
-
-      second_membership =
-        Fixtures.Memberships.create_membership(account_id: second_account.id, user_id: user.id)
-
-      session = personal_session(user)
-
-      assert {:ok, %Membership{id: id}} =
-               Accounts.fetch_membership_for_session(nil, session)
-
-      assert id == second_membership.id
-    end
-
-    test "with a matching account_id, returns that specific membership even if older" do
-      user = Fixtures.Users.create_user()
-      first_account = Fixtures.Accounts.create_account()
-      second_account = Fixtures.Accounts.create_account()
-
-      first_membership =
-        Fixtures.Memberships.create_membership(account_id: first_account.id, user_id: user.id)
-
-      Fixtures.Memberships.create_membership(account_id: second_account.id, user_id: user.id)
-      session = personal_session(user)
-
-      assert {:ok, %Membership{id: id, account: %Account{} = account}} =
-               Accounts.fetch_membership_for_session(first_account.id, session)
-
-      assert id == first_membership.id
-      assert account.id == first_account.id
-    end
-
-    test "with a stale or unknown account_id, falls back to the primary" do
-      user = Fixtures.Users.create_user()
-      first_account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: first_account.id, user_id: user.id)
-      session = personal_session(user)
-
-      assert {:ok, %Membership{account_id: returned_account_id}} =
-               Accounts.fetch_membership_for_session(Ecto.UUID.generate(), session)
-
-      assert returned_account_id == first_account.id
-    end
-
-    test "with a suspended membership on the requested account, falls back" do
-      user = Fixtures.Users.create_user()
-      first_account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: first_account.id, user_id: user.id)
-
-      second_account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), second_account)
-
-      second_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: second_account.id,
-          user_id: user.id,
-          role: "operator"
-        )
-
-      session = personal_session(user)
-      assert {:ok, _} = Accounts.suspend_membership(second_membership, owner_subject)
-
-      assert {:ok, %Membership{account_id: returned_account_id}} =
-               Accounts.fetch_membership_for_session(second_account.id, session)
-
-      refute returned_account_id == second_account.id
-    end
-
-    test "returns :not_found for a user with no memberships" do
-      user = Fixtures.Users.create_user()
-
-      assert Accounts.fetch_membership_for_session(nil, personal_session(user)) ==
-               {:error, :not_found}
-    end
-
-    test "missing browser proof cannot borrow the user's memberships" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
-
-      assert Accounts.fetch_membership_for_session(account.id, nil) ==
-               {:error, :not_found}
-    end
-  end
-
   describe "pending invitation authorization" do
     test "the invite is visible to its lifecycle but grants access only after acceptance" do
-      user = Fixtures.Users.create_user()
-      current_account = Fixtures.Accounts.create_account()
-
-      current_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: current_account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      current_subject = Fixtures.Subjects.membership_subject(current_membership)
-      {:ok, session} = Auth.fetch_current_session(current_subject)
       {_inviter, invited_account, inviter_subject} = Fixtures.Subjects.owner_subject()
+      email = "pending-#{System.unique_integer([:positive])}@example.test"
 
       {:ok, %{membership: invitation, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
-            email: user.email,
+            email: email,
             role: "operator",
             runner_access_mode: "all"
           ),
@@ -4332,373 +3189,49 @@ defmodule Emisar.AccountsTest do
       assert Accounts.fetch_active_membership(Repo, invited_account.id, invitation.id) ==
                {:error, :not_found}
 
-      assert Accounts.fetch_and_lock_active_membership(
-               Repo,
-               invited_account.id,
-               invitation.id
-             ) == {:error, :not_found}
+      assert Accounts.fetch_and_lock_active_membership(Repo, invited_account.id, invitation.id) ==
+               {:error, :not_found}
 
       assert Accounts.runner_access_for_membership(invited_account.id, invitation.id) ==
                RunnerAccess.none()
 
-      assert {:ok, %Membership{id: current_id}} =
-               Accounts.fetch_membership_for_session(invited_account.id, session)
+      # A session row on the pending seat authenticates nothing.
+      pending_token = Fixtures.Auth.create_session_token!(invitation, :magic_link, nil)
 
-      assert current_id == current_membership.id
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(invited_account.slug, session) ==
+      assert Auth.fetch_session_by_token(pending_token, invited_account.id) ==
                {:error, :not_found}
-
-      assert Accounts.fetch_post_auth_membership(user, invited_account.id) ==
-               {:error, :not_found}
-
-      assert Accounts.switch_account(invited_account.id, current_subject) ==
-               {:error, :not_found}
-
-      assert {:ok, accounts, _metadata} = Accounts.list_accounts_for_user(current_subject)
-      assert Enum.map(accounts, & &1.id) == [current_account.id]
 
       :ok = Accounts.subscribe_account_team(invited_account.id)
-      assert {:ok, accepted} = Accounts.mark_invitation_accepted(invitation, token, user)
+      accepted = accept_invitation(token, email)
 
       assert_receive {:list_changed, :team, "membership.invitation_accepted", membership_id}
       assert membership_id == accepted.id
       assert Membership.authorizable?(accepted)
-
-      # Acceptance changes the Member, never the authority of an older bearer.
-      assert Accounts.switch_account(invited_account.id, current_subject) == {:error, :not_found}
-
-      assert {:ok, [%Account{id: current_account_id}], _} =
-               Accounts.list_accounts_for_user(current_subject)
-
-      assert current_account_id == current_account.id
-
-      session = personal_session(user)
-      current_subject = Fixtures.Subjects.subject_for(user, current_account, session: session)
+      assert %DateTime{} = accepted.email_verified_at
 
       assert {:ok, %Membership{id: accepted_id}} =
-               Accounts.fetch_membership_for_session(invited_account.id, session)
+               Accounts.fetch_and_lock_membership(invited_account.id, accepted.id)
 
       assert accepted_id == accepted.id
-
-      assert {:ok, %Membership{id: ^accepted_id}} =
-               Accounts.fetch_membership_by_account_id_or_slug(
-                 invited_account.slug,
-                 session
-               )
-
-      assert {:ok, %Membership{id: ^accepted_id}} =
-               Accounts.fetch_post_auth_membership(user, invited_account.id)
 
       assert %RunnerAccess{mode: :all} =
                Accounts.runner_access_for_membership(invited_account.id, accepted.id)
 
-      assert {:ok, %Membership{id: ^accepted_id}} =
-               Accounts.switch_account(invited_account.id, current_subject)
+      raw = Fixtures.Auth.create_session_token!(accepted, :magic_link, nil)
 
-      assert {:ok, accepted_accounts, _metadata} =
-               Accounts.list_accounts_for_user(current_subject)
-
-      assert MapSet.new(Enum.map(accepted_accounts, & &1.id)) ==
-               MapSet.new([current_account.id, invited_account.id])
-    end
-  end
-
-  describe "fetch_membership_by_account_id_or_slug/2" do
-    test "resolves the user's membership by the account slug" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      assert {:ok, %Membership{id: id, account: %Account{} = resolved, user: %User{}}} =
-               Accounts.fetch_membership_by_account_id_or_slug(
-                 account.slug,
-                 personal_session(user)
-               )
-
-      assert id == membership.id
-      assert resolved.id == account.id
-    end
-
-    test "resolves by the account id too (the UUID form for API/SSO/redirects)" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      assert {:ok, %Membership{id: id}} =
-               Accounts.fetch_membership_by_account_id_or_slug(
-                 account.id,
-                 personal_session(user)
-               )
-
-      assert id == membership.id
-    end
-
-    test "a non-member's slug is indistinguishable from an unknown one (404, never a leak)" do
-      member = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
-
-      outsider = Fixtures.Users.create_user()
-      session = personal_session(outsider)
-
-      # The account exists, but the outsider isn't a member: SAME :not_found as
-      # a slug no account has — so a URL never confirms a tenant exists (404, not 403).
-      assert Accounts.fetch_membership_by_account_id_or_slug(account.slug, session) ==
-               {:error, :not_found}
-
-      assert Accounts.fetch_membership_by_account_id_or_slug("no-such-team", session) ==
-               {:error, :not_found}
-    end
-
-    test "a member of account A cannot resolve account B (cross-account, by slug or id)" do
-      user = Fixtures.Users.create_user()
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user.id)
-
-      Fixtures.Memberships.create_membership(
-        account_id: account_b.id,
-        user_id: Fixtures.Users.create_user().id
-      )
-
-      session = personal_session(user)
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(account_b.slug, session) ==
-               {:error, :not_found}
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(account_b.id, session) ==
-               {:error, :not_found}
-    end
-
-    test "a suspended membership does not resolve" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "operator"
-        )
-
-      session = personal_session(user)
-      assert {:ok, _} = Accounts.suspend_membership(membership, owner_subject)
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(account.slug, session) ==
-               {:error, :not_found}
-    end
-  end
-
-  describe "fetch_post_auth_membership/2" do
-    test "resolves a live membership on a DISABLED account, with the account preloaded" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      Fixtures.Accounts.disable_account(account)
-
-      assert {:ok, %Membership{id: id, account: %Account{} = resolved}} =
-               Accounts.fetch_post_auth_membership(user, account.slug)
-
-      assert id == membership.id
-      assert resolved.id == account.id
-      assert %DateTime{} = resolved.disabled_at
-    end
-
-    test "resolves by the account id too (the UUID form for API/SSO/redirects)" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      assert {:ok, %Membership{id: id}} = Accounts.fetch_post_auth_membership(user, account.id)
-      assert id == membership.id
-    end
-
-    test "a non-member's ref is indistinguishable from an unknown one" do
-      member = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
-
-      outsider = Fixtures.Users.create_user()
-
-      assert Accounts.fetch_post_auth_membership(outsider, account.slug) == {:error, :not_found}
-      assert Accounts.fetch_post_auth_membership(outsider, account.id) == {:error, :not_found}
-      assert Accounts.fetch_post_auth_membership(outsider, "no-such-team") == {:error, :not_found}
-    end
-
-    test "a suspended or tombstoned membership does not resolve" do
-      suspended_user = Fixtures.Users.create_user()
-      deleted_user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      suspended_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: suspended_user.id
-        )
-
-      deleted_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: deleted_user.id)
-
-      Fixtures.Memberships.suspend_membership(suspended_membership)
-      Fixtures.Memberships.mark_membership_as_deleted(deleted_membership)
-
-      assert Accounts.fetch_post_auth_membership(suspended_user, account.slug) ==
-               {:error, :not_found}
-
-      assert Accounts.fetch_post_auth_membership(deleted_user, account.slug) ==
-               {:error, :not_found}
-    end
-
-    test "a soft-deleted account does not resolve, by slug or id" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-      Fixtures.Accounts.mark_account_as_deleted(account)
-
-      assert Accounts.fetch_post_auth_membership(user, account.slug) == {:error, :not_found}
-      assert Accounts.fetch_post_auth_membership(user, account.id) == {:error, :not_found}
-    end
-  end
-
-  describe "switch_account/2" do
-    setup do
-      user = Fixtures.Users.create_user()
-      current_account = Fixtures.Accounts.create_account()
-      target_account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: current_account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-      %{user: user, current_account: current_account, target_account: target_account}
-    end
-
-    test "returns the target membership and audits the switch on the target account", %{
-      user: user,
-      current_account: current_account,
-      target_account: target_account
-    } do
-      target_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: target_account.id,
-          user_id: user.id,
-          role: "operator"
-        )
-
-      context = %RequestContext{ip_address: "203.0.113.7", user_agent: "Mozilla/5.0"}
-      user = enroll_mfa(user)
-
-      subject =
-        Fixtures.Subjects.subject_for(user, current_account,
-          context: context,
-          auth_method: :magic_link,
-          mfa: true
-        )
-
-      target_membership_id = target_membership.id
-      target_account_id = target_account.id
-
-      assert {:ok, %Membership{id: ^target_membership_id} = switched} =
-               Accounts.switch_account(target_account.id, subject)
-
-      assert %Account{id: ^target_account_id} = switched.account
-      assert %User{} = switched.user
-
-      event =
-        AuditEvent.Query.all()
-        |> AuditEvent.Query.by_account_id(target_account.id)
-        |> Repo.one()
-
-      assert event.event_type == "session.account_switched"
-      assert event.actor_kind == "membership"
-      assert event.actor_id == target_membership_id
-      assert event.target_kind == "membership"
-      assert event.target_id == target_membership_id
-      assert event.target_label == Accounts.member_display_name(switched)
-      assert event.payload["role"] == "operator"
-      assert event.ip_address == "203.0.113.7"
-      assert event.auth_method == "magic_link"
-      assert event.mfa
-    end
-
-    test "a subject without the view-own-account permission is rejected", %{
-      user: user,
-      target_account: target_account
-    } do
-      Fixtures.Memberships.create_membership(account_id: target_account.id, user_id: user.id)
-      subject = Fixtures.Subjects.build_subject(user: user)
-
-      assert Accounts.switch_account(target_account.id, subject) == {:error, :unauthorized}
-
-      refute AuditEvent.Query.all()
-             |> AuditEvent.Query.by_account_id(target_account.id)
-             |> Repo.one()
-    end
-
-    test "a user who is not a member of the target account cannot switch into it", %{
-      user: user,
-      current_account: current_account,
-      target_account: target_account
-    } do
-      Fixtures.Memberships.create_membership(account_id: target_account.id)
-      subject = Fixtures.Subjects.subject_for(user, current_account)
-
-      assert Accounts.switch_account(target_account.id, subject) == {:error, :not_found}
-
-      refute AuditEvent.Query.all()
-             |> AuditEvent.Query.by_account_id(target_account.id)
-             |> Repo.one()
-    end
-
-    test "a suspended membership on the target account cannot be switched into", %{
-      user: user,
-      current_account: current_account,
-      target_account: target_account
-    } do
-      target_membership =
-        Fixtures.Memberships.create_membership(account_id: target_account.id, user_id: user.id)
-
-      Fixtures.Memberships.suspend_membership(target_membership)
-      subject = Fixtures.Subjects.subject_for(user, current_account)
-
-      assert Accounts.switch_account(target_account.id, subject) == {:error, :not_found}
-
-      refute AuditEvent.Query.all()
-             |> AuditEvent.Query.by_account_id(target_account.id)
-             |> Repo.one()
-    end
-
-    test "a malformed account id is rejected before any audit is written", %{
-      user: user,
-      current_account: current_account
-    } do
-      subject = Fixtures.Subjects.subject_for(user, current_account)
-
-      assert Accounts.switch_account("not-a-uuid", subject) == {:error, :not_found}
-
-      refute AuditEvent.Query.all()
-             |> AuditEvent.Query.by_event_type("session.account_switched")
-             |> Repo.one()
+      assert {:ok, %UserToken{membership_id: ^accepted_id}} =
+               Auth.fetch_session_by_token(raw, invited_account.id)
     end
   end
 
   describe "membership_disabled?/1" do
     test "is true only once the membership has been suspended" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
@@ -4710,91 +3243,17 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "has_membership_history?/1" do
-    test "is true when every membership the user holds is suspended" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "operator"
-        )
-
-      {:ok, _} = Accounts.suspend_membership(membership, owner_subject)
-
-      assert Accounts.has_membership_history?(user)
-    end
-
-    test "is true when at least one membership is still active" do
-      user = Fixtures.Users.create_user()
-      live_account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: live_account.id, user_id: user.id)
-
-      account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-
-      suspended =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "operator"
-        )
-
-      {:ok, _} = Accounts.suspend_membership(suspended, owner_subject)
-
-      assert Accounts.has_membership_history?(user)
-    end
-
-    test "is false when the user has only an unresolved invitation" do
-      user = Fixtures.Users.create_user()
-      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
-
-      assert {:ok, %{membership: invitation}} =
-               Accounts.invite_user_to_account(
-                 Fixtures.Accounts.invitation_attrs(email: user.email, role: "operator"),
-                 subject
-               )
-
-      assert Membership.invitation_pending?(invitation)
-      refute Accounts.has_membership_history?(user)
-    end
-
-    test "is false when the user has never joined a workspace" do
-      user = Fixtures.Users.create_user()
-
-      refute Accounts.has_membership_history?(user)
-    end
-
-    test "removed history still routes to recovery without granting access" do
-      user = Fixtures.Users.create_user()
-      account = Fixtures.Accounts.create_account()
-
-      membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      membership |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
-
-      assert Accounts.has_membership_history?(user)
-      assert Auth.session_membership_ids(personal_session(user)) == []
-    end
-  end
-
   describe "update_membership_role/4" do
     test "the last active owner can't demote themselves; with a second owner it works" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner_membership)
 
       # Sole owner — the in-transaction guard (locked re-count of the
       # account's active owner rows) refuses the demotion.
@@ -4802,17 +3261,40 @@ defmodule Emisar.AccountsTest do
                {:error, :last_owner}
 
       # A second active owner frees the demotion.
-      second_owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: second_owner.id,
-        role: "owner"
-      )
+      _second_owner =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       assert {:ok, %Membership{role: :admin}} =
                Accounts.update_membership_role(owner_membership, "admin", subject,
                  runner_access: RunnerAccess.all()
+               )
+    end
+
+    test "a stale owner Subject demoted to admin can neither promote itself back nor demote an owner" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      demoted = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      # The snapshot a mounted Team page holds: taken before the demotion, it
+      # still carries owner permissions the Member row no longer has.
+      stale = Fixtures.Subjects.subject_for(demoted)
+      demoted = Fixtures.Memberships.force_role(demoted, "admin")
+
+      assert Accounts.update_membership_role(demoted, "owner", stale) ==
+               {:error, :cannot_self_promote}
+
+      assert Accounts.update_membership_role(owner, "admin", stale,
+               runner_access: RunnerAccess.all()
+             ) == {:error, :insufficient_privileges}
+
+      assert Repo.reload!(demoted).role == :admin
+      assert Repo.reload!(owner).role == :owner
+
+      assert {:ok, %Membership{role: :owner}} =
+               Accounts.update_membership_role(
+                 demoted,
+                 "owner",
+                 Fixtures.Subjects.subject_for(owner)
                )
     end
 
@@ -4848,32 +3330,24 @@ defmodule Emisar.AccountsTest do
     test "demoting a member revokes the API keys they minted" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(account, "team")
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-      admin = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(owner)
 
       admin_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: admin.id,
           role: "admin"
         )
 
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: admin.id,
+          created_by_membership_id: admin_membership.id,
           kind: :audit_export
         )
 
-      admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
+      admin_subject = Fixtures.Subjects.subject_for(admin_membership)
 
       {:ok, _device_code, _user_code, pending_grant} =
         Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -4898,17 +3372,14 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      operator = Fixtures.Users.create_user()
-
       operator_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: operator.id,
           role: "operator"
         )
 
       target_membership = Fixtures.Memberships.create_membership(account_id: account.id)
-      subject = Fixtures.Subjects.membership_subject(operator_membership)
+      subject = Fixtures.Subjects.subject_for(operator_membership)
 
       assert Accounts.update_membership_role(target_membership, "admin", subject) ==
                {:error, :unauthorized}
@@ -4916,24 +3387,15 @@ defmodule Emisar.AccountsTest do
 
     test "promotes operator to admin" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      target_user = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target_user.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       assert {:ok, %Membership{role: :admin}} =
                Accounts.update_membership_role(target_membership, "admin", subject)
@@ -4941,24 +3403,15 @@ defmodule Emisar.AccountsTest do
 
     test "rejects an unknown role" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      target_user = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target_user.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       assert {:error, changeset} =
                Accounts.update_membership_role(target_membership, "supreme-leader", subject)
@@ -4971,26 +3424,18 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
         role: "owner"
       )
 
-      admin = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      subject = Fixtures.Subjects.subject_for(admin)
 
       assert Accounts.update_membership_role(target_membership, "owner", subject) ==
                {:error, :insufficient_privileges}
@@ -5002,19 +3447,12 @@ defmodule Emisar.AccountsTest do
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
           role: "owner"
         )
 
-      admin = Fixtures.Users.create_user()
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
-
-      subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      subject = Fixtures.Subjects.subject_for(admin)
 
       assert Accounts.update_membership_role(owner_membership, "operator", subject) ==
                {:error, :insufficient_privileges}
@@ -5025,20 +3463,16 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
         role: "owner"
       )
-
-      admin = Fixtures.Users.create_user()
 
       admin_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: admin.id,
           role: "admin"
         )
 
-      subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      subject = Fixtures.Subjects.subject_for(admin_membership)
 
       assert Accounts.update_membership_role(admin_membership, "owner", subject) ==
                {:error, :cannot_self_promote}
@@ -5046,22 +3480,15 @@ defmodule Emisar.AccountsTest do
 
     test "an owner can grant the owner role" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       assert {:ok, %Membership{role: :owner}} =
                Accounts.update_membership_role(target_membership, "owner", subject)
@@ -5081,7 +3508,7 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.force_runner_access(target_membership, db_access)
 
-      subject = Fixtures.Subjects.membership_subject(admin_membership)
+      subject = Fixtures.Subjects.subject_for(admin_membership)
 
       assert {:ok, %Membership{role: :operator}} =
                Accounts.update_membership_role(target_membership, "operator", subject)
@@ -5101,13 +3528,13 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.force_runner_access(target_membership, RunnerAccess.all())
 
-      subject = Fixtures.Subjects.membership_subject(admin_membership)
+      subject = Fixtures.Subjects.subject_for(admin_membership)
 
       assert Accounts.update_membership_role(target_membership, "operator", subject) ==
                {:error, :member_runner_access_exceeds_subject}
 
       assert %Membership{role: :viewer} =
-               Fixtures.Memberships.fetch_membership(account.id, target_membership.user_id)
+               Repo.reload!(target_membership)
     end
 
     test "the cap covers the pack dimension, not only runners" do
@@ -5124,7 +3551,7 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.force_runner_access(target_membership, RunnerAccess.all())
 
-      subject = Fixtures.Subjects.membership_subject(admin_membership)
+      subject = Fixtures.Subjects.subject_for(admin_membership)
 
       assert Accounts.update_membership_role(target_membership, "operator", subject) ==
                {:error, :member_runner_access_exceeds_subject}
@@ -5144,7 +3571,7 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.force_runner_access(target_membership, RunnerAccess.all())
 
-      subject = Fixtures.Subjects.membership_subject(admin_membership)
+      subject = Fixtures.Subjects.subject_for(admin_membership)
 
       assert {:ok, %Membership{role: :viewer}} =
                Accounts.update_membership_role(target_membership, "viewer", subject)
@@ -5155,7 +3582,6 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
         role: "owner"
       )
 
@@ -5193,7 +3619,7 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.force_runner_access(other_membership, db_access)
 
-      subject = Fixtures.Subjects.membership_subject(admin_membership)
+      subject = Fixtures.Subjects.subject_for(admin_membership)
 
       # The account gate fires before the reach cap, so a member the actor could
       # otherwise promote is still refused for being in another account.
@@ -5201,7 +3627,7 @@ defmodule Emisar.AccountsTest do
                {:error, :unauthorized}
 
       assert %Membership{role: :viewer} =
-               Fixtures.Memberships.fetch_membership(other_account.id, other_membership.user_id)
+               Repo.reload!(other_membership)
     end
 
     test "an owner of another account can't change this member's role (cross-account)" do
@@ -5209,16 +3635,12 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
         role: "owner"
       )
-
-      target_user = Fixtures.Users.create_user()
 
       target_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target_user.id,
           role: "operator"
         )
 
@@ -5232,14 +3654,19 @@ defmodule Emisar.AccountsTest do
 
       # A's membership is untouched — still operator.
       assert %Membership{role: :operator} =
-               Fixtures.Memberships.fetch_membership(account.id, target_user.id)
+               Repo.reload!(target_membership)
     end
   end
 
   describe "subscribe_account_team/1" do
     test "the subscriber receives the account's team-list broadcasts" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       assert Accounts.subscribe_account_team(account.id) == :ok
@@ -5253,7 +3680,11 @@ defmodule Emisar.AccountsTest do
     test "a subscriber to account A does not receive account B's broadcasts" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      owner_subject_b = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_b)
+
+      owner_subject_b =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account_b.id, role: :owner)
+        )
 
       target_b =
         Fixtures.Memberships.create_membership(account_id: account_b.id, role: "operator")
@@ -5269,24 +3700,11 @@ defmodule Emisar.AccountsTest do
   describe "suspend_membership/2 + reinstate_membership/2" do
     setup do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      target_user = Fixtures.Users.create_user()
-
-      target =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
-          role: "operator"
-        )
-
-      owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
       {:ok, account: account, owner: owner, target: target, owner_subject: owner_subject}
     end
 
@@ -5303,6 +3721,26 @@ defmodule Emisar.AccountsTest do
       refute Membership.disabled?(reinstated)
       assert is_nil(Repo.reload!(target).disabled_by_membership_id)
       assert is_nil(reinstated.disabled_by_membership_id)
+    end
+
+    test "a stale owner Subject demoted to admin can neither suspend nor reinstate an owner", %{
+      account: account,
+      owner: owner
+    } do
+      demoted = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      # Snapshot taken before the demotion, as a mounted Team page holds it.
+      stale = Fixtures.Subjects.subject_for(demoted)
+      Fixtures.Memberships.force_role(demoted, "admin")
+
+      assert Accounts.suspend_membership(owner, stale) == {:error, :insufficient_privileges}
+      refute Membership.disabled?(Repo.reload!(owner))
+
+      Fixtures.Memberships.suspend_membership(owner)
+
+      assert Accounts.reinstate_membership(Repo.reload!(owner), stale) ==
+               {:error, :insufficient_privileges}
+
+      assert Membership.disabled?(Repo.reload!(owner))
     end
 
     test "break-glass support still suspends a member of a DISABLED account", %{
@@ -5323,24 +3761,22 @@ defmodule Emisar.AccountsTest do
       account: account,
       owner_subject: owner_subject
     } do
-      admin = Fixtures.Users.create_user()
       Fixtures.Accounts.create_subscription(account, "team")
 
       admin_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: admin.id,
           role: "admin"
         )
 
       {raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: admin.id,
+          created_by_membership_id: admin_membership.id,
           kind: :audit_export
         )
 
-      admin_subject = Fixtures.Subjects.membership_subject(admin_membership)
+      admin_subject = Fixtures.Subjects.subject_for(admin_membership)
 
       {:ok, _device_code, _user_code, pending_grant} =
         Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -5369,22 +3805,23 @@ defmodule Emisar.AccountsTest do
       # exposure is that a grant is bound to whichever key ASKED, so retiring
       # the approver's credentials never reaches it.
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: target.user_id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: target.id
+        )
 
-      other_approver = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: other_approver.id,
-        role: "admin"
-      )
+      other_approver =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "admin"
+        )
 
       theirs =
         Fixtures.Approvals.create_grant(
           account_id: account.id,
           api_key_id: key.id,
           action_id: "a.theirs",
-          granted_by_id: target.user_id
+          granted_by_membership_id: target.id
         )
 
       untouched =
@@ -5392,7 +3829,7 @@ defmodule Emisar.AccountsTest do
           account_id: account.id,
           api_key_id: key.id,
           action_id: "a.other",
-          granted_by_id: other_approver.id
+          granted_by_membership_id: other_approver.id
         )
 
       assert {:ok, _suspended} = Accounts.suspend_membership(target, owner_subject)
@@ -5415,13 +3852,16 @@ defmodule Emisar.AccountsTest do
       owner_subject: owner_subject
     } do
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: target.user_id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: target.id
+        )
 
       grant =
         Fixtures.Approvals.create_grant(
           account_id: account.id,
           api_key_id: key.id,
-          granted_by_id: target.user_id
+          granted_by_membership_id: target.id
         )
 
       assert {:ok, _removed} = Accounts.delete_membership(target, owner_subject)
@@ -5429,15 +3869,9 @@ defmodule Emisar.AccountsTest do
     end
 
     test "operator cannot suspend anyone", %{account: account, target: target} do
-      operator = Fixtures.Users.create_user()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
 
       assert Accounts.suspend_membership(target, operator_subject) == {:error, :unauthorized}
     end
@@ -5486,7 +3920,7 @@ defmodule Emisar.AccountsTest do
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: target.user_id
+          created_by_membership_id: target.id
         )
 
       invalid_subject = %{owner_subject | context: %RequestContext{request_id: 123}}
@@ -5498,14 +3932,8 @@ defmodule Emisar.AccountsTest do
       assert is_nil(Repo.reload!(key).revoked_at)
     end
 
-    test "can't suspend yourself", %{owner: owner, account: account, owner_subject: owner_subject} do
-      owner_membership =
-        Emisar.Accounts.Membership.Query.all()
-        |> Emisar.Accounts.Membership.Query.by_account_and_user(account.id, owner.id)
-        |> Emisar.Repo.fetch!(Emisar.Accounts.Membership.Query)
-
-      assert Accounts.suspend_membership(owner_membership, owner_subject) ==
-               {:error, :cannot_modify_self}
+    test "can't suspend yourself", %{owner: owner, owner_subject: owner_subject} do
+      assert Accounts.suspend_membership(owner, owner_subject) == {:error, :cannot_modify_self}
     end
 
     test "a suspended owner's old browser cannot act after reinstatement", %{
@@ -5513,46 +3941,30 @@ defmodule Emisar.AccountsTest do
       account: account,
       owner_subject: owner_subject
     } do
-      owner_membership =
-        Emisar.Accounts.Membership.Query.all()
-        |> Emisar.Accounts.Membership.Query.by_account_and_user(account.id, owner.id)
-        |> Emisar.Repo.fetch!(Emisar.Accounts.Membership.Query)
-
       # Promote another owner so the actor isn't the only one — then
       # the second owner suspends the first.
-      second_owner = Fixtures.Users.create_user()
+      second_owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: second_owner.id,
-        role: "owner"
-      )
-
-      second_owner_subject = Fixtures.Subjects.subject_for(second_owner, account, role: :owner)
-      assert {:ok, _} = Accounts.suspend_membership(owner_membership, second_owner_subject)
+      second_owner_subject = Fixtures.Subjects.subject_for(second_owner)
+      assert {:ok, _} = Accounts.suspend_membership(owner, second_owner_subject)
 
       # The first owner's held Subject loses authority immediately, including
       # context calls that don't pass back through the web boundary.
-      second_owner_membership =
-        Emisar.Accounts.Membership.Query.all()
-        |> Emisar.Accounts.Membership.Query.by_account_and_user(account.id, second_owner.id)
-        |> Emisar.Repo.fetch!(Emisar.Accounts.Membership.Query)
-
-      assert Accounts.suspend_membership(second_owner_membership, owner_subject) ==
+      assert Accounts.suspend_membership(second_owner, owner_subject) ==
                {:error, :unauthorized}
 
-      # Reinstating the first owner makes the second suspendable again —
-      # and pins that reinstate REALLY clears the row (a stale-struct
-      # reinstate used to silently no-op).
-      {:ok, _} = Accounts.reinstate_membership(owner_membership, second_owner_subject)
+      # Reinstating the first owner makes the second suspendable again, from a
+      # NEW session — suspension ended the old one — and pins that reinstate
+      # REALLY clears the row (a stale-struct reinstate used to silently no-op).
+      {:ok, _} = Accounts.reinstate_membership(owner, second_owner_subject)
 
-      assert Accounts.suspend_membership(second_owner_membership, owner_subject) ==
+      assert Accounts.suspend_membership(second_owner, owner_subject) ==
                {:error, :unauthorized}
 
-      owner_subject = Fixtures.Subjects.subject_for(owner, account)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
 
       assert {:ok, _} =
-               Accounts.suspend_membership(second_owner_membership, owner_subject)
+               Accounts.suspend_membership(second_owner, owner_subject)
     end
 
     test "a pending owner invitation can be suspended", %{
@@ -5570,35 +3982,28 @@ defmodule Emisar.AccountsTest do
                Accounts.suspend_membership(pending_owner, owner_subject)
     end
 
-    test "suspended membership is excluded from fetch_membership_for_session/2", %{
+    test "suspension ends the member's live sessions", %{
+      account: account,
       target: target,
       owner_subject: owner_subject
     } do
-      target_user = Emisar.Repo.preload(target, :user).user
-      session = personal_session(target_user)
-
-      assert {:ok, %Membership{}} =
-               Accounts.fetch_membership_for_session(nil, session)
+      token = Fixtures.Auth.create_session_token!(target, :magic_link, nil)
+      assert {:ok, %UserToken{}} = Auth.fetch_session_by_token(token, account.id)
 
       assert {:ok, _} = Accounts.suspend_membership(target, owner_subject)
 
-      assert Accounts.fetch_membership_for_session(nil, session) ==
-               {:error, :not_found}
-
+      assert Auth.fetch_session_by_token(token, account.id) == {:error, :not_found}
       assert Repo.reload!(target).disabled_at
     end
 
     test "an owner of another account can't suspend this member (cross-account)", %{
-      account: account,
       target: target
     } do
       {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Accounts.suspend_membership(target, subject_b) == {:error, :unauthorized}
 
-      refute Membership.disabled?(
-               Fixtures.Memberships.fetch_membership(account.id, target.user_id)
-             )
+      refute Membership.disabled?(Repo.reload!(target))
 
       assert is_nil(Repo.reload!(target).disabled_by_membership_id)
     end
@@ -5633,25 +4038,16 @@ defmodule Emisar.AccountsTest do
       # row stays disabled.
       {:ok, suspended} = Accounts.suspend_membership(target, owner_subject)
 
-      operator = Fixtures.Users.create_user()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
 
       assert Accounts.reinstate_membership(suspended, operator_subject) == {:error, :unauthorized}
 
-      assert Membership.disabled?(
-               Fixtures.Memberships.fetch_membership(account.id, target.user_id)
-             )
+      assert Membership.disabled?(Repo.reload!(target))
     end
 
     test "an owner of another account can't reinstate this member (cross-account)", %{
-      account: account,
       target: target,
       owner_subject: owner_subject
     } do
@@ -5663,16 +4059,19 @@ defmodule Emisar.AccountsTest do
       # account B is refused and the member stays suspended in account A.
       assert Accounts.reinstate_membership(suspended, subject_b) == {:error, :unauthorized}
 
-      assert Membership.disabled?(
-               Fixtures.Memberships.fetch_membership(account.id, target.user_id)
-             )
+      assert Membership.disabled?(Repo.reload!(target))
     end
   end
 
   describe "reinstate_membership/2" do
     test "reinstating clears disabled_at and broadcasts the reinstate" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
       {:ok, suspended} = Accounts.suspend_membership(target, owner_subject)
       assert Membership.disabled?(suspended)
@@ -5689,7 +4088,12 @@ defmodule Emisar.AccountsTest do
 
     test "an owner of another account can't reinstate this member (cross-account)" do
       account_a = Fixtures.Accounts.create_account()
-      owner_subject_a = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account_a)
+
+      owner_subject_a =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account_a.id, role: :owner)
+        )
+
       target = Fixtures.Memberships.create_membership(account_id: account_a.id, role: "operator")
       {:ok, suspended} = Accounts.suspend_membership(target, owner_subject_a)
 
@@ -5701,7 +4105,12 @@ defmodule Emisar.AccountsTest do
 
     test "reinstating a member who was never suspended writes no audit row" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       assert {:ok, unchanged} = Accounts.reinstate_membership(target, owner_subject)
@@ -5816,17 +4225,13 @@ defmodule Emisar.AccountsTest do
   describe "membership_suspended_effects/2" do
     test "broadcasts and disconnects without mutating credentials" do
       account = Fixtures.Accounts.create_account()
-      member_user = Fixtures.Users.create_user()
-
-      member =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member_user.id,
-          role: "admin"
-        )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member_user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: member.id
+        )
 
       assert is_nil(Repo.reload!(key).revoked_at)
       :ok = Accounts.subscribe_account_team(account.id)
@@ -5962,7 +4367,7 @@ defmodule Emisar.AccountsTest do
       account = Fixtures.Accounts.create_account()
       provider = provider_fixture(account)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-      member_subject = Fixtures.Subjects.membership_subject(member)
+      member_subject = Fixtures.Subjects.subject_for(member)
 
       Emisar.Config.put_override(
         :session_disconnect_handler,
@@ -5974,7 +4379,7 @@ defmodule Emisar.AccountsTest do
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: member.user_id
+          created_by_membership_id: member.id
         )
 
       {:ok, _device_code, _user_code, pending_grant} =
@@ -6019,17 +4424,13 @@ defmodule Emisar.AccountsTest do
     test "fires a committed suspension's broadcast and credential cleanup" do
       account = Fixtures.Accounts.create_account()
       provider = provider_fixture(account)
-      user = Fixtures.Users.create_user()
-
-      member =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "operator"
-        )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: member.id
+        )
 
       :ok = Accounts.subscribe_account_team(account.id)
 
@@ -6121,7 +4522,7 @@ defmodule Emisar.AccountsTest do
       {:ok, _raw, key} =
         Emisar.ApiKeys.create_key(
           %{name: "SIEM", kind: :audit_export},
-          Fixtures.Subjects.membership_subject(admin)
+          Fixtures.Subjects.subject_for(admin)
         )
 
       assert {:ok, %Membership{role: :operator}} =
@@ -6198,15 +4599,9 @@ defmodule Emisar.AccountsTest do
       # lift what the IdP placed, so with the IdP gone the member was suspended
       # permanently, by nobody.
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
       {:ok, suspended, true} = commit_sync_lifecycle(member, provider, :suspend)
@@ -6277,21 +4672,222 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "put_member_mfa_enrollment/6" do
+    test "composes the factor and its user.mfa_enabled row into the caller's transaction" do
+      member = Fixtures.Memberships.create_membership()
+      enabled_at = DateTime.utc_now()
+      context = %RequestContext{request_id: "req-enroll"}
+
+      assert {:ok, %{mfa_enrollment: enrolled, mfa_enrollment_audit: event}} =
+               Multi.new()
+               |> Accounts.put_member_mfa_enrollment(
+                 member,
+                 mfa_reset_secret(),
+                 enabled_at,
+                 ["digest-a", "digest-b"],
+                 context
+               )
+               |> Repo.commit_multi()
+
+      assert enrolled.id == member.id
+      assert enrolled.mfa_secret == mfa_reset_secret()
+      assert enrolled.mfa_enabled_at == enabled_at
+      assert enrolled.mfa_recovery_codes == ["digest-a", "digest-b"]
+      assert is_nil(enrolled.mfa_last_used_at)
+      assert event.event_type == "user.mfa_enabled"
+
+      assert {event.account_id, event.actor_id, event.target_id} ==
+               {member.account_id, member.id, member.id}
+
+      assert event.request_id == "req-enroll"
+    end
+  end
+
+  describe "disable_member_mfa/2" do
+    test "turns the factor off under the row lock and commits the audit with it; an unenrolled Member is refused" do
+      member = Fixtures.Memberships.create_membership() |> enroll_member_mfa()
+      audit = &Audit.Events.member_security_event(&1, "user.mfa_disabled", %RequestContext{})
+
+      assert {:ok, disabled} = Accounts.disable_member_mfa(member, audit: audit)
+      assert disabled.id == member.id
+      assert is_nil(disabled.mfa_secret)
+      assert is_nil(disabled.mfa_enabled_at)
+      assert disabled.mfa_recovery_codes == []
+      assert [event] = member_security_events(member.account_id, "user.mfa_disabled")
+      assert event.actor_id == member.id
+
+      assert Accounts.disable_member_mfa(disabled, audit: audit) == {:error, :mfa_not_enabled}
+      assert [_same] = member_security_events(member.account_id, "user.mfa_disabled")
+    end
+  end
+
+  describe "regenerate_member_mfa_recovery_codes/4" do
+    test "a current TOTP or recovery code replaces every digest in one locked update with its audit; a wrong factor or an unenrolled Member changes nothing" do
+      member = Fixtures.Memberships.create_membership() |> enroll_member_mfa()
+
+      audit =
+        &Audit.Events.member_security_event(
+          &1,
+          "user.mfa_recovery_codes_regenerated",
+          %RequestContext{}
+        )
+
+      at = DateTime.utc_now()
+      otp = NimbleTOTP.verification_code(mfa_reset_secret(), time: at)
+
+      assert {:ok, regenerated} =
+               Accounts.regenerate_member_mfa_recovery_codes(member, {:totp, otp}, ["fresh-a"],
+                 audit: audit,
+                 clock: fn -> at end
+               )
+
+      assert regenerated.mfa_recovery_codes == ["fresh-a"]
+      assert regenerated.mfa_last_used_at == at
+
+      # The TOTP bucket is spent with it.
+      assert Accounts.regenerate_member_mfa_recovery_codes(regenerated, {:totp, otp}, ["again"],
+               audit: audit,
+               clock: fn -> at end
+             ) == {:error, :replay}
+
+      assert {:ok, by_code} =
+               Accounts.regenerate_member_mfa_recovery_codes(
+                 regenerated,
+                 {:recovery_code, "fresh-a"},
+                 ["fresh-b"],
+                 audit: audit
+               )
+
+      assert by_code.mfa_recovery_codes == ["fresh-b"]
+
+      assert Accounts.regenerate_member_mfa_recovery_codes(
+               by_code,
+               {:recovery_code, "fresh-a"},
+               ["x"],
+               audit: audit
+             ) == {:error, :invalid}
+
+      assert Accounts.regenerate_member_mfa_recovery_codes(by_code, {:totp, "000000"}, ["x"],
+               audit: audit
+             ) == {:error, :invalid}
+
+      assert Repo.reload!(by_code).mfa_recovery_codes == ["fresh-b"]
+
+      assert length(
+               member_security_events(member.account_id, "user.mfa_recovery_codes_regenerated")
+             ) == 2
+
+      unenrolled = Fixtures.Memberships.create_membership(account_id: member.account_id)
+
+      assert Accounts.regenerate_member_mfa_recovery_codes(unenrolled, {:totp, otp}, ["x"],
+               audit: audit
+             ) == {:error, :mfa_not_enabled}
+    end
+  end
+
+  describe "consume_member_mfa_recovery_code/3" do
+    test "spends a digest once under the row lock, with the audit; a spent or unknown digest is refused" do
+      member = Fixtures.Memberships.create_membership() |> enroll_member_mfa()
+
+      audit = fn updated ->
+        Audit.Events.member_security_event(
+          updated,
+          "user.mfa_recovery_code_used",
+          %RequestContext{},
+          %{remaining: length(updated.mfa_recovery_codes)}
+        )
+      end
+
+      assert {:ok, consumed} =
+               Accounts.consume_member_mfa_recovery_code(member, "digest-a", audit: audit)
+
+      assert consumed.mfa_recovery_codes == ["digest-b"]
+      assert [event] = member_security_events(member.account_id, "user.mfa_recovery_code_used")
+      assert event.payload == %{"remaining" => 1}
+
+      assert Accounts.consume_member_mfa_recovery_code(consumed, "digest-a", audit: audit) ==
+               {:error, :invalid}
+
+      assert Accounts.consume_member_mfa_recovery_code(consumed, "never-issued", audit: audit) ==
+               {:error, :invalid}
+
+      assert Repo.reload!(member).mfa_recovery_codes == ["digest-b"]
+    end
+  end
+
+  describe "verify_and_consume_member_mfa/3" do
+    test "accepts a current code once per bucket against the locked row, and refuses a wrong code, a disabled factor or a removed Member" do
+      member = Fixtures.Memberships.create_membership() |> enroll_member_mfa()
+      at = DateTime.utc_now()
+      otp = NimbleTOTP.verification_code(mfa_reset_secret(), time: at)
+
+      assert {:ok, verified} =
+               Accounts.verify_and_consume_member_mfa(member, otp, clock: fn -> at end)
+
+      assert verified.mfa_last_used_at == at
+
+      assert Accounts.verify_and_consume_member_mfa(verified, otp, clock: fn -> at end) ==
+               {:error, :replay}
+
+      later = DateTime.add(at, 60, :second)
+
+      assert Accounts.verify_and_consume_member_mfa(verified, otp, clock: fn -> later end) ==
+               {:error, :invalid}
+
+      later_otp = NimbleTOTP.verification_code(mfa_reset_secret(), time: later)
+
+      assert {:ok, again} =
+               Accounts.verify_and_consume_member_mfa(verified, later_otp, clock: fn -> later end)
+
+      assert again.mfa_last_used_at == later
+
+      disabled = Fixtures.Memberships.set_mfa_state(again, mfa_secret: nil, mfa_enabled_at: nil)
+
+      assert Accounts.verify_and_consume_member_mfa(disabled, later_otp, clock: fn -> later end) ==
+               {:error, :invalid}
+
+      removed =
+        Fixtures.Memberships.create_membership(account_id: member.account_id)
+        |> enroll_member_mfa()
+
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
+
+      assert Accounts.verify_and_consume_member_mfa(removed, otp, clock: fn -> at end) ==
+               {:error, :not_found}
+    end
+  end
+
+  describe "peek_mfa_enrolled_membership/1" do
+    test "names the authorized Member with an enrolled authenticator, nil otherwise" do
+      member = Fixtures.Memberships.create_membership() |> enroll_member_mfa()
+      assert %Membership{id: member_id} = Accounts.peek_mfa_enrolled_membership(member.id)
+      assert member_id == member.id
+
+      unenrolled = Fixtures.Memberships.create_membership(account_id: member.account_id)
+      assert is_nil(Accounts.peek_mfa_enrolled_membership(unenrolled.id))
+
+      Fixtures.Memberships.suspend_membership(member)
+      assert is_nil(Accounts.peek_mfa_enrolled_membership(member.id))
+      assert is_nil(Accounts.peek_mfa_enrolled_membership("not-a-uuid"))
+      assert is_nil(Accounts.peek_mfa_enrolled_membership(Ecto.UUID.generate()))
+    end
+  end
+
   describe "verify_member_mfa_reset/4" do
     test "a current owner TOTP produces a reset-specific proof" do
       reset = member_mfa_reset_fixture()
 
       assert {:ok, proof} =
                Accounts.verify_member_mfa_reset(
-                 reset.target_membership,
+                 reset.target,
                  {:totp, current_totp()},
                  reset.actor_session_token_digest,
                  reset.subject
                )
 
       assert {:ok, payload} = Auth.verify_member_mfa_reset_proof(proof)
-      assert payload.actor_id == reset.actor.id
-      assert payload.target_user_id == reset.target_user.id
+      assert payload.actor_membership_id == reset.actor.id
+      assert payload.target_membership_id == reset.target.id
       assert match?({:local, _generic_proof}, payload.source)
     end
 
@@ -6300,7 +4896,7 @@ defmodule Emisar.AccountsTest do
       otp = current_totp()
 
       assert Accounts.verify_member_mfa_reset(
-               reset.target_membership,
+               reset.target,
                {:totp, otp},
                reset.actor_session_token_digest,
                reset.subject
@@ -6316,7 +4912,7 @@ defmodule Emisar.AccountsTest do
       otp = current_totp()
 
       assert Accounts.verify_member_mfa_reset(
-               foreign.target_membership,
+               foreign.target,
                {:totp, otp},
                reset.actor_session_token_digest,
                reset.subject
@@ -6336,7 +4932,7 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, proof} =
                Accounts.issue_member_mfa_reset_sso_proof(
-                 reset.target_membership,
+                 reset.target,
                  reauthentication,
                  reset.actor_session_token_digest,
                  reset.subject
@@ -6355,7 +4951,7 @@ defmodule Emisar.AccountsTest do
                ])
 
       assert Accounts.issue_member_mfa_reset_sso_proof(
-               reset.target_membership,
+               reset.target,
                Map.delete(reauthentication, :auth_time),
                reset.actor_session_token_digest,
                reset.subject
@@ -6369,7 +4965,7 @@ defmodule Emisar.AccountsTest do
       reset = member_mfa_reset_fixture(actor_role: "viewer")
 
       assert Accounts.issue_member_mfa_reset_sso_proof(
-               reset.target_membership,
+               reset.target,
                sso_reauthentication(reset),
                reset.actor_session_token_digest,
                reset.subject
@@ -6381,7 +4977,7 @@ defmodule Emisar.AccountsTest do
       foreign = member_mfa_reset_fixture()
 
       assert Accounts.issue_member_mfa_reset_sso_proof(
-               foreign.target_membership,
+               foreign.target,
                sso_reauthentication(foreign),
                reset.actor_session_token_digest,
                reset.subject
@@ -6392,8 +4988,10 @@ defmodule Emisar.AccountsTest do
   describe "reset_member_mfa/4" do
     test "a recent local proof clears the factor, audits, deletes every target session, and disconnects after commit" do
       reset = member_mfa_reset_fixture()
-      session_a = Fixtures.Auth.create_session_token!(reset.target_user, :magic_link, nil)
-      session_b = Fixtures.Auth.create_session_token!(reset.target_user, :sso, DateTime.utc_now())
+      session_a = Fixtures.Auth.create_session_token!(reset.target, :magic_link, nil)
+
+      session_b =
+        Fixtures.Auth.create_session_token!(reset.target, :magic_link, DateTime.utc_now())
 
       Emisar.Config.put_override(
         :emisar,
@@ -6403,9 +5001,9 @@ defmodule Emisar.AccountsTest do
 
       proof = verified_member_mfa_reset_proof(reset)
 
-      assert {:ok, %User{} = updated} =
+      assert {:ok, %Membership{} = updated} =
                Accounts.reset_member_mfa(
-                 reset.target_membership,
+                 reset.target,
                  proof,
                  reset.actor_session_token_digest,
                  reset.subject
@@ -6414,13 +5012,13 @@ defmodule Emisar.AccountsTest do
       assert is_nil(updated.mfa_enabled_at)
       assert is_nil(updated.mfa_secret)
       assert updated.mfa_recovery_codes == []
-      assert Auth.fetch_session_by_token(session_a) == {:error, :not_found}
-      assert Auth.fetch_session_by_token(session_b) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(session_a, reset.account.id) == {:error, :not_found}
+      assert Auth.fetch_session_by_token(session_b, reset.account.id) == {:error, :not_found}
 
       expected_topics =
         Enum.sort([
-          Auth.live_socket_topic_for_session(session_a),
-          Auth.live_socket_topic_for_session(session_b)
+          Auth.live_socket_topic(Crypto.hash(session_a)),
+          Auth.live_socket_topic(Crypto.hash(session_b))
         ])
 
       assert_receive {:mfa_reset_disconnect, topics, false}
@@ -6434,24 +5032,53 @@ defmodule Emisar.AccountsTest do
              ) == 1
     end
 
-    test "a target who belongs to another workspace is refused before and after the proof" do
+    test "a stale owner Subject demoted to admin cannot reset an owner's factor" do
+      reset = member_mfa_reset_fixture(target_role: "owner")
+      # The proof was issued while the actor was still an owner.
+      proof = verified_member_mfa_reset_proof(reset)
+      Fixtures.Memberships.force_role(reset.actor, "admin")
+
+      assert Accounts.reset_member_mfa(
+               reset.target,
+               proof,
+               reset.actor_session_token_digest,
+               reset.subject
+             ) == {:error, :insufficient_privileges}
+
+      assert Repo.reload!(reset.target).mfa_enabled_at
+    end
+
+    test "resets only this Member: a namesake in another workspace keeps its factor and sessions" do
       reset = member_mfa_reset_fixture()
       other_account = Fixtures.Accounts.create_account()
 
-      Fixtures.Memberships.create_membership(
-        account_id: other_account.id,
-        user_id: reset.target_user.id
-      )
+      namesake =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          email: reset.target.email
+        )
+        |> enroll_member_mfa()
 
-      # The refusal lands at verification, before the actor's own factor is spent.
-      assert Accounts.verify_member_mfa_reset(
-               reset.target_membership,
-               {:totp, current_totp()},
-               reset.actor_session_token_digest,
-               reset.subject
-             ) == {:error, :member_of_other_workspaces}
+      namesake_session = Fixtures.Auth.create_session_token!(namesake, :magic_link, nil)
+      proof = verified_member_mfa_reset_proof(reset)
 
-      assert Repo.reload!(reset.target_user).mfa_enabled_at != nil
+      assert {:ok, %Membership{mfa_enabled_at: nil}} =
+               Accounts.reset_member_mfa(
+                 reset.target,
+                 proof,
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
+
+      assert %DateTime{} = Repo.reload!(namesake).mfa_enabled_at
+      assert Repo.reload!(namesake).mfa_recovery_codes == ["digest-a", "digest-b"]
+      assert {:ok, _session} = Auth.fetch_session_by_token(namesake_session, other_account.id)
+
+      assert [_only] =
+               Repo.all(
+                 AuditEvent.Query.all()
+                 |> AuditEvent.Query.by_event_type("user.mfa_reset_by_admin")
+               )
     end
 
     test "a recovery-code proof consumes only the presented actor code" do
@@ -6460,15 +5087,15 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, proof} =
                Accounts.verify_member_mfa_reset(
-                 reset.target_membership,
+                 reset.target,
                  {:recovery_code, used_code},
                  reset.actor_session_token_digest,
                  reset.subject
                )
 
-      assert {:ok, %User{}} =
+      assert {:ok, %Membership{}} =
                Accounts.reset_member_mfa(
-                 reset.target_membership,
+                 reset.target,
                  proof,
                  reset.actor_session_token_digest,
                  reset.subject
@@ -6488,18 +5115,18 @@ defmodule Emisar.AccountsTest do
 
       for session_state <- [:revoked, :expired, :foreign] do
         reset = member_mfa_reset_fixture()
-        target_session = Fixtures.Auth.create_session_token!(reset.target_user, :magic_link, nil)
+        target_session = Fixtures.Auth.create_session_token!(reset.target, :magic_link, nil)
 
         {proof, token_digest} =
           case session_state do
             :foreign ->
-              foreign = Fixtures.Users.create_user()
+              foreign = Fixtures.Memberships.create_membership(account_id: reset.account.id)
               foreign_token = Fixtures.Auth.create_session_token!(foreign, :magic_link, nil)
               foreign_digest = Crypto.hash(foreign_token)
 
               {:ok, proof} =
                 Accounts.verify_member_mfa_reset(
-                  reset.target_membership,
+                  reset.target,
                   {:totp, current_totp()},
                   foreign_digest,
                   reset.subject
@@ -6511,7 +5138,7 @@ defmodule Emisar.AccountsTest do
               proof = verified_member_mfa_reset_proof(reset)
 
               if state == :revoked do
-                :ok = Auth.delete_session_token(reset.actor_session_token)
+                :ok = Fixtures.Auth.delete_session_token!(reset.actor_session_token)
               else
                 :ok =
                   Fixtures.Auth.backdate_session_token!(
@@ -6523,17 +5150,21 @@ defmodule Emisar.AccountsTest do
               {proof, reset.actor_session_token_digest}
           end
 
+        # An ended actor session fails the Authorizer's live re-read before the
+        # proof is even opened; another Member's session fails the session lock.
+        expected = if session_state == :foreign, do: :mfa_reset_proof_stale, else: :unauthorized
+
         assert Accounts.reset_member_mfa(
-                 reset.target_membership,
+                 reset.target,
                  proof,
                  token_digest,
                  reset.subject
-               ) == {:error, :mfa_reset_proof_stale}
+               ) == {:error, expected}
 
-        refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+        refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
 
         assert {:ok, _session} =
-                 Auth.fetch_session_by_token(target_session)
+                 Auth.fetch_session_by_token(target_session, reset.account.id)
       end
 
       refute Repo.exists?(
@@ -6552,7 +5183,7 @@ defmodule Emisar.AccountsTest do
                Auth.verify_current_session_mfa_challenge({:totp, otp}, reset.subject)
 
       assert Accounts.reset_member_mfa(
-               reset.target_membership,
+               reset.target,
                nil,
                reset.actor_session_token_digest,
                reset.subject
@@ -6560,7 +5191,7 @@ defmodule Emisar.AccountsTest do
                {:error, :mfa_reset_proof_stale}
 
       assert Accounts.reset_member_mfa(
-               reset.target_membership,
+               reset.target,
                generic_proof,
                reset.actor_session_token_digest,
                reset.subject
@@ -6568,21 +5199,15 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, proof} =
                Auth.issue_member_mfa_reset_proof(
-                 reset.target_membership,
-                 reset.target_user,
+                 reset.target,
                  {:local, generic_proof},
                  reset.actor_session_token_digest,
                  reset.subject
                )
 
-      other_user = enroll_member_mfa(Fixtures.Users.create_user())
-
       other_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: reset.account.id,
-          user_id: other_user.id,
-          role: "operator"
-        )
+        Fixtures.Memberships.create_membership(account_id: reset.account.id, role: "operator")
+        |> enroll_member_mfa()
 
       assert Accounts.reset_member_mfa(
                other_membership,
@@ -6592,8 +5217,8 @@ defmodule Emisar.AccountsTest do
              ) ==
                {:error, :mfa_reset_proof_stale}
 
-      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
-      refute is_nil(Repo.reload!(other_user).mfa_enabled_at)
+      refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
+      refute is_nil(Repo.reload!(other_membership).mfa_enabled_at)
     end
 
     test "the proof cannot cross accounts or authorize self-reset" do
@@ -6601,22 +5226,18 @@ defmodule Emisar.AccountsTest do
       proof = verified_member_mfa_reset_proof(reset)
       other_account = Fixtures.Accounts.create_account()
 
-      Fixtures.Memberships.create_membership(
-        account_id: other_account.id,
-        user_id: reset.actor.id,
-        role: "owner"
-      )
-
-      other_target = enroll_member_mfa(Fixtures.Users.create_user())
-
-      other_membership =
+      other_actor =
         Fixtures.Memberships.create_membership(
           account_id: other_account.id,
-          user_id: other_target.id,
-          role: "operator"
+          email: reset.actor.email,
+          role: "owner"
         )
 
-      other_subject = Fixtures.Subjects.subject_for(reset.actor, other_account)
+      other_membership =
+        Fixtures.Memberships.create_membership(account_id: other_account.id, role: "operator")
+        |> enroll_member_mfa()
+
+      other_subject = Fixtures.Subjects.subject_for(other_actor)
 
       assert Accounts.reset_member_mfa(
                other_membership,
@@ -6638,7 +5259,6 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, proof} =
                Auth.issue_member_mfa_reset_proof(
-                 reset.actor_membership,
                  current_actor,
                  {:local, local_proof},
                  reset.actor_session_token_digest,
@@ -6646,14 +5266,14 @@ defmodule Emisar.AccountsTest do
                )
 
       assert Accounts.reset_member_mfa(
-               reset.actor_membership,
+               current_actor,
                proof,
                reset.actor_session_token_digest,
                reset.subject
              ) ==
                {:error, :cannot_modify_self}
 
-      refute is_nil(Repo.reload!(other_target).mfa_enabled_at)
+      refute is_nil(Repo.reload!(other_membership).mfa_enabled_at)
       refute is_nil(Repo.reload!(reset.actor).mfa_enabled_at)
     end
 
@@ -6661,18 +5281,18 @@ defmodule Emisar.AccountsTest do
       reset = member_mfa_reset_fixture()
       proof = verified_member_mfa_reset_proof(reset)
 
-      assert {:ok, %User{}} =
+      assert {:ok, %Membership{}} =
                Accounts.reset_member_mfa(
-                 reset.target_membership,
+                 reset.target,
                  proof,
                  reset.actor_session_token_digest,
                  reset.subject
                )
 
-      re_enrolled = enroll_member_mfa(Repo.reload!(reset.target_user))
+      re_enrolled = enroll_member_mfa(Repo.reload!(reset.target))
 
       assert Accounts.reset_member_mfa(
-               reset.target_membership,
+               reset.target,
                proof,
                reset.actor_session_token_digest,
                reset.subject
@@ -6687,7 +5307,7 @@ defmodule Emisar.AccountsTest do
       proof = directly_issued_member_mfa_reset_proof(reset)
 
       assert Accounts.reset_member_mfa(
-               reset.target_membership,
+               reset.target,
                proof,
                reset.actor_session_token_digest,
                reset.subject
@@ -6696,23 +5316,23 @@ defmodule Emisar.AccountsTest do
 
       reset = member_mfa_reset_fixture()
       proof = verified_member_mfa_reset_proof(reset)
-      Fixtures.Memberships.force_role(reset.actor_membership, "viewer")
+      Fixtures.Memberships.force_role(reset.actor, "viewer")
 
       assert Accounts.reset_member_mfa(
-               reset.target_membership,
+               reset.target,
                proof,
                reset.actor_session_token_digest,
                reset.subject
              ) ==
                {:error, :unauthorized}
 
-      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+      refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
 
       reset = member_mfa_reset_fixture()
       proof = verified_member_mfa_reset_proof(reset)
 
       pending =
-        reset.target_membership
+        reset.target
         |> Ecto.Changeset.change(
           invitation_token_digest: "pending-reset-invitation",
           invitation_accepted_at: nil
@@ -6727,161 +5347,62 @@ defmodule Emisar.AccountsTest do
              ) ==
                {:error, :invitation_pending}
 
-      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+      refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
     end
 
-    test "an existing user's unaccepted admin invitation grants no reset authority" do
-      {_actor, _actor_account, actor_subject} = Fixtures.Subjects.owner_subject()
+    test "a pending invitee holding admin permissions has no reset authority" do
+      reset = member_mfa_reset_fixture()
 
-      {actor, [recovery_code | _remaining_codes]} =
-        Fixtures.Users.enable_mfa!(mfa_reset_secret(), actor_subject)
-
-      {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
-
-      assert {:ok, %{membership: pending_membership}} =
-               Accounts.invite_user_to_account(
-                 Fixtures.Accounts.invitation_attrs(email: actor.email, role: "admin"),
-                 owner_subject
-               )
-
-      assert pending_membership.invitation_token_digest
-      actor_session = Fixtures.Auth.create_session_token!(actor, :magic_link, nil)
-      actor_session_digest = Crypto.hash(actor_session)
-      {:ok, actor_token} = Auth.fetch_session_by_token(actor_session)
-
-      # The invitation holds the actor's address in this workspace, so the seat
-      # the fixture rigs for the actor names another.
-      rigged_membership =
+      pending =
         Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: actor.id,
-          role: "owner",
-          email: Fixtures.Random.unique_email()
+          account_id: reset.account.id,
+          role: "admin",
+          invitation_token_digest: "pending-admin"
         )
+        |> enroll_member_mfa()
+
+      pending_session = Fixtures.Auth.create_session_token!(pending, :magic_link, nil)
 
       pending_subject = %{
-        Fixtures.Subjects.subject_for(actor, account, membership: rigged_membership)
-        | session_token_id: actor_token.id
+        Fixtures.Subjects.subject_for(pending, session: pending_session)
+        | role: :admin,
+          permissions: Auth.Permissions.for_role(:admin)
       }
 
-      target_user = Fixtures.Users.create_user() |> enroll_member_mfa()
-
-      target_membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
-          role: "operator"
-        )
-
-      target_session = Fixtures.Auth.create_session_token!(target_user, :magic_link, nil)
-      recovery_codes_before = Repo.reload!(actor).mfa_recovery_codes
+      target_session = Fixtures.Auth.create_session_token!(reset.target, :magic_link, nil)
 
       assert Accounts.verify_member_mfa_reset(
-               target_membership,
-               {:recovery_code, recovery_code},
-               actor_session_digest,
+               reset.target,
+               {:totp, current_totp()},
+               Crypto.hash(pending_session),
                pending_subject
              ) == {:error, :unauthorized}
-
-      assert Repo.reload!(actor).mfa_recovery_codes == recovery_codes_before
-
-      # The same code still succeeds at the factor boundary, proving the
-      # authorization refusal happened before factor consumption. A directly
-      # issued proof then pins the final locked recheck too.
-      assert {:ok, local_proof} =
-               Auth.verify_current_session_mfa_challenge(
-                 {:recovery_code, recovery_code},
-                 pending_subject
-               )
-
-      actor = Repo.reload!(actor)
-      pending_subject = %{pending_subject | actor: actor}
-
-      assert {:ok, proof} =
-               Auth.issue_member_mfa_reset_proof(
-                 target_membership,
-                 target_user,
-                 {:local, local_proof},
-                 actor_session_digest,
-                 pending_subject
-               )
-
-      Emisar.Config.put_override(
-        :emisar,
-        :session_disconnect_handler,
-        {:emisar, RecordingMfaResetSessionDisconnector}
-      )
 
       assert Accounts.reset_member_mfa(
-               target_membership,
-               proof,
-               actor_session_digest,
+               reset.target,
+               verified_member_mfa_reset_proof(reset),
+               Crypto.hash(pending_session),
                pending_subject
              ) == {:error, :unauthorized}
 
-      refute is_nil(Repo.reload!(target_user).mfa_enabled_at)
-      assert {:ok, _token} = Auth.fetch_session_by_token(target_session)
-      assert {:ok, _token} = Auth.fetch_session_by_token(actor_session)
-
-      refute Repo.exists?(
-               AuditEvent.Query.all()
-               |> AuditEvent.Query.by_account_id(account.id)
-               |> AuditEvent.Query.by_event_type("user.mfa_reset_by_admin")
-             )
-
-      refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
+      refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
+      assert {:ok, _token} = Auth.fetch_session_by_token(target_session, reset.account.id)
     end
 
-    test "an audit rollback preserves MFA, sessions, the proof, and socket state" do
-      reset = member_mfa_reset_fixture()
-      session = Fixtures.Auth.create_session_token!(reset.target_user, :magic_link, nil)
-      proof = verified_member_mfa_reset_proof(reset)
-
-      Emisar.Config.put_override(
-        :emisar,
-        :session_disconnect_handler,
-        {:emisar, RecordingMfaResetSessionDisconnector}
-      )
-
-      bad_subject = %{reset.subject | context: %RequestContext{request_id: 123}}
-
-      assert {:error, {:audit_failed, %Ecto.Changeset{}}} =
-               Accounts.reset_member_mfa(
-                 reset.target_membership,
-                 proof,
-                 reset.actor_session_token_digest,
-                 bad_subject
-               )
-
-      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
-      assert {:ok, _token} = Auth.fetch_session_by_token(session)
-      refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
-
-      assert {:ok, %User{}} =
-               Accounts.reset_member_mfa(
-                 reset.target_membership,
-                 proof,
-                 reset.actor_session_token_digest,
-                 reset.subject
-               )
-    end
-  end
-
-  describe "reset_member_mfa/4 — Members without a personal login" do
-    test "an administrator without one resets through a fresh IdP reauthentication" do
-      reset = unlinked_admin_reset_fixture()
+    test "an administrator without a local factor resets through a fresh IdP reauthentication" do
+      reset = sso_admin_reset_fixture()
 
       assert {:ok, proof} =
                Accounts.issue_member_mfa_reset_sso_proof(
-                 reset.target_membership,
+                 reset.target,
                  reset.reauthentication,
                  reset.session_digest,
                  reset.subject
                )
 
-      assert {:ok, %User{mfa_enabled_at: nil}} =
+      assert {:ok, %Membership{mfa_enabled_at: nil}} =
                Accounts.reset_member_mfa(
-                 reset.target_membership,
+                 reset.target,
                  proof,
                  reset.session_digest,
                  reset.subject
@@ -6895,35 +5416,40 @@ defmodule Emisar.AccountsTest do
                |> Repo.all()
     end
 
-    test "an administrator without one has no local factor to prove" do
-      reset = unlinked_admin_reset_fixture()
+    test "an administrator without a local factor has none to prove" do
+      reset = sso_admin_reset_fixture()
 
-      assert Auth.issue_member_mfa_reset_proof(
-               reset.target_membership,
-               reset.target_user,
-               {:local, "local-proof"},
-               reset.session_digest,
-               reset.subject
-             ) == {:error, :mfa_reset_proof_stale}
+      # The handoff only wraps the source; the final transaction rechecks it
+      # against the acting Member, which has no factor to have proved.
+      {:ok, forged} =
+        Auth.issue_member_mfa_reset_proof(
+          reset.target,
+          {:local, "local-proof"},
+          reset.session_digest,
+          reset.subject
+        )
+
+      assert Accounts.reset_member_mfa(reset.target, forged, reset.session_digest, reset.subject) ==
+               {:error, :mfa_reset_proof_stale}
 
       assert Accounts.verify_member_mfa_reset(
-               reset.target_membership,
+               reset.target,
                {:totp, current_totp()},
                reset.session_digest,
                reset.subject
-             ) == {:error, :personal_login_required}
+             ) == {:error, :invalid}
 
-      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+      refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
     end
 
-    test "a target without one has no MFA to reset" do
+    test "a target without a factor has no MFA to reset" do
       reset = member_mfa_reset_fixture()
-      unlinked = Fixtures.Memberships.create_unlinked_membership(account_id: reset.account.id)
+      unenrolled = Fixtures.Memberships.create_membership(account_id: reset.account.id)
       otp = current_totp()
 
       # Refused before the actor's own factor is spent.
       assert Accounts.verify_member_mfa_reset(
-               unlinked,
+               unenrolled,
                {:totp, otp},
                reset.actor_session_token_digest,
                reset.subject
@@ -6931,23 +5457,57 @@ defmodule Emisar.AccountsTest do
 
       assert {:ok, proof} =
                Accounts.verify_member_mfa_reset(
-                 reset.target_membership,
+                 reset.target,
                  {:totp, otp},
                  reset.actor_session_token_digest,
                  reset.subject
                )
 
       assert Accounts.reset_member_mfa(
-               unlinked,
+               unenrolled,
                proof,
                reset.actor_session_token_digest,
                reset.subject
              ) == {:error, :mfa_reset_proof_stale}
 
-      assert Accounts.reset_member_mfa_for_support(unlinked, support_subject(reset.account)) ==
+      assert Accounts.reset_member_mfa_for_support(unenrolled, support_subject(reset.account)) ==
                {:error, :mfa_not_enabled}
 
-      refute is_nil(Repo.reload!(reset.target_user).mfa_enabled_at)
+      refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
+    end
+
+    test "an audit rollback preserves MFA, sessions, the proof, and socket state" do
+      reset = member_mfa_reset_fixture()
+      session = Fixtures.Auth.create_session_token!(reset.target, :magic_link, nil)
+      proof = verified_member_mfa_reset_proof(reset)
+
+      Emisar.Config.put_override(
+        :emisar,
+        :session_disconnect_handler,
+        {:emisar, RecordingMfaResetSessionDisconnector}
+      )
+
+      bad_subject = %{reset.subject | context: %RequestContext{request_id: 123}}
+
+      assert {:error, %Ecto.Changeset{}} =
+               Accounts.reset_member_mfa(
+                 reset.target,
+                 proof,
+                 reset.actor_session_token_digest,
+                 bad_subject
+               )
+
+      refute is_nil(Repo.reload!(reset.target).mfa_enabled_at)
+      assert {:ok, _token} = Auth.fetch_session_by_token(session, reset.account.id)
+      refute_receive {:mfa_reset_disconnect, _topics, _in_transaction?}
+
+      assert {:ok, %Membership{}} =
+               Accounts.reset_member_mfa(
+                 reset.target,
+                 proof,
+                 reset.actor_session_token_digest,
+                 reset.subject
+               )
     end
   end
 
@@ -6956,21 +5516,21 @@ defmodule Emisar.AccountsTest do
       reset = member_mfa_reset_fixture()
       support = support_subject(reset.account)
 
-      assert {:ok, %User{mfa_enabled_at: nil}} =
-               Accounts.reset_member_mfa_for_support(reset.target_membership, support)
+      assert {:ok, %Membership{mfa_enabled_at: nil}} =
+               Accounts.reset_member_mfa_for_support(reset.target, support)
     end
 
     test "a browser subject and an unenrolled target are refused" do
       reset = member_mfa_reset_fixture()
 
       assert Accounts.reset_member_mfa_for_support(
-               reset.target_membership,
+               reset.target,
                reset.subject
              ) == {:error, :unauthorized}
 
       reset = member_mfa_reset_fixture(target_mfa?: false)
       support = support_subject(reset.account)
-      target_session = Fixtures.Auth.create_session_token!(reset.target_user, :magic_link, nil)
+      target_session = Fixtures.Auth.create_session_token!(reset.target, :magic_link, nil)
 
       Emisar.Config.put_override(
         :emisar,
@@ -6978,11 +5538,11 @@ defmodule Emisar.AccountsTest do
         {:emisar, RecordingMfaResetSessionDisconnector}
       )
 
-      assert Accounts.reset_member_mfa_for_support(reset.target_membership, support) ==
+      assert Accounts.reset_member_mfa_for_support(reset.target, support) ==
                {:error, :mfa_not_enabled}
 
       assert {:ok, _session} =
-               Auth.fetch_session_by_token(target_session)
+               Auth.fetch_session_by_token(target_session, reset.account.id)
 
       refute Repo.exists?(
                AuditEvent.Query.all()
@@ -6999,10 +5559,10 @@ defmodule Emisar.AccountsTest do
 
       # The entry gate reads `account_id` off the caller's struct, so the scope
       # that matters is the one on the LOCKED read.
-      forged = %{foreign.target_membership | account_id: reset.account.id}
+      forged = %{foreign.target | account_id: reset.account.id}
 
       assert Accounts.reset_member_mfa_for_support(forged, support) == {:error, :not_found}
-      assert Repo.reload!(foreign.target_user).mfa_enabled_at
+      assert Repo.reload!(foreign.target).mfa_enabled_at
     end
   end
 
@@ -7013,9 +5573,10 @@ defmodule Emisar.AccountsTest do
       %{account: account, owner_subject: owner_subject, provider: provider}
     end
 
-    # A Member without a personal login, its identity at `provider`, and a key it minted.
-    defp login_less_key(account, provider) do
-      member = Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
+    # An SSO-only Member (no verified address), its identity at `provider`, and a key it minted.
+    defp sso_only_key(account, provider) do
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, email_verified?: false)
 
       identity =
         Fixtures.SSO.create_user_identity(
@@ -7024,18 +5585,20 @@ defmodule Emisar.AccountsTest do
           membership: member
         )
 
-      raw = Fixtures.Auth.create_member_session_token!(member, identity)
-      subject = Fixtures.Subjects.unlinked_member_subject(member, raw)
+      raw =
+        Fixtures.Auth.create_session_token!(member, :sso, nil, %{}, user_identity_id: identity.id)
+
+      subject = Fixtures.Subjects.subject_for(member, session: raw)
       {:ok, key_raw, key} = Emisar.ApiKeys.mint_quick_key(subject)
       {member, key_raw, key}
     end
 
-    test "ends a login-less Member's keys and audits the revocation once", %{
+    test "ends an SSO-only Member's keys and audits the revocation once", %{
       account: account,
       owner_subject: owner_subject,
       provider: provider
     } do
-      {member, key_raw, _key} = login_less_key(account, provider)
+      {member, key_raw, _key} = sso_only_key(account, provider)
 
       assert {:ok, [%AuditEvent{event_type: "membership.credentials_revoked"} = event]} =
                Accounts.revoke_stranded_member_credentials(
@@ -7056,17 +5619,17 @@ defmodule Emisar.AccountsTest do
              ) == {:ok, []}
     end
 
-    test "leaves a personal login's, a suspended Member's and another workspace's keys", %{
+    test "leaves a verified Member's, a suspended Member's and another workspace's keys", %{
       account: account,
       owner_subject: owner_subject,
       provider: provider
     } do
       {:ok, _owner_raw, owner_key} = Emisar.ApiKeys.mint_quick_key(owner_subject)
-      {suspended, _suspended_raw, suspended_key} = login_less_key(account, provider)
+      {suspended, _suspended_raw, suspended_key} = sso_only_key(account, provider)
       Fixtures.Memberships.suspend_membership(suspended)
       other = Fixtures.Accounts.create_account(plan: "team")
       other_provider = Fixtures.SSO.create_identity_provider(account_id: other.id)
-      {stranger, _stranger_raw, stranger_key} = login_less_key(other, other_provider)
+      {stranger, _stranger_raw, stranger_key} = sso_only_key(other, other_provider)
 
       assert Accounts.revoke_stranded_member_credentials(
                Repo,
@@ -7081,161 +5644,37 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  # A person with a personal browser session, a workspace of their own without
-  # SSO, and a sole-owner seat in another workspace that an SSO identity came through.
-  defp linked_sso_seat do
-    user = Fixtures.Users.create_user()
-    own = Fixtures.Accounts.create_account()
-    own_seat = Fixtures.Memberships.create_membership(account_id: own.id, user_id: user.id)
-    other = Fixtures.Accounts.create_account(plan: "team")
-    provider = Fixtures.SSO.create_identity_provider(account_id: other.id)
-
-    seat =
-      Fixtures.Memberships.create_membership(
-        account_id: other.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-    identity =
-      Fixtures.SSO.create_user_identity(
-        account_id: other.id,
-        provider_id: provider.id,
-        user_id: user.id
-      )
-
-    raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, session} = Auth.fetch_session_by_token(raw)
-
-    %{
-      user: user,
-      own: own,
-      own_seat: own_seat,
-      other: other,
-      provider: provider,
-      seat: seat,
-      identity: identity,
-      session: session,
-      subject: %Auth.Subject{actor: user, session_token_id: session.id}
-    }
-  end
-
-  describe "list_detachable_memberships/1" do
-    test "lists only the caller's seats an SSO identity came through" do
-      %{other: other, seat: seat, subject: subject} = linked_sso_seat()
-
-      assert {:ok, [%Membership{id: seat_id, account: %Account{id: account_id}}]} =
-               Accounts.list_detachable_memberships(subject)
-
-      assert {seat_id, account_id} == {seat.id, other.id}
-    end
-
-    test "refuses a browser without personal proof" do
-      %{user: user} = linked_sso_seat()
-      sso_raw = Fixtures.Auth.create_session_token!(user, :sso, nil)
-      {:ok, sso_session} = Auth.fetch_session_by_token(sso_raw)
-
-      assert Accounts.list_detachable_memberships(%Auth.Subject{
-               actor: user,
-               session_token_id: sso_session.id
-             }) == {:error, :unauthorized}
-    end
-  end
-
-  describe "detach_personal_login/2" do
-    test "leaves the seat without a login, ends this person's grant there and audits it there" do
-      %{own: own, other: other, seat: seat, session: session, subject: subject} =
-        linked_sso_seat()
-
-      context = RequestContext.new(%{ip_address: "203.0.113.7", request_id: "req-detach"})
-
-      assert {:ok, %Membership{id: seat_id, user_id: nil}} =
-               Accounts.detach_personal_login(seat.id, %{subject | context: context})
-
-      assert seat_id == seat.id
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(other.id, session) ==
-               {:error, :not_found}
-
-      assert {:ok, _own_seat} = Accounts.fetch_membership_by_account_id_or_slug(own.id, session)
-
-      assert [event] =
-               AuditEvent.Query.all()
-               |> AuditEvent.Query.by_event_type("membership.personal_login_detached")
-               |> Repo.all()
-
-      assert {event.account_id, event.actor_id, event.target_id} == {other.id, seat.id, seat.id}
-      assert {event.ip_address, event.request_id} == {nil, "req-detach"}
-    end
-
-    test "refuses a seat whose only SSO route is retired, disabled or off the plan" do
-      %{seat: seat, identity: identity, subject: subject} = linked_sso_seat()
-      Fixtures.SSO.retire_identity(identity)
-
-      assert Accounts.list_detachable_memberships(subject) == {:ok, []}
-      assert Accounts.detach_personal_login(seat.id, subject) == {:error, :no_sso_identity}
-
-      %{seat: seat, provider: provider, subject: subject} = linked_sso_seat()
-      Fixtures.SSO.disable_provider(provider)
-
-      assert Accounts.detach_personal_login(seat.id, subject) == {:error, :no_sso_identity}
-      assert Repo.reload!(seat).user_id == seat.user_id
-
-      # A lapsed plan keeps the connection enabled but refuses its sign-ins, so a
-      # detached owner there could reach the workspace neither way.
-      %{seat: seat, other: other, subject: subject} = linked_sso_seat()
-      Fixtures.Accounts.create_subscription(other, "free")
-
-      assert Accounts.list_detachable_memberships(subject) == {:ok, []}
-      assert Accounts.detach_personal_login(seat.id, subject) == {:error, :no_sso_identity}
-      assert Repo.reload!(seat).user_id == seat.user_id
-    end
-
-    test "refuses a seat no SSO identity came through, another person's and a bad id" do
-      %{own_seat: own_seat, other: other, subject: subject} = linked_sso_seat()
-      stranger = Fixtures.Memberships.create_membership(account_id: other.id)
-
-      assert Accounts.detach_personal_login(own_seat.id, subject) == {:error, :no_sso_identity}
-      assert Accounts.detach_personal_login(stranger.id, subject) == {:error, :not_found}
-      assert Accounts.detach_personal_login("not-a-uuid", subject) == {:error, :not_found}
-      assert Repo.reload!(own_seat).user_id == own_seat.user_id
-      assert Repo.reload!(stranger).user_id == stranger.user_id
-    end
-
-    test "refuses a browser without personal proof or without a personal login" do
-      %{user: user, seat: seat} = linked_sso_seat()
-      sso_raw = Fixtures.Auth.create_session_token!(user, :sso, nil)
-      {:ok, sso_session} = Auth.fetch_session_by_token(sso_raw)
-      sso_subject = %Auth.Subject{actor: user, session_token_id: sso_session.id}
-      member = Fixtures.Memberships.create_unlinked_membership()
-
-      assert Accounts.detach_personal_login(seat.id, sso_subject) == {:error, :unauthorized}
-
-      assert Accounts.detach_personal_login(seat.id, %Auth.Subject{actor: member}) ==
-               {:error, :personal_login_required}
-
-      assert Repo.reload!(seat).user_id == user.id
-    end
-  end
-
   describe "update_member_profile_as_admin/3" do
+    test "a stale owner Subject demoted to admin cannot edit an owner's profile" do
+      account = Fixtures.Accounts.create_account()
+
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          display_name: "Owner Name"
+        )
+
+      demoted = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      # Snapshot taken before the demotion, as a mounted Team page holds it.
+      stale = Fixtures.Subjects.subject_for(demoted)
+      Fixtures.Memberships.force_role(demoted, "admin")
+
+      assert Accounts.update_member_profile_as_admin(owner, %{display_name: "Renamed"}, stale) ==
+               {:error, :insufficient_privileges}
+
+      assert Repo.reload!(owner).display_name == "Owner Name"
+    end
+
     test "a directory-synced member's profile is refused — the IdP owns the name" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      target = Fixtures.Users.create_user(full_name: "Synced Name")
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target.id,
-          role: "operator"
+          role: "operator",
+          display_name: "Synced Name"
         )
 
       provider = account |> provider_fixture() |> Fixtures.SSO.enable_scim()
@@ -7245,7 +5684,7 @@ defmodule Emisar.AccountsTest do
       Fixtures.SSO.create_user_identity(%{
         account_id: account.id,
         provider_id: provider.id,
-        user_id: target.id,
+        membership: membership,
         provider_identifier: external_id,
         scim_external_id: external_id,
         created_by: :provider,
@@ -7253,7 +5692,7 @@ defmodule Emisar.AccountsTest do
         scim_active: true
       })
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       assert Accounts.update_member_profile_as_admin(
                membership,
@@ -7262,29 +5701,20 @@ defmodule Emisar.AccountsTest do
              ) ==
                {:error, :directory_managed_profile}
 
-      assert Repo.reload!(target).full_name == "Synced Name"
+      assert Repo.reload!(membership).display_name == "Synced Name"
     end
 
     test "an owner renames a member's profile" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      target = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       assert {:ok, %Membership{display_name: "Renamed By Admin"}} =
                Accounts.update_member_profile_as_admin(
@@ -7299,28 +5729,18 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
         role: "owner"
       )
-
-      target = Fixtures.Users.create_user()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target.id,
           role: "operator"
         )
 
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      subject = Fixtures.Subjects.subject_for(viewer)
 
       assert Accounts.update_member_profile_as_admin(
                membership,
@@ -7335,16 +5755,12 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
         role: "owner"
       )
-
-      target = Fixtures.Users.create_user()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target.id,
           role: "operator"
         )
 
@@ -7362,25 +5778,18 @@ defmodule Emisar.AccountsTest do
 
     test "a struct naming a foreign membership under the caller's account is not found" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       foreign_account = Fixtures.Accounts.create_account()
-      foreign_user = Fixtures.Users.create_user(full_name: "Untouched")
 
       foreign_membership =
         Fixtures.Memberships.create_membership(
           account_id: foreign_account.id,
-          user_id: foreign_user.id,
-          role: "operator"
+          role: "operator",
+          display_name: "Untouched"
         )
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       # The entry gate reads `account_id` off the caller's struct, so the scope
       # that matters is the one on the LOCKED read.
@@ -7389,40 +5798,42 @@ defmodule Emisar.AccountsTest do
       assert Accounts.update_member_profile_as_admin(forged, %{"display_name" => "x"}, subject) ==
                {:error, :not_found}
 
-      assert Repo.reload!(foreign_user).full_name == "Untouched"
+      assert Repo.reload!(foreign_membership).display_name == "Untouched"
     end
   end
 
   describe "end_all_sessions_for/2" do
+    test "a stale owner Subject demoted to admin cannot end an owner's sessions" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      demoted = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      # Snapshot taken before the demotion, as a mounted Team page holds it.
+      stale = Fixtures.Subjects.subject_for(demoted)
+      Fixtures.Memberships.force_role(demoted, "admin")
+      token = Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
+
+      assert Accounts.end_all_sessions_for(owner, stale) == {:error, :insufficient_privileges}
+      assert {:ok, %UserToken{}} = Auth.fetch_session_by_token(token, account.id)
+    end
+
     test "an owner ends a member's workspace grants without deleting the bearer" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      target = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
-      token = Fixtures.Auth.create_session_token!(target, :magic_link, nil)
-      assert {:ok, %{user: %User{}}} = Emisar.Auth.fetch_session_by_token(token)
+      token = Fixtures.Auth.create_session_token!(membership, :magic_link, nil)
+      assert {:ok, %UserToken{}} = Auth.fetch_session_by_token(token, account.id)
 
       assert Accounts.end_all_sessions_for(membership, subject) == :ok
-      assert {:ok, session} = Auth.fetch_session_by_token(token)
-
-      assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
-               {:error, :not_found}
+      assert Auth.fetch_session_by_token(token, account.id) == {:error, :not_found}
+      refute Repo.exists?(UserToken.Query.by_membership(account.id, membership.id))
     end
 
     test "a viewer (no manage_team) is refused" do
@@ -7430,28 +5841,18 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
         role: "owner"
       )
-
-      target = Fixtures.Users.create_user()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target.id,
           role: "operator"
         )
 
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      subject = Fixtures.Subjects.subject_for(viewer)
 
       assert Accounts.end_all_sessions_for(membership, subject) == {:error, :unauthorized}
     end
@@ -7461,16 +5862,12 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
         role: "owner"
       )
-
-      target = Fixtures.Users.create_user()
 
       membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: target.id,
           role: "operator"
         )
 
@@ -7481,67 +5878,56 @@ defmodule Emisar.AccountsTest do
 
     test "a struct naming a foreign membership under the caller's account is not found" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       foreign_account = Fixtures.Accounts.create_account()
-      foreign_user = Fixtures.Users.create_user()
 
       foreign_membership =
         Fixtures.Memberships.create_membership(
           account_id: foreign_account.id,
-          user_id: foreign_user.id,
           role: "operator"
         )
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-      token = Fixtures.Auth.create_session_token!(foreign_user, :magic_link, nil)
+      subject = Fixtures.Subjects.subject_for(owner)
+      token = Fixtures.Auth.create_session_token!(foreign_membership, :magic_link, nil)
 
       # The entry gate reads `account_id` off the caller's struct, so the scope
       # that matters is the one on the LOCKED read.
       forged = %{foreign_membership | account_id: account.id}
 
       assert Accounts.end_all_sessions_for(forged, subject) == {:error, :not_found}
-      assert {:ok, %{user: %User{}}} = Emisar.Auth.fetch_session_by_token(token)
+      assert {:ok, %UserToken{}} = Auth.fetch_session_by_token(token, foreign_account.id)
     end
   end
 
   describe "delete_membership/2" do
+    test "a stale owner Subject demoted to admin cannot remove an owner" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      demoted = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      # Snapshot taken before the demotion, as a mounted Team page holds it.
+      stale = Fixtures.Subjects.subject_for(demoted)
+      Fixtures.Memberships.force_role(demoted, "admin")
+
+      assert Accounts.delete_membership(owner, stale) == {:error, :insufficient_privileges}
+      refute Repo.reload!(owner).deleted_at
+    end
+
     test "owner can remove a non-owner member" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      target_user = Fixtures.Users.create_user()
-
-      target =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
-          role: "operator"
-        )
-
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-      session = personal_session(target_user)
+      subject = Fixtures.Subjects.subject_for(owner)
+      token = Fixtures.Auth.create_session_token!(target, :magic_link, nil)
 
       assert {:ok, %Membership{} = removed} = Accounts.delete_membership(target, subject)
 
       # Removal is a soft delete: the tombstone keeps history while every
       # not_deleted() read treats the member as gone.
       assert removed.deleted_at
-
-      assert Accounts.fetch_membership_for_session(account.id, session) ==
-               {:error, :not_found}
+      assert Auth.fetch_session_by_token(token, account.id) == {:error, :not_found}
     end
 
     test "the last active owner cannot be removed" do
@@ -7550,7 +5936,7 @@ defmodule Emisar.AccountsTest do
       owner_membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      subject = Fixtures.Subjects.membership_subject(owner_membership)
+      subject = Fixtures.Subjects.subject_for(owner_membership)
 
       assert Accounts.delete_membership(owner_membership, subject) == {:error, :last_owner}
     end
@@ -7571,29 +5957,23 @@ defmodule Emisar.AccountsTest do
 
     test "removing a member revokes the API keys they minted" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-
-      member = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(owner)
 
       member_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.id,
           role: "admin"
         )
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: member_membership.id
+        )
 
-      member_subject = Fixtures.Subjects.membership_subject(member_membership)
+      member_subject = Fixtures.Subjects.subject_for(member_membership)
 
       {:ok, _device_code, _user_code, pending_grant} =
         Emisar.ApiKeys.open_device_grant(["claude-code"], %RequestContext{})
@@ -7610,27 +5990,17 @@ defmodule Emisar.AccountsTest do
 
     test "an audit failure rolls back removal without revoking credentials" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      member = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "admin"
-        )
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: membership.id
+        )
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
       invalid_subject = %{subject | context: %RequestContext{request_id: 123}}
 
       assert {:error, %Ecto.Changeset{}} =
@@ -7640,102 +6010,60 @@ defmodule Emisar.AccountsTest do
       assert is_nil(Repo.reload!(key).revoked_at)
     end
 
-    test "removing a member ends their access here without signing them out elsewhere" do
+    test "removing a member ends their sessions here; a namesake elsewhere stays signed in" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      subject = Fixtures.Subjects.subject_for(owner)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      session_token = Fixtures.Auth.create_session_token!(membership, :magic_link, nil)
+      elsewhere = Fixtures.Memberships.create_membership(email: membership.email)
+      elsewhere_token = Fixtures.Auth.create_session_token!(elsewhere, :magic_link, nil)
 
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-      member = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "admin"
-        )
-
-      session_token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
-
-      assert {:ok, %{user: %User{}} = session} =
-               Emisar.Auth.fetch_session_by_token(session_token)
-
+      assert {:ok, %UserToken{}} = Auth.fetch_session_by_token(session_token, account.id)
       assert {:ok, _} = Accounts.delete_membership(membership, subject)
 
-      # A session token is a user-level login, not an account credential — the
-      # person may belong to other workspaces, and this account has no authority
-      # over those. It survives…
-      assert {:ok, %{user: %User{}}} =
-               Emisar.Auth.fetch_session_by_token(session_token)
+      # The Member's credentials end with its seat; another workspace's Member
+      # at the same address is nobody's business here.
+      assert Auth.fetch_session_by_token(session_token, account.id) == {:error, :not_found}
 
-      # …but it no longer resolves this account, which is what ending access means.
-      assert Accounts.fetch_membership_for_session(account.id, session) ==
-               {:error, :not_found}
+      assert {:ok, %UserToken{}} =
+               Auth.fetch_session_by_token(elsewhere_token, elsewhere.account_id)
     end
 
     test "a removed member can be re-invited (tombstone doesn't hold the seat)" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      target_user = Fixtures.Users.create_user()
-
-      target =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
-          role: "operator"
-        )
-
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       assert {:ok, _} = Accounts.delete_membership(target, subject)
 
       assert {:ok, %{membership: fresh, invitation_token: token}} =
                Accounts.invite_user_to_account(
-                 Fixtures.Accounts.invitation_attrs(email: target_user.email, role: "viewer"),
+                 Fixtures.Accounts.invitation_attrs(email: target.email, role: "viewer"),
                  subject
                )
 
       assert fresh.id != target.id
-      assert {:ok, accepted} = Accounts.mark_invitation_accepted(fresh, token, target_user)
-      assert accepted.user_id == target_user.id
+      accepted = accept_invitation(token, target.email)
+      assert accepted.id == fresh.id
+      assert %DateTime{} = accepted.email_verified_at
     end
 
     test "an operator (no manage_team permission) cannot remove a member → :unauthorized" do
       account = Fixtures.Accounts.create_account()
-      target_user = Fixtures.Users.create_user()
+      target = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      target =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
-          role: "viewer"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      operator = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
 
       assert Accounts.delete_membership(target, operator_subject) == {:error, :unauthorized}
       # The target membership is still present.
-      assert %Membership{} = Fixtures.Memberships.fetch_membership(account.id, target_user.id)
+      assert %Membership{} = Repo.reload!(target)
     end
 
     test "an admin cannot remove an owner" do
@@ -7744,19 +6072,12 @@ defmodule Emisar.AccountsTest do
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: Fixtures.Users.create_user().id,
           role: "owner"
         )
 
-      admin = Fixtures.Users.create_user()
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
-
-      subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      subject = Fixtures.Subjects.subject_for(admin)
 
       assert Accounts.delete_membership(owner_membership, subject) ==
                {:error, :insufficient_privileges}
@@ -7767,49 +6088,35 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user().id,
         role: "owner"
       )
 
-      target_user = Fixtures.Users.create_user()
-
-      target =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
-          role: "operator"
-        )
+      target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Accounts.delete_membership(target, subject_b) == {:error, :unauthorized}
       # A's membership survives.
-      assert %Membership{} = Fixtures.Memberships.fetch_membership(account.id, target_user.id)
+      assert %Membership{} = Repo.reload!(target)
     end
 
     test "a removed member's API key can no longer resolve for dispatch" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-
-      member = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(owner)
 
       member_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.id,
           role: "admin"
         )
 
       {raw, _key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: member_membership.id
+        )
 
       # The key resolves while the member is active — the MCP/OAuth auth boundary.
       assert %Emisar.ApiKeys.ApiKey{} = Emisar.ApiKeys.peek_api_key_by_secret(raw)
@@ -7869,7 +6176,7 @@ defmodule Emisar.AccountsTest do
              ) == {:error, :rate_limited}
 
       refute_received {:email, _}
-      assert Users.fetch_user_by_email(email) == {:error, :not_found}
+      assert Accounts.peek_sync_membership_by_email(account.id, email) == nil
 
       # Resends draw on the same budget.
       pending =
@@ -7885,13 +6192,12 @@ defmodule Emisar.AccountsTest do
     test "the invitation lands in the subject's account, never another the invitee belongs to" do
       {owner, account, subject} = Fixtures.Subjects.owner_subject()
       {_other_owner, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
-      invitee = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: other_account.id,
-        user_id: invitee.id,
-        role: "owner"
-      )
+      invitee =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          role: "owner"
+        )
 
       assert {:ok, result} =
                Accounts.invite_user_to_account_and_deliver(
@@ -7903,10 +6209,10 @@ defmodule Emisar.AccountsTest do
       # The account comes from the SUBJECT, so an existing membership elsewhere
       # neither collides with the invite nor gains a role from it.
       assert result.membership.account_id == account.id
-      assert is_nil(result.membership.user_id)
+      refute result.membership.email_verified_at
 
       assert %Membership{role: :owner} =
-               Fixtures.Memberships.fetch_membership(other_account.id, invitee.id)
+               Repo.reload!(invitee)
     end
 
     test "a suppressed address still gets the invitation, but no email is sent" do
@@ -7946,16 +6252,14 @@ defmodule Emisar.AccountsTest do
 
     test "a viewer cannot invite, and nothing is emailed" do
       account = Fixtures.Accounts.create_account()
-      viewer = Fixtures.Users.create_user()
 
       viewer_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: viewer.id,
           role: "viewer"
         )
 
-      subject = Fixtures.Subjects.membership_subject(viewer_membership)
+      subject = Fixtures.Subjects.subject_for(viewer_membership)
       email = "denied-deliver-#{System.unique_integer([:positive])}@example.test"
 
       assert Accounts.invite_user_to_account_and_deliver(
@@ -7964,7 +6268,7 @@ defmodule Emisar.AccountsTest do
                  role: "operator",
                  runner_access_mode: "all"
                ),
-               viewer,
+               viewer_membership,
                subject
              ) ==
                {:error, :unauthorized}
@@ -7974,6 +6278,26 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "resend_account_invitation/2" do
+    test "a stale owner Subject demoted to admin cannot resend an owner invitation" do
+      account = Fixtures.Accounts.create_account()
+      demoted = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      # Snapshot taken before the demotion, as a mounted Team page holds it.
+      stale = Fixtures.Subjects.subject_for(demoted)
+      Fixtures.Memberships.force_role(demoted, "admin")
+
+      pending_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          invitation_token_digest: "pending-owner"
+        )
+
+      assert Accounts.resend_account_invitation(pending_owner, stale) ==
+               {:error, :insufficient_privileges}
+
+      assert Repo.reload!(pending_owner).invitation_token_digest == "pending-owner"
+    end
+
     test "refreshes the pending invite token and validity window" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       email = "resend-#{System.unique_integer([:positive])}@example.test"
@@ -8000,7 +6324,6 @@ defmodule Emisar.AccountsTest do
 
       assert updated.id == membership.id
       assert updated.email == email
-      assert is_nil(updated.user_id)
       refute new_token == old_token
       refute updated.invitation_token_digest == membership.invitation_token_digest
       assert DateTime.compare(updated.inserted_at, expired_at) == :gt
@@ -8011,7 +6334,11 @@ defmodule Emisar.AccountsTest do
 
     test "a viewer cannot resend an invitation" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       {:ok, %{membership: membership}} =
         Accounts.invite_user_to_account(
@@ -8022,15 +6349,9 @@ defmodule Emisar.AccountsTest do
           owner_subject
         )
 
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
 
       assert Accounts.resend_account_invitation(membership, viewer_subject) ==
                {:error, :unauthorized}
@@ -8061,19 +6382,19 @@ defmodule Emisar.AccountsTest do
 
     test "an accepted invitation is no longer resendable" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
-      user = Fixtures.Users.create_user()
+      email = "accepted-#{System.unique_integer([:positive])}@example.test"
 
       {:ok, %{membership: membership, invitation_token: token}} =
         Accounts.invite_user_to_account(
           Fixtures.Accounts.invitation_attrs(
-            email: user.email,
+            email: email,
             role: "operator",
             runner_access_mode: "all"
           ),
           subject
         )
 
-      assert {:ok, _accepted} = Accounts.mark_invitation_accepted(membership, token, user)
+      _accepted = accept_invitation(token, email)
       assert Accounts.resend_account_invitation(membership, subject) == {:error, :not_found}
     end
 
@@ -8089,15 +6410,9 @@ defmodule Emisar.AccountsTest do
           owner_subject
         )
 
-      admin = Fixtures.Users.create_user()
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
-
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert Accounts.resend_account_invitation(membership, admin_subject) ==
                {:error, :insufficient_privileges}
@@ -8196,16 +6511,14 @@ defmodule Emisar.AccountsTest do
 
     test "counts suspended members (suspension preserves the seat)" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
-      owner_subject = Fixtures.Subjects.membership_subject(owner_membership)
+      owner_subject = Fixtures.Subjects.subject_for(owner_membership)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       assert Accounts.count_memberships(account.id) == 2
@@ -8216,16 +6529,14 @@ defmodule Emisar.AccountsTest do
 
     test "does NOT count soft-deleted (removed) members — they free the seat" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner.id,
           role: "owner"
         )
 
-      owner_subject = Fixtures.Subjects.membership_subject(owner_membership)
+      owner_subject = Fixtures.Subjects.subject_for(owner_membership)
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       assert Accounts.count_memberships(account.id) == 2
@@ -8385,60 +6696,54 @@ defmodule Emisar.AccountsTest do
   describe "fetch_billing_contact/1" do
     test "selects the earliest active confirmed owner" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user(email: "owner-a@example.test")
-      other_owner = Fixtures.Users.create_user(email: "owner-b@example.test")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "owner-a@example.test"
+        )
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: other_owner.id,
-        role: "owner"
-      )
+      other_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "owner-b@example.test"
+        )
 
       assert {:ok, %{account: %Account{id: account_id}, owner: selected}} =
                Accounts.fetch_billing_contact(account.id)
 
-      assert {account_id, selected.user_id} == {account.id, owner.id}
+      assert {account_id, selected.id} == {account.id, owner.id}
+      assert other_owner.id != selected.id
     end
 
     test "skips an owner who is no longer one" do
       account = Fixtures.Accounts.create_account()
-      demoted = Fixtures.Users.create_user()
-      owner = Fixtures.Users.create_user()
 
       demoted_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: demoted.id,
           role: "owner"
         )
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       Fixtures.Memberships.force_role(demoted_membership, "admin")
 
       assert {:ok, %{owner: selected}} = Accounts.fetch_billing_contact(account.id)
-      assert selected.user_id == owner.id
+      assert selected.id == owner.id
     end
 
-    test "skips unconfirmed owners and refuses an account with no billable owner email" do
+    test "skips unverified owners and refuses an account with no billable owner email" do
       account = Fixtures.Accounts.create_account()
-      unconfirmed = Fixtures.Users.create_user(confirmed?: false)
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: unconfirmed.id,
-        role: "owner"
-      )
+      _unverified =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email_verified?: false
+        )
 
       assert Accounts.fetch_billing_contact(account.id) == {:error, :no_billing_contact}
       assert Accounts.fetch_billing_contact("not-a-uuid") == {:error, :not_found}
@@ -8446,24 +6751,18 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "list_account_report_recipients/2" do
-    test "returns every active confirmed Owner, paginated by membership id" do
+    test "returns every active verified Owner, paginated by membership id" do
       account = Fixtures.Accounts.create_account()
-      users = for _ <- 1..3, do: Fixtures.Users.create_user()
 
-      # Different user/membership ordering catches a cursor taken from the user.
       memberships =
-        for user <- Enum.reverse(users) do
-          Fixtures.Memberships.create_membership(
-            account_id: account.id,
-            user_id: user.id,
-            role: "owner"
-          )
+        for _ <- 1..3 do
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         end
 
       [first, second, third] = Enum.sort_by(memberships, & &1.id)
       assert [page_one] = Accounts.list_account_report_recipients(account, limit: 1)
       assert page_one.id == first.id
-      assert page_one.user.id == first.user_id
+      assert page_one.email == first.email
 
       assert Enum.map(
                Accounts.list_account_report_recipients(account,
@@ -8474,15 +6773,15 @@ defmodule Emisar.AccountsTest do
              ) == [second.id, third.id]
     end
 
-    test "excludes unconfirmed, suspended, deleted, invited and non-Owner recipients" do
+    test "excludes unverified, address-less, suspended, deleted, invited and non-Owner recipients" do
       account = Fixtures.Accounts.create_account()
-      unconfirmed = Fixtures.Users.create_user(confirmed?: false)
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: unconfirmed.id,
-        role: "owner"
-      )
+      _unverified =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email_verified?: false
+        )
 
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       |> Fixtures.Memberships.suspend_membership()
@@ -8490,15 +6789,7 @@ defmodule Emisar.AccountsTest do
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       |> Fixtures.Memberships.mark_membership_as_deleted()
 
-      deleted_user = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: deleted_user.id,
-        role: "owner"
-      )
-
-      Fixtures.Users.mark_user_as_deleted(deleted_user)
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner", email: nil)
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
@@ -8514,13 +6805,12 @@ defmodule Emisar.AccountsTest do
     test "does not select another account's owner" do
       account = Fixtures.Accounts.create_account()
       other_account = Fixtures.Accounts.create_account()
-      other_owner = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: other_account.id,
-        user_id: other_owner.id,
-        role: "owner"
-      )
+      _other_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          role: "owner"
+        )
 
       assert Accounts.list_account_report_recipients(account) == []
     end
@@ -8638,14 +6928,9 @@ defmodule Emisar.AccountsTest do
   describe "soft-deleted associations are excluded from preloads" do
     test "account preload skips a soft-deleted membership (preloader honors :where)" do
       account = Fixtures.Accounts.create_account()
-      live_user = Fixtures.Users.create_user()
-      doomed_user = Fixtures.Users.create_user()
+      live = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      _live =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: live_user.id)
-
-      doomed =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: doomed_user.id)
+      doomed = Fixtures.Memberships.create_membership(account_id: account.id)
 
       Fixtures.Memberships.mark_membership_as_deleted(doomed)
 
@@ -8655,23 +6940,22 @@ defmodule Emisar.AccountsTest do
         |> Emisar.Repo.fetch(Account.Query, preload: [:memberships])
 
       assert [%Membership{} = only] = loaded.memberships
-      assert only.user_id == live_user.id
+      assert only.id == live.id
     end
   end
 
   describe "subject_can_manage_team?/1" do
     test "is true for an owner and an admin (they hold manage_team)" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-      admin = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert Accounts.subject_can_manage_team?(owner_subject)
       assert Accounts.subject_can_manage_team?(admin_subject)
@@ -8679,23 +6963,12 @@ defmodule Emisar.AccountsTest do
 
     test "is false for an operator and a viewer" do
       account = Fixtures.Accounts.create_account()
-      operator = Fixtures.Users.create_user()
-      viewer = Fixtures.Users.create_user()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
-      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
 
       refute Accounts.subject_can_manage_team?(operator_subject)
       refute Accounts.subject_can_manage_team?(viewer_subject)
@@ -8712,7 +6985,7 @@ defmodule Emisar.AccountsTest do
             {:viewer, []}
           ] do
         member = Fixtures.Memberships.create_membership(account_id: account.id, role: actor_role)
-        subject = Fixtures.Subjects.membership_subject(member)
+        subject = Fixtures.Subjects.subject_for(member)
 
         for role <- [:owner, :admin, :operator, :viewer, :billing_manager] do
           assert Accounts.subject_can_assign_member_role?(role, subject) == role in allowed
@@ -8728,9 +7001,9 @@ defmodule Emisar.AccountsTest do
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: :admin)
       viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
       foreign = Fixtures.Memberships.create_membership(role: :viewer)
-      owner_subject = Fixtures.Subjects.membership_subject(owner)
-      admin_subject = Fixtures.Subjects.membership_subject(admin)
-      viewer_subject = Fixtures.Subjects.membership_subject(viewer)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
+      admin_subject = Fixtures.Subjects.subject_for(admin)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
 
       assert Accounts.subject_can_manage_member?(admin, owner_subject)
       assert Accounts.subject_can_manage_member?(viewer, admin_subject)
@@ -8745,16 +7018,15 @@ defmodule Emisar.AccountsTest do
   describe "subject_can_manage_account?/1" do
     test "is true for an owner and an admin (they hold manage_own_account)" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-      admin = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert Accounts.subject_can_manage_account?(owner_subject)
       assert Accounts.subject_can_manage_account?(admin_subject)
@@ -8762,23 +7034,12 @@ defmodule Emisar.AccountsTest do
 
     test "is false for an operator and a viewer" do
       account = Fixtures.Accounts.create_account()
-      operator = Fixtures.Users.create_user()
-      viewer = Fixtures.Users.create_user()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
-      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
 
       refute Accounts.subject_can_manage_account?(operator_subject)
       refute Accounts.subject_can_manage_account?(viewer_subject)
@@ -8788,16 +7049,15 @@ defmodule Emisar.AccountsTest do
   describe "subject_can_manage_account_security?/1" do
     test "is true for an owner and an admin (they hold manage_security_settings)" do
       account = Fixtures.Accounts.create_account()
-      owner_subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
-      admin = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: admin.id,
-        role: "admin"
-      )
+      owner_subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
-      admin_subject = Fixtures.Subjects.subject_for(admin, account, role: :admin)
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+
+      admin_subject = Fixtures.Subjects.subject_for(admin)
 
       assert Accounts.subject_can_manage_account_security?(owner_subject)
       assert Accounts.subject_can_manage_account_security?(admin_subject)
@@ -8805,23 +7065,12 @@ defmodule Emisar.AccountsTest do
 
     test "is false for an operator and a viewer" do
       account = Fixtures.Accounts.create_account()
-      operator = Fixtures.Users.create_user()
-      viewer = Fixtures.Users.create_user()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
-
-      operator_subject = Fixtures.Subjects.subject_for(operator, account, role: :operator)
-      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      operator_subject = Fixtures.Subjects.subject_for(operator)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
 
       refute Accounts.subject_can_manage_account_security?(operator_subject)
       refute Accounts.subject_can_manage_account_security?(viewer_subject)
@@ -8831,46 +7080,26 @@ defmodule Emisar.AccountsTest do
   describe "refresh_directory_authorization_sessions/1" do
     test "disconnects live sockets without revoking the member's session token" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "admin"
-        )
-
-      token = Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now())
+      token = Fixtures.Auth.create_session_token!(membership, :magic_link, DateTime.utc_now())
 
       assert Accounts.refresh_directory_authorization_sessions(membership) == :ok
-      assert {:ok, %{user: %User{}}} = Emisar.Auth.fetch_session_by_token(token)
+      assert {:ok, %UserToken{}} = Auth.fetch_session_by_token(token, account.id)
     end
   end
 
   describe "team-list broadcasts" do
     setup do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
-
-      target_user = Fixtures.Users.create_user()
-
-      target =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: target_user.id,
-          role: "operator"
-        )
+      target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       %{
         account: account,
         target: target,
-        subject: Fixtures.Subjects.subject_for(owner, account, role: :owner)
+        subject: Fixtures.Subjects.subject_for(owner)
       }
     end
 
@@ -8918,64 +7147,99 @@ defmodule Emisar.AccountsTest do
     })
   end
 
-  defp enroll_mfa(user) do
-    Fixtures.Users.set_mfa_state(user, mfa_enabled_at: DateTime.utc_now())
+  defp enroll_mfa(member) do
+    Fixtures.Memberships.set_mfa_state(member, mfa_enabled_at: DateTime.utc_now())
   end
 
-  defp personal_session(user) do
-    raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, session} = Auth.fetch_session_by_token(raw)
-    session
+  # Accepts a pending invitation the way the sign-in transaction does: the
+  # workspace lock, then the acceptance of the proved address.
+  defp accept_invitation(token, email) do
+    {:ok, ^email, intent} =
+      Accounts.prepare_invitation_acceptance(token, %{"display_name" => "Accepted Member"})
+
+    {:ok, %{accepted: accepted}} =
+      Multi.new()
+      |> Multi.run(:account, fn repo, _changes ->
+        Accounts.fetch_and_lock_account(intent.account_id, repo: repo)
+      end)
+      |> Accounts.put_invitation_acceptance(intent, email)
+      |> Repo.commit_multi(after_commit: &Accounts.after_membership_activation_committed/1)
+
+    accepted
+  end
+
+  # The `users` table has no writer left: its rows are history until S3 drops
+  # it, so the erase flow's input is inserted directly.
+  defp legacy_login do
+    %User{}
+    |> Ecto.Changeset.change(
+      email: Fixtures.Random.unique_email(),
+      full_name: "Legacy Login",
+      confirmed_at: DateTime.utc_now()
+    )
+    |> Repo.insert!()
+  end
+
+  defp legacy_member(account, %User{} = login, role) do
+    Fixtures.Memberships.create_membership(account_id: account.id, email: login.email, role: role)
+    |> Ecto.Changeset.change(user_id: login.id)
+    |> Repo.update!()
   end
 
   defp member_mfa_reset_fixture(opts \\ []) do
     account = Fixtures.Accounts.create_account()
-    actor = Fixtures.Users.create_user()
 
-    actor_membership =
+    actor =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: actor.id,
         role: Keyword.get(opts, :actor_role, "owner")
       )
 
-    actor_subject = Fixtures.Subjects.subject_for(actor, account)
-    {actor, actor_recovery_codes} = Fixtures.Users.enable_mfa!(mfa_reset_secret(), actor_subject)
-    subject = Fixtures.Subjects.subject_for(actor, account)
+    # An owner besides the actor, so hierarchy guards never hinge on the actor
+    # being the last owner.
+    Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    actor_subject = Fixtures.Subjects.subject_for(actor)
+
+    {actor, actor_recovery_codes} =
+      Fixtures.Memberships.enable_mfa!(mfa_reset_secret(), actor_subject)
+
     actor_session_token = Fixtures.Auth.create_session_token!(actor, :magic_link, nil)
-    target_user = Fixtures.Users.create_user()
+    subject = Fixtures.Subjects.subject_for(actor, session: actor_session_token)
 
-    target_user =
-      if Keyword.get(opts, :target_mfa?, true),
-        do: enroll_member_mfa(target_user),
-        else: target_user
-
-    target_membership =
+    target =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: target_user.id,
         role: Keyword.get(opts, :target_role, "operator")
       )
+
+    target =
+      if Keyword.get(opts, :target_mfa?, true),
+        do: enroll_member_mfa(target),
+        else: target
 
     %{
       account: account,
       actor: actor,
-      actor_membership: actor_membership,
       actor_recovery_codes: actor_recovery_codes,
       actor_session_token: actor_session_token,
       actor_session_token_digest: Crypto.hash(actor_session_token),
       subject: subject,
-      target_user: target_user,
-      target_membership: target_membership
+      target: target
     }
   end
 
-  # An administrator without a personal login, signed in through an IdP whose
-  # MFA this workspace trusts, and a linked target with an enrolled factor.
-  defp unlinked_admin_reset_fixture do
+  # An administrator with no local factor, signed in through an IdP whose MFA
+  # this workspace trusts, and a target with an enrolled factor.
+  defp sso_admin_reset_fixture do
     account = Fixtures.Accounts.create_account(plan: "team")
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id, satisfies_mfa: true)
-    admin = Fixtures.Memberships.create_unlinked_membership(account_id: account.id, role: "admin")
+
+    admin =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "admin",
+        email_verified?: false
+      )
 
     identity =
       Fixtures.SSO.create_user_identity(
@@ -8984,32 +7248,28 @@ defmodule Emisar.AccountsTest do
         membership: admin
       )
 
-    raw = Fixtures.Auth.create_member_session_token!(admin, identity)
-    target_user = enroll_member_mfa(Fixtures.Users.create_user())
+    raw =
+      Fixtures.Auth.create_session_token!(admin, :sso, nil, %{}, user_identity_id: identity.id)
 
-    target_membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: target_user.id,
-        role: "operator"
-      )
+    target =
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+      |> enroll_member_mfa()
 
     %{
+      account: account,
       admin: admin,
-      subject: Fixtures.Subjects.unlinked_member_subject(admin, raw),
+      subject: Fixtures.Subjects.subject_for(admin, session: raw),
       session_digest: Crypto.hash(raw),
-      target_user: target_user,
-      target_membership: target_membership,
+      target: target,
       reauthentication: %{
         provider_id: provider.id,
         identity_id: identity.id,
         provider_identifier: identity.provider_identifier,
         namespace: {provider.issuer, provider.client_id, provider.identifier_claim},
         auth_time: System.system_time(:second),
-        target_membership_id: target_membership.id,
-        target_user_id: target_user.id,
-        target_mfa_enabled_at: target_user.mfa_enabled_at,
-        target_updated_at: target_user.updated_at
+        target_membership_id: target.id,
+        target_mfa_enabled_at: target.mfa_enabled_at,
+        target_updated_at: target.updated_at
       }
     }
   end
@@ -9021,17 +7281,16 @@ defmodule Emisar.AccountsTest do
       provider_identifier: "subject-123",
       namespace: {"https://idp.example", "client-id", :sub},
       auth_time: System.system_time(:second),
-      target_membership_id: reset.target_membership.id,
-      target_user_id: reset.target_user.id,
-      target_mfa_enabled_at: reset.target_user.mfa_enabled_at,
-      target_updated_at: reset.target_user.updated_at
+      target_membership_id: reset.target.id,
+      target_mfa_enabled_at: reset.target.mfa_enabled_at,
+      target_updated_at: reset.target.updated_at
     }
   end
 
   defp verified_member_mfa_reset_proof(reset) do
     {:ok, proof} =
       Accounts.verify_member_mfa_reset(
-        reset.target_membership,
+        reset.target,
         {:totp, current_totp()},
         reset.actor_session_token_digest,
         reset.subject
@@ -9046,8 +7305,7 @@ defmodule Emisar.AccountsTest do
 
     {:ok, proof} =
       Auth.issue_member_mfa_reset_proof(
-        reset.target_membership,
-        reset.target_user,
+        reset.target,
         {:local, local_proof},
         reset.actor_session_token_digest,
         reset.subject
@@ -9071,40 +7329,19 @@ defmodule Emisar.AccountsTest do
   # the timestamp — so reset_member_mfa's "every field is wiped" assertion
   # is meaningful (clearing only the timestamp wouldn't prove the secret
   # and codes were dropped).
+
+  defp member_security_events(account_id, event_type) do
+    AuditEvent.Query.all()
+    |> AuditEvent.Query.by_account_id(account_id)
+    |> AuditEvent.Query.by_event_type(event_type)
+    |> Repo.all()
+  end
+
   defp enroll_member_mfa(user) do
-    Fixtures.Users.set_mfa_state(user,
+    Fixtures.Memberships.set_mfa_state(user,
       mfa_secret: "JBSWY3DPEHPK3PXP",
       mfa_enabled_at: DateTime.utc_now(),
       mfa_recovery_codes: ["digest-a", "digest-b"]
     )
-  end
-
-  # Another workspace that federates with `issuer` and provisioned `user` there:
-  # an enabled provider on that issuer, the person's identity under it, and an
-  # operator membership. The fixture behind the SSO federation-scope tests.
-  defp federated_sibling(user, issuer, provider_identifier) do
-    {_owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
-
-    provider =
-      Fixtures.SSO.create_identity_provider(%{
-        account_id: account.id,
-        name: "Sibling IdP",
-        issuer: issuer
-      })
-
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "operator"
-    )
-
-    Fixtures.SSO.create_user_identity(%{
-      account_id: account.id,
-      provider_id: provider.id,
-      user_id: user.id,
-      provider_identifier: provider_identifier
-    })
-
-    account
   end
 end

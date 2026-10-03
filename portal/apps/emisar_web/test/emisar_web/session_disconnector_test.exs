@@ -1,7 +1,7 @@
 defmodule EmisarWeb.SessionDisconnectorTest do
   @moduledoc """
-  The web-side half of "kill this user's live sessions": each
-  `live_socket_id` topic must receive the `%Phoenix.Socket.Broadcast{}`
+  The web-side half of "end these sessions' sockets": each session's
+  topic must receive the `%Phoenix.Socket.Broadcast{}`
   disconnect event LiveView's channel tears down on.
   """
   use EmisarWeb.ConnCase, async: true
@@ -23,16 +23,15 @@ defmodule EmisarWeb.SessionDisconnectorTest do
   end
 
   test "Auth calls the handler while the web application is running" do
-    user = Fixtures.Users.create_user()
-    token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+    member = Fixtures.Memberships.create_membership()
+    token = Fixtures.Auth.create_session_token!(member)
     topic = Auth.live_socket_topic(Crypto.hash(token))
     EmisarWeb.Endpoint.subscribe(topic)
 
-    assert user |> Auth.capture_live_socket_topics() |> Auth.disconnect_live_socket_topics() ==
-             :ok
-
+    assert Auth.disconnect_live_socket_topics([topic]) == :ok
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect", payload: %{}}
 
-    assert {:ok, _auth} = Auth.fetch_session_by_token(token)
+    # Disconnecting sockets ends no session: only revocation deletes the row.
+    assert {:ok, _auth} = Auth.fetch_session_by_token(token, member.account_id)
   end
 end

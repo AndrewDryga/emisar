@@ -159,6 +159,36 @@ defmodule Emisar.Crypto do
 
   def verify_paddle_account_binding(_token), do: {:error, :invalid}
 
+  @checkout_return_salt "checkout return"
+  @checkout_return_max_age_seconds 24 * 60 * 60
+
+  @doc """
+  Signs the return state a checkout URL carries back to Emisar: the workspace
+  and the Paddle transaction it pays, so the checkout page and its return can
+  trust both. Valid for a day: a checkout is paid right after it opens, and a
+  resumed one is signed again. Verify with `verify_checkout_return/1`.
+  """
+  def checkout_return(account_id, transaction_id)
+      when is_binary(account_id) and is_binary(transaction_id) do
+    Phoenix.Token.sign(email_link_secret(), @checkout_return_salt, {account_id, transaction_id})
+  end
+
+  @doc "Verifies checkout return state. Returns `{:ok, {account_id, transaction_id}} | {:error, :invalid}`."
+  def verify_checkout_return(token) when is_binary(token) do
+    case Phoenix.Token.verify(email_link_secret(), @checkout_return_salt, token,
+           max_age: @checkout_return_max_age_seconds
+         ) do
+      {:ok, {account_id, transaction_id}}
+      when is_binary(account_id) and is_binary(transaction_id) ->
+        {:ok, {account_id, transaction_id}}
+
+      _invalid ->
+        {:error, :invalid}
+    end
+  end
+
+  def verify_checkout_return(_token), do: {:error, :invalid}
+
   defp email_link_secret, do: Application.fetch_env!(:emisar, :email_link_secret)
 
   # The emailed magic-link secret is a short, typable code; the browser-side

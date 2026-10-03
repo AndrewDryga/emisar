@@ -49,13 +49,12 @@ defmodule EmisarWeb.SSOPendingLiveTest do
 
   test "a matched invitee is told to accept the emailed invitation first", %{conn: conn} do
     %{conn: conn, request: request, account: account} = pending(conn)
-    user = Fixtures.Users.create_user(email: request.email)
 
     member =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: user.id,
-        invitation_token_digest: "pending-invitation"
+        invitation_token_digest: "pending-invitation",
+        email: request.email
       )
 
     request

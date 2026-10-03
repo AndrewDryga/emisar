@@ -21,8 +21,6 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
   alias Emisar.Runners.Runner
 
   defp pending_request(account, requested_by, opts \\ []) do
-    membership = Emisar.Accounts.peek_sync_membership(account.id, requested_by.id)
-
     {:ok, runner} =
       Runner.Changeset.register(%{
         account_id: account.id,
@@ -44,7 +42,7 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
         action_id: "cassandra.repair",
         source: "operator",
         reason: "needs review",
-        initiating_membership_id: membership.id,
+        initiating_membership_id: requested_by.id,
         args: %{},
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
@@ -71,15 +69,14 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
 
   # Downgrade the logged-in owner to a viewer (same move team_live_test
   # uses). `register_and_log_in` always creates an owner.
-  defp downgrade_to_viewer(user, account) do
-    m = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    Fixtures.Memberships.force_role(m, "viewer")
+  defp downgrade_to_viewer(member) do
+    Fixtures.Memberships.force_role(member, "viewer")
   end
 
   describe "owner decisions transition state" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      request = pending_request(account, user)
+      {conn, owner, account} = register_and_log_in(conn)
+      request = pending_request(account, owner)
       %{conn: conn, account: account, request: request}
     end
 
@@ -120,9 +117,9 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
 
   describe "viewer is gated" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      request = pending_request(account, user)
-      downgrade_to_viewer(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      request = pending_request(account, owner)
+      downgrade_to_viewer(owner)
       %{conn: conn, account: account, request: request}
     end
 
@@ -202,17 +199,11 @@ defmodule EmisarWeb.ApprovalDecisionGateLiveTest do
       request: request
     } do
       # A second owner (not the requester) opens the page — they CAN approve.
-      other = Fixtures.Users.create_user()
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: other.id,
-          role: "owner"
-        )
+      other = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(other) |> live(~p"/app/#{account}/approvals/#{request.id}")
+        build_conn() |> log_in_member(other) |> live(~p"/app/#{account}/approvals/#{request.id}")
 
       assert html =~ "Approve"
 

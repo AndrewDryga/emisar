@@ -1,6 +1,6 @@
 defmodule Emisar.SSOMembershipBindingTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Auth, Fixtures, Repo, RequestContext, SSO}
+  alias Emisar.{Accounts, Auth, Crypto, Fixtures, Repo, RequestContext, SSO}
   alias Emisar.SSO.SCIMUserUpdate
 
   defmodule VerifiedOIDC do
@@ -31,27 +31,22 @@ defmodule Emisar.SSOMembershipBindingTest do
                full_name: "Original Member"
              })
 
-    # The person linked a personal login to the directory's Member by proving
-    # the mailbox, so a replacement seat of that login is the same person.
-    user = Fixtures.Users.create_user(email: email)
-    {:ok, member} = Accounts.link_personal_login(Repo, member, user)
-
     %{
       account: account,
       subject: subject,
       provider: provider,
       identity: identity,
-      member: member,
-      user: user
+      member: member
     }
   end
 
   defp replace_member(member, subject) do
     assert {:ok, _removed} = Accounts.delete_membership(member, subject)
 
+    # The same address joins again as a new Member.
     Fixtures.Memberships.create_membership(
       account_id: member.account_id,
-      user_id: member.user_id,
+      email: member.email,
       display_name: "Replacement Member"
     )
   end
@@ -60,14 +55,13 @@ defmodule Emisar.SSOMembershipBindingTest do
     member: member,
     subject: subject,
     identity: identity,
-    user: user,
     provider: provider
   } do
     replacement = replace_member(member, subject)
 
     claims = %{
       "sub" => identity.provider_identifier,
-      "email" => user.email,
+      "email" => member.email,
       "email_verified" => true
     }
 
@@ -81,19 +75,17 @@ defmodule Emisar.SSOMembershipBindingTest do
     member: member,
     subject: subject,
     identity: identity,
-    user: user,
-    account: account
+    provider: provider
   } do
     replace_member(member, subject)
 
-    assert {:error, :membership_unavailable} =
-             Auth.complete_sso_account_sign_in(
-               user,
-               account.id,
-               %RequestContext{},
-               user_identity_id: identity.id,
-               provider_identifier: identity.provider_identifier
-             )
+    assert Auth.complete_sso_sign_in(
+             member,
+             identity,
+             provider,
+             Crypto.random_secret(),
+             %RequestContext{}
+           ) == {:error, :membership_unavailable}
   end
 
   test "an old SCIM resource neither reads nor renames the replacement member", %{
@@ -116,7 +108,7 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert Repo.reload!(replacement).display_name == "Replacement Member"
   end
 
-  test "inactive directory writes leave a replacement seat alone; explicit reprovision binds it",
+  test "inactive directory writes leave a replacement seat alone; a reprovision is refused while it holds the address",
        %{member: member, subject: subject, identity: identity, provider: provider} do
     replacement = replace_member(member, subject)
 
@@ -133,29 +125,27 @@ defmodule Emisar.SSOMembershipBindingTest do
 
     refute Repo.reload!(replacement).disabled_at
 
-    assert {:ok, %{membership: rebound, identity: identity}} =
-             SSO.scim_provision_user(provider, %{
-               external_id: "directory-person",
-               active: true
-             })
+    # One address is one live Member: the directory cannot re-seat the person
+    # onto the replacement, nor beside it, while the replacement holds it.
+    assert SSO.scim_provision_user(provider, %{
+             external_id: "directory-person",
+             active: true
+           }) == {:error, :member_email_taken}
 
-    assert rebound.id == replacement.id
-    assert identity.membership_id == replacement.id
-    assert {:ok, resource} = SSO.scim_fetch_user(provider, identity.id)
-    assert resource.active
-    assert resource.display_name == "Replacement Member"
+    assert Repo.reload!(identity).membership_id == member.id
+    assert Repo.reload!(replacement).display_name == "Replacement Member"
+    refute Repo.reload!(replacement).disabled_at
   end
 
   test "a stale link approval cannot target a replacement; a fresh request can", %{
     member: member,
     subject: subject,
-    user: user,
     identity: identity,
     provider: provider
   } do
     claims = %{
       "sub" => "fresh-oidc-subject",
-      "email" => user.email,
+      "email" => member.email,
       "email_verified" => true
     }
 
@@ -178,8 +168,12 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert {:ok, %{identity: linked}} =
              SSO.approve_link_request(fresh, Accounts.RunnerAccess.none(), subject)
 
+    # The replacement gets its own identity for the subject it proved; the
+    # identity left on the removed seat is never adopted.
     assert linked.membership_id == replacement.id
-    assert linked.id == identity.id
+    assert linked.provider_identifier == "fresh-oidc-subject"
+    refute linked.id == identity.id
+    assert Repo.reload!(identity).membership_id == member.id
   end
 
   test "directory attribution and policy changes do not adopt a replacement seat", %{
@@ -212,7 +206,7 @@ defmodule Emisar.SSOMembershipBindingTest do
     refute unchanged.directory_managed
   end
 
-  test "a removed Member without a personal login is never re-found through its address", %{
+  test "a removed Member is never re-found through its address", %{
     account: account,
     subject: subject,
     provider: provider
@@ -229,7 +223,7 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert {:ok, _removed} = Accounts.delete_membership(member, subject)
 
     namesake =
-      Fixtures.Memberships.create_unlinked_membership(
+      Fixtures.Memberships.create_membership(
         account_id: account.id,
         email: email
       )
@@ -252,7 +246,6 @@ defmodule Emisar.SSOMembershipBindingTest do
              SSO.scim_provision_user(provider, %{external_id: "unlinked-person", active: true})
 
     refute reseated.id in [member.id, namesake.id]
-    assert is_nil(reseated.user_id)
     assert reseated.email == email
     assert rebound.membership_id == reseated.id
   end

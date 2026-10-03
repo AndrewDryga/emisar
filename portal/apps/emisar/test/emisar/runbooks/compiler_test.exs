@@ -6,7 +6,7 @@ defmodule Emisar.Runbooks.CompilerTest do
   @pack_hash "sha256:" <> String.duplicate("a", 64)
 
   setup do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     %{account: account, subject: subject}
   end
 
@@ -166,7 +166,7 @@ defmodule Emisar.Runbooks.CompilerTest do
   end
 
   test "does not expose runners from another account", %{subject: subject} do
-    {_user, other_account, other_subject} = Fixtures.Subjects.owner_subject()
+    {_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
     runner = trusted_runner(other_account, other_subject)
 
     assert {:error, [issue]} =

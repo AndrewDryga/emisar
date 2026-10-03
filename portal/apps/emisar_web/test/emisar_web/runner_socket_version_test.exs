@@ -86,23 +86,13 @@ defmodule EmisarWeb.RunnerSocketVersionTest do
   end
 
   defp connected_socket(_ctx) do
-    {:ok, user} =
-      Emisar.Users.register_user(%{
-        email: "owner-#{System.unique_integer([:positive])}@example.com"
-      })
-
-    {:ok, account} =
-      Emisar.Accounts.create_account_with_owner(
-        %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
-        user
-      )
+    {owner, account, subject} = Fixtures.Subjects.owner_subject(%{name: "OwnerCo"})
 
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
     {_raw, token} = Runners.mint_runner_token(runner)
     {:ok, state} = RunnerSocket.init(%{token: token, runner: runner})
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
-    %{account: account, user: user, runner: runner, state: state, subject: subject}
+    %{account: account, owner: owner, runner: runner, state: state, subject: subject}
   end
 
   defp text, do: [opcode: :text]

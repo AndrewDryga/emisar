@@ -5,22 +5,15 @@ defmodule Emisar.InvitationConcurrencyTest do
   alias Emisar.{Accounts, Fixtures, Repo}
   alias Emisar.Accounts.{Account, RunnerAccess}
   alias Emisar.Runners.Runner
-  alias Emisar.Users.User
 
   test "inviting a group does not wait for a runner's unrelated update" do
     Sandbox.unboxed_run(Repo, fn ->
-      owner = Fixtures.Users.create_user()
-      invitee = Fixtures.Users.create_user()
+      invitee_email = Fixtures.Random.unique_email()
       account = Fixtures.Accounts.create_account()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "production")
       parent = self()
 
@@ -47,7 +40,7 @@ defmodule Emisar.InvitationConcurrencyTest do
 
         attrs =
           Fixtures.Accounts.invitation_attrs(
-            email: invitee.email,
+            email: invitee_email,
             runner_access_mode: "restricted",
             scope: ["group:production"]
           )
@@ -67,8 +60,6 @@ defmodule Emisar.InvitationConcurrencyTest do
         send(updater.pid, :release)
         Task.yield(updater, 5_000) || Task.shutdown(updater, :brutal_kill)
         Repo.delete_all(from(a in Account, where: a.id == ^account.id))
-        user_ids = [owner.id, invitee.id]
-        Repo.delete_all(from(u in User, where: u.id in ^user_ids))
       end
     end)
   end

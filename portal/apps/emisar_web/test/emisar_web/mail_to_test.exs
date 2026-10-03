@@ -7,14 +7,14 @@ defmodule EmisarWeb.MailToTest do
   alias EmisarWeb.MailTo
 
   describe "support/1" do
-    test "prefills the subject/body and appends account/user context" do
+    test "prefills the subject/body and appends account/member context" do
       href =
         MailTo.support(
           subject: "Billing question - Test Co",
           context: %{
             account: "Test Co",
             account_id: "acc_123",
-            user: "owner@example.com"
+            member: "owner@example.com"
           }
         )
 
@@ -31,7 +31,8 @@ defmodule EmisarWeb.MailToTest do
       assert params["body"] =~ "I have not included passwords, API keys, tokens"
       assert params["body"] =~ "Account: Test Co"
       assert params["body"] =~ "Account ID: acc_123"
-      assert params["body"] =~ "User: owner@example.com"
+      assert params["body"] =~ "Member: owner@example.com"
+      refute params["body"] =~ "User:"
     end
   end
 
@@ -58,6 +59,13 @@ defmodule EmisarWeb.MailToTest do
       assert MailTo.context(%{
                current_account: %{name: "Test Co", id: "acc_123"}
              }) == %{account: "Test Co", account_id: "acc_123"}
+    end
+
+    test "names the signed-in Member by its own email" do
+      assert MailTo.context(%{
+               current_account: %{name: "Test Co", id: "acc_123"},
+               current_membership: %Emisar.Accounts.Membership{email: "maya@example.com"}
+             }) == %{account: "Test Co", account_id: "acc_123", member: "maya@example.com"}
     end
   end
 end

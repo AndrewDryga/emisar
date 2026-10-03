@@ -30,7 +30,6 @@ defmodule Emisar.Users.User do
     # `through:` can't take a `:where` — it inherits the filters of the
     # associations it traverses (memberships above + Membership.account).
     has_many :accounts, through: [:memberships, :account]
-    has_many :tokens, Emisar.Auth.UserToken
 
     timestamps()
   end

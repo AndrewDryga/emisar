@@ -5,7 +5,7 @@ defmodule Emisar.Audit.RejectionTest do
   alias Emisar.Audit.Rejection
 
   test "the outer boundary records one frozen receipt after rollback and restores the error" do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
     event =
       Audit.Events.dispatch_blocked_target_unavailable(account.id, %{
@@ -47,7 +47,7 @@ defmodule Emisar.Audit.RejectionTest do
   end
 
   test "prevalidation receipts bound submitted text and exclude foreign target facts" do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
     event =
       Audit.Events.dispatch_blocked_target_unavailable(account.id, %{
@@ -70,7 +70,7 @@ defmodule Emisar.Audit.RejectionTest do
   end
 
   test "a rejected receipt insert preserves the original rejection and logs no payload" do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
     event =
       Audit.Events.dispatch_blocked_target_unavailable(account.id, %{

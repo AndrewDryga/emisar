@@ -199,9 +199,9 @@ defmodule Emisar.Repo do
       %Ecto.Changeset{} = audit_changeset ->
         insert(audit_changeset, mode: :savepoint)
 
-      # The user-event fan-out (`Audit.user_changesets/3`) returns a list — one
-      # row per active membership. Insert each in the same savepoint (atomic with
-      # the mutation); `[]` (no membership) → {:ok, []}, the skip.
+      # A mutation that records several events (`Accounts`' per-setting account
+      # audits) returns a list. Insert each in the same savepoint
+      # (atomic with the mutation); `[]` → {:ok, []}, the skip.
       changesets when is_list(changesets) ->
         Enum.reduce_while(changesets, {:ok, []}, fn changeset, {:ok, acc} ->
           case insert(changeset, mode: :savepoint) do

@@ -196,16 +196,9 @@ defmodule Emisar.AuditTest do
   describe "record/1" do
     test "inserts a prebuilt Audit.Events changeset and returns {:ok, %Event{}}" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(member)
       updated = %{account | name: "Renamed"}
 
       assert {:ok, %Audit.Event{} = event} =
@@ -261,101 +254,6 @@ defmodule Emisar.AuditTest do
       # Explicit ip wins over the context; un-overridden ua falls through from it.
       assert Ecto.Changeset.get_field(changeset, :ip_address) == "8.8.8.8"
       assert Ecto.Changeset.get_field(changeset, :user_agent) == "ctx-ua"
-    end
-  end
-
-  describe "log_for_user/3 without a membership" do
-    # a user with no active membership can't be scoped to an
-    # account_id, so the event is silently skipped (returns :ok, writes nothing)
-    # rather than raising or writing an account-less row.
-    test "no-ops (returns :ok) and writes no row when the user has no membership" do
-      user = Fixtures.Users.create_user()
-      before = Repo.aggregate(Audit.Event, :count, :id)
-
-      assert Audit.log_for_user(user, "user.signed_in", actor_kind: "user") == :ok
-      assert Repo.aggregate(Audit.Event, :count, :id) == before
-    end
-  end
-
-  describe "user_changesets/3" do
-    test "one changeset per active membership, each naming that account's Member" do
-      account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      assert [changeset] = Audit.user_changesets(user, "user.signed_in")
-
-      assert %Ecto.Changeset{valid?: true} = changeset
-      # Scoped onto the user's account…
-      assert Ecto.Changeset.get_field(changeset, :account_id) == account.id
-      # …naming that account's Member, never the personal login.
-      assert Ecto.Changeset.get_field(changeset, :actor_kind) == "membership"
-      assert Ecto.Changeset.get_field(changeset, :actor_id) == membership.id
-      assert Ecto.Changeset.get_field(changeset, :target_kind) == "membership"
-      assert Ecto.Changeset.get_field(changeset, :target_id) == membership.id
-      assert Ecto.Changeset.get_field(changeset, :target_label) == "Test User"
-    end
-
-    test "fans out to every account the user is an active member of" do
-      user = Fixtures.Users.create_user()
-      account_a = Fixtures.Accounts.create_account()
-      account_b = Fixtures.Accounts.create_account()
-
-      member_a =
-        Fixtures.Memberships.create_membership(
-          account_id: account_a.id,
-          user_id: user.id,
-          display_name: "Work A"
-        )
-
-      member_b =
-        Fixtures.Memberships.create_membership(
-          account_id: account_b.id,
-          user_id: user.id,
-          display_name: "Work B"
-        )
-
-      changesets = Audit.user_changesets(user, "user.signed_in")
-
-      account_ids = Enum.map(changesets, &Ecto.Changeset.get_field(&1, :account_id))
-      assert Enum.sort(account_ids) == Enum.sort([account_a.id, account_b.id])
-
-      assert Map.new(
-               changesets,
-               &{Ecto.Changeset.get_field(&1, :account_id),
-                {Ecto.Changeset.get_field(&1, :actor_id),
-                 Ecto.Changeset.get_field(&1, :target_label)}}
-             ) == %{
-               account_a.id => {member_a.id, "Work A"},
-               account_b.id => {member_b.id, "Work B"}
-             }
-    end
-
-    test "attrs can override actor metadata but never the local profile label" do
-      account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      assert [changeset] =
-               Audit.user_changesets(user, "user.signed_in",
-                 actor_kind: "system",
-                 target_label: "Private label"
-               )
-
-      assert Ecto.Changeset.get_field(changeset, :actor_kind) == "system"
-      assert Ecto.Changeset.get_field(changeset, :target_label) == "Test User"
-    end
-
-    test "returns [] (skip) when the user has no active membership" do
-      user = Fixtures.Users.create_user()
-
-      assert Audit.user_changesets(user, "user.signed_in") == []
     end
   end
 
@@ -427,7 +325,10 @@ defmodule Emisar.AuditTest do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: member.user_id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: member.id
+        )
 
       attrs = %{
         account_id: account.id,
@@ -634,16 +535,9 @@ defmodule Emisar.AuditTest do
   describe "Audit.Events builders inherit the subject's request context" do
     setup do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      %{account: account, user: user}
+      %{account: account, user: member}
     end
 
     test "a builder stamps actor + the subject's context onto the event", %{
@@ -656,7 +550,7 @@ defmodule Emisar.AuditTest do
         request_id: "req_evt"
       }
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner, context: context)
+      subject = Fixtures.Subjects.subject_for(user, context: context)
       updated = %{account | name: "Renamed"}
 
       {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
@@ -676,7 +570,7 @@ defmodule Emisar.AuditTest do
       user: user,
       account: account
     } do
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(user)
       updated = %{account | name: "Renamed"}
 
       {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
@@ -691,10 +585,10 @@ defmodule Emisar.AuditTest do
       user: user,
       account: account
     } do
-      creator = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      creator = Repo.reload!(user)
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
       subject = Emisar.Auth.Subject.for_api_key(key, account)
       updated = %{account | name: "Renamed"}
@@ -798,7 +692,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -1213,7 +1107,7 @@ defmodule Emisar.AuditTest do
       account_a = Fixtures.Accounts.create_account()
 
       subject_a =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
         )
 
@@ -1237,7 +1131,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -1276,7 +1170,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -1353,7 +1247,7 @@ defmodule Emisar.AuditTest do
 
   describe "approval_event_refs/2" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       run =
@@ -1399,7 +1293,7 @@ defmodule Emisar.AuditTest do
       {:ok, _unanchored_vote} =
         Audit.log(account.id, "approval.decision_recorded",
           actor_kind: "user",
-          actor_id: Fixtures.Users.create_user().id,
+          actor_id: Ecto.UUID.generate(),
           target_kind: "approval_request",
           target_id: request.id
         )
@@ -1470,7 +1364,7 @@ defmodule Emisar.AuditTest do
 
   describe "approval_decision_receipts/2" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       run =
@@ -1490,7 +1384,8 @@ defmodule Emisar.AuditTest do
       request: request
     } do
       reviewer = Fixtures.Memberships.create_membership(account_id: account.id)
-      admin = Fixtures.Users.create_user()
+      # A historical override by a personal login, recorded before Members acted.
+      admin_id = Ecto.UUID.generate()
 
       {:ok, _vote} =
         Audit.log(account.id, "approval.decision_recorded",
@@ -1508,7 +1403,7 @@ defmodule Emisar.AuditTest do
       {:ok, _override} =
         Audit.log(account.id, "approval.overridden",
           actor_kind: "user",
-          actor_id: admin.id,
+          actor_id: admin_id,
           target_kind: "approval_request",
           target_id: request.id,
           payload: %{
@@ -1532,7 +1427,7 @@ defmodule Emisar.AuditTest do
                decided_at: %DateTime{}
              } = receipts[request.id].override
 
-      assert actor_id == admin.id
+      assert actor_id == admin_id
     end
 
     test "reads nothing for another account's request or an invalid id", %{request: request} do
@@ -1548,7 +1443,7 @@ defmodule Emisar.AuditTest do
 
   describe "approval_decision_receipt/2" do
     test "reads a vote by its Member, an empty note included, and never a vote with no Member" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       request = Fixtures.Approvals.create_request(account_id: account.id)
 
       # Recorded before receipts named Members: the vote and its outcome stay on
@@ -1584,16 +1479,9 @@ defmodule Emisar.AuditTest do
   describe "list_actor_options/3 (the dynamic actor picker)" do
     setup do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       %{account: account, owner: owner, subject: subject}
     end
@@ -1602,19 +1490,28 @@ defmodule Emisar.AuditTest do
       account: account,
       subject: subject
     } do
-      alice = Fixtures.Users.create_user(email: "alice@example.com", full_name: "Alice")
-      bob = Fixtures.Users.create_user(email: "bob@example.com", full_name: "Bob")
-      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: alice.id)
-      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: bob.id)
+      alice =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "alice@example.com",
+          display_name: "Alice"
+        )
+
+      bob =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "bob@example.com",
+          display_name: "Bob"
+        )
 
       # Two events for bob, one for alice — the picker dedupes to one option per
       # actor, sorted by label (alice precedes bob regardless of event order).
-      {:ok, _} = Audit.log(account.id, "x", actor_kind: "user", actor_id: bob.id)
-      {:ok, _} = Audit.log(account.id, "y", actor_kind: "user", actor_id: bob.id)
-      {:ok, _} = Audit.log(account.id, "z", actor_kind: "user", actor_id: alice.id)
+      {:ok, _} = Audit.log(account.id, "x", actor_kind: "membership", actor_id: bob.id)
+      {:ok, _} = Audit.log(account.id, "y", actor_kind: "membership", actor_id: bob.id)
+      {:ok, _} = Audit.log(account.id, "z", actor_kind: "membership", actor_id: alice.id)
 
       assert {:ok, [{alice_id, "Alice"}, {bob_id, "Bob"}], _metadata} =
-               Audit.list_actor_options("user", subject)
+               Audit.list_actor_options("membership", subject)
 
       assert alice_id == alice.id
       assert bob_id == bob.id
@@ -1625,19 +1522,23 @@ defmodule Emisar.AuditTest do
       subject: subject
     } do
       # A member who has never acted — not in the log, so absent by default.
-      quiet = Fixtures.Users.create_user(email: "quiet@example.com", full_name: "Quiet User")
-      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: quiet.id)
+      quiet =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "quiet@example.com",
+          display_name: "Quiet User"
+        )
 
-      assert {:ok, [], _metadata} = Audit.list_actor_options("user", subject)
+      assert {:ok, [], _metadata} = Audit.list_actor_options("membership", subject)
 
       # ensure them in so the picker SELECTS them instead of falling back to All.
       assert {:ok, [{id, "Quiet User"}], _metadata} =
-               Audit.list_actor_options("user", subject, ensure: quiet.id)
+               Audit.list_actor_options("membership", subject, ensure: quiet.id)
 
       assert id == quiet.id
 
       # An id that isn't a member of this account resolves to no label → dropped.
-      stranger = Fixtures.Users.create_user(email: "stranger@example.com")
+      stranger = Fixtures.Memberships.create_membership(email: "stranger@example.com")
       assert {:ok, [], _metadata} = Audit.list_actor_options("user", subject, ensure: stranger.id)
 
       # nil ensure is a no-op.
@@ -1649,11 +1550,13 @@ defmodule Emisar.AuditTest do
       owner: owner,
       subject: subject
     } do
-      member = Fixtures.Users.create_user()
-      _ = Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
 
       {_raw, key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
 
       {:ok, _} = Audit.log(account.id, "u", actor_kind: "user", actor_id: member.id)
       {:ok, _} = Audit.log(account.id, "k", actor_kind: "api_key", actor_id: key.id)
@@ -1666,17 +1569,16 @@ defmodule Emisar.AuditTest do
       account_a = Fixtures.Accounts.create_account()
 
       subject_a =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
         )
 
-      user_b = Fixtures.Users.create_user()
       account_b = Fixtures.Accounts.create_account()
-      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user_b.id)
+      member_b = Fixtures.Memberships.create_membership(account_id: account_b.id)
 
       # A's log references B's user (a mis-stamped id): it lives in A's events
       # but is only resolvable in B, so it must not surface in A's picker.
-      {:ok, _} = Audit.log(account_a.id, "x", actor_kind: "user", actor_id: user_b.id)
+      {:ok, _} = Audit.log(account_a.id, "x", actor_kind: "user", actor_id: member_b.id)
 
       assert {:ok, [], _metadata} = Audit.list_actor_options("user", subject_a)
     end
@@ -1685,7 +1587,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -1721,15 +1623,12 @@ defmodule Emisar.AuditTest do
       account_a = Fixtures.Accounts.create_account()
 
       subject_b =
-        Fixtures.Subjects.membership_subject(
-          Fixtures.Memberships.create_membership(role: "owner")
-        )
+        Fixtures.Subjects.subject_for(Fixtures.Memberships.create_membership(role: "owner"))
 
-      user_a = Fixtures.Users.create_user()
-      _ = Fixtures.Memberships.create_membership(account_id: account_a.id, user_id: user_a.id)
+      member_a = Fixtures.Memberships.create_membership(account_id: account_a.id)
 
       {:ok, _} =
-        Audit.log(account_a.id, "user.invited", target_kind: "user", target_id: user_a.id)
+        Audit.log(account_a.id, "user.invited", target_kind: "user", target_id: member_a.id)
 
       assert {:ok, [], _metadata} = Audit.list_target_options("user", subject_b)
     end
@@ -1741,7 +1640,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -1760,40 +1659,42 @@ defmodule Emisar.AuditTest do
     # and is rejected, so the picker doesn't offer a dead option. Here the user's
     # membership is removed after the event, so the user-label resolver (scoped
     # through `members_of_account`) no longer finds them in the account.
-    test "a subject whose label can no longer resolve is dropped from the options" do
+    test "a target whose label cannot resolve in this workspace is dropped from the options" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: owner.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-
-      member =
-        Fixtures.Users.create_user(email: "departing@example.com", full_name: "Departing User")
+      subject = Fixtures.Subjects.subject_for(owner)
 
       membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: member.id)
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "departing@example.com",
+          display_name: "Departing User"
+        )
 
       {:ok, _} =
-        Audit.log(account.id, "user.invited", target_kind: "user", target_id: member.id)
+        Audit.log(account.id, "user.invited",
+          target_kind: "membership",
+          target_id: membership.id
+        )
 
-      # While the member is in the account, the picker offers them.
-      assert {:ok, [{id, "Departing User"}], _metadata} =
-               Audit.list_target_options("user", subject)
-
-      assert id == member.id
-
-      # Remove the membership — the audit row still references the user id, but
-      # the label resolver (members_of_account) can no longer resolve it, so the
-      # option is dropped rather than rendered with a nil/blank label.
+      # A removed Member keeps its exact local label: the trail still names them.
       Fixtures.Memberships.mark_membership_as_deleted(membership)
 
-      assert {:ok, [], _metadata} = Audit.list_target_options("user", subject)
+      assert {:ok, [{id, "Departing User"}], _metadata} =
+               Audit.list_target_options("membership", subject)
+
+      assert id == membership.id
+
+      # A Member of another workspace resolves nothing here, so that option is
+      # dropped rather than rendered with a nil/blank label.
+      foreign = Fixtures.Memberships.create_membership(display_name: "Foreign Member")
+
+      {:ok, _} =
+        Audit.log(account.id, "user.invited", target_kind: "membership", target_id: foreign.id)
+
+      assert {:ok, [{^id, "Departing User"}], _metadata} =
+               Audit.list_target_options("membership", subject)
     end
   end
 
@@ -1817,7 +1718,7 @@ defmodule Emisar.AuditTest do
       Fixtures.Accounts.create_subscription(account, "team")
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -1902,7 +1803,7 @@ defmodule Emisar.AuditTest do
       Fixtures.Accounts.create_subscription(account_b, "team")
 
       subject_b =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account_b.id, role: "owner")
         )
 
@@ -1913,7 +1814,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -1937,7 +1838,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -1973,7 +1874,7 @@ defmodule Emisar.AuditTest do
       Fixtures.Accounts.create_subscription(account, "team")
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -1996,7 +1897,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -2033,7 +1934,7 @@ defmodule Emisar.AuditTest do
       Fixtures.Accounts.create_subscription(account_b, "team")
 
       subject_b =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account_b.id, role: "owner")
         )
 
@@ -2044,7 +1945,7 @@ defmodule Emisar.AuditTest do
 
   describe "stream_csv_export/2" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Accounts.create_subscription(account, "team")
       %{account: account, subject: subject}
     end
@@ -2114,7 +2015,7 @@ defmodule Emisar.AuditTest do
 
   describe "record_siem_export/3" do
     test "only exact SIEM export receipts suppress another receipt" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       for {event_type, payload} <- [
             {"audit.exported", %{"transport" => "csv"}},
@@ -2139,7 +2040,7 @@ defmodule Emisar.AuditTest do
 
   describe "record_export/3" do
     test "count > 0 records one audit.exported attributed to the exporter, with the count" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, event} = Audit.record_export(subject, [limit: 100, event_types: []], 7)
       assert event.event_type == "audit.exported"
@@ -2154,7 +2055,7 @@ defmodule Emisar.AuditTest do
     end
 
     test "count == 0 records nothing — a caught-up poll leaves no marker" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       assert Audit.record_export(subject, [limit: 100], 0) == {:ok, :not_recorded}
 
@@ -2182,7 +2083,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -2205,18 +2106,14 @@ defmodule Emisar.AuditTest do
       {:ok, event_a} = Audit.log(account_a.id, "user.signed_in", actor_kind: "user")
 
       subject_b =
-        Fixtures.Subjects.membership_subject(
-          Fixtures.Memberships.create_membership(role: "owner")
-        )
+        Fixtures.Subjects.subject_for(Fixtures.Memberships.create_membership(role: "owner"))
 
       assert Audit.fetch_event_by_id(event_a.id, subject_b) == {:error, :not_found}
     end
 
     test "a malformed id is a clean :not_found" do
       subject =
-        Fixtures.Subjects.membership_subject(
-          Fixtures.Memberships.create_membership(role: "owner")
-        )
+        Fixtures.Subjects.subject_for(Fixtures.Memberships.create_membership(role: "owner"))
 
       assert Audit.fetch_event_by_id("not-a-uuid", subject) == {:error, :not_found}
     end
@@ -2225,18 +2122,12 @@ defmodule Emisar.AuditTest do
   describe "resolve_references/2" do
     setup do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       %{
         account: account,
-        user: user,
-        subject: Fixtures.Subjects.subject_for(user, account, role: :owner)
+        user: member,
+        subject: Fixtures.Subjects.subject_for(member)
       }
     end
 
@@ -2252,13 +2143,13 @@ defmodule Emisar.AuditTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "db-prod-01")
 
       {_raw, api_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
       {:ok, e_user} =
         Audit.log(account.id, "user.touched",
-          actor_kind: "user",
+          actor_kind: "membership",
           actor_id: user.id,
-          target_kind: "user",
+          target_kind: "membership",
           target_id: user.id
         )
 
@@ -2276,7 +2167,7 @@ defmodule Emisar.AuditTest do
 
       refs = Audit.resolve_references([e_user, e_runner, e_key], subject)
 
-      assert refs["user"][user.id] == user.full_name
+      assert refs["membership"][user.id] == Emisar.Accounts.member_display_name(user)
       assert refs["runner"][runner.id] == "db-prod-01"
       assert refs["api_key"][api_key.id] == api_key.name
 
@@ -2338,7 +2229,7 @@ defmodule Emisar.AuditTest do
       # The audit trail leads with WHO acted; an api_key/MCP actor resolves to
       # its creating human so a wall of generically-named keys stays legible.
       {_raw, api_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
       {:ok, event} =
         Audit.log(account.id, "action.dispatched",
@@ -2349,56 +2240,54 @@ defmodule Emisar.AuditTest do
       refs = Audit.resolve_references([event], subject)
 
       assert refs["api_key"][api_key.id] == api_key.name
-      assert refs["api_key_owner"][api_key.id] == (user.full_name || user.email)
+      assert refs["api_key_owner"][api_key.id] == Emisar.Accounts.member_display_name(user)
     end
 
     test "falls back to email when an actor or key owner has no nonblank name", %{
       account: account,
       subject: subject
     } do
-      user = Fixtures.Users.create_user(full_name: "  ")
-
-      _ =
+      member =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
-          role: "owner"
+          role: "owner",
+          display_name: "  "
         )
 
       {_raw, api_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: member.id
+        )
 
       {:ok, event} =
-        Audit.log(account.id, "action.dispatched", actor_kind: "user", actor_id: user.id)
+        Audit.log(account.id, "action.dispatched", actor_kind: "membership", actor_id: member.id)
 
       {:ok, key_event} =
         Audit.log(account.id, "action.dispatched", actor_kind: "api_key", actor_id: api_key.id)
 
       refs = Audit.resolve_references([event, key_event], subject)
 
-      assert refs["user"][user.id] == user.email
-      assert refs["api_key_owner"][api_key.id] == user.email
+      assert refs["membership"][member.id] == member.email
+      assert refs["api_key_owner"][api_key.id] == member.email
     end
 
     test "an api_key owner in another account does not resolve (account-scoped)" do
       account_a = Fixtures.Accounts.create_account()
       account_b = Fixtures.Accounts.create_account()
-      user_b = Fixtures.Users.create_user()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
         )
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account_b.id,
-          user_id: user_b.id,
-          role: "owner"
-        )
+      member_b = Fixtures.Memberships.create_membership(account_id: account_b.id, role: "owner")
 
       {_raw, key_b} =
-        Fixtures.ApiKeys.create_api_key(account_id: account_b.id, created_by_id: user_b.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account_b.id,
+          created_by_membership_id: member_b.id
+        )
 
       # A mis-stamped row in account A pointing at B's key id.
       {:ok, event} =
@@ -2413,17 +2302,17 @@ defmodule Emisar.AuditTest do
       account: account,
       subject: subject
     } do
-      departed_user = Fixtures.Users.create_user()
-
       departed_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: departed_user.id,
           role: "owner"
         )
 
       {_raw, api_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: departed_user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: departed_membership.id
+        )
 
       Fixtures.Memberships.mark_membership_as_deleted(departed_membership)
 
@@ -2442,10 +2331,11 @@ defmodule Emisar.AuditTest do
            account: account,
            subject: subject
          } do
-      departed = Fixtures.Users.create_user(full_name: "Current name outside this account")
-
       membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: departed.id)
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          display_name: "Current name outside this account"
+        )
 
       Fixtures.Memberships.mark_membership_as_deleted(membership)
       now = DateTime.utc_now()
@@ -2453,7 +2343,7 @@ defmodule Emisar.AuditTest do
       {:ok, _} =
         Audit.log(account.id, "user.provisioned_via_scim",
           target_kind: "user",
-          target_id: departed.id,
+          target_id: membership.id,
           target_label: "former@example.com",
           occurred_at: DateTime.add(now, -120, :second)
         )
@@ -2461,7 +2351,7 @@ defmodule Emisar.AuditTest do
       {:ok, _} =
         Audit.log(account.id, "membership.renamed_via_scim",
           target_kind: "user",
-          target_id: departed.id,
+          target_id: membership.id,
           payload: %{from: "Old directory name", to: "Recorded directory name"},
           occurred_at: DateTime.add(now, -60, :second)
         )
@@ -2469,17 +2359,17 @@ defmodule Emisar.AuditTest do
       {:ok, event} =
         Audit.log(account.id, "membership.role_synced_via_scim",
           target_kind: "user",
-          target_id: departed.id,
+          target_id: membership.id,
           payload: %{from: "viewer", to: "admin"},
           occurred_at: now
         )
 
       refs = Audit.resolve_references([event], subject)
 
-      refute Map.has_key?(refs["user"], departed.id)
-      assert refs["historical"][{"user", :target}][departed.id] == "Recorded directory name"
+      refute Map.has_key?(refs["user"], membership.id)
+      assert refs["historical"][{"user", :target}][membership.id] == "Recorded directory name"
       assert {:ok, options, _} = Audit.list_target_options("user", subject)
-      assert {departed.id, "Recorded directory name"} in options
+      assert {membership.id, "Recorded directory name"} in options
       assert Repo.get!(Audit.Event, event.id).target_label == nil
     end
 
@@ -2545,7 +2435,7 @@ defmodule Emisar.AuditTest do
       ghost_id = Ecto.UUID.generate()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -2565,19 +2455,18 @@ defmodule Emisar.AuditTest do
       account_b = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
         )
 
       # A runner + user that genuinely live in account B.
       runner_b = Fixtures.Runners.create_runner(account_id: account_b.id, name: "b-runner")
-      user_b = Fixtures.Users.create_user()
-      _ = Fixtures.Memberships.create_membership(account_id: account_b.id, user_id: user_b.id)
+      member_b = Fixtures.Memberships.create_membership(account_id: account_b.id)
 
       {:ok, _} =
         Audit.log(account_b.id, "cross.account",
           actor_kind: "user",
-          actor_id: user_b.id,
+          actor_id: member_b.id,
           actor_label: "Other account user",
           target_kind: "runner",
           target_id: runner_b.id,
@@ -2588,16 +2477,16 @@ defmodule Emisar.AuditTest do
       {:ok, event} =
         Audit.log(account_a.id, "cross.account",
           actor_kind: "user",
-          actor_id: user_b.id,
+          actor_id: member_b.id,
           target_kind: "runner",
           target_id: runner_b.id
         )
 
       refs = Audit.resolve_references([event], subject)
 
-      refute Map.has_key?(refs["user"], user_b.id)
+      refute Map.has_key?(refs["user"], member_b.id)
       refute Map.has_key?(refs["runner"], runner_b.id)
-      refute refs["historical"][{"user", :actor}][user_b.id]
+      refute refs["historical"][{"user", :actor}][member_b.id]
       refute refs["historical"][{"runner", :target}][runner_b.id]
     end
 
@@ -2611,7 +2500,7 @@ defmodule Emisar.AuditTest do
       {_raw, enrollment_key} =
         Fixtures.Runners.create_enrollment_key(
           account_id: account.id,
-          user_id: user.id,
+          membership: user,
           description: "enroll-prod"
         )
 
@@ -2700,7 +2589,7 @@ defmodule Emisar.AuditTest do
       ghost_id = Ecto.UUID.generate()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -2750,8 +2639,7 @@ defmodule Emisar.AuditTest do
                   runner.disabled runner.deleted membership.removed
                   membership.suspended approval.expired action_run.cancelled approval.grant_revoked
                   approval.overridden
-                  user.mfa_rate_limited user.email_change_rate_limited
-                  user.inbox_step_up_rate_limited] do
+                  user.mfa_rate_limited user.inbox_step_up_rate_limited] do
         assert Audit.event_outcome(t) == :warn, "expected #{t} to be :warn"
       end
     end
@@ -2835,7 +2723,7 @@ defmodule Emisar.AuditTest do
 
   describe "available_event_kinds/1" do
     test "returns only kinds present in the subject's account" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       other = Fixtures.Accounts.create_account()
 
       {:ok, _} =
@@ -2862,7 +2750,7 @@ defmodule Emisar.AuditTest do
 
   describe "available_event_filters/3" do
     test "narrows kind values to rows while preserving crafted-filter validation" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, _} =
         Audit.log(account.id, "user.invited",
@@ -3068,7 +2956,7 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       subject =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
         )
 
@@ -3145,17 +3033,16 @@ defmodule Emisar.AuditTest do
   end
 
   # The proof above is only as wide as the source `emitted_event_types/0` reads.
-  # It used to read five named files, so a literal logged from `audit/multi.ex`
-  # or from a web module — neither of which carried one — would have shipped
-  # unfilterable without failing anything. These pin the widened reach.
+  # It used to read five named files, so a literal logged from another domain
+  # module or from a web module — neither of which carried one — would have
+  # shipped unfilterable without failing anything. These pin the widened reach.
   describe "the scan that proves the vocabulary reads every emitting module" do
     test "its roots are every umbrella app's lib tree, not a list of files" do
       apps = Path.wildcard(Path.expand("../*", File.cwd!())) |> Enum.filter(&File.dir?/1)
 
       assert Enum.sort(Enum.map(source_roots(), &Path.dirname/1)) == Enum.sort(apps)
 
-      # The two the five-file list never reached.
-      assert File.exists?(Path.join(File.cwd!(), "lib/emisar/audit/multi.ex"))
+      # The templates the five-file list never reached.
       assert Enum.any?(source_roots(), &(Path.wildcard(Path.join(&1, "**/*.heex")) != []))
     end
 
@@ -3175,9 +3062,11 @@ defmodule Emisar.AuditTest do
 
       File.write!(Path.join(dir, "emisar_web/live/stray_multi.ex"), """
       defmodule Emisar.StrayMulti do
-        def revoke(multi, user) do
-          Emisar.Audit.Multi.log_for_user(multi, :audit, user, "stray.logged_from_a_multi",
-            payload_fn: fn _changes -> %{note: "not.a.type"} end
+        def revoke(multi, member, context) do
+          Ecto.Multi.insert(multi, :audit,
+            Emisar.Audit.Events.member_security_event(member, "stray.logged_from_a_multi", context,
+              %{note: "not.a.type"}
+            )
           )
         end
       end
@@ -3195,7 +3084,7 @@ defmodule Emisar.AuditTest do
     test "it still finds the literals the real tree emits at a call site" do
       emitted = call_site_event_types(source_roots())
 
-      # events.ex (`Audit.changeset/3`), auth.ex and users.ex (`Audit.Multi.log_for_user/5`).
+      # events.ex (`Audit.changeset/3`) and auth.ex (`Audit.Events.member_security_event/4`).
       assert "account.created" in emitted
       assert "user.signed_out" in emitted
       assert "user.signed_in" in emitted
@@ -3209,12 +3098,10 @@ defmodule Emisar.AuditTest do
     # real account and run it through the real builder → changeset → insert.
     test "a SCIM-provisioned user event carries directory_sync + the provider id" do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
 
       member =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
           display_name: "Directory Profile"
         )
 
@@ -3303,7 +3190,7 @@ defmodule Emisar.AuditTest do
     # pending/sent/running labels exist in the known list for the Type dropdown
     # only — they match no real audit row.
     test "pending → sent → running produces no audit_event rows" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       _ = Fixtures.Catalog.create_action(runner: runner)
       _ = Fixtures.Policies.create_policy(account_id: account.id)
@@ -3424,13 +3311,14 @@ defmodule Emisar.AuditTest do
   @dotless_type ~S"(?:pack_trust_|pack_retirement_|pack_retention_|pack_version_|dispatch_blocked_)[a-z0-9_]+|pack_deleted"
 
   # A type literal named AT one of the type-bearing audit entry points. The args
-  # ahead of it are ids, atoms or `nil` — never a string — so the first literal
-  # after the opening paren (allowing one level of nested call) is the type. When
-  # the type is a variable (`Audit.Multi.log_for_user(multi, :rate_limit_audit,
-  # user, event_type, …)`) nothing matches, which is correct: the literal lives at
-  # the wrapper's caller instead, in a file the whole-file scan below reads.
+  # ahead of it are ids, structs, atoms or `nil` — never a string — so the first
+  # literal after the opening paren (allowing one level of nested call) is the
+  # type. When the type is a variable (`Audit.Events.member_security_event(
+  # membership, event_type, …)`) nothing matches, which is correct: the literal
+  # lives at the wrapper's caller instead, in a file the whole-file scan below
+  # reads.
   @audit_call_site ~r/
-    (?:Emisar\.)?Audit\.(?:Multi\.)?(?:log|log_for_user|changeset|user_changesets)\(
+    (?:Emisar\.)?Audit\.(?:Events\.)?(?:log|changeset|member_security_event)\(
     (?:[^"()]|\([^"()]*\))*
     "(#{@dotted_type}|#{@dotless_type})"
   /x
@@ -3496,11 +3384,13 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       viewer_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       billing_manager_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
-          role: :billing_manager
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :billing_manager)
         )
 
       %{billing_manager_subject: billing_manager_subject, viewer_subject: viewer_subject}
@@ -3520,13 +3410,17 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       for role <- [:owner, :admin, :operator, :viewer] do
-        subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: role)
+        subject =
+          Fixtures.Subjects.subject_for(
+            Fixtures.Memberships.create_membership(account_id: account.id, role: role)
+          )
+
         refute Audit.subject_sees_billing_audit_only?(subject)
       end
 
       billing_manager_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
-          role: :billing_manager
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :billing_manager)
         )
 
       assert Audit.subject_sees_billing_audit_only?(billing_manager_subject)
@@ -3538,11 +3432,13 @@ defmodule Emisar.AuditTest do
       account = Fixtures.Accounts.create_account()
 
       viewer_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       billing_manager_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
-          role: :billing_manager
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :billing_manager)
         )
 
       assert Audit.subject_can_export_audit?(viewer_subject)

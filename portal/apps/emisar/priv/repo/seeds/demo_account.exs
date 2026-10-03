@@ -5,35 +5,31 @@ defmodule Emisar.Seeds.DemoAccount do
   first-pass demo artifacts so an existing dev database upgrades in place.
   """
 
+  alias Ecto.Multi
   alias Emisar.Accounts
   alias Emisar.Accounts.Account
   alias Emisar.Accounts.Membership
+  alias Emisar.Audit
   alias Emisar.Policies
   alias Emisar.Repo
   alias Emisar.Runbooks
   alias Emisar.Runners
   alias Emisar.Seeds.Helpers
-  alias Emisar.Users
 
   @account_name "Northstar Labs"
   @email "demo@emisar.dev"
   @full_name "Maya Chen"
 
   @doc """
-  Seeds the account and returns the context the rest of the seed builds on:
-  `user`, `account`, `owner_membership`, `owner_subject`, `policy`, `jordan`,
-  and `priya`.
+  Seeds the account and returns the context the rest of the seed builds on.
+  Every person in it is a Member of the account: `owner`, `jordan` and
+  `priya`, beside `account`, `owner_subject` and `policy`.
   """
   def run do
-    user = Helpers.ensure_persona(@email, @full_name)
+    {account, owner} = Helpers.ensure_account(@account_name, "demo", @email, @full_name)
+    account = Helpers.reset_screenshot_sign_in_policy(account)
 
-    account =
-      @account_name
-      |> Helpers.ensure_account("demo", user)
-      |> Helpers.reset_screenshot_sign_in_policy()
-
-    owner_subject = Helpers.subject_for(account, user)
-    owner_membership = Accounts.peek_sync_membership(account.id, user.id)
+    owner_subject = Helpers.subject_for(account, owner)
     account = Helpers.ensure_account_name(account, @account_name, owner_subject)
     owner_subject = %{owner_subject | account: account}
 
@@ -41,9 +37,8 @@ defmodule Emisar.Seeds.DemoAccount do
     Helpers.seed_subscription(account, "enterprise")
 
     ctx = %{
-      user: user,
+      owner: owner,
       account: account,
-      owner_membership: owner_membership,
       owner_subject: owner_subject
     }
 
@@ -70,22 +65,9 @@ defmodule Emisar.Seeds.DemoAccount do
   # never started. Every re-seed of a database where Sam had signed in died there.
   defp retire_first_pass_artifacts(%{account: account, owner_subject: owner_subject}) do
     for email <- ["alex@emisar.dev"] do
-      case Users.fetch_user_by_email(email) do
-        {:ok, old_user} ->
-          old_user = Helpers.clear_seeded_mfa(old_user)
-
-          case Accounts.peek_sync_membership(account.id, old_user.id) do
-            nil ->
-              :ok
-
-            membership ->
-              membership
-              |> Accounts.Membership.Changeset.delete()
-              |> Repo.update!()
-          end
-
-        {:error, :not_found} ->
-          :ok
+      case Accounts.peek_sync_membership_by_email(account.id, email) do
+        nil -> :ok
+        membership -> membership |> Membership.Changeset.delete() |> Repo.update!()
       end
     end
 
@@ -123,11 +105,6 @@ defmodule Emisar.Seeds.DemoAccount do
         :ok
     end
 
-    case Users.fetch_user_by_email("owner@initech.test") do
-      {:ok, old_user} -> Helpers.clear_seeded_mfa(old_user)
-      {:error, :not_found} -> :ok
-    end
-
     :ok
   end
 
@@ -141,35 +118,56 @@ defmodule Emisar.Seeds.DemoAccount do
   end
 
   @doc """
-  Invites `email` as a standing, accepted member of the demo account — or
-  converges the membership a previous seed (or a sign-in) left behind. An
-  invitation names only the address, so the teammate's confirmed personal login
-  comes first and accepts it, as a signed-in invitee would.
+  Invites `email` as a standing, accepted Member of the demo account and
+  returns that Member — or converges the one a previous seed (or a sign-in)
+  left behind. The invitation is accepted the way the emailed code accepts it:
+  with the teammate's name, verifying the invited address, and the acceptance
+  receipt.
   """
   def invite_member(%{account: account, owner_subject: owner_subject}, email, full_name, role) do
-    member = Helpers.ensure_persona(email, full_name)
-
-    case Accounts.peek_sync_membership(account.id, member.id) do
+    case Accounts.peek_sync_membership_by_email(account.id, email) do
       nil ->
-        {:ok, %{membership: membership, invitation_token: token}} =
+        {:ok, %{membership: invitation}} =
           Accounts.invite_user_to_account(
             %{"email" => email, "role" => role, "runner_access_mode" => "all"},
             owner_subject
           )
 
-        {:ok, _membership} = Accounts.mark_invitation_accepted(membership, token, member)
+        accept_invitation(invitation, full_name)
 
-      membership ->
-        if Accounts.membership_disabled?(membership) do
-          {:ok, _reinstated} = Accounts.reinstate_membership(membership, owner_subject)
-        end
+      %Membership{invitation_accepted_at: nil, invitation_token_digest: digest} = invitation
+      when is_binary(digest) ->
+        accept_invitation(invitation, full_name)
+
+      %Membership{} = membership ->
+        membership
+        |> ensure_reinstated(owner_subject)
+        |> Membership.Changeset.profile(%{display_name: full_name})
+        |> Helpers.verify_seeded_address()
+        |> Repo.update!()
+        |> Helpers.clear_seeded_mfa()
     end
+  end
 
-    account.id
-    |> Accounts.peek_sync_membership(member.id)
-    |> Membership.Changeset.profile(%{display_name: full_name})
-    |> Repo.update!()
+  defp ensure_reinstated(%Membership{} = membership, owner_subject) do
+    if Accounts.membership_disabled?(membership) do
+      {:ok, reinstated} = Accounts.reinstate_membership(membership, owner_subject)
+      reinstated
+    else
+      membership
+    end
+  end
 
-    member
+  defp accept_invitation(%Membership{} = invitation, full_name) do
+    {:ok, %{accepted: accepted}} =
+      Multi.new()
+      |> Multi.update(
+        :accepted,
+        Membership.Changeset.accept_invitation_with_profile(invitation, %{display_name: full_name})
+      )
+      |> Multi.insert(:audit, &Audit.Events.user_invitation_accepted(&1.accepted))
+      |> Repo.commit_multi()
+
+    accepted
   end
 end

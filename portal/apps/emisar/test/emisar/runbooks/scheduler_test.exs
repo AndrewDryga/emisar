@@ -9,7 +9,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
   @hash "sha256:" <> String.duplicate("b", 64)
 
   setup do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     _policy = Fixtures.Policies.create_policy(account_id: account.id)
     runner = trusted_runner(account, subject)
     Runners.subscribe_runner_transport(runner)
@@ -408,14 +408,14 @@ defmodule Emisar.Runbooks.SchedulerTest do
             {_raw, key} =
               Fixtures.ApiKeys.create_api_key(
                 account_id: account.id,
-                created_by_id: other.user_id
+                created_by_membership_id: other.id
               )
 
             %{api_key_id: key.id}
 
           :removed_member ->
-            account.id
-            |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+            subject.actor
+            |> Repo.reload!()
             |> Fixtures.Memberships.mark_membership_as_deleted()
 
             %{}
@@ -453,7 +453,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "membership recheck", subject)
     assert [first] = runs(account.id, result.execution_id)
 
-    membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+    membership = Repo.reload!(subject.actor)
     _suspended = Fixtures.Memberships.suspend_membership(membership)
 
     assert {:ok, _first} =
@@ -485,8 +485,8 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "role recheck", subject)
     assert [first] = runs(account.id, result.execution_id)
 
-    subject.account.id
-    |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+    subject.actor
+    |> Repo.reload!()
     |> Fixtures.Memberships.force_role("viewer")
 
     assert {:ok, _first} =
@@ -509,7 +509,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
     {_raw, key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: account.id,
-        created_by_id: owner.actor.id
+        created_by_membership_id: owner.actor.id
       )
 
     subject = Subject.for_api_key(key, account)
@@ -545,10 +545,10 @@ defmodule Emisar.Runbooks.SchedulerTest do
     runner: runner
   } do
     subject =
-      account.id
-      |> Fixtures.Memberships.fetch_membership(subject.actor.id)
+      subject.actor
+      |> Repo.reload!()
       |> Fixtures.Memberships.force_role("admin")
-      |> Fixtures.Subjects.membership_subject()
+      |> Fixtures.Subjects.subject_for()
 
     runbook =
       published_runbook(
@@ -562,7 +562,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
     assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "scope recheck", subject)
     assert [first] = runs(account.id, result.execution_id)
 
-    membership = Fixtures.Memberships.fetch_membership(account.id, subject.actor.id)
+    membership = Repo.reload!(subject.actor)
     _membership = Fixtures.Memberships.force_runner_access(membership, RunnerAccess.none())
 
     assert {:ok, _first} =
@@ -1000,7 +1000,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
       {:ok, access} = RunnerAccess.new(:restricted, [], [production.id])
       membership = Fixtures.Memberships.force_runner_access(membership, access)
-      scoped = Fixtures.Subjects.membership_subject(membership)
+      scoped = Fixtures.Subjects.subject_for(membership)
       execution_before = execution(result.execution_id)
       items_before = Repo.all(ExecutionItem)
       audit_before = Repo.all(Audit.Event)
@@ -1035,7 +1035,7 @@ defmodule Emisar.Runbooks.SchedulerTest do
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
       {:ok, access} = RunnerAccess.new(:restricted, [], [runner.id])
       membership = Fixtures.Memberships.force_runner_access(membership, access)
-      scoped = Fixtures.Subjects.membership_subject(membership)
+      scoped = Fixtures.Subjects.subject_for(membership)
       execution_before = execution(result.execution_id)
       items_before = Repo.all(ExecutionItem)
       audit_before = Repo.all(Audit.Event)
@@ -1259,21 +1259,18 @@ defmodule Emisar.Runbooks.SchedulerTest do
 
     assert {:ok, result} = Runbooks.dispatch_runbook(runbook, "protected cancel", subject)
 
-    viewer = Fixtures.Users.create_user()
-
     viewer_membership =
       Fixtures.Memberships.create_membership(
         account_id: subject.account.id,
-        user_id: viewer.id,
         role: "viewer"
       )
 
-    viewer_subject = Fixtures.Subjects.membership_subject(viewer_membership)
+    viewer_subject = Fixtures.Subjects.subject_for(viewer_membership)
 
     assert Runbooks.cancel_execution(result.execution_id, viewer_subject) ==
              {:error, :unauthorized}
 
-    {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+    {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
     assert Runbooks.cancel_execution(result.execution_id, other_subject) == {:error, :not_found}
   end
 

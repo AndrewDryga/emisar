@@ -1,12 +1,16 @@
 defmodule EmisarWeb.ConnCase do
   @moduledoc """
-  Test case for Phoenix controllers / LiveViews. Wraps Phoenix.ConnTest
-  with a sandboxed Repo and convenience helpers (`log_in_user/2`,
-  `register_and_log_in/1`).
+  Test case for Phoenix controllers / LiveViews. Wraps Phoenix.ConnTest with a
+  sandboxed Repo and helpers for the browser's workspace sessions
+  (`register_and_log_in/2`, `log_in_member/3`, `session_token/2`,
+  `email_link_sign_in/3`) and for the staff realm (`log_in_staff/2`,
+  `put_staff_cookie/2`).
   """
 
   use ExUnit.CaseTemplate
+  alias Emisar.Accounts.Membership
   alias Emisar.Fixtures
+  require ExUnit.Assertions
 
   using do
     quote do
@@ -27,57 +31,109 @@ defmodule EmisarWeb.ConnCase do
   end
 
   @doc """
-  Logs the given `user` into the `conn` by writing a real session token
-  into the session and returning the conn.
+  Signs `membership` in on `conn` the way a browser carries it: a real session
+  row for that Member, minted for this browser, appended to the cookie's
+  `"sessions"` list (one entry per workspace, so an entry for the same
+  workspace is replaced). The browser id is the conn's own, or a new one.
+  Works on a fresh conn or one built by earlier calls; a conn that already
+  made a request carries its session in the response cookie, so sign that
+  browser in through a real flow instead.
+
+  Options: `:auth_method` (`:magic_link` by default, or `:sso` with
+  `:user_identity_id`) and `:mfa` (the session proved a second factor now).
   """
-  def log_in_user(conn, user) do
-    token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+  def log_in_member(conn, %Membership{} = membership, opts \\ []) do
+    conn = Phoenix.ConnTest.init_test_session(conn, %{})
+    browser_id = Plug.Conn.get_session(conn, :browser_id) || Emisar.Crypto.random_secret()
+    mfa_verified_at = if opts[:mfa], do: DateTime.utc_now()
+
+    token =
+      Fixtures.Auth.create_session_token!(
+        membership,
+        Keyword.get(opts, :auth_method, :magic_link),
+        mfa_verified_at,
+        %{},
+        opts |> Keyword.take([:user_identity_id]) |> Keyword.put(:browser_id, browser_id)
+      )
+
+    entries =
+      conn
+      |> Plug.Conn.get_session(:sessions)
+      |> List.wrap()
+      |> List.keydelete(membership.account_id, 0)
 
     conn
-    |> Phoenix.ConnTest.init_test_session(%{})
-    |> Plug.Conn.put_session(:user_token, token)
+    |> Plug.Conn.put_session(:sessions, entries ++ [{membership.account_id, token}])
+    |> Plug.Conn.put_session(:browser_id, browser_id)
+  end
+
+  @doc "The raw session token `conn`'s cookie holds for `account`'s workspace, or nil."
+  def session_token(%Plug.Conn{} = conn, %{id: account_id}) do
+    case List.keyfind(Plug.Conn.get_session(conn, :sessions) || [], account_id, 0) do
+      {^account_id, token} -> token
+      nil -> nil
+    end
   end
 
   @doc """
-  Registers a user, creates an account they own, and logs them in.
-  Returns `{conn, user, account}`.
+  Signs `email` in to `account` through the real emailed-code flow, as one
+  browser: the workspace's email start, then the emailed link from the same
+  cookie jar (the nonce cookie rides `Phoenix.ConnTest.recycle/1`). Returns the
+  completing response. The code's email is taken from the test mailbox.
+  """
+  def email_link_sign_in(conn, %{slug: slug}, email) when is_binary(email) do
+    started =
+      Phoenix.ConnTest.dispatch(conn, EmisarWeb.Endpoint, :post, "/app/#{slug}/sign_in/email", %{
+        "user" => %{"email" => email}
+      })
+
+    ExUnit.Assertions.assert_received({:email, %{text_body: body}})
+    [_, token_id, code] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", body)
+
+    started
+    |> Phoenix.ConnTest.recycle()
+    |> Phoenix.ConnTest.dispatch(EmisarWeb.Endpoint, :get, "/sign_in/magic/#{token_id}/#{code}")
+  end
+
+  @doc """
+  Creates a workspace, its owner Member (a verified address, every runner), the
+  default policy and the `account.created` audit row, as a sign-up does, and
+  signs the owner in. Returns `{conn, owner, account}`. `attrs[:member]`
+  overrides the owner's `:email` and `:display_name`; `attrs[:account]`
+  overrides the account attrs, and a non-"free" `:plan` mints a matching
+  subscription.
   """
   def register_and_log_in(conn, attrs \\ %{}) do
-    user_attrs =
-      Map.merge(
-        %{
-          email: "user-#{System.unique_integer([:positive])}@example.com",
-          full_name: "Test User"
-        },
-        Map.get(attrs, :user, %{})
-      )
-
-    # Plan lives on the account's subscription now (no `accounts.plan`
-    # column). Pop a `:plan` override and mint a matching subscription for a
-    # paid tier, mirroring `Fixtures.Accounts.create_account`'s shim.
-    {plan, account_overrides} =
-      attrs |> Map.get(:account, %{}) |> Map.new() |> Map.pop(:plan, "free")
-
     # A unique default slug, as `Fixtures.Accounts.account_attrs/1` builds. Deriving
     # one from the name reads the table before inserting, and an async test's
     # sandbox transaction cannot see another test's uncommitted `test-co`, so two
     # tests would queue on the `accounts.slug` unique index instead of colliding.
-    account_attrs =
-      Map.merge(%{name: "Test Co", slug: Fixtures.Random.unique_slug()}, account_overrides)
+    account =
+      Fixtures.Accounts.create_account(
+        Map.merge(%{name: "Test Co"}, attrs |> Map.get(:account, %{}) |> Map.new())
+      )
 
-    {:ok, user} = Emisar.Users.register_user(user_attrs)
-    user = Fixtures.Users.confirm_user(user)
+    member_attrs =
+      Map.merge(
+        %{
+          email: "user-#{System.unique_integer([:positive])}@example.com",
+          display_name: "Test User"
+        },
+        attrs |> Map.get(:member, %{}) |> Map.new() |> Map.take([:email, :display_name])
+      )
 
-    {:ok, account} = Emisar.Accounts.create_account_with_owner(account_attrs, user)
+    owner =
+      Fixtures.Memberships.create_membership(
+        Map.merge(member_attrs, %{
+          account_id: account.id,
+          role: "owner",
+          runner_access_mode: "all"
+        })
+      )
 
-    if plan != "free", do: Fixtures.Accounts.create_subscription(account, plan)
-
-    {log_in_user(conn, user), user, account}
-  end
-
-  @doc "Builds an owner `%Subject{}` for a user + account pair (test convenience)."
-  def owner_subject(user, account) do
-    Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {:ok, _policy} = Emisar.Policies.seed_policy(account.id, owner.id)
+    Emisar.Repo.insert!(Emisar.Audit.Events.account_created(account, owner))
+    {log_in_member(conn, owner), owner, account}
   end
 
   @doc """

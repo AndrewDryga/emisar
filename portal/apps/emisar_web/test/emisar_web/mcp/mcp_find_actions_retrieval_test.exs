@@ -167,16 +167,14 @@ defmodule EmisarWeb.MCPFindActionsRetrievalTest do
 
   setup %{conn: conn} do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "owner"
-    )
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
-    _policy = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    subject = Fixtures.Subjects.subject_for(user)
+
+    _policy =
+      Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: user.id)
+
     {:ok, raw, _key} = ApiKeys.create_key(%{name: "retrieval", kind: :mcp}, subject)
 
     packs_by_id = Map.new(@catalog["packs"], &{&1["id"], &1})

@@ -18,18 +18,20 @@ defmodule EmisarWeb.MfaDisableDisconnectTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Auth, Fixtures}
 
-  test "disabling MFA disconnects the user's live sockets but keeps their session" do
-    {user, _account, subject} = Fixtures.Subjects.owner_subject()
-    {_user, [recovery_code | _]} = Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), subject)
+  test "disabling MFA disconnects the Member's live sockets but keeps its session" do
+    {owner, account, subject} = Fixtures.Subjects.owner_subject()
 
-    token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
-    topic = Auth.live_socket_topic_for_session(token)
+    {_owner, [recovery_code | _]} =
+      Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+    token = Fixtures.Auth.create_session_token!(owner, :magic_link, DateTime.utc_now())
+    topic = Auth.live_socket_topic(Emisar.Crypto.hash(token))
     EmisarWeb.Endpoint.subscribe(topic)
 
     assert {:ok, disabled} = Auth.disable_mfa(recovery_code, subject)
     refute disabled.mfa_enabled_at
 
     assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
-    assert {:ok, _session} = Auth.fetch_session_by_token(token)
+    assert {:ok, _session} = Auth.fetch_session_by_token(token, account.id)
   end
 end

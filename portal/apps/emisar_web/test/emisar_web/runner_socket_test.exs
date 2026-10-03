@@ -67,24 +67,14 @@ defmodule EmisarWeb.RunnerSocketTest do
 
   describe "POST /runner/register (bearer-authed)" do
     setup do
-      {:ok, user} =
-        Emisar.Users.register_user(%{
-          email: "owner-#{System.unique_integer([:positive])}@example.com"
-        })
-
-      {:ok, account} =
-        Emisar.Accounts.create_account_with_owner(
-          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
-          user
-        )
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{name: "OwnerCo"})
 
       # Team plan (via a subscription) so the registration tests below aren't
       # capped at free's 3-runner limit; plan lives on the subscription now.
       Fixtures.Accounts.create_subscription(account, "team")
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, raw_key, _key} = Runners.create_enrollment_key(%{description: "test"}, subject)
-      %{account: account, user: user, raw_key: raw_key}
+      %{account: account, raw_key: raw_key}
     end
 
     test "exchanges and safely retries a single-use enrollment key", %{
@@ -181,22 +171,11 @@ defmodule EmisarWeb.RunnerSocketTest do
 
   describe "POST /runner/register — limits and name conflicts" do
     setup do
-      {:ok, user} =
-        Emisar.Users.register_user(%{
-          email: "owner-#{System.unique_integer([:positive])}@example.com"
-        })
-
-      {:ok, account} =
-        Emisar.Accounts.create_account_with_owner(
-          %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
-          user
-        )
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{name: "OwnerCo"})
 
       # Team plan (via a subscription) so the registration tests below aren't
       # capped at free's 3-runner limit; plan lives on the subscription now.
       Fixtures.Accounts.create_subscription(account, "team")
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
       # Reusable: these tests register several runners off one bootstrap key.
       {:ok, raw_key, _key} =
@@ -212,18 +191,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
 
     test "the free plan caps runners at its limit → 402", %{conn: conn} do
-      {:ok, user} =
-        Emisar.Users.register_user(%{
-          email: "owner-#{System.unique_integer([:positive])}@example.com"
-        })
-
-      {:ok, account} =
-        Emisar.Accounts.create_account_with_owner(
-          %{name: "FreeCo", slug: Emisar.Accounts.suggest_unique_slug("FreeCo")},
-          user
-        )
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{name: "FreeCo"})
 
       {:ok, raw_key, _key} =
         Runners.create_enrollment_key(%{description: "test", reusable: true}, subject)
@@ -295,15 +263,10 @@ defmodule EmisarWeb.RunnerSocketTest do
 
     test "a disabled runner's valid token → retryable 403", %{conn: conn} do
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {raw, _token} = Runners.mint_runner_token(runner)
       {:ok, _runner} = Runners.disable_runner(runner, subject)
@@ -1773,7 +1736,7 @@ defmodule EmisarWeb.RunnerSocketTest do
     end
 
     test "an error envelope records a runner.error audit row stamped with the connect IP/UA",
-         %{account: account, state: state, user: user} do
+         %{state: state, subject: subject} do
       # Avoid re-running the socket connect path in this already-connected test
       # process; connect would double-track this runner in Presence. The error
       # envelope only needs the request context carried on state.
@@ -1794,7 +1757,6 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, state)
       assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, events, _meta} = Emisar.Audit.list_events(subject, target_id: state.runner_id)
 
       row = Enum.find(events, &(&1.event_type == "runner.error"))
@@ -1811,17 +1773,15 @@ defmodule EmisarWeb.RunnerSocketTest do
     # the row; the absent fields are carried into the payload as nil rather than
     # dropping the audit.
     test "an error envelope missing code/message still records a row (nils carried)", %{
-      account: account,
       runner: runner,
-      user: user,
-      state: state
+      state: state,
+      subject: subject
     } do
       request_id = Emisar.Crypto.run_request_id()
       raw = runner_frame(%{"type" => "error", "request_id" => request_id})
       assert {:ok, next} = RunnerSocket.handle_in({raw, text()}, state)
       assert Map.delete(next, :error_frames) == Map.delete(state, :error_frames)
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
       {:ok, events, _meta} = Emisar.Audit.list_events(subject, target_id: runner.id)
 
       row =
@@ -1899,26 +1859,16 @@ defmodule EmisarWeb.RunnerSocketTest do
   end
 
   defp unconnected_socket do
-    {:ok, user} =
-      Emisar.Users.register_user(%{
-        email: "owner-#{System.unique_integer([:positive])}@example.com"
-      })
-
-    {:ok, account} =
-      Emisar.Accounts.create_account_with_owner(
-        %{name: "OwnerCo", slug: Emisar.Accounts.suggest_unique_slug("OwnerCo")},
-        user
-      )
+    {owner, account, subject} = Fixtures.Subjects.owner_subject(%{name: "OwnerCo"})
 
     Fixtures.Accounts.create_subscription(account, "team")
 
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
     Fixtures.Catalog.create_action(runner: runner)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
     {_raw, token} = Runners.mint_runner_token(runner)
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
 
-    %{account: account, user: user, runner: runner, token: token, subject: subject}
+    %{account: account, owner: owner, runner: runner, token: token, subject: subject}
   end
 
   # Dispatches a real run to the connected runner and drains the resulting

@@ -1,6 +1,6 @@
 defmodule Emisar.Seeds.SmokeTest do
   use Emisar.DataCase, async: false
-  alias Emisar.{Accounts, Approvals, Auth, Fixtures, Repo, Runners, Runs, Users}
+  alias Emisar.{Accounts, Approvals, Auth, Fixtures, Repo, Runners, Runs}
 
   test "the fixed development enrollment secret belongs to the exact seed owner" do
     variable = "EMISAR_DEV_FIXED_ENROLLMENT_KEY"
@@ -35,9 +35,15 @@ defmodule Emisar.Seeds.SmokeTest do
     end
 
     seed.()
-    {:ok, user} = Users.fetch_user_by_email("demo@emisar.dev")
 
-    Fixtures.Users.set_mfa_state(user,
+    demo =
+      Accounts.Account.Query.not_deleted()
+      |> Accounts.Account.Query.by_slug("demo")
+      |> Repo.one!()
+
+    user = Accounts.peek_sync_membership_by_email(demo.id, "demo@emisar.dev")
+
+    Fixtures.Memberships.set_mfa_state(user,
       mfa_secret: Auth.generate_mfa_secret(),
       mfa_enabled_at: DateTime.utc_now()
     )
@@ -70,8 +76,6 @@ defmodule Emisar.Seeds.SmokeTest do
     assert Repo.reload!(unrelated).settings.require_mfa
     refute Repo.reload!(user).mfa_enabled_at
     refute Repo.exists?(Auth.UserToken.Query.by_context("session"))
-    refute Repo.exists?(Auth.MemberGrant)
-    refute Repo.exists?(Auth.MemberGrantRoute)
   end
 
   test "the development seed builds usable demo, partial and empty accounts" do
@@ -79,9 +83,9 @@ defmodule Emisar.Seeds.SmokeTest do
     # so evaluating the real entry point leaves global configuration unchanged.
     assert Application.fetch_env!(:emisar, :notify_approvers_async?) == false
 
-    unrelated = Fixtures.Users.create_user()
+    unrelated = Fixtures.Memberships.create_membership()
     raw = Fixtures.Auth.create_session_token!(unrelated, :magic_link, nil)
-    {:ok, retained} = Auth.fetch_session_by_token(raw)
+    {:ok, retained} = Auth.fetch_session_by_token(raw, unrelated.account_id)
 
     for _ <- 1..2 do
       ExUnit.CaptureIO.capture_io(fn ->
@@ -91,9 +95,6 @@ defmodule Emisar.Seeds.SmokeTest do
       assert Repo.all(Auth.UserToken.Query.by_context("session")) |> Enum.map(& &1.id) == [
                retained.id
              ]
-
-      refute Repo.exists?(Auth.MemberGrant)
-      refute Repo.exists?(Auth.MemberGrantRoute)
 
       grants = Repo.all(Approvals.Grant)
       assert length(grants) == 2
@@ -125,14 +126,12 @@ defmodule Emisar.Seeds.SmokeTest do
             {"sam@emisar.dev", "Sam Okafor"},
             {"wren@emisar.dev", "Wren Alvarez"}
           ] do
-        {:ok, person} = Users.fetch_user_by_email(email)
-
         account =
           Accounts.Account.Query.not_deleted()
           |> Accounts.Account.Query.by_slug("demo")
           |> Repo.one!()
 
-        membership = Accounts.peek_sync_membership(account.id, person.id)
+        membership = Accounts.peek_sync_membership_by_email(account.id, email)
         assert Accounts.member_display_name(membership) == name
       end
     end
@@ -144,14 +143,12 @@ defmodule Emisar.Seeds.SmokeTest do
           {"owner@globex.test", "globex"},
           {"owner@blank.test", "blank"}
         ] do
-      assert {:ok, user} = Users.fetch_user_by_email(email)
-      raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      {:ok, session} = Auth.fetch_session_by_token(raw)
-
-      assert {:ok, membership} =
-               Accounts.fetch_membership_by_account_id_or_slug(slug, session)
-
-      assert membership.account.slug == slug
+      {:ok, account} = Accounts.fetch_account_by_id_or_slug(slug)
+      member = Accounts.peek_sync_membership_by_email(account.id, email)
+      assert member.email_verified_at
+      raw = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
+      assert {:ok, session} = Auth.fetch_session_by_token(raw, account.id)
+      assert session.membership.account.slug == slug
     end
   end
 end

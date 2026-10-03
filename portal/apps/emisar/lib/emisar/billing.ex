@@ -1173,6 +1173,24 @@ defmodule Emisar.Billing do
     end
   end
 
+  @doc """
+  Internal — pre-auth: the checkout page and its return read the signed return
+  state every checkout URL carries (`start_checkout/4`,
+  `payment_method_update_url/2`): the workspace and the Paddle transaction it
+  pays. It grants nothing; the return still needs that workspace's session.
+  Returns `{:ok, %{account_id: id, transaction_id: id}}`, or `{:error,
+  :invalid}` for a missing, edited, foreign or day-old value.
+  """
+  def verify_checkout_return(checkout_return) do
+    case Crypto.verify_checkout_return(checkout_return) do
+      {:ok, {account_id, transaction_id}} ->
+        {:ok, %{account_id: account_id, transaction_id: transaction_id}}
+
+      {:error, :invalid} ->
+        {:error, :invalid}
+    end
+  end
+
   defp ensure_self_service_checkout(plan_name, cycle) do
     cond do
       self_service_checkout?(plan_name, cycle) -> :ok

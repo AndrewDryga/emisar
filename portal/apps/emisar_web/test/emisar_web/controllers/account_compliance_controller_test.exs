@@ -10,12 +10,12 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
     * the OAuth consent mint — the consent RENDER stays open (it mints nothing),
       and require_sso / require_mfa is enforced at the mint, on the CHOSEN account.
 
-  The MFA exemption is ACCOUNT-SCOPED (a foreign-IdP SSO session earns none), and
-  the sso_required shim a bounced session lands on stays reachable (no loop).
+  A session belongs to one workspace, so another workspace's SSO session earns
+  nothing here, and a session `require_sso` no longer accepts is dropped and
+  sent to the workspace's sign-in (no loop).
   """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.{Audit, Auth, Fixtures, OAuth, Repo}
-  alias Emisar.SSO.UserIdentity
 
   @redirect "https://claude.ai/api/mcp/auth_callback"
   @resource EmisarWeb.Endpoint.url() <> "/api/mcp/rpc"
@@ -31,33 +31,17 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
   defp require_mfa!(account),
     do: Fixtures.Accounts.set_account_settings(account, %{require_mfa: true})
 
-  # A real signed-in session whose token records SSO provenance for `identity`.
-  defp sso_session(user, identity) do
-    token =
-      Fixtures.Auth.create_session_token!(user, :sso, DateTime.utc_now(), %{},
-        user_identity_id: identity.id
-      )
-
-    build_conn() |> init_test_session(%{}) |> put_session(:user_token, token)
+  # A browser signed in to `member`'s workspace through `identity`'s provider.
+  defp sso_session(member, identity) do
+    log_in_member(build_conn(), member,
+      auth_method: :sso,
+      user_identity_id: identity.id,
+      mfa: true
+    )
   end
 
-  defp identity_for(account, provider, user) do
-    {:ok, identity} =
-      Repo.insert(
-        UserIdentity.Changeset.create(
-          account.id,
-          provider.id,
-          Fixtures.Memberships.fetch_membership(account.id, user.id),
-          %{
-            provider_identifier: "okta|#{System.unique_integer([:positive])}",
-            created_by: :provider,
-            provisioned_via: :oidc_jit
-          }
-        )
-      )
-
-    identity
-  end
+  defp identity_for(provider, member),
+    do: Fixtures.SSO.create_user_identity(provider_id: provider.id, membership: member)
 
   defp register_client! do
     {:ok, client} =
@@ -91,42 +75,45 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
     test "a magic-link session in a require_sso account is bounced, never handed the CSV", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       _ = enabled_provider(account)
       require_sso!(account)
 
+      token = session_token(conn, account)
       conn = get(conn, ~p"/app/#{account}/audit/download")
 
-      # A 302 to the SSO step-up — BEFORE the Team-plan gate (no subscription
-      # here), proving the compliance plug runs first; no CSV body is streamed.
-      assert redirected_to(conn) == ~p"/app/#{account}/sso_required"
+      # The workspace gate drops the session the policy refuses and sends the
+      # browser to the workspace's sign-in; no CSV body is streamed.
+      assert redirected_to(conn) == ~p"/app/#{account}/sign_in"
+      refute get_session(conn, :sessions)
+      assert Auth.fetch_session_by_token(token, account.id) == {:error, :not_found}
     end
 
     test "a non-enrolled member of a require_mfa account is funnelled to MFA setup", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       require_mfa!(account)
 
       conn = get(conn, ~p"/app/#{account}/audit/download")
 
-      assert redirected_to(conn) == ~p"/app/mfa_setup"
+      assert redirected_to(conn) == ~p"/app/#{account}/mfa_setup"
     end
 
     test "an SSO-compliant session for the account still downloads the CSV", %{conn: conn} do
-      {_conn, user, account} = register_and_log_in(conn)
+      {_conn, owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = enabled_provider(account)
       require_sso!(account)
-      identity = identity_for(account, provider, user)
+      identity = identity_for(provider, owner)
 
       {:ok, _} =
         Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "alice")
 
       conn =
         get(
-          sso_session(user, identity),
+          sso_session(owner, identity),
           ~p"/app/#{account}/audit/download?event_type=user.invited"
         )
 
@@ -134,25 +121,31 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       assert response(conn, 200) =~ "alice"
     end
 
-    test "a session SSO-authed via ANOTHER account's IdP cannot reach this account at all", %{
-      conn: conn
-    } do
-      # An SSO session is authority only inside its provider's account, so a
-      # foreign-IdP session never reaches THIS account's page — 404, the same
-      # as a non-member, stronger than the account-scoped MFA exemption it used
-      # to be funnelled through.
-      {_conn, user, account} = register_and_log_in(conn)
+    test "another workspace's SSO session earns nothing here", %{conn: conn} do
+      # A session is authority only inside its own workspace: the same person's
+      # SSO session in another workspace never reaches THIS workspace's page, and
+      # its token presented under this workspace is refused.
+      {_conn, owner, account} = register_and_log_in(conn)
       require_mfa!(account)
 
       other = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(other, "team")
       other_provider = enabled_provider(other)
-      Fixtures.Memberships.create_membership(account_id: other.id, user_id: user.id)
-      foreign_identity = identity_for(other, other_provider, user)
 
-      assert_error_sent 404, fn ->
-        get(sso_session(user, foreign_identity), ~p"/app/#{account}/audit/download")
-      end
+      other_member =
+        Fixtures.Memberships.create_membership(account_id: other.id, email: owner.email)
+
+      foreign = sso_session(other_member, identity_for(other_provider, other_member))
+
+      refused = get(foreign, ~p"/app/#{account}/audit/download")
+      assert redirected_to(refused) == ~p"/app/#{account}/sign_in"
+
+      forged =
+        build_conn()
+        |> init_test_session(%{sessions: [{account.id, session_token(foreign, other)}]})
+        |> get(~p"/app/#{account}/audit/download")
+
+      assert redirected_to(forged) == ~p"/app/#{account}/sign_in"
     end
 
     test "an SSO session whose provider satisfies MFA FOR THIS account stays exempt", %{
@@ -161,18 +154,18 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       # The account-scoped positive: an MFA-satisfying SSO identity that DOES
       # belong to this account keeps its exemption — the fix narrows the hole
       # without breaking the legitimate case.
-      {_conn, user, account} = register_and_log_in(conn)
+      {_conn, owner, account} = register_and_log_in(conn)
       require_mfa!(account)
       Fixtures.Accounts.create_subscription(account, "team")
       provider = enabled_provider(account)
-      identity = identity_for(account, provider, user)
+      identity = identity_for(provider, owner)
 
       {:ok, _} =
         Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "alice")
 
       conn =
         get(
-          sso_session(user, identity),
+          sso_session(owner, identity),
           ~p"/app/#{account}/audit/download?event_type=user.invited"
         )
 
@@ -184,7 +177,7 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
     test "a magic-link session in a require_sso account still reaches the consent screen", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
       _ = enabled_provider(account)
       require_sso!(account)
@@ -203,22 +196,24 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
 
   describe "POST /oauth/authorize (mint) — require_sso/require_mfa gates the CHOSEN account" do
     test "approving a require_sso account from a non-SSO session mints nothing", %{conn: conn} do
-      {conn, user, session_account} = register_and_log_in(conn)
+      {conn, owner, session_account} = register_and_log_in(conn)
 
       chosen = Fixtures.Accounts.create_account()
       Fixtures.Accounts.create_subscription(chosen, "team")
       _ = enabled_provider(chosen)
       require_sso!(chosen)
 
-      # Owner in the chosen account — so WITHOUT the compliance guard the mint
-      # would succeed (key-issue permission is present); the guard is what blocks.
-      Fixtures.Memberships.create_membership(
-        account_id: chosen.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      # Owner in the chosen workspace, signed in there by email — so WITHOUT the
+      # compliance guard the mint would succeed; the guard is what blocks.
+      chosen_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: chosen.id,
+          email: owner.email,
+          role: "owner"
+        )
 
-      conn = conn |> log_in_user(user) |> put_session(:current_account_id, session_account.id)
+      conn = log_in_member(conn, chosen_owner)
+      assert session_token(conn, session_account)
       client = register_client!()
 
       params = authorize_params(client, %{"account_id" => chosen.id, "decision" => "approve"})
@@ -230,18 +225,20 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
     end
 
     test "approving a require_mfa account without an enrolled factor mints nothing", %{conn: conn} do
-      {conn, user, session_account} = register_and_log_in(conn)
+      {conn, owner, session_account} = register_and_log_in(conn)
 
       chosen = Fixtures.Accounts.create_account()
       require_mfa!(chosen)
 
-      Fixtures.Memberships.create_membership(
-        account_id: chosen.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      chosen_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: chosen.id,
+          email: owner.email,
+          role: "owner"
+        )
 
-      conn = conn |> log_in_user(user) |> put_session(:current_account_id, session_account.id)
+      conn = log_in_member(conn, chosen_owner)
+      assert session_token(conn, session_account)
       client = register_client!()
 
       params = authorize_params(client, %{"account_id" => chosen.id, "decision" => "approve"})
@@ -254,26 +251,25 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
       refute Repo.one(OAuth.AuthorizationCode)
     end
 
-    test "a session whose CURRENT account requires SSO can still grant a NON-enforcing account",
+    test "a browser also signed in to a require_sso workspace can still grant a NON-enforcing one",
          %{conn: conn} do
-      # Regression guard: enforcement is on the CHOSEN account, not the session
-      # account. A magic-link session pinned to a require_sso account must still
-      # grant a different, non-enforcing account it belongs to — the removed
-      # session-account plug wrongly blocked this (and even blocked "deny").
-      {conn, user, session_account} = register_and_log_in(conn)
+      # Regression guard: enforcement is on the CHOSEN workspace, not on any other
+      # session in the browser.
+      {conn, owner, session_account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(session_account, "team")
       _ = enabled_provider(session_account)
       require_sso!(session_account)
 
       grantee = Fixtures.Accounts.create_account()
 
-      Fixtures.Memberships.create_membership(
-        account_id: grantee.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      grantee_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: grantee.id,
+          email: owner.email,
+          role: "owner"
+        )
 
-      conn = conn |> log_in_user(user) |> put_session(:current_account_id, session_account.id)
+      conn = log_in_member(conn, grantee_owner)
       client = register_client!()
 
       params = authorize_params(client, %{"account_id" => grantee.id, "decision" => "approve"})
@@ -284,21 +280,23 @@ defmodule EmisarWeb.AccountComplianceControllerTest do
     end
   end
 
-  describe "the sso_required shim stays reachable (no redirect loop)" do
-    test "a non-SSO session reaches the shim without a destructive GET", %{
+  describe "a session require_sso no longer accepts" do
+    test "is dropped once and lands on the workspace sign-in, which renders (no loop)", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
-      _ = enabled_provider(account)
+      provider = enabled_provider(account)
       require_sso!(account)
+      token = session_token(conn, account)
 
-      token = get_session(conn, :user_token)
-      conn = get(conn, ~p"/app/#{account}/sso_required")
+      dropped = get(conn, ~p"/app/#{account}")
+      assert redirected_to(dropped) == ~p"/app/#{account}/sign_in"
+      refute get_session(dropped, :sessions)
+      assert Auth.fetch_session_by_token(token, account.id) == {:error, :not_found}
 
-      assert html_response(conn, 200) =~ "Sign out and sign in again"
-      assert get_session(conn, :user_token) == token
-      assert {:ok, _session} = Auth.fetch_session_by_token(token)
+      page = dropped |> recycle() |> get(~p"/app/#{account}/sign_in")
+      assert html_response(page, 200) =~ ~p"/sign_in/sso/#{provider.id}"
     end
   end
 end

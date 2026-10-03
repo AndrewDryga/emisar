@@ -28,18 +28,18 @@ defmodule Emisar.AccountsOwnerAccessTest do
     account = Fixtures.Accounts.create_account()
     Fixtures.Accounts.create_subscription(account, "team")
     owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-    subject = Fixtures.Subjects.membership_subject(owner)
+    subject = Fixtures.Subjects.subject_for(owner)
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
     {:ok, restricted} = RunnerAccess.new(:restricted, ["database"], [], :restricted, ["postgres"])
     target = Fixtures.Memberships.force_runner_access(target, restricted)
-    target_subject = Fixtures.Subjects.membership_subject(target)
-    session = Fixtures.Auth.create_session_token!(target_subject.actor, :magic_link, nil)
+    target_subject = Fixtures.Subjects.subject_for(target)
+    session = Fixtures.Auth.create_session_token!(target)
 
     {raw, key} =
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: target.user_id)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: target.id)
 
     {_other_raw, other_key} =
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.user_id)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: owner.id)
 
     old_subject = Auth.Subject.for_api_key(key, account)
     grant = Fixtures.ApiKeys.create_approved_device_grant(target_subject)
@@ -56,7 +56,7 @@ defmodule Emisar.AccountsOwnerAccessTest do
     assert Emisar.ApiKeys.peek_api_key_by_secret(raw).id == key.id
     assert Accounts.runner_access_for_subject(old_subject) == RunnerAccess.all()
     assert old_subject.role == :api_client
-    assert {:ok, _token} = Auth.fetch_session_by_token(session)
+    assert {:ok, _token} = Auth.fetch_session_by_token(session, account.id)
     membership_id = target.id
     assert_receive {:list_changed, :team, "membership.role_changed", ^membership_id}
   end
@@ -68,10 +68,10 @@ defmodule Emisar.AccountsOwnerAccessTest do
     target = Fixtures.Memberships.force_runner_access(target, RunnerAccess.none())
 
     {raw, key} =
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: target.user_id)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: target.id)
 
     old_subject = Auth.Subject.for_api_key(key, account)
-    subject = Fixtures.Subjects.membership_subject(owner)
+    subject = Fixtures.Subjects.subject_for(owner)
     assert {:ok, revoked} = Emisar.ApiKeys.revoke_api_key(key, subject)
 
     assert {:ok, _promoted} = Accounts.update_membership_role(target, :owner, subject)
@@ -86,9 +86,9 @@ defmodule Emisar.AccountsOwnerAccessTest do
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     {_raw, key} =
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: target.user_id)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: target.id)
 
-    subject = Fixtures.Subjects.membership_subject(owner)
+    subject = Fixtures.Subjects.subject_for(owner)
     assert Accounts.subscribe_account_team(account.id) == :ok
 
     assert {:ok, _promoted} = Accounts.update_membership_role(target, :owner, subject)
@@ -106,7 +106,7 @@ defmodule Emisar.AccountsOwnerAccessTest do
     owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
     foreign = Fixtures.Memberships.create_membership(role: "owner")
-    subject = Fixtures.Subjects.membership_subject(owner)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     assert Accounts.update_membership_runner_access(target, RunnerAccess.none(), subject) ==
              {:error, :owner_access_is_account_wide}
@@ -129,33 +129,33 @@ defmodule Emisar.AccountsOwnerAccessTest do
     assert Accounts.update_membership_role(
              target,
              :owner,
-             Fixtures.Subjects.membership_subject(operator)
+             Fixtures.Subjects.subject_for(operator)
            ) ==
              {:error, :unauthorized}
 
     assert Accounts.update_membership_role(
              target,
              :owner,
-             Fixtures.Subjects.membership_subject(admin)
+             Fixtures.Subjects.subject_for(admin)
            ) ==
              {:error, :insufficient_privileges}
 
     assert Accounts.update_membership_role(
              target,
              :owner,
-             Fixtures.Subjects.membership_subject(foreign_owner)
+             Fixtures.Subjects.subject_for(foreign_owner)
            ) ==
              {:error, :unauthorized}
 
     assert Accounts.return_owner_to_directory(
              target,
-             Fixtures.Subjects.membership_subject(operator)
+             Fixtures.Subjects.subject_for(operator)
            ) ==
              {:error, :unauthorized}
 
     assert Accounts.return_owner_to_directory(
              target,
-             Fixtures.Subjects.membership_subject(foreign_owner)
+             Fixtures.Subjects.subject_for(foreign_owner)
            ) ==
              {:error, :unauthorized}
 
@@ -167,14 +167,14 @@ defmodule Emisar.AccountsOwnerAccessTest do
     owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    subject = Fixtures.Subjects.membership_subject(owner)
+    subject = Fixtures.Subjects.subject_for(owner)
     {:ok, access} = RunnerAccess.new(:restricted, [], [runner.id], :restricted, ["postgres"])
 
     {_raw, key} =
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: target.user_id)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: target.id)
 
     grant =
-      Fixtures.ApiKeys.create_approved_device_grant(Fixtures.Subjects.membership_subject(target))
+      Fixtures.ApiKeys.create_approved_device_grant(Fixtures.Subjects.subject_for(target))
 
     assert Accounts.subscribe_account_team(account.id) == :ok
 
@@ -200,9 +200,9 @@ defmodule Emisar.AccountsOwnerAccessTest do
     foreign_runner = Fixtures.Runners.create_runner()
 
     {_raw, key} =
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: target.user_id)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: target.id)
 
-    subject = Fixtures.Subjects.membership_subject(owner)
+    subject = Fixtures.Subjects.subject_for(owner)
     {:ok, access} = RunnerAccess.restricted([], [foreign_runner.id])
 
     assert Accounts.update_membership_role(target, :admin, subject, runner_access: access) ==
@@ -218,7 +218,7 @@ defmodule Emisar.AccountsOwnerAccessTest do
     owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
     snapshot = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
     Fixtures.Memberships.force_role(snapshot, "admin")
-    subject = Fixtures.Subjects.membership_subject(owner)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     assert Accounts.update_membership_role(snapshot, :viewer, subject,
              runner_access: RunnerAccess.none(),
@@ -250,13 +250,9 @@ defmodule Emisar.AccountsOwnerAccessTest do
           directory_provider_id: provider.id
         )
 
-      Fixtures.SSO.create_user_identity(
-        account_id: account.id,
-        provider_id: provider.id,
-        user_id: target.user_id
-      )
+      Fixtures.SSO.create_user_identity(provider_id: provider.id, membership: target)
 
-      subject = Fixtures.Subjects.membership_subject(owner)
+      subject = Fixtures.Subjects.subject_for(owner)
       assert Accounts.subscribe_account_team(account.id) == :ok
 
       assert {:ok, pending} = Accounts.return_owner_to_directory(target, subject)
@@ -287,7 +283,7 @@ defmodule Emisar.AccountsOwnerAccessTest do
       for member <- [operator, foreign_owner] do
         assert Accounts.return_owner_to_directory(
                  target,
-                 Fixtures.Subjects.membership_subject(member)
+                 Fixtures.Subjects.subject_for(member)
                ) ==
                  {:error, :unauthorized}
       end
@@ -323,7 +319,7 @@ defmodule Emisar.AccountsOwnerAccessTest do
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
     {_raw, key} =
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: owner.user_id)
+      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: owner.id)
 
     owner = Fixtures.Memberships.mark_directory_authorization_pending(owner, 0)
     assert Accounts.subscribe_account_team(account.id) == :ok

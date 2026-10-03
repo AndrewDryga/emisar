@@ -14,7 +14,7 @@ defmodule Emisar.RepoTest do
   """
   use Emisar.DataCase, async: true
   alias Ecto.Multi
-  alias Emisar.{Audit, Fixtures, Repo, Users}
+  alias Emisar.{Accounts, Audit, Fixtures, Repo}
 
   describe "valid_uuid?/1" do
     test "accepts canonical UUID text and rejects malformed or raw values" do
@@ -51,22 +51,21 @@ defmodule Emisar.RepoTest do
       # fire as soon as the nested call returned, so subscribers were told about a
       # rename that the outer rollback then erased — an audit
       # trail announcing something that never happened.
-      {user, account, subject} = Fixtures.Subjects.owner_subject()
-      subject = %{subject | auth_method: :magic_link}
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       :ok = Audit.subscribe_account_audit(account.id)
 
       multi =
         Multi.new()
         |> Multi.run(:rename, fn _repo, _changes ->
-          Users.update_user_profile(%{full_name: "New Name"}, subject)
+          Accounts.update_own_member_profile(%{display_name: "New Name"}, subject)
         end)
         |> Multi.run(:fail, fn _repo, _changes -> {:error, :forced_rollback} end)
 
       assert Repo.commit_multi(multi) == {:error, :forced_rollback}
 
       # The write rolled back...
-      assert Repo.reload!(user).full_name == user.full_name
+      assert Repo.reload!(owner).display_name == owner.display_name
       # ...and nothing was announced about it.
       refute_receive {:audit_event, _event}, 200
     end

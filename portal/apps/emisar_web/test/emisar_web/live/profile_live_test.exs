@@ -1,1109 +1,196 @@
 defmodule EmisarWeb.ProfileLiveTest do
+  @moduledoc """
+  Profile (plan §3 "Profile"): three sections, all about this Member in this
+  workspace — its name (the email is shown, not editable: to change an address,
+  an administrator invites the new one), its multi-factor authentication, and
+  its own active sessions. Nothing here reaches another workspace or another
+  Member.
+  """
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Auth
 
-  describe "workspace profile" do
-    test "a workspace name draft survives sibling events and session pagination", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      lv |> element("#change-workspace-name") |> render_click()
-
-      lv
-      |> form("#workspace-profile-form", workspace_profile: %{display_name: "Draft Work Name"})
-      |> render_change()
-
-      lv |> element("#change-name") |> render_click()
-      assert has_element?(lv, "#workspace_profile_display_name[value='Draft Work Name']")
-      render_patch(lv, ~p"/app/#{account}/settings/profile?cursor=invalid")
-      assert has_element?(lv, "#workspace_profile_display_name[value='Draft Work Name']")
+  describe "the Profile section" do
+    setup %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, owner: owner, account: account}
     end
 
-    test "edits the local name without changing personal details or another workspace", %{
-      conn: conn
+    test "shows the name and a read-only email, with how to change an address", %{
+      conn: conn,
+      owner: owner,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
-
-      other =
-        Fixtures.Memberships.create_membership(user_id: user.id, display_name: "Other Workspace")
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv |> element("#change-workspace-name") |> render_click()
-
-      lv
-      |> form("#workspace-profile-form", workspace_profile: %{display_name: "Work Name"})
-      |> render_submit()
-
-      assert has_element?(lv, "#workspace-details", "Work Name")
-      assert has_element?(lv, "#display-name", user.full_name)
-      assert Emisar.Repo.reload!(user).full_name == user.full_name
-      assert Emisar.Repo.reload!(other).display_name == "Other Workspace"
-
-      lv |> element("#change-workspace-name") |> render_click()
-
-      render_submit(lv, "save_workspace_profile", %{
-        "workspace_profile" => %{"display_name" => String.duplicate("a", 256)}
-      })
-
-      assert has_element?(lv, "#workspace-profile-form", "at most 255")
-
-      assert Fixtures.Memberships.fetch_membership(account.id, user.id).display_name ==
-               "Work Name"
-    end
-  end
-
-  describe "workspace SSO personal-authority boundary" do
-    test "shows a stable restriction and refuses crafted personal-control events", %{conn: conn} do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
-      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
-      member
-      |> Ecto.Changeset.change(
-        display_name: "Workspace Identity",
-        email: "work-identity@example.test"
-      )
-      |> Emisar.Repo.update!()
-
-      Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
-
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id
-        })
-
-      sso_raw =
-        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
-
-      personal_raw =
-        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
-          user_agent: "Private personal browser",
-          ip_address: "203.0.113.12"
-        })
-
-      {:ok, personal_session} = Auth.fetch_session_by_token(personal_raw)
-      conn = conn |> init_test_session(%{}) |> put_session(:user_token, sso_raw)
-
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile?cursor=invalid")
-      assert html =~ "personal email-link proof"
-      assert has_element?(lv, "#sessions-personal-sign-in-required")
-
-      assert has_element?(
-               lv,
-               "#personal-sign-in-required a[href='/session/recover']",
-               "Sign out and sign in by email"
-             )
-
-      assert has_element?(
-               lv,
-               "#sessions-personal-sign-in-required a[href='/session/recover']",
-               "Sign out and sign in by email"
-             )
-
-      refute has_element?(lv, "#change-name")
-      refute has_element?(lv, "#change-email")
-      refute has_element?(lv, "#active-sessions")
-      refute has_element?(lv, "#signout-others")
-      refute has_element?(lv, "#linked-workspaces")
-      refute has_element?(lv, "[phx-click=retry_sessions]")
-      refute html =~ "Private personal browser"
-      refute html =~ "203.0.113.12"
-      assert has_element?(lv, "#workspace-details", "Workspace Identity")
-      assert has_element?(lv, "#workspace-details", "work-identity@example.test")
-      refute has_element?(lv, "#display-name")
-      refute has_element?(lv, "#email")
-      assert has_element?(lv, "[phx-click=start_mfa]")
-
-      for {event, params} <- [
-            {"edit_profile", %{}},
-            {"save_profile", %{"profile" => %{"full_name" => "Changed by workspace"}}},
-            {"edit_email", %{}},
-            {"save_email", %{"email" => %{"email" => "other@example.test"}}},
-            {"resend_email_code", %{}},
-            {"confirm_email_change", %{"email_step" => %{"code" => "123456"}}},
-            {"revoke_session", %{"id" => personal_session.id}},
-            {"revoke_other_sessions", %{}},
-            {"detach_personal_login", %{"id" => Ecto.UUID.generate()}}
-          ] do
-        assert render_click(lv, event, params) =~
-                 "These controls require unexpired personal email-link proof in this browser."
-      end
-
-      render_click(lv, "retry_sessions", %{})
-      assert has_element?(lv, "#sessions-personal-sign-in-required")
-      refute has_element?(lv, "[phx-click=retry_sessions]")
-      refute has_element?(lv, "#profile_form")
-      refute has_element?(lv, "#email_form")
-      assert Emisar.Repo.reload!(user).full_name == user.full_name
-      assert Emisar.Repo.reload!(user).email == user.email
-      assert {:ok, _} = Auth.fetch_session_by_token(personal_raw)
-      assert {:ok, _} = Auth.fetch_session_by_token(sso_raw)
-      refute_received {:email, _}
-    end
-  end
-
-  describe "email form validation" do
-    test "a profile without an email address does not claim confirmation is pending", %{
-      conn: conn
-    } do
-      user = Fixtures.Users.create_sso_user(full_name: "No Email")
-      account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "viewer"
-      )
-
-      conn = log_in_user(conn, user)
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      assert has_element?(lv, "#email", "No email address")
-      assert has_element?(lv, "#email", "Ask your workspace administrator")
-      refute has_element?(lv, "#email", "Awaiting confirmation")
-      assert has_element?(lv, "#change-email[disabled]")
-
-      render_click(lv, "edit_email", %{})
-      render_submit(lv, "save_email", %{"email" => %{"email" => "new@example.com"}})
-
-      assert has_element?(lv, "#email_form", "Your profile has no email address")
-      refute has_element?(lv, "#email_step_form")
-      refute_received {:email, _}
-    end
-
-    test "a missing-email profile with MFA can add an address through its authenticator", %{
-      conn: conn
-    } do
-      user =
-        Fixtures.Users.create_sso_user()
-        |> Fixtures.Users.set_mfa_state(
-          mfa_secret: Auth.generate_mfa_secret(),
-          mfa_enabled_at: DateTime.utc_now()
-        )
-
-      account = Fixtures.Accounts.create_account()
-      Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
-
-      {:ok, lv, _html} = live(log_in_user(conn, user), ~p"/app/#{account}/settings/profile")
-
-      refute has_element?(lv, "#change-email[disabled]")
-      refute has_element?(lv, "#email", "Ask your workspace administrator")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "new@example.com"}})
-      |> render_submit()
-
-      assert has_element?(lv, "#email_step_form", "authenticator")
-      assert is_nil(Emisar.Repo.reload!(user).email)
-      refute_received {:email, _}
-    end
-
-    test "a malformed email surfaces inline via phx-change, not a flash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
 
-      assert html =~ "Personal details"
-      refute has_element?(lv, "#email_form")
-      assert has_element?(lv, "#change-email", "Change email")
+      assert has_element?(lv, "#display-name", owner.display_name)
+      assert has_element?(lv, "#email", owner.email)
+      assert html =~ "ask a workspace administrator to invite the new address"
+      refute has_element?(lv, "#email input")
+      refute has_element?(lv, "#change-email")
+      refute html =~ "Not verified"
 
-      # The email-format check is a field error driven by phx-change.
-      html =
-        lv
-        |> edit_email()
-        |> form("#email_form", %{"email" => %{"email" => "not-an-email"}})
-        |> render_change()
-
-      assert html =~ "must have the @ sign and no spaces"
+      for section <- ~w(profile-details multi-factor-authentication sessions) do
+        assert has_element?(lv, "##{section}")
+      end
     end
-  end
 
-  describe "profile form" do
-    test "the name saves independently and an unchanged value disables Save", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "saves a new name for this Member only", %{
+      conn: conn,
+      owner: owner,
+      account: account
+    } do
+      # The same person in another workspace is another Member with its own name.
+      elsewhere =
+        Fixtures.Memberships.create_membership(email: owner.email, display_name: "Elsewhere")
+
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      refute has_element?(lv, "#profile_form")
-      assert has_element?(lv, "#display-name", user.full_name)
+      refute has_element?(lv, "#profile-form")
       lv |> element("#change-name", "Change name") |> render_click()
-      assert has_element?(lv, "#profile_form button[disabled]", "Save")
-      refute has_element?(lv, "#email_form")
-
-      lv
-      |> form("#profile_form", %{"profile" => %{"full_name" => "Updated name"}})
-      |> render_change()
-
-      refute has_element?(lv, "#profile_form button[disabled]")
-
-      lv
-      |> form("#profile_form", %{"profile" => %{"full_name" => user.full_name}})
-      |> render_change()
-
-      assert has_element?(lv, "#profile_form button[disabled]", "Save")
-    end
-
-    test "saving a new full name updates and confirms", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      lv |> element("#change-name") |> render_click()
 
       html =
         lv
-        |> form("#profile_form", %{"profile" => %{"full_name" => "Renamed Person"}})
+        |> form("#profile-form", %{"profile" => %{"display_name" => "Renamed Person"}})
         |> render_submit()
 
       assert html =~ "Name updated."
-      assert html =~ "Renamed Person"
-      assert Emisar.Repo.reload!(user).full_name == "Renamed Person"
-      refute has_element?(lv, "#profile_form")
-      assert has_element?(lv, "#change-name")
-      refute has_element?(lv, "#email_form")
+      assert has_element?(lv, "#display-name", "Renamed Person")
+      refute has_element?(lv, "#profile-form")
+      assert Emisar.Repo.reload!(owner).display_name == "Renamed Person"
+      assert Emisar.Repo.reload!(elsewhere).display_name == "Elsewhere"
     end
 
-    test "cancel discards the name draft without resetting an email edit", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "a draft survives validation and session paging; cancel discards it", %{
+      conn: conn,
+      owner: owner,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      edit_email(lv)
       lv |> element("#change-name") |> render_click()
-      lv |> form("#profile_form", profile: %{full_name: "Discard this"}) |> render_change()
-      lv |> element("#profile_form button", "Cancel") |> render_click()
 
-      refute has_element?(lv, "#profile_form")
-      assert has_element?(lv, "#email_form")
-      assert Emisar.Repo.reload!(user).full_name == user.full_name
+      lv |> form("#profile-form", profile: %{display_name: "Draft Name"}) |> render_change()
+      render_patch(lv, ~p"/app/#{account}/settings/profile?cursor=invalid")
+      assert has_element?(lv, "#profile_display_name[value='Draft Name']")
 
+      lv |> element("#profile-form button", "Cancel") |> render_click()
+
+      refute has_element?(lv, "#profile-form")
+      assert Emisar.Repo.reload!(owner).display_name == owner.display_name
       lv |> element("#change-name") |> render_click()
-      assert has_element?(lv, "#profile_full_name[value='#{user.full_name}']")
-      assert has_element?(lv, "#profile_form button[disabled]", "Save")
+      assert has_element?(lv, "#profile_display_name[value='#{owner.display_name}']")
     end
 
-    test "invalid names keep the editor open and report a field error", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+    test "an invalid name keeps the editor open with a field error", %{
+      conn: conn,
+      owner: owner,
+      account: account
+    } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       lv |> element("#change-name") |> render_click()
       draft = String.duplicate("x", 256)
 
-      lv |> form("#profile_form", profile: %{full_name: draft}) |> render_submit()
+      lv |> form("#profile-form", profile: %{display_name: draft}) |> render_submit()
 
-      assert has_element?(lv, "#profile_form", "should be at most 255 character(s)")
-      assert has_element?(lv, "#profile_full_name[value='#{draft}']")
-      assert Emisar.Repo.reload!(user).full_name == user.full_name
+      assert has_element?(lv, "#profile-form", "should be at most 255 character(s)")
+      assert has_element?(lv, "#profile_display_name[value='#{draft}']")
+      assert Emisar.Repo.reload!(owner).display_name == owner.display_name
     end
 
-    test "a save after the user is deleted requires signing in again", %{
-      conn: conn
+    test "a save after the Member is removed goes back to the workspace", %{
+      conn: conn,
+      owner: owner,
+      account: account
     } do
-      {conn, user, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       lv |> element("#change-name") |> render_click()
-      Fixtures.Users.mark_user_as_deleted(user)
+      Fixtures.Memberships.mark_membership_as_deleted(owner)
 
       lv
-      |> form("#profile_form", %{"profile" => %{"full_name" => "Unsaved Name"}})
+      |> form("#profile-form", %{"profile" => %{"display_name" => "Unsaved Name"}})
       |> render_submit()
 
-      flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
+      flash = assert_redirect(lv, ~p"/app/#{account}")
       assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
-    end
-  end
-
-  describe "email form" do
-    setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      assert Emisar.Repo.reload!(owner).display_name == owner.display_name
     end
 
-    test "an address rejected after proof keeps the draft and shows its error locally", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      other = Fixtures.Users.create_user()
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => other.email}})
-      |> render_submit()
-
-      assert_received {:email, email}
-
-      render_hook(lv, "confirm_email_change", %{
-        "email_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
-      })
-
-      assert Emisar.Repo.reload!(user).email == user.email
-      finish_new_email(lv)
-
-      assert has_element?(lv, "#email_form", "Couldn't change to that email")
-      assert has_element?(lv, "#email_form input[value='#{other.email}']")
-      refute has_element?(lv, "#email_step_form")
-      assert Emisar.Repo.reload!(user).email == user.email
-
-      lv
-      |> form("#email_form", %{"email" => %{"email" => "corrected@example.com"}})
-      |> render_change()
-
-      refute has_element?(lv, "#email_form", "Couldn't change to that email")
-      assert has_element?(lv, "#email_form input[value='corrected@example.com']")
-    end
-
-    test "a change needs a confirmation code (no MFA) — not applied until confirmed", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      # Submitting only STARTS the step-up — the email is not changed yet.
-      html =
-        lv
-        |> edit_email()
-        |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
-        |> render_submit()
-
-      assert html =~ "emailed a confirmation code"
-      assert has_element?(lv, "#email_step_form button", "Continue")
-      assert html =~ "enter the 6-digit code sent to"
-      assert html =~ user.email
-      assert Emisar.Repo.reload!(user).email == user.email
-
-      # A wrong code is refused and the email stays put. The code boxes are
-      # client-owned (CodeInput hook fills the hidden aggregate), so drive the
-      # submit event directly rather than through the un-settable hidden field.
-      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
-
-      # The rejection renders inline at the code input, not in a transient flash.
-      assert lv |> element("#email_step_form") |> render() =~ "incorrect or expired"
-      assert_push_event(lv, "code:reset", %{id: "email-step-code"})
-      assert Emisar.Repo.reload!(user).email == user.email
-    end
-
-    test "a confirm_email_change with no step-up in progress fails closed (no LiveView crash)", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      # email_step is :idle (no save started) and the confirm form isn't even
-      # rendered. A crafted confirm event over the socket must NOT crash the
-      # LiveView (IL-15: never trust the rendered UI) — it fails closed.
-      html = render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "123456"}})
-
-      assert html =~ "Start an email change first."
-      assert Emisar.Repo.reload!(user).email == user.email
-    end
-
-    test "a resend_email_code with no step-up in progress fails closed (no LiveView crash)", %{
-      conn: conn,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      # email_step is :idle, so pending_new_email is nil — a crafted resend over
-      # the socket must neither crash on the nil email nor claim a code was sent.
-      html = render_hook(lv, "resend_email_code", %{})
-
-      assert html =~ "Start an email change first."
-      refute html =~ "We sent a new code"
-      refute_received {:email, _}
-    end
-
-    test "a resend during the TOTP step is refused — the domain chose the authenticator factor",
-         %{
-           conn: conn,
-           user: user,
-           account: account
-         } do
-      secret = Auth.generate_mfa_secret()
-      {:ok, _user, _codes} = Fixtures.Users.enroll_mfa(secret, owner_subject(user, account))
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "mfa-fresh@example.com"}})
-      |> render_submit()
-
-      # The step-up is :totp (no resend button rendered) — a forged resend must
-      # not mint an emailed code beside the authenticator challenge.
-      html = render_hook(lv, "resend_email_code", %{})
-
-      assert html =~ "Start an email change first."
-      refute_received {:email, _}
-    end
-
-    test "a resend during the pending step sends a fresh working code and clears a stale error",
-         %{
-           conn: conn,
-           user: user,
-           account: account
-         } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
-      |> render_submit()
-
-      assert_received {:email, _first_code_email}
-
-      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
-      assert lv |> element("#email_step_form") |> render() =~ "incorrect or expired"
-
-      html = lv |> element("#email_step_form button", "Resend code") |> render_click()
-
-      # Success is claimed only after the issue call actually ran — a fresh code
-      # was emailed — and the stale rejection no longer sits under the input.
-      assert html =~ "We sent a new code to"
-      refute html =~ "incorrect or expired"
-      assert_received {:email, resent_email}
-      code = Fixtures.Auth.code_from_email(resent_email)
-
-      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => code}})
-      assert Emisar.Repo.reload!(user).email == user.email
-      finish_new_email(lv)
-      assert Emisar.Repo.reload!(user).email == "fresh@example.com"
-    end
-
-    test "resends share the issuance budget and keep the latest code usable", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
-      |> render_submit()
-
-      assert_received {:email, _initial_email}
-
-      latest_email =
-        Enum.reduce(1..4, nil, fn _, _previous ->
-          lv |> element("#email_step_form button", "Resend code") |> render_click()
-          assert_received {:email, email}
-          email
-        end)
-
-      latest_code = Fixtures.Auth.code_from_email(latest_email)
-
-      html = lv |> element("#email_step_form button", "Resend code") |> render_click()
-
-      assert html =~ "Too many code requests. Wait up to 15 minutes, then try again."
-      refute_received {:email, _}
-
-      # The refused sixth issuance did not replace the fifth token, and the
-      # pending step remains open instead of stranding the operator.
-      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => latest_code}})
-      assert Emisar.Repo.reload!(user).email == user.email
-      finish_new_email(lv)
-      assert Emisar.Repo.reload!(user).email == "fresh@example.com"
-    end
-
-    test "an exhausted issuance budget refuses a fresh step without sending mail", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      subject = browser_subject(conn, user, account)
-
-      for index <- 1..5 do
-        assert Auth.issue_email_change_code("spent-#{index}@example.com", subject) == {:ok, :sent}
-        assert_received {:email, _}
-      end
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      html =
-        lv
-        |> edit_email()
-        |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
-        |> render_submit()
-
-      assert html =~ "Too many code requests. Wait up to 15 minutes, then try again."
-      assert has_element?(lv, "#email_form")
-      refute has_element?(lv, "#email_step_form")
-      refute_received {:email, _}
-      assert Emisar.Repo.reload!(user).email == user.email
-    end
-
-    test "starting after the user is deleted reports failure instead of crashing", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      Fixtures.Users.mark_user_as_deleted(user)
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
-      |> render_submit()
-
-      flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
-      assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
-      refute_received {:email, _}
-    end
-
-    test "starting a fresh step-up clears a stale inline rejection", %{
-      conn: conn,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "first@example.com"}})
-      |> render_submit()
-
-      render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => "000000"}})
-      assert lv |> element("#email_step_form") |> render() =~ "incorrect or expired"
-
-      # The email form isn't rendered mid-step, but the event stays reachable
-      # over the socket — a restarted challenge must not open already accusing
-      # the operator of the prior challenge's wrong code.
-      render_hook(lv, "save_email", %{"email" => %{"email" => "second@example.com"}})
-
-      refute lv |> element("#email_step_form") |> render() =~ "incorrect or expired"
-    end
-
-    test "a resend after the user is deleted reports failure instead of claiming success", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
-      |> render_submit()
-
-      Fixtures.Users.mark_user_as_deleted(user)
-
-      lv |> element("#email_step_form button", "Resend code") |> render_click()
-      flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
-      assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
-    end
-
-    test "an MFA-on user proves TOTP and then the new mailbox before the email changes", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      secret = Auth.generate_mfa_secret()
-      {:ok, _user, _codes} = Fixtures.Users.enroll_mfa(secret, owner_subject(user, account))
-
-      # Clear the consumed-bucket marker so a fresh code this same 30s window
-      # isn't read as a replay of the enrollment code.
-      {:ok, _} = user |> Ecto.Changeset.change(mfa_last_used_at: nil) |> Emisar.Repo.update()
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      # MFA-on → an authenticator prompt, no emailed code.
-      html =
-        lv
-        |> edit_email()
-        |> form("#email_form", %{"email" => %{"email" => "mfa-fresh@example.com"}})
-        |> render_submit()
-
-      assert html =~ "authenticator"
-      assert Emisar.Repo.reload!(user).email == user.email
-
-      html =
-        render_hook(lv, "confirm_email_change", %{
-          "email_step" => %{"code" => Fixtures.Auth.totp_code(secret)}
-        })
-
-      assert html =~ "Your email has not changed yet."
-      assert Emisar.Repo.reload!(user).email == user.email
-      html = finish_new_email(lv)
-      assert html =~ "Email changed to mfa-fresh@example.com."
-      refute has_element?(lv, "#email", "Awaiting confirmation")
-      refute has_element?(lv, "#email_form")
-      updated = Emisar.Repo.reload!(user)
-      assert updated.email == "mfa-fresh@example.com"
-      assert updated.confirmed_at
-    end
-
-    test "a wrong new-address code has usable restart guidance and cancel closes the step", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "new@example.test"}})
-      |> render_submit()
-
-      assert_received {:email, old_mail}
-
-      render_hook(lv, "confirm_email_change", %{
-        "email_step" => %{"code" => Fixtures.Auth.code_from_email(old_mail)}
-      })
-
-      assert_received {:email, new_mail}
-      code = Fixtures.Auth.code_from_email(new_mail)
-      wrong = if code == "AAAAAA", do: "BBBBBB", else: "AAAAAA"
-
-      html = render_hook(lv, "confirm_email_change", %{"email_step" => %{"code" => wrong}})
-      assert html =~ "cancel and start the email change again"
-      assert_push_event(lv, "code:reset", %{id: "new-email-code"})
-      refute has_element?(lv, "#email_step_form button", "Resend code")
-      render_hook(lv, "cancel_email_change", %{})
-      assert Emisar.Repo.reload!(user).email == user.email
-      refute has_element?(lv, "#email_step_form")
-    end
-
-    test "suppressed new-address delivery reports no change and returns to the draft", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      {:ok, _} = Emisar.Mail.suppress("bounced@example.test", :hard_bounce, "test bounce")
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "bounced@example.test"}})
-      |> render_submit()
-
-      assert_received {:email, old_mail}
-
-      html =
-        render_hook(lv, "confirm_email_change", %{
-          "email_step" => %{"code" => Fixtures.Auth.code_from_email(old_mail)}
-        })
-
-      assert html =~ "Your email has not changed."
-      assert has_element?(lv, "#email_form input[value='bounced@example.test']")
-      refute has_element?(lv, "#email_step_form")
-      assert Emisar.Repo.reload!(user).email == user.email
-      refute_received {:email, _}
-    end
-
-    test "an exhausted MFA window refuses the confirmation inline, email unchanged", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      secret = Auth.generate_mfa_secret()
-
-      {enrolled, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "mfa-fresh@example.com"}})
-      |> render_submit()
-
-      # Spend the shared per-user window elsewhere; the step-up here inherits it.
-      for _ <- 1..5 do
-        assert Auth.verify_mfa_challenge(enrolled, {:totp, "000000"}) == {:error, :invalid}
-      end
-
-      render_hook(lv, "confirm_email_change", %{
-        "email_step" => %{"code" => Fixtures.Auth.totp_code(secret)}
-      })
-
-      # The refusal renders at the code input and the step stays open to retry.
-      assert lv |> element("#email_step_form") |> render() =~
-               "Too many attempts. Wait a few minutes, then try again."
-
-      assert Emisar.Repo.reload!(user).email == user.email
-    end
-
-    test "a malformed email is refused with an inline changeset error", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      original_email = user.email
-
-      html =
-        lv
-        |> edit_email()
-        |> form("#email_form", %{"email" => %{"email" => "not-an-email"}})
-        |> render_submit()
-
-      assert html =~ "must have the @ sign and no spaces"
-      assert Emisar.Repo.reload!(user).email == original_email
-    end
-
-    test "cancelling the step-up returns to the current address, email unchanged", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv
-      |> edit_email()
-      |> form("#email_form", %{"email" => %{"email" => "fresh@example.com"}})
-      |> render_submit()
-
-      html = lv |> element("#email_step_form button", "Cancel") |> render_click()
-
-      assert html =~ user.email
-      assert has_element?(lv, "#change-email")
-      refute has_element?(lv, "#email_form")
-      refute has_element?(lv, "#email_step_form")
-      assert Emisar.Repo.reload!(user).email == user.email
-    end
-  end
-
-  describe "OIDC sign-in methods" do
-    setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+    test "a directory-managed name is read-only here", %{account: account} do
+      Fixtures.Accounts.create_subscription(account, "enterprise")
 
       provider =
-        Fixtures.SSO.create_identity_provider(
+        Fixtures.SSO.create_identity_provider(account_id: account.id)
+        |> Fixtures.SSO.enable_scim()
+
+      %{membership: member} =
+        Fixtures.SSO.create_directory_member(provider, display_name: "Directory Name")
+
+      {:ok, lv, _html} =
+        live(log_in_member(build_conn(), member), ~p"/app/#{account}/settings/profile")
+
+      assert has_element?(lv, "#display-name", "Directory Name")
+      assert has_element?(lv, "#display-name", "Your identity provider manages this name.")
+      refute has_element?(lv, "#change-name")
+
+      render_click(lv, "edit_profile", %{})
+      refute has_element?(lv, "#profile-form")
+
+      render_submit(lv, "save_profile", %{"profile" => %{"display_name" => "Crafted"}})
+      assert Emisar.Repo.reload!(member).display_name == "Directory Name"
+    end
+
+    test "an SSO-only Member's address is marked unverified", %{account: account} do
+      member =
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
-          name: "Workforce Okta"
+          role: "operator",
+          email_verified?: false
         )
 
-      %{account: account, conn: conn, provider: provider, user: user}
-    end
+      {:ok, lv, _html} =
+        live(log_in_member(build_conn(), member), ~p"/app/#{account}/settings/profile")
 
-    test "lists an enabled workspace provider with linking guidance", %{
-      conn: conn,
-      account: account,
-      provider: provider
-    } do
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      assert html =~ "Sign-in methods"
-
-      assert has_element?(
-               lv,
-               "#single-sign-on-help",
-               "Each workspace sets its own sign-in rules."
-             )
-
-      assert has_element?(lv, "#oidc-identity-#{provider.id}", "Workforce Okta")
-      assert has_element?(lv, "#link-oidc-#{provider.id}", "Link")
-
-      assert has_element?(
-               lv,
-               "#link-oidc-#{provider.id}[phx-hook='PendingButton'][phx-disable-with='Linking…']"
-             )
-    end
-
-    test "a crafted start_oidc_unlink does not crash the socket", %{conn: conn, account: account} do
-      # An enabled-but-unlinked provider entry carries identity_id: nil, so a crafted
-      # null (or non-binary) identity_id matched a non-removable, non-linked entry and
-      # CaseClauseError'd the socket; the guard + total case make it a no-op.
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      assert render_hook(lv, "start_oidc_unlink", %{"identity_id" => nil})
-      assert render_hook(lv, "start_oidc_unlink", %{"identity_id" => ["x"]})
-    end
-
-    test "keeps a wrong local proof inline and arms only a valid handoff", %{
-      conn: conn,
-      account: account,
-      provider: provider
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv |> element("#link-oidc-#{provider.id}") |> render_click()
-      assert_received {:email, email}
-      assert has_element?(lv, "#profile-oidc-step-form")
-
-      wrong =
-        render_hook(lv, "confirm_oidc_step_up", %{
-          "oidc_step" => %{"code" => "000000"}
-        })
-
-      assert wrong =~ "incorrect or expired"
-      refute wrong =~ ~s(name="handoff")
-      assert_push_event(lv, "code:reset", %{id: "profile-oidc-step-code"})
-
-      confirmed =
-        render_hook(lv, "confirm_oidc_step_up", %{
-          "oidc_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
-        })
-
-      assert confirmed =~ "phx-trigger-action"
-      assert confirmed =~ ~s(action="/app/#{account.slug}/settings/sso/identity/link")
-      assert confirmed =~ ~s(name="handoff")
-    end
-
-    test "a provider-linked identity labels its verification pending state", %{
-      conn: conn,
-      account: account,
-      provider: provider,
-      user: user
-    } do
-      Fixtures.SSO.create_user_identity(%{
-        account_id: account.id,
-        provider_id: provider.id,
-        user_id: user.id
-      })
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      assert has_element?(lv, "#link-oidc-#{provider.id}", "Verify")
-
-      assert has_element?(
-               lv,
-               "#link-oidc-#{provider.id}[phx-hook='PendingButton'][phx-disable-with='Verifying…']"
-             )
-    end
-
-    test "resends visibly and closes the link dialog through server state", %{
-      conn: conn,
-      account: account,
-      provider: provider
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      lv |> element("#link-oidc-#{provider.id}") |> render_click()
-      assert_received {:email, _email}
-
-      html = render(lv)
-      assert html =~ ~s(id="profile-oidc-step-close")
-      assert html =~ ~s(id="profile-oidc-step-resend")
-      assert html =~ "hover:bg-zinc-800"
-      assert has_element?(lv, "#profile-oidc-step-form button", "Cancel")
-      assert has_element?(lv, "#profile-oidc-step-continue", "Continue to Workforce Okta")
-
-      assert has_element?(
-               lv,
-               "#profile-oidc-step-continue[class~='min-w-28'][phx-hook='PendingButton'][phx-disable-with='Confirming...']"
-             )
-
-      assert has_element?(
-               lv,
-               "#profile-oidc-step-resend[phx-hook='PendingButton'][phx-disable-with='Sending…']"
-             )
-
-      lv |> element("#profile-oidc-step-resend") |> render_click()
-      assert_received {:email, _replacement_email}
-      assert_push_event(lv, "code:reset", %{id: "profile-oidc-step-code"})
-      assert render(lv) =~ "We sent a new code"
-
-      lv |> element("#profile-oidc-step-close") |> render_click()
-      refute has_element?(lv, "#profile-oidc-step-form")
-    end
-
-    test "a user-verified identity has explicit removal friction and unlinks inline", %{
-      conn: conn,
-      account: account,
-      provider: provider,
-      user: user
-    } do
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id,
-          created_by: :user,
-          provisioned_via: :oidc_link
-        })
-
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      assert html =~ "Linked by you"
-      assert has_element?(lv, "#remove-oidc-#{provider.id}", "Remove")
-      refute has_element?(lv, "#remove-oidc-dialog-#{provider.id}")
-      lv |> element("#remove-oidc-#{provider.id}") |> render_click()
-      assert_received {:email, email}
-      assert has_element?(lv, "#profile-oidc-step", "Type Workforce Okta to confirm")
-      assert has_element?(lv, ~s(#profile-oidc-step button[data-copy-text="#{provider.name}"]))
-      assert has_element?(lv, "#profile-oidc-step-continue[disabled]", "Remove sign-in method")
-
-      for token <- [nil, "Wrong provider"] do
-        render_hook(lv, "confirm_oidc_step_up", %{
-          "confirm_token" => token,
-          "oidc_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
-        })
-
-        assert has_element?(
-                 lv,
-                 "#profile-oidc-step",
-                 "Enter the provider name to confirm removal."
-               )
-
-        refute Emisar.Repo.reload!(identity).deleted_at
-        refute_push_event(lv, "code:reset", %{id: "profile-oidc-step-code"})
-      end
-
-      # Capitals don't matter, in the browser gate or the server check below.
-      lv
-      |> form("#profile-oidc-step-form", %{"confirm_token" => String.upcase(provider.name)})
-      |> render_change()
-
-      refute has_element?(lv, "#profile-oidc-step-continue[disabled]")
-
-      # A wrong code keeps the typed name for the retry: only a confirm dialog's
-      # own submit spends the page's typed value.
-      lv
-      |> element("#profile-oidc-step-form")
-      |> render_submit(%{"confirm_token" => provider.name, "oidc_step" => %{"code" => "wrong"}})
-
-      assert_push_event(lv, "code:reset", %{id: "profile-oidc-step-code"})
-      refute has_element?(lv, "#profile-oidc-step-continue[disabled]")
-
-      html =
-        render_hook(lv, "confirm_oidc_step_up", %{
-          "confirm_token" => String.downcase(provider.name),
-          "oidc_step" => %{"code" => Fixtures.Auth.code_from_email(email)}
-        })
-
-      assert html =~ "Workforce Okta was removed from your profile."
-      refute has_element?(lv, "#remove-oidc-#{provider.id}")
-      assert has_element?(lv, "#link-oidc-#{provider.id}", "Link")
-      assert Emisar.Repo.reload!(identity).deleted_at
-    end
-
-    test "a forged provider id outside the current workspace fails closed", %{
-      conn: conn,
-      account: account
-    } do
-      foreign = Fixtures.SSO.create_identity_provider(name: "Foreign Provider")
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      html = render_click(lv, "start_oidc_link", %{"provider_id" => foreign.id})
-
-      assert html =~ "That sign-in method is no longer available."
-      refute_received {:email, _email}
-    end
-
-    test "a required method remains user-linked and explains blocked removal before proof", %{
-      conn: conn,
-      account: account,
-      provider: provider,
-      user: user
-    } do
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id,
-          created_by: :user,
-          provisioned_via: :oidc_link
-        })
-
-      token =
-        Fixtures.Auth.create_session_token!(user, :sso, nil, %{}, user_identity_id: identity.id)
-
-      conn = put_session(conn, :user_token, token)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
-      render_click(lv, "retry_oidc_identities", %{})
-
-      assert has_element?(lv, "#oidc-identity-#{provider.id}", "Linked by you")
-      assert has_element?(lv, "#remove-oidc-#{provider.id}[disabled]")
-      refute has_element?(lv, "#link-oidc-#{provider.id}")
-
-      assert has_element?(
-               lv,
-               "#remove-oidc-reason-#{provider.id}",
-               "Link another enabled sign-in method before removing this one."
-             )
-
-      render_click(lv, "start_oidc_unlink", %{"identity_id" => identity.id})
-      refute has_element?(lv, "#profile-oidc-step")
-      refute_received {:email, _}
-    end
-
-    test "a crafted step-up event with nothing in progress spends no attempt", %{
-      conn: conn,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-
-      confirmed = render_hook(lv, "confirm_oidc_step_up", %{"oidc_step" => %{"code" => "000000"}})
-
-      assert confirmed =~ "Choose a sign-in method first."
-      assert render_hook(lv, "resend_oidc_step_up", %{}) =~ "Start the confirmation again."
-      refute_received {:email, _email}
+      assert has_element?(lv, "#email", member.email)
+      assert has_element?(lv, "#email", "Not verified")
     end
   end
 
   describe "sessions" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
-    end
-
-    test "lists the workspaces a personal login reaches through SSO and detaches one", %{
-      conn: conn,
-      user: user,
-      account: account
-    } do
-      other = Fixtures.Accounts.create_account(name: "Client Workspace", plan: "team")
-      provider = Fixtures.SSO.create_identity_provider(account_id: other.id)
-      seat = Fixtures.Memberships.create_membership(account_id: other.id, user_id: user.id)
-
-      Fixtures.SSO.create_user_identity(
-        account_id: other.id,
-        provider_id: provider.id,
-        user_id: user.id
-      )
-
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      assert has_element?(lv, "#linked-workspace-#{seat.id}", "Client Workspace")
-      refute has_element?(lv, "#linked-workspaces", account.name)
-
-      result = render_click(lv, "detach_personal_login", %{"id" => seat.id})
-      assert {:error, {:redirect, %{to: to}}} = result
-      assert to == ~p"/app/#{account}/settings/profile"
-      {:ok, followed} = follow_redirect(result, conn)
-
-      assert html_response(followed, 200) =~
-               "Your personal login is no longer linked to Client Workspace."
-
-      assert is_nil(Emisar.Repo.reload!(seat).user_id)
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, owner: owner, account: account}
     end
 
     test "lists sessions and revokes the selected one", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # A second session for the same user (another device).
-      other_conn = build_conn() |> log_in_user(user)
-      _ = other_conn
+      _other_device = log_in_member(build_conn(), owner)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       html = render(lv)
       assert html =~ "This session"
 
-      subject = browser_subject(conn, user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+      subject = browser_subject(conn, owner, account)
+      {:ok, sessions, _meta} = Auth.list_sessions_for_member(nil, subject, page: [limit: 100])
       assert length(sessions) == 2
 
       html = render_click(lv, "revoke_other_sessions", %{})
       assert html =~ "Other sessions signed out."
 
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+      {:ok, sessions, _meta} = Auth.list_sessions_for_member(nil, subject, page: [limit: 100])
       assert length(sessions) == 1
     end
 
     test "lists each session and marks the current device", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # A second device with recognizable metadata so its row renders distinctly
       # from the current session.
       _other =
-        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+        Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{
           ip_address: "198.51.100.4",
           user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
         })
@@ -1116,23 +203,25 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "This session"
       assert html =~ "198.51.100.4"
       assert html =~ "Chrome 124.0 on Linux"
-      assert has_element?(lv, "#active-sessions li", "Email link")
+      assert has_element?(lv, "#active-sessions li", "Email code")
       assert has_element?(lv, "#active-sessions li", "Sign-in IP:")
       assert has_element?(lv, "#active-sessions time[data-format=absolute][data-tooltip-id]")
       refute has_element?(lv, "#active-sessions", "Last active")
       assert has_element?(lv, "#active-sessions li", "This session")
 
-      subject = browser_subject(conn, user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+      subject = browser_subject(conn, owner, account)
+      {:ok, sessions, _meta} = Auth.list_sessions_for_member(nil, subject, page: [limit: 100])
       assert length(sessions) == 2
     end
 
     test "shows the recorded sign-in method and honest missing metadata", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
-      Fixtures.Auth.create_session_token!(user, :sso, nil)
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      identity = Fixtures.SSO.create_user_identity(provider_id: provider.id, membership: owner)
+      Fixtures.Auth.create_session_token!(owner, :sso, nil, %{}, user_identity_id: identity.id)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       assert has_element?(lv, "#active-sessions li", "Single sign-on")
@@ -1142,27 +231,20 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "links separately to this user's agents in the current workspace", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
-      other = Fixtures.Users.create_user()
-
       membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: other.id,
-          role: "operator"
-        )
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(
           %{name: "Someone else's agent"},
-          Fixtures.Subjects.membership_subject(membership)
+          Fixtures.Subjects.subject_for(membership)
         )
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      own = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      href = ~p"/app/#{account}/agents?#{[owner: own.id]}"
+      href = ~p"/app/#{account}/agents?#{[owner: owner.id]}"
       assert has_element?(lv, ~s(#sessions-help p + p a[href="#{href}"]), "Review your agents")
 
       {:ok, agents, _html} =
@@ -1175,32 +257,21 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
 
     test "does not offer Agents to a billing manager", %{account: account} do
-      user = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "billing_manager"
-      )
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
 
       {:ok, lv, _html} =
-        live(log_in_user(build_conn(), user), ~p"/app/#{account}/settings/profile")
+        live(log_in_member(build_conn(), member), ~p"/app/#{account}/settings/profile")
 
       assert has_element?(lv, "#sessions-help", "Don't recognize a session?")
       refute has_element?(lv, "#review-your-agents")
     end
 
-    test "the own-agents filter stays readable for a profile without email", %{account: account} do
-      user = Fixtures.Users.create_sso_user()
-
+    test "the own-agents filter stays readable for a Member without email", %{account: account} do
       membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "viewer"
-        )
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer", email: nil)
 
-      conn = log_in_user(build_conn(), user)
+      conn = log_in_member(build_conn(), membership)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       href = ~p"/app/#{account}/agents?#{[owner: membership.id]}"
 
@@ -1213,13 +284,13 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "caps the page at 10 sessions and pages the rest", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # 10 more devices on top of the current session — 11 total, one past a page.
       for n <- 1..10 do
         token =
-          Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+          Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{
             ip_address: "203.0.113.#{n}",
             user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
           })
@@ -1246,8 +317,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert rendered_session_rows(lv) == 1
       assert html =~ "Prev"
 
-      subject = browser_subject(conn, user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+      subject = browser_subject(conn, owner, account)
+      {:ok, sessions, _meta} = Auth.list_sessions_for_member(nil, subject, page: [limit: 100])
       oldest_session = List.last(sessions)
 
       html = lv |> element("#signout-session-#{oldest_session.id}-confirm") |> render_click()
@@ -1262,14 +333,14 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "a session with no user agent shows the unknown-device mark", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # A session recorded without a User-Agent header — the row still has to
       # name a device class, and UserAgent owns what that is. A local fallback
       # here once answered `infrastructure.network`, putting a globe in a column
       # of device silhouettes while the drawing made for this case went unused.
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+      Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{
         ip_address: "198.51.100.7"
       })
 
@@ -1282,23 +353,23 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "renders and revokes same-device sessions independently", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       user_agent = "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
 
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+      Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{
         ip_address: "203.0.113.10",
         user_agent: user_agent
       })
 
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+      Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{
         ip_address: "203.0.113.11",
         user_agent: user_agent
       })
 
-      subject = browser_subject(conn, user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+      subject = browser_subject(conn, owner, account)
+      {:ok, sessions, _meta} = Auth.list_sessions_for_member(nil, subject, page: [limit: 100])
       first_session = Enum.find(sessions, &(&1.ip_address == "203.0.113.10"))
       second_session = Enum.find(sessions, &(&1.ip_address == "203.0.113.11"))
 
@@ -1315,7 +386,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "203.0.113.11"
 
       assert {:ok, remaining, _meta} =
-               Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+               Auth.list_sessions_for_member(nil, subject, page: [limit: 100])
 
       refute Enum.any?(remaining, &(&1.id == first_session.id))
       assert Enum.any?(remaining, &(&1.id == second_session.id))
@@ -1323,19 +394,19 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "revoking one non-current session removes exactly that row", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # A second device — the row we'll revoke. It's the one the caller's own
       # session token does NOT mark as current.
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+      Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{
         user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
-      subject = browser_subject(conn, user, account)
+      subject = browser_subject(conn, owner, account)
 
       {:ok, sessions, _meta} =
-        Auth.list_sessions_for_user(Emisar.Crypto.hash(session_token(conn)), subject,
+        Auth.list_sessions_for_member(Emisar.Crypto.hash(session_token(conn, account)), subject,
           page: [limit: 100]
         )
 
@@ -1346,27 +417,27 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert render_click(lv, "revoke_session", %{"id" => other.id}) =~ "Session signed out."
 
       # Down to one — only the current device remains.
-      {:ok, remaining, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+      {:ok, remaining, _meta} = Auth.list_sessions_for_member(nil, subject, page: [limit: 100])
       assert length(remaining) == 1
       refute Enum.any?(remaining, &(&1.id == other.id))
     end
 
     test "the current device row offers no Revoke control", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # Two devices: one current, one other. The other carries a sign-out control;
       # the current device must not (you can't sign yourself out from here —
       # that's "sign out everywhere else").
-      Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+      Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{
         user_agent: "Mozilla/5.0 (X11; Linux x86_64) Chrome/124.0"
       })
 
-      subject = browser_subject(conn, user, account)
+      subject = browser_subject(conn, owner, account)
 
       {:ok, sessions, _meta} =
-        Auth.list_sessions_for_user(Emisar.Crypto.hash(session_token(conn)), subject,
+        Auth.list_sessions_for_member(Emisar.Crypto.hash(session_token(conn, account)), subject,
           page: [limit: 100]
         )
 
@@ -1387,14 +458,14 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "large session lists stay bounded in the context and on the page", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # 100 more sessions (register_and_log_in already created one) → 101 total.
-      for _ <- 1..100, do: Fixtures.Auth.create_session_token!(user, :magic_link, nil)
+      for _ <- 1..100, do: Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
 
-      subject = browser_subject(conn, user, account)
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(nil, subject, page: [limit: 100])
+      subject = browser_subject(conn, owner, account)
+      {:ok, sessions, _meta} = Auth.list_sessions_for_member(nil, subject, page: [limit: 100])
       assert length(sessions) == 100
 
       # The page renders only ten while exposing the total and bulk action.
@@ -1406,7 +477,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "the disconnected (dead) render reads no session metadata", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # IL-18: the session list is the only DB read on this page, gated behind
@@ -1414,7 +485,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # session rows, even though a real session exists. A second device is seeded
       # so "no rows on the dead render" is meaningful.
       _other =
-        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+        Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{
           ip_address: "203.0.113.9",
           user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Safari/17.0"
         })
@@ -1423,67 +494,20 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # The seeded device's metadata is NOT read on the dead pass.
       assert dead =~ "Loading sessions"
-      assert dead =~ "Loading sign-in methods"
       assert dead =~ "Loading MFA settings"
-      assert dead =~ "Loading personal details"
-      refute dead =~ "Workspace SSO does not grant access"
-      refute dead =~ "No single sign-on providers are enabled"
       refute dead =~ "203.0.113.9"
       refute dead =~ "This session"
     end
 
-    test "denied sessions clear stale rows while sign-in-method failures offer local retry", %{
-      conn: conn,
-      account: account
-    } do
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
-      original_subject = :sys.get_state(lv.pid).socket.assigns.current_subject
-
-      :sys.replace_state(lv.pid, fn state ->
-        socket =
-          Phoenix.Component.assign(state.socket, :current_subject, %{
-            original_subject
-            | actor: nil,
-              permissions: MapSet.new()
-          })
-
-        %{state | socket: socket}
-      end)
-
-      render_click(lv, "retry_oidc_identities", %{})
-      render_click(lv, "retry_sessions", %{})
-      assert has_element?(lv, "#sessions-personal-sign-in-required")
-      refute has_element?(lv, "#sessions", "Couldn't load your sessions")
-      refute has_element?(lv, "button[phx-click=retry_sessions]")
-      refute has_element?(lv, "#active-sessions")
-      assert has_element?(lv, "#single-sign-on", "Couldn't load sign-in methods")
-      assert has_element?(lv, "button[phx-click=retry_oidc_identities]", "Retry")
-      refute has_element?(lv, "#single-sign-on", "No single sign-on providers are enabled")
-
-      :sys.replace_state(lv.pid, fn state ->
-        %{
-          state
-          | socket: Phoenix.Component.assign(state.socket, :current_subject, original_subject)
-        }
-      end)
-
-      render_click(lv, "retry_oidc_identities", %{})
-      render_click(lv, "retry_sessions", %{})
-      refute has_element?(lv, "button[phx-click=retry_sessions]")
-      assert has_element?(lv, "#active-sessions", "This session")
-      refute has_element?(lv, "button[phx-click=retry_oidc_identities]")
-      assert has_element?(lv, "#single-sign-on", "No single sign-on providers are enabled")
-    end
-
     test "revoking a session removed after mount refreshes the displayed list", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-      subject = browser_subject(conn, user, account)
-      current_digest = Emisar.Crypto.hash(session_token(conn))
-      {:ok, sessions, _meta} = Auth.list_sessions_for_user(current_digest, subject)
+      token = Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
+      subject = browser_subject(conn, owner, account)
+      current_digest = Emisar.Crypto.hash(session_token(conn, account))
+      {:ok, sessions, _meta} = Auth.list_sessions_for_member(current_digest, subject)
       other = Enum.find(sessions, &(not &1.current?))
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       assert has_element?(lv, "#sessions-#{other.id}")
@@ -1499,7 +523,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "the rendered session rows never surface the raw token (only id + metadata)", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # A second session minted with a recognizable device (the metadata DOES
@@ -1508,7 +532,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       # digest may ever reach the rendered rows — only id + inserted_at + the
       # ip/user-agent metadata.
       raw_token =
-        Fixtures.Auth.create_session_token!(user, :magic_link, nil, %{
+        Fixtures.Auth.create_session_token!(owner, :magic_link, nil, %{
           ip_address: "203.0.113.7",
           user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Firefox/126.0"
         })
@@ -1530,10 +554,101 @@ defmodule EmisarWeb.ProfileLiveTest do
     end
   end
 
+  describe "Active sessions belong to this Member" do
+    test "another Member's sessions, here or in another workspace, are never listed or revoked",
+         %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      teammate = Fixtures.Memberships.create_membership(account_id: account.id)
+      elsewhere = Fixtures.Memberships.create_membership(email: owner.email)
+
+      teammate_token =
+        Fixtures.Auth.create_session_token!(teammate, :magic_link, nil, %{
+          ip_address: "203.0.113.21"
+        })
+
+      Fixtures.Auth.create_session_token!(elsewhere, :magic_link, nil, %{
+        ip_address: "203.0.113.22"
+      })
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      assert rendered_session_rows(lv) == 1
+      refute render(lv) =~ "203.0.113.21"
+      refute render(lv) =~ "203.0.113.22"
+
+      teammate_row =
+        teammate_token
+        |> Emisar.Crypto.hash()
+        |> Emisar.Auth.UserToken.Query.by_token_digest()
+        |> Emisar.Repo.one!()
+
+      assert render_click(lv, "revoke_session", %{"id" => teammate_row.id}) =~
+               "This session has already ended."
+
+      assert {:ok, _live} = Auth.fetch_session_by_token(teammate_token, account.id)
+    end
+  end
+
+  describe "how a Member proves itself to enroll MFA" do
+    test "an SSO-only Member is sent to its identity provider, never the email code", %{
+      conn: conn
+    } do
+      {_conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+
+      provider =
+        Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Acme Okta")
+
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "operator",
+          email_verified?: false
+        )
+
+      identity = Fixtures.SSO.create_user_identity(provider_id: provider.id, membership: member)
+
+      conn = log_in_member(build_conn(), member, auth_method: :sso, user_identity_id: identity.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      assert has_element?(
+               lv,
+               ~s(#verify-with-sso[href="#{~p"/app/#{account}/mfa_setup/sso"}"][data-method="post"]),
+               "Verify with Acme Okta"
+             )
+
+      refute has_element?(lv, "button[phx-click=start_mfa]")
+
+      # A crafted start finds no address to prove and sends nothing.
+      render_click(lv, "start_mfa", %{})
+      refute render(lv) =~ "mfa-setup-key"
+      refute_received {:email, _}
+    end
+
+    test "an email-code session without a verified address is told why it cannot enroll", %{
+      conn: conn
+    } do
+      {_conn, _owner, account} = register_and_log_in(conn)
+
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "operator",
+          email_verified?: false
+        )
+
+      {:ok, lv, html} =
+        live(log_in_member(build_conn(), member), ~p"/app/#{account}/settings/profile")
+
+      assert html =~ "Neither is available from this session"
+      refute has_element?(lv, "button[phx-click=start_mfa]")
+      refute has_element?(lv, "#verify-with-sso")
+    end
+  end
+
   describe "MFA lifecycle" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, owner: owner, account: account}
     end
 
     for event <- [
@@ -1546,13 +661,16 @@ defmodule EmisarWeb.ProfileLiveTest do
         ] do
       @event event
       @tag :mfa_session_recovery
-      test "#{event} sends an expired mounted browser back to workspace sign-in", %{
+      test "#{event} sends an expired mounted browser back to the workspace", %{
         conn: conn,
-        user: user,
+        owner: owner,
         account: account
       } do
         if @event in ["disable_mfa", "regenerate_recovery_codes"] do
-          Fixtures.Users.enable_mfa!(Auth.generate_mfa_secret(), owner_subject(user, account))
+          Fixtures.Memberships.enable_mfa!(
+            Auth.generate_mfa_secret(),
+            Fixtures.Subjects.subject_for(owner)
+          )
         end
 
         {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -1578,17 +696,17 @@ defmodule EmisarWeb.ProfileLiveTest do
               %{}
           end
 
-        before = Emisar.Repo.reload!(user)
+        before = Emisar.Repo.reload!(owner)
 
         Fixtures.Auth.backdate_session_token!(
-          session_token(conn),
+          session_token(conn, account),
           DateTime.add(DateTime.utc_now(), -61, :day)
         )
 
         render_hook(lv, @event, params)
-        flash = assert_redirect(lv, ~p"/app/#{account}/sign_in")
+        flash = assert_redirect(lv, ~p"/app/#{account}")
         assert flash["error"] == EmisarWeb.MfaErrors.message(:session_not_found)
-        assert Emisar.Repo.reload!(user) == before
+        assert Emisar.Repo.reload!(owner) == before
         refute_received {:email, _}
       end
     end
@@ -1601,17 +719,17 @@ defmodule EmisarWeb.ProfileLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       Fixtures.Auth.backdate_session_token!(
-        session_token(conn),
+        session_token(conn, account),
         DateTime.add(DateTime.utc_now(), -61, :day)
       )
 
       render_patch(lv, ~p"/app/#{account}/settings/profile?cursor=expired")
-      assert_redirect(lv, ~p"/app/#{account}/sign_in")
+      assert_redirect(lv, ~p"/app/#{account}")
     end
 
     test "email proof → authenticator confirm enables MFA and shows recovery codes once", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -1627,10 +745,10 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert html =~ "MFA enabled."
       assert html =~ "recovery codes"
-      assert Emisar.Repo.reload!(user).mfa_enabled_at
+      assert Emisar.Repo.reload!(owner).mfa_enabled_at
 
       {:ok, persisted} =
-        Auth.fetch_session_by_token(session_token(conn))
+        Auth.fetch_session_by_token(session_token(conn, account), account.id)
 
       assigns = :sys.get_state(lv.pid).socket.assigns
 
@@ -1674,7 +792,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert has_element?(
                lv,
                "aside#multi-factor-authentication-help",
-               "We recommend enabling MFA to help protect your profile."
+               "We recommend enabling MFA to help protect your account in this workspace."
              )
 
       refute has_element?(lv, "#multi-factor-authentication > div", "recommend")
@@ -1699,16 +817,16 @@ defmodule EmisarWeb.ProfileLiveTest do
     test "a suppressed current address does not claim or advance delivery", %{
       conn: conn,
       account: account,
-      user: user
+      owner: owner
     } do
       assert {:ok, _suppression} =
-               Emisar.Mail.suppress(user.email, :hard_bounce, "bounce")
+               Emisar.Mail.suppress(owner.email, :hard_bounce, "bounce")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       html = render_click(lv, "start_mfa", %{})
 
-      assert html =~ "cannot deliver mail to your current address"
+      assert html =~ "cannot deliver mail to your address"
       assert html =~ "Contact support"
       refute html =~ "Email verification code"
       refute html =~ "mfa-setup-key"
@@ -1769,12 +887,12 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "a low recovery-code count nudges to regenerate (amber)", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       # MFA on with only 2 codes left (8 burned down on lost-device sign-ins) —
       # tracked all along but never shown until now.
-      user
+      owner
       |> Ecto.Changeset.change(
         mfa_enabled_at: DateTime.utc_now(),
         mfa_recovery_codes: ["digest-1", "digest-2"]
@@ -1789,7 +907,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "a wrong OTP leaves MFA off with the error inline at the code input", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -1803,20 +921,20 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert lv |> element("#mfa_form") |> render() =~ "That code didn&#39;t match"
       assert has_element?(lv, "#mfa-otp")
       assert_push_event(lv, "code:reset", %{id: "mfa-otp"})
-      refute Emisar.Repo.reload!(user).mfa_enabled_at
+      refute Emisar.Repo.reload!(owner).mfa_enabled_at
     end
 
     test "a stale profile view refreshes when another session enables MFA", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       {_user, _codes} =
-        Fixtures.Users.enable_mfa!(
+        Fixtures.Memberships.enable_mfa!(
           Auth.generate_mfa_secret(),
-          Fixtures.Subjects.subject_for(user, account)
+          Fixtures.Subjects.subject_for(owner)
         )
 
       render_click(lv, "start_mfa", %{})
@@ -1826,16 +944,16 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "a concurrent enrollment completion refreshes the profile MFA state", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       pending_secret = lv |> begin_mfa_enrollment() |> mfa_secret_from()
 
       {_user, _codes} =
-        Fixtures.Users.enable_mfa!(
+        Fixtures.Memberships.enable_mfa!(
           Auth.generate_mfa_secret(),
-          Fixtures.Subjects.subject_for(user, account)
+          Fixtures.Subjects.subject_for(owner)
         )
 
       submit_concurrent_mfa_enrollment(lv, pending_secret)
@@ -1845,7 +963,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "a non-numeric OTP is rejected and MFA stays off", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -1858,12 +976,12 @@ defmodule EmisarWeb.ProfileLiveTest do
       html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => "abc123"}})
 
       assert html =~ "That code didn&#39;t match"
-      refute Emisar.Repo.reload!(user).mfa_enabled_at
+      refute Emisar.Repo.reload!(owner).mfa_enabled_at
     end
 
     test "a code from a prior 30s bucket is rejected (no leeway)", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -1880,18 +998,18 @@ defmodule EmisarWeb.ProfileLiveTest do
       html = render_hook(lv, "confirm_mfa", %{"mfa" => %{"otp" => stale_otp}})
 
       assert html =~ "That code didn&#39;t match"
-      refute Emisar.Repo.reload!(user).mfa_enabled_at
+      refute Emisar.Repo.reload!(owner).mfa_enabled_at
     end
 
     test "dismissing the recovery-codes reveal hides them and they're not re-shown", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       secret = Auth.generate_mfa_secret()
 
       {_user, [proof_code | _]} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -1938,13 +1056,13 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "disabling MFA without a code is rejected and MFA stays enabled", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       secret = Auth.generate_mfa_secret()
 
       {_user, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -1952,19 +1070,19 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert html =~ "Authenticator or recovery code"
       assert html =~ "That code did not match. Try again."
-      reloaded = Emisar.Repo.reload!(user)
+      reloaded = Emisar.Repo.reload!(owner)
       assert %DateTime{} = reloaded.mfa_enabled_at
     end
 
     test "regenerate + disable for an MFA-enabled user", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       secret = Auth.generate_mfa_secret()
 
       {_user, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -1986,18 +1104,18 @@ defmodule EmisarWeb.ProfileLiveTest do
       # offers setup again.
       assert html =~ "Set up MFA"
       refute html =~ "Disable MFA"
-      refute Emisar.Repo.reload!(user).mfa_enabled_at
+      refute Emisar.Repo.reload!(owner).mfa_enabled_at
     end
 
     test "recovery-code regeneration refuses missing or wrong proof without replacement", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       secret = Auth.generate_mfa_secret()
 
       {enrolled, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
 
       old_digests = enrolled.mfa_recovery_codes
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -2005,7 +1123,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       html = render_click(lv, "regenerate_recovery_codes", %{})
       assert html =~ "That code did not match. Try again."
       refute has_element?(lv, "#mfa-recovery-codes")
-      assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
+      assert Emisar.Repo.reload!(owner).mfa_recovery_codes == old_digests
 
       render_click(lv, "start_regenerate_recovery_codes", %{})
 
@@ -2016,17 +1134,17 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert html =~ "That code did not match. Try again."
       refute has_element?(lv, "#mfa-recovery-codes")
-      assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
+      assert Emisar.Repo.reload!(owner).mfa_recovery_codes == old_digests
     end
 
     test "recovery regeneration start, cancel, and disable forms stay mutually exclusive", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       secret = Auth.generate_mfa_secret()
 
-      Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+      Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
       render_click(lv, "start_regenerate_recovery_codes", %{})
@@ -2056,13 +1174,13 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "a replayed authenticator code stays inline and preserves the old set", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       secret = Auth.generate_mfa_secret()
 
       {enrolled, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
 
       old_digests = enrolled.mfa_recovery_codes
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
@@ -2080,7 +1198,7 @@ defmodule EmisarWeb.ProfileLiveTest do
                "That code did not match. Try again."
              ) do
           refute has_element?(lv, "#mfa-recovery-codes")
-          assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
+          assert Emisar.Repo.reload!(owner).mfa_recovery_codes == old_digests
           submit_replayed_mfa_code(lv, enrolled, secret)
         else
           {consumed_bucket, response_bucket}
@@ -2094,23 +1212,23 @@ defmodule EmisarWeb.ProfileLiveTest do
              "Expected inline replay: consumed bucket #{consumed_bucket}, response bucket #{response_bucket}"
 
       refute has_element?(lv, "#mfa-recovery-codes")
-      assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
+      assert Emisar.Repo.reload!(owner).mfa_recovery_codes == old_digests
     end
 
     test "a concurrent MFA disable closes stale regeneration controls", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       secret = Auth.generate_mfa_secret()
 
-      {user, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+      {owner, _codes} =
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       render_click(lv, "start_regenerate_recovery_codes", %{})
 
-      Fixtures.Users.set_mfa_state(user,
+      Fixtures.Memberships.set_mfa_state(owner,
         mfa_secret: nil,
         mfa_enabled_at: nil,
         mfa_recovery_codes: []
@@ -2127,21 +1245,21 @@ defmodule EmisarWeb.ProfileLiveTest do
 
     test "an exhausted shared MFA window leaves regeneration open and codes unchanged", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
       secret = Auth.generate_mfa_secret()
 
       {enrolled, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
 
       old_digests = enrolled.mfa_recovery_codes
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
       render_click(lv, "start_regenerate_recovery_codes", %{})
 
       for _ <- 1..5 do
-        assert Auth.verify_mfa_challenge(enrolled, {:totp, "000000"}) == {:error, :invalid}
+        assert Auth.verify_mfa_challenge(enrolled.id, {:totp, "000000"}) == {:error, :invalid}
       end
 
       html =
@@ -2154,18 +1272,18 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert html =~ "Too many attempts. Wait a few minutes, then try again."
       assert has_element?(lv, "#mfa_recovery_regeneration_form")
       refute has_element?(lv, "#mfa-recovery-codes")
-      assert Emisar.Repo.reload!(user).mfa_recovery_codes == old_digests
+      assert Emisar.Repo.reload!(owner).mfa_recovery_codes == old_digests
     end
 
     test "a wrong code stays inline and leaves MFA enabled", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       secret = Auth.generate_mfa_secret()
 
       {_user, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -2178,19 +1296,19 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert html =~ "That code did not match. Try again."
       refute html =~ "Could not disable MFA."
-      assert %DateTime{} = Emisar.Repo.reload!(user).mfa_enabled_at
+      assert %DateTime{} = Emisar.Repo.reload!(owner).mfa_enabled_at
     end
 
     test "an exhausted MFA window refuses the disable inline and leaves MFA on", %{
       conn: conn,
-      user: user,
+      owner: owner,
       account: account
     } do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
       secret = Auth.generate_mfa_secret()
 
       {enrolled, _codes} =
-        Fixtures.Users.enable_mfa!(secret, Fixtures.Subjects.subject_for(user, account))
+        Fixtures.Memberships.enable_mfa!(secret, Fixtures.Subjects.subject_for(owner))
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
 
@@ -2198,7 +1316,7 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       # Spend the shared per-user window elsewhere; this step-up inherits it.
       for _ <- 1..5 do
-        assert Auth.verify_mfa_challenge(enrolled, {:totp, "000000"}) == {:error, :invalid}
+        assert Auth.verify_mfa_challenge(enrolled.id, {:totp, "000000"}) == {:error, :invalid}
       end
 
       otp = Fixtures.Auth.totp_code(secret)
@@ -2207,18 +1325,12 @@ defmodule EmisarWeb.ProfileLiveTest do
       # The refusal renders at the code input and the step stays open to retry.
       assert html =~ "Too many attempts. Wait a few minutes, then try again."
       assert html =~ "Authenticator or recovery code"
-      assert %DateTime{} = Emisar.Repo.reload!(user).mfa_enabled_at
+      assert %DateTime{} = Emisar.Repo.reload!(owner).mfa_enabled_at
     end
   end
 
-  # The raw session token the logged-in conn presents — what the page hands
-  # `Auth.list_sessions_for_user/3` so its own row comes back `current?: true`.
-  defp session_token(conn), do: Plug.Conn.get_session(conn, :user_token)
-
-  defp browser_subject(conn, user, account) do
-    {:ok, session} = Auth.fetch_session_by_token(session_token(conn))
-    Fixtures.Subjects.subject_for(user, account, session: session)
-  end
+  defp browser_subject(conn, member, account),
+    do: Fixtures.Subjects.subject_for(member, session: session_token(conn, account))
 
   # Count of session rows rendered on the current page — each stream row is an
   # <li id="sessions-<uuid>">, so the ids that match are exactly this page's rows.
@@ -2235,23 +1347,6 @@ defmodule EmisarWeb.ProfileLiveTest do
     Base.decode32!(encoded, padding: false)
   end
 
-  defp finish_new_email(lv) do
-    assert_received {:email, mail}
-    assert has_element?(lv, "#email_step_form", "6-character code")
-    assert has_element?(lv, "#new-email-code[data-numeric=false] input[inputmode=text]")
-    refute has_element?(lv, "#email-step-code")
-    refute has_element?(lv, "#email_step_form button", "Resend code")
-
-    render_hook(lv, "confirm_email_change", %{
-      "email_step" => %{"code" => Fixtures.Auth.code_from_email(mail)}
-    })
-  end
-
-  defp edit_email(lv) do
-    lv |> element("#change-email") |> render_click()
-    lv
-  end
-
   defp begin_mfa_enrollment(lv) do
     render_click(lv, "start_mfa", %{})
     assert_received {:email, email}
@@ -2262,12 +1357,14 @@ defmodule EmisarWeb.ProfileLiveTest do
     })
   end
 
-  defp submit_replayed_mfa_code(lv, user, secret) do
+  defp submit_replayed_mfa_code(lv, member, secret) do
     sampled_at = DateTime.utc_now()
     otp = NimbleTOTP.verification_code(secret, time: sampled_at)
 
-    assert {:ok, _proof} =
-             Emisar.Users.verify_and_consume_mfa(user.id, otp, clock: fn -> sampled_at end)
+    assert {:ok, _member} =
+             Emisar.Accounts.verify_and_consume_member_mfa(member, otp,
+               clock: fn -> sampled_at end
+             )
 
     render_submit(lv, "regenerate_recovery_codes", %{
       "mfa_recovery_regeneration" => %{"code" => otp}
@@ -2306,7 +1403,7 @@ defmodule EmisarWeb.ProfileLiveTest do
   defp totp_bucket(%DateTime{} = at), do: div(DateTime.to_unix(at), 30)
 
   # Submits the enrollment form, retrying once across a 30s-window straddle (the
-  # code-gen/validate boundary) — the same flake Fixtures.Users.enroll_mfa guards, but
+  # code-gen/validate boundary) — the same flake Fixtures.Memberships.enroll_mfa guards, but
   # through the LiveView form. A straddle re-renders the form without the success
   # flash, so a second submit with a fresh code lands in a stable window.
   defp submit_mfa_enrollment(lv, secret) do

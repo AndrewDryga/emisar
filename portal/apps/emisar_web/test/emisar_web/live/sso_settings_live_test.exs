@@ -14,10 +14,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   alias Emisar.SSO
   alias Emisar.SSO.IdentityProvider
 
-  defp make_viewer(user, account) do
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    Fixtures.Memberships.force_role(membership, "viewer")
-  end
+  defp make_viewer(member), do: Fixtures.Memberships.force_role(member, "viewer")
 
   defp insert_provider(account, attrs) do
     attrs =
@@ -37,12 +34,12 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     provider
   end
 
-  defp mark_sign_in_verified(provider, user) do
+  defp mark_sign_in_verified(provider, member) do
     identity =
       Fixtures.SSO.create_user_identity(%{
         account_id: provider.account_id,
         provider_id: provider.id,
-        user_id: user.id,
+        membership: member,
         created_by: :user,
         provisioned_via: :oidc_link
       })
@@ -76,15 +73,15 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "connection refresh and fixed identity fields" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})
 
       %{
         conn: conn,
-        user: user,
+        user: owner,
         account: account,
         provider: provider,
-        subject: Fixtures.Subjects.subject_for(user, account)
+        subject: Fixtures.Subjects.subject_for(owner)
       }
     end
 
@@ -220,8 +217,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "as an enterprise admin" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, user: owner, account: account}
     end
 
     test "the overview /settings/sso now redirects to Team's anchored SSO card",
@@ -432,21 +429,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       conn: _conn,
       account: account
     } do
-      admin = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {:ok, restricted} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
-      Fixtures.Memberships.force_runner_access(membership, restricted)
+      Fixtures.Memberships.force_runner_access(admin, restricted)
 
       {:ok, lv, _html} =
         build_conn()
-        |> log_in_user(admin)
+        |> log_in_member(admin)
         |> live(~p"/app/#{account}/settings/sso/new")
 
       changed =
@@ -860,7 +850,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       # The viewer never sees the form (locked upsell), but the create handler is
       # gated server-side — a forged event is a no-op.
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       _ =
@@ -884,7 +874,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user
     } do
       provider = insert_provider(account, %{name: "Untouchable"})
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}/edit")
 
       _ =
@@ -938,8 +928,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "the connection detail page" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, user: owner, account: account}
     end
 
     test "every SSO view reads one crumb chain rooted at Team", %{conn: conn, account: account} do
@@ -997,7 +987,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
                "deactivate them in your identity provider"
              )
 
-      owner = Fixtures.Subjects.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user)
 
       on =
         insert_provider(account, %{name: "Synced", kind: :entra, default_role: :billing_manager})
@@ -1182,7 +1172,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           default_pack_access_mode: :all
         })
 
-      owner = Fixtures.Subjects.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user)
       {:ok, provider, _token} = SSO.enable_scim(provider, owner)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
@@ -1204,7 +1194,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
            account: account,
            user: user
          } do
-      owner = Fixtures.Subjects.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user)
       provider = insert_provider(account, %{kind: :entra})
       {:ok, provider, _token} = SSO.enable_scim(provider, owner)
 
@@ -1419,7 +1409,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user
     } do
       provider = insert_provider(account, %{name: "Acme Okta"})
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
@@ -1433,7 +1423,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user
     } do
       provider = insert_provider(account, %{name: "Acme Okta"})
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       html =
@@ -1448,8 +1438,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "the setup test-connection capstone" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, user: owner, account: account}
     end
 
     test "an SSRF issuer is blocked through the UI, before any discovery", %{
@@ -1528,7 +1518,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       user: user
     } do
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       # The viewer never sees the form; a pushed test event is gated server-side —
@@ -1542,7 +1532,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "role mapping forms gating" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       %{conn: conn, account: account}
     end
 
@@ -1572,8 +1562,8 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "provider setup guide" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      %{conn: conn, user: user, account: account}
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      %{conn: conn, user: owner, account: account}
     end
 
     test "the identifier claim offers oid only for Entra", %{conn: conn, account: account} do
@@ -1689,7 +1679,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "current provider setup directions" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       %{conn: conn, account: account}
     end
 
@@ -1736,9 +1726,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "directory sync (SCIM)" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{name: "Acme Okta"})
-      %{conn: conn, user: user, account: account, provider: provider}
+      %{conn: conn, user: owner, account: account, provider: provider}
     end
 
     test "enable mints a token shown once + the SCIM base URL", %{
@@ -1884,7 +1874,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider: provider,
       user: user
     } do
-      owner = Fixtures.Subjects.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user)
       {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
 
       Fixtures.Accounts.create_subscription(account, "enterprise", status: "canceled")
@@ -1979,7 +1969,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       user: user,
       provider: provider
     } do
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       # The viewer sees the upsell, not the panel; the gated event is a no-op
@@ -1997,11 +1987,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       # SCIM is enabled by an admin first, then the role is dropped to viewer —
       # the rotate/disable handlers are Permissions.gated AND the context re-checks
       # `manage_sso` + Enterprise, so a forged event leaves the token untouched.
-      owner = Fixtures.Subjects.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user)
       {:ok, enabled, _raw} = SSO.enable_scim(provider, owner)
       prefix = enabled.scim_token_prefix
 
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       _ = render_click(lv, "rotate_scim", %{"id" => provider.id})
@@ -2072,7 +2062,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})
-      owner = Fixtures.Subjects.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user)
       {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
 
       {:ok, %{identity: identity, membership: membership}} =
@@ -2099,13 +2089,13 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       provider: provider,
       membership: member
     } do
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       assert {:ok, _removed} = Accounts.delete_membership(member, subject)
 
       replacement =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: member.user_id,
+          email: member.email,
           display_name: "Replacement Person"
         )
 
@@ -2126,50 +2116,48 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       account: account,
       provider: provider
     } do
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
       Fixtures.SSO.create_user_identity(%{
         account_id: account.id,
         provider_id: provider.id,
-        user_id: user.id,
+        membership: user,
         created_by: :user,
         provisioned_via: :oidc_link
       })
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
-      assert has_element?(lv, "#self-role-lock-#{membership.id}-tt", "Owner")
-      assert has_element?(lv, "#self-role-lock-#{membership.id}-tt [data-icon='role.restricted']")
-      refute has_element?(lv, "#self-role-lock-#{membership.id}-tt button")
+      assert has_element?(lv, "#self-role-lock-#{user.id}-tt", "Owner")
+      assert has_element?(lv, "#self-role-lock-#{user.id}-tt [data-icon='role.restricted']")
+      refute has_element?(lv, "#self-role-lock-#{user.id}-tt button")
 
       assert has_element?(
                lv,
-               "#self-role-lock-#{membership.id}[role='tooltip']",
+               "#self-role-lock-#{user.id}[role='tooltip']",
                "You can't change your own role."
              )
 
       assert has_element?(
                lv,
-               "#self-suspend-lock-#{membership.id}-tt button[disabled]",
+               "#self-suspend-lock-#{user.id}-tt button[disabled]",
                "Suspend access"
              )
 
       assert has_element?(
                lv,
-               "#self-suspend-lock-#{membership.id}[role='tooltip']",
+               "#self-suspend-lock-#{user.id}[role='tooltip']",
                "You can't suspend your own access."
              )
 
-      refute has_element?(lv, "#synced-role-#{membership.id}-admin")
+      refute has_element?(lv, "#synced-role-#{user.id}-admin")
 
       render_click(lv, "change_member_role", %{
-        "membership_id" => membership.id,
+        "membership_id" => user.id,
         "role" => "admin"
       })
 
-      render_click(lv, "suspend_member", %{"membership_id" => membership.id})
-      assert Repo.reload!(membership).role == :owner
-      refute Accounts.membership_disabled?(Repo.reload!(membership))
+      render_click(lv, "suspend_member", %{"membership_id" => user.id})
+      assert Repo.reload!(user).role == :owner
+      refute Accounts.membership_disabled?(Repo.reload!(user))
     end
 
     test "lists the provisioned member and suspends them from the connection page", %{
@@ -2347,7 +2335,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       membership: membership,
       user: user
     } do
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       _ = render_click(lv, "suspend_member", %{"membership_id" => membership.id})
@@ -2359,7 +2347,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   describe "role mapping" do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      owner = Fixtures.Subjects.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user)
       provider = insert_provider(account, %{name: "Acme Okta"})
       {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
       %{conn: conn, user: user, account: account, provider: provider, owner: owner}
@@ -2700,8 +2688,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       foreign_account = Fixtures.Accounts.create_account(%{plan: "enterprise"})
       foreign = insert_provider(foreign_account, %{}) |> Fixtures.SSO.enable_scim()
       foreign_group = sync_group(foreign, "foreign", "Foreign group")
-      foreign_user = Fixtures.Users.create_user()
-      foreign_subject = Fixtures.Subjects.subject_for(foreign_user, foreign_account)
+
+      foreign_owner =
+        Fixtures.Memberships.create_membership(account_id: foreign_account.id, role: "owner")
+
+      foreign_subject = Fixtures.Subjects.subject_for(foreign_owner)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       for id <- [other_group.id, foreign_group.id, "not-a-group-id"] do
@@ -3198,8 +3189,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
            owner: owner,
            user: user
          } do
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
+      Fixtures.Memberships.force_runner_access(user, Emisar.Accounts.RunnerAccess.all())
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       group = sync_group(provider, "grp-database", "Database team")
 
@@ -3655,7 +3645,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           owner
         )
 
-      make_viewer(user, account)
+      make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       render_click(lv, "edit_group_access", %{"group_id" => group.id})
@@ -3834,7 +3824,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       owner: owner
     } do
       group = sync_group(provider, "viewer-forged", "Viewer forged group")
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
       render_click(lv, "set_group_role", %{"group_id" => group.id, "role" => "admin"})
       refute has_element?(lv, "#create-mapping-#{provider.id}")
@@ -3876,7 +3866,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
           owner
         )
 
-      _ = make_viewer(user, account)
+      _ = make_viewer(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       _ =
@@ -3894,7 +3884,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "as a free account" do
     test "the Add page shows the paid-plan upsell, not the form", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "free"}})
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "free"}})
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
@@ -3907,7 +3897,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "as a Team account" do
     test "the Add page shows the OIDC config, not the plan upsell", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
@@ -3916,7 +3906,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     end
 
     test "the SCIM upsell sales link carries account/user context", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "team"}})
       provider = insert_provider(account, %{})
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
@@ -3927,14 +3917,14 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert html =~ "mailto:sales@emisar.dev"
       assert html =~ "subject=SCIM%20directory%20sync%20-%20Test%20Co"
       assert html =~ "Account%20ID%3A%20#{account.id}"
-      assert html =~ "User%3A%20#{String.replace(user.email, "@", "%40")}"
+      assert html =~ "Member%3A%20#{String.replace(owner.email, "@", "%40")}"
     end
   end
 
   describe "as a non-admin member" do
     test "an enterprise viewer is denied the Add page and sees the role gate", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-      _ = make_viewer(user, account)
+      {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      _ = make_viewer(owner)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
@@ -3947,7 +3937,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
   # commit apart from that describe's in-flight rework — logically it belongs there.
   describe "synced members — a directory-synced role is read-only" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})
       {:ok, provider} = provider |> Ecto.Changeset.change(scim_enabled: true) |> Repo.update()
 
@@ -3991,7 +3981,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     setup %{conn: conn} do
       {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})
-      owner = Fixtures.Subjects.subject_for(user, account)
+      owner = Fixtures.Subjects.subject_for(user)
       {:ok, provider, _raw} = SSO.enable_scim(provider, owner)
 
       {:ok, %{identity: identity}} =
@@ -4070,7 +4060,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
 
   describe "directory request history and setup instructions" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+      {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
       provider = insert_provider(account, %{})
       {:ok, provider} = provider |> Ecto.Changeset.change(scim_enabled: true) |> Repo.update()
       %{conn: conn, account: account, provider: provider}

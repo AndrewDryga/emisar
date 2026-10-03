@@ -1,7 +1,7 @@
 defmodule EmisarWeb.MailTo do
   @moduledoc """
   Builds `mailto:` links with prefilled subject/body templates and optional
-  authenticated account/user context.
+  authenticated workspace/Member context.
   """
   @support "support@emisar.dev"
   @sales "sales@emisar.dev"
@@ -17,15 +17,15 @@ defmodule EmisarWeb.MailTo do
   def security(opts \\ []),
     do: build(@security, "Security disclosure · emisar", security_body(), opts)
 
-  @doc "Builds a context footer map from assigns containing `current_account` and/or `current_user`."
+  @doc "Builds a context footer map from assigns containing `current_account` and/or `current_membership`."
   def context(assigns) do
     account = assigns[:current_account]
-    user = assigns[:current_user]
+    membership = assigns[:current_membership]
 
     %{}
     |> put_if(:account, account && account.name)
     |> put_if(:account_id, account && account.id)
-    |> put_if(:user, user && user.email)
+    |> put_if(:member, membership && membership.email)
   end
 
   # -- internals ----------------------------------------------------------
@@ -61,7 +61,7 @@ defmodule EmisarWeb.MailTo do
       [
         ctx[:account] && "Account: #{ctx[:account]}",
         ctx[:account_id] && "Account ID: #{ctx[:account_id]}",
-        ctx[:user] && "User: #{ctx[:user]}"
+        ctx[:member] && "Member: #{ctx[:member]}"
       ]
       |> Enum.reject(&is_nil/1)
 

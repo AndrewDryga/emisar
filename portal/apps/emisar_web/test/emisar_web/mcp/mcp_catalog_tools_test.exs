@@ -8,21 +8,18 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
   setup %{conn: conn} do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "admin"
-      )
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-    subject = Fixtures.Subjects.membership_subject(membership)
-    _policy = Fixtures.Policies.create_policy(account_id: account.id, created_by_id: user.id)
+    subject = Fixtures.Subjects.subject_for(user)
+
+    _policy =
+      Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: user.id)
+
     {:ok, raw, key} = ApiKeys.create_key(%{name: "catalog", kind: :mcp}, subject)
 
     conn = put_req_header(conn, "authorization", "Bearer " <> raw)
-    {:ok, conn: conn, account: account, subject: subject, membership: membership, key: key}
+    {:ok, conn: conn, account: account, subject: subject, membership: user, key: key}
   end
 
   test "tools/list advertises the complete fixed catalog within the frame budget", %{conn: conn} do
@@ -1882,15 +1879,10 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
 
   defp foreign_key_conn do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: user.id,
-      role: "owner"
-    )
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user)
     {:ok, raw, _key} = ApiKeys.create_key(%{name: "foreign-catalog", kind: :mcp}, subject)
     authorize(build_conn(), raw)
   end

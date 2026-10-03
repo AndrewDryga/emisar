@@ -138,8 +138,8 @@ defmodule Emisar.Seeds.ActionRuns do
     end
   end
 
-  defp insert_run(%{account: account, user: user, policy: policy} = ctx, attrs) do
-    requester = attrs[:requested_by] || user
+  defp insert_run(%{account: account, owner: owner, policy: policy} = ctx, attrs) do
+    requester = attrs[:requested_by] || owner
 
     {:ok, run} =
       ctx
@@ -148,8 +148,7 @@ defmodule Emisar.Seeds.ActionRuns do
       |> Map.merge(%{
         account_id: account.id,
         source: attrs[:source] || "operator",
-        initiating_membership_id:
-          Emisar.Accounts.peek_sync_membership(account.id, requester.id).id,
+        initiating_membership_id: requester.id,
         policy_id: policy && policy.id,
         policy_decision: attrs[:policy_decision] || "allow",
         policy_reason:
@@ -263,7 +262,9 @@ defmodule Emisar.Seeds.ActionRuns do
 
   # -- Finished runs ----------------------------------------------------
 
-  defp seed_finished_runs(%{user: user, jordan: jordan, priya: priya, agent_key: agent_key} = ctx) do
+  defp seed_finished_runs(
+         %{owner: owner, jordan: jordan, priya: priya, agent_key: agent_key} = ctx
+       ) do
     edge = runner_named(ctx, "edge-fra-01")
     api = runner_named(ctx, "api-iad-02")
     database = runner_named(ctx, "pg-primary-iad")
@@ -274,7 +275,7 @@ defmodule Emisar.Seeds.ActionRuns do
        @uptime_stdout},
       {edge, "caddy.reverse_proxy_upstreams", Helpers.mins_ago(24), 610, %{}, jordan,
        "verify checkout upstream health after deploy", @caddy_upstreams_stdout},
-      {database, "postgres.replication_lag", Helpers.mins_ago(46), 840, %{}, user,
+      {database, "postgres.replication_lag", Helpers.mins_ago(46), 840, %{}, owner,
        "confirm replicas caught up after catalog import", @postgres_lag_stdout},
       {api, "systemd.failed_units", Helpers.hours_ago(3), 530, %{}, priya,
        "pre-handoff health sweep", @systemd_failed_stdout},
@@ -282,7 +283,7 @@ defmodule Emisar.Seeds.ActionRuns do
        %{"schema" => "public", "limit" => 20}, jordan, "check autovacuum before traffic peak",
        @postgres_vacuum_stdout},
       {edge, "linux.disk_usage", Helpers.hours_ago(12), 280, %{"paths" => ["/", "/var/log"]},
-       user, "weekly capacity check", @df_stdout},
+       owner, "weekly capacity check", @df_stdout},
       {api, "linux.journalctl", Helpers.hours_ago(19), 900,
        %{"unit" => "checkout-api.service", "since" => "2h", "priority" => "warning"}, priya,
        "review checkout-api warnings after release", @journalctl_stdout}
@@ -329,7 +330,7 @@ defmodule Emisar.Seeds.ActionRuns do
           action_id: action_id,
           args: args,
           reason: reason,
-          requested_by: user,
+          requested_by: owner,
           source: "mcp",
           api_key_id: agent_key.id,
           status: "running"
@@ -409,7 +410,7 @@ defmodule Emisar.Seeds.ActionRuns do
   #
   # Returns the approved request, which the standing grants hang off.
   defp seed_approval_stories(
-         %{account: account, user: user, jordan: jordan, priya: priya, agent_key: agent_key} =
+         %{account: account, owner: owner, jordan: jordan, priya: priya, agent_key: agent_key} =
            ctx
        ) do
     edge = runner_named(ctx, "edge-fra-01")
@@ -431,7 +432,7 @@ defmodule Emisar.Seeds.ActionRuns do
         action_id: "caddy.reload_config",
         args: %{"file" => "/etc/caddy/Caddyfile"},
         reason: "Maya via Claude: apply the checked-in Caddyfile after certificate renewal",
-        requested_by: user,
+        requested_by: owner,
         source: "mcp",
         api_key_id: agent_key.id,
         status: "pending_approval",
@@ -494,7 +495,7 @@ defmodule Emisar.Seeds.ActionRuns do
         action_id: "caddy.reload_config",
         args: %{"file" => "/etc/caddy/Caddyfile"},
         reason: "Maya via Claude: reload Caddy after config validation",
-        requested_by: user,
+        requested_by: owner,
         source: "mcp",
         api_key_id: agent_key.id,
         status: "pending_approval",
@@ -566,7 +567,7 @@ defmodule Emisar.Seeds.ActionRuns do
         action_id: "postgres.reload_conf",
         args: %{},
         reason: "Maya via Claude: reload Postgres config before change ticket is approved",
-        requested_by: user,
+        requested_by: owner,
         source: "mcp",
         api_key_id: agent_key.id,
         status: "pending_approval",
@@ -667,13 +668,13 @@ defmodule Emisar.Seeds.ActionRuns do
   defp seed_sign_in_events(%{account: account, jordan: jordan, priya: priya}) do
     Audit.log(account.id, "user.signed_in",
       actor_kind: "membership",
-      actor_id: Emisar.Accounts.peek_sync_membership(account.id, jordan.id).id,
+      actor_id: jordan.id,
       payload: %{ip: "203.0.113.42"}
     )
 
     Audit.log(account.id, "user.signed_in",
       actor_kind: "membership",
-      actor_id: Emisar.Accounts.peek_sync_membership(account.id, priya.id).id,
+      actor_id: priya.id,
       payload: %{ip: "198.51.100.17"}
     )
   end
@@ -687,7 +688,7 @@ defmodule Emisar.Seeds.ActionRuns do
   """
   def seed_typed_json_run(%{
         account: account,
-        user: user,
+        owner: owner,
         owner_subject: owner_subject,
         policy: policy
       }) do
@@ -758,8 +759,7 @@ defmodule Emisar.Seeds.ActionRuns do
                   args: %{"file" => "/opt/northstar/docker-compose.yml"},
                   reason: typed_demo_reason,
                   source: "operator",
-                  initiating_membership_id:
-                    Emisar.Accounts.peek_sync_membership(account.id, user.id).id,
+                  initiating_membership_id: owner.id,
                   pack_ref: pack_ref,
                   expected_pack_hash: typed_demo_action.pack_hash,
                   structured_output_expected: true,

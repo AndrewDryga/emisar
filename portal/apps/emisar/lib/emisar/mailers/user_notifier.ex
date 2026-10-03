@@ -23,7 +23,6 @@ defmodule Emisar.Mailers.UserNotifier do
   alias Emisar.PublicUrl
   alias Emisar.RequestContext
   alias Emisar.Runs
-  alias Emisar.Users
   require Logger
 
   # Resolved at call-time (not compile-time) so `runtime.exs` env-var
@@ -34,78 +33,23 @@ defmodule Emisar.Mailers.UserNotifier do
      Application.get_env(:emisar, :mailer_from_email, "no-reply@emisar.dev")}
   end
 
-  def deliver_account_confirmation(
-        %Users.User{} = user,
-        token,
-        account \\ nil,
-        context \\ %RequestContext{}
-      ) do
-    url = PublicUrl.url("/confirm/#{token}")
-    email = one_line(user.email)
-
-    deliver_transactional(
-      user,
-      "Confirm your emisar email",
-      "Confirm #{email}. This link expires in 7 days.",
-      [
-        account_instruction(
-          "Confirm #{email} to finish setting up your emisar sign-in.",
-          "Confirm #{email} to finish setting up your emisar sign-in for ",
-          account,
-          "."
-        ),
-        {:paragraph, "This link works once and expires in 7 days."},
-        {:paragraph, "If you didn't request this, ignore this email."},
-        {:section, "Request details"},
-        {:pre, request_details(context)}
-      ],
-      {"Confirm email address", url}
-    )
-  end
-
-  def deliver_new_email_code(
-        %Users.User{} = user,
-        code,
-        account \\ nil,
-        context \\ %RequestContext{}
-      ) do
-    email = one_line(user.email)
-
-    deliver_transactional(
-      user,
-      "Confirm your new sign-in email",
-      "Use this code within 15 minutes to confirm your new sign-in email.",
-      [
-        account_instruction(
-          "Finish changing your emisar sign-in email.",
-          "Finish changing your emisar sign-in email for ",
-          account,
-          "."
-        ),
-        {:emphasis, "New sign-in email: ", email, "."},
-        {:code, code},
-        {:paragraph,
-         "Enter this 6-character code in the browser where you requested the change. It works once and expires in 15 minutes. Your sign-in email has not changed yet."},
-        {:paragraph,
-         "If you didn't request this change, ignore this email. Do not share the code."},
-        {:section, "Request details"},
-        {:pre, request_details(context)}
-      ]
-    )
-  end
-
+  @doc """
+  The emailed half of a workspace sign-in, or of accepting an invitation to it:
+  the code to type and a link carrying it. Either finishes only in the browser
+  that asked, which holds the other half. Names the workspace in the body; its
+  name stays out of the subject and preview, since a workspace owner typed it.
+  """
   def deliver_magic_link(
-        %Users.User{} = user,
+        %Accounts.Membership{} = membership,
         token_id,
         secret,
-        context \\ %RequestContext{},
-        return_to \\ nil,
-        account \\ nil
+        %RequestContext{} = context,
+        %Accounts.Account{} = account
       ) do
-    url = PublicUrl.url("/sign_in/magic/#{token_id}/#{secret}#{return_to_query(return_to)}")
+    url = PublicUrl.url("/sign_in/magic/#{token_id}/#{secret}")
 
     deliver_transactional(
-      user,
+      membership,
       "Your emisar sign-in code",
       "Your one-time sign-in code expires in 15 minutes.",
       [
@@ -123,6 +67,32 @@ defmodule Emisar.Mailers.UserNotifier do
         {:pre, request_details(context)}
       ],
       {"Sign in", url}
+    )
+  end
+
+  @doc """
+  The emailed half of a sign-up. Nobody has proved this address yet, so the
+  email greets the address itself and carries nothing the requester typed — not
+  their name and not the workspace name.
+  """
+  def deliver_sign_up_code(email, token_id, secret, %RequestContext{} = context)
+      when is_binary(email) do
+    url = PublicUrl.url("/sign_in/magic/#{token_id}/#{secret}")
+
+    deliver_transactional(
+      email,
+      "Your emisar sign-up code",
+      "Your one-time code to create an emisar workspace expires in 15 minutes.",
+      [
+        {:paragraph, "Use this code to finish creating your emisar workspace."},
+        {:code, secret},
+        {:paragraph,
+         "Enter the code in the browser where you signed up. It works once, only in that browser, and expires in 15 minutes."},
+        {:paragraph, "If you didn't sign up for emisar, ignore this email."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
+      ],
+      {"Create workspace", url}
     )
   end
 
@@ -148,44 +118,6 @@ defmodule Emisar.Mailers.UserNotifier do
         {:section, "Request details"},
         {:pre, request_details(context)}
       ]
-    )
-  end
-
-  @doc """
-  The code that links a workspace Member to this personal login. It names the
-  workspace from the factor, never from the requester's return path. That
-  workspace's owner typed its name, so the name stays out of the subject and
-  preview.
-  """
-  def deliver_member_link_code(
-        %Users.User{} = user,
-        token_id,
-        secret,
-        %Accounts.Account{} = account,
-        %RequestContext{} = context
-      ) do
-    url = PublicUrl.url("/sign_in/magic/#{token_id}/#{secret}")
-
-    deliver_transactional(
-      user,
-      "Link your emisar sign-in to a workspace",
-      "Your code to link your emisar sign-in to a workspace. It expires in 15 minutes.",
-      [
-        account_instruction(
-          "Someone who signed in to a workspace with its single sign-on asked to link that workspace member to your emisar sign-in.",
-          "Someone who signed in to ",
-          account,
-          " with its single sign-on asked to link that workspace member to your emisar sign-in."
-        ),
-        {:code, secret},
-        {:paragraph,
-         "The code signs that browser in as you. After the link, that workspace's single sign-on also signs you in to the workspace."},
-        {:paragraph,
-         "Enter the code only in your own browser, and only if you started this. If you didn't, ignore this email and do not share the code."},
-        {:section, "Request details"},
-        {:pre, request_details(context)}
-      ],
-      {"Link sign-in", url}
     )
   end
 
@@ -216,35 +148,6 @@ defmodule Emisar.Mailers.UserNotifier do
          "Give this code to that workspace only if you agree. Its invoices and receipts will then come to this address. It cannot see or change your other subscriptions."},
         {:paragraph,
          "This code works once and expires in 15 minutes. If you didn't expect this, ignore the email and nothing changes."},
-        {:section, "Request details"},
-        {:pre, request_details(context)}
-      ]
-    )
-  end
-
-  @doc """
-  Tells a personal login that a workspace Member was linked to it, so a link its
-  owner did not mean to make is visible. The workspace name stays out of the
-  subject and preview.
-  """
-  def deliver_member_linked(
-        %Users.User{} = user,
-        %Accounts.Account{} = account,
-        %RequestContext{} = context
-      ) do
-    deliver_transactional(
-      user,
-      "A workspace member was linked to your emisar sign-in",
-      "A workspace's single sign-on now signs you in to that workspace.",
-      [
-        account_instruction(
-          "A workspace member was linked to your emisar sign-in.",
-          "A member of ",
-          account,
-          " was linked to your emisar sign-in. That workspace's single sign-on now signs you in to it."
-        ),
-        {:paragraph,
-         "If you didn't do this, sign in, open your Profile and detach it under Linked workspaces."},
         {:section, "Request details"},
         {:pre, request_details(context)}
       ]
@@ -312,49 +215,24 @@ defmodule Emisar.Mailers.UserNotifier do
 
   defp device_summary(_), do: nil
 
-  def deliver_email_change_code(
-        %Users.User{} = user,
-        code,
-        new_email,
-        %RequestContext{} = context,
-        account \\ nil
-      ) do
-    deliver_transactional(
-      user,
-      "Confirm your sign-in email change",
-      "Use this code within 15 minutes to continue changing your sign-in email.",
-      [
-        account_instruction(
-          "Use this code to continue changing your emisar sign-in email.",
-          "Use this code to change your emisar sign-in email for ",
-          account,
-          "."
-        ),
-        {:code, code},
-        {:emphasis, "New sign-in email: ", one_line(new_email), "."},
-        {:paragraph, "This code works once and expires in 15 minutes."},
-        {:paragraph,
-         "If you didn't request this change, ignore the email. Your sign-in email will stay the same."},
-        {:section, "Request details"},
-        {:pre, request_details(context)}
-      ]
-    )
-  end
-
+  @doc """
+  The current-inbox code a workspace administrator types before verifying an
+  SSO connection by signing in through it. Goes to the Member's own address.
+  """
   def deliver_oidc_identity_step_up_code(
-        %Users.User{} = user,
+        %Accounts.Membership{} = membership,
         code,
         provider_name,
-        purpose,
         %RequestContext{} = context,
         account
       )
-      when is_binary(provider_name) and purpose in [:link, :verify_provider, :unlink] do
-    {subject, action} = oidc_identity_step_up_copy(provider_name, purpose)
+      when is_binary(provider_name) do
+    provider_name = one_line(provider_name)
+    action = "test #{provider_name} sign-in"
 
     deliver_transactional(
-      user,
-      subject,
+      membership,
+      "Confirm testing #{provider_name}",
       "Use this code within 15 minutes to #{action}.",
       [
         account_instruction(
@@ -373,23 +251,18 @@ defmodule Emisar.Mailers.UserNotifier do
     )
   end
 
-  defp oidc_identity_step_up_copy(provider_name, :link),
-    do: {"Confirm linking #{one_line(provider_name)}", "link #{one_line(provider_name)}"}
-
-  defp oidc_identity_step_up_copy(provider_name, :verify_provider),
-    do: {"Confirm testing #{one_line(provider_name)}", "test #{one_line(provider_name)} sign-in"}
-
-  defp oidc_identity_step_up_copy(provider_name, :unlink),
-    do: {"Confirm removing #{one_line(provider_name)}", "remove #{one_line(provider_name)}"}
-
+  @doc """
+  The current-inbox code a Member types before adding an authenticator to its
+  sign-in. Goes to the Member's own address.
+  """
   def deliver_mfa_enrollment_code(
-        %Users.User{} = user,
+        %Accounts.Membership{} = membership,
         code,
         %RequestContext{} = context,
-        account \\ nil
+        account
       ) do
     deliver_transactional(
-      user,
+      membership,
       "Confirm authenticator setup",
       "Use this code within 15 minutes to continue adding an authenticator.",
       [
@@ -990,14 +863,6 @@ defmodule Emisar.Mailers.UserNotifier do
     ])
   end
 
-  # The branded sign-in pages thread a `/app/<slug>` return_to through these
-  # links so the magic link / reset lands back on the right team. Already
-  # whitelisted by `EmisarWeb.ReturnTo` at the call site; encoded for the URL here.
-  defp return_to_query(nil), do: ""
-
-  defp return_to_query(return_to) when is_binary(return_to),
-    do: "?" <> URI.encode_query(return_to: return_to)
-
   defp deliver_transactional(recipient, subject, preview, blocks),
     do: deliver_transactional(recipient, subject, preview, blocks, nil, [])
 
@@ -1032,12 +897,12 @@ defmodule Emisar.Mailers.UserNotifier do
     )
   end
 
-  defp recipient_name(%Users.User{} = user), do: user.full_name || user.email
   defp recipient_name(%Admin.Staff{email: email}), do: email
   defp recipient_name(%Accounts.Membership{} = member), do: Accounts.member_display_name(member)
-  defp recipient_email(%Users.User{email: email}), do: email
+  defp recipient_name(email) when is_binary(email), do: email
   defp recipient_email(%Admin.Staff{email: email}), do: email
   defp recipient_email(%Accounts.Membership{email: email}), do: email
+  defp recipient_email(email) when is_binary(email), do: email
 
   defp deliver(nil, _subject, _text, _html, _headers), do: {:error, :no_contact_email}
 

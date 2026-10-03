@@ -128,7 +128,7 @@ defmodule Emisar.Catalog.PackBaselineTest do
 
   describe "observe_state/2 trust reconciliation" do
     test "a baseline entry without a release manifest stays pending" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       Fixtures.Catalog.create_observed_pack_version(

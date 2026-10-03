@@ -26,16 +26,9 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
 
   test "console keys have a 24-hour lifetime; manual keys retain their chosen expiry" do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
-
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
 
     assert {:ok, raw, key} = Runners.mint_install_key(subject)
     assert DateTime.diff(key.expires_at, key.auto_generated_at, :second) == 86_400
@@ -64,7 +57,7 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
   test "Active excludes expired, revoked, deleted, spent, and exhausted reusable keys" do
     account = Fixtures.Accounts.create_account()
     membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     {_, active} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
 
     {_, reusable} =
@@ -98,7 +91,7 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
   test "source filtering preserves account isolation and console origin after enrollment" do
     account = Fixtures.Accounts.create_account()
     membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     {raw, console} = Fixtures.Runners.create_install_key(account_id: account.id)
     {_, manual} = Fixtures.Runners.create_enrollment_key(account_id: account.id)
     Fixtures.Runners.create_install_key()
@@ -121,7 +114,7 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
 
     viewer =
       Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
-      |> Fixtures.Subjects.membership_subject()
+      |> Fixtures.Subjects.subject_for()
 
     assert {:error, :unauthorized} =
              Runners.list_enrollment_keys(viewer, filter: [source: ["console"]])
@@ -174,19 +167,19 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
 
   test "ring eviction retains a used console key after its origin marker is preserved" do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
     past = DateTime.add(DateTime.utc_now(), -120, :second)
 
     {_, used} =
       Fixtures.Runners.create_install_key(
         account_id: account.id,
-        user_id: user.id,
+        membership: user,
         auto_generated_at: past,
         last_used_at: past,
         uses_count: 1
       )
 
-    subject = Fixtures.Subjects.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user)
 
     for _ <- 1..3 do
       assert {:ok, _raw, _key} =
@@ -198,7 +191,7 @@ defmodule Emisar.EnrollmentKeyLifecycleTest do
 
   test "creation receipts snapshot expiry and usage limits, including explicit absence" do
     membership = Fixtures.Memberships.create_membership(role: "owner")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     expires_at = DateTime.add(DateTime.utc_now(), 86_400)
 
     for attrs <- [

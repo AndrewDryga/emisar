@@ -32,9 +32,6 @@ defmodule Emisar.Accounts.Membership.Query do
   def by_id(queryable, id),
     do: where(queryable, [memberships: m], m.id == ^id)
 
-  def without_personal_login(queryable),
-    do: where(queryable, [memberships: m], is_nil(m.user_id))
-
   def removed(queryable \\ all()),
     do: where(queryable, [memberships: m], not is_nil(m.deleted_at))
 
@@ -62,25 +59,8 @@ defmodule Emisar.Accounts.Membership.Query do
     )
   end
 
-  @doc "Scope to the membership whose (non-deleted) account has this slug. Slug is citext, so the match is case-insensitive."
-  def by_account_slug(queryable, slug),
-    do: queryable |> with_joined_account() |> where([account: a], a.slug == ^slug)
-
-  @doc """
-  Scope to the membership whose (non-deleted) account has this slug, including a
-  DISABLED account. Pairs with `with_joined_account_including_disabled/1`.
-  """
-  def by_account_slug_including_disabled(queryable, slug) do
-    queryable
-    |> with_joined_account_including_disabled()
-    |> where([account: a], a.slug == ^slug)
-  end
-
   def by_user_id(queryable, user_id),
     do: where(queryable, [memberships: m], m.user_id == ^user_id)
-
-  def by_user_ids(queryable, user_ids),
-    do: where(queryable, [memberships: m], m.user_id in ^user_ids)
 
   def by_role(queryable, role),
     do: where(queryable, [memberships: m], m.role == ^role)
@@ -103,20 +83,7 @@ defmodule Emisar.Accounts.Membership.Query do
     )
   end
 
-  @doc "Every account BUT this one — 'does this person belong anywhere else?'"
-  def excluding_account_id(queryable, account_id),
-    do: where(queryable, [memberships: m], m.account_id != ^account_id)
-
   def select_ids(queryable), do: select(queryable, [memberships: m], m.id)
-
-  def select_account_ids(queryable), do: select(queryable, [memberships: m], m.account_id)
-
-  def select_user_ids(queryable), do: select(queryable, [memberships: m], m.user_id)
-
-  def by_account_and_user(queryable, account_id, user_id) do
-    queryable
-    |> where([memberships: m], m.account_id == ^account_id and m.user_id == ^user_id)
-  end
 
   def by_directory_provider_or_unmanaged(queryable, provider_id) do
     where(
@@ -169,23 +136,6 @@ defmodule Emisar.Accounts.Membership.Query do
     )
   end
 
-  @doc "Most-recently-joined membership only — orders and limits in one step."
-  def latest(queryable),
-    do: queryable |> order_by([memberships: m], desc: m.inserted_at) |> limit(1)
-
-  # Local profile history remains displayable after removal, without making the
-  # removed row authorizable or falling back to a linked personal User.
-  def latest_profiles(queryable \\ all()) do
-    queryable
-    |> distinct([memberships: m], [m.account_id, m.user_id])
-    |> order_by([memberships: m],
-      asc: m.account_id,
-      asc: m.user_id,
-      desc: m.inserted_at,
-      desc: m.id
-    )
-  end
-
   @doc "Earliest-joined membership only — orders and limits in one step."
   def oldest(queryable),
     do: queryable |> order_by([memberships: m], asc: m.inserted_at, asc: m.id) |> limit(1)
@@ -216,87 +166,9 @@ defmodule Emisar.Accounts.Membership.Query do
     |> preload([memberships: m, account: account], account: account)
   end
 
-  @doc """
-  Inner-join the membership's non-deleted account, idempotently — unlike
-  `with_joined_account/1`, a DISABLED account is kept. The post-auth sign-in
-  target needs it: a member of a disabled account is sent to that account's own
-  page, so the row must resolve. A deleted account is still dropped.
-  """
-  def with_joined_account_including_disabled(queryable) do
-    with_named_binding(queryable, :account, fn queryable, binding ->
-      join(
-        queryable,
-        :inner,
-        [memberships: m],
-        account in ^Emisar.Accounts.Account.Query.not_deleted(),
-        on: m.account_id == account.id,
-        as: ^binding
-      )
-    end)
-  end
-
-  @doc """
-  Join (if needed) and preload the membership's account, disabled included.
-  See `with_joined_account_including_disabled/1`.
-  """
-  def with_preloaded_account_including_disabled(queryable) do
-    queryable
-    |> with_joined_account_including_disabled()
-    |> preload([memberships: m, account: account], account: account)
-  end
-
-  @doc """
-  Drop a Member whose linked personal login is deleted. A Member without a
-  personal login stays. Join-free, so it composes with a row lock.
-  """
-  def without_deleted_user(queryable) do
-    live_user =
-      Emisar.Users.User.Query.not_deleted()
-      |> where([users: u], u.id == parent_as(:memberships).user_id)
-
-    where(queryable, [memberships: m], is_nil(m.user_id) or exists(subquery(live_user)))
-  end
-
-  @doc """
-  Left-join the Member's live personal login, idempotently, to filter on its
-  columns. A Member without a personal login is kept with NULL user columns; a
-  Member whose linked login is deleted is dropped. Never lock this join:
-  PostgreSQL refuses to lock the nullable side of an outer join.
-  """
-  def with_joined_user(queryable) do
-    with_named_binding(queryable, :user, fn queryable, binding ->
-      queryable
-      |> join(:left, [memberships: m], user in ^Emisar.Users.User.Query.not_deleted(),
-        on: m.user_id == user.id,
-        as: ^binding
-      )
-      |> where([memberships: m, user: u], is_nil(m.user_id) or not is_nil(u.id))
-    end)
-  end
-
-  @doc """
-  Join (if needed) and preload the Member's live personal login, nil for a
-  Member without one. See `with_joined_user/1`; never lock this query.
-  """
-  def with_preloaded_user(queryable) do
-    queryable
-    |> with_joined_user()
-    |> preload([memberships: m, user: user], user: user)
-  end
-
-  @doc "Restrict to Members whose linked personal login has completed MFA enrollment."
-  def with_mfa_enrolled(queryable) do
-    queryable
-    |> with_joined_user()
-    |> where([user: u], not is_nil(u.mfa_enabled_at))
-  end
-
-  @doc "Restrict to Members whose linked personal login has a confirmed email address."
-  def with_confirmed_user_email(queryable) do
-    queryable
-    |> with_joined_user()
-    |> where([user: u], not is_nil(u.confirmed_at) and not is_nil(u.email))
-  end
+  @doc "Restrict to Members with an enrolled authenticator."
+  def with_mfa_enrolled(queryable),
+    do: where(queryable, [memberships: m], not is_nil(m.mfa_enabled_at))
 
   @doc """
   Members that name an address. Only the invited address can accept an
@@ -304,6 +176,15 @@ defmodule Emisar.Accounts.Membership.Query do
   """
   def with_email(queryable),
     do: where(queryable, [memberships: m], not is_nil(m.email))
+
+  @doc "Members whose address was proved by joining (invitation or sign-up), so mail and email sign-in may use it."
+  def with_verified_email(queryable) do
+    where(queryable, [memberships: m], not is_nil(m.email) and not is_nil(m.email_verified_at))
+  end
+
+  @doc "Members with no proved address, which therefore cannot sign in by email."
+  def with_unverified_email(queryable),
+    do: where(queryable, [memberships: m], is_nil(m.email) or is_nil(m.email_verified_at))
 
   @doc "Members whose workspace contact is `email`; the citext column compares case-insensitively."
   def by_email(queryable, email),
@@ -350,13 +231,9 @@ defmodule Emisar.Accounts.Membership.Query do
         values: [
           {"active", "Active"},
           {"pending_invitation", "Pending invitation"},
-          {"suspended", "Suspended"},
-          {"email_unconfirmed", "Email unconfirmed"}
+          {"suspended", "Suspended"}
         ],
-        fun: fn queryable, statuses ->
-          queryable = with_joined_user(queryable)
-          {queryable, status_dynamic(statuses)}
-        end
+        fun: fn queryable, statuses -> {queryable, status_dynamic(statuses)} end
       }
     ]
   end
@@ -373,7 +250,7 @@ defmodule Emisar.Accounts.Membership.Query do
 
   # Statuses intentionally overlap. A suspended invitation remains both
   # suspended and pending, so either lens can find it. "Active" is the clean
-  # complement: enabled, confirmed, and no unresolved invitation.
+  # complement: enabled and no unresolved invitation.
   defp status_dynamic(statuses) do
     case Enum.filter(statuses, &(&1 in status_values())) do
       [] -> dynamic(true)
@@ -381,14 +258,12 @@ defmodule Emisar.Accounts.Membership.Query do
     end
   end
 
-  # A Member without a personal login has no personal email to confirm.
   defp status_or("active", acc) do
     dynamic(
-      [memberships: m, user: u],
+      [memberships: m],
       ^acc or
         (is_nil(m.disabled_at) and
-           not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)) and
-           (is_nil(m.user_id) or not is_nil(u.confirmed_at)))
+           not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)))
     )
   end
 
@@ -402,17 +277,7 @@ defmodule Emisar.Accounts.Membership.Query do
   defp status_or("suspended", acc),
     do: dynamic([memberships: m], ^acc or not is_nil(m.disabled_at))
 
-  defp status_or("email_unconfirmed", acc) do
-    dynamic(
-      [memberships: m, user: u],
-      ^acc or
-        (not is_nil(m.user_id) and is_nil(u.confirmed_at) and
-           not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest)))
-    )
-  end
-
-  defp status_values,
-    do: ["active", "pending_invitation", "suspended", "email_unconfirmed"]
+  defp status_values, do: ["active", "pending_invitation", "suspended"]
 
   @impl Emisar.Repo.Query
   def cursor_fields,
@@ -430,12 +295,11 @@ defmodule Emisar.Accounts.Membership.Query do
 
   # Each preload is `{scope_query, nested_preloads}` so the associated
   # schema's own preloads/0 cascades — deep nesting composes. The scope is
-  # not_deleted/0 so a membership never resolves a soft-deleted account/user.
+  # not_deleted/0 so a membership never resolves a soft-deleted account.
   @impl Emisar.Repo.Query
   def preloads,
     do: [
       account:
-        {Emisar.Accounts.Account.Query.not_deleted(), Emisar.Accounts.Account.Query.preloads()},
-      user: {Emisar.Users.User.Query.not_deleted(), Emisar.Users.User.Query.preloads()}
+        {Emisar.Accounts.Account.Query.not_deleted(), Emisar.Accounts.Account.Query.preloads()}
     ]
 end

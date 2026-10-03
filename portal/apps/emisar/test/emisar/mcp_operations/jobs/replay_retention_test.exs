@@ -9,17 +9,11 @@ defmodule Emisar.MCPOperations.Jobs.ReplayRetentionTest do
   @pack_ref "linux-core@1.0.0/sha256:" <> String.duplicate("b", 64)
 
   setup do
-    user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    owner_subject = Fixtures.Subjects.membership_subject(membership)
+    owner_subject = Fixtures.Subjects.subject_for(membership)
     {:ok, _raw, key} = ApiKeys.create_key(%{name: "MCP"}, owner_subject)
     key_subject = Auth.Subject.for_api_key(key, account)
 

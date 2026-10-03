@@ -12,7 +12,7 @@
   amber numbers/pending, rose deny).
 ============================================================ --%>
 <div class="bg-zinc-950 text-zinc-100">
-  <.marketing_nav current_user={@current_user} current={:how_it_works} />
+  <.marketing_nav signed_in?={@signed_in?} current={:how_it_works} />
 
   <%!-- Hero --%>
   <section class="border-b border-zinc-900 bg-[#07080a]">

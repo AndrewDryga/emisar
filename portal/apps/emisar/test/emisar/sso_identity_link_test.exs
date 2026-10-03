@@ -1,8 +1,15 @@
 defmodule Emisar.SSOIdentityLinkTest do
+  @moduledoc """
+  Verifying an SSO connection by signing in through it: the administrator's
+  fresh local proof (an emailed code or its authenticator), the provider-bound
+  ceremony, and the identity it binds to the acting Member.
+  """
   use Emisar.DataCase, async: true
-  alias Emisar.{Audit, Auth, Crypto, Fixtures, Mail, Repo, SSO}
+  alias Emisar.{Audit, Auth, Crypto, Fixtures, Mail, Repo, RequestContext, SSO}
   alias Emisar.Auth.UserToken
   alias Emisar.SSO.{IdentityProvider, UserIdentity}
+
+  @redirect_uri "https://emisar.test/sign_in/sso/callback"
 
   defmodule StubOIDC do
     @behaviour Emisar.SSO.OIDC
@@ -27,11 +34,10 @@ defmodule Emisar.SSOIdentityLinkTest do
 
   setup do
     Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
-    {user, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    {owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id, name: "Workforce")
-    raw_session = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, session} = Auth.fetch_session_by_token(raw_session)
-    subject = Fixtures.Subjects.subject_for(user, account, session: session)
+    raw_session = Fixtures.Auth.create_session_token!(owner, :magic_link, nil)
+    subject = Fixtures.Subjects.subject_for(owner, session: raw_session)
 
     %{
       account: account,
@@ -39,386 +45,362 @@ defmodule Emisar.SSOIdentityLinkTest do
       raw_session: raw_session,
       session_digest: Crypto.hash(raw_session),
       subject: subject,
-      user: user
+      member: owner
     }
   end
 
-  describe "begin_oidc_identity_step_up/4" do
-    test "an emailed proof code is single-use and purpose-bound",
-         %{subject: _subject} = context do
+  describe "begin_oidc_identity_step_up/3" do
+    test "an emailed proof code is single-use and provider-bound", %{
+      account: account,
+      member: member,
+      provider: provider,
+      subject: subject
+    } do
       assert {:ok, :email} =
                Auth.begin_oidc_identity_step_up(
-                 context.provider.id,
-                 context.provider.name,
-                 :link,
-                 context.subject
+                 provider.id,
+                 provider.name,
+                 subject
                )
 
       assert_received {:email, email}
+      assert email.to == [{"", member.email}]
       code = Fixtures.Auth.code_from_email(email)
 
       assert {:ok, proof} =
-               Auth.confirm_oidc_identity_step_up(
-                 context.provider.id,
-                 :link,
-                 code,
-                 context.subject
-               )
+               Auth.confirm_oidc_identity_step_up(provider.id, code, subject)
 
-      assert Auth.confirm_oidc_identity_step_up(
-               context.provider.id,
-               :link,
-               code,
-               context.subject
-             ) == {:error, :invalid}
+      assert Auth.confirm_oidc_identity_step_up(provider.id, code, subject) ==
+               {:error, :invalid}
 
       # The miss is audited (a hijacked session grinding the emailed code leaves a
       # trail) — the same accountability the TOTP factor path already had.
-      assert [%Audit.Event{event_type: "user.oidc_identity_step_up_failed"}] =
+      assert [%Audit.Event{event_type: "user.oidc_identity_step_up_failed"} = miss] =
                Audit.Event.Query.all()
                |> Audit.Event.Query.by_event_type("user.oidc_identity_step_up_failed")
                |> Repo.all()
 
-      assert Auth.verify_oidc_identity_step_up_proof(
-               proof,
-               context.provider.id,
-               :verify_provider,
-               context.user
-             ) == {:error, :identity_step_up_stale}
+      assert miss.account_id == account.id
+      assert miss.actor_id == member.id
+
+      other =
+        Fixtures.SSO.create_identity_provider(
+          account_id: account.id,
+          kind: :openid_connect
+        )
+
+      assert Auth.verify_oidc_identity_step_up_proof(proof, other.id, member) ==
+               {:error, :identity_step_up_stale}
+
+      assert Auth.verify_oidc_identity_step_up_proof(proof, provider.id, member) ==
+               :ok
     end
 
-    test "uses the existing authenticator instead of issuing an inbox code",
-         %{subject: subject} = context do
+    test "uses the existing authenticator instead of issuing an inbox code", %{
+      provider: provider,
+      subject: subject
+    } do
       secret = Auth.generate_mfa_secret()
-      {:ok, enrolled, _codes} = Fixtures.Users.enroll_mfa(secret, subject)
+      {:ok, enrolled, _codes} = Fixtures.Memberships.enroll_mfa(secret, subject)
 
       assert Auth.begin_oidc_identity_step_up(
-               context.provider.id,
-               context.provider.name,
-               :link,
-               context.subject
+               provider.id,
+               provider.name,
+               subject
              ) == {:ok, :mfa}
 
       refute_received {:email, _email}
 
       assert {:ok, proof} =
                Auth.confirm_oidc_identity_step_up(
-                 context.provider.id,
-                 :link,
+                 provider.id,
                  Fixtures.Auth.totp_code(secret),
-                 context.subject
+                 subject
                )
 
       assert :ok =
                Auth.verify_oidc_identity_step_up_proof(
                  proof,
-                 context.provider.id,
-                 :link,
+                 provider.id,
                  Repo.reload!(enrolled)
                )
     end
 
-    test "a suppressed current address can't begin the emailed-code step-up",
-         %{user: user} = context do
-      {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+    test "a suppressed current address can't begin the emailed-code step-up", %{
+      member: member,
+      provider: provider,
+      subject: subject
+    } do
+      {:ok, _suppression} = Mail.suppress(member.email, :hard_bounce, "bounce")
 
       assert Auth.begin_oidc_identity_step_up(
-               context.provider.id,
-               context.provider.name,
-               :link,
-               context.subject
+               provider.id,
+               provider.name,
+               subject
              ) == {:error, :delivery_suppressed}
 
       refute_received {:email, _}
     end
+
+    test "a Member without a verified address or an authenticator has no proof to give", %{
+      account: account,
+      provider: provider
+    } do
+      directory =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "admin",
+          email_verified?: false
+        )
+
+      subject = Fixtures.Subjects.subject_for(directory)
+
+      assert Auth.begin_oidc_identity_step_up(
+               provider.id,
+               provider.name,
+               subject
+             ) == {:error, :email_unavailable}
+
+      refute_received {:email, _}
+    end
+
+    test "the sixth emailed code in fifteen minutes is refused with one audited rate limit", %{
+      account: account,
+      member: member,
+      provider: provider,
+      subject: subject
+    } do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      for _ <- 1..5 do
+        assert {:ok, :email} =
+                 Auth.begin_oidc_identity_step_up(
+                   provider.id,
+                   provider.name,
+                   subject
+                 )
+
+        assert_received {:email, _}
+      end
+
+      for _ <- 1..2 do
+        assert Auth.begin_oidc_identity_step_up(
+                 provider.id,
+                 provider.name,
+                 subject
+               ) == {:error, :rate_limited}
+
+        refute_received {:email, _}
+      end
+
+      assert [event] =
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_account_id(account.id)
+               |> Audit.Event.Query.by_event_type("user.oidc_identity_step_up_rate_limited")
+               |> Repo.all()
+
+      assert event.actor_id == member.id
+      assert event.payload["scope"] == "oidc_identity_step_up_issue"
+      assert event.payload["attempt_limit"] == 5
+      assert event.payload["window_seconds"] == 900
+    end
   end
 
-  describe "resend_oidc_identity_step_up_code/4" do
-    test "replaces the prior inbox code for the same provider and purpose",
-         %{subject: _subject} = context do
+  describe "resend_oidc_identity_step_up_code/3" do
+    test "replaces the prior inbox code for the same provider", %{
+      provider: provider,
+      subject: subject
+    } do
       assert {:ok, :email} =
                Auth.begin_oidc_identity_step_up(
-                 context.provider.id,
-                 context.provider.name,
-                 :link,
-                 context.subject
+                 provider.id,
+                 provider.name,
+                 subject
                )
 
       assert_received {:email, first_email}
 
       assert {:ok, :sent} =
                Auth.resend_oidc_identity_step_up_code(
-                 context.provider.id,
-                 context.provider.name,
-                 :link,
-                 context.subject
+                 provider.id,
+                 provider.name,
+                 subject
                )
 
       assert_received {:email, second_email}
 
       assert Auth.confirm_oidc_identity_step_up(
-               context.provider.id,
-               :link,
+               provider.id,
                Fixtures.Auth.code_from_email(first_email),
-               context.subject
+               subject
              ) == {:error, :invalid}
 
       assert {:ok, _proof} =
                Auth.confirm_oidc_identity_step_up(
-                 context.provider.id,
-                 :link,
+                 provider.id,
                  Fixtures.Auth.code_from_email(second_email),
-                 context.subject
+                 subject
                )
     end
 
-    test "a suppressed current address is reported, not passed off as sent",
-         %{user: user} = context do
-      {:ok, _suppression} = Mail.suppress(user.email, :hard_bounce, "bounce")
+    test "a suppressed current address is reported, not passed off as sent", %{
+      member: member,
+      provider: provider,
+      subject: subject
+    } do
+      {:ok, _suppression} = Mail.suppress(member.email, :hard_bounce, "bounce")
 
       assert {:ok, :suppressed} =
                Auth.resend_oidc_identity_step_up_code(
-                 context.provider.id,
-                 context.provider.name,
-                 :link,
-                 context.subject
+                 provider.id,
+                 provider.name,
+                 subject
                )
 
       refute_received {:email, _}
     end
+
+    test "once an authenticator is enrolled the emailed code is no longer offered", %{
+      provider: provider,
+      subject: subject
+    } do
+      {:ok, _enrolled, _codes} =
+        Fixtures.Memberships.enroll_mfa(Auth.generate_mfa_secret(), subject)
+
+      assert Auth.resend_oidc_identity_step_up_code(
+               provider.id,
+               provider.name,
+               subject
+             ) == {:error, :factor_changed}
+    end
   end
 
-  describe "confirm_oidc_identity_step_up/4" do
-    test "consumes an inbox code once", %{subject: _subject} = context do
+  describe "confirm_oidc_identity_step_up/3" do
+    test "consumes an inbox code once", %{provider: provider, subject: subject} do
       assert {:ok, :email} =
                Auth.begin_oidc_identity_step_up(
-                 context.provider.id,
-                 context.provider.name,
-                 :link,
-                 context.subject
+                 provider.id,
+                 provider.name,
+                 subject
                )
 
       assert_received {:email, email}
       code = Fixtures.Auth.code_from_email(email)
 
       assert {:ok, _proof} =
-               Auth.confirm_oidc_identity_step_up(
-                 context.provider.id,
-                 :link,
-                 code,
-                 context.subject
+               Auth.confirm_oidc_identity_step_up(provider.id, code, subject)
+
+      assert Auth.confirm_oidc_identity_step_up(provider.id, code, subject) ==
+               {:error, :invalid}
+    end
+
+    test "a code issued for one provider does not confirm another", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      other =
+        Fixtures.SSO.create_identity_provider(
+          account_id: account.id,
+          kind: :openid_connect
+        )
+
+      assert {:ok, :email} =
+               Auth.begin_oidc_identity_step_up(
+                 provider.id,
+                 provider.name,
+                 subject
                )
 
-      assert Auth.confirm_oidc_identity_step_up(
-               context.provider.id,
-               :link,
-               code,
-               context.subject
-             ) == {:error, :invalid}
+      assert_received {:email, email}
+      code = Fixtures.Auth.code_from_email(email)
+
+      assert Auth.confirm_oidc_identity_step_up(other.id, code, subject) ==
+               {:error, :invalid}
     end
   end
 
-  describe "verify_oidc_identity_step_up_proof/4" do
-    test "rejects a proof under a different purpose", %{subject: _subject} = context do
-      proof = local_proof(context, :link)
+  describe "verify_oidc_identity_step_up_proof/3" do
+    test "a proof is bound to the Member row it was confirmed for",
+         %{account: account, member: member, provider: provider} = context do
+      proof = local_proof(context)
+      assert Auth.verify_oidc_identity_step_up_proof(proof, provider.id, member) == :ok
 
-      assert Auth.verify_oidc_identity_step_up_proof(
-               proof,
-               context.provider.id,
-               :verify_provider,
-               context.user
-             ) == {:error, :identity_step_up_stale}
+      other_member = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert Auth.verify_oidc_identity_step_up_proof(proof, provider.id, other_member) ==
+               {:error, :identity_step_up_stale}
+
+      renamed = Fixtures.Memberships.sync_display_name(member, "Changed Since")
+
+      assert Auth.verify_oidc_identity_step_up_proof(proof, provider.id, renamed) ==
+               {:error, :identity_step_up_stale}
+
+      assert Auth.verify_oidc_identity_step_up_proof("garbage", provider.id, member) ==
+               {:error, :identity_step_up_stale}
     end
   end
 
-  describe "ensure_oidc_identity_step_up_current/6" do
-    test "requires the exact still-live browser session", %{subject: _subject} = context do
-      proof = local_proof(context, :link)
+  describe "ensure_oidc_identity_step_up_current/5" do
+    test "requires the exact still-live browser session",
+         %{
+           member: member,
+           provider: provider,
+           raw_session: raw_session,
+           session_digest: session_digest
+         } = context do
+      proof = local_proof(context)
 
       assert :ok =
                Auth.ensure_oidc_identity_step_up_current(
                  Repo,
                  proof,
-                 context.session_digest,
-                 context.provider.id,
-                 :link,
-                 context.user
+                 session_digest,
+                 provider.id,
+                 member
                )
 
-      assert :ok = Auth.delete_session_token(context.raw_session)
+      other_session = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
 
       assert Auth.ensure_oidc_identity_step_up_current(
                Repo,
                proof,
-               context.session_digest,
-               context.provider.id,
-               :link,
-               context.user
+               Crypto.hash(other_session),
+               provider.id,
+               member
+             ) == :ok
+
+      assert :ok = Auth.revoke_session_tokens([raw_session], :dead_entry, %RequestContext{})
+
+      assert Auth.ensure_oidc_identity_step_up_current(
+               Repo,
+               proof,
+               session_digest,
+               provider.id,
+               member
              ) == {:error, :identity_step_up_stale}
     end
   end
 
-  describe "list_self_service_identity_facts/1" do
-    test "lists enabled workspace methods without exposing provider configuration",
-         %{provider: _provider, subject: _subject} = context do
-      assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
-      assert facts.provider_id == context.provider.id
-      assert facts.provider_name == "Workforce"
-      refute facts.linked?
-      refute facts.user_verified?
-      refute facts.removable?
-      assert facts.removal_blocked_reason == :not_linked
-      refute Map.has_key?(facts, :issuer)
-      refute Map.has_key?(facts, :client_id)
-    end
-
-    test "workspace links need user verification; verified links can be removed",
-         %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: context.account.id,
-          provider_id: context.provider.id,
-          user_id: context.user.id
-        })
-
-      assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
-      assert facts.linked?
-      refute facts.user_verified?
-      refute facts.removable?
-      assert facts.removal_blocked_reason == :identity_not_user_verified
-
-      identity |> Ecto.Changeset.change(created_by: :user) |> Repo.update!()
-      assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
-      assert facts.user_verified?
-      assert facts.removable?
-      assert is_nil(facts.removal_blocked_reason)
-    end
-
-    test "only a usable alternative unblocks required-SSO removal",
-         %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
-      identity = link_identity(context)
-      context = with_sso_session(context, identity)
-      Fixtures.Accounts.set_account_settings(context.account, %{require_sso: true})
-
-      for state <- [:disabled, :deleted_provider, :retired, :deleted_identity] do
-        provider =
-          Fixtures.SSO.create_identity_provider(
-            account_id: context.account.id,
-            kind: :openid_connect
-          )
-
-        identity =
-          Fixtures.SSO.create_user_identity(%{
-            account_id: context.account.id,
-            provider_id: provider.id,
-            user_id: context.user.id
-          })
-
-        case state do
-          :disabled ->
-            Fixtures.SSO.disable_provider(provider)
-
-          :deleted_provider ->
-            Fixtures.SSO.mark_provider_deleted(provider)
-
-          :retired ->
-            identity
-            |> Ecto.Changeset.change(provider_identifier_retired_at: DateTime.utc_now())
-            |> Repo.update!()
-
-          :deleted_identity ->
-            identity |> Ecto.Changeset.change(deleted_at: DateTime.utc_now()) |> Repo.update!()
-        end
-
-        assert {:ok, facts} = SSO.list_self_service_identity_facts(context.subject)
-        refute Enum.find(facts, &(&1.provider_id == context.provider.id)).removable?
-        Fixtures.SSO.disable_provider(provider)
-      end
-
-      assert {:ok, facts} = SSO.list_self_service_identity_facts(context.subject)
-      current = Enum.find(facts, &(&1.provider_id == context.provider.id))
-      assert current.user_verified?
-      refute current.removable?
-      assert current.removal_blocked_reason == :required_sso_identity
-
-      alternative =
-        Fixtures.SSO.create_identity_provider(
-          account_id: context.account.id,
-          kind: :openid_connect
-        )
-
-      Fixtures.SSO.create_user_identity(%{
-        account_id: context.account.id,
-        provider_id: alternative.id,
-        user_id: context.user.id
-      })
-
-      assert {:ok, facts} = SSO.list_self_service_identity_facts(context.subject)
-      assert Enum.find(facts, &(&1.provider_id == context.provider.id)).removable?
-    end
-
-    test "denied subjects cannot read methods and other users or accounts cannot supply alternatives",
-         %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
-      denied = %{context.subject | permissions: MapSet.new()}
-      assert SSO.list_self_service_identity_facts(denied) == {:error, :unauthorized}
-
-      other_user = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: context.account.id,
-        user_id: other_user.id
-      )
-
-      Fixtures.SSO.create_user_identity(%{
-        account_id: context.account.id,
-        provider_id: context.provider.id,
-        user_id: other_user.id
-      })
-
-      assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
-      refute facts.linked?
-      assert is_nil(facts.identity_id)
-
-      {_, foreign_account, _} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
-      foreign_provider = Fixtures.SSO.create_identity_provider(account_id: foreign_account.id)
-
-      Fixtures.Memberships.create_membership(
-        account_id: foreign_account.id,
-        user_id: context.user.id
-      )
-
-      Fixtures.SSO.create_user_identity(%{
-        account_id: foreign_account.id,
-        provider_id: foreign_provider.id,
-        user_id: context.user.id
-      })
-
-      identity = link_identity(context)
-      context = with_sso_session(context, identity)
-      Fixtures.Accounts.set_account_settings(context.account, %{require_sso: true})
-      assert {:ok, [facts]} = SSO.list_self_service_identity_facts(context.subject)
-      assert facts.provider_id == context.provider.id
-      assert facts.removal_blocked_reason == :required_sso_identity
-    end
-  end
-
   describe "provider_sign_in_verification_facts/2" do
-    test "starts unverified and is scoped to the current account",
-         %{subject: _subject} = context do
+    test "starts unverified and is scoped to the current account", %{
+      provider: provider,
+      subject: subject
+    } do
       assert {:ok, %{status: :unverified, linked?: false}} =
-               SSO.provider_sign_in_verification_facts(context.provider, context.subject)
+               SSO.provider_sign_in_verification_facts(provider, subject)
 
-      {_other_user, _other_account, other_subject} =
+      {_other_owner, _other_account, other_subject} =
         Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
 
-      assert SSO.provider_sign_in_verification_facts(context.provider, other_subject) ==
+      assert SSO.provider_sign_in_verification_facts(provider, other_subject) ==
                {:error, :not_found}
     end
 
     test "a verifier's replacement seat inherits neither identity nor attribution, but the receipt remains valid",
-         %{account: account, provider: provider, user: user} = context do
+         %{account: account, provider: provider, member: member} = context do
       _identity = link_identity(context)
-      member = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      member = Repo.reload!(member)
       provider = Fixtures.SSO.verify_provider_sign_in(provider, member)
 
       provider =
@@ -429,11 +411,11 @@ defmodule Emisar.SSOIdentityLinkTest do
       replacement =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
+          email: member.email,
           role: "owner"
         )
 
-      subject = Fixtures.Subjects.membership_subject(replacement)
+      subject = Fixtures.Subjects.subject_for(replacement)
 
       assert {:ok, %{status: :verified, linked?: false, verified_by_current_member?: false}} =
                SSO.provider_sign_in_verification_facts(provider, subject)
@@ -449,251 +431,249 @@ defmodule Emisar.SSOIdentityLinkTest do
     end
   end
 
-  describe "begin_identity_link/6" do
-    test "links only the current user and leaves the current session provenance unchanged",
-         %{provider: _provider, subject: _subject, user: _user} = context do
-      Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
-      |> Ecto.Changeset.change(
-        display_name: "Workspace Linker",
-        email: "local@example.test"
-      )
-      |> Repo.update!()
-
-      proof = local_proof(context, :link)
+  describe "begin_identity_link/5" do
+    test "asks the IdP for a fresh sign-in and binds the ceremony to the Member and its session",
+         %{
+           account: account,
+           member: member,
+           provider: provider,
+           session_digest: session_digest,
+           subject: subject
+         } = context do
+      proof = local_proof(context)
 
       assert {:ok, begun} =
                SSO.begin_identity_link(
-                 context.provider.id,
-                 :link,
-                 "https://emisar.test/sign_in/sso/callback",
+                 provider.id,
+                 @redirect_uri,
                  proof,
-                 context.session_digest,
-                 context.subject
+                 session_digest,
+                 subject
                )
 
       assert_receive {:identity_link_begin_options, options}
       assert options[:url_extension] == [{"prompt", "login"}, {"max_age", "0"}]
+      assert begun.actor_membership_id == member.id
+      assert begun.actor_session_token_digest == session_digest
+      assert begun.account_id == account.id
+      assert begun.provider_id == provider.id
+      assert begun.local_proof == proof
+      assert is_integer(begun.started_at)
+    end
 
-      assert {:ok, %{identity: identity, purpose: :link}} =
+    test "refuses a provider that belongs to another account, a stale proof and a non-admin",
+         %{account: account, provider: provider, session_digest: session_digest, subject: subject} =
+           context do
+      {_other_owner, other_account, _other_subject} =
+        Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+
+      foreign = Fixtures.SSO.create_identity_provider(account_id: other_account.id, name: "Other")
+      proof = local_proof(context)
+
+      assert SSO.begin_identity_link(
+               foreign.id,
+               @redirect_uri,
+               proof,
+               session_digest,
+               subject
+             ) == {:error, :not_found}
+
+      other =
+        Fixtures.SSO.create_identity_provider(
+          account_id: account.id,
+          kind: :openid_connect
+        )
+
+      assert SSO.begin_identity_link(
+               other.id,
+               @redirect_uri,
+               proof,
+               session_digest,
+               subject
+             ) == {:error, :identity_step_up_stale}
+
+      operator = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert SSO.begin_identity_link(
+               provider.id,
+               @redirect_uri,
+               proof,
+               session_digest,
+               Fixtures.Subjects.subject_for(operator)
+             ) == {:error, :unauthorized}
+    end
+  end
+
+  describe "complete_identity_link/4" do
+    test "binds the identity to the acting Member, records the verified sign-in and leaves the session's provenance alone",
+         %{
+           account: account,
+           member: member,
+           provider: provider,
+           raw_session: raw_session,
+           session_digest: session_digest,
+           subject: subject
+         } = context do
+      Repo.reload!(member)
+      |> Fixtures.Memberships.sync_display_name("Workspace Linker")
+
+      proof = local_proof(context)
+
+      {:ok, begun} =
+        SSO.begin_identity_link(
+          provider.id,
+          @redirect_uri,
+          proof,
+          session_digest,
+          subject
+        )
+
+      assert {:ok, %{identity: identity, provider: verified}} =
                SSO.complete_identity_link(
                  callback("workforce|user"),
                  begun,
-                 context.session_digest,
-                 context.subject
+                 session_digest,
+                 subject
                )
 
-      assert identity.membership_id == context.subject.membership_id
-      assert identity.provider_id == context.provider.id
+      assert identity.membership_id == subject.membership_id
+      assert identity.provider_id == provider.id
       assert identity.created_by == :user
       assert identity.provisioned_via == :oidc_link
+      assert verified.sign_in_verified_by_membership_id == member.id
 
       assert {:ok, [event], _} =
-               Emisar.Audit.list_events(context.subject,
+               Emisar.Audit.list_events(subject,
                  filter: [event_type: ["sso.identity_linked"]]
                )
 
       assert event.target_label == "Workspace Linker"
 
       assert {:ok, %UserToken{auth_method: :magic_link, user_identity_id: nil}} =
-               Auth.fetch_session_by_token(context.raw_session)
+               Auth.fetch_session_by_token(raw_session, account.id)
     end
 
-    test "refuses a provider that belongs to another account",
-         %{provider: _provider, subject: _subject} = context do
-      {_other_user, other_account, _other_subject} =
-        Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    test "fails closed when the provider subject belongs to another Member, live or removed",
+         %{
+           account: account,
+           member: member,
+           provider: provider,
+           session_digest: session_digest,
+           subject: subject
+         } = context do
+      other = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      foreign =
-        Fixtures.SSO.create_identity_provider(account_id: other_account.id, name: "Other")
-
-      proof = local_proof(context, :link)
-
-      assert {:error, :not_found} =
-               SSO.begin_identity_link(
-                 foreign.id,
-                 :link,
-                 "https://emisar.test/sign_in/sso/callback",
-                 proof,
-                 context.session_digest,
-                 context.subject
-               )
-    end
-  end
-
-  describe "complete_identity_link/4" do
-    test "fails closed when the provider subject belongs to another user",
-         %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
-      other = Fixtures.Users.create_user()
-      Fixtures.Memberships.create_membership(account_id: context.account.id, user_id: other.id)
-
-      _identity =
+      _taken =
         Fixtures.SSO.create_user_identity(%{
-          account_id: context.account.id,
-          provider_id: context.provider.id,
-          user_id: other.id,
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: other,
           provider_identifier: "workforce|taken"
         })
 
-      proof = local_proof(context, :link)
+      removed = Fixtures.Memberships.create_membership(account_id: account.id)
 
-      {:ok, begun} =
-        SSO.begin_identity_link(
-          context.provider.id,
-          :link,
-          "https://emisar.test/sign_in/sso/callback",
-          proof,
-          context.session_digest,
-          context.subject
-        )
+      _left_behind =
+        Fixtures.SSO.create_user_identity(%{
+          account_id: account.id,
+          provider_id: provider.id,
+          membership: removed,
+          provider_identifier: "workforce|removed"
+        })
 
-      assert SSO.complete_identity_link(
-               callback("workforce|taken"),
-               begun,
-               context.session_digest,
-               context.subject
-             ) == {:error, :identity_already_linked}
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
+
+      for identifier <- ["workforce|taken", "workforce|removed"] do
+        proof = local_proof(context)
+
+        {:ok, begun} =
+          SSO.begin_identity_link(
+            provider.id,
+            @redirect_uri,
+            proof,
+            session_digest,
+            subject
+          )
+
+        assert SSO.complete_identity_link(
+                 callback(identifier),
+                 begun,
+                 session_digest,
+                 subject
+               ) == {:error, :identity_already_linked}
+      end
 
       refute Repo.exists?(
                UserIdentity.Query.not_deleted()
-               |> UserIdentity.Query.by_provider_id(context.provider.id)
-               |> UserIdentity.Query.by_member_user_id(context.user.id)
+               |> UserIdentity.Query.by_provider_id(provider.id)
+               |> UserIdentity.Query.by_membership_id(member.id)
              )
+
+      refute Repo.reload!(provider).sign_in_verified_at
     end
 
-    test "a member invited back links the identity left on their removed seat to the new one",
-         %{account: _account, provider: _provider, user: _user} = context do
-      seat = Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
-
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: context.account.id,
-          provider_id: context.provider.id,
-          membership: seat,
-          provider_identifier: "workforce|returning"
-        })
-
-      Fixtures.Memberships.mark_membership_as_deleted(seat)
-
-      replacement =
-        Fixtures.Memberships.create_membership(
-          account_id: context.account.id,
-          user_id: context.user.id,
-          role: "admin"
-        )
-
-      raw = Fixtures.Auth.create_session_token!(context.user, :magic_link, nil)
-      {:ok, session} = Auth.fetch_session_by_token(raw)
-
-      subject =
-        Fixtures.Subjects.subject_for(context.user, context.account,
-          session: session,
-          membership: replacement
-        )
-
-      context = %{context | raw_session: raw, session_digest: Crypto.hash(raw), subject: subject}
-      proof = local_proof(context, :link)
+    test "re-verifying rebinds the Member's own retired identity to the new subject",
+         %{provider: provider, session_digest: session_digest, subject: subject} = context do
+      identity = link_identity(context)
+      Fixtures.SSO.retire_identity(identity)
+      proof = local_proof(context)
 
       {:ok, begun} =
         SSO.begin_identity_link(
-          context.provider.id,
-          :link,
-          "https://emisar.test/sign_in/sso/callback",
+          provider.id,
+          @redirect_uri,
           proof,
-          context.session_digest,
-          context.subject
+          session_digest,
+          subject
         )
 
-      assert {:ok, %{identity: linked}} =
+      assert {:ok, %{identity: relinked}} =
                SSO.complete_identity_link(
-                 callback("workforce|returning"),
+                 callback("workforce|user-again"),
                  begun,
-                 context.session_digest,
-                 context.subject
+                 session_digest,
+                 subject
                )
 
-      assert linked.id == identity.id
-      assert linked.membership_id == replacement.id
-    end
-
-    test "a member invited back links the identity a removed seat without a login left at their address",
-         %{account: _account, provider: _provider, user: _user} = context do
-      seat = Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
-
-      former = Fixtures.Memberships.create_unlinked_membership(account_id: context.account.id)
-
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: context.account.id,
-          provider_id: context.provider.id,
-          membership: former,
-          provider_identifier: "workforce|returning-login-less"
-        })
-
-      # Only a removed seat may carry an address a live Member of the workspace holds.
-      former
-      |> Fixtures.Memberships.mark_membership_as_deleted()
-      |> Ecto.Changeset.change(email: seat.email)
-      |> Repo.update!()
-
-      proof = local_proof(context, :link)
-
-      {:ok, begun} =
-        SSO.begin_identity_link(
-          context.provider.id,
-          :link,
-          "https://emisar.test/sign_in/sso/callback",
-          proof,
-          context.session_digest,
-          context.subject
-        )
-
-      assert {:ok, %{identity: linked}} =
-               SSO.complete_identity_link(
-                 callback("workforce|returning-login-less"),
-                 begun,
-                 context.session_digest,
-                 context.subject
-               )
-
-      assert linked.id == identity.id
-      assert linked.membership_id == seat.id
+      assert relinked.id == identity.id
+      assert relinked.provider_identifier == "workforce|user-again"
+      assert is_nil(relinked.provider_identifier_retired_at)
     end
 
     test "provider verification works while disabled and becomes stale after config changes",
-         %{provider: _provider, subject: _subject} = context do
+         %{provider: provider, session_digest: session_digest, subject: subject} = context do
       disabled =
-        context.provider
+        provider
         |> IdentityProvider.Changeset.update(%{enabled: false})
         |> Repo.update!()
 
       context = %{context | provider: disabled}
-      proof = local_proof(context, :verify_provider)
+      proof = local_proof(context)
 
       {:ok, begun} =
         SSO.begin_identity_link(
           disabled.id,
-          :verify_provider,
-          "https://emisar.test/sign_in/sso/callback",
+          @redirect_uri,
           proof,
-          context.session_digest,
-          context.subject
+          session_digest,
+          subject
         )
 
-      assert {:ok, %{purpose: :verify_provider}} =
+      assert {:ok, %{provider: %IdentityProvider{enabled: false}}} =
                SSO.complete_identity_link(
                  callback("workforce|admin"),
                  begun,
-                 context.session_digest,
-                 context.subject
+                 session_digest,
+                 subject
                )
 
       assert {:ok, %{status: :verified, linked?: true}} =
-               SSO.provider_sign_in_verification_facts(disabled, context.subject)
+               SSO.provider_sign_in_verification_facts(disabled, subject)
 
       verified = Repo.reload!(disabled)
-      assert verified.sign_in_verified_by_membership_id == context.subject.membership_id
+      assert verified.sign_in_verified_by_membership_id == subject.membership_id
 
-      assert {:ok, enabled} = SSO.update_provider(disabled, %{enabled: true}, context.subject)
+      assert {:ok, enabled} = SSO.update_provider(disabled, %{enabled: true}, subject)
       assert enabled.enabled
 
       enabled
@@ -701,47 +681,69 @@ defmodule Emisar.SSOIdentityLinkTest do
       |> Repo.update!()
 
       assert {:ok, %{status: :stale}} =
-               SSO.provider_sign_in_verification_facts(enabled, context.subject)
+               SSO.provider_sign_in_verification_facts(enabled, subject)
     end
 
-    test "rejects cross-account providers and a proof minted for another purpose",
-         %{subject: _subject} = context do
-      foreign = Fixtures.SSO.create_identity_provider()
-      foreign_proof = local_proof(%{context | provider: foreign}, :link)
-
-      assert SSO.begin_identity_link(
-               foreign.id,
-               :link,
-               "https://emisar.test/sign_in/sso/callback",
-               foreign_proof,
-               context.session_digest,
-               context.subject
-             ) == {:error, :not_found}
-
-      link_proof = local_proof(context, :link)
-
-      assert SSO.begin_identity_link(
-               context.provider.id,
-               :verify_provider,
-               "https://emisar.test/sign_in/sso/callback",
-               link_proof,
-               context.session_digest,
-               context.subject
-             ) == {:error, :identity_step_up_stale}
-    end
-
-    test "rejects a stale IdP auth_time and a session revoked during the round trip",
-         %{subject: _subject} = context do
-      proof = local_proof(context, :link)
+    test "rejects a stash begun by another session or Member",
+         %{
+           account: account,
+           member: member,
+           provider: provider,
+           session_digest: session_digest,
+           subject: subject
+         } = context do
+      proof = local_proof(context)
 
       {:ok, begun} =
         SSO.begin_identity_link(
-          context.provider.id,
-          :link,
-          "https://emisar.test/sign_in/sso/callback",
+          provider.id,
+          @redirect_uri,
           proof,
-          context.session_digest,
-          context.subject
+          session_digest,
+          subject
+        )
+
+      other_session = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
+
+      assert SSO.complete_identity_link(
+               callback("workforce|user"),
+               begun,
+               Crypto.hash(other_session),
+               subject
+             ) == {:error, :identity_link_invalid}
+
+      other_admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      other_subject = Fixtures.Subjects.subject_for(other_admin)
+
+      assert SSO.complete_identity_link(
+               callback("workforce|user"),
+               begun,
+               session_digest,
+               other_subject
+             ) == {:error, :identity_link_invalid}
+
+      refute Repo.exists?(
+               UserIdentity.Query.not_deleted()
+               |> UserIdentity.Query.by_provider_id(provider.id)
+             )
+    end
+
+    test "rejects a stale IdP auth_time and a session revoked during the round trip",
+         %{
+           provider: provider,
+           raw_session: raw_session,
+           session_digest: session_digest,
+           subject: subject
+         } = context do
+      proof = local_proof(context)
+
+      {:ok, begun} =
+        SSO.begin_identity_link(
+          provider.id,
+          @redirect_uri,
+          proof,
+          session_digest,
+          subject
         )
 
       stale_callback =
@@ -751,235 +753,63 @@ defmodule Emisar.SSOIdentityLinkTest do
       assert SSO.complete_identity_link(
                stale_callback,
                begun,
-               context.session_digest,
-               context.subject
+               session_digest,
+               subject
              ) == {:error, :identity_link_invalid}
 
-      assert :ok = Auth.delete_session_token(context.raw_session)
+      no_auth_time =
+        update_in(callback("workforce|user"), ["_claims"], &Map.delete(&1, "auth_time"))
+
+      assert SSO.complete_identity_link(
+               no_auth_time,
+               begun,
+               session_digest,
+               subject
+             ) == {:error, :identity_link_invalid}
+
+      assert :ok = Auth.revoke_session_tokens([raw_session], :dead_entry, %RequestContext{})
 
       assert SSO.complete_identity_link(
                callback("workforce|user"),
                begun,
-               context.session_digest,
-               context.subject
+               session_digest,
+               subject
              ) == {:error, :unauthorized}
     end
 
     test "rechecks administrator authority at the provider callback",
-         %{account: account, subject: subject} = context do
-      proof = local_proof(context, :verify_provider)
+         %{member: member, provider: provider, session_digest: session_digest, subject: subject} =
+           context do
+      proof = local_proof(context)
 
       {:ok, begun} =
         SSO.begin_identity_link(
-          context.provider.id,
-          :verify_provider,
-          "https://emisar.test/sign_in/sso/callback",
+          provider.id,
+          @redirect_uri,
           proof,
-          context.session_digest,
+          session_digest,
           subject
         )
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, context.user.id)
+      membership = Repo.reload!(member)
       _membership = Fixtures.Memberships.force_role(membership, "viewer")
 
       assert SSO.complete_identity_link(
                callback("workforce|admin"),
                begun,
-               context.session_digest,
+               session_digest,
                subject
              ) == {:error, :unauthorized}
 
-      refute Repo.reload!(context.provider).sign_in_verified_at
+      refute Repo.reload!(provider).sign_in_verified_at
     end
   end
 
-  describe "unlink_identity/4" do
-    test "a stale allowed presentation never bypasses the locked required-SSO check",
-         %{account: _account, provider: _provider, subject: _subject, user: _user} = context do
-      identity = link_identity(context)
-      context = with_sso_session(context, identity)
-
-      alternative =
-        Fixtures.SSO.create_identity_provider(
-          account_id: context.account.id,
-          kind: :openid_connect
-        )
-
-      Fixtures.SSO.create_user_identity(%{
-        account_id: context.account.id,
-        provider_id: alternative.id,
-        user_id: context.user.id
-      })
-
-      Fixtures.Accounts.set_account_settings(context.account, %{require_sso: true})
-      assert {:ok, facts} = SSO.list_self_service_identity_facts(context.subject)
-      assert Enum.find(facts, &(&1.provider_id == context.provider.id)).removable?
-
-      Fixtures.SSO.disable_provider(alternative)
-      proof = local_proof(context, :unlink)
-
-      assert SSO.unlink_identity(identity.id, proof, context.session_digest, context.subject) ==
-               {:error, :required_sso_identity}
-
-      refute Repo.reload!(identity).deleted_at
-    end
-
-    test "removes the binding and its destination proof without deleting bearers",
-         %{provider: _provider, subject: _subject, user: _user} = context do
-      identity = link_identity(context)
-
-      Fixtures.Memberships.fetch_membership(context.account.id, context.user.id)
-      |> Ecto.Changeset.change(
-        display_name: "Workspace Unlinker",
-        email: "local@example.test"
-      )
-      |> Repo.update!()
-
-      provider_session =
-        Fixtures.Auth.create_session_token!(context.user, :sso, nil, %{},
-          user_identity_id: identity.id
-        )
-
-      unrelated_session = Fixtures.Auth.create_session_token!(context.user, :magic_link, nil)
-      proof = local_proof(context, :unlink)
-
-      assert {:ok, removed} =
-               SSO.unlink_identity(
-                 identity.id,
-                 proof,
-                 context.session_digest,
-                 context.subject
-               )
-
-      assert removed.deleted_at
-
-      assert {:ok, [event], _} =
-               Emisar.Audit.list_events(context.subject,
-                 filter: [event_type: ["sso.identity_unlinked"]]
-               )
-
-      assert event.target_label == "Workspace Unlinker"
-      assert {:ok, session} = Auth.fetch_session_by_token(provider_session)
-
-      assert Emisar.Accounts.fetch_membership_by_account_id_or_slug(
-               context.account.id,
-               session
-             ) ==
-               {:error, :not_found}
-
-      assert {:ok, _token} = Auth.fetch_session_by_token(unrelated_session)
-
-      assert {:ok, _token} =
-               Auth.fetch_session_by_token(context.raw_session)
-    end
-
-    test "does not strand a membership when its account requires SSO",
-         %{account: account, subject: _subject} = context do
-      identity = link_identity(context)
-      context = with_sso_session(context, identity)
-      _account = Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
-      proof = local_proof(context, :unlink)
-
-      assert SSO.unlink_identity(
-               identity.id,
-               proof,
-               context.session_digest,
-               context.subject
-             ) == {:error, :required_sso_identity}
-
-      refute Repo.reload!(identity).deleted_at
-    end
-
-    test "preserves a directory row while retiring its self-service sign-in identifier",
-         %{account: account, provider: provider, subject: _subject, user: user} = context do
-      identity =
-        Fixtures.SSO.create_user_identity(%{
-          account_id: account.id,
-          provider_id: provider.id,
-          user_id: user.id,
-          created_by: :user,
-          provisioned_via: :oidc_link,
-          scim_external_id: "directory-42",
-          scim_active: true
-        })
-
-      proof = local_proof(context, :unlink)
-
-      assert {:ok, removed} =
-               SSO.unlink_identity(
-                 identity.id,
-                 proof,
-                 context.session_digest,
-                 context.subject
-               )
-
-      refute removed.deleted_at
-      assert removed.scim_external_id == "directory-42"
-      assert removed.scim_active
-      assert %DateTime{} = removed.provider_identifier_retired_at
-    end
-  end
-
-  describe "membership_ids_with_usable_identity/2" do
-    test "names only the seats a live identity on an enabled provider reaches" do
-      account = Fixtures.Accounts.create_account(plan: "team")
-      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-
-      disabled =
-        Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :openid_connect)
-
-      [live, retired, deleted, off, bare] =
-        for _ <- 1..5, do: Fixtures.Memberships.create_unlinked_membership(account_id: account.id)
-
-      Fixtures.SSO.create_user_identity(
-        account_id: account.id,
-        provider_id: provider.id,
-        membership: live
-      )
-
-      account.id
-      |> identity_for(provider, retired)
-      |> Fixtures.SSO.retire_identity()
-
-      account.id
-      |> identity_for(provider, deleted)
-      |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
-      |> Repo.update!()
-
-      identity_for(account.id, disabled, off)
-      Fixtures.SSO.disable_provider(disabled)
-
-      seat_ids = Enum.map([live, retired, deleted, off, bare], & &1.id)
-      assert SSO.membership_ids_with_usable_identity(Repo, seat_ids) == [live.id]
-      assert SSO.membership_ids_with_usable_identity(Repo, []) == []
-    end
-  end
-
-  defp identity_for(account_id, provider, membership) do
-    Fixtures.SSO.create_user_identity(
-      account_id: account_id,
-      provider_id: provider.id,
-      membership: membership
-    )
-  end
-
-  defp with_sso_session(context, identity) do
-    raw =
-      Fixtures.Auth.create_session_token!(context.user, :sso, nil, %{},
-        user_identity_id: identity.id
-      )
-
-    {:ok, session} = Auth.fetch_session_by_token(raw)
-    subject = Fixtures.Subjects.subject_for(context.user, context.account, session: session)
-    %{context | raw_session: raw, session_digest: Crypto.hash(raw), subject: subject}
-  end
-
-  defp local_proof(context, purpose) do
+  defp local_proof(context) do
     assert {:ok, :email} =
              Auth.begin_oidc_identity_step_up(
                context.provider.id,
                context.provider.name,
-               purpose,
                context.subject
              )
 
@@ -987,24 +817,18 @@ defmodule Emisar.SSOIdentityLinkTest do
     code = Fixtures.Auth.code_from_email(email)
 
     assert {:ok, proof} =
-             Auth.confirm_oidc_identity_step_up(
-               context.provider.id,
-               purpose,
-               code,
-               context.subject
-             )
+             Auth.confirm_oidc_identity_step_up(context.provider.id, code, context.subject)
 
     proof
   end
 
   defp link_identity(context) do
-    proof = local_proof(context, :link)
+    proof = local_proof(context)
 
     {:ok, begun} =
       SSO.begin_identity_link(
         context.provider.id,
-        :link,
-        "https://emisar.test/sign_in/sso/callback",
+        @redirect_uri,
         proof,
         context.session_digest,
         context.subject

@@ -2,7 +2,7 @@ defmodule Emisar.RunnerAdministrationConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Audit, Fixtures, Repo, Runners, Users}
+  alias Emisar.{Accounts, Audit, Fixtures, Repo, Runners}
   alias Emisar.Accounts.RunnerAccess
 
   @moduletag timeout: 60_000
@@ -152,23 +152,15 @@ defmodule Emisar.RunnerAdministrationConcurrencyTest do
   defp unboxed_runners(fun) do
     Sandbox.unboxed_run(Repo, fn ->
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
 
       cleanup = fn ->
         Repo.delete_all(from(row in Accounts.Account, where: row.id == ^account.id))
-        Repo.delete_all(from(row in Users.User, where: row.id == ^user.id))
       end
 
       on_exit(fn -> Sandbox.unboxed_run(Repo, cleanup) end)
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "admin"
-        )
-
-      subject = Fixtures.Subjects.membership_subject(membership)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      subject = Fixtures.Subjects.subject_for(membership)
 
       runner =
         Fixtures.Runners.create_runner(
@@ -181,7 +173,7 @@ defmodule Emisar.RunnerAdministrationConcurrencyTest do
       runner = Fixtures.Runners.set_connection_credential(runner, token)
 
       {_raw, key} =
-        Fixtures.Runners.create_enrollment_key(account_id: account.id, user_id: user.id)
+        Fixtures.Runners.create_enrollment_key(account_id: account.id, membership: membership)
 
       Fixtures.Accounts.force_runner_inactive_retention_hours(account, 24)
 

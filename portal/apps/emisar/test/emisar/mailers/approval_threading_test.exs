@@ -6,7 +6,7 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
 
   test "nearby UUIDv7 action approvals have separate subjects and reply chains" do
     membership = Fixtures.Memberships.create_membership(role: "owner")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
 
     persisted =
       Fixtures.Runs.create_run(account_id: subject.account.id, action_id: "linux.uptime")
@@ -44,7 +44,7 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
 
   test "long runbook subjects retain the full request identity for every delivery path" do
     membership = Fixtures.Memberships.create_membership(role: "owner")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
 
     request = %{
       id: "019ec7d0-1000-7000-8000-000000000001",
@@ -82,7 +82,7 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
 
   test "every requester outcome shares its draft approval subject and recipient root" do
     membership = Fixtures.Memberships.create_membership(role: "owner")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
 
     request = %{
       id: Ecto.UUID.generate(),
@@ -123,7 +123,7 @@ defmodule Emisar.Mailers.ApprovalThreadingTest do
 
   test "each recipient has distinct message ids within the same approval" do
     first_membership = Fixtures.Memberships.create_membership(role: "owner")
-    first_subject = Fixtures.Subjects.membership_subject(first_membership)
+    first_subject = Fixtures.Subjects.subject_for(first_membership)
 
     second_membership =
       Fixtures.Memberships.create_membership(account_id: first_subject.account.id, role: "admin")

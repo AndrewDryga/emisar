@@ -80,10 +80,14 @@ defmodule EmisarWeb.AdminGateTest do
     test "a workspace session token opens nothing, even inside the staff cookie", %{conn: conn} do
       # An owner's real workspace session: platform staff is independent of any
       # tenant role, and the staff gate only looks in the staff token table.
-      {user, _account, _subject} = Fixtures.Subjects.owner_subject()
-      token = Fixtures.Auth.create_session_token!(user, :magic_link, DateTime.utc_now())
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      token = Fixtures.Auth.create_session_token!(owner, :magic_link, DateTime.utc_now())
 
-      for session <- [%{"user_token" => token}, %{"staff_token" => token}] do
+      for session <- [
+            %{"sessions" => [{account.id, token}]},
+            %{"user_token" => token},
+            %{"staff_token" => token}
+          ] do
         conn = conn |> put_staff_cookie(session) |> get(~p"/admin")
 
         assert redirected_to(conn) == ~p"/admin/sign_in"

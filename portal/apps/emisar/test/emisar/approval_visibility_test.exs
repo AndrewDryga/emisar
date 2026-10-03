@@ -5,7 +5,7 @@ defmodule Emisar.ApprovalVisibilityTest do
 
   setup do
     membership = Fixtures.Memberships.create_membership(role: "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     %{membership: membership, subject: subject, account: subject.account}
   end
 
@@ -18,7 +18,7 @@ defmodule Emisar.ApprovalVisibilityTest do
 
       viewer =
         Fixtures.Memberships.create_membership(role: "viewer")
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       assert [%{default: nil, prompt: "All requests"}] = Approvals.pending_request_filters(viewer)
 
@@ -138,7 +138,7 @@ defmodule Emisar.ApprovalVisibilityTest do
   end
 
   describe "fetch_approval_request_by_id/3" do
-    for invalidation <- [:suspended, :deleted_user, :disabled_account] do
+    for invalidation <- [:suspended, :removed_member, :disabled_account] do
       test "shared read entrypoints reject #{invalidation} identity", %{
         membership: membership,
         subject: subject
@@ -173,7 +173,7 @@ defmodule Emisar.ApprovalVisibilityTest do
       {_, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: subject.account.id,
-          created_by_id: subject.actor.id
+          created_by_membership_id: subject.actor.id
         )
 
       create =
@@ -182,7 +182,7 @@ defmodule Emisar.ApprovalVisibilityTest do
             [
               account_id: subject.account.id,
               api_key_id: key.id,
-              granted_by_id: subject.actor.id,
+              granted_by_membership_id: subject.actor.id,
               runner_id: runner.id
             ],
             &1
@@ -221,7 +221,7 @@ defmodule Emisar.ApprovalVisibilityTest do
       {_, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: subject.account.id,
-          created_by_id: subject.actor.id
+          created_by_membership_id: subject.actor.id
         )
 
       runner = Fixtures.Runners.create_runner(account_id: subject.account.id)
@@ -237,7 +237,7 @@ defmodule Emisar.ApprovalVisibilityTest do
           Fixtures.Approvals.create_grant(
             account_id: subject.account.id,
             api_key_id: key.id,
-            granted_by_id: subject.actor.id,
+            granted_by_membership_id: subject.actor.id,
             runner_id: runner_id,
             pack_ref: pack_ref
           )
@@ -257,7 +257,7 @@ defmodule Emisar.ApprovalVisibilityTest do
                wildcard.id => true
              }
 
-      {_user, _account, other} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other} = Fixtures.Subjects.owner_subject()
       assert {:ok, %{grants: foreign_hints}} = Approvals.grant_management_by_ids(ids, other)
       refute Enum.any?(foreign_hints, fn {_id, allowed?} -> allowed? end)
     end
@@ -274,8 +274,8 @@ defmodule Emisar.ApprovalVisibilityTest do
   defp invalidate(membership, _subject, :suspended),
     do: Fixtures.Memberships.suspend_membership(membership)
 
-  defp invalidate(_membership, subject, :deleted_user),
-    do: Fixtures.Users.mark_user_as_deleted(subject.actor)
+  defp invalidate(membership, _subject, :removed_member),
+    do: Fixtures.Memberships.mark_membership_as_deleted(membership)
 
   defp invalidate(_membership, subject, :disabled_account),
     do: Fixtures.Accounts.disable_account(subject.account)

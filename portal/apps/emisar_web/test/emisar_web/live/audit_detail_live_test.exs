@@ -4,13 +4,13 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   alias Emisar.{Audit, Repo, RequestContext, Runs}
 
   test "current-account targets use a short label without repeating the account ID", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     for saved_label <- [nil, "Previously saved account name"] do
       {:ok, event} =
         Audit.log(account.id, "account.max_grant_lifetime_set",
           actor_kind: "user",
-          actor_id: user.id,
+          actor_id: owner.id,
           target_kind: "account",
           target_id: account.id,
           target_label: saved_label,
@@ -46,13 +46,13 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "other targets are not relabeled as the current account", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     other_account_id = Ecto.UUID.generate()
 
     {:ok, event} =
       Audit.log(account.id, "account.updated",
         actor_kind: "user",
-        actor_id: user.id,
+        actor_id: owner.id,
         target_kind: "account",
         target_id: other_account_id,
         target_label: "Recorded target"
@@ -71,7 +71,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   test "former members use recorded names in the list and detail, keeping IDs only as facts", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     former_user_id = Ecto.UUID.generate()
 
     {:ok, _} =
@@ -126,7 +126,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "strips hostile metadata from a historical event", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     event =
       %Audit.Event{
@@ -153,7 +153,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "an action_run event shows the runner under the subject, not as a device", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     runner =
       Fixtures.Runners.create_runner(%{
@@ -210,7 +210,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "a current-shape run event targets the runner and links back to the run", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     runner = Fixtures.Runners.create_runner(%{account_id: account.id, name: "web-02"})
 
@@ -247,7 +247,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   test "surfaces self-reported client metadata from the run payload, labeled as such", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(%{account_id: account.id, name: "web-02"})
 
     {:ok, run} =
@@ -271,21 +271,20 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "the actor card stacks the human above the api_key/client", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
-    owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
+    {conn, _owner, account} = register_and_log_in(conn)
 
-    _ =
+    owner =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
+        role: "owner",
+        display_name: "Jordan Vale"
       )
 
     {_raw, key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: account.id,
         name: "Claude Code",
-        created_by_id: owner.id
+        created_by_membership_id: owner.id
       )
 
     {:ok, event} =
@@ -336,15 +335,13 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   test "the actor card surfaces the sign-in method + MFA state (provenance, not JSON)", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-
-    member = Fixtures.Memberships.fetch_membership(account.id, user.id)
+    {conn, owner, account} = register_and_log_in(conn)
 
     subject =
       Fixtures.Subjects.build_subject(
-        actor: user,
+        actor: owner,
         account: account,
-        membership_id: member.id,
+        membership_id: owner.id,
         auth_method: :sso,
         mfa: true
       )
@@ -361,7 +358,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test ~S(a runner_version of "-" renders as no version, not a dangling dash), %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     runner =
       Fixtures.Runners.create_runner(%{
@@ -395,13 +392,17 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "redirects anonymous users away from the detail route", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/sign_in"}}} =
-             live(conn, ~p"/app/anon/audit/#{Ecto.UUID.generate()}")
+    account = Fixtures.Accounts.create_account()
+
+    assert {:error, {:redirect, %{to: to}}} =
+             live(conn, ~p"/app/#{account}/audit/#{Ecto.UUID.generate()}")
+
+    assert to == ~p"/app/#{account}/sign_in"
   end
 
   test "an action_run subject whose run is in another account resolves to nil, never leaks the runner",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     # A separate tenant with its own runner + run. The viewer has no
     # membership there.
@@ -449,7 +450,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   # because the subject-gated run fetch finds nothing.
   test "a deleted action_run subject falls back to its stamped label and hides the runner line",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     runner =
       Fixtures.Runners.create_runner(%{
@@ -491,7 +492,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   # an event with no recorded actor/subject kind renders the
   # "Not recorded" entity card rather than a broken or blank card.
   test "an event with nil actor and subject kind renders the not-recorded card", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     # A bare event: no actor_kind / target_kind stamped at all.
     {:ok, event} = Audit.log(account.id, "audit.bare_event", [])
@@ -505,15 +506,15 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
   test "a self-action renders the subject as 'Same as actor', not a duplicate card",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     # A sign-in acts on itself: actor and subject are the same user.
     {:ok, event} =
       Audit.log(account.id, "user.signed_in",
         actor_kind: "user",
-        actor_id: user.id,
+        actor_id: owner.id,
         target_kind: "user",
-        target_id: user.id
+        target_id: owner.id
       )
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/#{event.id}")
@@ -532,7 +533,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
   test "the event id is a first-class copyable meta field; payload copy says Copy JSON",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, event} = Audit.log(account.id, "audit.rich_event", payload: %{"k" => "v"})
 
@@ -548,7 +549,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "an event with no payload renders no payload panel at all", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     # Framing an empty `{}` under a "Copy JSON" button promises a record that is
     # not there and copies nothing (§7.43). Both empty shapes reach the page:
@@ -574,7 +575,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "event metadata peers use one value tone", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     context = %RequestContext{ip_address: "203.0.113.7", request_id: "req_same_tone"}
     {:ok, event} = Audit.log(account.id, "audit.bare_event", context: context)
@@ -591,7 +592,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   # map is pretty JSON. Drive both through the live page (the
   # <pre id="audit-payload-json"> is the target).
   test "payload renders no panel when empty, pretty JSON for a map", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     # A fresh log/3 with no :payload leaves it nil — nothing to frame or copy.
     {:ok, nil_event} = Audit.log(account.id, "audit.nil_payload", actor_kind: "system")
@@ -617,7 +618,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   # from the REAL `Policies.diff_rules/2` output (the exact shape production
   # stamps), not plain JSON.
   test "a policy.updated event renders the bespoke changes diff", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     before_rules = %{
       "schema_version" => 2,
@@ -676,7 +677,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "override diffs show only the fields that changed", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     override = %{"action" => "linux.*", "name" => "Original", "decision" => "allow"}
     before_rules = Map.put(Emisar.Policies.default_rules(), "overrides", [override])
 
@@ -713,14 +714,14 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "sign-in summaries use plain language without changing recorded data", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     {:ok, event} =
       Audit.log(account.id, "user.signed_in",
         actor_kind: "user",
-        actor_id: user.id,
+        actor_id: owner.id,
         target_kind: "user",
-        target_id: user.id,
+        target_id: owner.id,
         payload: %{"method" => "magic_link"}
       )
 
@@ -748,7 +749,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   # shows NO device line at all — the runner's HTTP client is not a "device"
   # worth surfacing, and it's never mislabeled as the MCP bridge.
   test "a runner-actor's Go-http-client UA renders no device line", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, runner} =
       Emisar.Runners.Runner.Changeset.register(%{
@@ -781,7 +782,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   # a bridge when it actually parsed a structured posture field, so "MCP client"
   # never shows for an arbitrary string (it's just shown as a device instead).
   test "an opaque non-bridge UA is not labeled as the MCP bridge", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, event} =
       Audit.log(account.id, "api_key.created",
@@ -799,7 +800,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
 
   test "an approval-only policy change is visible from saved rules even with an old empty diff",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     before_rules =
       Map.put(Emisar.Policies.default_rules(), "approval", %{
@@ -832,7 +833,7 @@ defmodule EmisarWeb.AuditDetailLiveTest do
   end
 
   test "override-order changes retain each duplicate pattern's name and decision", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     first = %{"action" => "linux.*", "name" => "Allow hosts", "decision" => "allow"}
     second = %{"action" => "linux.*", "name" => "Deny hosts", "decision" => "deny"}
     before_rules = Map.put(Emisar.Policies.default_rules(), "overrides", [first, second])

@@ -1,72 +1,65 @@
 defmodule Emisar.Fixtures.Memberships do
   @moduledoc """
   Membership test fixtures. Use via `alias Emisar.Fixtures` then
-  `Fixtures.Memberships.create_membership/1`.
+  `Fixtures.Memberships.create_membership/1`. A Member is the only person
+  record: its email, its sign-in and its MFA factor are its own.
   """
 
   alias Emisar.Accounts.{Membership, MembershipRunnerScope, RunnerAccess}
-  alias Emisar.{Fixtures, Repo, Users}
+  alias Emisar.Auth.Subject
+  alias Emisar.{Fixtures, Repo}
+
+  @passthrough_fields [
+    :invited_by_membership_id,
+    :invitation_token_digest,
+    :invitation_accepted_at,
+    :directory_managed,
+    :runner_access_directory_managed,
+    :directory_provider_id,
+    :directory_authorization_pending_version
+  ]
+
+  @mfa_state_fields [:mfa_secret, :mfa_enabled_at, :mfa_recovery_codes, :mfa_last_used_at]
 
   @doc """
-  Creates a membership. Caller supplies `:account_id` and `:user_id` (or
-  the helper will create both as defaults).
+  Creates a workspace Member. `:account_id` defaults to a new account, `:email`
+  to a unique address (pass `email: nil` for a Member that has none),
+  `:display_name` to "Test User", `:role` to operator and `:runner_access_mode`
+  to all. The address counts as proved (`email_verified_at`) unless
+  `email_verified?: false` or the Member is a pending invitee, whose address is
+  proved only by accepting.
   """
   def create_membership(attrs \\ %{}) do
     attrs = Map.new(attrs)
 
-    account_id =
-      attrs[:account_id] || Fixtures.Accounts.create_account().id
+    if Map.has_key?(attrs, :user_id),
+      do: raise(ArgumentError, "a Member has no login to link; pass :email instead of :user_id")
 
-    user_id =
-      attrs[:user_id] || Fixtures.Users.create_user().id
-
-    user = Repo.get!(Users.User, user_id)
+    account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
 
     params =
       %{
         account_id: account_id,
-        user_id: user_id,
-        display_name: Map.get(attrs, :display_name, user.full_name),
-        email: Map.get(attrs, :email, user.email),
+        display_name: Map.get(attrs, :display_name, "Test User"),
+        email: Map.get(attrs, :email, Fixtures.Random.unique_email()),
         role: attrs[:role] || "operator",
         runner_access_mode: attrs[:runner_access_mode] || "all"
       }
-      |> Map.merge(
-        Map.take(attrs, [
-          :invited_by_membership_id,
-          :invitation_token_digest,
-          :directory_managed,
-          :runner_access_directory_managed,
-          :directory_provider_id,
-          :directory_authorization_pending_version
-        ])
-      )
+      |> Map.merge(Map.take(attrs, @passthrough_fields))
 
-    {:ok, m} = params |> Membership.Changeset.create() |> Repo.insert()
-    m
-  end
+    pending_invitee? =
+      is_binary(params[:invitation_token_digest]) and is_nil(params[:invitation_accepted_at])
 
-  @doc """
-  Creates a workspace Member without a personal login (`user_id` nil) through
-  the create changeset. Caller supplies `:account_id` (or one is created).
-  """
-  def create_unlinked_membership(attrs \\ %{}) do
-    attrs = Map.new(attrs)
-    account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
-    unique = Fixtures.Random.unique_int()
+    verified? = Map.get(attrs, :email_verified?, not pending_invitee?)
 
-    {:ok, membership} =
-      %{
-        account_id: account_id,
-        display_name: Map.get(attrs, :display_name, "Unlinked Member #{unique}"),
-        email: Map.get(attrs, :email, "unlinked-#{unique}@example.test"),
-        role: attrs[:role] || "operator",
-        runner_access_mode: attrs[:runner_access_mode] || "all"
-      }
-      |> Membership.Changeset.create()
-      |> Repo.insert()
-
-    membership
+    params
+    |> Membership.Changeset.create()
+    |> then(fn changeset ->
+      if verified? and is_binary(params.email),
+        do: Ecto.Changeset.put_change(changeset, :email_verified_at, DateTime.utc_now()),
+        else: changeset
+    end)
+    |> Repo.insert!()
   end
 
   @doc """
@@ -173,6 +166,17 @@ defmodule Emisar.Fixtures.Memberships do
     deleted
   end
 
+  @doc """
+  Moves a Member to another address directly. No flow changes a Member's email
+  any more (invite the new address instead), so this only arranges the stale
+  state an in-flight code or proof must refuse.
+  """
+  def change_email(%Membership{} = membership, email) when is_binary(email) do
+    membership
+    |> Ecto.Changeset.change(email: email)
+    |> Repo.update!()
+  end
+
   @doc "Sets a membership's coarse console-activity timestamp directly."
   def set_last_active_at(%Membership{} = membership, %DateTime{} = last_active_at) do
     {:ok, updated} =
@@ -216,14 +220,89 @@ defmodule Emisar.Fixtures.Memberships do
     |> Enum.map(&{&1.scope_type, &1.scope_value})
   end
 
+  @doc "Rigs a Member's stored MFA state directly for tests that exercise later lifecycle transitions."
+  def set_mfa_state(%Membership{} = membership, attrs) do
+    attrs = Map.new(attrs)
+
+    case Map.keys(attrs) -- @mfa_state_fields do
+      [] -> :ok
+      unknown -> raise ArgumentError, "unknown MFA state fields: #{inspect(Enum.sort(unknown))}"
+    end
+
+    membership
+    |> Ecto.Changeset.change(Map.take(attrs, @mfa_state_fields))
+    |> Repo.update!()
+  end
+
   @doc """
-  Test inspector: the membership joining `account_id` + `user_id`, or
-  `nil`. Lets a test read post-mutation membership state without the
-  production context exposing a fixture-only lookup.
+  Enrolls TOTP MFA through the real current-inbox proof and returns its tagged
+  result (`{:ok, membership, recovery_codes}` / `{:error, reason}`). The
+  enrollment completes on a disposable session of the same Member, deleted
+  afterwards, so `subject`'s own session keeps its proof state; pass
+  `session_token:` (a raw token of the Member) to complete on that session
+  instead. A test asserting `enable_mfa`'s success contract calls this
+  directly; `enable_mfa!/3` wraps it for setup.
   """
-  def fetch_membership(account_id, user_id) do
-    Membership.Query.all()
-    |> Membership.Query.by_account_and_user(account_id, user_id)
-    |> Repo.peek()
+  def enroll_mfa(secret, %Subject{actor: %Membership{} = membership} = subject, opts \\ [])
+      when is_binary(secret) do
+    {session_token, disposable_session?} =
+      case Keyword.fetch(opts, :session_token) do
+        {:ok, token} ->
+          {token, false}
+
+        :error ->
+          token =
+            Fixtures.Auth.create_session_token!(
+              membership,
+              subject.auth_method || :magic_link,
+              nil,
+              %{},
+              user_identity_id: subject.user_identity_id
+            )
+
+          {token, true}
+      end
+
+    try do
+      subject =
+        Fixtures.Subjects.subject_for(membership,
+          session: session_token,
+          context: subject.context
+        )
+
+      proof = mfa_enrollment_proof(subject)
+
+      Emisar.Auth.enable_mfa(
+        secret,
+        Fixtures.Auth.totp_code(secret),
+        proof,
+        Emisar.Crypto.hash(session_token),
+        subject
+      )
+    after
+      if disposable_session?, do: Fixtures.Auth.delete_session_token!(session_token)
+    end
+  end
+
+  @doc "Issues and verifies the real current-inbox proof used by MFA enrollment tests."
+  def mfa_enrollment_proof(%Subject{} = subject) do
+    {:ok, :sent} = Emisar.Auth.issue_mfa_enrollment_code(subject)
+
+    email =
+      receive do
+        {:email, email} -> email
+      after
+        1_000 -> raise "MFA enrollment code email was not delivered"
+      end
+
+    code = Fixtures.Auth.code_from_email(email)
+    {:ok, proof} = Emisar.Auth.verify_mfa_enrollment_code(code, subject)
+    proof
+  end
+
+  @doc "Enrolls MFA as test setup, unwrapping `enroll_mfa/3` to `{membership, recovery_codes}`."
+  def enable_mfa!(secret, %Subject{} = subject, opts \\ []) when is_binary(secret) do
+    {:ok, membership, codes} = enroll_mfa(secret, subject, opts)
+    {membership, codes}
   end
 end

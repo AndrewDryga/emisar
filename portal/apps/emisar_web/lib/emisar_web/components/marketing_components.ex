@@ -102,13 +102,14 @@ defmodule EmisarWeb.MarketingComponents do
 
   @doc """
   Top nav for marketing pages. Pass `current` to highlight the active
-  link, and `current_user` so a signed-in visitor sees a Dashboard link
-  instead of the Sign in / Start free CTAs.
+  link, and `signed_in?` (the browser's cookie holds a workspace session; no
+  database read) so a signed-in visitor sees a Dashboard link instead of the
+  Sign in / Start free CTAs.
 
-      <.marketing_nav current={:pricing} current_user={@current_user} />
+      <.marketing_nav current={:pricing} signed_in?={@signed_in?} />
   """
   attr :current, :atom, default: nil
-  attr :current_user, :any, default: nil
+  attr :signed_in?, :boolean, default: false
   attr :sticky, :boolean, default: false
 
   def marketing_nav(assigns) do
@@ -145,7 +146,7 @@ defmodule EmisarWeb.MarketingComponents do
         <%!-- Desktop CTAs: visible md+. A signed-in visitor gets a
              Dashboard link; everyone else gets Sign in / Start free. --%>
         <div class="hidden items-center gap-4 md:flex">
-          <%= if @current_user do %>
+          <%= if @signed_in? do %>
             <.marketing_button size={:sm} href={~p"/app"} icon="action.next">
               Dashboard
             </.marketing_button>
@@ -261,7 +262,7 @@ defmodule EmisarWeb.MarketingComponents do
               <div class="rise-5 relative px-6 pb-9">
                 <.scan_line class="mb-7 opacity-50" />
                 <div class="space-y-3">
-                  <%= if @current_user do %>
+                  <%= if @signed_in? do %>
                     <.marketing_button block href={~p"/app"} icon="action.next">
                       Dashboard
                     </.marketing_button>

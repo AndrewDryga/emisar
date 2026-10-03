@@ -192,7 +192,7 @@ defmodule Emisar.Billing.PaddleClientLiveTest do
 
     test "account closure waits for confirmed provider cancellation" do
       for status <- ["active", "paused", "canceled"] do
-        {_user, account, subject} = Fixtures.Subjects.owner_subject()
+        {_owner, account, subject} = Fixtures.Subjects.owner_subject()
         subscription_id = "sub_#{account.id}"
         customer_id = "ctm_#{account.id}"
         {:ok, _linked} = Accounts.link_account_paddle_customer(account, customer_id)

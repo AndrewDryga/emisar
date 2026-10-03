@@ -1,16 +1,18 @@
 defmodule EmisarWeb.BillingIntentController do
   @moduledoc """
-  Captures a public Team plan/cycle choice, then lets an authenticated operator
+  Captures a public Team plan/cycle choice, then lets a signed-in operator
   choose the exact workspace they intend to review before checkout.
 
-  GET never contacts Paddle. The selection POST re-resolves membership and
-  billing authority, pins that workspace in the session, and forwards to the
-  ordinary Billing page, whose explicit Upgrade action remains the only checkout
-  boundary.
+  GET never contacts Paddle. The selection POST authenticates this browser's
+  own session for the chosen workspace, re-checks its billing authority, and
+  forwards to that workspace's ordinary Billing page, whose explicit Upgrade
+  action remains the only checkout boundary. Nothing is switched server-side:
+  the workspace is in the URL from here on.
   """
   use EmisarWeb, :controller
-  alias Emisar.{Accounts, Auth, Billing}
-  alias EmisarWeb.{BillingIntent, UserAuth}
+  alias Emisar.Auth.Subject
+  alias Emisar.Billing
+  alias EmisarWeb.{BillingIntent, RequestContext, UserAuth}
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
 
@@ -37,21 +39,7 @@ defmodule EmisarWeb.BillingIntentController do
   def show(conn, _params) do
     case pending_intent(conn) do
       {:ok, token, intent} ->
-        {accounts, accounts_error?} =
-          case Accounts.list_accounts_for_user(conn.assigns.current_subject,
-                 page: [limit: 100],
-                 count: false
-               ) do
-            {:ok, accounts, _meta} -> {manageable_accounts(conn, accounts), false}
-            {:error, _reason} -> {[], true}
-          end
-
-        render(conn, :show,
-          accounts: accounts,
-          accounts_error?: accounts_error?,
-          intent: intent,
-          token: token
-        )
+        render(conn, :show, accounts: manageable_accounts(conn), intent: intent, token: token)
 
       _error ->
         invalid_intent(conn)
@@ -61,18 +49,12 @@ defmodule EmisarWeb.BillingIntentController do
   def select(conn, %{"account_id" => account_id}) when is_binary(account_id) do
     with {:ok, token, _intent} <- pending_intent(conn),
          {:ok, chosen_subject} <- UserAuth.subject_for_account(conn, account_id),
-         true <- Billing.subject_can_manage_billing?(chosen_subject),
-         {:ok, membership} <-
-           Accounts.switch_account(account_id, conn.assigns.current_subject) do
+         true <- Billing.subject_can_manage_billing?(chosen_subject) do
       conn
       |> delete_session(:billing_intent)
-      |> UserAuth.switch_account(membership)
-      |> redirect(to: ~p"/app/#{membership.account}/settings/billing?billing_intent=#{token}")
+      |> redirect(to: ~p"/app/#{chosen_subject.account}/settings/billing?billing_intent=#{token}")
     else
       false ->
-        denied_selection(conn)
-
-      {:error, :unauthorized} ->
         denied_selection(conn)
 
       {:error, :not_found} ->
@@ -80,11 +62,6 @@ defmodule EmisarWeb.BillingIntentController do
 
       {:error, :invalid} ->
         invalid_intent(conn)
-
-      _error ->
-        conn
-        |> put_flash(:error, "Couldn't select that workspace. Try again.")
-        |> show(%{})
     end
   end
 
@@ -114,13 +91,15 @@ defmodule EmisarWeb.BillingIntentController do
     |> show(%{})
   end
 
-  defp manageable_accounts(conn, accounts) do
-    Enum.filter(accounts, fn account ->
-      case UserAuth.subject_for_account(conn, account.id) do
-        {:ok, subject} -> Billing.subject_can_manage_billing?(subject)
-        {:error, :not_found} -> false
-      end
-    end)
+  # The signed-in workspaces whose Member may manage billing. `require_signed_in`
+  # already resolved each live session with its Member and workspace, so the
+  # Subjects are built from those rows without another read.
+  defp manageable_accounts(conn) do
+    context = RequestContext.from_conn(conn)
+
+    conn.assigns.signed_in_sessions
+    |> Enum.filter(&Billing.subject_can_manage_billing?(Subject.for_session(&1, context)))
+    |> Enum.map(& &1.membership.account)
   end
 
   defp invalid_intent(conn) do
@@ -130,11 +109,11 @@ defmodule EmisarWeb.BillingIntentController do
     |> redirect(to: ~p"/pricing")
   end
 
-  defp capture_destination(%{assigns: %{current_auth: %Auth.UserToken{}}}, _token),
-    do: ~p"/app/billing/start"
-
+  # "Signed in" is the cookie holding a workspace session (no database read on
+  # this public handoff); the selector then resolves the live ones.
+  defp capture_destination(%{assigns: %{signed_in?: true}}, _token), do: ~p"/app/billing/start"
   defp capture_destination(_conn, token), do: ~p"/sign_up?billing_intent=#{token}"
 
-  defp default_destination(%{assigns: %{current_auth: %Auth.UserToken{}}}), do: ~p"/app"
+  defp default_destination(%{assigns: %{signed_in?: true}}), do: ~p"/app"
   defp default_destination(_conn), do: ~p"/sign_up"
 end

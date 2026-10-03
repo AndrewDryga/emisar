@@ -9,7 +9,7 @@ defmodule Emisar.RunsCancellationTest do
     test "checks the complete frozen targets without requiring a live catalog" do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       Fixtures.Runners.disable_runner(runner)
       run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, status: :sent)
@@ -42,7 +42,7 @@ defmodule Emisar.RunsCancellationTest do
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
       {:ok, access} = RunnerAccess.new(:restricted, [], [runner.id], :restricted, ["postgres"])
       membership = Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       run =
         Fixtures.Runs.create_run(
@@ -62,7 +62,7 @@ defmodule Emisar.RunsCancellationTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "production")
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       {:ok, wrong_runner} = RunnerAccess.new(:restricted, ["staging"], [], :all)
       {:ok, wrong_pack} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
       Runners.subscribe_runner_transport(runner)
@@ -98,7 +98,7 @@ defmodule Emisar.RunsCancellationTest do
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
       {:ok, access} = RunnerAccess.new(:restricted, ["staging"], [])
       membership = Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       run = Fixtures.Runs.create_run(account_id: account.id, runner_id: runner.id, status: :sent)
       Fixtures.Runners.move_to_group(runner, "production")
 
@@ -113,7 +113,7 @@ defmodule Emisar.RunsCancellationTest do
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
       {:ok, postgres} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
       membership = Fixtures.Memberships.force_runner_access(membership, postgres)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Catalog.create_action(runner: runner, action_id: "svc.read", pack_id: "linux-core")
 
       run =
@@ -131,7 +131,7 @@ defmodule Emisar.RunsCancellationTest do
     test "deleted targets and malformed frozen refs are denied even to an owner" do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
 
       invalid =
@@ -158,7 +158,7 @@ defmodule Emisar.RunsCancellationTest do
     test "terminal cancellation is a no-op even when an inconsistent pending request remains" do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       run =
         Fixtures.Runs.create_run(account_id: account.id, initiating_membership_id: membership.id)
@@ -178,7 +178,7 @@ defmodule Emisar.RunsCancellationTest do
     test "returns the bound member's current access and refuses a stale demoted role" do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       {:ok, access} = RunnerAccess.new(:restricted, ["staging"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
 
@@ -196,19 +196,19 @@ defmodule Emisar.RunsCancellationTest do
             &Fixtures.Memberships.mark_directory_authorization_pending(&1, 2)
           ] do
         membership = Fixtures.Memberships.create_membership(account_id: account.id)
-        subject = Fixtures.Subjects.membership_subject(membership)
+        subject = Fixtures.Subjects.subject_for(membership)
         invalidate.(membership)
         assert Runs.fetch_and_lock_cancellation_access(subject) == {:error, :unauthorized}
       end
     end
 
-    test "a different user's or account's membership never grants cancellation authority" do
+    test "another Member's or another account's membership never grants cancellation authority" do
       account = Fixtures.Accounts.create_account()
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
-      subject = Fixtures.Subjects.membership_subject(membership)
-      other_user = Fixtures.Users.create_user()
+      subject = Fixtures.Subjects.subject_for(membership)
+      other = Fixtures.Memberships.create_membership(account_id: account.id)
       foreign = Fixtures.Memberships.create_membership()
-      mismatched = %{subject | actor: other_user}
+      mismatched = %{subject | actor: other}
       cross_account = %{subject | membership_id: foreign.id}
 
       assert Runs.fetch_and_lock_cancellation_access(mismatched) == {:error, :unauthorized}
@@ -340,7 +340,7 @@ defmodule Emisar.RunsCancellationTest do
         mcp_cancel_setup()
 
       run = own_mcp_run(account, runner, key, :pending_approval)
-      human = Fixtures.Subjects.membership_subject(membership)
+      human = Fixtures.Subjects.subject_for(membership)
 
       assert Runs.cancel_mcp_run(run.id, human) == {:error, :unauthorized}
 
@@ -376,7 +376,7 @@ defmodule Emisar.RunsCancellationTest do
     test "a rotated successor key still owns the runs its predecessor created" do
       %{account: account, runner: runner, key: key, membership: membership} = mcp_cancel_setup()
       run = own_mcp_run(account, runner, key, :pending_approval)
-      minter = Fixtures.Subjects.membership_subject(membership)
+      minter = Fixtures.Subjects.subject_for(membership)
       assert {:ok, _raw, successor} = ApiKeys.rotate_api_key(key, minter)
 
       assert {:ok, %ActionRun{status: :cancelled}} =
@@ -387,16 +387,13 @@ defmodule Emisar.RunsCancellationTest do
   defp mcp_cancel_setup do
     account = Fixtures.Accounts.create_account()
     runner = Fixtures.Runners.create_runner(account_id: account.id)
-    user = Fixtures.Users.create_user()
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    membership =
-      Fixtures.Memberships.create_membership(
+    {_raw, key} =
+      Fixtures.ApiKeys.create_api_key(
         account_id: account.id,
-        user_id: user.id,
-        role: "owner"
+        created_by_membership_id: membership.id
       )
-
-    {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
 
     %{
       account: account,

@@ -1,22 +1,18 @@
 defmodule EmisarWeb.UserSignUpLive do
-  use EmisarWeb, :live_view
-  alias Emisar.{Accounts, Throttle, Users}
-  alias EmisarWeb.{BillingIntent, LiveForm, RegistrationHandoff, RequestContext}
-
-  @signup_limit 20
-  @signup_window_ms 60 * 60_000
-
-  @doc """
-  Signup's hourly cap per source address. The member-link form shares it: both
-  can create a personal login and email a new address.
+  @moduledoc """
+  Self-serve sign-up: the owner's name and address and the workspace's name.
+  The form validates here, then posts to `UserSessionController.sign_up_start`,
+  which sends a code to the address and keeps the intent on it server-side.
+  Nothing — no workspace, Member or slug — exists until that code comes back in
+  this browser.
   """
-  def check_signup_throttle(ip_address),
-    do: Throttle.check("sign_up", ip_address, @signup_limit, @signup_window_ms)
+  use EmisarWeb, :live_view
+  alias Emisar.Accounts
+  alias EmisarWeb.{BillingIntent, LiveForm}
 
   # The landing page's CTA collects a work email and GETs here with it; carry it
   # into the form so the operator doesn't retype what they just typed.
   def mount(params, _session, socket) do
-    changeset = Users.change_user(%Emisar.Users.User{}, Map.take(params, ["email"]))
     {billing_intent, billing_choice} = billing_choice(params["billing_intent"])
 
     {:ok,
@@ -25,11 +21,7 @@ defmodule EmisarWeb.UserSignUpLive do
      |> assign(:billing_intent, billing_intent)
      |> assign(:billing_choice, billing_choice)
      |> assign(:trigger_submit, false)
-     |> assign(:account_name, "")
-     |> assign(:account_name_error, nil)
-     |> assign(:registration_handoff, nil)
-     |> assign(:request_context, RequestContext.from_socket(socket))
-     |> assign_form(changeset)}
+     |> assign_form(Accounts.change_sign_up(Map.take(params, ["email"])))}
   end
 
   def render(assigns) do
@@ -42,18 +34,17 @@ defmodule EmisarWeb.UserSignUpLive do
         Create your workspace and verify your email. Review the price before you pay.
       </.selected_plan>
 
-      <%!-- On a successful save we flip `trigger_submit` and the form POSTs its
-           email to the magic-link request, so the new owner gets a sign-in
-           link immediately (no password, no re-typing their email). The magic
-           link confirms the email address when used, so signup itself stays
-           quiet and the operator gets one email, not three. --%>
+      <%!-- A valid submission flips `trigger_submit` and the form POSTs to
+           sign-up, which emails a sign-in link and a 6-character code; using
+           either in this browser proves the address and creates the
+           workspace, so the operator gets one email, not three. --%>
       <.simple_form
         for={@form}
         id="registration_form"
         phx-submit="save"
         phx-change="validate"
         phx-trigger-action={@trigger_submit}
-        action={~p"/sign_in/magic/start"}
+        action={~p"/sign_up"}
         method="post"
       >
         <.input
@@ -64,17 +55,11 @@ defmodule EmisarWeb.UserSignUpLive do
           required
         />
         <.input field={@form[:email]} type="email" label="Work email" autocomplete="email" required />
-        <%!-- Explicit id: account_name isn't a @form field (it's a standalone
-             param), so it needs an id for its <label for> to associate — a screen
-             reader can't otherwise name the field (UI-005). --%>
         <.input
-          name="account_name"
-          id="account_name"
-          value={@account_name}
+          field={@form[:account_name]}
           type="text"
           label="Workspace name"
           autocomplete="organization"
-          errors={if @account_name_error, do: [@account_name_error], else: []}
           required
         />
 
@@ -85,21 +70,11 @@ defmodule EmisarWeb.UserSignUpLive do
           and finish creating your workspace.
         </p>
 
-        <%!-- Carries the workspace/profile intent to the inbox-proof factor.
-             Existing-email submissions carry an equal-shaped decoy, so this
-             client-visible value never reveals whether registration can resume. --%>
         <input
           :if={@billing_intent}
           type="hidden"
           name="billing_intent"
           value={@billing_intent}
-        />
-
-        <input
-          :if={@registration_handoff}
-          type="hidden"
-          name="registration_handoff"
-          value={@registration_handoff}
         />
 
         <:actions>
@@ -126,108 +101,35 @@ defmodule EmisarWeb.UserSignUpLive do
     """
   end
 
-  def handle_event("validate", %{"user" => params} = all, socket) do
+  def handle_event("validate", %{"sign_up" => params} = event, socket) when is_map(params) do
     changeset =
-      %Emisar.Users.User{}
-      |> Users.change_user(params)
-      |> LiveForm.on_change(all)
+      params
+      |> Accounts.change_sign_up()
+      |> LiveForm.on_change(event)
 
-    {:noreply,
-     socket
-     |> assign(:account_name, all["account_name"] || socket.assigns.account_name)
-     |> assign(:account_name_error, nil)
-     |> assign_form(changeset)}
+    {:noreply, assign_form(socket, changeset)}
   end
 
-  def handle_event("save", %{"user" => user_params} = all, socket) do
-    case check_signup_throttle(socket.assigns.request_context.ip_address) do
-      :ok -> handle_save(socket, user_params, all)
-      {:error, :rate_limited} -> signup_rate_limited(socket)
-    end
-  end
-
-  defp handle_save(socket, user_params, all) do
-    account_name = String.trim(all["account_name"] || "")
-
-    socket =
-      socket
-      |> assign(:account_name, account_name)
-      |> assign(:account_name_error, nil)
-
-    if account_name == "" do
-      # Inline under the field (it's a hand-rolled input, not a changeset
-      # field) — matches every other form's inline-error behaviour, not a flash.
-      {:noreply, assign(socket, :account_name_error, "Tell us what to call your workspace.")}
-    else
-      do_save(socket, user_params, account_name)
-    end
-  end
-
-  defp do_save(socket, user_params, account_name) do
-    full_name = user_params["full_name"]
-
-    account_attrs = %{
-      name: account_name,
-      slug: Accounts.suggest_unique_slug(account_name)
-    }
-
-    case Accounts.begin_owner_registration(user_params, account_attrs) do
-      {:ok, user} ->
-        arm_magic_link_post(
-          socket,
-          user_params,
-          RegistrationHandoff.sign(user.id, account_name, full_name)
-        )
-
-      {:error, :email_taken} ->
-        arm_magic_link_post(
-          socket,
-          user_params,
-          RegistrationHandoff.decoy(account_name, full_name)
-        )
-
-      {:error, {:user, changeset}} ->
-        {:noreply, assign_form(socket, changeset)}
-
-      {:error, {:account, changeset}} ->
+  # Validation only — the workspace name must also derive a usable address — and
+  # nothing is written: the POST it arms sends the code, under the server's
+  # address and per-IP budgets.
+  def handle_event("save", %{"sign_up" => params}, socket) when is_map(params) do
+    case Accounts.validate_sign_up(params) do
+      {:ok, _sign_up} ->
         {:noreply,
          socket
-         |> assign(:account_name_error, account_name_error(changeset))
-         |> assign_form(Users.change_user(%Emisar.Users.User{}, user_params))}
+         |> assign(:trigger_submit, true)
+         |> assign_form(Accounts.change_sign_up(params))}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign_form(socket, changeset)}
     end
   end
 
-  # Both a new registration and an existing email submit the same form with a
-  # same-shaped opaque handoff. Only the handoff whose signed id matches the
-  # resumable zero-membership user carries registration authority downstream.
-  defp arm_magic_link_post(socket, user_params, handoff) do
-    {:noreply,
-     socket
-     |> assign(:trigger_submit, true)
-     |> assign(:registration_handoff, handoff)
-     |> assign_form(Users.change_user(%Emisar.Users.User{}, user_params))}
-  end
-
-  defp signup_rate_limited(socket) do
-    {:noreply,
-     socket
-     |> put_flash(:error, "Too many signup attempts. Wait a while, then try again.")
-     |> assign(:trigger_submit, false)}
-  end
-
-  # The workspace name is a standalone param, not a form field, so its rejection
-  # arrives as the account changeset. The slug is derived from the name, so a
-  # name that validated yet produced an unusable slug is still a name problem
-  # to the operator.
-  defp account_name_error(%Ecto.Changeset{} = changeset) do
-    case changeset.errors[:name] || changeset.errors[:slug] do
-      nil -> "Pick a different workspace name."
-      error -> translate_error(error)
-    end
-  end
+  def handle_event(_event, _params, socket), do: {:noreply, socket}
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
-    do: assign(socket, :form, to_form(changeset, as: "user"))
+    do: assign(socket, :form, to_form(changeset, as: "sign_up"))
 
   defp billing_choice(token) do
     case BillingIntent.verify(token) do

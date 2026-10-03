@@ -253,8 +253,8 @@ type signInOutcome struct {
 }
 
 // loginStamp marks the sign-in form's document so the outcome is read from the document the
-// submit produced, never from text that was already on the page (the "you must log in" flash
-// that lands an anonymous console visit on /sign_in, for one).
+// submit produced, never from text that was already on the page (the "you must sign in" flash
+// that lands an anonymous console visit on its workspace's sign-in page, for one).
 const loginStamp = "emisarLoginForm"
 
 const signInOutcomeScript = `(() => {
@@ -268,18 +268,23 @@ const signInOutcomeScript = `(() => {
   };
 })()`
 
-// Login signs the tab in as email through the passwordless flow against the development
-// mailbox. It returns as soon as the sign-in response itself refuses the request (the
-// recipient throttle's flash, the per-IP 429), waits a bounded time for a delayed email, names
-// a mailbox transport failure as such, and stops when the tab's context is cancelled. No error
-// carries the magic link: its path is the secret half of the split code.
-func (s *Session) Login(email string) error {
-	current, err := s.CurrentURL()
-	if err != nil {
-		return err
+// emailFormWait bounds the wait for a workspace sign-in page's email form. An unknown slug, a
+// disabled workspace, and one that signs in only through SSO all render a page without it.
+var emailFormWait = 10 * time.Second
+
+// Login signs the tab in to the workspace slug as email: its own sign-in page
+// (/app/<slug>/sign_in), then the passwordless flow against the development mailbox. A tab
+// already inside the workspace, or sent into it by that page, is signed in already. It returns
+// as soon as the sign-in response itself refuses the request (the recipient throttle's flash,
+// the per-IP 429) or the page offers no email sign-in, waits a bounded time for a delayed
+// email, names a mailbox transport failure as such, and stops when the tab's context is
+// cancelled. No error carries the magic link: its path is the secret half of the split code.
+func (s *Session) Login(slug, email string) error {
+	if slug == "" {
+		return fmt.Errorf("sign-in needs the workspace slug whose sign-in page to use")
 	}
-	if parsed, err := url.Parse(current); err == nil && strings.HasPrefix(parsed.Path, "/app/") {
-		return nil
+	if signedIn, err := s.inWorkspace(slug); err != nil || signedIn {
+		return err
 	}
 	before, err := mailbox(s.Context, s.BaseURL)
 	if err != nil {
@@ -292,11 +297,18 @@ func (s *Session) Login(email string) error {
 	for _, message := range before {
 		seen[mailID(message)] = true
 	}
-	if err := s.Navigate("/sign_in"); err != nil {
+	signInPage := "/app/" + slug + "/sign_in"
+	if err := s.Navigate(signInPage); err != nil {
+		return err
+	}
+	// The page sends a browser that already holds this workspace's session on into it.
+	if signedIn, err := s.inWorkspace(slug); err != nil || signedIn {
+		return err
+	}
+	if err := s.awaitEmailForm(signInPage); err != nil {
 		return err
 	}
 	if err := chromedp.Run(s.Context,
-		chromedp.WaitVisible(`input[type="email"]`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.documentElement.dataset.`+loginStamp+` = '1'`, nil),
 		chromedp.SendKeys(`input[type="email"]`, email, chromedp.ByQuery),
 		chromedp.KeyEvent("\r"),
@@ -330,12 +342,12 @@ func (s *Session) Login(email string) error {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if current, err := s.CurrentURL(); err == nil {
-			if parsed, _ := url.Parse(current); parsed != nil && !strings.HasPrefix(parsed.Path, "/sign_in") {
+			if parsed, _ := url.Parse(current); parsed != nil && !strings.HasPrefix(parsed.Path, "/sign_in") && !strings.HasPrefix(parsed.Path, signInPage) {
 				return nil
 			}
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("sign-in did not leave /sign_in after opening the magic link")
+			return fmt.Errorf("sign-in did not leave the sign-in pages after opening the magic link")
 		}
 		select {
 		case <-s.Context.Done():
@@ -343,6 +355,45 @@ func (s *Session) Login(email string) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+// inWorkspace reports whether the tab is on one of the workspace's own pages, which only a
+// browser signed in to it reaches. Its sign-in page is not one of them.
+func (s *Session) inWorkspace(slug string) (bool, error) {
+	current, err := s.CurrentURL()
+	if err != nil {
+		return false, err
+	}
+	pageSlug, rest := appSlug(current)
+	return pageSlug == slug && rest != "sign_in" && !strings.HasPrefix(rest, "sign_in/"), nil
+}
+
+// awaitEmailForm waits a bounded time for the sign-in page's email field.
+func (s *Session) awaitEmailForm(signInPage string) error {
+	ctx, cancel := context.WithTimeout(s.Context, emailFormWait)
+	defer cancel()
+	if err := chromedp.Run(ctx, chromedp.WaitVisible(`input[type="email"]`, chromedp.ByQuery)); err != nil {
+		if ctxErr := s.Context.Err(); ctxErr != nil {
+			return fmt.Errorf("opening %s: %w", signInPage, ctxErr)
+		}
+		return fmt.Errorf("%w: %s offers no email sign-in (an unknown workspace, a disabled one, or one that signs in only through SSO)", ErrSignInRefused, signInPage)
+	}
+	return nil
+}
+
+// appSlug splits an /app/<slug>/... URL or path into the slug and what follows it; anything
+// else yields two empty strings.
+func appSlug(raw string) (slug, rest string) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", ""
+	}
+	after, ok := strings.CutPrefix(parsed.Path, "/app/")
+	if !ok {
+		return "", ""
+	}
+	slug, rest, _ = strings.Cut(after, "/")
+	return slug, rest
 }
 
 // signInOutcome waits for the submit to replace the stamped form document, then reads what

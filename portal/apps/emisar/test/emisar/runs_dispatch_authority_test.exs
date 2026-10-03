@@ -7,7 +7,7 @@ defmodule Emisar.RunsDispatchAuthorityTest do
 
   test "ordinary unsigned dispatch freezes the verified pack for later authority checks" do
     membership = Fixtures.Memberships.create_membership(role: "operator")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     runner = Fixtures.Runners.create_runner(account_id: subject.account.id)
     Fixtures.Catalog.create_action(runner: runner)
     Fixtures.Policies.create_policy(account_id: subject.account.id)
@@ -22,10 +22,18 @@ defmodule Emisar.RunsDispatchAuthorityTest do
     refute Map.has_key?(payload, "attestation")
   end
 
-  for invalidation <- [:demoted, :suspended, :deleted, :pending, :deleted_user, :disabled_account] do
+  for invalidation <- [
+        :demoted,
+        :suspended,
+        :deleted,
+        :pending,
+        :revoked_session,
+        :disabled_account
+      ] do
     test "dispatch and a previously composed batch reject #{invalidation} authority" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      session = Fixtures.Auth.create_session_token!(membership)
+      subject = Fixtures.Subjects.subject_for(membership, session: session)
       runner = Fixtures.Runners.create_runner(account_id: subject.account.id)
       Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
       Fixtures.Policies.create_policy(account_id: subject.account.id)
@@ -35,7 +43,8 @@ defmodule Emisar.RunsDispatchAuthorityTest do
       assert {:ok, multi} =
                Runs.compose_dispatch_batch_in_multi(Multi.new(), [attrs], subject, :test)
 
-      invalidate(membership, subject, unquote(invalidation))
+      held = %{membership: membership, session: session, subject: subject}
+      invalidate(unquote(invalidation), held)
 
       assert {:error, _reason} = Runs.dispatch_run(attrs, subject)
       assert {:error, _reason} = Repo.commit_multi(multi)
@@ -48,7 +57,7 @@ defmodule Emisar.RunsDispatchAuthorityTest do
 
   test "a queued human run binds its exact live member and current dispatch permission" do
     membership = Fixtures.Memberships.create_membership(role: "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     runner = Fixtures.Runners.create_runner(account_id: subject.account.id, connected?: false)
 
     run =
@@ -73,19 +82,20 @@ defmodule Emisar.RunsDispatchAuthorityTest do
     assert authorize_initiator(run) == {:error, :initiator_no_longer_authorized}
   end
 
-  test "a subject carrying another person or another account's member cannot dispatch" do
+  test "a subject carrying another Member or another account's member cannot dispatch" do
     membership = Fixtures.Memberships.create_membership(role: "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     runner = Fixtures.Runners.create_runner(account_id: subject.account.id)
     Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
     Fixtures.Policies.create_policy(account_id: subject.account.id)
     attrs = Fixtures.Runs.dispatch_attrs(account_id: subject.account.id, runner_id: runner.id)
     Runners.subscribe_runner_transport(runner)
     foreign = Fixtures.Memberships.create_membership(role: "admin")
+    other = Fixtures.Memberships.create_membership(account_id: subject.account.id, role: "admin")
 
     for forged <- [
           %{subject | membership_id: foreign.id},
-          %{subject | actor: Fixtures.Users.create_user()}
+          %{subject | actor: other}
         ] do
       assert Runs.dispatch_run(attrs, forged) == {:error, :unauthorized}
       assert locked_access(forged) == {:error, :unauthorized}
@@ -97,7 +107,7 @@ defmodule Emisar.RunsDispatchAuthorityTest do
 
   test "delayed pack authority comes from the frozen reference without any current catalog" do
     membership = Fixtures.Memberships.create_membership(role: "operator")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     runner = Fixtures.Runners.create_runner(account_id: subject.account.id, connected?: false)
     {:ok, access} = RunnerAccess.new(:restricted, [], [runner.id], :restricted, ["postgres"])
     Fixtures.Memberships.force_runner_access(membership, access)
@@ -122,13 +132,13 @@ defmodule Emisar.RunsDispatchAuthorityTest do
 
   test "a queued API run cannot borrow another creator's key in the same account" do
     membership = Fixtures.Memberships.create_membership(role: "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
     runner = Fixtures.Runners.create_runner(account_id: subject.account.id, connected?: false)
 
     {_raw, key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: subject.account.id,
-        created_by_id: subject.actor.id
+        created_by_membership_id: subject.actor.id
       )
 
     other = Fixtures.Memberships.create_membership(account_id: subject.account.id, role: "admin")
@@ -136,7 +146,7 @@ defmodule Emisar.RunsDispatchAuthorityTest do
     {_raw, other_key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: subject.account.id,
-        created_by_id: other.user_id
+        created_by_membership_id: other.id
       )
 
     run =
@@ -160,12 +170,12 @@ defmodule Emisar.RunsDispatchAuthorityTest do
   describe "fetch_and_lock_dispatch_access/2" do
     test "preserves attenuation, key identity and its fixed role" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      owner = Fixtures.Subjects.membership_subject(membership)
+      owner = Fixtures.Subjects.subject_for(membership)
 
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: owner.account.id,
-          created_by_id: owner.actor.id
+          created_by_membership_id: owner.actor.id
         )
 
       subject = Subject.for_api_key(key, owner.account)
@@ -200,21 +210,21 @@ defmodule Emisar.RunsDispatchAuthorityTest do
     end)
   end
 
-  defp invalidate(membership, _subject, :demoted),
+  defp invalidate(:demoted, %{membership: membership}),
     do: Fixtures.Memberships.force_role(membership, "viewer")
 
-  defp invalidate(membership, _subject, :suspended),
+  defp invalidate(:suspended, %{membership: membership}),
     do: Fixtures.Memberships.suspend_membership(membership)
 
-  defp invalidate(membership, _subject, :deleted),
+  defp invalidate(:deleted, %{membership: membership}),
     do: Fixtures.Memberships.mark_membership_as_deleted(membership)
 
-  defp invalidate(membership, _subject, :pending),
+  defp invalidate(:pending, %{membership: membership}),
     do: Fixtures.Memberships.mark_directory_authorization_pending(membership, 1)
 
-  defp invalidate(_membership, subject, :deleted_user),
-    do: Fixtures.Users.mark_user_as_deleted(subject.actor)
+  defp invalidate(:revoked_session, %{session: session}),
+    do: Fixtures.Auth.delete_session_token!(session)
 
-  defp invalidate(_membership, subject, :disabled_account),
+  defp invalidate(:disabled_account, %{subject: subject}),
     do: Fixtures.Accounts.disable_account(subject.account)
 end

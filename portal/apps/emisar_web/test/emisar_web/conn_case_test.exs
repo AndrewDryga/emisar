@@ -22,7 +22,7 @@ defmodule EmisarWeb.ConnCaseTest do
       first =
         isolated_owner(fn ->
           send(parent, {:first_backend, backend_pid()})
-          {_conn, _user, account} = register_default_shape(name)
+          {_conn, _owner, account} = register_default_shape(name)
           send(parent, {:first_slug, account.slug})
 
           receive do
@@ -36,7 +36,7 @@ defmodule EmisarWeb.ConnCaseTest do
       second =
         isolated_owner(fn ->
           send(parent, {:second_backend, backend_pid()})
-          {_conn, _user, account} = register_default_shape(name)
+          {_conn, _owner, account} = register_default_shape(name)
           account
         end)
 
@@ -55,7 +55,7 @@ defmodule EmisarWeb.ConnCaseTest do
       first =
         isolated_owner(fn ->
           send(parent, {:first_backend, backend_pid()})
-          {_conn, _user, account} = register_and_log_in(Phoenix.ConnTest.build_conn())
+          {_conn, _owner, account} = register_and_log_in(Phoenix.ConnTest.build_conn())
           send(parent, {:first_account, account})
 
           receive do
@@ -71,7 +71,7 @@ defmodule EmisarWeb.ConnCaseTest do
 
       second =
         isolated_owner(fn ->
-          {_conn, _user, account} = register_and_log_in(Phoenix.ConnTest.build_conn())
+          {_conn, _owner, account} = register_and_log_in(Phoenix.ConnTest.build_conn())
           account
         end)
 
@@ -82,6 +82,55 @@ defmodule EmisarWeb.ConnCaseTest do
       assert first_account.name == "Test Co"
       assert second_account.name == "Test Co"
       assert first_account.slug != second_account.slug
+    end
+  end
+
+  describe "log_in_member/3" do
+    test "appends one real entry per workspace, all minted for this browser", %{conn: conn} do
+      {owner_a, account_a, _subject_a} = Fixtures.Subjects.owner_subject()
+      {owner_b, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
+
+      conn = conn |> log_in_member(owner_a) |> log_in_member(owner_b)
+      browser_id = get_session(conn, :browser_id)
+
+      assert [{first_account, token_a}, {second_account, token_b}] = get_session(conn, :sessions)
+      assert {first_account, second_account} == {account_a.id, account_b.id}
+
+      for {token, account} <- [{token_a, account_a}, {token_b, account_b}] do
+        assert {:ok, session} = Emisar.Auth.fetch_session_by_token(token, account.id)
+        assert session.auth_method == :magic_link
+        assert session.browser_digest == Emisar.Crypto.hash(browser_id)
+      end
+
+      assert session_token(conn, account_b) == token_b
+    end
+
+    test "a second sign-in to the same workspace replaces its entry", %{conn: conn} do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+
+      first = log_in_member(conn, owner)
+      second = log_in_member(first, owner)
+
+      assert [{account_id, token}] = get_session(second, :sessions)
+      assert account_id == account.id
+      refute token == session_token(first, account)
+      assert get_session(second, :browser_id) == get_session(first, :browser_id)
+    end
+
+    test "carries SSO provenance and a proved second factor when asked", %{conn: conn} do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      identity = Fixtures.SSO.create_user_identity(provider_id: provider.id, membership: owner)
+
+      conn =
+        log_in_member(conn, owner, auth_method: :sso, user_identity_id: identity.id, mfa: true)
+
+      assert {:ok, session} =
+               Emisar.Auth.fetch_session_by_token(session_token(conn, account), account.id)
+
+      assert session.auth_method == :sso
+      assert session.user_identity_id == identity.id
+      assert %DateTime{} = session.mfa_verified_at
     end
   end
 

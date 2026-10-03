@@ -4,7 +4,7 @@ defmodule Emisar.RunnerCredentialRotationTest do
 
   describe "request_credential_rotation/2" do
     test "an offline runner keeps an audited, idempotent request until a new credential connects" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {raw, token} = Fixtures.Runners.create_token(runner)
       runner = Fixtures.Runners.set_connection_credential(runner, token)
@@ -59,7 +59,7 @@ defmodule Emisar.RunnerCredentialRotationTest do
     end
 
     test "a failed handoff can retry the old token without extending its grace" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {raw, token} = Fixtures.Runners.create_token(runner)
       runner = Fixtures.Runners.set_connection_credential(runner, token)
@@ -71,7 +71,7 @@ defmodule Emisar.RunnerCredentialRotationTest do
     end
 
     test "unsupported or expired credentials cannot be requested" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {raw, token} = Fixtures.Runners.create_token(runner)
       unsupported = Fixtures.Runners.set_connection_credential(runner, token, false)
@@ -88,9 +88,9 @@ defmodule Emisar.RunnerCredentialRotationTest do
 
     test "rotation requires permission, account ownership, and current runner access" do
       {user, account, _owner} = Fixtures.Subjects.owner_subject()
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = Repo.reload!(user)
       membership = Fixtures.Memberships.force_role(membership, "admin")
-      admin = Fixtures.Subjects.membership_subject(membership)
+      admin = Fixtures.Subjects.subject_for(membership)
 
       runner =
         Fixtures.Runners.create_runner(
@@ -105,7 +105,7 @@ defmodule Emisar.RunnerCredentialRotationTest do
 
       assert Runners.request_credential_rotation(
                runner,
-               Fixtures.Subjects.membership_subject(viewer)
+               Fixtures.Subjects.subject_for(viewer)
              ) ==
                {:error, :unauthorized}
 
@@ -113,7 +113,7 @@ defmodule Emisar.RunnerCredentialRotationTest do
 
       assert Runners.request_credential_rotation(
                runner,
-               Fixtures.Subjects.membership_subject(foreign)
+               Fixtures.Subjects.subject_for(foreign)
              ) ==
                {:error, :not_found}
 
@@ -279,7 +279,7 @@ defmodule Emisar.RunnerCredentialRotationTest do
 
   describe "credential_rotation_message/3" do
     test "a rotation request targets only the authenticated token prefix and is recovered on reconnect" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {_raw, token} = Fixtures.Runners.create_token(runner)
       runner = Fixtures.Runners.set_connection_credential(runner, token)

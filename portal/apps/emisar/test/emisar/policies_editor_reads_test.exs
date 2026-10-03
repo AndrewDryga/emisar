@@ -4,10 +4,10 @@ defmodule Emisar.PoliciesEditorReadsTest do
   alias Emisar.{Catalog, Fixtures, Policies, Repo, Runners}
 
   setup do
-    {user, account, subject} = Fixtures.Subjects.owner_subject()
+    {owner, account, subject} = Fixtures.Subjects.owner_subject()
 
     %{
-      user: user,
+      user: owner,
       account: account,
       subject: subject,
       denied: Fixtures.Subjects.permissionless_subject(account)
@@ -106,13 +106,13 @@ defmodule Emisar.PoliciesEditorReadsTest do
       member = member(account, ["empty"])
 
       assert {:ok, rows, _} =
-               Policies.list_scoped_policy_summaries(Fixtures.Subjects.membership_subject(member))
+               Policies.list_scoped_policy_summaries(Fixtures.Subjects.subject_for(member))
 
       assert MapSet.new(rows, & &1.id) == MapSet.new([empty.id, hidden.id])
       Fixtures.Memberships.force_runner_access(member, RunnerAccess.none())
 
       assert {:ok, rows, _} =
-               Policies.list_scoped_policy_summaries(Fixtures.Subjects.membership_subject(member))
+               Policies.list_scoped_policy_summaries(Fixtures.Subjects.subject_for(member))
 
       assert MapSet.new(rows, & &1.id) == MapSet.new([empty.id, hidden.id])
     end
@@ -126,7 +126,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       assert loaded.rules == policy.rules
       {_, _, other} = Fixtures.Subjects.owner_subject()
       assert {:error, :not_found} = Policies.fetch_scoped_policy_by_id(policy.id, other)
-      restricted = account |> member(["elsewhere"]) |> Fixtures.Subjects.membership_subject()
+      restricted = account |> member(["elsewhere"]) |> Fixtures.Subjects.subject_for()
       assert {:ok, ^policy} = Policies.fetch_scoped_policy_by_id(policy.id, restricted)
       assert {:error, :not_found} = Policies.fetch_scoped_policy_by_id("bad", subject)
       assert {:error, :unauthorized} = Policies.fetch_scoped_policy_by_id(policy.id, denied)
@@ -227,7 +227,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       assert {:error, :unauthorized} =
                Policies.fetch_scope_target_option(:runner, runner.id, denied)
 
-      restricted = account |> member(["empty"]) |> Fixtures.Subjects.membership_subject()
+      restricted = account |> member(["empty"]) |> Fixtures.Subjects.subject_for()
 
       assert {:ok, %{label: "empty"}} =
                Policies.fetch_scope_target_option(:group, "empty", restricted)
@@ -308,7 +308,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       scoped(account, user, :group, "empty")
       scoped(account, user, :group, first.id)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       targets = [
         {:runner, first.id},
@@ -344,7 +344,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       account: account
     } do
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       targets = [{:group, "empty"}]
       assert Policies.policy_management_capabilities(subject, targets).targets[{:group, "empty"}]
 
@@ -464,7 +464,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
       member = member(account, ["db"])
       {:ok, access} = RunnerAccess.new(:restricted, ["db"], [], :restricted, ["test"])
       Fixtures.Memberships.force_runner_access(member, access)
-      subject = Fixtures.Subjects.membership_subject(member)
+      subject = Fixtures.Subjects.subject_for(member)
       assert {:ok, risks, _} = Catalog.list_action_risks(:account, subject)
       assert Enum.map(risks, & &1.action_id) == ["db.allowed", "db.hidden", "db.wrong-pack"]
       Fixtures.Memberships.force_runner_access(member, RunnerAccess.none())
@@ -550,7 +550,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
                Policies.preview_policy(
                  input,
                  :account,
-                 Fixtures.Subjects.membership_subject(member)
+                 Fixtures.Subjects.subject_for(member)
                )
     end
 
@@ -574,7 +574,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
     } do
       input = Policies.editor_input(Policies.default_rules())
       member = member(account, ["db"])
-      subject = Fixtures.Subjects.membership_subject(member)
+      subject = Fixtures.Subjects.subject_for(member)
       assert {:ok, preview} = Policies.preview_policy(input, :account, subject)
       assert Policies.preview_current?(preview, subject)
       refute Policies.preview_current?(preview, denied)
@@ -594,7 +594,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
         Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
 
       policy = scoped(account, user, :runner, runner.id)
-      subject = account |> member(["db"]) |> Fixtures.Subjects.membership_subject()
+      subject = account |> member(["db"]) |> Fixtures.Subjects.subject_for()
       input = Policies.editor_input(Policies.default_rules())
       assert {:ok, preview} = Policies.preview_policy(input, policy.id, subject)
       assert Policies.preview_current?(preview, subject)
@@ -614,7 +614,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
   defp scoped(account, user, type, value) do
     Fixtures.Policies.create_policy(
       account_id: account.id,
-      created_by_id: user.id,
+      updated_by_membership_id: user.id,
       scope_type: type,
       scope_value: value
     )

@@ -14,12 +14,9 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
   alias Emisar.Runs.Jobs.DispatchTimeout
 
   defp run_attrs(runner) do
-    user = Fixtures.Users.create_user()
-
     membership =
       Fixtures.Memberships.create_membership(
         account_id: runner.account_id,
-        user_id: user.id,
         role: "operator"
       )
 
@@ -484,16 +481,10 @@ defmodule Emisar.Runs.Jobs.DispatchTimeoutTest do
   end
 
   defp owner_with_subject do
-    user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+    member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    {account, user, Fixtures.Subjects.subject_for(user, account, role: :owner)}
+    {account, member, Fixtures.Subjects.subject_for(member)}
   end
 end

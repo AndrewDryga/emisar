@@ -17,7 +17,7 @@ defmodule EmisarWeb.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug EmisarWeb.Plugs.ContentSecurityPolicy
-    plug :fetch_current_user
+    plug :fetch_session_entries
     plug EmisarWeb.Plugs.Analytics
   end
 
@@ -115,16 +115,18 @@ defmodule EmisarWeb.Router do
     :billing_intent,
     :magic_link_email,
     :magic_link_expires_at,
-    :mfa_pending_user_id,
+    :magic_link_back_to,
+    :mfa_pending_membership_id,
     :mfa_pending_at,
     :sso_pending_request
   ]
 
   # LiveView merges this map into the ordinary Plug session before signing the
   # websocket session. Mirror only the short-lived controller markers that the
-  # pre-auth mounts read by string key; the base session still carries the
-  # authenticated keys used by mixed signed-in/signed-out flows such as
-  # onboarding and invitation acceptance.
+  # pre-auth mounts read by string key. Never a credential or a proof: the
+  # signed websocket session is readable in the page, while the mounts read the
+  # code's halves, the browser id and the invitation SSO proof from the
+  # encrypted cookie session itself.
   def auth_live_session(conn) do
     session =
       @auth_live_session_keys
@@ -272,89 +274,82 @@ defmodule EmisarWeb.Router do
     post "/monthly-report/:token", UnsubscribeController, :create
   end
 
-  # Registered OIDC callback shared by signed-out login and the authenticated
-  # administrator-reset reauthentication. It must precede the dynamic
-  # `/sign_in/sso/:provider_id` route below or `callback` is parsed as a
-  # provider id before either one-time session stash can be consumed.
+  # The registered OIDC callback (customer IdPs have this URL registered) serves
+  # ordinary sign-in, an invitation's SSO step and the authenticated ceremonies
+  # (MFA enrollment, connection verification, member MFA reset). It must precede
+  # the dynamic `/sign_in/sso/:provider_id` route below or `callback` is parsed
+  # as a provider id before the session stash can be consumed.
   scope "/", EmisarWeb do
     pipe_through [:browser, :noindex]
 
     get "/sign_in/sso/callback", SSOController, :callback
-    # Renderable for a valid bearer with no remaining workspace proof as well as
-    # an expired one. No authenticated redirect or workspace grant is required.
-    get "/session/recover", SessionRecoveryController, :show
-    post "/session/recover", SessionRecoveryController, :restart
   end
 
-  # -- Auth surface (only when signed-out) ----------------------------
+  # -- Sign-in surface --------------------------------------------------
 
+  # A workspace's own sign-in page — the slug picks the workspace; it offers
+  # that workspace's SSO and, unless it requires SSO, the emailed code. A
+  # browser already signed in to that workspace goes to it.
   scope "/", EmisarWeb do
-    pipe_through [:browser, :noindex, :redirect_if_user_is_authenticated]
+    pipe_through [:browser, :noindex, :redirect_if_signed_in_to_workspace]
 
-    live_session :redirect_if_user_is_authenticated,
-      session: {__MODULE__, :auth_live_session, []},
-      on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
-      live "/sign_up", UserSignUpLive
-      live "/sign_in", UserSignInLive
-
-      # Per-account ("branded") sign-in — the slug picks the tenant; offers SSO + magic link.
+    live_session :workspace_sign_in, session: {__MODULE__, :auth_live_session, []} do
       live "/app/:account_id_or_slug/sign_in", AccountSignInLive
+    end
+  end
+
+  # Signing in never depends on being signed out: a browser holds a session per
+  # workspace, so each of these pages works beside the sessions it already has.
+  scope "/", EmisarWeb do
+    pipe_through [:browser, :noindex]
+
+    # The workspace picker: recent workspaces and "enter your workspace".
+    get "/sign_in", SignInController, :new
+    post "/sign_in", SignInController, :create
+
+    live_session :sign_in, session: {__MODULE__, :auth_live_session, []} do
+      live "/sign_up", UserSignUpLive
+
+      # The emailed-code page: the code from the email, or its link. Reads the
+      # pending request from the session; without one it goes to `/sign_in`.
+      live "/sign_in/magic", MagicLinkLive
+
+      # Second factor for a Member with an authenticator, after the code
+      # verified factor one. Reads the partial-auth marker from the session.
+      live "/sign_in/mfa", MfaChallengeLive
 
       # A :manual-provisioner SSO first login parks here (request id in the session)
       # and live-updates when an admin approves. Declared before the `:provider_id`
       # begin route below so "pending" isn't read as a provider id.
       live "/sign_in/sso/pending", SSOPendingLive
+
+      live "/accept_invitation/:token", AcceptInvitationLive
     end
 
-    # SSO landing: pick a team (recent-accounts cookie + manual entry) → its branded sign-in page.
-    get "/sign_in/sso", SSOSignInController, :new
-    post "/sign_in/sso", SSOSignInController, :create
-    get "/sign_in/sso/:provider_id", SSOController, :begin
-  end
-
-  # Email proof: the magic link and its second factor. A browser with a personal
-  # login is sent to the app; a member-only SSO session has none, so these pages
-  # stay open to it — linking a personal login rides this same proof.
-  scope "/", EmisarWeb do
-    pipe_through [:browser, :noindex, :redirect_if_personal_login]
-
-    live_session :email_sign_in,
-      session: {__MODULE__, :auth_live_session, []},
-      on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
-      live "/sign_in/magic", MagicLinkLive
-
-      # Second-factor challenge for an mfa_enabled user after the magic link
-      # verifies factor one. Reads the partial-auth `:mfa_pending_user_id` from
-      # the session; a browser with a personal login is bounced to the app by
-      # this pipeline, a never-pending one back to /sign_in/magic on mount.
-      live "/sign_in/mfa", MfaChallengeLive
-    end
-
-    # Split-code magic link: the LV form POSTs the email to :magic_link_start
-    # (issues + sets the nonce cookie + mails the link/code); the email link
-    # carries token_id + secret. The typed code is verified IN the LiveView (so a
-    # wrong code shows inline, no reload) — on success the LV redirects to
-    # :magic_link_complete with a short-lived, cookie-bound handoff that sets the
-    # session (a LiveView can't set the auth cookie itself).
-    post "/sign_in/magic/start", UserSessionController, :magic_link_start
+    # Each form POSTs to a controller that issues the split code and sets the
+    # browser half (the nonce cookie), which a LiveView cannot. The typed code is
+    # verified IN `MagicLinkLive` (inline errors), which then redirects to
+    # `:magic_link_complete` with a short-lived, cookie-bound handoff; the
+    # emailed link carries the token id and the code.
+    post "/app/:account_id_or_slug/sign_in/email", UserSessionController, :magic_link_start
+    post "/accept_invitation/:token", UserSessionController, :invitation_start
+    post "/sign_up", UserSessionController, :sign_up_start
+    post "/sign_in/magic/resend", UserSessionController, :magic_link_resend
     get "/sign_in/magic/complete", UserSessionController, :magic_link_complete
     get "/sign_in/magic/:token_id/:secret", UserSessionController, :magic_link_confirm
 
     # MFA challenge completion — MfaChallengeLive verifies the TOTP/recovery code,
     # then redirects here with a signed handoff that (with the matching pending
-    # session) establishes the full second-factor-verified session the LiveView
-    # can't set itself.
+    # marker) establishes the second-factor-verified session the LiveView can't
+    # set itself.
     get "/sign_in/mfa/complete", UserSessionController, :mfa_complete
-  end
 
-  # Email confirmation must run whether or not you're signed in — the link
-  # has to consume the token either way. It previously lived under
-  # :redirect_if_user_is_authenticated, which silently bounced an
-  # already-signed-in user to the dashboard without ever confirming.
-  scope "/", EmisarWeb do
-    pipe_through [:browser, :noindex]
+    # An invitee whose workspace signs in only through SSO continues its
+    # acceptance at one of the workspace's providers; the proof rides the
+    # encrypted session, never this request.
+    post "/sign_in/sso/invitation", SSOController, :begin_invitation
+    get "/sign_in/sso/:provider_id", SSOController, :begin
 
-    get "/confirm/:token", UserConfirmationController, :confirm
     # Public pricing handoff: verifies a purpose-bound Team/cycle choice and
     # stores only that opaque choice before entering auth or the protected
     # workspace selector. No account, URL, or Paddle resource rides in it.
@@ -367,23 +362,19 @@ defmodule EmisarWeb.Router do
 
   # -- Authenticated product surface ----------------------------------
 
-  # The device-grant approval URL the MCP installer prints (…/activate) —
-  # top-level so the printed URL stays short; forwards into the current
-  # account's slugged page, preserving ?code=.
+  # Pages that name no workspace choose among this browser's signed-in
+  # workspaces themselves. The device-grant approval URL the MCP installer
+  # prints (…/activate) is top-level so the printed URL stays short.
   scope "/", EmisarWeb do
-    pipe_through [:browser, :noindex, :require_authenticated_user]
+    pipe_through [:browser, :noindex, :require_signed_in]
 
     get "/activate", AccountRedirectController, :activate
   end
 
   scope "/app", EmisarWeb do
-    pipe_through [:browser, :noindex, :require_authenticated_user]
+    pipe_through [:browser, :noindex, :require_signed_in]
 
-    post "/accounts/switch", AccountSwitchController, :switch
-
-    # Bare /app → the user's current (session-hinted, else default) account, slugged.
-    # require_authenticated_user has already resolved current_account (or bounced a
-    # no-membership/suspended user), so this just forwards to the canonical URL.
+    # Bare /app → the only signed-in workspace, or a pick among several.
     get "/", AccountRedirectController, :show
 
     # Slugless deep-link shorthands — URLs the MCP installer, `emisar-mcp
@@ -411,132 +402,112 @@ defmodule EmisarWeb.Router do
     get "/billing", AccountRedirectController, :billing
 
     # Literal plan-intent selector before the dynamic account scope: GET only
-    # renders choices; the CSRF-protected POST re-resolves and pins the chosen
+    # renders choices; the CSRF-protected POST authenticates the chosen
     # workspace before the ordinary Billing page can start checkout.
     get "/billing/start", BillingIntentController, :show
     post "/billing/start", BillingIntentController, :select
     post "/billing/start/cancel", BillingIntentController, :cancel
 
-    # New checkout links pin the origin UUID; authentication resolves that
-    # account before the session selection. Older unscoped returns stay neutral.
+    # The checkout return names its workspace only in signed state
+    # (`Billing.verify_checkout_return/1`); the workspace's own session then
+    # authorizes the billing page it lands on.
     get "/checkout/success", CheckoutController, :success
-    get "/:account_id_or_slug/checkout/success", CheckoutController, :success
+  end
 
-    # Workspace SSO continuation preserves this browser until the bound proof
-    # succeeds. Outside the compliance-gated live_session to avoid a loop.
-    get "/:account_id_or_slug/sso_required", SSORequiredController, :show
-    post "/:account_id_or_slug/sso_required", SSOController, :begin_session_step_up
+  # Every tenant page nests under the account ref (id or slug; the slug is the
+  # canonical UI form). `fetch_workspace_session` resolves the workspace from the
+  # URL and authenticates this browser's entry for it; an unknown ref 404s and a
+  # workspace this browser is not signed in to goes to its sign-in page.
+  # `:ensure_authenticated` repeats that on every LiveView mount (IL-15).
+  scope "/app/:account_id_or_slug", EmisarWeb do
+    pipe_through [:browser, :noindex, :fetch_workspace_session]
 
-    # Outside the slug scope on purpose: this is where ensure_account_compliant
-    # sends a non-compliant member, so it must mount without that combined gate (it
-    # would loop). It DOES carry the SSO gate: SSO precedes MFA, so a member of a
-    # require_sso+require_mfa account must satisfy SSO before enrolling a factor
-    # (else a magic-link session could enroll TOTP without ever passing SSO).
+    # Outside the compliance-gated live_session on purpose: this is where
+    # `:ensure_account_compliant` sends a Member who owes MFA, so it must mount
+    # without that gate (it would loop). It does read the SSO posture: SSO
+    # precedes MFA, so a session `require_sso` no longer accepts never enrolls a
+    # factor here.
     live_session :mfa_setup,
       on_mount: [
         {EmisarWeb.UserAuth, :ensure_authenticated},
-        {EmisarWeb.UserAuth, :ensure_sso_compliant}
+        {EmisarWeb.UserAuth, :assign_account_compliance}
       ] do
       live "/mfa_setup", MfaSetupLive, :new
     end
 
-    # Every tenant page nests under the account slug (resolved id-or-slug; the slug
-    # is the canonical UI form). :ensure_account_slug resolves + authorizes it from
-    # the URL on every mount — a non-member/unknown ref 404s, never leaks (IL-15).
-    scope "/:account_id_or_slug" do
-      live_session :authenticated,
-        on_mount: [
-          {EmisarWeb.UserAuth, :reload_stale_assets},
-          {EmisarWeb.UserAuth, :ensure_authenticated},
-          {EmisarWeb.UserAuth, :ensure_account_slug},
-          {EmisarWeb.UserAuth, :ensure_account_compliant},
-          {EmisarWeb.UserAuth, :track_pending_approvals},
-          {EmisarWeb.UserAuth, :email_confirmation},
-          {EmisarWeb.PortalPerformance, :default},
-          {EmisarWeb.UserAuth, :track_pageviews}
-        ] do
-        live "/", DashboardLive, :index
+    # A Member without a verified email proves its own credential at its
+    # workspace's identity provider before adding an authenticator.
+    post "/mfa_setup/sso", SSOController, :begin_mfa_enrollment
 
-        live "/runners", RunnersLive, :index
-        live "/runners/install", RunnerInstallLive, :new
-        # Before /runners/:id so "keys" isn't captured as a runner id.
-        live "/runners/keys", EnrollmentKeysLive, :index
-        live "/runners/keys/new", EnrollmentKeysLive, :new
-        live "/runners/:id", RunnerDetailLive, :show
+    live_session :authenticated,
+      on_mount: [
+        {EmisarWeb.UserAuth, :reload_stale_assets},
+        {EmisarWeb.UserAuth, :ensure_authenticated},
+        {EmisarWeb.UserAuth, :ensure_account_compliant},
+        {EmisarWeb.UserAuth, :track_pending_approvals},
+        {EmisarWeb.PortalPerformance, :default},
+        {EmisarWeb.UserAuth, :track_pageviews}
+      ] do
+      live "/", DashboardLive, :index
 
-        live "/runs", RunsLive, :index
-        live "/runs/:id", RunDetailLive, :show
-        live "/runs/new/:runner_id/:action_id", RunNewLive, :new
+      live "/runners", RunnersLive, :index
+      live "/runners/install", RunnerInstallLive, :new
+      # Before /runners/:id so "keys" isn't captured as a runner id.
+      live "/runners/keys", EnrollmentKeysLive, :index
+      live "/runners/keys/new", EnrollmentKeysLive, :new
+      live "/runners/:id", RunnerDetailLive, :show
 
-        live "/approvals", ApprovalsLive, :index
-        live "/approvals/:id", ApprovalDetailLive, :show
+      live "/runs", RunsLive, :index
+      live "/runs/:id", RunDetailLive, :show
+      live "/runs/new/:runner_id/:action_id", RunNewLive, :new
 
-        live "/runbooks", RunbooksLive, :index
-        live "/runbooks/new", RunbookEditorLive, :new
-        live "/runbooks/import", RunbookImportLive, :new
-        live "/runbooks/:id/edit", RunbookEditorLive, :edit
-        live "/runbooks/:id/runs/:execution_id", RunbookRunLive, :show
-        live "/runbooks/:id/run", RunbookRunLive, :new
+      live "/approvals", ApprovalsLive, :index
+      live "/approvals/:id", ApprovalDetailLive, :show
 
-        live "/policies", PoliciesLive, :index
+      live "/runbooks", RunbooksLive, :index
+      live "/runbooks/new", RunbookEditorLive, :new
+      live "/runbooks/import", RunbookImportLive, :new
+      live "/runbooks/:id/edit", RunbookEditorLive, :edit
+      live "/runbooks/:id/runs/:execution_id", RunbookRunLive, :show
+      live "/runbooks/:id/run", RunbookRunLive, :new
 
-        live "/packs", PacksLive, :index
+      live "/policies", PoliciesLive, :index
 
-        live "/audit", AuditLive, :index
-        # Before /audit/:id so "export"/"download" aren't captured as event ids.
-        live "/audit/export", AuditExportLive, :index
-        get "/audit/download", AuditDownloadController, :download
-        live "/audit/:id", AuditDetailLive, :show
+      live "/packs", PacksLive, :index
 
-        live "/agents", AgentsLive, :index
-        live "/agents/connect", AgentsLive, :connect
-        live "/activate", ActivateLive, :show
-        live "/settings/team", TeamLive, :index
-        live "/settings/team/invite", TeamLive, :new
-        live "/settings/team/:membership_id/change-role/:role", MemberRoleLive, :edit
-        live "/settings/team/:membership_id/reset_mfa", TeamLive, :reset_mfa
+      live "/audit", AuditLive, :index
+      # Before /audit/:id so "export"/"download" aren't captured as event ids.
+      live "/audit/export", AuditExportLive, :index
+      get "/audit/download", AuditDownloadController, :download
+      live "/audit/:id", AuditDetailLive, :show
 
-        post "/settings/team/:membership_id/reset_mfa/sso",
-             SSOController,
-             :begin_member_mfa_reset
+      live "/agents", AgentsLive, :index
+      live "/agents/connect", AgentsLive, :connect
+      live "/activate", ActivateLive, :show
+      live "/settings/team", TeamLive, :index
+      live "/settings/team/invite", TeamLive, :new
+      live "/settings/team/:membership_id/change-role/:role", MemberRoleLive, :edit
+      live "/settings/team/:membership_id/reset_mfa", TeamLive, :reset_mfa
 
-        post "/settings/sso/identity/link", SSOController, :begin_identity_link
+      post "/settings/team/:membership_id/reset_mfa/sso",
+           SSOController,
+           :begin_member_mfa_reset
 
-        live "/settings/sso", SSOSettingsLive, :index
-        live "/settings/sso/new", SSOSettingsLive, :new
-        live "/settings/sso/:id", SSOSettingsLive, :show
-        live "/settings/sso/:id/edit", SSOSettingsLive, :edit
-        live "/settings/billing", BillingLive, :index
-        live "/settings/profile", ProfileLive, :index
-      end
+      post "/settings/sso/identity/link", SSOController, :begin_identity_link
+
+      live "/settings/sso", SSOSettingsLive, :index
+      live "/settings/sso/new", SSOSettingsLive, :new
+      live "/settings/sso/:id", SSOSettingsLive, :show
+      live "/settings/sso/:id/edit", SSOSettingsLive, :edit
+      live "/settings/billing", BillingLive, :index
+      live "/settings/profile", ProfileLive, :index
     end
   end
 
+  # Ends every workspace session this browser holds, together.
   scope "/", EmisarWeb do
     pipe_through :browser
     delete "/sign_out", UserSessionController, :delete
-  end
-
-  scope "/", EmisarWeb do
-    # :noindex like every other auth-bound route — robots.txt blocks crawling
-    # but not URL-only indexing, and the router comment above already promises
-    # this pipeline on every one of them.
-    pipe_through [:browser, :noindex]
-
-    get "/onboarding", OnboardingController, :new
-    post "/onboarding", OnboardingController, :create
-    post "/accept_invitation/:token", AcceptInvitationController, :create
-
-    live_session :onboarding,
-      session: {__MODULE__, :auth_live_session, []},
-      on_mount: [{EmisarWeb.UserAuth, :mount_current_user}] do
-      # Invitation acceptance has to work whether the visitor is signed
-      # in or not: a brand-new invitee enters their name and requests a
-      # sign-in link here, but a
-      # signed-in user invited to a NEW team should see the prompt too
-      # (the previous shared scope silently bounced them to /app).
-      live "/accept_invitation/:token", AcceptInvitationLive
-    end
   end
 
   # -- Runner transport (bearer-authed) --------------------------------
@@ -643,7 +614,7 @@ defmodule EmisarWeb.Router do
   # Consent screen — the operator must be signed in; the approve/deny
   # POST rides the CSRF-protected browser pipeline.
   scope "/oauth", EmisarWeb do
-    pipe_through [:browser, :noindex, :require_authenticated_user]
+    pipe_through [:browser, :noindex, :require_signed_in]
 
     get "/authorize", OAuthController, :authorize
     post "/authorize", OAuthController, :authorize_submit

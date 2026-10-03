@@ -25,7 +25,7 @@ defmodule Emisar.PoliciesPersistenceTest do
 
   describe "save_rules/2" do
     test "creates the account's first policy, then updates it in place" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, created} = Policies.save_rules(rules("require_approval"), subject)
       assert created.account_id == account.id
@@ -39,7 +39,7 @@ defmodule Emisar.PoliciesPersistenceTest do
 
     test "saving identical rules keeps the same row and version" do
       membership = Fixtures.Memberships.create_membership(role: "owner")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       policy_rules = rules("require_approval")
 
       assert {:ok, created} = Policies.save_rules(policy_rules, subject)
@@ -51,16 +51,9 @@ defmodule Emisar.PoliciesPersistenceTest do
 
     test "a viewer can't save policy rules" do
       {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
-
-      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
 
       assert Policies.save_rules(rules("require_approval"), viewer_subject) ==
                {:error, :unauthorized}

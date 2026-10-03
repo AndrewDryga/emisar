@@ -760,7 +760,7 @@ defmodule Emisar.PoliciesTest do
 
   describe "fetch_policy/1" do
     test "returns the account's default policy for a member subject" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, %Policy{} = policy} = Policies.fetch_policy(subject)
       assert policy.account_id == account.id
@@ -771,7 +771,7 @@ defmodule Emisar.PoliciesTest do
       {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
 
       operator =
-        Fixtures.Subjects.membership_subject(
+        Fixtures.Subjects.subject_for(
           Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
         )
 
@@ -784,8 +784,8 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "cross-account: a subject only ever reads its OWN account's policy" do
-      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
-      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       {:ok, policy_a} = Policies.fetch_policy(subject_a)
       {:ok, policy_b} = Policies.fetch_policy(subject_b)
@@ -798,7 +798,7 @@ defmodule Emisar.PoliciesTest do
 
   describe "snapshot_runbook_decisions/2" do
     test "returns the account default's decision, reason, and approval settings" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject, "database")
 
       assert {:ok, compiled} = compile_uptime_plan(subject, runner.group)
@@ -812,7 +812,7 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "resolves the ruleset targeting the compiled item's runner group" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject, "database")
       rules = require_approval_rules(min_approvals: 2, allow_self_approval: false)
 
@@ -829,7 +829,7 @@ defmodule Emisar.PoliciesTest do
 
   describe "list_scoped_policy_summaries/2" do
     test "lists the account's scoped overrides, excluding the account default" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, scoped} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, subject)
 
@@ -847,7 +847,7 @@ defmodule Emisar.PoliciesTest do
       operator_membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      operator = Fixtures.Subjects.membership_subject(operator_membership)
+      operator = Fixtures.Subjects.subject_for(operator_membership)
 
       assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(operator)
 
@@ -857,11 +857,11 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "cross-account: never lists another account's overrides" do
-      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
       {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_a)
 
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
       assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject_b)
     end
 
@@ -888,7 +888,7 @@ defmodule Emisar.PoliciesTest do
       member_membership =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-      member = Fixtures.Subjects.membership_subject(member_membership)
+      member = Fixtures.Subjects.subject_for(member_membership)
 
       {:ok, _updated} =
         Accounts.update_membership_runner_access(member_membership, RunnerAccess.none(), owner)
@@ -913,7 +913,7 @@ defmodule Emisar.PoliciesTest do
 
   describe "delete_scoped_policy/2" do
     test "soft-deletes an override so its scope falls back to the next-broader scope" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, subject)
 
@@ -931,7 +931,9 @@ defmodule Emisar.PoliciesTest do
       {:ok, policy} = Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, owner)
 
       viewer =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       assert Policies.delete_scoped_policy(policy, viewer) == {:error, :unauthorized}
       # The row is untouched — still live.
@@ -957,13 +959,13 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "cross-account: B can't delete A's override (:not_found, row untouched)" do
-      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
 
       {:ok, policy_a} =
         Policies.save_scoped_rules(deny_all_rules(), :runner, runner_a.id, subject_a)
 
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       # The locked re-fetch is scoped by Authorizer.for_subject, so A's override
       # scopes out to :not_found for B without being touched.
@@ -972,13 +974,13 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "a forged struct claiming a reachable scope cannot delete another account's row" do
-      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
 
       {:ok, policy_a} =
         Policies.save_scoped_rules(deny_all_rules(), :runner, runner_a.id, subject_a)
 
-      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       # Judging scope + account on the caller's struct let a forged struct — one
       # claiming account B and a group an unrestricted B reaches, but whose id is
@@ -992,7 +994,7 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "a forged scoped snapshot cannot delete the account default" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       {:ok, default} = Policies.fetch_policy(subject)
       forged = %{default | scope_type: :group, scope_value: "anything"}
 
@@ -1003,7 +1005,7 @@ defmodule Emisar.PoliciesTest do
 
   describe "save_scoped_rules/4" do
     test "creates a runner override, then upserts the same row in place" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       assert {:ok, created} =
@@ -1027,7 +1029,7 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "rejects a blank scope_value for a runner/group scope" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       assert Policies.save_scoped_rules(deny_all_rules(), :runner, "", subject) ==
                {:error, :runner_not_found}
@@ -1037,7 +1039,7 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "rejects another account's runner id (:runner_not_found, no row written)" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       foreign_runner = Fixtures.Runners.create_runner(connected?: false)
 
       assert Policies.save_scoped_rules(deny_all_rules(), :runner, foreign_runner.id, subject) ==
@@ -1047,7 +1049,7 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "rejects a nonexistent and a malformed runner id (:runner_not_found)" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       assert Policies.save_scoped_rules(
                deny_all_rules(),
@@ -1061,7 +1063,7 @@ defmodule Emisar.PoliciesTest do
     end
 
     test "rejects a soft-deleted runner's id (:runner_not_found)" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, _} = Runners.delete_runner(runner, subject)
 
@@ -1073,7 +1075,7 @@ defmodule Emisar.PoliciesTest do
     # an unrestricted writer can already see every group, so the name they invent
     # tells them nothing they did not already have.
     test "an unrestricted member may write a group ruleset before any runner is enrolled" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, saved} =
                Policies.save_scoped_rules(deny_all_rules(), :group, "not-enrolled-yet", subject)
@@ -1115,20 +1117,22 @@ defmodule Emisar.PoliciesTest do
       {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
 
       viewer =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       assert Policies.save_scoped_rules(deny_all_rules(), :runner, "r1", viewer) ==
                {:error, :unauthorized}
     end
 
     test "cross-account: B can't claim A's runner id, and A's override is untouched" do
-      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
 
       {:ok, policy_a} =
         Policies.save_scoped_rules(deny_all_rules(), :runner, runner_a.id, subject_a)
 
-      {_user_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_b) ==
                {:error, :runner_not_found}
@@ -1148,7 +1152,7 @@ defmodule Emisar.PoliciesTest do
       {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "db")
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      admin = Fixtures.Subjects.membership_subject(membership)
+      admin = Fixtures.Subjects.subject_for(membership)
       default_before = Policies.peek_policy_for_account(account.id)
       {:ok, restricted} = RunnerAccess.restricted(["db"], [])
 
@@ -1174,7 +1178,7 @@ defmodule Emisar.PoliciesTest do
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "db")
       {:ok, scoped} = Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, owner)
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      admin = Fixtures.Subjects.membership_subject(membership)
+      admin = Fixtures.Subjects.subject_for(membership)
       default_before = Policies.peek_policy_for_account(account.id)
       {:ok, restricted} = RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
 
@@ -1204,11 +1208,13 @@ defmodule Emisar.PoliciesTest do
       account = Fixtures.Accounts.create_account()
 
       viewer_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       billing_manager_subject =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account,
-          role: :billing_manager
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :billing_manager)
         )
 
       assert Policies.subject_can_view_policies?(viewer_subject)
@@ -1221,7 +1227,11 @@ defmodule Emisar.PoliciesTest do
       {_owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
       assert Policies.subject_can_manage_policies?(owner_subject)
 
-      admin = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :admin)
+      admin =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :admin)
+        )
+
       assert Policies.subject_can_manage_policies?(admin)
     end
 
@@ -1229,10 +1239,14 @@ defmodule Emisar.PoliciesTest do
       {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
 
       operator =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :operator)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :operator)
+        )
 
       viewer =
-        Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       refute Policies.subject_can_manage_policies?(operator)
       refute Policies.subject_can_manage_policies?(viewer)
@@ -1246,7 +1260,7 @@ defmodule Emisar.PoliciesTest do
     test "separates role, runner, and pack authority using current membership access" do
       {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      admin = Fixtures.Subjects.membership_subject(membership)
+      admin = Fixtures.Subjects.subject_for(membership)
 
       assert Policies.policy_management_capabilities(admin) == %{
                can_manage?: true,
@@ -1288,7 +1302,7 @@ defmodule Emisar.PoliciesTest do
     test "allows a runner-restricted admin with full pack access" do
       {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      admin = Fixtures.Subjects.membership_subject(membership)
+      admin = Fixtures.Subjects.subject_for(membership)
       {:ok, restricted} = RunnerAccess.restricted(["db"], [])
       {:ok, _updated} = Accounts.update_membership_runner_access(membership, restricted, owner)
 
@@ -1300,7 +1314,7 @@ defmodule Emisar.PoliciesTest do
     test "requires full runner and pack access" do
       {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      admin = Fixtures.Subjects.membership_subject(membership)
+      admin = Fixtures.Subjects.subject_for(membership)
 
       assert Policies.subject_can_manage_account_policy?(admin)
 
@@ -1340,7 +1354,7 @@ defmodule Emisar.PoliciesTest do
 
   describe "peek_policy_for_account/1" do
     test "returns the account's default policy struct, never a scoped override" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, _scoped} = Policies.save_scoped_rules(deny_all_rules(), :runner, runner.id, subject)
 
@@ -1785,7 +1799,7 @@ defmodule Emisar.PoliciesTest do
   end
 
   defp preview_result(rules, catalog) do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
     for {id, risk} <- catalog do
@@ -1809,7 +1823,7 @@ defmodule Emisar.PoliciesTest do
     {:ok, _updated} =
       Accounts.update_membership_runner_access(membership, access, granting_subject)
 
-    Fixtures.Subjects.membership_subject(membership)
+    Fixtures.Subjects.subject_for(membership)
   end
 
   # A runner in `group` advertising one trusted low-risk action, so the compiler

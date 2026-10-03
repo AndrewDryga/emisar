@@ -2,7 +2,7 @@ defmodule Emisar.ApprovalsConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Approvals, Audit, Fixtures, Repo, Runbooks, Runners, Runs, Users}
+  alias Emisar.{Accounts, Approvals, Audit, Fixtures, Repo, Runbooks, Runners, Runs}
 
   @moduletag timeout: 60_000
 
@@ -21,7 +21,7 @@ defmodule Emisar.ApprovalsConcurrencyTest do
           |> Fixtures.Memberships.force_role("admin")
           |> Fixtures.Memberships.force_runner_access(access)
 
-        admin = Fixtures.Subjects.membership_subject(membership)
+        admin = Fixtures.Subjects.subject_for(membership)
 
         assert_scope_change_blocks(
           runner,
@@ -44,9 +44,9 @@ defmodule Emisar.ApprovalsConcurrencyTest do
           &Approvals.override_request(&1, "Stop invalid work", &2)
         ] do
       Sandbox.unboxed_run(Repo, fn ->
-        {user, account, _owner} = Fixtures.Subjects.owner_subject()
-        membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-        request = Fixtures.Approvals.create_execution_request(account, user, executable?: false)
+        {owner, account, _owner} = Fixtures.Subjects.owner_subject()
+        membership = Repo.reload!(owner)
+        request = Fixtures.Approvals.create_execution_request(account, owner, executable?: false)
 
         {:ok, [target | _]} =
           Runbooks.approval_targets_for_execution(request.runbook_execution_id, account.id)
@@ -59,7 +59,7 @@ defmodule Emisar.ApprovalsConcurrencyTest do
           |> Fixtures.Memberships.force_role("admin")
           |> Fixtures.Memberships.force_runner_access(access)
 
-        admin = Fixtures.Subjects.membership_subject(membership)
+        admin = Fixtures.Subjects.subject_for(membership)
 
         try do
           assert_scope_change_blocks(
@@ -76,7 +76,6 @@ defmodule Emisar.ApprovalsConcurrencyTest do
           refute Repo.exists?(by_request(Approvals.Decision, request.id))
         after
           Repo.delete_all(from(row in Accounts.Account, where: row.id == ^account.id))
-          Repo.delete_all(from(row in Users.User, where: row.id == ^user.id))
         end
       end)
     end
@@ -92,16 +91,19 @@ defmodule Emisar.ApprovalsConcurrencyTest do
           |> Fixtures.Memberships.force_role("admin")
           |> Fixtures.Memberships.force_runner_access(access)
 
-        admin = Fixtures.Subjects.membership_subject(membership)
+        admin = Fixtures.Subjects.subject_for(membership)
 
         {_secret, key} =
-          Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: admin.actor.id)
+          Fixtures.ApiKeys.create_api_key(
+            account_id: account.id,
+            created_by_membership_id: admin.actor.id
+          )
 
         grant =
           Fixtures.Approvals.create_grant(
             account_id: account.id,
             api_key_id: key.id,
-            granted_by_id: admin.actor.id,
+            granted_by_membership_id: admin.actor.id,
             runner_id: runner.id
           )
 
@@ -189,7 +191,7 @@ defmodule Emisar.ApprovalsConcurrencyTest do
           |> Fixtures.Memberships.force_runner_access(restricted)
         end)
 
-      admin = Fixtures.Subjects.membership_subject(membership)
+      admin = Fixtures.Subjects.subject_for(membership)
       parent = self()
 
       group_changer =
@@ -241,19 +243,17 @@ defmodule Emisar.ApprovalsConcurrencyTest do
   test "a concurrent demotion prevents invalid-runbook cleanup" do
     Sandbox.unboxed_run(Repo, fn ->
       account = Fixtures.Accounts.create_account()
-      owner_user = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner_user.id,
           role: "owner"
         )
 
-      owner = Fixtures.Subjects.membership_subject(owner_membership)
+      owner = Fixtures.Subjects.subject_for(owner_membership)
 
       request =
-        Fixtures.Approvals.create_execution_request(account, owner_user,
+        Fixtures.Approvals.create_execution_request(account, owner_membership,
           executable?: false,
           min_approvals: 2
         )
@@ -308,8 +308,6 @@ defmodule Emisar.ApprovalsConcurrencyTest do
         Repo.delete_all(
           from(account_row in Accounts.Account, where: account_row.id == ^account.id)
         )
-
-        Repo.delete_all(from(user in Users.User, where: user.id == ^owner_user.id))
       end
     end)
   end
@@ -321,25 +319,19 @@ defmodule Emisar.ApprovalsConcurrencyTest do
       Fixtures.Catalog.create_action(runner: runner)
       Emisar.Runners.subscribe_runner_transport(runner)
 
-      initiator = Fixtures.Users.create_user()
-
       initiator_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: initiator.id,
           role: "operator"
         )
-
-      owner_user = Fixtures.Users.create_user()
 
       owner_membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: owner_user.id,
           role: "owner"
         )
 
-      owner = Fixtures.Subjects.membership_subject(owner_membership)
+      owner = Fixtures.Subjects.subject_for(owner_membership)
 
       {:ok, run} =
         Runs.create_run(%{
@@ -368,10 +360,6 @@ defmodule Emisar.ApprovalsConcurrencyTest do
         })
       after
         Repo.delete_all(from(account in Accounts.Account, where: account.id == ^account.id))
-
-        Repo.delete_all(
-          from(user in Users.User, where: user.id in ^[initiator.id, owner_user.id])
-        )
       end
     end)
   end

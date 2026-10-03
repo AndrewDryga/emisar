@@ -2,12 +2,11 @@ defmodule Emisar.OAuthRefreshConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Fixtures, OAuth, Repo}
   alias Emisar.Accounts.Account
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.Audit.Event
+  alias Emisar.{Fixtures, OAuth, Repo}
   alias Emisar.OAuth.{Client, Token}
-  alias Emisar.Users.User
 
   @moduletag timeout: 60_000
   @redirect "https://claude.ai/api/mcp/auth_callback"
@@ -87,15 +86,21 @@ defmodule Emisar.OAuthRefreshConcurrencyTest do
   defp unboxed_oauth(fun) do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
-      user = Fixtures.Users.create_user(%{email: "oauth-race-#{suffix}@example.test"})
 
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "OAuth race #{suffix}", slug: "oauth-race-#{suffix}"},
-          user
+      account =
+        Fixtures.Accounts.create_account(
+          name: "OAuth race #{suffix}",
+          slug: "oauth-race-#{suffix}"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "oauth-race-#{suffix}@example.test"
+        )
+
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, client} =
         OAuth.register_client(%{
@@ -136,7 +141,6 @@ defmodule Emisar.OAuthRefreshConcurrencyTest do
       after
         Repo.delete_all(from(account in Account, where: account.id == ^account.id))
         Repo.delete_all(from(client in Client, where: client.id == ^client.id))
-        Repo.delete_all(from(user in User, where: user.id == ^user.id))
       end
     end)
   end

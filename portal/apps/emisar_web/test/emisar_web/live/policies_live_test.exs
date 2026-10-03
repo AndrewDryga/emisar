@@ -10,14 +10,16 @@ defmodule EmisarWeb.PoliciesLiveTest do
   alias Emisar.{Fixtures, Policies}
 
   describe "GET /app/policies" do
-    test "redirects anonymous users", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/policies")
+    test "redirects anonymous users to the workspace sign-in", %{conn: conn} do
+      account = Fixtures.Accounts.create_account()
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/policies")
+      assert to == ~p"/app/#{account}/sign_in"
     end
 
     test "renders the default policy + ruleset sections with the empty placeholders", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "Default policy"
@@ -58,7 +60,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "crafted set_target/remove_override events with non-binary params don't crash the socket",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       # `target[]=` / `index[]=` post lists; parse_target and Integer.parse would
@@ -71,7 +73,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # The raw min_approvals number input had no accessible name; it now carries
       # an editor-scoped id wired to its "Required approvers" <label for> (the id
       # is scoped so the default policy + each ruleset don't collide).
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       assert has_element?(lv, ~s|label[for="policy-account-min-approvals"]|, "Required approvers")
@@ -90,7 +92,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # would be more permissive than high and is rendered disabled-but-visible;
       # the stored "deny" is pre-selected. This is the per-option state the
       # shared <.select> must carry through (options_for_select can't).
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       [critical] =
@@ -105,7 +107,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
          %{
            conn: conn
          } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       policy = Policies.peek_policy_for_account(account.id)
 
       corrupt_rules =
@@ -144,7 +146,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "a padded stored override renders and saves trimmed", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       policy = Policies.peek_policy_for_account(account.id)
 
       corrupt_rules =
@@ -172,7 +174,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "tweak defaults + add an override → save → persisted as v2 JSON", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       # Add an empty override row to the account editor.
@@ -226,7 +228,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "blank-action override rows are dropped on save", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -254,7 +256,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "a partially filled override blocks save with an inline action error", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       render_click(lv, "add_override", %{"editor" => "account"})
@@ -303,7 +305,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "a changed decision also makes a blank-action override incomplete", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       render_click(lv, "add_override", %{"editor" => "account"})
@@ -325,7 +327,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "remove_override drops the row from the account form", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -360,8 +362,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # the override AND the `policy.updated` audit diff records it under
       # `changes.overrides.removed` (the LV mutation reaches the same context write
       # + diff the API does).
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       # Seed a saved default carrying one override (the "before" the diff compares).
       {:ok, _} =
@@ -405,7 +407,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "warns when an override is shadowed by an earlier broader glob (deny copy)", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -430,7 +432,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "no shadow warning when the specific deny comes first", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -454,7 +456,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "an unmatched override warning is scoped to the preview and allows future actions", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Catalog.create_action(runner: runner, action_id: "nginx.reload", risk: "medium")
 
@@ -483,7 +485,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "no unmatched warning once the glob actually matches an action", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Catalog.create_action(runner: runner, action_id: "nginx.reload", risk: "medium")
 
@@ -506,7 +508,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "a valid edit saves cleanly — the rules error is a defensive inline net, never a flash",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       # The tier defaults are constrained <select>s and form_change auto-enforces
@@ -525,8 +527,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "loading an existing policy reflects its defaults + overrides in the form", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _} =
         Policies.save_rules(
@@ -557,7 +559,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
     test "approval requirements round-trip through the editor (2 approvers, no self-approval)",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       html =
@@ -584,8 +586,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "an existing min_approvals reflects in the editor's number input", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _} =
         Policies.save_rules(
@@ -615,8 +617,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "the required-approvers label pluralizes with the count", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _} =
         Policies.save_rules(
@@ -649,8 +651,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "self-approval + a single approval warns once below the preview's risk catalog", %{
       conn: conn
     } do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       Fixtures.Catalog.create_action(runner: runner, risk: "high")
 
@@ -703,8 +705,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "a config with independent review shows no single-reviewer guidance", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _} =
         Policies.save_rules(
@@ -733,8 +735,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "a healthy four-eyes gate shows no verdict callout", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _} =
         Policies.save_rules(
@@ -762,24 +764,17 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # and is denied.
       {_owner_conn, owner, account} = register_and_log_in(conn)
 
-      operator = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, _updated} =
         Emisar.Accounts.update_membership_runner_access(
-          membership,
+          operator,
           Emisar.Accounts.RunnerAccess.all(),
-          Fixtures.Subjects.subject_for(owner, account)
+          Fixtures.Subjects.subject_for(owner)
         )
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/policies")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/policies")
 
       assert html =~ "only owners and admins can change it"
       refute html =~ "Add ruleset"
@@ -798,7 +793,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # min_approvals number + self-approval checkbox are `disabled`. The Save gate
       # is defense-in-depth on top; the card simply offers nothing to submit.
       {_owner_conn, owner, account} = register_and_log_in(conn)
-      owner_subject = Fixtures.Subjects.subject_for(owner, account)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
 
       # Seed a saved default carrying one override so the trash button has a row
       # to (not) render on.
@@ -820,16 +815,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
           owner_subject
         )
 
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
-
-      {:ok, _lv, html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/policies")
+      {:ok, _lv, html} =
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/policies")
 
       # The override row is shown (read-only)…
       assert html =~ ~s(value="block-drops")
@@ -857,7 +846,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # Action/Decision (a caller's `text-xs` shrank the box), and a hidden trash
       # in an `auto` track slid every field sideways for a viewer.
       {_owner_conn, owner, account} = register_and_log_in(conn)
-      owner_subject = Fixtures.Subjects.subject_for(owner, account)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
 
       rules = %{
         "schema_version" => 2,
@@ -875,19 +864,13 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _} = Policies.save_rules(rules, owner_subject)
 
-      viewer = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, _lv, owner_html} =
-        build_conn() |> log_in_user(owner) |> live(~p"/app/#{account}/policies")
+        build_conn() |> log_in_member(owner) |> live(~p"/app/#{account}/policies")
 
       {:ok, _lv, viewer_html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/policies")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/policies")
 
       fields = [
         ~s(policy[overrides][0][name]),
@@ -927,7 +910,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # shrinks the select to its content, and a locked tier renders narrower than
       # its neighbours.
       {conn, owner, account} = register_and_log_in(conn)
-      {:ok, _} = Policies.save_rules(deny_all(), Fixtures.Subjects.subject_for(owner, account))
+      {:ok, _} = Policies.save_rules(deny_all(), Fixtures.Subjects.subject_for(owner))
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/policies")
 
@@ -952,10 +935,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # `fetch_policy` / `list_scoped_policy_summaries` scope to the
       # subject's account via `for_subject`, so a foreign account's saved default
       # and runner ruleset are invisible here.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
-      {_b_conn, b_user, b_account} = register_and_log_in(build_conn())
-      b_subject = Fixtures.Subjects.subject_for(b_user, b_account)
+      {_b_conn, b_owner, b_account} = register_and_log_in(build_conn())
+      b_subject = Fixtures.Subjects.subject_for(b_owner)
 
       b_runner =
         Fixtures.Runners.create_runner(
@@ -979,7 +962,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "remove_override with a non-integer index is a no-op", %{conn: conn} do
       # `Integer.parse("abc")` is `:error`, so the handler
       # returns the socket unchanged. The existing override row survives.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -1004,7 +987,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     test "remove_override with an out-of-range index is safe", %{conn: conn} do
       # `List.delete_at/2` past the end returns the list
       # unchanged, so removing index 5 of a single-row list is a no-op, no crash.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_override", %{"editor" => "account"})
@@ -1030,7 +1013,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # posting low=deny runs `enforce_monotonic_defaults`,
       # lifting medium/high/critical up to at least deny. The rendered selects all
       # reflect deny, and the would-be-invalid combo never reaches the operator.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       html =
@@ -1051,7 +1034,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # `merge_defaults/2` only accepts a value in
       # `@decisions`; a junk POST for a tier falls back to the editor's current
       # value. The seeded high default is require_approval and stays that way.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       html =
@@ -1072,7 +1055,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # low=deny, high=allow is auto-monotonized client-side to all-deny, so the
       # rendered form carries no rules error and the result the client produced
       # is accepted by the server on save (no transient-invalid state).
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       html =
@@ -1101,7 +1084,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # (LV half) — `parse_min_approvals/2` keeps the prior
       # editor value when the posted string isn't a parseable integer ≥ 1. The
       # seeded default is 1, so a junk post leaves the number input at 1.
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       html =
@@ -1116,8 +1099,8 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
   describe "targeted rulesets" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      %{conn: conn, account: account, subject: Fixtures.Subjects.subject_for(user, account)}
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, account: account, subject: Fixtures.Subjects.subject_for(owner)}
     end
 
     test "a runner-restricted admin sees the default read-only and can edit an in-scope ruleset",
@@ -1133,7 +1116,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, _updated} =
         Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
 
-      admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+      admin_conn = log_in_member(build_conn(), membership)
       {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
       html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
@@ -1169,7 +1152,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
           subject
         )
 
-      admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+      admin_conn = log_in_member(build_conn(), membership)
       {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
 
       assert rendered_text(html) =~ "You can view all policies."
@@ -1215,7 +1198,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, _updated} =
         Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
 
-      admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+      admin_conn = log_in_member(build_conn(), membership)
       {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
       html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
@@ -1408,7 +1391,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, _updated} =
         Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
 
-      admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+      admin_conn = log_in_member(build_conn(), membership)
 
       for target <- [
             "runner:" <> Ecto.UUID.generate(),
@@ -1539,23 +1522,17 @@ defmodule EmisarWeb.PoliciesLiveTest do
       _runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
-      viewer = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, _updated} =
         Emisar.Accounts.update_membership_runner_access(
-          membership,
+          viewer,
           Emisar.Accounts.RunnerAccess.all(),
           subject
         )
 
-      {:ok, lv, html} = build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/policies")
+      {:ok, lv, html} =
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/policies")
 
       # No management affordances: no "Add ruleset", no Save buttons.
       refute html =~ "Add ruleset"
@@ -1586,17 +1563,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/policies")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/policies")
 
       render_click(lv, "open_ruleset", %{"uid" => saved.id})
 
@@ -1617,17 +1587,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, _html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/policies")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/policies")
 
       render_click(lv, "open_ruleset", %{"uid" => saved.id})
 
@@ -1647,17 +1610,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       _runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/policies")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/policies")
 
       refute html =~ "Save ruleset"
       refute render_hook(lv, "add_ruleset", %{}) =~ "Save ruleset"
@@ -1908,7 +1864,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
   end
 
   test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
     # The payload is the operator's own socket, so this is self-inflicted — but

@@ -206,8 +206,7 @@ defmodule Emisar.Seeds.RunbookExecutions do
     |> Ecto.Changeset.change(
       status: :approved,
       overridden: false,
-      decided_by_membership_id:
-        Emisar.Accounts.peek_sync_membership(request.account_id, jordan.id).id,
+      decided_by_membership_id: jordan.id,
       decided_at: DateTime.add(succeeded_at, 5, :second),
       decision_reason: "Validated config, drained connections, and an open change window."
     )
@@ -305,7 +304,7 @@ defmodule Emisar.Seeds.RunbookExecutions do
   """
   def seed_output_previews(%{
         account: account,
-        owner_membership: owner_membership,
+        owner: owner,
         approval_runbook: approval_runbook,
         seeded_execution_ids: seeded_execution_ids,
         succeeded_at: succeeded_at,
@@ -332,7 +331,7 @@ defmodule Emisar.Seeds.RunbookExecutions do
             # so seeding it as `operator` left the runs list's "Dispatched by →
             # Runbook" filter matching nothing in the demo account.
             source: "runbook",
-            initiating_membership_id: owner_membership.id,
+            initiating_membership_id: owner.id,
             pack_ref: item.pack_ref,
             runner_ref: item.runner_ref,
             runbook_id: approval_runbook.id,

@@ -10,16 +10,18 @@ defmodule EmisarWeb.ActivateLive do
   secret.
   """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, ApiKeys, Throttle, Users}
-  alias EmisarWeb.{MfaErrors, Permissions}
+  alias Emisar.{Accounts, ApiKeys, Throttle}
+  alias EmisarWeb.{MfaErrors, Permissions, UserAuth}
 
-  def mount(_params, _session, socket) do
-    # IL-18: the selector read runs on the connected mount only; a
-    # single-account user (the common case) just never sees the selector
-    # during the static flash.
+  def mount(_params, session, socket) do
+    # IL-18: the selector read runs on the connected mount only; a browser
+    # signed in to one workspace (the common case) just never sees the
+    # selector during the static flash. The choices are the workspaces this
+    # browser holds a live session for — picking one re-enters this page under
+    # that workspace, whose own session then decides.
     accounts =
       if connected?(socket),
-        do: list_switchable_accounts(socket.assigns.current_subject),
+        do: UserAuth.signed_in_accounts(session),
         else: [socket.assigns.current_account]
 
     {:ok,
@@ -128,11 +130,7 @@ defmodule EmisarWeb.ActivateLive do
     end
   end
 
-  # One budget per person: the personal login when there is one, otherwise the
-  # Member, which is the whole identity of a member-only session.
-  defp lookup_budget_key(%{assigns: %{current_user: %Users.User{id: user_id}}}),
-    do: user_id
-
+  # One budget per Member: the whole identity of a workspace session.
   defp lookup_budget_key(%{assigns: %{current_subject: subject}}), do: subject.membership_id
 
   defp do_lookup(socket, code) do
@@ -155,13 +153,6 @@ defmodule EmisarWeb.ActivateLive do
     # without one.
     "No pending request matches this code — it may have expired (codes last " <>
       "15 minutes) or already been decided. Start the connection again for a fresh code."
-  end
-
-  defp list_switchable_accounts(subject) do
-    case Accounts.list_accounts_for_user(subject) do
-      {:ok, accounts, _metadata} -> accounts
-      {:error, _reason} -> []
-    end
   end
 
   def render(assigns) do
@@ -342,12 +333,15 @@ defmodule EmisarWeb.ActivateLive do
           </div>
       <% end %>
 
-      <:footer :if={@current_user}>
-        Signed in as <span class="text-zinc-400">{@current_user.email}</span>
+      <:footer>
+        Signed in as <span class="text-zinc-400">{member_label(@current_membership)}</span>
       </:footer>
     </.auth_card>
     """
   end
+
+  defp member_label(%Accounts.Membership{email: email}) when is_binary(email), do: email
+  defp member_label(membership), do: Accounts.member_display_name(membership)
 
   # "Claude Code" / "Claude Code & Cursor" / "Claude Code, Cursor & Codex CLI"
   defp client_labels_phrase(grant) do

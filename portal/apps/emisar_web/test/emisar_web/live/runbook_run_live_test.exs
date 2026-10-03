@@ -8,9 +8,9 @@ defmodule EmisarWeb.RunbookRunLiveTest do
   @hash "sha256:" <> String.duplicate("c", 64)
 
   setup %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     Fixtures.Policies.create_policy(account_id: account.id)
-    %{conn: conn, user: user, account: account, subject: owner_subject(user, account)}
+    %{conn: conn, user: owner, account: account, subject: Fixtures.Subjects.subject_for(owner)}
   end
 
   defp trusted_runner(account, subject, opts \\ []) do
@@ -454,17 +454,12 @@ defmodule EmisarWeb.RunbookRunLiveTest do
     } do
       runner = trusted_runner(account, subject)
       runbook = published_runbook(subject, runner)
-      viewer = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       assert {:ok, lv, html} =
                build_conn()
-               |> log_in_user(viewer)
+               |> log_in_member(viewer)
                |> live(~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
       assert html =~ "Confirm the incident"
@@ -489,7 +484,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
         )
 
       runbook = published_runbook(subject, runner, typed_input: true)
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = user
       membership = Fixtures.Memberships.force_role(membership, "admin")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
 
@@ -576,7 +571,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       runbook =
         Fixtures.Runbooks.create_runbook(
           account_id: account.id,
-          created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+          created_by_membership_id: user.id,
           title: "Half baked",
           slug: "half-baked"
         )
@@ -1501,20 +1496,14 @@ defmodule EmisarWeb.RunbookRunLiveTest do
 
       Fixtures.Runbooks.mark_runbook_as_deleted(runbook)
       Fixtures.Runners.mark_deleted(runner)
-      viewer = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
+      Fixtures.Memberships.force_runner_access(viewer, Emisar.Accounts.RunnerAccess.none())
 
       assert {:ok, lv, html} =
                build_conn()
-               |> log_in_user(viewer)
+               |> log_in_member(viewer)
                |> live(~p"/app/#{account}/runbooks/#{runbook.id}/runs/#{execution_id}")
 
       assert html =~ "Retained incident evidence"
@@ -1542,7 +1531,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert {:error, {:live_redirect, %{to: ^wrong_path}}} =
                live(conn, ~p"/app/#{account}/runbooks/#{other.id}/runs/#{execution_id}")
 
-      {foreign_conn, _user, foreign_account} = register_and_log_in(build_conn())
+      {foreign_conn, _owner, foreign_account} = register_and_log_in(build_conn())
       foreign_path = ~p"/app/#{foreign_account}/runbooks/#{runbook.id}/run"
 
       assert {:error, {:live_redirect, %{to: ^foreign_path}}} =
@@ -1566,7 +1555,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
           steps: [step("first", runner.group, []), step("second", other.group, [])]
         )
 
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      membership = user
       membership = Fixtures.Memberships.force_role(membership, "admin")
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runbooks/#{runbook.id}/run")
       start(lv)

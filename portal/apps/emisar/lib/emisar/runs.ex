@@ -22,7 +22,6 @@ defmodule Emisar.Runs do
   alias Emisar.Repo
   alias Emisar.RequestContext
   alias Emisar.Runs.{ActionRun, Attestation, Authorizer, RunEvent, RunnerError}
-  alias Emisar.Users
   require Logger
 
   @sent_dispatch_deadline_secs 600
@@ -1869,7 +1868,7 @@ defmodule Emisar.Runs do
   # letting a user name another membership (or an API key another credential)
   # to widen its fleet reach or misattribute the run.
   defp put_dispatcher_identity(attrs, %Subject{actor: actor, membership_id: membership_id})
-       when is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership) do
+       when is_struct(actor, Accounts.Membership) do
     attrs
     |> Map.put(:requested_by_membership_id, membership_id)
     |> Map.delete(:api_key_id)
@@ -3106,7 +3105,7 @@ defmodule Emisar.Runs do
         %Subject{account: %Accounts.Account{} = account, actor: actor} = subject,
         opts
       )
-      when is_struct(actor, Users.User) or is_struct(actor, Accounts.Membership) do
+      when is_struct(actor, Accounts.Membership) do
     repo = Keyword.get(opts, :repo, Repo)
 
     with :ok <-
@@ -4049,7 +4048,6 @@ defmodule Emisar.Runs do
 
   # A person dispatches as their exact Member, and an MCP key as the Member that
   # minted it (`subject.membership_id` either way). No other actor dispatches.
-  defp dispatch_actor?(%Subject{actor: %Users.User{}}), do: true
   defp dispatch_actor?(%Subject{actor: %Accounts.Membership{}}), do: true
 
   defp dispatch_actor?(%Subject{actor: %ApiKeys.ApiKey{kind: :mcp, id: id}}),
@@ -4057,7 +4055,6 @@ defmodule Emisar.Runs do
 
   defp dispatch_actor?(_subject), do: false
 
-  defp lock_dispatch_key(_repo, %Subject{actor: %Users.User{}}), do: :ok
   defp lock_dispatch_key(_repo, %Subject{actor: %Accounts.Membership{}}), do: :ok
 
   defp lock_dispatch_key(repo, %Subject{
@@ -4098,9 +4095,6 @@ defmodule Emisar.Runs do
 
     with :ok <- ensure_run_initiator_authorized(repo, run), do: {:ok, :authorized}
   end
-
-  defp dispatcher_matches_attrs?(%Subject{actor: %Users.User{}}, attrs),
-    do: is_nil(Map.get(attrs, :api_key_id))
 
   defp dispatcher_matches_attrs?(%Subject{actor: %Accounts.Membership{}}, attrs),
     do: is_nil(Map.get(attrs, :api_key_id))

@@ -117,4 +117,41 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
     assert html =~ "Wrong code"
     assert html =~ "Verify email"
   end
+
+  describe "EmisarWeb.MfaEnrollment" do
+    alias Emisar.Accounts.{Account, Membership}
+    alias EmisarWeb.{MfaEnrollment, MfaQr}
+
+    test "labels the authenticator entry with the workspace and the Member's email, else name" do
+      assert MfaEnrollment.member_label(%Membership{
+               email: "maya@example.com",
+               display_name: "Maya"
+             }) ==
+               "maya@example.com"
+
+      assert MfaEnrollment.member_label(%Membership{email: nil, display_name: "Maya Chen"}) ==
+               "Maya Chen"
+    end
+
+    test "prepare_authenticator/2 mints the secret this socket shows, for this workspace's entry" do
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{
+          __changed__: %{},
+          current_account: %Account{name: "Acme Ops"},
+          current_membership: %Membership{email: "maya@example.com"}
+        }
+      }
+
+      %{assigns: assigns} = MfaEnrollment.prepare_authenticator(socket, "the-proof")
+
+      assert assigns.mfa_enrollment_step == :totp
+      assert assigns.mfa_enrollment_proof == "the-proof"
+      assert Base.decode32!(assigns.mfa_setup_key, padding: false) == assigns.mfa_secret
+
+      assert assigns.mfa_qr_svg ==
+               "Acme Ops"
+               |> MfaQr.provisioning_uri("maya@example.com", assigns.mfa_secret)
+               |> MfaQr.svg()
+    end
+  end
 end

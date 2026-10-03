@@ -12,12 +12,13 @@ defmodule EmisarWeb.Plugs.EnsureAccountCompliance do
   single current account). Do not read this plug as covering OAuth and delete
   that check.
 
-  Composed after `:require_authenticated_user` (which resolves
-  `current_account` + the subject carrying the session's auth provenance into
-  assigns), it runs the SAME `Emisar.Accounts.ensure_account_compliant/2` policy
-  the LiveView hooks use — so the two enforcement paths can't drift — and bounces
-  a non-compliant session to the matching step-up (the SSO shim / the MFA setup
-  interstitial) before the action runs, mirroring the hooks' redirects.
+  Composed after `:fetch_workspace_session` (which resolves `current_account`
+  and the subject carrying the session's auth provenance into assigns), it runs
+  the SAME `Emisar.Accounts.ensure_account_compliant/2` policy the LiveView
+  hooks use — so the two enforcement paths can't drift — and mirrors the hooks'
+  redirects before the action runs: a session `require_sso` no longer accepts
+  goes back to the workspace, whose plug drops it; one that owes MFA goes to the
+  workspace's MFA setup page.
   """
   use EmisarWeb, :verified_routes
   import Plug.Conn
@@ -34,10 +35,10 @@ defmodule EmisarWeb.Plugs.EnsureAccountCompliance do
         conn
 
       {:error, :sso_required} ->
-        conn |> redirect(to: ~p"/app/#{account}/sso_required") |> halt()
+        conn |> redirect(to: ~p"/app/#{account}") |> halt()
 
       {:error, :mfa_required} ->
-        conn |> redirect(to: ~p"/app/mfa_setup") |> halt()
+        conn |> redirect(to: ~p"/app/#{account}/mfa_setup") |> halt()
 
       # The pipeline resolves the account and subject together. Treat an
       # inconsistent or unauthorized pair like every other tenant-scope miss.

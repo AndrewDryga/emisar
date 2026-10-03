@@ -5,17 +5,9 @@ defmodule Emisar.PoliciesAuditTest do
 
   describe "policy.updated audit payload" do
     setup do
-      user = Fixtures.Users.create_user()
-
-      {:ok, account} =
-        Emisar.Accounts.create_account_with_owner(
-          %{name: "X", slug: "x-#{System.unique_integer()}", plan: "free"},
-          user
-        )
-
-      subject = Fixtures.Subjects.subject_for(user, account)
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
       {:ok, policy} = Policies.fetch_policy(subject)
-      %{user: user, account: account, subject: subject, policy: policy}
+      %{owner: owner, account: account, subject: subject, policy: policy}
     end
 
     test "captures before/after snapshots", %{

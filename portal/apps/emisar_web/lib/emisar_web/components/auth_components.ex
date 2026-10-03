@@ -16,7 +16,6 @@ defmodule EmisarWeb.AuthComponents do
 
   import EmisarWeb.CoreComponents
   import EmisarWeb.MarketingComponents, only: [brand: 1]
-  alias EmisarWeb.ConfirmDialog
 
   @doc """
   iPhone-style one-box-per-character code entry, driven by the `CodeInput` JS
@@ -81,19 +80,18 @@ defmodule EmisarWeb.AuthComponents do
   attr :id, :string, required: true
   attr :form, :map, required: true
   attr :step, :map, required: true
-  attr :purpose, :atom, required: true, values: [:link, :unlink, :verify]
-  attr :email, :string, required: true
+  attr :email, :string, default: nil
   attr :error, :string, default: nil
   attr :handoff, :string, default: nil
   attr :trigger_submit, :boolean, default: false
   attr :action, :string, required: true
-  attr :typed, :string, default: ""
 
   def oidc_step_dialog(assigns) do
     assigns =
       assign(assigns,
-        title: oidc_step_title(assigns.purpose, assigns.step.provider_name),
-        explanation: oidc_step_explanation(assigns.purpose, assigns.step.provider_name),
+        title: "Verify sign-in",
+        explanation:
+          "Confirm it's you, then sign in with #{assigns.step.provider_name} to verify this connection.",
         close: Phoenix.LiveView.JS.push("cancel_oidc_step_up")
       )
 
@@ -140,18 +138,10 @@ defmodule EmisarWeb.AuthComponents do
             id={"#{@id}-form"}
             class="mt-6"
             phx-submit="confirm_oidc_step_up"
-            phx-change={@purpose == :unlink && "confirm_typed"}
             phx-trigger-action={@trigger_submit}
             action={@action}
             method="post"
           >
-            <.typed_confirm_field
-              :if={@purpose == :unlink}
-              id={"#{@id}-confirm-token"}
-              token={@step.provider_name}
-              value={@typed}
-              required
-            />
             <p class="text-sm text-zinc-300">
               <%= if @step.factor == :email do %>
                 Enter the 6-digit code sent to {@email}.
@@ -180,20 +170,11 @@ defmodule EmisarWeb.AuthComponents do
             <:actions>
               <.button
                 id={"#{@id}-continue"}
-                variant={if @purpose == :unlink, do: :secondary, else: :primary}
-                tone={if @purpose == :unlink, do: :rose, else: nil}
-                disabled={
-                  @purpose == :unlink and not ConfirmDialog.matches?(@typed, @step.provider_name)
-                }
                 class="min-w-28 max-w-full break-words"
                 phx-hook="PendingButton"
                 phx-disable-with="Confirming..."
               >
-                <span class="min-w-0 break-words">
-                  {if @purpose == :unlink,
-                    do: "Remove sign-in method",
-                    else: "Continue to #{@step.provider_name}"}
-                </span>
+                <span class="min-w-0 break-words">Continue to {@step.provider_name}</span>
               </.button>
               <.button
                 :if={@step.factor == :email}
@@ -215,20 +196,6 @@ defmodule EmisarWeb.AuthComponents do
     </div>
     """
   end
-
-  defp oidc_step_title(:link, provider_name), do: "Link #{provider_name}"
-  defp oidc_step_title(:unlink, provider_name), do: "Remove #{provider_name}"
-  defp oidc_step_title(:verify, _provider_name), do: "Verify sign-in"
-
-  defp oidc_step_explanation(:link, provider_name),
-    do: "Confirm it's you, then sign in with #{provider_name}."
-
-  defp oidc_step_explanation(:unlink, provider_name) do
-    "You won't be able to sign in with #{provider_name}. Existing sessions lose the workspace access proved through this method; other sign-in proof remains."
-  end
-
-  defp oidc_step_explanation(:verify, provider_name),
-    do: "Confirm it's you, then sign in with #{provider_name} to verify this connection."
 
   @doc """
   Two-column auth-flow layout: marketing copy on the left, form on the
@@ -442,7 +409,7 @@ defmodule EmisarWeb.AuthComponents do
       <.auth_card>
         <div class="border-b border-zinc-800 px-6 py-5">…header…</div>
         <div class="px-6 py-5">…body…</div>
-        <:footer>Signed in as {@current_user.email}</:footer>
+        <:footer>Signed in as {@current_membership.email}</:footer>
       </.auth_card>
   """
   slot :inner_block, required: true
@@ -604,44 +571,6 @@ defmodule EmisarWeb.AuthComponents do
     <p class="mb-4 text-xs text-zinc-400" role="status">
       Step {@step} of 3 <span aria-hidden="true">·</span> <span class="text-zinc-200">{@label}</span>
     </p>
-    """
-  end
-
-  @doc """
-  Links a personal login to a workspace Member that has none. The form posts an
-  email address with the page's signed member-link handoff to the email
-  sign-in; the Member is linked only once this browser proves that mailbox and
-  any second factor its login already has. Shared by Profile and the required
-  MFA page, which offer the link before any factor can be set up.
-  """
-  attr :handoff, :string, required: true, doc: "the signed EmisarWeb.MemberLinkHandoff"
-  attr :return_to, :string, required: true, doc: "the Member's workspace, `/app/<slug>`"
-  attr :class, :string, default: nil
-
-  def member_link_form(assigns) do
-    ~H"""
-    <.simple_form
-      for={%{}}
-      id="member-link-form"
-      class={@class}
-      action={~p"/sign_in/magic/start"}
-      method="post"
-    >
-      <input type="hidden" name="member_link_handoff" value={@handoff} />
-      <input type="hidden" name="return_to" value={@return_to} />
-      <.input
-        name="user[email]"
-        id="member-link-email"
-        value=""
-        type="email"
-        label="Email address"
-        autocomplete="email"
-        required
-      />
-      <:actions>
-        <.button>Email me a code</.button>
-      </:actions>
-    </.simple_form>
     """
   end
 

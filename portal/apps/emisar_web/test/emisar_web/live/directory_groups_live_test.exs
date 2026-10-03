@@ -3,14 +3,14 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
   alias Emisar.Fixtures
 
   test "Team keeps normal member filters without directory groups or group reads", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+    {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
 
     provider =
       Fixtures.SSO.create_identity_provider(account_id: account.id) |> Fixtures.SSO.enable_scim()
 
     members =
       for n <- 1..7,
-          do: Fixtures.SSO.create_directory_member(provider, full_name: "Engineer #{n}")
+          do: Fixtures.SSO.create_directory_member(provider, display_name: "Engineer #{n}")
 
     member = hd(members)
 
@@ -36,7 +36,7 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
   end
 
   test "connection counts filter and focus Members on the same page", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+    {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
 
     provider =
       Fixtures.SSO.create_identity_provider(account_id: account.id) |> Fixtures.SSO.enable_scim()
@@ -84,7 +84,12 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
            )
 
     refute has_element?(lv, "#synced-member-groups-#{member.identity.id} [phx-hook=Tooltip]")
-    refute has_element?(lv, "#synced-group-#{platform.id} [role=tooltip]", member.user.full_name)
+
+    refute has_element?(
+             lv,
+             "#synced-group-#{platform.id} [role=tooltip]",
+             member.membership.display_name
+           )
 
     lv |> form("#group-access-search", %{group_access_search: "Security"}) |> render_change()
     assert_patch(lv)
@@ -109,9 +114,8 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
   end
 
   test "Team does not expose directory groups to viewers either", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    Fixtures.Memberships.force_role(membership, "viewer")
+    {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+    Fixtures.Memberships.force_role(owner, "viewer")
     provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
     member = Fixtures.SSO.create_directory_member(provider)
 
@@ -128,7 +132,7 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
   test "SSO group badges toggle the same list and stay selected outside the choice page", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+    {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
 
     provider =
       Fixtures.SSO.create_identity_provider(account_id: account.id) |> Fixtures.SSO.enable_scim()
@@ -203,7 +207,7 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
 
   test "SSO unavailable group filters stay visible and clearable without revealing other providers",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+    {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
 
     provider =
       Fixtures.SSO.create_identity_provider(account_id: account.id) |> Fixtures.SSO.enable_scim()
@@ -236,7 +240,7 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
 
   test "member origin badges distinguish self-linked accounts from SCIM with plain explanations",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+    {conn, owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
 
     provider =
       Fixtures.SSO.create_identity_provider(account_id: account.id) |> Fixtures.SSO.enable_scim()
@@ -245,7 +249,7 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
       Fixtures.SSO.create_user_identity(
         account_id: account.id,
         provider_id: provider.id,
-        user_id: user.id,
+        membership: owner,
         provisioned_via: :oidc_link
       )
 
@@ -272,7 +276,7 @@ defmodule EmisarWeb.DirectoryGroupsLiveTest do
   end
 
   test "SSO member group overflow is bounded and closes when membership is removed", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
+    {conn, _owner, account} = register_and_log_in(conn, %{account: %{plan: "enterprise"}})
 
     provider =
       Fixtures.SSO.create_identity_provider(account_id: account.id) |> Fixtures.SSO.enable_scim()

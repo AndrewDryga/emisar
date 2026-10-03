@@ -1,41 +1,32 @@
 defmodule EmisarWeb.ProfileLive do
+  @moduledoc """
+  The Member's own page in this workspace: Profile (the name shown here; the
+  email it was invited or signed up with, read-only), Multi-factor
+  authentication (this Member's factor, enrolled with a fresh proof of its own
+  credential), and Active sessions (this Member's sessions in this workspace).
+
+  Everything here belongs to one Member in one workspace — there is no
+  personal login behind it, so nothing on this page reaches another workspace.
+  """
   use EmisarWeb, :live_view
-  alias Emisar.{Accounts, ApiKeys, Auth, SSO, Users}
-  alias EmisarWeb.{ConfirmDialog, LiveForm, LiveTable, MemberLinkHandoff, MfaEnrollment}
-  alias EmisarWeb.{MfaErrors, OIDCStepUp, UserAgent, UserAuth}
+  alias Emisar.{Accounts, ApiKeys, Auth}
+  alias EmisarWeb.{LiveForm, LiveTable, MfaEnrollment, MfaErrors, UserAgent, UserAuth}
   alias Phoenix.LiveView.JS
 
-  # Both step-ups on this page — the email-change authenticator branch and
-  # disabling MFA — spend the same per-user MFA attempt window, so they report
-  # its exhaustion in the same words.
-  @mfa_enrollment_email_unavailable_error "Your profile has no email address. Ask your workspace administrator for help, or contact support@emisar.dev."
-  @mfa_enrollment_email_suppressed_error "Emisar cannot deliver mail to your current address. Contact support to restore email delivery before setting up MFA."
+  @mfa_enrollment_email_unavailable_error "Your email address isn't verified, so we can't send a code to it. Ask your workspace administrator for help, or contact support@emisar.dev."
+  @mfa_enrollment_email_suppressed_error "Emisar cannot deliver mail to your address. Contact support to restore email delivery before setting up MFA."
   @mfa_enrollment_email_delivery_error "We could not deliver the verification code. Try again. If it keeps failing, contact support."
 
-  # Named once so linking and removing a sign-in method report an unstartable
-  # step-up identically — the operator hit the same wall either way.
-  @oidc_step_up_start_error "Couldn't start confirmation. Try again."
-  @personal_sign_in_required "These controls require unexpired personal email-link proof in this browser. Workspace SSO alone does not provide it."
-  @no_personal_login "Your membership in this workspace has no personal login."
-
-  # A member-only session keeps only its workspace profile.
-  @workspace_profile_events ~w(edit_workspace_profile cancel_workspace_profile
-                               validate_workspace_profile save_workspace_profile)
-
   def mount(_params, _session, socket) do
-    user = socket.assigns.current_user
-
     {:ok,
      socket
      |> assign(:page_title, "Profile")
-     |> assign(:member_link_handoff, MemberLinkHandoff.sign(socket.assigns.current_subject))
-     |> assign(:personal_sign_in?, false)
      |> assign(:profile_editing?, false)
-     |> assign(:workspace_profile_editing?, false)
-     |> assign(:workspace_profile_editable?, false)
-     |> assign(:workspace_profile_error?, false)
-     |> assign(:workspace_profile_loaded?, false)
-     |> assign_workspace_profile_form(socket.assigns.current_membership)
+     |> assign(:profile_editable?, false)
+     |> assign(:profile_error?, false)
+     |> assign(:profile_loaded?, false)
+     |> assign_profile_form(socket.assigns.current_membership)
+     |> assign(:mfa_facts, nil)
      |> assign(:mfa_recovery_codes, nil)
      |> assign(:codes_saved?, false)
      |> assign(:mfa_start_error, nil)
@@ -43,103 +34,63 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:mfa_recovery_regeneration_error, nil)
      |> assign(:mfa_disable_step, :idle)
      |> assign(:mfa_disable_error, nil)
+     |> MfaEnrollment.reset()
+     |> assign_mfa_enrollment_email_form()
+     |> assign_mfa_form()
+     |> assign_mfa_recovery_regeneration_form()
+     |> assign_mfa_disable_form()
      |> assign(:session_count, 0)
      |> assign(:session_page_count, 0)
      |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
      |> assign(:filter_params, %{})
      |> assign(:sessions_error?, false)
      |> assign(:sessions_loaded?, false)
-     |> assign(:oidc_identities, [])
-     |> assign(:oidc_identities_error?, false)
-     |> assign(:oidc_identities_loaded?, false)
-     |> assign(:linked_workspaces, [])
-     |> OIDCStepUp.reset()
-     |> ConfirmDialog.init()
-     |> assign(:mfa_facts, nil)
-     |> assign_profile_form(user)
-     |> assign_email_form(user)
-     |> MfaEnrollment.reset()
-     |> assign_mfa_enrollment_email_form()
-     |> assign_mfa_form()
-     |> assign_mfa_recovery_regeneration_form()
-     |> assign_mfa_disable_form()
-     |> reset_email_step()
      |> stream(:sessions, [])}
   end
 
-  def handle_params(params, _uri, socket), do: {:noreply, maybe_load_sessions(socket, params)}
+  def handle_params(params, _uri, socket), do: {:noreply, maybe_load(socket, params)}
 
-  # IL-18: load lists only after connecting; static HTML shows loading, not an
-  # empty result. Session pagination preserves its URL state.
-  defp maybe_load_sessions(socket, params) do
-    if connected?(socket),
-      do: load_profile(socket, params, socket.assigns.current_user),
-      else: assign(socket, :filter_params, params)
+  # IL-18: load after connecting; static HTML shows loading, not an empty
+  # result. Session pagination preserves its URL state.
+  # A session that stopped authenticating redirects once from the first read;
+  # the other reads are skipped rather than redirect again.
+  defp maybe_load(socket, params) do
+    if connected?(socket) do
+      socket = load_sessions(socket, params)
+      if socket.redirected, do: socket, else: socket |> load_profile() |> assign_mfa_facts()
+    else
+      assign(socket, :filter_params, params)
+    end
   end
 
-  defp load_profile(socket, _params, nil), do: load_workspace_profile(socket)
-
-  defp load_profile(socket, params, user) do
-    socket
-    |> load_sessions(params)
-    |> load_linked_workspaces()
-    |> load_oidc_identities()
-    |> load_workspace_profile()
-    |> assign_mfa_facts(user)
-  end
-
-  defp load_workspace_profile(socket) do
-    socket = assign(socket, :workspace_profile_loaded?, true)
+  defp load_profile(socket) do
+    socket = assign(socket, :profile_loaded?, true)
 
     case Accounts.fetch_own_member_profile(socket.assigns.current_subject) do
       {:ok, %{membership: member, editable?: editable?}} ->
         socket =
           socket
           |> assign(:current_membership, member)
-          |> assign(:workspace_profile_editable?, editable?)
-          |> assign(:workspace_profile_error?, false)
+          |> assign(:profile_editable?, editable?)
+          |> assign(:profile_error?, false)
 
-        if socket.assigns.workspace_profile_editing?,
+        if socket.assigns.profile_editing?,
           do: socket,
-          else: assign_workspace_profile_form(socket, member)
+          else: assign_profile_form(socket, member)
 
       {:error, _} ->
         socket
-        |> assign(:workspace_profile_editable?, false)
-        |> assign(:workspace_profile_error?, true)
+        |> assign(:profile_editable?, false)
+        |> assign(:profile_error?, true)
     end
   end
 
-  defp assign_workspace_profile_form(socket, member, attrs \\ %{}) do
+  defp assign_profile_form(socket, member, attrs \\ %{}) do
     assign(
       socket,
-      :workspace_profile_form,
-      to_form(Accounts.change_member_profile(member, attrs), as: "workspace_profile")
+      :profile_form,
+      to_form(Accounts.change_member_profile(member, attrs), as: "profile")
     )
-  end
-
-  # Only a browser with personal proof can detach, so any other gets none.
-  defp load_linked_workspaces(socket) do
-    case Accounts.list_detachable_memberships(socket.assigns.current_subject) do
-      {:ok, members} -> assign(socket, :linked_workspaces, members)
-      {:error, _reason} -> assign(socket, :linked_workspaces, [])
-    end
-  end
-
-  defp load_oidc_identities(socket) do
-    socket = assign(socket, :oidc_identities_loaded?, true)
-
-    case SSO.list_self_service_identity_facts(socket.assigns.current_subject) do
-      {:ok, identities} ->
-        socket
-        |> assign(:oidc_identities, identities)
-        |> assign(:oidc_identities_error?, false)
-
-      {:error, _reason} ->
-        socket
-        |> assign(:oidc_identities, [])
-        |> assign(:oidc_identities_error?, true)
-    end
   end
 
   # 10 a page: a heavy automation account can hold ~100 sessions, and an
@@ -152,12 +103,15 @@ defmodule EmisarWeb.ProfileLive do
 
     presented_digest = socket.assigns.current_auth.token
 
-    case Auth.list_sessions_for_user(presented_digest, socket.assigns.current_subject, list_opts) do
+    case Auth.list_sessions_for_member(
+           presented_digest,
+           socket.assigns.current_subject,
+           list_opts
+         ) do
       {:ok, sessions, metadata} ->
         presented = Enum.map(sessions, &present_session/1)
 
         socket
-        |> assign(:personal_sign_in?, true)
         |> assign(:session_count, metadata.count || 0)
         |> assign(:session_page_count, length(presented))
         |> assign(:metadata, metadata)
@@ -165,15 +119,9 @@ defmodule EmisarWeb.ProfileLive do
         |> assign(:sessions_error?, false)
         |> stream(:sessions, presented, reset: true)
 
+      # The session reading this page no longer authenticates: a sign-in step.
       {:error, :unauthorized} ->
-        socket
-        |> assign(:personal_sign_in?, false)
-        |> assign(:session_count, 0)
-        |> assign(:session_page_count, 0)
-        |> assign(:metadata, %Emisar.Repo.Paginator.Metadata{count: 0, limit: 0})
-        |> assign(:filter_params, %{})
-        |> assign(:sessions_error?, false)
-        |> stream(:sessions, [], reset: true)
+        UserAuth.reauthenticate(socket)
 
       # A bad cursor from a hand-edited URL — retry once, clean, on page 1.
       {:error, _} when map_size(params) > 0 ->
@@ -197,13 +145,6 @@ defmodule EmisarWeb.ProfileLive do
   # doesn't bounce them back to page 1 (their cursor rides on filter_params).
   defp reload_sessions(socket), do: load_sessions(socket, socket.assigns.filter_params)
 
-  defp personal_authority_error(socket) do
-    case Auth.fetch_current_session(socket.assigns.current_subject) do
-      {:ok, _session} -> put_flash(socket, :error, @personal_sign_in_required)
-      {:error, :unauthorized} -> UserAuth.reauthenticate(socket)
-    end
-  end
-
   defp present_session(%Auth.SessionFacts{} = session) do
     %{
       id: session.id,
@@ -216,349 +157,71 @@ defmodule EmisarWeb.ProfileLive do
     }
   end
 
-  defp linked_workspace_name(socket, member_id) do
-    case Enum.find(socket.assigns.linked_workspaces, &(&1.id == member_id)) do
-      %{account: %{name: name}} -> name
-      nil -> "that workspace"
-    end
-  end
-
-  defp session_sign_in_method(:magic_link), do: "Email link"
+  defp session_sign_in_method(:magic_link), do: "Email code"
   defp session_sign_in_method(:sso), do: "Single sign-on"
   defp session_sign_in_method(nil), do: nil
 
-  def handle_event(event, _params, %{assigns: %{current_user: nil}} = socket)
-      when event not in @workspace_profile_events do
-    {:noreply, put_flash(socket, :error, @no_personal_login)}
-  end
-
-  def handle_event(event, _params, %{assigns: %{personal_sign_in?: false}} = socket)
-      when event in [
-             "edit_profile",
-             "save_profile",
-             "edit_email",
-             "save_email",
-             "resend_email_code",
-             "confirm_email_change",
-             "revoke_session",
-             "revoke_other_sessions",
-             "detach_personal_login"
-           ] do
-    {:noreply, personal_authority_error(socket)}
-  end
+  # -- Profile ---------------------------------------------------------
 
   def handle_event("edit_profile", _params, socket) do
-    {:noreply,
-     socket
-     |> assign_profile_form(socket.assigns.current_user)
-     |> assign(:profile_editing?, true)}
-  end
-
-  def handle_event("cancel_profile_edit", _params, socket) do
-    {:noreply,
-     socket
-     |> assign_profile_form(socket.assigns.current_user)
-     |> assign(:profile_editing?, false)}
-  end
-
-  def handle_event("validate_profile", %{"profile" => params} = event, socket) do
-    changeset =
-      socket.assigns.current_user
-      |> Users.change_user(params)
-      |> LiveForm.on_change(event)
-
-    {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
-  end
-
-  def handle_event("save_profile", %{"profile" => params}, socket) do
-    case Users.update_user_profile(params, socket.assigns.current_subject) do
-      {:ok, updated} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Name updated.")
-         |> assign(:current_user, updated)
-         |> assign(:profile_editing?, false)
-         |> assign_profile_form(updated)}
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
-
-      {:error, :unauthorized} ->
-        {:noreply, personal_authority_error(socket)}
-
-      {:error, _reason} ->
-        changeset = Users.change_user(socket.assigns.current_user, params)
-
-        {:noreply,
-         socket
-         |> assign(:profile_form, to_form(changeset, as: "profile"))
-         |> put_flash(:error, "Couldn't update your name. Try again.")}
-    end
-  end
-
-  def handle_event("edit_workspace_profile", _params, socket) do
-    socket = load_workspace_profile(socket)
+    socket = load_profile(socket)
 
     cond do
-      socket.assigns.workspace_profile_error? ->
+      socket.assigns.profile_error? ->
         {:noreply, socket}
 
-      socket.assigns.workspace_profile_editable? ->
-        {:noreply, assign(socket, :workspace_profile_editing?, true)}
+      socket.assigns.profile_editable? ->
+        {:noreply, assign(socket, :profile_editing?, true)}
 
       true ->
-        {:noreply,
-         put_flash(socket, :error, "Your workspace name is managed by your identity provider.")}
+        {:noreply, put_flash(socket, :error, "Your name is managed by your identity provider.")}
     end
   end
 
-  def handle_event("cancel_workspace_profile", _params, socket) do
+  def handle_event("cancel_profile", _params, socket) do
     {:noreply,
      socket
-     |> assign(:workspace_profile_editing?, false)
-     |> assign_workspace_profile_form(socket.assigns.current_membership)}
+     |> assign(:profile_editing?, false)
+     |> assign_profile_form(socket.assigns.current_membership)}
   end
 
-  def handle_event("validate_workspace_profile", %{"workspace_profile" => attrs} = event, socket) do
+  def handle_event("validate_profile", %{"profile" => attrs} = event, socket) do
     changeset =
       socket.assigns.current_membership
       |> Accounts.change_member_profile(attrs)
       |> LiveForm.on_change(event)
 
-    {:noreply,
-     assign(socket, :workspace_profile_form, to_form(changeset, as: "workspace_profile"))}
+    {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
   end
 
-  def handle_event("save_workspace_profile", %{"workspace_profile" => attrs}, socket) do
+  def handle_event("save_profile", %{"profile" => attrs}, socket) do
     case Accounts.update_own_member_profile(attrs, socket.assigns.current_subject) do
       {:ok, member} ->
         {:noreply,
          socket
          |> assign(:current_membership, member)
-         |> assign(:workspace_profile_editing?, false)
-         |> assign_workspace_profile_form(member)
-         |> put_flash(:info, "Workspace name updated.")}
+         |> assign(:profile_editing?, false)
+         |> assign_profile_form(member)
+         |> put_flash(:info, "Name updated.")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply,
-         assign(socket, :workspace_profile_form, to_form(changeset, as: "workspace_profile"))}
+        {:noreply, assign(socket, :profile_form, to_form(changeset, as: "profile"))}
+
+      {:error, :unauthorized} ->
+        {:noreply, UserAuth.reauthenticate(socket)}
 
       {:error, reason} ->
         {:noreply,
          socket
-         |> assign_workspace_profile_form(socket.assigns.current_membership, attrs)
+         |> assign_profile_form(socket.assigns.current_membership, attrs)
          |> put_flash(:error, EmisarWeb.MemberErrors.message(reason))}
     end
   end
 
-  def handle_event("validate_email", %{"email" => params} = event, socket) do
-    changeset =
-      socket.assigns.current_user
-      |> Users.change_user(%{"email" => params["email"] || ""})
-      |> LiveForm.on_change(event)
-
-    socket =
-      if socket.assigns.email_step == :edit and
-           params["email"] != socket.assigns.email_form[:email].value do
-        assign(socket, :email_step_error, nil)
-      else
-        socket
-      end
-
-    {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
-  end
-
-  def handle_event("edit_email", _params, socket) do
-    {:noreply,
-     socket
-     |> reset_email_step()
-     |> assign(:email_step, :edit)
-     |> assign_email_form(socket.assigns.current_user)}
-  end
+  # -- Active sessions -------------------------------------------------
 
   def handle_event("retry_sessions", _params, socket),
     do: {:noreply, reload_sessions(socket)}
-
-  def handle_event("retry_oidc_identities", _params, socket),
-    do: {:noreply, load_oidc_identities(socket)}
-
-  # Email is identity-defining — it controls every future magic link — so a
-  # self-service change is credential-grade: the submit only STARTS a step-up
-  # (an MFA-on user re-enters a TOTP code; everyone else confirms a one-time
-  # code emailed to their CURRENT address). Only then can the same browser prove
-  # the NEW mailbox. Neither the old factor nor the new-mailbox code alone can
-  # publish an unproved address or upgrade another person's retained session.
-  def handle_event("save_email", %{"email" => params}, socket) do
-    user = socket.assigns.current_user
-    new_email = String.trim(params["email"] || "")
-    changeset = Users.change_user(user, %{"email" => new_email})
-
-    cond do
-      not changeset.valid? ->
-        changeset = Map.put(changeset, :action, :validate)
-        {:noreply, assign(socket, :email_form, to_form(changeset, as: "email"))}
-
-      not Map.has_key?(changeset.changes, :email) ->
-        {:noreply, assign(socket, :email_step_error, "That's already your email.")}
-
-      true ->
-        socket = assign(socket, :email_form, to_form(changeset, as: "email"))
-        {:noreply, start_email_step_up(socket, user, new_email)}
-    end
-  end
-
-  def handle_event("confirm_email_change", %{"email_step" => %{"code" => code}}, socket) do
-    %{email_step: step, pending_new_email: new_email, current_subject: subject} = socket.assigns
-
-    # Sequencing guard is the web's own state; the step-up factor decision, the
-    # verify, and the commit are all `Auth.confirm_email_change`'s call — the
-    # domain re-derives the factor from the fresh row and gates the write.
-    if step in [:totp, :code, :new_address] do
-      handle_email_change_confirmation(socket, new_email, String.trim(code || ""), subject, step)
-    else
-      # Out-of-sequence (fired over the socket while :idle, before any save_email
-      # started a step-up) — fail closed (IL-15: a handler is reachable over the
-      # socket regardless of what's rendered).
-      {:noreply, put_flash(socket, :error, "Start an email change first.")}
-    end
-  end
-
-  def handle_event("resend_email_code", _params, socket) do
-    %{email_step: step, pending_new_email: new_email} = socket.assigns
-
-    # Same fail-closed sequencing guard as confirm_email_change (IL-15): resend
-    # only makes sense while an emailed-code step-up is pending.
-    if step == :code do
-      case Auth.issue_email_change_code(new_email, socket.assigns.current_subject) do
-        {:ok, :sent} ->
-          {:noreply,
-           socket
-           |> assign(:email_step_error, nil)
-           |> push_event("code:reset", %{id: "email-step-code"})
-           |> put_flash(:info, "We sent a new code to #{socket.assigns.current_user.email}.")}
-
-        # The code goes to the CURRENT address, which has bounced/complained, so
-        # no code will arrive and the change can't complete — say so plainly.
-        {:ok, :suppressed} ->
-          {:noreply,
-           assign(
-             socket,
-             :email_step_error,
-             "We can't send a code to your current email (#{socket.assigns.current_user.email}). Contact support@emisar.dev."
-           )}
-
-        {:error, :rate_limited} ->
-          {:noreply, assign(socket, :email_step_error, MfaErrors.message(:email_rate_limited))}
-
-        {:error, :unauthorized} ->
-          {:noreply, personal_authority_error(socket)}
-
-        # :not_found (row gone mid-session) or any other unexpected Multi failure.
-        {:error, _reason} ->
-          {:noreply, assign(socket, :email_step_error, "Couldn't send a new code. Try again.")}
-      end
-    else
-      {:noreply, put_flash(socket, :error, "Start an email change first.")}
-    end
-  end
-
-  def handle_event("cancel_email_change", _params, socket) do
-    {:noreply,
-     socket
-     |> assign_email_form(socket.assigns.current_user)
-     |> reset_email_step()}
-  end
-
-  def handle_event("start_oidc_link", %{"provider_id" => provider_id}, socket) do
-    socket = socket |> OIDCStepUp.reset() |> ConfirmDialog.reset()
-
-    case Enum.find(socket.assigns.oidc_identities, &(&1.provider_id == provider_id)) do
-      %{linked?: false} = identity ->
-        {:noreply, OIDCStepUp.begin(socket, identity, :link, @oidc_step_up_start_error)}
-
-      %{linked?: true, user_verified?: false} = identity ->
-        {:noreply, OIDCStepUp.begin(socket, identity, :link, @oidc_step_up_start_error)}
-
-      %{linked?: true, user_verified?: true} ->
-        {:noreply, put_flash(socket, :info, "That sign-in method is already linked.")}
-
-      nil ->
-        {:noreply, put_flash(socket, :error, "That sign-in method is no longer available.")}
-    end
-  end
-
-  def handle_event("start_oidc_unlink", %{"identity_id" => identity_id}, socket)
-      when is_binary(identity_id) do
-    socket = socket |> OIDCStepUp.reset() |> ConfirmDialog.reset()
-
-    case Enum.find(socket.assigns.oidc_identities, &(&1.identity_id == identity_id)) do
-      %{removable?: true} = identity ->
-        {:noreply, OIDCStepUp.begin(socket, identity, :unlink, @oidc_step_up_start_error)}
-
-      %{removal_blocked_reason: :required_sso_identity} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Link another enabled sign-in method before removing this one."
-         )}
-
-      %{linked?: true} ->
-        {:noreply,
-         put_flash(socket, :error, "Verify this sign-in method yourself before removing it.")}
-
-      # No match (nil) or a matched-but-unlinked identity (a retired provider still
-      # in the list) — either way there is nothing linked to remove.
-      _ ->
-        {:noreply, put_flash(socket, :error, "That sign-in method is no longer linked.")}
-    end
-  end
-
-  def handle_event("start_oidc_unlink", _params, socket), do: {:noreply, socket}
-
-  def handle_event("confirm_oidc_step_up", %{"oidc_step" => %{"code" => code}} = params, socket) do
-    case socket.assigns.oidc_step do
-      %{} = step ->
-        if step.purpose == :unlink and
-             not ConfirmDialog.matches?(params["confirm_token"], step.provider_name) do
-          {:noreply,
-           assign(socket, :oidc_step_error, "Enter the provider name to confirm removal.")}
-        else
-          case OIDCStepUp.confirm(step, code, socket.assigns.current_subject) do
-            {:ok, proof} ->
-              complete_oidc_step_up(socket, step, proof)
-
-            {:error, message} ->
-              {:noreply,
-               socket
-               |> assign(:oidc_step_error, message)
-               |> push_event("code:reset", %{id: "profile-oidc-step-code"})}
-          end
-        end
-
-      nil ->
-        {:noreply, put_flash(socket, :error, "Choose a sign-in method first.")}
-    end
-  end
-
-  def handle_event("resend_oidc_step_up", _params, socket) do
-    case socket.assigns.oidc_step do
-      %{factor: :email} = step ->
-        {:noreply, OIDCStepUp.resend(socket, step, "profile-oidc-step-code")}
-
-      _other ->
-        {:noreply, put_flash(socket, :error, "Start the confirmation again.")}
-    end
-  end
-
-  def handle_event("cancel_oidc_step_up", _params, socket),
-    do: {:noreply, socket |> OIDCStepUp.reset() |> ConfirmDialog.reset()}
-
-  def handle_event("confirm_typed", params, socket),
-    do: {:noreply, ConfirmDialog.put_typed(socket, params)}
-
-  def handle_event("confirm_reset", _params, socket),
-    do: {:noreply, ConfirmDialog.reset(socket)}
 
   def handle_event("revoke_session", %{"id" => id}, socket) do
     case Auth.revoke_session(id, socket.assigns.current_subject) do
@@ -570,41 +233,10 @@ defmodule EmisarWeb.ProfileLive do
          socket |> put_flash(:info, "This session has already ended.") |> reload_sessions()}
 
       {:error, :unauthorized} ->
-        {:noreply, personal_authority_error(socket)}
+        {:noreply, UserAuth.reauthenticate(socket)}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't sign out this session. Try again.")}
-    end
-  end
-
-  # The detached seat's grants on this browser end with it, so leave the
-  # workspace when it was the current one; otherwise reload Profile.
-  def handle_event("detach_personal_login", %{"id" => id}, socket) do
-    case Accounts.detach_personal_login(id, socket.assigns.current_subject) do
-      {:ok, member} ->
-        name = linked_workspace_name(socket, member.id)
-
-        to =
-          if member.account_id == socket.assigns.current_account.id,
-            do: ~p"/app",
-            else: ~p"/app/#{socket.assigns.current_account}/settings/profile"
-
-        {:noreply,
-         socket
-         |> put_flash(:info, "Your personal login is no longer linked to #{name}.")
-         |> redirect(to: to)}
-
-      {:error, :unauthorized} ->
-        {:noreply, personal_authority_error(socket)}
-
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> put_flash(
-           :error,
-           "That workspace couldn't be detached. Reload the page and try again."
-         )
-         |> load_linked_workspaces()}
     end
   end
 
@@ -620,13 +252,18 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply, socket |> put_flash(:info, msg) |> load_sessions(%{})}
 
       {:error, :unauthorized} ->
-        {:noreply, personal_authority_error(socket)}
+        {:noreply, UserAuth.reauthenticate(socket)}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't sign out other sessions. Try again.")}
     end
   end
 
+  # -- Multi-factor authentication -------------------------------------
+
+  # The inbox-code enrollment path. An SSO-only Member takes the "Verify with
+  # <provider>" form instead, which posts to the MFA setup page's SSO
+  # ceremony and finishes enrollment there.
   def handle_event("start_mfa", _params, socket) do
     case Auth.issue_mfa_enrollment_code(socket.assigns.current_subject) do
       {:ok, :sent} ->
@@ -635,7 +272,7 @@ defmodule EmisarWeb.ProfileLive do
          |> assign(:mfa_enrollment_step, :email)
          |> assign(:mfa_start_error, nil)
          |> assign(:mfa_enrollment_email_error, nil)
-         |> put_flash(:info, "We emailed a verification code to your current address.")}
+         |> put_flash(:info, "We emailed a verification code to your address.")}
 
       {:ok, :suppressed} ->
         {:noreply, assign(socket, :mfa_start_error, @mfa_enrollment_email_suppressed_error)}
@@ -762,7 +399,7 @@ defmodule EmisarWeb.ProfileLive do
              "MFA enabled. Copy your recovery codes below — they'll only be shown once."
            )
            |> MfaEnrollment.assign_current_proof(updated)
-           |> assign_mfa_facts(updated)
+           |> assign_mfa_facts()
            |> assign(:mfa_recovery_codes, recovery_codes)
            |> assign(:codes_saved?, false)
            |> MfaEnrollment.reset()
@@ -872,8 +509,8 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply,
          socket
          |> put_flash(:info, "MFA disabled.")
-         |> assign(:current_user, updated)
-         |> assign_mfa_facts(updated)
+         |> assign(:current_membership, updated)
+         |> assign_mfa_facts()
          |> assign(:mfa_recovery_codes, nil)
          |> assign(:mfa_disable_step, :idle)
          |> assign(:mfa_disable_error, nil)
@@ -917,8 +554,8 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply,
          socket
          |> put_flash(:info, "New recovery codes generated. Old codes are now invalid.")
-         |> assign(:current_user, updated)
-         |> assign_mfa_facts(updated)
+         |> assign(:current_membership, updated)
+         |> assign_mfa_facts()
          |> assign(:mfa_recovery_codes, codes)
          |> assign(:codes_saved?, false)
          |> reset_mfa_recovery_regeneration()}
@@ -961,232 +598,14 @@ defmodule EmisarWeb.ProfileLive do
     end
   end
 
-  # Facts come from the live browser and current User, never a held actor
+  # Facts come from the live session and the current Member row, never a held
   # snapshot. Expiry during a mounted page is a sign-in step, not a crash.
-  defp assign_mfa_facts(socket, user) do
-    case Auth.mfa_facts(%{socket.assigns.current_subject | actor: user}) do
+  defp assign_mfa_facts(socket) do
+    case Auth.mfa_facts(socket.assigns.current_subject) do
       {:ok, facts} -> assign(socket, :mfa_facts, facts)
       {:error, :unauthorized} -> UserAuth.reauthenticate(socket)
     end
   end
-
-  defp assign_profile_form(socket, nil), do: assign(socket, :profile_form, nil)
-
-  defp assign_profile_form(socket, user) do
-    changeset = Users.change_user(user, %{"full_name" => user.full_name || ""})
-    assign(socket, :profile_form, to_form(changeset, as: "profile"))
-  end
-
-  defp assign_email_form(socket, nil), do: assign(socket, :email_form, nil)
-
-  defp assign_email_form(socket, user) do
-    changeset = Users.change_user(user, %{"email" => user.email || ""})
-    assign(socket, :email_form, to_form(changeset, as: "email"))
-  end
-
-  # Email-change state: :idle (current address), :edit (new address), :totp (an MFA-on user
-  # re-enters an authenticator code), :code (the current inbox), then :new_address
-  # (the new inbox). The split nonce stays in this LiveView, never in the email.
-  defp reset_email_step(socket) do
-    socket
-    |> assign(:email_step, :idle)
-    |> assign(:pending_new_email, nil)
-    |> assign(:new_email_proof, nil)
-    |> assign(:email_step_error, nil)
-    |> assign(:email_step_form, to_form(%{"code" => ""}, as: "email_step"))
-  end
-
-  defp handle_email_change_confirmation(socket, new_email, code, subject, step) do
-    socket = push_event(socket, "code:reset", %{id: email_code_input_id(step)})
-
-    result =
-      case step do
-        :new_address ->
-          proof = socket.assigns.new_email_proof
-
-          Auth.complete_email_change(
-            proof.token_id,
-            proof.nonce,
-            String.upcase(code),
-            socket.assigns.current_auth.token,
-            subject
-          )
-
-        _ ->
-          Auth.confirm_email_change(new_email, code, socket.assigns.current_auth.token, subject)
-      end
-
-    case result do
-      {:ok, %Users.User{} = updated} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Email changed to #{updated.email}.")
-         |> assign(:current_user, updated)
-         |> assign_email_form(updated)
-         |> reset_email_step()}
-
-      {:ok, %{token_id: _, nonce: _, email: email} = proof} ->
-        {:noreply,
-         socket
-         |> assign(:email_step, :new_address)
-         |> assign(:new_email_proof, proof)
-         |> assign(:pending_new_email, email)
-         |> assign(:email_step_error, nil)
-         |> put_flash(:info, "We sent a code to #{email}. Your email has not changed yet.")}
-
-      {:error, :unauthorized} ->
-        {:noreply, personal_authority_error(socket)}
-
-      {:error, :delivery_suppressed} ->
-        {:noreply,
-         socket
-         |> reset_email_step()
-         |> assign(:email_step, :edit)
-         |> assign(
-           :email_step_error,
-           "We can't deliver to that new address. Check it or contact support@emisar.dev. Your email has not changed."
-         )}
-
-      # Capped before the code was even checked — the step-up stays open so the
-      # operator can retry once the window rolls over.
-      {:error, :rate_limited} ->
-        {:noreply, assign(socket, :email_step_error, MfaErrors.message(:rate_limited))}
-
-      {:error, :replay} ->
-        {:noreply,
-         assign(
-           socket,
-           :email_step_error,
-           "That code was just used — wait a moment for the next one."
-         )}
-
-      {:error, :invalid} ->
-        {:noreply, assign(socket, :email_step_error, step_up_error(step))}
-
-      # Step-up passed but the email itself was rejected (e.g. now taken) — the
-      # one-time proof is spent, so send them back to the start.
-      {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply,
-         socket
-         |> reset_email_step()
-         |> assign(:email_step, :edit)
-         |> assign(:email_form, to_form(changeset, as: "email"))
-         |> assign(
-           :email_step_error,
-           "Couldn't change to that email. Check the address and try again."
-         )}
-
-      # Any other domain failure (e.g. the row was soft-deleted mid-session) — the
-      # proof is spent, so reset rather than leave a dead step-up open.
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> reset_email_step()
-         |> assign(:email_step, :edit)
-         |> assign(:email_step_error, "Couldn't change your email. Try again.")}
-    end
-  end
-
-  # The DOMAIN decides the factor from the user's CURRENT row (`begin_email_change`
-  # re-reads it) — not `@mfa_facts`, which is a stale mount snapshot that could
-  # downgrade the challenge — and issues the emailed code on the `:code` path.
-  defp start_email_step_up(socket, user, new_email) do
-    # A fresh challenge invalidates any rejection from a prior one — a stale
-    # inline error under a brand-new code input would accuse the operator of a
-    # mistake they haven't made yet.
-    socket =
-      socket
-      |> assign(:pending_new_email, new_email)
-      |> assign(:new_email_proof, nil)
-      |> assign(:email_step_error, nil)
-
-    case Auth.begin_email_change(new_email, socket.assigns.current_subject) do
-      {:error, :unauthorized} ->
-        personal_authority_error(socket)
-
-      {:ok, :totp} ->
-        assign(socket, :email_step, :totp)
-
-      {:ok, :code} ->
-        socket
-        |> assign(:email_step, :code)
-        |> put_flash(:info, "We emailed a confirmation code to #{user.email}.")
-
-      # The code goes to the CURRENT address to prove inbox control; that address
-      # has bounced/complained, so no code will arrive — say so instead of a false
-      # "check your inbox". They can't self-fix a suppressed current address.
-      {:error, :delivery_suppressed} ->
-        socket
-        |> assign(:email_step, :edit)
-        |> assign(
-          :email_step_error,
-          "We can't send a code to your current email (#{user.email}). Contact support@emisar.dev."
-        )
-
-      {:error, :email_unavailable} ->
-        socket
-        |> assign(:email_step, :edit)
-        |> assign(:email_step_error, @mfa_enrollment_email_unavailable_error)
-
-      {:error, :rate_limited} ->
-        socket
-        |> assign(:email_step, :edit)
-        |> assign(:email_step_error, MfaErrors.message(:email_rate_limited))
-
-      # :not_found (row gone mid-session) or any other unexpected Multi failure.
-      {:error, _reason} ->
-        socket
-        |> assign(:email_step, :edit)
-        |> assign(:email_step_error, "Couldn't start the email change. Try again.")
-    end
-  end
-
-  # CodeInput owns an ignored DOM subtree and captures its numeric mode at
-  # mount. A different id remounts it when the new-address code admits letters.
-  defp email_code_input_id(:new_address), do: "new-email-code"
-  defp email_code_input_id(_step), do: "email-step-code"
-
-  defp step_up_error(:totp), do: MfaErrors.message(:invalid_otp)
-
-  defp step_up_error(:new_address) do
-    "That code is incorrect or expired. Try again, or cancel and start the email change again for a fresh code."
-  end
-
-  defp step_up_error(_), do: MfaErrors.message(:email_code_invalid)
-
-  defp complete_oidc_step_up(socket, %{purpose: :unlink} = step, proof) do
-    case SSO.unlink_identity(
-           step.identity_id,
-           proof,
-           socket.assigns.current_auth.token,
-           socket.assigns.current_subject
-         ) do
-      {:ok, _identity} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "#{step.provider_name} was removed from your profile.")
-         |> OIDCStepUp.reset()
-         |> load_oidc_identities()}
-
-      {:error, :required_sso_identity} ->
-        {:noreply,
-         socket
-         |> put_flash(
-           :error,
-           "Link another enabled sign-in method before removing the one this workspace requires."
-         )
-         |> OIDCStepUp.reset()}
-
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "Couldn't remove that sign-in method. Refresh and try again.")
-         |> OIDCStepUp.reset()}
-    end
-  end
-
-  defp complete_oidc_step_up(socket, %{purpose: :link} = step, proof),
-    do: {:noreply, OIDCStepUp.handoff(socket, step, proof)}
 
   defp assign_mfa_form(socket) do
     assign(socket, :mfa_form, to_form(%{"otp" => ""}, as: "mfa"))
@@ -1222,6 +641,14 @@ defmodule EmisarWeb.ProfileLive do
   defp session_ip(ip) when is_binary(ip) and ip != "", do: ip
   defp session_ip(_ip), do: nil
 
+  # The identity provider behind this SSO session; `with_preloaded_authority/1`
+  # carries it on the session row.
+  defp sso_provider_name(%Auth.UserToken{user_identity: %{provider: %{name: name}}})
+       when is_binary(name),
+       do: name
+
+  defp sso_provider_name(_auth), do: "your identity provider"
+
   # No-op for the broadcasts the on_mount badge/fleet hooks forward (approvals,
   # pack trust, runner presence). The hooks own those nav cues; this page ignores them.
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -1232,7 +659,6 @@ defmodule EmisarWeb.ProfileLive do
       chrome={@shell_chrome}
       current_membership={@current_membership}
       current_subject={@current_subject}
-      current_user={@current_user}
       current_account={@current_account}
       section={:profile}
       width={:table}
@@ -1240,7 +666,7 @@ defmodule EmisarWeb.ProfileLive do
       <:title>Profile</:title>
 
       <.page_intro>
-        Your profile in this workspace, personal sign-in, and security settings.
+        Your profile, multi-factor authentication and sessions in this workspace.
         <.doc_link href="/security">Security overview</.doc_link>
       </.page_intro>
 
@@ -1248,460 +674,83 @@ defmodule EmisarWeb.ProfileLive do
         id="profile-layout"
         class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start"
       >
-        <.section_with_note id="workspace-details">
+        <.section_with_note id="profile-details">
           <:header>
-            <.section_header title="Workspace profile">
+            <.section_header title="Profile">
               <:subtitle>
-                How you appear in <span class="font-medium text-zinc-200">{@current_account.name}</span>. Other workspaces are unchanged.
+                How you appear in <span class="font-medium text-zinc-200">{@current_account.name}</span>.
               </:subtitle>
             </.section_header>
           </:header>
-          <p :if={@workspace_profile_error?} role="alert" class="mb-4 text-sm text-rose-300">
-            Couldn't load your workspace profile. Refresh to try again.
+          <:note>
+            Your email is the address this workspace invited or signed you up with. To change
+            it, ask a workspace administrator to invite the new address.
+          </:note>
+          <p :if={@profile_error?} role="alert" class="mb-4 text-sm text-rose-300">
+            Couldn't load your profile. Refresh to try again.
           </p>
           <.simple_form
-            :if={@workspace_profile_editing?}
-            for={@workspace_profile_form}
-            id="workspace-profile-form"
-            phx-change="validate_workspace_profile"
-            phx-submit="save_workspace_profile"
+            :if={@profile_editing?}
+            for={@profile_form}
+            id="profile-form"
+            class="max-w-2xl"
+            phx-change="validate_profile"
+            phx-submit="save_profile"
+            phx-mounted={JS.focus(to: "#profile_display_name")}
+            phx-remove={JS.focus(to: "#change-name")}
           >
             <.input
-              field={@workspace_profile_form[:display_name]}
+              field={@profile_form[:display_name]}
               type="text"
-              label="Workspace display name"
+              label="Display name"
               autocomplete="name"
               maxlength="255"
             />
             <:actions>
               <.button type="submit" phx-disable-with="Saving…">Save name</.button>
-              <.button type="button" variant={:secondary} phx-click="cancel_workspace_profile">Cancel</.button>
+              <.button type="button" variant={:secondary} phx-click="cancel_profile">Cancel</.button>
             </:actions>
           </.simple_form>
-          <dl :if={not @workspace_profile_editing?} class="divide-y divide-zinc-800/70">
-            <div class="pb-4">
+          <dl :if={not @profile_editing?} class="divide-y divide-zinc-800/70">
+            <div id="display-name" class="pb-4">
               <dt class="mb-1 text-sm text-zinc-400">Display name</dt>
               <dd class="flex items-center justify-between gap-4">
-                <span class="min-w-0 break-words text-base text-zinc-100">{@current_membership.display_name ||
-                  "No display name"}</span>
+                <span class="min-w-0 break-words text-base text-zinc-100">
+                  {@current_membership.display_name || "No display name"}
+                </span>
                 <.button
-                  :if={@workspace_profile_editable?}
-                  id="change-workspace-name"
+                  :if={@profile_editable?}
+                  id="change-name"
                   variant={:secondary}
                   size={:sm}
-                  phx-click="edit_workspace_profile"
-                >Change name</.button>
+                  phx-click="edit_profile"
+                >
+                  Change name
+                </.button>
               </dd>
               <p
-                :if={
-                  @workspace_profile_loaded? and not @workspace_profile_editable? and
-                    not @workspace_profile_error?
-                }
+                :if={@profile_loaded? and not @profile_editable? and not @profile_error?}
                 class="mt-2 text-xs text-zinc-400"
               >
                 Your identity provider manages this name.
               </p>
             </div>
-            <div class="pt-4">
-              <dt class="mb-1 text-sm text-zinc-400">Workspace contact</dt>
-              <dd class="break-words text-base text-zinc-100">
-                {@current_membership.email || "No contact address"}
-              </dd>
-            </div>
-          </dl>
-        </.section_with_note>
-
-        <.section_with_note :if={is_nil(@current_user)} id="personal-login">
-          <:header>
-            <.section_header title="Personal login" />
-          </:header>
-          <p class="text-sm text-zinc-400">
-            Your membership in this workspace has no personal login. You sign in through
-            this workspace's single sign-on. Link a personal login to add your own email
-            sign-in, sessions and multi-factor authentication.
-          </p>
-          <.member_link_form
-            :if={@member_link_handoff}
-            handoff={@member_link_handoff}
-            return_to={~p"/app/#{@current_account}"}
-            class="mt-4 max-w-2xl"
-          />
-          <:note>
-            We email a sign-in code to that address. If its login already uses multi-factor
-            authentication, you also enter a code from it.
-          </:note>
-        </.section_with_note>
-
-        <.section_with_note :if={@current_user} id="personal-details">
-          <:header>
-            <.section_header title="Personal details" />
-          </:header>
-          <p :if={not @sessions_loaded?} role="status" class="text-sm text-zinc-400">
-            Loading personal details…
-          </p>
-          <p
-            :if={@sessions_loaded? and not @personal_sign_in?}
-            id="personal-sign-in-required"
-            class="mb-4 text-sm text-zinc-400"
-          >
-            Changing your personal details requires unexpired personal email-link proof in
-            this browser. Workspace SSO alone does not provide it.
-            <.link href={~p"/session/recover"} class="text-brand-400 hover:text-brand-300">
-              Sign out and sign in by email
-            </.link>
-            to use these controls.
-          </p>
-          <dl :if={@personal_sign_in?} class="divide-y divide-zinc-800/70">
-            <div id="display-name" class="pb-4">
-              <dt class="mb-1 text-sm text-zinc-400">Display name</dt>
-              <dd>
-                <div
-                  :if={not @profile_editing?}
-                  class="flex flex-wrap items-center justify-between gap-3"
-                >
-                  <p class="min-w-0 break-words text-base text-zinc-100">
-                    {@current_user.full_name || "No display name"}
-                  </p>
-                  <.button
-                    id="change-name"
-                    variant={:secondary}
-                    size={:sm}
-                    phx-click="edit_profile"
-                  >
-                    Change name
-                  </.button>
-                </div>
-                <.simple_form
-                  :if={@profile_editing?}
-                  for={@profile_form}
-                  id="profile_form"
-                  class="max-w-2xl"
-                  phx-change="validate_profile"
-                  phx-submit="save_profile"
-                  phx-mounted={JS.focus(to: "#profile_full_name")}
-                  phx-remove={JS.focus(to: "#change-name")}
-                >
-                  <%!-- No repeated field label — the row already says "Display name"
-                 (one voice on a single-field section); aria-label keeps the
-                 accessible name. --%>
-                  <.input
-                    field={@profile_form[:full_name]}
-                    type="text"
-                    aria-label="Display name"
-                    autocomplete="name"
-                    placeholder="Ada Lovelace"
-                  />
-                  <:actions>
-                    <.button
-                      variant={if @profile_form.source.changes == %{}, do: :secondary, else: :primary}
-                      disabled={@profile_form.source.changes == %{}}
-                      phx-disable-with="Saving..."
-                    >
-                      Save
-                    </.button>
-                    <.button variant={:ghost} type="button" phx-click="cancel_profile_edit">
-                      Cancel
-                    </.button>
-                  </:actions>
-                </.simple_form>
-              </dd>
-            </div>
             <div id="email" class="pt-4">
               <dt class="mb-1 text-sm text-zinc-400">Email</dt>
-              <dd>
-                <%= case @email_step do %>
-                  <% :idle -> %>
-                    <div class="flex flex-wrap items-center justify-between gap-3">
-                      <div class="min-w-0">
-                        <p class="break-all text-base text-zinc-100">
-                          {@current_user.email || "No email address"}
-                        </p>
-                        <p
-                          :if={is_nil(@current_user.email) and is_nil(@current_user.mfa_enabled_at)}
-                          class="mt-1 text-xs text-zinc-400"
-                        >
-                          Your profile has no email address. Ask your workspace administrator for help,
-                          or contact support@emisar.dev.
-                        </p>
-                        <p
-                          :if={@current_user.email && is_nil(@current_user.confirmed_at)}
-                          class="mt-1 text-xs text-zinc-400"
-                        >
-                          Awaiting confirmation
-                        </p>
-                      </div>
-                      <.button
-                        id="change-email"
-                        variant={:secondary}
-                        size={:sm}
-                        phx-click="edit_email"
-                        disabled={
-                          is_nil(@current_user.email) and is_nil(@current_user.mfa_enabled_at)
-                        }
-                      >
-                        Change email
-                      </.button>
-                    </div>
-                  <% :edit -> %>
-                    <.simple_form
-                      for={@email_form}
-                      id="email_form"
-                      class="max-w-2xl"
-                      phx-change="validate_email"
-                      phx-submit="save_email"
-                    >
-                      <p class="text-sm text-zinc-300">Enter your new email address.</p>
-                      <.input
-                        field={@email_form[:email]}
-                        type="email"
-                        aria-label="New email address"
-                        autocomplete="email"
-                        required
-                      />
-                      <.error :if={@email_step_error}>{@email_step_error}</.error>
-                      <:actions>
-                        <.button
-                          variant={
-                            if @email_form.source.changes == %{}, do: :secondary, else: :primary
-                          }
-                          disabled={@email_form.source.changes == %{}}
-                          phx-disable-with="Checking..."
-                        >
-                          Continue
-                        </.button>
-                        <.button variant={:ghost} type="button" phx-click="cancel_email_change">
-                          Cancel
-                        </.button>
-                      </:actions>
-                    </.simple_form>
-                  <% step -> %>
-                    <.simple_form
-                      for={@email_step_form}
-                      id="email_step_form"
-                      class="max-w-2xl"
-                      phx-submit="confirm_email_change"
-                    >
-                      <p class="text-sm text-zinc-300">
-                        To change your email to <span class="break-all font-medium text-zinc-100">{@pending_new_email}</span>,
-                        <%= case step do %>
-                          <% :code -> %>
-                            enter the 6-digit code sent to <span class="break-all">{@current_user.email}</span>.
-                          <% :totp -> %>
-                            enter the 6-digit code from your authenticator app.
-                          <% :new_address -> %>
-                            enter the 6-character code sent to that new address. Your current email stays unchanged until you finish.
-                        <% end %>
-                      </p>
-                      <.code_input
-                        id={email_code_input_id(step)}
-                        name="email_step[code]"
-                        numeric={step != :new_address}
-                        label={if step == :totp, do: "Authenticator code", else: "Confirmation code"}
-                        error={@email_step_error}
-                      />
-                      <:actions>
-                        <.button phx-disable-with="Checking...">
-                          {if step == :new_address, do: "Change email", else: "Continue"}
-                        </.button>
-                        <.button
-                          :if={step == :code}
-                          variant={:secondary}
-                          size={:md}
-                          type="button"
-                          phx-click="resend_email_code"
-                        >
-                          Resend code
-                        </.button>
-                        <.button
-                          variant={:ghost}
-                          size={:md}
-                          type="button"
-                          phx-click="cancel_email_change"
-                        >
-                          Cancel
-                        </.button>
-                      </:actions>
-                    </.simple_form>
-                <% end %>
+              <dd class="break-all text-base text-zinc-100">
+                {@current_membership.email || "No email address"}
               </dd>
+              <p
+                :if={@current_membership.email && is_nil(@current_membership.email_verified_at)}
+                class="mt-2 text-xs text-zinc-400"
+              >
+                Not verified: you sign in to this workspace through single sign-on.
+              </p>
             </div>
           </dl>
         </.section_with_note>
 
-        <.section_with_note :if={@current_user} id="single-sign-on">
-          <:header>
-            <.section_header title="Sign-in methods">
-              <:subtitle>
-                Sign-in methods you can link to your profile in this workspace.
-              </:subtitle>
-            </.section_header>
-          </:header>
-          <:note>
-            Link the methods you use to help avoid approval delays.
-            Each workspace sets its own sign-in rules.
-            <.doc_link href="/docs/sso">About single sign-on</.doc_link>
-          </:note>
-
-          <p :if={not @oidc_identities_loaded?} role="status" class="text-sm text-zinc-400">
-            Loading sign-in methods…
-          </p>
-
-          <.empty_state
-            :if={@oidc_identities_error?}
-            tone={:danger}
-            icon="state.warning"
-            title="Couldn't load sign-in methods"
-          >
-            Try loading them again.
-            <:actions>
-              <.button
-                variant={:secondary}
-                size={:sm}
-                phx-click="retry_oidc_identities"
-                phx-disable-with="Loading…"
-              >
-                Retry
-              </.button>
-            </:actions>
-          </.empty_state>
-
-          <p
-            :if={@oidc_identities_loaded? and not @oidc_identities_error? and @oidc_identities == []}
-            class="text-sm text-zinc-400"
-          >
-            No single sign-on providers are enabled in this workspace.
-          </p>
-
-          <ul
-            :if={@oidc_identities != []}
-            id="oidc-identities"
-            class="divide-y divide-zinc-800/70 border-y border-zinc-800/70"
-          >
-            <li
-              :for={identity <- @oidc_identities}
-              id={"oidc-identity-#{identity.provider_id}"}
-              class="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div class="min-w-0">
-                <p class="font-medium text-zinc-100">{identity.provider_name}</p>
-                <p class="mt-1 text-xs text-zinc-400">
-                  <%= cond do %>
-                    <% identity.user_verified? -> %>
-                      Linked by you
-                    <% identity.linked? -> %>
-                      Linked by your workspace
-                    <% true -> %>
-                      Not linked
-                  <% end %>
-                </p>
-              </div>
-              <div class="flex flex-wrap items-center gap-2 sm:justify-end">
-                <span
-                  :if={identity.linked? and not identity.user_verified?}
-                  class="text-xs text-zinc-400"
-                >
-                  Verify it before you can remove it.
-                </span>
-                <.button
-                  :if={not identity.user_verified?}
-                  id={"link-oidc-#{identity.provider_id}"}
-                  type="button"
-                  variant={:secondary}
-                  size={:sm}
-                  class="min-w-20"
-                  phx-hook="PendingButton"
-                  phx-click="start_oidc_link"
-                  phx-value-provider_id={identity.provider_id}
-                  phx-disable-with={if(identity.linked?, do: "Verifying…", else: "Linking…")}
-                >
-                  {if(identity.linked?, do: "Verify", else: "Link")}
-                </.button>
-                <div :if={identity.user_verified?} class="space-y-1 sm:text-right">
-                  <.button
-                    id={"remove-oidc-#{identity.provider_id}"}
-                    type="button"
-                    variant={:secondary}
-                    tone={:rose}
-                    size={:sm}
-                    disabled={not identity.removable?}
-                    aria-describedby={
-                      not identity.removable? && "remove-oidc-reason-#{identity.provider_id}"
-                    }
-                    phx-click="start_oidc_unlink"
-                    phx-value-identity_id={identity.identity_id}
-                    phx-disable-with="Opening…"
-                  >
-                    Remove
-                  </.button>
-                  <p
-                    :if={not identity.removable?}
-                    id={"remove-oidc-reason-#{identity.provider_id}"}
-                    class="max-w-xs text-xs text-zinc-400"
-                  >
-                    Link another enabled sign-in method before removing this one.
-                  </p>
-                </div>
-              </div>
-            </li>
-          </ul>
-
-          <.oidc_step_dialog
-            :if={@oidc_step}
-            id="profile-oidc-step"
-            form={@oidc_step_form}
-            step={@oidc_step}
-            purpose={@oidc_step.purpose}
-            email={@current_user.email}
-            error={@oidc_step_error}
-            typed={@typed}
-            handoff={@oidc_handoff}
-            trigger_submit={@oidc_trigger_submit}
-            action={~p"/app/#{@current_account}/settings/sso/identity/link"}
-          />
-        </.section_with_note>
-
-        <.section_with_note
-          :if={@current_user && @linked_workspaces != []}
-          id="linked-workspaces"
-        >
-          <:header>
-            <.section_header title="Linked workspaces">
-              <:subtitle>
-                Workspace memberships your personal login signs in to. Each also signs in through its workspace's single sign-on.
-              </:subtitle>
-            </.section_header>
-          </:header>
-          <:note>
-            Didn't link one of these? Detach it, then sign out everywhere else.
-          </:note>
-
-          <ul id="linked-workspaces-list" class="divide-y divide-zinc-800/70 text-sm">
-            <.list_row :for={member <- @linked_workspaces} id={"linked-workspace-#{member.id}"}>
-              <:title>
-                <span class="truncate font-medium text-zinc-100">{member.account.name}</span>
-              </:title>
-              <:actions>
-                <.confirm_button
-                  id={"detach-personal-login-#{member.id}"}
-                  title={"Detach your personal login from #{member.account.name}?"}
-                  confirm_label="Detach"
-                  variant={:secondary}
-                  tone={:rose}
-                  size={:sm}
-                  class="shrink-0"
-                  on_confirm={JS.push("detach_personal_login", value: %{id: member.id})}
-                >
-                  <:body>
-                    This login loses access to {member.account.name} on every device. The membership stays and signs in only through its single sign-on.
-                  </:body>
-                  Detach
-                </.confirm_button>
-              </:actions>
-            </.list_row>
-          </ul>
-        </.section_with_note>
-
-        <.section_with_note :if={@current_user} id="multi-factor-authentication">
+        <.section_with_note id="multi-factor-authentication">
           <:header>
             <.section_header title="Multi-factor authentication">
               <:subtitle>Use an authenticator app for an extra check when you sign in.</:subtitle>
@@ -1710,7 +759,7 @@ defmodule EmisarWeb.ProfileLive do
           <:note :if={
             not is_nil(@mfa_facts) and not @mfa_facts.enabled? and @mfa_enrollment_step == :idle
           }>
-            We recommend enabling MFA to help protect your profile.
+            We recommend enabling MFA to help protect your account in this workspace.
           </:note>
 
           <%= cond do %>
@@ -1818,8 +867,8 @@ defmodule EmisarWeb.ProfileLive do
               >
                 <.section_header level={3} title="Disable MFA">
                   <:subtitle>
-                    You'll stop using an authenticator code to sign in. You may need to set it
-                    up again to access workspaces that require MFA.
+                    You'll stop using an authenticator code to sign in to this workspace. If it
+                    requires MFA, you'll set one up again on your next visit.
                   </:subtitle>
                 </.section_header>
                 <.input
@@ -1846,7 +895,7 @@ defmodule EmisarWeb.ProfileLive do
             <% @mfa_enrollment_step == :email -> %>
               <.mfa_setup_progress step={1} />
               <.mfa_enrollment_email_verification
-                email={@current_user.email}
+                email={@current_membership.email}
                 form={@mfa_enrollment_email_form}
                 error={@mfa_enrollment_email_error}
               >
@@ -1885,7 +934,7 @@ defmodule EmisarWeb.ProfileLive do
                   </.button>
                 </:actions>
               </.mfa_enrollment>
-            <% true -> %>
+            <% @mfa_facts.enrollment_proof == :email -> %>
               <div id="mfa-status" class="flex flex-wrap items-center justify-between gap-4">
                 <.chip tone={:amber}>Not enabled</.chip>
                 <.button
@@ -1898,18 +947,47 @@ defmodule EmisarWeb.ProfileLive do
                 </.button>
               </div>
               <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
+            <% @mfa_facts.enrollment_proof == :sso -> %>
+              <%!-- An SSO-only Member proves itself with a fresh sign-in at its identity
+                   provider; the callback continues enrollment on the MFA setup page. --%>
+              <div id="mfa-status" class="flex flex-wrap items-center justify-between gap-4">
+                <.chip tone={:amber}>Not enabled</.chip>
+                <.button
+                  id="verify-with-sso"
+                  href={~p"/app/#{@current_account}/mfa_setup/sso"}
+                  method="post"
+                  size={:sm}
+                >
+                  Verify with {sso_provider_name(@current_auth)}
+                </.button>
+              </div>
+              <p class="mt-3 text-sm text-zinc-400">
+                To set up MFA, first sign in again with {sso_provider_name(@current_auth)} to confirm
+                it's you.
+              </p>
+            <% true -> %>
+              <div id="mfa-status" class="flex flex-wrap items-center justify-between gap-4">
+                <.chip tone={:amber}>Not enabled</.chip>
+              </div>
+              <p class="mt-3 text-sm text-zinc-400">
+                Setting up an authenticator needs a fresh proof of your own sign-in: a code to a
+                verified email address, or a new sign-in through this workspace's identity provider.
+                Neither is available from this session. Ask a workspace administrator for help.
+              </p>
           <% end %>
         </.section_with_note>
 
-        <.section_with_note :if={@current_user} id="sessions">
+        <.section_with_note id="sessions">
           <:header>
             <.section_header title="Active sessions">
               <:subtitle>
-                Browsers and devices signed in to your profile.
+                Browsers and devices signed in to
+                <span class="font-medium text-zinc-200">{@current_account.name}</span>
+                as you.
               </:subtitle>
               <:actions>
                 <.confirm_button
-                  :if={@personal_sign_in? and @session_count > 1}
+                  :if={@session_count > 1}
                   id="signout-others"
                   title="Sign out of every other browser and device?"
                   confirm_label="Sign out everywhere else"
@@ -1925,7 +1003,7 @@ defmodule EmisarWeb.ProfileLive do
             </.section_header>
           </:header>
           <:note>
-            <p :if={@personal_sign_in?}>
+            <p>
               Don't recognize a session? Sign it out. That browser or device will need to sign in again.
               Signing out everywhere else keeps this session open.
             </p>
@@ -1948,18 +1026,6 @@ defmodule EmisarWeb.ProfileLive do
                node on a single page, leaving one child and no phantom gap). --%>
           <div class="space-y-4">
             <p
-              :if={@sessions_loaded? and not @personal_sign_in?}
-              id="sessions-personal-sign-in-required"
-              class="text-sm text-zinc-400"
-            >
-              Viewing or ending other devices' sessions requires unexpired personal email-link
-              proof in this browser. Workspace SSO alone does not provide it.
-              <.link href={~p"/session/recover"} class="text-brand-400 hover:text-brand-300">
-                Sign out and sign in by email
-              </.link>
-              to use these controls.
-            </p>
-            <p
               :if={not @sessions_loaded?}
               role="status"
               class="text-sm text-zinc-400"
@@ -1967,7 +1033,7 @@ defmodule EmisarWeb.ProfileLive do
               Loading sessions…
             </p>
             <.empty_state
-              :if={@personal_sign_in? and @sessions_error?}
+              :if={@sessions_error?}
               tone={:danger}
               icon="state.warning"
               title="Couldn't load your sessions"
@@ -1986,7 +1052,7 @@ defmodule EmisarWeb.ProfileLive do
             </.empty_state>
 
             <ul
-              :if={@personal_sign_in? and @sessions_loaded? and not @sessions_error?}
+              :if={@sessions_loaded? and not @sessions_error?}
               id="active-sessions"
               phx-update="stream"
               class="divide-y divide-zinc-800/70 text-sm"

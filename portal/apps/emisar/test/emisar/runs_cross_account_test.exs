@@ -25,16 +25,10 @@ defmodule Emisar.RunsCrossAccountTest do
         source: "operator"
       }
 
-      subject_user = Fixtures.Users.create_user()
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account_a.id, role: "owner")
 
-      _membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account_a.id,
-          user_id: subject_user.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(subject_user, account_a, role: :owner)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Runs.dispatch_run(attrs, subject) == {:error, :runner_not_found}
     end
@@ -42,16 +36,8 @@ defmodule Emisar.RunsCrossAccountTest do
     test "rejects a missing runner_id" do
       account = Fixtures.Accounts.create_account()
       _ = Fixtures.Policies.create_policy(account_id: account.id)
-      subject_user = Fixtures.Users.create_user()
-
-      _membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: subject_user.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(subject_user, account, role: :owner)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Runs.dispatch_run(
                %{
@@ -66,16 +52,8 @@ defmodule Emisar.RunsCrossAccountTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       _ = Fixtures.Policies.create_policy(account_id: account.id)
-      user = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      subject = Fixtures.Subjects.subject_for(membership)
 
       {:ok, _disabled} = Emisar.Runners.disable_runner(runner, subject)
 

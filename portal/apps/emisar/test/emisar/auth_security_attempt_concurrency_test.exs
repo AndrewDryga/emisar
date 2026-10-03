@@ -2,15 +2,14 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Audit, Auth, Fixtures, Repo}
   alias Emisar.Accounts.Account
+  alias Emisar.{Audit, Auth, Fixtures, Repo}
   alias Emisar.Auth.SecurityAttemptWindow
-  alias Emisar.Users.User
 
   @moduletag timeout: 60_000
 
   test "concurrent first attempts create one window and never exceed the budget" do
-    unboxed_user(fn user ->
+    unboxed_member(fn member ->
       parent = self()
 
       inserter =
@@ -18,9 +17,9 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
           Repo.transaction(fn ->
             Repo.insert_all(
               SecurityAttemptWindow,
-              [security_window_attrs(user.id, :inbox_step_up)],
+              [security_window_attrs(member.id, :inbox_step_up)],
               on_conflict: :nothing,
-              conflict_target: [:user_id, :scope]
+              conflict_target: [:membership_id, :scope]
             )
 
             send(parent, {:inserter_ready, backend_pid()})
@@ -36,7 +35,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
       contender =
         unboxed_task(fn ->
           send(parent, {:contender_ready, backend_pid()})
-          Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000)
+          Auth.check_security_attempt(member, :inbox_step_up, 5, 300_000)
         end)
 
       try do
@@ -48,17 +47,19 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
         assert Task.await(contender, 30_000) == :ok
 
         for _ <- 1..4 do
-          assert Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000) == :ok
+          assert Auth.check_security_attempt(member, :inbox_step_up, 5, 300_000) == :ok
         end
 
-        assert Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000) ==
+        assert Auth.check_security_attempt(member, :inbox_step_up, 5, 300_000) ==
                  {:error, :rate_limited, :exhausted}
 
-        assert Auth.check_security_attempt(user, :inbox_step_up, 5, 300_000) ==
+        assert Auth.check_security_attempt(member, :inbox_step_up, 5, 300_000) ==
                  {:error, :rate_limited, :capped}
 
         assert [%SecurityAttemptWindow{attempt_count: 6}] =
-                 Repo.all(SecurityAttemptWindow.Query.by_user_and_scope(user.id, :inbox_step_up))
+                 Repo.all(
+                   SecurityAttemptWindow.Query.by_membership_and_scope(member.id, :inbox_step_up)
+                 )
       after
         send(inserter.pid, :commit)
         stop_tasks([inserter, contender])
@@ -67,9 +68,10 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
   end
 
   test "the final allowance and first rejection serialize behind the same row lock" do
-    unboxed_user(fn user ->
+    unboxed_member(fn member ->
       for _ <- 1..4 do
-        assert Auth.check_security_attempt(user, :email_change_issue, 5, 300_000) == :ok
+        assert Auth.check_security_attempt(member, :oidc_identity_step_up_issue, 5, 300_000) ==
+                 :ok
       end
 
       parent = self()
@@ -77,7 +79,10 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
       locker =
         unboxed_task(fn ->
           Repo.transaction(fn ->
-            SecurityAttemptWindow.Query.by_user_and_scope(user.id, :email_change_issue)
+            SecurityAttemptWindow.Query.by_membership_and_scope(
+              member.id,
+              :oidc_identity_step_up_issue
+            )
             |> SecurityAttemptWindow.Query.lock_for_update()
             |> Repo.one!()
 
@@ -95,7 +100,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
         Enum.map(1..2, fn _index ->
           unboxed_task(fn ->
             send(parent, {:contender_ready, self(), backend_pid()})
-            Auth.check_security_attempt(user, :email_change_issue, 5, 300_000)
+            Auth.check_security_attempt(member, :oidc_identity_step_up_issue, 5, 300_000)
           end)
         end)
 
@@ -126,8 +131,8 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
 
         assert %SecurityAttemptWindow{attempt_count: 6} =
                  Repo.get_by!(SecurityAttemptWindow,
-                   user_id: user.id,
-                   scope: :email_change_issue
+                   membership_id: member.id,
+                   scope: :oidc_identity_step_up_issue
                  )
       after
         send(locker.pid, :release)
@@ -137,12 +142,12 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
   end
 
   test "database time is sampled only after a contended row lock is acquired" do
-    unboxed_user(fn user ->
-      assert Auth.check_security_attempt(user, :mfa_enrollment_issue, 1, 300_000) == :ok
+    unboxed_member(fn member ->
+      assert Auth.check_security_attempt(member, :mfa_enrollment_issue, 1, 300_000) == :ok
 
       expires_at = DateTime.add(database_now(), 5, :second)
 
-      SecurityAttemptWindow.Query.by_user_and_scope(user.id, :mfa_enrollment_issue)
+      SecurityAttemptWindow.Query.by_membership_and_scope(member.id, :mfa_enrollment_issue)
       |> Repo.update_all(set: [window_expires_at: expires_at])
 
       parent = self()
@@ -151,7 +156,10 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
         unboxed_task(fn ->
           Repo.transaction(fn ->
             window =
-              SecurityAttemptWindow.Query.by_user_and_scope(user.id, :mfa_enrollment_issue)
+              SecurityAttemptWindow.Query.by_membership_and_scope(
+                member.id,
+                :mfa_enrollment_issue
+              )
               |> SecurityAttemptWindow.Query.lock_for_update()
               |> Repo.one!()
 
@@ -168,7 +176,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
       waiter =
         unboxed_task(fn ->
           send(parent, {:waiter_ready, backend_pid(), database_now()})
-          Auth.check_security_attempt(user, :mfa_enrollment_issue, 1, 300_000)
+          Auth.check_security_attempt(member, :mfa_enrollment_issue, 1, 300_000)
         end)
 
       try do
@@ -184,7 +192,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
 
         assert %SecurityAttemptWindow{attempt_count: 1} =
                  Repo.get_by!(SecurityAttemptWindow,
-                   user_id: user.id,
+                   membership_id: member.id,
                    scope: :mfa_enrollment_issue
                  )
       after
@@ -195,9 +203,9 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
   end
 
   test "concurrent over-limit MFA attempts emit one bounded audit signal" do
-    unboxed_owner(fn user, account ->
+    unboxed_owner(fn member, account ->
       for _ <- 1..5 do
-        assert Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000) == :ok
+        assert Auth.check_security_attempt(member, :mfa_challenge, 5, 300_000) == :ok
       end
 
       parent = self()
@@ -205,7 +213,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
       locker =
         unboxed_task(fn ->
           Repo.transaction(fn ->
-            SecurityAttemptWindow.Query.by_user_and_scope(user.id, :mfa_challenge)
+            SecurityAttemptWindow.Query.by_membership_and_scope(member.id, :mfa_challenge)
             |> SecurityAttemptWindow.Query.lock_for_update()
             |> Repo.one!()
 
@@ -223,7 +231,7 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
         Enum.map(1..2, fn _index ->
           unboxed_task(fn ->
             send(parent, {:contender_ready, self(), backend_pid()})
-            Auth.check_security_attempt(user, :mfa_challenge, 5, 300_000)
+            Auth.check_security_attempt(member, :mfa_challenge, 5, 300_000)
           end)
         end)
 
@@ -262,21 +270,28 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
     end)
   end
 
-  defp unboxed_user(fun) do
+  defp unboxed_member(fun) do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
 
-      user =
-        Fixtures.Users.create_user(%{
-          email: "auth-security-concurrency-#{suffix}@example.test"
+      account =
+        Fixtures.Accounts.create_account(%{
+          name: "Auth security concurrency #{suffix}",
+          slug: "auth-security-concurrency-#{suffix}"
         })
+
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "auth-security-concurrency-#{suffix}@example.test"
+        )
 
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
 
       try do
-        fun.(user)
+        fun.(member)
       after
-        Repo.delete_all(from(user in User, where: user.id == ^user.id))
+        Repo.delete_all(from(account in Account, where: account.id == ^account.id))
       end
     end)
   end
@@ -285,22 +300,25 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
 
-      user =
-        Fixtures.Users.create_user(%{email: "auth-signal-concurrency-#{suffix}@example.test"})
+      account =
+        Fixtures.Accounts.create_account(%{
+          name: "Auth signal concurrency #{suffix}",
+          slug: "auth-signal-concurrency-#{suffix}"
+        })
 
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "Auth signal concurrency #{suffix}", slug: "auth-signal-concurrency-#{suffix}"},
-          user
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "auth-signal-concurrency-#{suffix}@example.test"
         )
 
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
 
       try do
-        fun.(user, account)
+        fun.(owner, account)
       after
         Repo.delete_all(from(account in Account, where: account.id == ^account.id))
-        Repo.delete_all(from(user in User, where: user.id == ^user.id))
       end
     end)
   end
@@ -310,12 +328,12 @@ defmodule Emisar.AuthSecurityAttemptConcurrencyTest do
     now
   end
 
-  defp security_window_attrs(user_id, scope) do
+  defp security_window_attrs(membership_id, scope) do
     expired = ~U[2000-01-01 00:00:00.000000Z]
 
     %{
       id: Repo.generate_id(),
-      user_id: user_id,
+      membership_id: membership_id,
       scope: scope,
       attempt_count: 0,
       window_started_at: expired,

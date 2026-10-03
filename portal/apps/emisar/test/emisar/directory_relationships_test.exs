@@ -5,7 +5,12 @@ defmodule Emisar.DirectoryRelationshipsTest do
   describe "member_group_summaries/3" do
     test "summaries cap groups across providers, while member groups remain searchable and paginated" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       first = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
       second =
@@ -13,11 +18,7 @@ defmodule Emisar.DirectoryRelationshipsTest do
 
       member = Fixtures.SSO.create_directory_member(first)
 
-      other_identity =
-        Fixtures.SSO.create_directory_member(second,
-          user: member.user,
-          membership: member.membership
-        )
+      other_identity = Fixtures.SSO.create_directory_member(second, membership: member.membership)
 
       groups =
         for n <- 1..12 do
@@ -78,17 +79,25 @@ defmodule Emisar.DirectoryRelationshipsTest do
 
     test "directory reads and connection group filtering deny viewers and cannot cross accounts" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       viewer_member =
         Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      viewer = Fixtures.Subjects.membership_subject(viewer_member)
+      viewer = Fixtures.Subjects.subject_for(viewer_member)
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       member = Fixtures.SSO.create_directory_member(provider)
       group = Fixtures.SSO.create_directory_group(provider, identities: [member.identity])
       other_account = Fixtures.Accounts.create_account()
-      other = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), other_account)
+
+      other =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: other_account.id, role: :owner)
+        )
 
       assert SSO.member_group_summaries([member.membership.id], viewer) == {:error, :unauthorized}
       assert SSO.list_member_groups(member.membership.id, viewer) == {:error, :unauthorized}
@@ -117,7 +126,12 @@ defmodule Emisar.DirectoryRelationshipsTest do
   describe "list_member_groups/3" do
     test "can scope a member's groups to one provider and rejects malformed lookup options" do
       account = Fixtures.Accounts.create_account()
-      subject = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      subject =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
       member = Fixtures.SSO.create_directory_member(provider)
 
@@ -129,11 +143,7 @@ defmodule Emisar.DirectoryRelationshipsTest do
 
       other = Fixtures.SSO.create_identity_provider(account_id: account.id, kind: :openid_connect)
 
-      other_member =
-        Fixtures.SSO.create_directory_member(other,
-          user: member.user,
-          membership: member.membership
-        )
+      other_member = Fixtures.SSO.create_directory_member(other, membership: member.membership)
 
       Fixtures.SSO.create_directory_group(other, identities: [other_member.identity])
 
@@ -154,7 +164,11 @@ defmodule Emisar.DirectoryRelationshipsTest do
   describe "fetch_directory_group_facts/3" do
     test "retired groups disappear from summaries and filter choices" do
       account = Fixtures.Accounts.create_account(plan: "enterprise")
-      owner = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id)
@@ -179,7 +193,12 @@ defmodule Emisar.DirectoryRelationshipsTest do
   describe "list_directory_groups/2" do
     test "group choices are bounded, searchable and fenced to the account and selected provider" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
       groups =
@@ -246,7 +265,11 @@ defmodule Emisar.DirectoryRelationshipsTest do
   describe "list_synced_users/3 — directory group filtering" do
     test "connection member group filters use the live roster and reject other connections" do
       account = Fixtures.Accounts.create_account(plan: "enterprise")
-      owner = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
 
       provider =
         Fixtures.SSO.create_identity_provider(account_id: account.id)
@@ -254,14 +277,14 @@ defmodule Emisar.DirectoryRelationshipsTest do
 
       member =
         Fixtures.SSO.create_directory_member(provider,
-          full_name: "Selected member",
+          display_name: "Selected member",
           scim_active: false
         )
 
       Fixtures.Memberships.suspend_membership(member.membership)
       removed = Fixtures.SSO.create_directory_member(provider)
       Fixtures.Memberships.mark_membership_as_deleted(removed.membership)
-      Fixtures.SSO.create_directory_member(provider, full_name: "Outside group")
+      Fixtures.SSO.create_directory_member(provider, display_name: "Outside group")
 
       group =
         Fixtures.SSO.create_directory_group(provider,
@@ -289,7 +312,12 @@ defmodule Emisar.DirectoryRelationshipsTest do
       end
 
       foreign_account = Fixtures.Accounts.create_account()
-      foreign = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), foreign_account)
+
+      foreign =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: foreign_account.id, role: :owner)
+        )
+
       assert SSO.list_synced_users(provider, foreign, opts) == {:error, :not_found}
       denied = Fixtures.Subjects.permissionless_subject(account)
       assert SSO.list_synced_users(provider, denied, opts) == {:error, :unauthorized}
@@ -299,12 +327,17 @@ defmodule Emisar.DirectoryRelationshipsTest do
 
     test "connection group filters paginate the live roster, including suspended people and account-local names" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
 
       members =
         for n <- 1..7,
-            do: Fixtures.SSO.create_directory_member(provider, full_name: "Person #{n}")
+            do: Fixtures.SSO.create_directory_member(provider, display_name: "Person #{n}")
 
       first = Enum.min_by(members, & &1.membership.id)
       Fixtures.Memberships.sync_display_name(first.membership, "Directory name")
@@ -344,11 +377,16 @@ defmodule Emisar.DirectoryRelationshipsTest do
       refute Enum.any?(page ++ rest, &(&1.membership_id == removed.membership.id))
     end
 
-    test "directory member search retains local history without exposing personal edits after removal" do
+    test "directory member search retains a removed Member's local name and address" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+
+      owner =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
-      member = Fixtures.SSO.create_directory_member(provider, full_name: "Private profile name")
+      member = Fixtures.SSO.create_directory_member(provider)
       Fixtures.Memberships.sync_display_name(member.membership, "Workspace name")
 
       assert {:ok, [named], _} =
@@ -357,25 +395,13 @@ defmodule Emisar.DirectoryRelationshipsTest do
       assert named.membership_id == member.membership.id
       Fixtures.Memberships.mark_membership_as_deleted(member.membership)
 
-      member.user
-      |> Ecto.Changeset.change(email: "private-after@example.test")
-      |> Repo.update!()
-
-      assert {:ok, [], _} =
-               SSO.list_synced_users(provider, owner, filter: [search: "Private profile name"])
-
       assert {:ok, [historical], _} =
                SSO.list_synced_users(provider, owner, filter: [search: "Workspace name"])
 
       assert historical.membership_id == member.membership.id
 
-      assert {:ok, [], _} =
-               SSO.list_synced_users(provider, owner,
-                 filter: [search: "private-after@example.test"]
-               )
-
       assert {:ok, [retained], _} =
-               SSO.list_synced_users(provider, owner, filter: [search: member.user.email])
+               SSO.list_synced_users(provider, owner, filter: [search: member.membership.email])
 
       assert retained.membership_id == member.membership.id
     end

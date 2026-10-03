@@ -4,8 +4,8 @@ defmodule Emisar.Fixtures.ApiKeys do
   `Fixtures.ApiKeys.create_api_key/1`.
   """
 
-  alias Emisar.Accounts.Account
-  alias Emisar.{ApiKeys, Fixtures, Repo, Users}
+  alias Emisar.Accounts.Membership
+  alias Emisar.{ApiKeys, Fixtures, Repo}
   alias Emisar.ApiKeys.DeviceGrant
 
   @doc "Creates an approved, unclaimed device grant for credential lifecycle tests."
@@ -31,12 +31,21 @@ defmodule Emisar.Fixtures.ApiKeys do
   end
 
   @doc """
-  Creates an API key. Returns `{raw, key}`.
+  Creates an API key. Returns `{raw, key}`. `:created_by_membership_id` names
+  the exact Member minting it; by default a new owner of `:account_id` does.
   """
   def create_api_key(attrs \\ %{}) do
     attrs = Map.new(attrs)
-    account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
-    user_id = attrs[:created_by_id] || Fixtures.Users.create_user().id
+
+    creator =
+      case attrs[:created_by_membership_id] do
+        nil ->
+          account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
+          Fixtures.Memberships.create_membership(account_id: account_id, role: "owner")
+
+        membership_id ->
+          Repo.get!(Membership, membership_id)
+      end
 
     create_attrs =
       %{
@@ -46,22 +55,7 @@ defmodule Emisar.Fixtures.ApiKeys do
         expires_at: attrs[:expires_at]
       }
 
-    account =
-      Account.Query.not_deleted()
-      |> Account.Query.by_id(account_id)
-      |> Repo.fetch!(Account.Query)
-
-    {:ok, user} = Users.fetch_user_by_id(user_id)
-
-    membership =
-      Fixtures.Memberships.fetch_membership(account.id, user.id) ||
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "owner"
-        )
-
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(creator)
     {:ok, raw, key} = ApiKeys.create_key(create_attrs, subject)
     {raw, key}
   end

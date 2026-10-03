@@ -5,7 +5,6 @@ defmodule Emisar.Seeds.Agents do
   (one rotation still mid-swap), and the audit-export token.
   """
 
-  alias Emisar.Accounts
   alias Emisar.ApiKeys
   alias Emisar.Repo
   alias Emisar.Seeds.Helpers
@@ -29,11 +28,7 @@ defmodule Emisar.Seeds.Agents do
   # minted with that well-known raw value and the `mcp` compose service can
   # drive the bridge with no manual minting. Locally (no env) it's a random
   # secret like any real key.
-  defp seed_bridge_key(%{
-         account: account,
-         owner_membership: owner_membership,
-         owner_subject: owner_subject
-       }) do
+  defp seed_bridge_key(%{account: account, owner: owner, owner_subject: owner_subject}) do
     agent_key_name = "Claude Code"
 
     agent_key_attrs = %{
@@ -74,7 +69,7 @@ defmodule Emisar.Seeds.Agents do
           {:ok, key} =
             ApiKeys.ApiKey.Changeset.create(
               account.id,
-              owner_membership.id,
+              owner.id,
               String.slice(fixed, 0, 12),
               Emisar.Crypto.hash(fixed),
               agent_key_attrs
@@ -133,17 +128,14 @@ defmodule Emisar.Seeds.Agents do
   # starts earning the "outdated" nudge — and eventually the rose "unsupported"
   # chip plus the fleet-wide upgrade notice — the day the target moves, and the
   # default demo account has to read healthy.
-  defp seed_agent_fleet(
-         %{account: account, owner_membership: owner_membership, jordan: jordan} = ctx
-       ) do
+  defp seed_agent_fleet(%{owner: owner, jordan: jordan} = ctx) do
     mcp_bridge_current = Emisar.Compat.mcp_target()
-    jordan_membership = Accounts.peek_sync_membership(account.id, jordan.id)
 
-    # {owner, membership_id, key name, client_info, last_used_at, expires_at}
+    # {owner membership_id, key name, client_info, last_used_at, expires_at}
     [
       # A pure quick-mint: named after its client, so the list DROPS the redundant
       # "client Claude Code" seg — the name already says which client it is.
-      {owner_membership.id, "Claude Code",
+      {owner.id, "Claude Code",
        %{
          "name" => "claude-code",
          "title" => "Claude Code",
@@ -153,20 +145,20 @@ defmodule Emisar.Seeds.Agents do
       # Remote OAuth (ChatGPT): it initialized — so it reports a client — but no
       # tracked call has landed yet → "never used". No bridge (remote), and OAuth
       # owns its lifecycle so there is no static expiry.
-      {owner_membership.id, "ChatGPT", %{"name" => "openai-mcp (ChatGPT)"}, nil, nil},
+      {owner.id, "ChatGPT", %{"name" => "openai-mcp (ChatGPT)"}, nil, nil},
       # A second owner's key, so the list gains a second owner group. Codex reports
       # a short "Codex" title that differs from the key name → the client seg stays.
-      {jordan_membership.id, "Codex CLI",
+      {jordan.id, "Codex CLI",
        %{"name" => "Codex", "version" => "0.9.2", "bridge_version" => mcp_bridge_current},
        Helpers.mins_ago(6), Helpers.days_out(30)},
       # A minimal client initialize — no title, no client version — still renders.
-      {jordan_membership.id, "Gemini CLI",
+      {jordan.id, "Gemini CLI",
        %{"name" => "gemini-cli-mcp-client", "bridge_version" => mcp_bridge_current},
        Helpers.hours_ago(1), Helpers.days_out(29)},
       # Drift: a key named for one client but actually driven by another (Claude
       # Code), gone quiet for weeks → dormant. Here the client seg earns its place —
       # the name alone would mislead.
-      {jordan_membership.id, "Claude Desktop",
+      {jordan.id, "Claude Desktop",
        %{
          "name" => "claude-code",
          "title" => "Claude Code",
@@ -231,14 +223,11 @@ defmodule Emisar.Seeds.Agents do
   # A rotation still mid-swap: the operator rotated "Cursor", so a successor
   # exists, but its first call hasn't landed — the predecessor keeps working until
   # it does. The list shows the successor's amber "replaces … · swap pending".
-  defp seed_mid_swap_rotation(
-         %{account: account, owner_membership: owner_membership},
-         mcp_bridge_current
-       ) do
+  defp seed_mid_swap_rotation(%{account: account, owner: owner}, mcp_bridge_current) do
     cursor_keys =
       Enum.filter(
         Helpers.account_api_keys(account),
-        &(&1.name == "Cursor" and &1.created_by_membership_id == owner_membership.id)
+        &(&1.name == "Cursor" and &1.created_by_membership_id == owner.id)
       )
 
     cursor_client = %{"name" => "cursor", "bridge_version" => mcp_bridge_current}
@@ -251,7 +240,7 @@ defmodule Emisar.Seeds.Agents do
           {:ok, minted} =
             ApiKeys.ApiKey.Changeset.create(
               account.id,
-              owner_membership.id,
+              owner.id,
               prefix,
               hash,
               %{name: "Cursor"}
@@ -279,7 +268,7 @@ defmodule Emisar.Seeds.Agents do
           {:ok, minted} =
             ApiKeys.ApiKey.Changeset.create(
               account.id,
-              owner_membership.id,
+              owner.id,
               prefix,
               hash,
               %{name: "Cursor"},

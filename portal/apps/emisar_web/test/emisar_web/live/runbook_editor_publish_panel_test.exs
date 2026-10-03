@@ -4,8 +4,8 @@ defmodule EmisarWeb.RunbookEditorPublishPanelTest do
   alias EmisarWeb.RunbookDraft
 
   setup %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    %{conn: conn, user: user, account: account}
+    {conn, owner, account} = register_and_log_in(conn)
+    %{conn: conn, user: owner, account: account}
   end
 
   test "a clean live runbook gets a run check, not a publish pitch", %{
@@ -18,7 +18,7 @@ defmodule EmisarWeb.RunbookEditorPublishPanelTest do
     published =
       [
         account_id: account.id,
-        created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        created_by_membership_id: user.id,
         title: "Fleet health",
         slug: "fleet-health",
         definition: canonical_definition(valid_draft())
@@ -59,7 +59,7 @@ defmodule EmisarWeb.RunbookEditorPublishPanelTest do
     published =
       [
         account_id: account.id,
-        created_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        created_by_membership_id: user.id,
         title: "Fleet health",
         slug: "fleet-health",
         definition: canonical_definition(valid_draft())
@@ -179,7 +179,7 @@ defmodule EmisarWeb.RunbookEditorPublishPanelTest do
                ]
              })
 
-    subject = owner_subject(user, account)
+    subject = Fixtures.Subjects.subject_for(user)
     versions = Fixtures.Catalog.list_pack_versions(subject.account.id)
 
     Enum.each(versions, fn version ->

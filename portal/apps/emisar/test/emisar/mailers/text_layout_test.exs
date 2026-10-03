@@ -63,58 +63,38 @@ defmodule Emisar.Mailers.TextLayoutTest do
   end
 
   defp bodies do
-    user = Fixtures.Users.create_user(full_name: "Andrew Dryga")
     account = Fixtures.Accounts.create_account(name: "Fleet Ops")
 
-    UserNotifier.deliver_account_confirmation(user, "tok-confirm", account, request_context())
-    confirmation = sent_text_body()
+    member =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "owner",
+        display_name: "Andrew Dryga"
+      )
 
-    UserNotifier.deliver_new_email_code(
-      user,
-      "ABC234",
-      account,
-      request_context()
-    )
-
-    email_change_confirmation = sent_text_body()
-
-    UserNotifier.deliver_magic_link(user, "tok", "ABC234", request_context(), nil, account)
+    UserNotifier.deliver_magic_link(member, "tok", "ABC234", request_context(), account)
     magic_link = sent_text_body()
 
-    UserNotifier.deliver_email_change_code(
-      user,
-      "ABC234",
-      "new@example.com",
-      request_context(),
-      account
-    )
+    UserNotifier.deliver_sign_up_code("new-owner@example.com", "tok", "ABC234", request_context())
+    sign_up_code = sent_text_body()
 
-    email_change = sent_text_body()
-
-    UserNotifier.deliver_mfa_enrollment_code(user, "ABC234", request_context(), account)
+    UserNotifier.deliver_mfa_enrollment_code(member, "ABC234", request_context(), account)
     mfa_enrollment = sent_text_body()
 
     UserNotifier.deliver_oidc_identity_step_up_code(
-      user,
+      member,
       "123456",
       "Okta Workforce",
-      :link,
       request_context(),
       account
     )
 
     oidc_identity_step_up = sent_text_body()
 
-    UserNotifier.deliver_member_link_code(user, "tok", "ABC234", account, request_context())
-    member_link_code = sent_text_body()
-
-    UserNotifier.deliver_member_linked(user, account, request_context())
-    member_linked = sent_text_body()
-
     billing_contact =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: Fixtures.Users.create_user(full_name: "Billing Owner").id,
+        display_name: "Billing Owner",
         role: "owner"
       )
 
@@ -127,40 +107,22 @@ defmodule Emisar.Mailers.TextLayoutTest do
 
     billing_link_code = sent_text_body()
 
-    invitation_membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        email: user.email,
-        role: "owner"
-      )
-
-    UserNotifier.deliver_account_invitation(
-      invitation_membership,
-      "Andrew Dryga",
-      account,
-      "tok-invite"
-    )
-
+    UserNotifier.deliver_account_invitation(member, "Andrew Dryga", account, "tok-invite")
     invitation = sent_text_body()
 
     [
-      {"confirmation", confirmation},
-      {"email change confirmation", email_change_confirmation},
       {"magic link", magic_link},
-      {"email change code", email_change},
+      {"sign-up code", sign_up_code},
       {"authenticator code", mfa_enrollment},
       {"OIDC identity step-up", oidc_identity_step_up},
-      {"member link code", member_link_code},
-      {"member linked notice", member_linked},
       {"staff sign-in code", staff_sign_in_code_body()},
       {"billing link code", billing_link_code},
       {"invitation", invitation},
-      {"approval request", approval_request_body(user, account)},
-      {"runbook approval request", runbook_approval_request_body(user, account)},
-      {"approval decision", approval_decision_body(user, account)},
-      {"approval update", approval_event_body(user, account)},
-      {"monthly report", monthly_report_text(user, account)}
+      {"approval request", approval_request_body(member, account)},
+      {"runbook approval request", runbook_approval_request_body(member, account)},
+      {"approval decision", approval_decision_body(member, account)},
+      {"approval update", approval_event_body(member, account)},
+      {"monthly report", monthly_report_text(member, account)}
     ]
   end
 
@@ -174,10 +136,8 @@ defmodule Emisar.Mailers.TextLayoutTest do
     sent_text_body()
   end
 
-  defp approval_request_body(user, account) do
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
-    subject = Fixtures.Subjects.membership_subject(membership)
+  defp approval_request_body(member, account) do
+    subject = Fixtures.Subjects.subject_for(member)
     runner = Fixtures.Runners.create_runner(account_id: account.id, name: "edge-1")
 
     persisted =
@@ -199,11 +159,11 @@ defmodule Emisar.Mailers.TextLayoutTest do
     }
 
     args = Runs.project_authorized_account_args(run, account.id)
-    UserNotifier.deliver_approval_request(membership, args, request, run)
+    UserNotifier.deliver_approval_request(member, args, request, run)
     sent_text_body()
   end
 
-  defp runbook_approval_request_body(user, account) do
+  defp runbook_approval_request_body(member, account) do
     request = %{
       id: "req-execution-1",
       reason: "apply the reviewed settings",
@@ -232,12 +192,11 @@ defmodule Emisar.Mailers.TextLayoutTest do
       }
     }
 
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    UserNotifier.deliver_runbook_execution_approval_request(membership, request)
+    UserNotifier.deliver_runbook_execution_approval_request(member, request)
     sent_text_body()
   end
 
-  defp approval_decision_body(user, account) do
+  defp approval_decision_body(member, account) do
     request = %{
       id: "req-decided-1",
       status: :approved,
@@ -247,14 +206,11 @@ defmodule Emisar.Mailers.TextLayoutTest do
       context: %{"action_id" => "caddy.reload_config"}
     }
 
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    UserNotifier.deliver_approval_decision(membership, request)
+    UserNotifier.deliver_approval_decision(member, request)
     sent_text_body()
   end
 
-  defp approval_event_body(user, account) do
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
+  defp approval_event_body(member, account) do
     request = %{
       id: "req-event-1",
       min_approvals: 2,
@@ -262,7 +218,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
       context: %{"action_id" => "caddy.reload_config"}
     }
 
-    UserNotifier.deliver_approval_event(membership, request, %{
+    UserNotifier.deliver_approval_event(member, request, %{
       id: "decision-1",
       kind: :vote,
       approved_count: 1,
@@ -274,7 +230,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
     sent_text_body()
   end
 
-  defp monthly_report_text(user, account) do
+  defp monthly_report_text(member, account) do
     report = %{
       period_start: ~U[2026-07-01 00:00:00Z],
       period_end: ~U[2026-08-01 00:00:00Z],
@@ -300,8 +256,7 @@ defmodule Emisar.Mailers.TextLayoutTest do
       team_size: 2
     }
 
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    MonthlyReport.render(membership, account, report, "http://localhost/unsubscribe/token").text
+    MonthlyReport.render(member, account, report, "http://localhost/unsubscribe/token").text
   end
 
   defp request_context do

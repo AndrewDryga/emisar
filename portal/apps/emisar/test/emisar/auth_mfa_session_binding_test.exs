@@ -1,24 +1,24 @@
 defmodule Emisar.AuthMfaSessionBindingTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Auth, Crypto, Fixtures, Repo}
+  alias Emisar.{Auth, Crypto, Fixtures, Repo, RequestContext}
 
-  defp browser_session(user, account) do
-    raw = Fixtures.Auth.create_session_token!(user, :magic_link, nil)
-    {:ok, token} = Auth.fetch_session_by_token(raw)
-    {raw, token, Fixtures.Subjects.subject_for(user, account, session: token)}
+  defp browser_session(member) do
+    raw = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
+    {:ok, token} = Auth.fetch_session_by_token(raw, member.account_id)
+    {raw, token, Fixtures.Subjects.subject_for(member, session: raw)}
   end
 
-  describe "fetch_current_session/1" do
+  describe "fetch_current_session/1 — browser proof" do
     for state <- [:revoked, :expired, :missing, :foreign, :wrong_context] do
       @state state
       test "#{state} browser proof is denied before facts, mail, attempts or factor consumption" do
         Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-        {user, account, _owner} = Fixtures.Subjects.owner_subject()
-        {raw, token, subject} = browser_session(user, account)
+        {owner, _account, _owner} = Fixtures.Subjects.owner_subject()
+        {raw, token, subject} = browser_session(owner)
         recovery_code = "disposable-recovery-proof"
 
         enrolled =
-          Fixtures.Users.set_mfa_state(user,
+          Fixtures.Memberships.set_mfa_state(owner,
             mfa_secret: Auth.generate_mfa_secret(),
             mfa_enabled_at: DateTime.utc_now(),
             mfa_recovery_codes: [Crypto.hash(recovery_code)]
@@ -27,7 +27,7 @@ defmodule Emisar.AuthMfaSessionBindingTest do
         invalid =
           case @state do
             :revoked ->
-              :ok = Auth.delete_session_token(raw)
+              :ok = Auth.revoke_session_tokens([raw], :dead_entry, %RequestContext{})
               subject
 
             :expired ->
@@ -42,12 +42,13 @@ defmodule Emisar.AuthMfaSessionBindingTest do
               %{subject | session_token_id: nil}
 
             :foreign ->
-              %{subject | actor: Fixtures.Users.create_user()}
+              # Another Member holding this session's id: the actor must be the
+              # session's own Member.
+              %{subject | actor: Fixtures.Memberships.create_membership()}
 
             :wrong_context ->
-              Fixtures.Auth.create_confirmation_token!(user)
-              row = Auth.UserToken.Query.by_context("confirm") |> Repo.one!()
-              %{subject | session_token_id: row.id}
+              code = Fixtures.Auth.create_aged_token!(owner, "magic_link", DateTime.utc_now())
+              %{subject | session_token_id: code.id}
           end
 
         assert Auth.fetch_current_session(invalid) == {:error, :unauthorized}
@@ -73,32 +74,33 @@ defmodule Emisar.AuthMfaSessionBindingTest do
 
     test "a revoked browser cannot spend or consume an outstanding enrollment code" do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      {user, account, _owner} = Fixtures.Subjects.owner_subject()
-      {raw, _token, subject} = browser_session(user, account)
+      {owner, _account, _owner} = Fixtures.Subjects.owner_subject()
+      {raw, _token, subject} = browser_session(owner)
       assert Auth.issue_mfa_enrollment_code(subject) == {:ok, :sent}
       assert_received {:email, email}
       code = Fixtures.Auth.code_from_email(email)
       pending = Auth.UserToken.Query.by_context("mfa_enrollment") |> Repo.one!()
       attempts = Repo.all(Auth.SecurityAttemptWindow)
-      assert Auth.delete_session_token(raw) == :ok
+      assert Auth.revoke_session_tokens([raw], :dead_entry, %RequestContext{}) == :ok
 
       assert Auth.verify_mfa_enrollment_code(code, subject) == {:error, :unauthorized}
       assert Repo.reload!(pending) == pending
       assert Repo.all(Auth.SecurityAttemptWindow) == attempts
     end
 
-    test "facts come from the current user, not a held actor snapshot" do
-      {user, _account, subject} = Fixtures.Subjects.owner_subject()
+    test "facts come from the current Member, not a held actor snapshot" do
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       current =
-        Fixtures.Users.set_mfa_state(user,
+        Fixtures.Memberships.set_mfa_state(owner,
           mfa_enabled_at: DateTime.utc_now(),
           mfa_recovery_codes: []
         )
 
       assert {:ok, session} = Auth.fetch_current_session(subject)
       assert session.id == subject.session_token_id
-      assert session.user == current
+      assert session.membership.id == current.id
+      assert session.membership.mfa_enabled_at == current.mfa_enabled_at
       assert {:ok, facts} = Auth.mfa_facts(subject)
       assert facts.enabled?
       assert facts.recovery_codes_remaining == 0
@@ -106,12 +108,12 @@ defmodule Emisar.AuthMfaSessionBindingTest do
   end
 
   describe "exact-browser MFA completion" do
-    test "enrollment cannot stamp another live browser belonging to the same user" do
-      {user, account, _owner} = Fixtures.Subjects.owner_subject()
-      {_raw_a, _token_a, subject_a} = browser_session(user, account)
-      {raw_b, token_b, _subject_b} = browser_session(user, account)
+    test "enrollment cannot stamp another live browser belonging to the same Member" do
+      {owner, _account, _owner} = Fixtures.Subjects.owner_subject()
+      {_raw_a, _token_a, subject_a} = browser_session(owner)
+      {raw_b, token_b, _subject_b} = browser_session(owner)
       token_b = Repo.reload!(token_b)
-      proof = Fixtures.Users.mfa_enrollment_proof(subject_a)
+      proof = Fixtures.Memberships.mfa_enrollment_proof(subject_a)
       secret = Auth.generate_mfa_secret()
 
       assert Auth.enable_mfa(
@@ -122,18 +124,18 @@ defmodule Emisar.AuthMfaSessionBindingTest do
                subject_a
              ) == {:error, :session_not_found}
 
-      assert is_nil(Repo.reload!(user).mfa_enabled_at)
+      assert is_nil(Repo.reload!(owner).mfa_enabled_at)
       assert Repo.reload!(token_b) == token_b
     end
 
-    test "step-up cannot stamp another live browser belonging to the same user" do
-      {user, account, _owner} = Fixtures.Subjects.owner_subject()
-      {_raw_a, _token_a, subject_a} = browser_session(user, account)
-      {raw_b, token_b, _subject_b} = browser_session(user, account)
+    test "step-up cannot stamp another live browser belonging to the same Member" do
+      {owner, _account, _owner} = Fixtures.Subjects.owner_subject()
+      {_raw_a, _token_a, subject_a} = browser_session(owner)
+      {raw_b, token_b, _subject_b} = browser_session(owner)
       token_b = Repo.reload!(token_b)
       recovery_code = "disposable-step-up-proof"
 
-      Fixtures.Users.set_mfa_state(user,
+      Fixtures.Memberships.set_mfa_state(owner,
         mfa_enabled_at: DateTime.utc_now(),
         mfa_recovery_codes: [Crypto.hash(recovery_code)]
       )

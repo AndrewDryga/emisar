@@ -29,7 +29,7 @@ defmodule Emisar.PoliciesScopesTest do
 
   describe "scoped CRUD (save / list / delete)" do
     test "saves, lists (account default excluded), and deletes an override" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       {:ok, policy} = Policies.save_scoped_rules(@deny_all, :runner, runner.id, subject)
@@ -44,7 +44,7 @@ defmodule Emisar.PoliciesScopesTest do
     end
 
     test "editing a scope upserts the same row and bumps vsn" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, v1} = Policies.save_scoped_rules(@deny_all, :group, "db", subject)
       {:ok, v2} = Policies.save_scoped_rules(@allow_all, :group, "db", subject)
@@ -54,8 +54,13 @@ defmodule Emisar.PoliciesScopesTest do
     end
 
     test "a viewer can neither save nor delete a scoped policy" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
-      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
+
+      viewer =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
+
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
       assert Policies.save_scoped_rules(@deny_all, :runner, runner.id, viewer) ==
@@ -66,18 +71,18 @@ defmodule Emisar.PoliciesScopesTest do
     end
 
     test "cross-account: can't fetch or delete another account's override" do
-      {_user, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
       {:ok, policy_a} = Policies.save_scoped_rules(@deny_all, :runner, runner_a.id, subject_a)
 
-      {_user, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject_b)
       assert Policies.delete_scoped_policy(policy_a, subject_b) == {:error, :not_found}
     end
 
     test "a runner/group scope requires a non-empty scope_value" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       assert Policies.save_scoped_rules(@deny_all, :runner, "", subject) ==
                {:error, :runner_not_found}
@@ -89,7 +94,7 @@ defmodule Emisar.PoliciesScopesTest do
 
   describe "scope uniqueness — at most one live policy per (account, scope)" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 
@@ -178,10 +183,10 @@ defmodule Emisar.PoliciesScopesTest do
     # DELETE returns :not_found — see the list/delete tests above; the WRITE
     # path's isolation is the row scoping.)
     test "account B's save_rules never mutates account A's default policy" do
-      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       {:ok, policy_a} = Policies.save_rules(@deny_all, subject_a)
 
-      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
       {:ok, policy_b} = Policies.save_rules(@allow_all, subject_b)
 
       # B's write created/updated B's own row, not A's.
@@ -202,7 +207,7 @@ defmodule Emisar.PoliciesScopesTest do
     # rather than a host and both owners are unrestricted, so B saving a colliding
     # "prod" creates B's own row and leaves A's same-named override untouched.
     test "account B can't claim A's runner id, and its group save leaves A's override alone" do
-      {_user_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
 
       {:ok, runner_policy_a} =
@@ -210,7 +215,7 @@ defmodule Emisar.PoliciesScopesTest do
 
       {:ok, group_policy_a} = Policies.save_scoped_rules(@deny_all, :group, "prod", subject_a)
 
-      {_user_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner_b, account_b, subject_b} = Fixtures.Subjects.owner_subject()
 
       assert Policies.save_scoped_rules(@allow_all, :runner, runner_a.id, subject_b) ==
                {:error, :runner_not_found}
@@ -256,8 +261,12 @@ defmodule Emisar.PoliciesScopesTest do
     # denial (manage_policies) shape on the write path is :unauthorized, distinct
     # from the cross-account :not_found above.
     test "a viewer is denied both the default and the scoped write (:unauthorized)" do
-      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
-      viewer = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account, role: :viewer)
+      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+
+      viewer =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
+        )
 
       assert Policies.save_rules(@deny_all, viewer) == {:error, :unauthorized}
 
@@ -268,7 +277,7 @@ defmodule Emisar.PoliciesScopesTest do
 
   describe "resolve_policy/3 precedence (runner > group > account)" do
     test "a runner-scoped policy wins over group and account" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
       {:ok, _} = Policies.save_rules(@allow_all, subject)
       {:ok, _} = Policies.save_scoped_rules(@deny_all, :group, "db", subject)
@@ -280,7 +289,7 @@ defmodule Emisar.PoliciesScopesTest do
     end
 
     test "a group-scoped policy wins over the account default when no runner override" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       {:ok, _} = Policies.save_rules(@allow_all, subject)
       {:ok, group_policy} = Policies.save_scoped_rules(@deny_all, :group, "db", subject)
 
@@ -290,7 +299,7 @@ defmodule Emisar.PoliciesScopesTest do
     end
 
     test "falls through to the account default when no scope matches" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       {:ok, account_policy} = Policies.save_rules(@allow_all, subject)
       {:ok, _} = Policies.save_scoped_rules(@deny_all, :group, "db", subject)
 
@@ -306,11 +315,11 @@ defmodule Emisar.PoliciesScopesTest do
     end
 
     test "scoped policies never leak across accounts" do
-      {_user, account_a, subject_a} = Fixtures.Subjects.owner_subject()
+      {_owner, account_a, subject_a} = Fixtures.Subjects.owner_subject()
       runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
       {:ok, _} = Policies.save_scoped_rules(@deny_all, :runner, runner_a.id, subject_a)
 
-      {_user, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
+      {_owner, account_b, _subject_b} = Fixtures.Subjects.owner_subject()
 
       # Resolution doesn't validate the id, so B resolving A's runner id still
       # falls through to B's own account default.
@@ -321,7 +330,7 @@ defmodule Emisar.PoliciesScopesTest do
 
   describe "evaluate_with_policy/3 with a runner-scoped override" do
     setup do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       %{account: account, subject: subject}
     end
 

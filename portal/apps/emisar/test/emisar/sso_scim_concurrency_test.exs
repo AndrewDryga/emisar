@@ -6,83 +6,8 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
   alias Emisar.Accounts.{Account, Membership, RunnerAccess}
   alias Emisar.SSO.{DirectoryGroup, GroupRoleMapping, GroupRunnerAccessMapping}
   alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUserUpdate, UserIdentity}
-  alias Emisar.Users.User
 
   @moduletag timeout: 60_000
-
-  test "foreign invitation acceptance and directory re-POST keep User-before-identity lock order" do
-    unboxed_scim(fn context ->
-      attrs = scim_attrs(context, "repost-activation")
-
-      {:ok, %{identity: identity, membership: member}} =
-        SSO.scim_provision_user(context.provider, attrs)
-
-      # A seat with a personal login: its re-POST locks that User first.
-      {user, member} = link_login(context, member, "repost-activation")
-
-      identity = identity |> Ecto.Changeset.change(created_by: :admin) |> Repo.update!()
-      Fixtures.Memberships.mark_membership_as_deleted(member)
-      {other_owner, other_account, other_subject} = Fixtures.Subjects.owner_subject()
-
-      try do
-        {:ok, %{membership: invitation, invitation_token: token}} =
-          Accounts.invite_user_to_account(
-            Fixtures.Accounts.invitation_attrs(email: user.email),
-            other_subject
-          )
-
-        parent = self()
-        blocker = membership_blocker(invitation, parent)
-
-        try do
-          assert_receive {:membership_locked, blocker_backend}, 5_000
-
-          acceptance =
-            unboxed_task(fn ->
-              send(parent, {:acceptance_backend, backend_pid()})
-              Accounts.mark_invitation_accepted(invitation, token, user)
-            end)
-
-          try do
-            assert_receive {:acceptance_backend, acceptance_backend}, 5_000
-            await_blocked_by(acceptance_backend, blocker_backend)
-
-            repost =
-              unboxed_task(fn ->
-                send(parent, {:repost_backend, backend_pid()})
-                SSO.scim_provision_user(context.provider, attrs)
-              end)
-
-            try do
-              assert_receive {:repost_backend, repost_backend}, 5_000
-              await_blocked_by(repost_backend, acceptance_backend)
-              send(blocker.pid, :release)
-              assert {:ok, %Membership{}} = Task.await(blocker, 30_000)
-              assert {:ok, %Membership{}} = Task.await(acceptance, 30_000)
-
-              assert {:ok, %{identity: rebound, membership: replacement}} =
-                       Task.await(repost, 30_000)
-
-              assert rebound.id == identity.id
-              assert rebound.membership_id == replacement.id
-              assert replacement.id != member.id
-              assert Repo.reload!(identity).provider_identifier_retired_at
-            after
-              stop_tasks([repost])
-            end
-          after
-            stop_tasks([acceptance])
-          end
-        after
-          send(blocker.pid, :release)
-          stop_tasks([blocker])
-        end
-      after
-        Repo.delete_all(from(account in Account, where: account.id == ^other_account.id))
-        Repo.delete_all(from(user in User, where: user.id == ^other_owner.id))
-      end
-    end)
-  end
 
   for revocation <- [:disable, :delete], mutation <- [:create, :repost, :rename, :deactivate] do
     test "#{revocation} wins before a stale SCIM #{mutation} and leaves no mutation state" do
@@ -283,10 +208,11 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
                  Fixtures.Memberships.force_runner_access(membership, RunnerAccess.all())
                end)
 
-      {user, _membership} = link_login(context, membership, "version-retry")
-
       {_raw, api_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: context.account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(
+          account_id: context.account.id,
+          created_by_membership_id: membership.id
+        )
 
       assert is_nil(Repo.reload!(api_key).revoked_at)
 
@@ -763,23 +689,14 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
     }
   end
 
-  # The directory creates Members without a personal login; a person links one
-  # by proving the mailbox. The login's address matches the fixture cleanup.
-  defp link_login(context, membership, label) do
-    user = Fixtures.Users.create_user(%{email: "#{label}-login-#{context.suffix}@example.test"})
-    {:ok, linked} = Accounts.link_personal_login(Repo, membership, user)
-    {user, linked}
-  end
-
   defp prepare_collision(context, label) do
     email = "#{label}-#{context.suffix}@example.test"
-    member = Fixtures.Users.create_user(%{email: email})
 
     _membership =
       Fixtures.Memberships.create_membership(
         account_id: context.account.id,
-        user_id: member.id,
-        role: :admin
+        role: :admin,
+        email: email
       )
 
     %{
@@ -1071,16 +988,23 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
   defp unboxed_scim(fun) do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
-      owner = Fixtures.Users.create_user(%{email: "owner-#{suffix}@example.test"})
 
-      {:ok, account} =
-        Accounts.create_account_with_owner(
-          %{name: "SCIM race #{suffix}", slug: "scim-race-#{suffix}"},
-          owner
+      account =
+        Fixtures.Accounts.create_account(%{
+          name: "SCIM race #{suffix}",
+          slug: "scim-race-#{suffix}"
+        })
+
+      owner =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "owner",
+          email: "owner-#{suffix}@example.test"
         )
 
+      {:ok, _policy} = Emisar.Policies.seed_policy(account.id, owner.id)
       _subscription = Fixtures.Accounts.create_subscription(account, "enterprise")
-      subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       provider =
         Fixtures.SSO.create_identity_provider(%{
@@ -1105,8 +1029,6 @@ defmodule Emisar.SSOSCIMConcurrencyTest do
         if deleted_accounts != 1 do
           raise "SCIM concurrency fixture failed to delete account #{account.id}"
         end
-
-        Repo.delete_all(from(user in User, where: like(user.email, ^"%-#{suffix}@example.test")))
       end
     end)
   end

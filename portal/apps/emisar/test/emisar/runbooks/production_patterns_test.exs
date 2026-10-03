@@ -8,7 +8,7 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
   @pack_hash "sha256:" <> String.duplicate("d", 64)
 
   setup do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
     policy_rules = %{
       "schema_version" => 2,
@@ -485,16 +485,9 @@ defmodule Emisar.Runbooks.ProductionPatternsTest do
   end
 
   defp approver_subject(account) do
-    user = Fixtures.Users.create_user()
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "admin"
-      )
-
-    Fixtures.Subjects.membership_subject(membership)
+    Fixtures.Subjects.subject_for(membership)
   end
 
   defp approve_execution!(approver) do

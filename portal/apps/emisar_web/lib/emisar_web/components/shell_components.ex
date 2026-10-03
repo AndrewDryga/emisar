@@ -25,23 +25,20 @@ defmodule EmisarWeb.ShellComponents do
 
   @doc """
   Shell for authenticated product pages: sidebar + topbar + main.
-  Expects @current_user, @current_account in assigns.
+  Expects @current_account, @current_membership and @current_subject in assigns.
   `:pending_approvals_count` is set by the `:track_pending_approvals`
   on_mount hook (UserAuth) — defaults to 0 so the shell still renders
   in test contexts that haven't gone through the hook.
-  `:switchable_accounts` is the full list of accounts the user can
-  pick from (including the current one); defaults to a list with just
-  the current account so the shell still renders without the on_mount
-  hook in unit tests.
+  `:switchable_accounts` lists the workspaces this browser is signed in
+  to (including the current one); defaults to a list with just the
+  current account so the shell still renders without the on_mount hook
+  in unit tests.
   """
-  attr :current_user, :map, required: true
   attr :current_account, :map, required: true
   attr :current_subject, :map, required: true
-  # `chrome.membership` is what names the person, not `current_user`: a directory
-  # can rename a member per account, and `users.full_name` is cross-account, so a
-  # multi-account synced member was called two different things depending on the
-  # surface. The struct defaults throughout, so a unit test can render the shell
-  # without the on_mount hooks that seed it.
+  # The Member names the person: its display name is this workspace's, and a
+  # directory may rename a member per workspace. The struct defaults throughout,
+  # so a unit test can render the shell without the on_mount hooks that seed it.
   attr :current_membership, :map, default: nil
 
   attr :chrome, EmisarWeb.ShellChrome,
@@ -81,7 +78,7 @@ defmodule EmisarWeb.ShellComponents do
         />
         <.shell_nav
           current_account={@current_account}
-          current_user={@current_user}
+          current_membership={@current_membership}
           current_subject={@current_subject}
           section={@section}
           support_channels={@chrome.support_channels}
@@ -92,11 +89,7 @@ defmodule EmisarWeb.ShellComponents do
           no_agents?={@chrome.no_agents?}
           onboarding_incomplete?={@chrome.onboarding_incomplete?}
         />
-        <.shell_user
-          current_user={@current_user}
-          current_account={@current_account}
-          current_membership={@current_membership}
-        />
+        <.shell_user current_account={@current_account} current_membership={@current_membership} />
       </aside>
 
       <%!-- Mobile drawer (hidden by default; JS toggles `open`). The focus_wrap
@@ -134,7 +127,7 @@ defmodule EmisarWeb.ShellComponents do
           </div>
           <.shell_nav
             current_account={@current_account}
-            current_user={@current_user}
+            current_membership={@current_membership}
             current_subject={@current_subject}
             section={@section}
             support_channels={@chrome.support_channels}
@@ -145,11 +138,7 @@ defmodule EmisarWeb.ShellComponents do
             no_agents?={@chrome.no_agents?}
             onboarding_incomplete?={@chrome.onboarding_incomplete?}
           />
-          <.shell_user
-            current_user={@current_user}
-            current_account={@current_account}
-            current_membership={@current_membership}
-          />
+          <.shell_user current_account={@current_account} current_membership={@current_membership} />
         </.focus_wrap>
       </div>
 
@@ -157,24 +146,6 @@ defmodule EmisarWeb.ShellComponents do
            The id is the capture anchor for full-workspace docs shots
            (tools/internal/browser/docs.go): the page without the nav rail. --%>
       <div id="shell-canvas" class="flex min-w-0 flex-1 flex-col bg-black">
-        <%!-- Portal-wide nudge: a signed-in user whose email isn't
-             confirmed yet. Shown on every page until they verify; the
-             "Resend" button is handled by the global `:email_confirmation`
-             on_mount hook so it works regardless of which LV is mounted. --%>
-        <.callout
-          :if={@current_user && @current_user.email && is_nil(@current_user.confirmed_at)}
-          tone={:amber}
-          variant={:strip}
-          icon="communication.email"
-        >
-          Verify your email — open the confirmation link for <span class="break-all font-medium text-amber-100">{@current_user.email}</span>, or request a new one.
-          <:action>
-            <.button variant={:secondary} size={:sm} phx-click="resend_confirmation">
-              Resend email
-            </.button>
-          </:action>
-        </.callout>
-
         <%!-- The no-LLM nudge is ONE signal: the nav item's attention dot.
              The page-wide banner strip died — three signals for one fact (a
              brand-washed banner on every page + the nav dot + the dashboard
@@ -281,6 +252,9 @@ defmodule EmisarWeb.ShellComponents do
 
   # -- shell sub-components (shared between desktop + mobile) ----------
 
+  # The switcher lists the workspaces this browser is signed in to: each is a
+  # plain link into that workspace (its own cookie entry carries it; nothing
+  # is switched server-side). Any other workspace is a fresh sign-in.
   attr :current_account, :map, required: true
   attr :switchable_accounts, :list, required: true
 
@@ -333,26 +307,27 @@ defmodule EmisarWeb.ShellComponents do
             <span class="truncate font-medium">{@current_account.name}</span>
           </div>
         </li>
-        <%= for account <- @other_accounts do %>
-          <li>
-            <form action={~p"/app/accounts/switch"} method="post" class="contents">
-              <input type="hidden" name="_csrf_token" value={Phoenix.Controller.get_csrf_token()} />
-              <input type="hidden" name="account_id" value={account.id} />
-              <button
-                type="submit"
-                class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-zinc-900"
-              >
-                <.avatar name={account.name} shape={:square} size={:xs} />
-                <span class="truncate">{account.name}</span>
-              </button>
-            </form>
-          </li>
-        <% end %>
+        <li :for={account <- @other_accounts}>
+          <.link
+            href={~p"/app/#{account}"}
+            class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-zinc-900"
+          >
+            <.avatar name={account.name} shape={:square} size={:xs} />
+            <span class="truncate">{account.name}</span>
+          </.link>
+        </li>
       </ul>
 
       <div class="border-t border-zinc-800/70 p-1">
         <.link
-          href={~p"/onboarding"}
+          href={~p"/sign_in"}
+          class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
+        >
+          <.icon name="action.next" class="h-4 w-4 shrink-0" />
+          <span>Sign in to another workspace</span>
+        </.link>
+        <.link
+          href={~p"/sign_up"}
           class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
         >
           <.icon name="action.add" class="h-4 w-4 shrink-0" />
@@ -373,7 +348,7 @@ defmodule EmisarWeb.ShellComponents do
   attr :no_agents?, :boolean, default: false
   attr :onboarding_incomplete?, :boolean, default: false
   attr :current_account, :map, required: true
-  attr :current_user, :map, required: true
+  attr :current_membership, :map, default: nil
 
   defp shell_nav(assigns) do
     # One domain predicate per section — the nav shows only what the member
@@ -396,7 +371,7 @@ defmodule EmisarWeb.ShellComponents do
     support_context =
       MailTo.context(%{
         current_account: assigns.current_account,
-        current_user: assigns.current_user
+        current_membership: assigns.current_membership
       })
 
     assigns =
@@ -585,7 +560,6 @@ defmodule EmisarWeb.ShellComponents do
     """
   end
 
-  attr :current_user, :map, required: true
   attr :current_account, :map, required: true
   attr :current_membership, :map, default: nil
 

@@ -31,8 +31,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   defp pending_request(account, requested_by, opts \\ []) do
-    initiating_membership = Fixtures.Memberships.fetch_membership(account.id, requested_by.id)
-
     {:ok, runner} =
       Runner.Changeset.register(%{
         account_id: account.id,
@@ -55,7 +53,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         source: "operator",
         reason: "needs review",
         args: %{},
-        initiating_membership_id: initiating_membership.id,
+        initiating_membership_id: requested_by.id,
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
@@ -112,8 +110,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "renders human decision evidence and states that whole-run approval happens once", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_execution_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_execution_request(account, owner)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -153,10 +151,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "identifies a draft test before the approver decides", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     request =
-      Fixtures.Approvals.create_execution_request(account, user, %{
+      Fixtures.Approvals.create_execution_request(account, owner, %{
         execution_kind: :draft_test,
         executable?: true
       })
@@ -170,21 +168,20 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "labels a requester with this account's directory name", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     other_account = Fixtures.Accounts.create_account()
 
-    local_membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    _local = Fixtures.Memberships.sync_display_name(local_membership, "Local Contractor")
+    _local = Fixtures.Memberships.sync_display_name(owner, "Local Contractor")
 
     other_membership =
       Fixtures.Memberships.create_membership(
         account_id: other_account.id,
-        user_id: user.id,
+        email: owner.email,
         role: "operator"
       )
 
     _other = Fixtures.Memberships.sync_display_name(other_membership, "Other Employee")
-    request = pending_request(account, user)
+    request = pending_request(account, owner)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -192,34 +189,35 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Other Employee"
   end
 
-  test "a requester without a local profile has a visible label without personal details", %{
+  test "a requester with neither a name nor an email still has a visible label", %{
     conn: conn
   } do
     {conn, _owner, account} = register_and_log_in(conn)
-    requester = Fixtures.Users.create_user(full_name: "Private Personal Name")
 
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: requester.id,
-      display_name: nil,
-      email: nil
-    )
+    requester =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        display_name: nil,
+        email: nil
+      )
 
     request = pending_request(account, requester)
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert html =~ "Former member"
-    refute html =~ requester.full_name
-    refute html =~ requester.email
   end
 
   test "a withdrawn request explains that the action did not run", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
     run = Runs.peek_run_by_id(request.run_id)
 
     assert {:ok, _cancelled} =
-             Runs.cancel_run(run, owner_subject(user, account), "approval request withdrawn")
+             Runs.cancel_run(
+               run,
+               Fixtures.Subjects.subject_for(owner),
+               "approval request withdrawn"
+             )
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -229,8 +227,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "approving a runbook follows the explicit non-ActionRun result branch", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_execution_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_execution_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -243,7 +241,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "Runbook approved. Eligible actions are being dispatched."
     assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
     assert has_element?(lv, ~s([data-shot="approval-decisions"]), "change window confirmed")
-    subject = Fixtures.Subjects.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(owner)
     request_id = request.id
 
     assert {:ok, %{^request_id => %{final: event_id}}} =
@@ -259,14 +257,14 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "a high-risk action shows its risk pill so the approver sees the stakes", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "high")
 
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        initiating_membership_id: owner.id,
         runner_id: runner.id,
         action_id: "linux.reboot",
         source: "operator",
@@ -285,13 +283,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
   test "the decision surface renders the agent's snapshotted evidence/expected chain",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        initiating_membership_id: owner.id,
         runner_id: runner.id,
         action_id: "linux.uptime",
         source: "mcp",
@@ -313,7 +311,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "shows the resolved command when the pinned pack hash matches ours", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     {action, pack_ref} =
@@ -332,7 +330,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        initiating_membership_id: owner.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -367,7 +365,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
        %{conn: conn} do
     # Even a currently trusted advertisement cannot prove what an old unpinned
     # request reviewed. Keep its stored arguments, not a newly resolved command.
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     {_action, pack_ref} =
@@ -376,7 +374,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        initiating_membership_id: owner.id,
         runner_id: runner.id,
         action_id: "linux.systemctl_restart",
         source: "operator",
@@ -399,7 +397,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
        %{conn: conn} do
     # The pinned hash is authoritative: a drift must never be papered over by
     # an advertisement that names our bytes. No command; args still show.
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     pack = PublishedRegistry.get("cloud-init")
 
@@ -415,7 +413,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        initiating_membership_id: owner.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -436,7 +434,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # An older runner that names no bytes proves nothing, and a matching
     # version is not a substitute — the preview stays off rather than promise a
     # command line we cannot tie to the pack on the host.
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     pack = PublishedRegistry.get("cloud-init")
 
@@ -452,7 +450,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        initiating_membership_id: owner.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -470,7 +468,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "shows exact decimals while redacting sensitive arguments", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     Fixtures.Catalog.create_action(
@@ -487,7 +485,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        initiating_membership_id: owner.id,
         runner_id: runner.id,
         action_id: "database.scale",
         source: "mcp",
@@ -506,7 +504,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "renders the resolved command from the redacted arguments", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     # The pack's own schema does NOT declare `module` sensitive, so only the
@@ -517,7 +515,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        initiating_membership_id: owner.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -547,7 +545,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "hides both the arguments and the command when they no longer decode", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
 
     Fixtures.Catalog.create_action(
@@ -562,7 +560,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, run} =
       Runs.create_run(%{
         account_id: account.id,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        initiating_membership_id: owner.id,
         runner_id: runner.id,
         action_id: "cloud-init.single_module",
         source: "operator",
@@ -583,8 +581,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "renders the decision panel for a decider without crashing", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -614,11 +612,11 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "the duration menu hides options above the account's grant-lifetime cap", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     # Cap standing grants at 1 day — the 30/90-day windows must not be offered.
     Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 86_400)
 
-    request = pending_request(account, user)
+    request = pending_request(account, owner)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -629,10 +627,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "cap 0 replaces the reuse menu with the standing-grants-disabled note", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     Fixtures.Accounts.set_max_grant_lifetime_seconds(account, 0)
 
-    request = pending_request(account, user)
+    request = pending_request(account, owner)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -642,8 +640,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "the decide panel carries a live expiry countdown that lapses server-side", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -664,8 +662,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "choosing a reuse window reveals the grant scope fields", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -690,8 +688,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # browser-set `<details open>` — the section slammed shut on the operator
     # the moment they typed a note or picked a window. The open state is
     # server-owned now, so each re-render puts `open` back.
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     refute html =~ ~r/<details[^>]*\bid="grant-reuse"[^>]*\bopen\b/
@@ -713,8 +711,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "adjusting the reuse window keeps the note, match, and cap already entered", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     form = element(lv, "form[phx-change='grant_form_changed']")
@@ -744,8 +742,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # The page posts raw values; Approvals owns what they mean. A cap it can't
     # type must come back as a fixable input error — not the stale-state path,
     # which would flip the panel to history for a request nobody decided.
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -781,8 +779,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "a crafted reuse window is refused before any decision is recorded", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -803,8 +801,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "a crafted match scope is refused before any decision is recorded", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -830,8 +828,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "editing the form clears a previous rejection's message", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -851,8 +849,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # A policy that forbids self-approval refuses the requester's approve but
     # leaves the panel live (denying your own request is fine), so the
     # justification they typed must survive the refusal.
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user, allow_self_approval: false)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner, allow_self_approval: false)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -868,8 +866,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "a self-blocked requester gets deny-only copy, no Approve affordance", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user, allow_self_approval: false)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner, allow_self_approval: false)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -884,8 +882,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "the disconnected (dead) render shows the shared loading state", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     dead = conn |> get(~p"/app/#{account}/approvals/#{request.id}") |> html_response(200)
 
@@ -894,8 +892,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "the free-text decision controls each have an accessible name", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -916,8 +914,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "denying does not crash when the form carries no reason", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     subscribe_approvals(account)
@@ -934,8 +932,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "a denied request leads with the verdict callout, no live decide panel", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     subscribe_approvals(account)
@@ -957,8 +955,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "an expired request explains expiry without calling it a denial, no decide panel", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     request
     |> Ecto.Changeset.change(
@@ -977,8 +975,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a lapsed request the sweeper hasn't expired yet reads expired, never pending", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     # Still :pending in the DB — only the expiry has lapsed. The page must
     # normalize everywhere: a "pending" status badge above an
@@ -995,8 +993,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "a decision that lost a race to expiry re-fetches and flips the panel", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -1027,13 +1025,12 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "revoked pack access blocks a stale denial and keeps the request readable", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
-    account.id
-    |> Fixtures.Memberships.fetch_membership(user.id)
+    owner
     |> Fixtures.Memberships.force_role("admin")
 
-    request = pending_request(account, user)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -1043,12 +1040,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
              "Approve"
            )
 
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-
     {:ok, revoked_access} =
       Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
 
-    Fixtures.Memberships.force_runner_access(membership, revoked_access)
+    Fixtures.Memberships.force_runner_access(owner, revoked_access)
 
     lv
     |> form("form[phx-submit='decide']", %{})
@@ -1061,7 +1056,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "approving a run whose signature aged out shows the re-issue prompt", %{conn: conn} do
-    {conn, approver, account} = register_and_log_in(conn)
+    {conn, _approver, account} = register_and_log_in(conn)
 
     {:ok, runner} =
       %{
@@ -1121,12 +1116,11 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert html =~ "This signed request expired."
     assert html =~ "Send a new request from your AI app."
     assert Repo.reload!(request).status == :pending
-    _ = approver
   end
 
   test "a request whose action is already gone offers only Deny", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
     runner_id = Repo.reload!(request).context["runner_id"]
     Fixtures.Catalog.delete_actions_for_runner(runner_id)
 
@@ -1142,8 +1136,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
   test "Recheck restores a missing action without losing the note, reuse choices, or override reason",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user, min_approvals: 2)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner, min_approvals: 2)
     runner = Repo.get!(Runner, request.context["runner_id"])
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -1181,16 +1175,16 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert {:ok, []} =
              Approvals.list_decisions_for_request(
                request,
-               Fixtures.Subjects.subject_for(user, account)
+               Fixtures.Subjects.subject_for(owner)
              )
   end
 
   test "changed advertisement facts disappear until the frozen action is proven again", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
+    subject = Fixtures.Subjects.subject_for(owner)
     runner = Repo.get!(Runner, request.context["runner_id"])
     {:ok, action} = Emisar.Catalog.fetch_action_by_id("linux.uptime", runner.id, subject)
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
@@ -1220,9 +1214,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a concluded approval does not present a later advertisement as its reviewed action", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
+    subject = Fixtures.Subjects.subject_for(owner)
     {:ok, {_request, _run}} = Approvals.deny_request(request, subject, "Not needed")
 
     {:ok, action} =
@@ -1240,8 +1234,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "Recheck distinguishes a catalog inspection failure from a missing action", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     permission = Emisar.Catalog.Authorizer.view_catalog_permission()
 
@@ -1267,8 +1261,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a recorded vote still shows a later blockage and can recheck without another vote", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user, min_approvals: 2)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner, min_approvals: 2)
     runner = Repo.get!(Runner, request.context["runner_id"])
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     render_hook(lv, "approve", %{"reason" => "Reviewed"})
@@ -1287,7 +1281,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert {:ok, [_decision]} =
              Approvals.list_decisions_for_request(
                request,
-               Fixtures.Subjects.subject_for(user, account)
+               Fixtures.Subjects.subject_for(owner)
              )
 
     assert Repo.reload!(request).status == :pending
@@ -1297,8 +1291,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
        %{
          conn: conn
        } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
     runner = Repo.get!(Runner, request.context["runner_id"])
     Fixtures.Catalog.delete_actions_for_runner(runner.id)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
@@ -1317,14 +1311,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "Recheck respects access revoked while the page is open", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    Fixtures.Memberships.force_role(membership, "admin")
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Memberships.force_role(owner, "admin")
+    request = pending_request(account, owner)
     Fixtures.Catalog.delete_actions_for_runner(request.context["runner_id"])
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
     {:ok, access} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["another-pack"])
-    Fixtures.Memberships.force_runner_access(membership, access)
+    Fixtures.Memberships.force_runner_access(owner, access)
 
     lv |> element("#approval-availability button", "Recheck") |> render_click()
     assert has_element?(lv, "#approval-access-required")
@@ -1335,9 +1328,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a changed runbook action can be restored without cancelling its frozen execution", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_execution_request(account, user)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_execution_request(account, owner)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, [target | _]} =
       Emisar.Runbooks.approval_targets_for_execution(request.runbook_execution_id, account.id)
@@ -1372,8 +1365,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # contract, the runner stopped advertising the action, and the operator
     # clicked Approve. The refusal must read as the unavailable state, not a
     # generic "didn't record", and must leave the request decidable.
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -1403,10 +1396,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   end
 
   test "warns when the target runner is offline (queues on approve)", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     # pending_request/2 targets a freshly-registered runner that never connects,
     # so the decision panel surfaces the shared offline notice.
-    request = pending_request(account, user)
+    request = pending_request(account, owner)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -1427,7 +1420,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # `fetch_approval_request_by_id` returns {:error,:not_found}
     # for an unknown id; mount redirects to /approvals rather than rendering a
     # half-empty detail page.
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     dest = ~p"/app/#{account}/approvals"
 
@@ -1440,10 +1433,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # but the request id belongs to account B. `for_subject` scopes the fetch to A
     # → {:error,:not_found} → the same "Approval not found." redirect as a
     # nonexistent id (no tenant-existence leak, 404 not 403).
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
-    {_b_conn, b_user, b_account} = register_and_log_in(build_conn())
-    foreign_request = pending_request(b_account, b_user)
+    {_b_conn, b_owner, b_account} = register_and_log_in(build_conn())
+    foreign_request = pending_request(b_account, b_owner)
 
     dest = ~p"/app/#{account}/approvals"
 
@@ -1468,19 +1461,18 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # A different operator records the first (of three) approvals — stays pending.
     # A distinct full_name so the Decisions card's decider label is unambiguous
     # (every fixture user is otherwise "Test User").
-    approver = Fixtures.Users.create_user(full_name: "Casey Approver")
 
-    _ =
+    approver =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: approver.id,
-        role: "operator"
+        role: "operator",
+        display_name: "Casey Approver"
       )
 
     {:ok, {%Approvals.Request{status: :pending}, :pending}} =
       Approvals.approve_request(
         request,
-        Fixtures.Subjects.subject_for(approver, account),
+        Fixtures.Subjects.subject_for(approver),
         "first"
       )
 
@@ -1583,7 +1575,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert render(lv) =~ "review requirement overridden"
     refute has_element?(lv, ~s([data-shot="approval-override"]))
 
-    subject = owner_subject(owner, account)
+    subject = Fixtures.Subjects.subject_for(owner)
     request_id = request.id
 
     assert {:ok, %{^request_id => %{override: event_id, final: final_event_id}}} =
@@ -1620,7 +1612,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "an owner who already voted keeps only the focused override path", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     request = pending_request(account, owner, min_approvals: 2)
-    subject = owner_subject(owner, account)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     assert {:ok, {%Approvals.Request{status: :pending}, :pending}} =
              Approvals.approve_request(request, subject, "first review")
@@ -1646,16 +1638,10 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "operators cannot see or craft the override action", %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
     request = pending_request(account, owner, min_approvals: 2)
-    operator = Fixtures.Users.create_user()
 
-    _membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+    operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
-    operator_conn = log_in_user(build_conn(), operator)
+    operator_conn = log_in_member(build_conn(), operator)
     {:ok, lv, _html} = live(operator_conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert has_element?(
@@ -1689,7 +1675,6 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
   test "an approved multi-approver request lists every approver in Decisions", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
-    owner_membership = Fixtures.Memberships.fetch_membership(account.id, owner.id)
     runner = Fixtures.Runners.create_runner(account_id: account.id)
     Fixtures.Catalog.create_action(runner: runner)
 
@@ -1701,7 +1686,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
         source: "operator",
         reason: "needs review",
         args: %{},
-        initiating_membership_id: owner_membership.id,
+        initiating_membership_id: owner.id,
         pack_ref: Fixtures.Catalog.default_pack_ref(),
         expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
         status: :pending_approval
@@ -1710,26 +1695,22 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, request} =
       Approvals.create_request(run, "please approve", min_approvals: 2)
 
-    first_approver = Fixtures.Users.create_user(full_name: "Casey Approver")
-
     first_membership =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: first_approver.id,
-        role: "operator"
+        role: "operator",
+        display_name: "Casey Approver"
       )
-
-    second_approver = Fixtures.Users.create_user(full_name: "Riley Reviewer")
 
     second_membership =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: second_approver.id,
-        role: "operator"
+        role: "operator",
+        display_name: "Riley Reviewer"
       )
 
-    first_subject = Fixtures.Subjects.membership_subject(first_membership)
-    second_subject = Fixtures.Subjects.membership_subject(second_membership)
+    first_subject = Fixtures.Subjects.subject_for(first_membership)
+    second_subject = Fixtures.Subjects.subject_for(second_membership)
 
     assert {:ok, {%Approvals.Request{status: :pending}, :pending}} =
              Approvals.approve_request(request, first_subject, "first")
@@ -1770,19 +1751,17 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute html =~ "Casey Approver"
     subscribe_approvals(account)
 
-    approver = Fixtures.Users.create_user(full_name: "Casey Approver")
-
-    _ =
+    approver =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: approver.id,
-        role: "operator"
+        role: "operator",
+        display_name: "Casey Approver"
       )
 
     {:ok, {%Approvals.Request{status: :pending}, :pending}} =
       Approvals.approve_request(
         request,
-        Fixtures.Subjects.subject_for(approver, account),
+        Fixtures.Subjects.subject_for(approver),
         "first"
       )
 
@@ -1797,8 +1776,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a pending single-approver request hides the tally and empty Decisions section", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
@@ -1809,7 +1788,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a final decision with no recorded Member keeps its note without naming anyone", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     request =
       Fixtures.Approvals.create_request(%{
@@ -1821,9 +1800,9 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 
     assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
-    refute has_element?(lv, ~s([data-shot="approval-decisions"]), user.full_name)
+    refute has_element?(lv, ~s([data-shot="approval-decisions"]), owner.display_name)
     assert has_element?(lv, ~s([data-shot="approval-decisions"]), "Reviewed the final plan.")
-    refute has_element?(lv, ~s([data-shot="approval-verdict"]), user.full_name)
+    refute has_element?(lv, ~s([data-shot="approval-verdict"]), owner.display_name)
   end
 
   test "a pruned override receipt never turns its overrider into an approver", %{conn: conn} do
@@ -1861,19 +1840,17 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     {conn, owner, account} = register_and_log_in(conn)
     request = pending_request(account, owner, min_approvals: 3)
 
-    approver = Fixtures.Users.create_user(full_name: "Casey Approver")
-
-    _ =
+    approver =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: approver.id,
-        role: "operator"
+        role: "operator",
+        display_name: "Casey Approver"
       )
 
     {:ok, {%Approvals.Request{status: :pending}, :pending}} =
       Approvals.approve_request(
         request,
-        Fixtures.Subjects.subject_for(approver, account),
+        Fixtures.Subjects.subject_for(approver),
         "first"
       )
 
@@ -1894,7 +1871,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     assert has_element?(lv, ~s([data-shot="approval-verdict"]), "approved")
     # The recorded vote is still the vote trail; the overrider is not added to it.
     assert has_element?(lv, ~s([data-shot="approval-decisions"]), "Casey Approver")
-    refute has_element?(lv, ~s([data-shot="approval-decisions"]), owner.full_name)
+    refute has_element?(lv, ~s([data-shot="approval-decisions"]), owner.display_name)
 
     refute has_element?(
              lv,
@@ -1907,13 +1884,13 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     # Pre-marker history: nothing proves this request was finalized ordinarily
     # rather than released by override, so its final columns stay out of the
     # ledger instead of naming their decider an approver.
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     request =
       Fixtures.Approvals.create_request(%{
         account_id: account.id,
         status: :approved,
-        decided_by_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+        decided_by_membership_id: owner.id,
         decision_reason: "Reviewed the final plan."
       })
 
@@ -1929,8 +1906,8 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
   test "a soft-deleted target runner leaves readable history without decision authority", %{
     conn: conn
   } do
-    {conn, user, account} = register_and_log_in(conn)
-    request = pending_request(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
 
     # The freshly-built struct holds context with atom keys; reload so the
     # JSONB round-trips to the string keys the page reads.
@@ -1951,17 +1928,15 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
   test "a removed requester's exact Member keeps its local historical label", %{conn: conn} do
     {conn, _owner, account} = register_and_log_in(conn)
-    requester = Fixtures.Users.create_user()
 
-    member =
+    requester =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: requester.id,
         display_name: "Retired Local Requester"
       )
 
     request = pending_request(account, requester)
-    Fixtures.Memberships.mark_membership_as_deleted(member)
+    Fixtures.Memberships.mark_membership_as_deleted(requester)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
 

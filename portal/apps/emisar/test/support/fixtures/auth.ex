@@ -4,11 +4,11 @@ defmodule Emisar.Fixtures.Auth do
   `Fixtures.Auth.create_session_token!/5`.
   """
 
-  alias Emisar.{Accounts, SSO}
-  alias Emisar.Auth.{SessionGrants, UserToken}
+  alias Emisar.Accounts.Membership
+  alias Emisar.Auth.UserToken
   alias Emisar.Crypto
   alias Emisar.Repo
-  alias Emisar.Users.User
+  alias Emisar.SSO
 
   @doc """
   The current TOTP code, never taken in the last two seconds of its 30-second
@@ -31,26 +31,45 @@ defmodule Emisar.Fixtures.Auth do
     code
   end
 
-  @doc "Persists a raw confirmation factor for a consumer/controller test."
-  def create_confirmation_token!(%User{} = user) do
-    {raw, digest} = Crypto.email_token()
-    Repo.insert!(UserToken.Changeset.hashed(user, digest, "confirm", user.email))
-    raw
-  end
-
   @doc """
   Persists one token in an exact `context`, aged to `inserted_at` — the arrange
   for the retention sweep, which judges each row against its own context's
-  validity window.
+  validity window. A `nil` Member makes the one owner-less row, a `sign_up`
+  code.
   """
-  def create_aged_token!(%User{} = user, context, %DateTime{} = inserted_at)
+  def create_aged_token!(membership, context, %DateTime{} = inserted_at)
       when is_binary(context) do
     {_raw, digest} = Crypto.email_token()
-    token = Repo.insert!(UserToken.Changeset.hashed(user, digest, context, user.email))
+
+    token =
+      membership
+      |> aged_token(digest, context)
+      |> Repo.insert!()
 
     {1, _} = UserToken.Query.by_id(token.id) |> Repo.update_all(set: [inserted_at: inserted_at])
 
     Repo.reload!(token)
+  end
+
+  defp aged_token(nil, digest, "sign_up") do
+    UserToken.Changeset.sign_up(digest, Emisar.Fixtures.Random.unique_email(), 5, %{
+      account_name: "Aged Workspace",
+      full_name: "Aged Person"
+    })
+  end
+
+  defp aged_token(%Membership{} = membership, digest, "session") do
+    UserToken.Changeset.session(membership, digest, Crypto.hash(Crypto.random_secret()), %{}, nil)
+  end
+
+  defp aged_token(%Membership{} = membership, digest, context) do
+    Ecto.Changeset.change(%UserToken{},
+      token: digest,
+      context: context,
+      sent_to: membership.email,
+      account_id: membership.account_id,
+      membership_id: membership.id
+    )
   end
 
   @doc "Backdates one session token's insertion time and returns `:ok`."
@@ -78,113 +97,71 @@ defmodule Emisar.Fixtures.Auth do
     :ok
   end
 
-  @doc "Expires independent personal and local-factor proof without ending the session or its SSO routes."
-  def expire_session_independent_proofs!(raw) do
+  @doc "Expires a session's local-factor proof without ending the session or its SSO route."
+  def expire_local_mfa_proof!(raw) when is_binary(raw) do
     expired_at = DateTime.add(DateTime.utc_now(), -1, :second)
 
     {1, _} =
       UserToken.Query.by_token_digest(Crypto.hash(raw))
-      |> Repo.update_all(set: [personal_expires_at: expired_at, local_mfa_expires_at: expired_at])
+      |> Repo.update_all(set: [local_mfa_expires_at: expired_at])
 
     :ok
   end
 
   @doc """
-  Persists a session row with arbitrary provenance and returns the raw token.
-  `mfa_verified_at` is when this session proved a second factor, or nil for
-  never; pass an explicit `DateTime` when a test turns on how that stamp sits
-  against the user's `mfa_enabled_at`.
+  Persists a session row for one Member with arbitrary provenance and returns
+  the raw token. `mfa_verified_at` is when this session proved a second factor,
+  or nil for never; a local proof binds the session to the Member's current
+  enrollment (read from the row, so a struct loaded before enrollment still
+  binds). `:sso` needs `user_identity_id:` and freezes that identity's subject
+  and its provider's issuer, as a real SSO sign-in does. `browser_id:` names
+  the minting browser (a random one by default).
 
   Production never mints a session this way — every sign-in flow owns its own
-  provenance (`Auth.complete_magic_link_sign_in/5`,
-  `Auth.complete_magic_link_mfa_sign_in/5`, `Auth.complete_sso_account_sign_in/4`)
+  provenance (`Auth.complete_magic_link_sign_in/4`,
+  `Auth.complete_magic_link_mfa_sign_in/4`, `Auth.complete_sso_sign_in/5`)
   precisely so no caller can hand-pick `auth_method`/`mfa_verified_at`. This is
   the test arrange for everything that only needs *a* live session to exist.
   """
   def create_session_token!(
-        %User{} = user,
-        auth_method,
-        mfa_verified_at,
+        %Membership{} = membership,
+        auth_method \\ :magic_link,
+        mfa_verified_at \\ nil,
         metadata \\ %{},
         opts \\ []
       ) do
     {token, digest} = Crypto.session_token()
+    browser_digest = Crypto.hash(Keyword.get_lazy(opts, :browser_id, &Crypto.random_secret/0))
+    membership = Repo.reload(membership) || membership
 
-    session =
-      Repo.insert!(
-        UserToken.Changeset.session(user, digest, metadata, auth_method, mfa_verified_at, opts)
-      )
-
-    insert_fixture_grants(session, user, auth_method, opts)
-
-    token
-  end
-
-  @doc """
-  Persists a member-only SSO session for a Member without a personal login and
-  returns the raw token. The row is the member-only session changeset; its one
-  frozen grant comes from the real sign-in authority for `identity`.
-  """
-  def create_member_session_token!(
-        %Accounts.Membership{user_id: nil} = membership,
-        %SSO.UserIdentity{} = identity,
-        metadata \\ %{}
-      ) do
-    {token, digest} = Crypto.session_token()
-
-    {:ok, _changes} =
-      Ecto.Multi.new()
-      |> SSO.put_sign_in_authority(membership, identity.account_id,
-        user_identity_id: identity.id,
-        provider_identifier: identity.provider_identifier
-      )
-      |> Ecto.Multi.insert(:session, fn %{sso_provider: provider} ->
-        mfa_verified_at = if provider.satisfies_mfa, do: DateTime.utc_now()
-        UserToken.Changeset.member_session(digest, metadata, mfa_verified_at, identity.id)
-      end)
-      |> Ecto.Multi.run(:fixture_grants, fn repo, changes ->
-        SessionGrants.insert_sso(repo, changes.session, changes.sso_destinations)
-      end)
-      |> Repo.commit_multi()
+    membership
+    |> session_changeset(auth_method, digest, browser_digest, metadata, mfa_verified_at, opts)
+    |> Repo.insert!()
 
     token
   end
 
-  # Consumers need the same frozen authority shape as a real sign-in. These
-  # fixtures never make grantless tokens authoritative in production; deliberate
-  # invalid/retired SSO origins keep a token with no workspace grants.
-  defp insert_fixture_grants(session, user, :magic_link, _opts) do
-    members = Accounts.list_active_memberships_for_user(user)
+  defp session_changeset(
+         membership,
+         :magic_link,
+         digest,
+         browser_digest,
+         metadata,
+         mfa_at,
+         _opts
+       ),
+       do: UserToken.Changeset.session(membership, digest, browser_digest, metadata, mfa_at)
 
-    {:ok, _grants} =
-      SessionGrants.insert_personal(Repo, session, %{
-        grant_member_candidates: members,
-        grant_accounts: Map.new(members, &{&1.account_id, &1.account})
-      })
+  defp session_changeset(membership, :sso, digest, browser_digest, metadata, mfa_at, opts) do
+    identity_id =
+      Keyword.get(opts, :user_identity_id) ||
+        raise ArgumentError, "an :sso session needs the user_identity_id: it signed in through"
+
+    identity = Repo.get!(SSO.UserIdentity, identity_id)
+    provider = Repo.get!(SSO.IdentityProvider, identity.provider_id)
+
+    membership
+    |> UserToken.Changeset.sso_session(digest, browser_digest, metadata, identity, provider)
+    |> Ecto.Changeset.put_change(:mfa_verified_at, mfa_at)
   end
-
-  defp insert_fixture_grants(session, user, :sso, opts) do
-    identity_id = opts[:user_identity_id]
-
-    identity =
-      if Repo.valid_uuid?(identity_id) do
-        SSO.UserIdentity.Query.not_deleted()
-        |> SSO.UserIdentity.Query.by_id(identity_id)
-        |> Repo.peek()
-      end
-
-    if identity do
-      Ecto.Multi.new()
-      |> SSO.put_sign_in_authority(user, identity.account_id,
-        user_identity_id: identity.id,
-        provider_identifier: identity.provider_identifier
-      )
-      |> Ecto.Multi.run(:fixture_grants, fn repo, %{sso_destinations: destinations} ->
-        SessionGrants.insert_sso(repo, session, destinations)
-      end)
-      |> Repo.commit_multi()
-    end
-  end
-
-  defp insert_fixture_grants(_session, _user, _method, _opts), do: :ok
 end

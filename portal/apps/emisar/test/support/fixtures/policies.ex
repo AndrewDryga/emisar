@@ -19,7 +19,8 @@ defmodule Emisar.Fixtures.Policies do
     account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
 
     membership_id =
-      attrs[:updated_by_membership_id] || policy_editor(account_id, attrs[:created_by_id]).id
+      attrs[:updated_by_membership_id] ||
+        Fixtures.Memberships.create_membership(account_id: account_id).id
 
     rules =
       attrs[:rules] ||
@@ -55,14 +56,6 @@ defmodule Emisar.Fixtures.Policies do
       )
 
     policy
-  end
-
-  defp policy_editor(account_id, nil),
-    do: Fixtures.Memberships.create_membership(account_id: account_id)
-
-  defp policy_editor(account_id, user_id) do
-    Fixtures.Memberships.fetch_membership(account_id, user_id) ||
-      Fixtures.Memberships.create_membership(account_id: account_id, user_id: user_id)
   end
 
   @doc "Test helper: writes a malformed approval shape that the production changeset refuses."

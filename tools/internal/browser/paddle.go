@@ -336,7 +336,7 @@ func PaddlePurchase(ctx context.Context, manager *Manager, config PaddleConfig) 
 	})); err != nil {
 		return err
 	}
-	if err := session.Login(config.Email); err != nil {
+	if err := session.Login("demo", config.Email); err != nil {
 		return err
 	}
 	logf("billing e2e: signed in")

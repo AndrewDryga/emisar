@@ -28,7 +28,7 @@ defmodule Emisar.RunbooksCancellationTest do
         RunnerAccess.new(:restricted, [], [first.runner_id], :restricted, ["postgres"])
 
       membership = Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       before = cancellation_state()
 
       assert {:ok, _visible} =
@@ -50,7 +50,7 @@ defmodule Emisar.RunbooksCancellationTest do
       runner_ids = Enum.map(items, & &1.runner_id)
       {:ok, access} = RunnerAccess.new(:restricted, [], runner_ids, :restricted, ["postgres"])
       membership = Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert {:ok, execution} = Runbooks.cancel_execution(request.runbook_execution_id, subject)
       assert execution.status == :cancelled
@@ -67,7 +67,7 @@ defmodule Emisar.RunbooksCancellationTest do
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
       {:ok, access} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
       membership = Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       before = cancellation_state()
 
       assert Runbooks.cancel_execution(request.runbook_execution_id, subject) ==
@@ -81,7 +81,7 @@ defmodule Emisar.RunbooksCancellationTest do
       request: request
     } do
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       before = cancellation_state()
       Fixtures.Memberships.force_role(membership, "viewer")
 

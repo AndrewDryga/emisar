@@ -907,8 +907,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       provider ->
         step = %{provider_id: provider.id, provider_name: provider.name}
 
-        {:noreply,
-         OIDCStepUp.begin(socket, step, :verify_provider, @sign_in_verification_start_error)}
+        {:noreply, OIDCStepUp.begin(socket, step, @sign_in_verification_start_error)}
     end
   end
 
@@ -1583,8 +1582,8 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp kind_label(kind), do: Map.fetch!(@kind_labels, kind)
 
-  defp scim_sales_mailto(account, user) do
-    context = MailTo.context(%{current_account: account, current_user: user})
+  defp scim_sales_mailto(account, membership) do
+    context = MailTo.context(%{current_account: account, current_membership: membership})
 
     MailTo.sales(
       subject: "SCIM directory sync - #{account.name}",
@@ -1598,7 +1597,6 @@ defmodule EmisarWeb.SSOSettingsLive do
       chrome={@shell_chrome}
       current_membership={@current_membership}
       current_subject={@current_subject}
-      current_user={@current_user}
       current_account={@current_account}
       section={:team}
       width={:table}
@@ -1957,8 +1955,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   id="provider-oidc-step"
                   form={@oidc_step_form}
                   step={@oidc_step}
-                  purpose={:verify}
-                  email={@current_user.email}
+                  email={@current_membership.email}
                   error={@oidc_step_error}
                   handoff={@oidc_handoff}
                   trigger_submit={@oidc_trigger_submit}
@@ -2066,7 +2063,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                     See plans
                   </.link>
                   or <a
-                    href={scim_sales_mailto(@current_account, @current_user)}
+                    href={scim_sales_mailto(@current_account, @current_membership)}
                     class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
                   >talk to us</a>.
                 </p>

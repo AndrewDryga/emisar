@@ -1,282 +1,213 @@
 defmodule EmisarWeb.UserSessionController do
   @moduledoc """
-  Session controller for the passwordless sign-in flows: the split-code
-  magic-link request (`magic_link_start`), the email-link verifier
-  (`magic_link_confirm`), the typed-code sign-in completion (`magic_link_complete`
-  — the code itself is verified in `MagicLinkLive`), and sign-out. A user with a
-  second factor enrolled is diverted to the MFA challenge (`MfaChallengeLive`)
-  after the magic link verifies and only reaches a full session via `mfa_complete`.
-  Account-wide MFA *enrollment* is still enforced post-login by `UserAuth`'s
-  `:ensure_account_compliant` gate.
+  The emailed-code sign-in flows. Each start sends one split code — the browser
+  keeps a nonce in a signed, 15-minute cookie and the inbox gets the code — and
+  the flow finishes only in this browser:
 
-  A member-only SSO session links a personal login through this same flow: its
-  signed `member_link_handoff` rides the email request onto the factor, and the
-  completion presents this browser's session cookie as the link's donor.
+    * `magic_link_start` — a workspace's email sign-in (`/app/:slug/sign_in`)
+    * `invitation_start` — an invitation's name form
+    * `sign_up_start` — a new workspace
+    * `magic_link_resend` — a fresh code for the one this browser holds
+
+  Completion runs through the typed code (`magic_link_complete`, after
+  `MagicLinkLive` verified it) or the emailed link (`magic_link_confirm`), and
+  for a Member with an authenticator through the second factor
+  (`mfa_complete`). `delete` signs this browser out of every workspace.
+
+  Every start shares one budget per address — five codes per 15 minutes,
+  whatever the flow or workspace — and lands on the same "check your email"
+  page: a refused or unknown address gets a same-shaped decoy, so the response
+  never says whether the address can sign in.
   """
 
   use EmisarWeb, :controller
-  alias Emisar.{Accounts, Auth, Config, Throttle, Users}
-  alias EmisarWeb.{Analytics, BillingIntent, MagicLinkHandoff, MemberLinkHandoff}
-  alias EmisarWeb.{MfaChallengeHandoff, RecentAccounts, RegistrationHandoff}
-  alias EmisarWeb.{RequestContext, ReturnTo, UserAuth, UserSignUpLive}
+  alias Emisar.{Accounts, Auth, Config, Throttle}
+  alias EmisarWeb.{Analytics, BillingIntent, MagicLinkHandoff, MfaChallengeHandoff}
+  alias EmisarWeb.{RequestContext, UserAuth}
 
-  # The split-code magic link keeps its browser-side nonce in this signed,
-  # 15-minute, http-only cookie (`token_id:nonce`); the email carries the
-  # 6-character secret. Verifying needs BOTH — an intercepted link/code can't sign
-  # in without this cookie. SameSite=Lax so the cookie still rides the top-level
-  # GET when the operator clicks the email link.
+  # The split code keeps its browser-side nonce in this signed, 15-minute,
+  # http-only cookie (`token_id:nonce`); the email carries the 6-character code.
+  # Verifying needs BOTH — an intercepted link or code can't sign in without
+  # this cookie. SameSite=Lax so the cookie still rides the top-level GET when
+  # the operator clicks the email link.
   @magic_cookie "emisar_magic"
   @magic_cookie_opts [sign: true, max_age: 900, http_only: true, same_site: "Lax"]
 
-  # Per-IP cap on the magic-link endpoints, layered over the per-recipient
-  # throttle in `magic_link_start` and the per-token 5-attempt cap on verify.
-  # By IP (never email — an email key would let an attacker lock a victim out);
-  # generous enough for a NAT'd team behind one egress IP.
+  # One budget per address across sign-in, invitation, sign-up and resend, in
+  # every workspace, so neither several flows nor several workspaces multiply
+  # the mail an address receives.
+  @address_limit 5
+  @address_window_ms 15 * 60_000
+  @address_rate_limited "You've asked for several sign-in emails for that address."
+  # Sign-up's hourly cap per source address.
+  @sign_up_limit 20
+  @sign_up_window_ms 60 * 60_000
+  # The longest valid address. A longer input never resolves a Member, and the
+  # stored value must not overflow the ~4 KiB session cookie.
+  @max_address_bytes 320
+
+  # Per-IP cap on every start, completion and confirmation, layered over the
+  # address budget and the per-code 5-attempt cap. By IP (never email — an email
+  # key would let an attacker lock a victim out); generous enough for a NAT'd
+  # team behind one egress IP.
   plug EmisarWeb.Plugs.RateLimit,
        [bucket: "sign_in", limit: 30, window_ms: 60_000]
        when action in [
               :magic_link_start,
+              :invitation_start,
+              :sign_up_start,
+              :magic_link_resend,
               :magic_link_complete,
-              :magic_link_confirm
+              :magic_link_confirm,
+              :mfa_complete
             ]
 
   @doc """
-  Magic-link request (POST from the email form). `Auth.request_magic_link/3`
-  issues the split-code token and emails the link + 6-character code; the browser
-  nonce it hands back is stashed in the signed cookie. Always lands on the "check
-  your email" page — a throttled, unknown, or unavailable-team request skips the
-  work but shows the same page (no account-existence leak).
-
-  A `member_link_handoff` asks to link a personal login to this browser's
-  member-only session. It is honored only from that exact session, and an
-  address with no personal login yet gets one, exactly as signup creates it.
-  A member-only browser's requests always link: a resend or another address
-  reuses the handoff its link started with, and without one nothing is sent.
+  A workspace's email sign-in. The workspace comes from the path; the code goes
+  only to an active Member of it whose address is verified, and only while the
+  workspace accepts email sign-in. Anything else gets the decoy.
   """
-  # An invitation's name form asks for a code for the invited address. The
-  # address comes from the invitation, never the form, and nothing is accepted
-  # until that mailbox's code completes in this browser. A browser signed in
-  # through workspace SSO without a personal login goes back to the invitation,
-  # which tells it to sign out first.
-  def magic_link_start(conn, %{"invitation_token" => token, "member" => member} = params)
-      when is_binary(token) and is_map(member) do
-    with false <- match?(%Auth.UserToken{user_id: nil}, conn.assigns[:current_auth]),
-         {:ok, address, invitation} <- Accounts.prepare_invitation_acceptance(token, member) do
-      request_magic_link(conn, address, params, {:invitation, invitation})
-    else
-      _ -> redirect(conn, to: ~p"/accept_invitation/#{token}")
-    end
-  end
+  def magic_link_start(conn, %{"account_id_or_slug" => account_ref} = params) do
+    account =
+      case Accounts.fetch_account_by_id_or_slug_including_disabled(account_ref) do
+        {:ok, account} -> account
+        {:error, :not_found} -> raise EmisarWeb.NotFoundError
+      end
 
-  def magic_link_start(conn, %{"user" => %{"email" => email}} = params) when is_binary(email) do
-    handoff = params["member_link_handoff"] || member_link_in_flight(conn)
+    address = submitted_address(params["user"])
+    back_to = ~p"/app/#{account}/sign_in"
 
-    case member_link(handoff, conn.assigns[:current_auth]) do
-      :invalid ->
-        member_link_failed(conn, :member_link_invalid)
-
-      nil ->
-        request_magic_link(conn, email, params, nil)
-
-      member_link ->
-        case UserSignUpLive.check_signup_throttle(RequestContext.client_ip(conn)) do
-          :ok ->
-            conn
-            |> put_session(:member_link_handoff, handoff)
-            |> request_magic_link(email, params, {:member_link, member_link})
-
-          {:error, :rate_limited} ->
-            member_link_failed(conn, :rate_limited)
-        end
-    end
-  end
-
-  def magic_link_start(conn, _params) do
-    conn
-    |> clear_magic_request()
-    |> replace_billing_intent(nil)
-    |> redirect(to: ~p"/sign_in/magic?sent=1")
-  end
-
-  defp request_magic_link(conn, email, params, intent) do
-    context = RequestContext.from_conn(conn)
-    return_to = ReturnTo.app_path(params["return_to"])
-    handoff = params["registration_handoff"]
-    prior_token_id = get_session(conn, :magic_link_token_id)
-    billing_intent = requested_billing_intent(conn, params, prior_token_id)
-    # Throttle by recipient so the form can't bomb an inbox — an ETS-bucket key,
-    # not a DB lookup (citext owns DB comparison), so the no-app-downcase rule
-    # doesn't apply.
-    trimmed = String.trim(email)
-    key = String.downcase(trimmed)
-
-    case Throttle.check("magic_link", key, 5, 900_000) do
+    case check_address_budget(address) do
       :ok ->
-        conn = conn |> clear_magic_request() |> replace_billing_intent(billing_intent)
+        request = Auth.request_magic_link(account, address, RequestContext.from_conn(conn))
 
-        conn =
-          with {:ok, user} <- magic_link_user(email, intent),
-               {:ok, %{token_id: token_id, nonce: nonce}} <-
-                 Auth.request_magic_link(
-                   user,
-                   context,
-                   [
-                     account_ref: branded_account_ref(return_to),
-                     return_to: return_to,
-                     prior_magic_link_token_id: prior_token_id
-                   ] ++ magic_link_intent(handoff, intent, user)
-                 ) do
-            put_magic_request(conn, token_id, nonce)
-            # The LiveView verifies the typed code (the nonce isn't readable from JS),
-            # so it reads token_id + nonce from the encrypted session; the cookie stays
-            # for the email-link path and the sign-in-completion browser binding.
-          else
-            # An unknown email, or a branded request naming a team that isn't
-            # available, stays silent — same "sent" page either way, so the response
-            # never reveals whether the address is an account or the team exists.
-            _ -> put_decoy_magic_request(conn)
-          end
-
-        finish_magic_request(conn, trimmed, return_to)
-
-      {:error, :rate_limited} when is_tuple(intent) and elem(intent, 0) == :invitation ->
-        # No factor exists to resend yet, so the intent would be lost to a decoy;
-        # the invitation page asks again once the recipient cap allows it.
-        conn
-        |> put_flash(
-          :error,
-          "You've asked for several sign-in emails for that address. Wait a few minutes, then try again."
-        )
-        |> redirect(to: ~p"/accept_invitation/#{params["invitation_token"]}")
-
-      {:error, :rate_limited} when is_binary(handoff) ->
-        # A first signup request has no server-side factor from which a later
-        # resend could recover its workspace intent. Keep the operator on signup
-        # so they can retry the same neutral submission after the recipient cap.
         conn
         |> clear_magic_request()
         |> replace_billing_intent(verified_billing_intent(params["billing_intent"]))
-        |> put_flash(
-          :error,
-          "You've asked for several sign-in emails for that address. Wait a few minutes, then try signup again."
-        )
-        |> redirect(to: sign_up_path(verified_billing_intent(params["billing_intent"])))
+        |> put_code_request(request)
+        |> finish_code_request(address, back_to)
 
       {:error, :rate_limited} ->
-        # A resend must not replace a still-live real factor (and its server-side
-        # registration intent) with a decoy. With no prior browser state, install
-        # the same-shaped decoy used for any other silent request.
-        conn =
-          if magic_request_present?(conn) do
-            conn
-          else
-            conn |> clear_magic_request() |> put_decoy_magic_request()
-          end
-
         conn
-        |> put_flash(
-          :error,
-          "You've asked for several sign-in emails for that address. Wait a few minutes, then resend."
-        )
+        |> keep_or_decoy_code_request(address, back_to)
+        |> put_flash(:error, @address_rate_limited <> " Wait a few minutes, then resend.")
         |> redirect(to: ~p"/sign_in/magic?sent=1")
     end
   end
 
-  # A member-only browser mid-link reuses its link's handoff for a resend or
-  # another address; no other browser ever inherits one.
-  defp member_link_in_flight(%{assigns: %{current_auth: %Auth.UserToken{user_id: nil}}} = conn),
-    do: get_session(conn, :member_link_handoff)
+  @doc """
+  An invitation's name form. The code goes to the invited address only — never
+  one the form names — and nothing is accepted until that inbox's code
+  completes in this browser, so a forwarded invitation link changes nothing.
+  """
+  def invitation_start(conn, %{"token" => token} = params) do
+    with {:ok, address, invitation} <-
+           Accounts.prepare_invitation_acceptance(token, member_params(params)),
+         :ok <- check_address_budget(address),
+         {:ok, request} <-
+           Auth.request_invitation_code(invitation, RequestContext.from_conn(conn)) do
+      conn
+      |> clear_magic_request()
+      |> replace_billing_intent(nil)
+      |> put_code_request({:ok, request})
+      |> finish_code_request(address, ~p"/accept_invitation/#{token}")
+    else
+      {:error, :rate_limited} ->
+        # No code exists to resend yet; the invitation page asks again once the
+        # address budget allows it.
+        conn
+        |> put_flash(:error, @address_rate_limited <> " Wait a few minutes, then try again.")
+        |> redirect(to: ~p"/accept_invitation/#{token}")
 
-  defp member_link_in_flight(_conn), do: nil
-
-  # nil for an ordinary request; the link intent when the handoff names this
-  # exact member-only session; `:invalid` for any other handoff, or for a
-  # member-only browser without one (a plain sign-in would replace its session).
-  defp member_link(nil, %Auth.UserToken{user_id: nil}), do: :invalid
-  defp member_link(nil, _current_auth), do: nil
-
-  defp member_link(handoff, %Auth.UserToken{
-         id: donor_token_id,
-         user_id: nil,
-         user_identity_id: identity_id
-       })
-       when is_binary(identity_id) do
-    case MemberLinkHandoff.verify(handoff) do
-      {:ok, {account_id, membership_id, ^identity_id, ^donor_token_id}} ->
-        %{
-          account_id: account_id,
-          membership_id: membership_id,
-          identity_id: identity_id,
-          donor_token_id: donor_token_id
-        }
-
-      _other ->
-        :invalid
+      _invalid_or_no_longer_pending ->
+        redirect(conn, to: ~p"/accept_invitation/#{token}")
     end
-  end
-
-  defp member_link(_handoff, _current_auth), do: :invalid
-
-  # Linking proves the address it names, so an address with no personal login
-  # yet gets one, exactly as signup creates it (a concurrent submit that created
-  # it first is read back); a sign-in stays silent instead.
-  defp magic_link_user(email, nil), do: Users.fetch_user_by_email(email)
-
-  defp magic_link_user(email, {_intent, %{}}) do
-    with {:error, :not_found} <- Users.fetch_user_by_email(email),
-         {:error, _changeset} <- Users.register_user(%{email: email}) do
-      Users.fetch_user_by_email(email)
-    end
-  end
-
-  defp magic_link_intent(handoff, nil, user),
-    do: [owner_registration: owner_registration(handoff, user)]
-
-  defp magic_link_intent(_handoff, {:member_link, link}, _user), do: [member_link: link]
-  defp magic_link_intent(_handoff, {:invitation, invitation}, _user), do: [invitation: invitation]
-
-  defp magic_link_expiry do
-    DateTime.utc_now()
-    |> DateTime.add(Auth.magic_link_validity_in_minutes() * 60, :second)
-    |> DateTime.to_iso8601()
-  end
-
-  defp finish_magic_request(conn, email, return_to) do
-    conn
-    # Stash the typed address + the code's expiry so the "sent" page can offer
-    # Resend without a retype and count the code down to expiry. Both are uniform
-    # for any address (their own input + a fixed window), so neither leaks whether
-    # the address is an account.
-    # Bound the typed address before it enters the ~4 KiB cookie: a 5 KB value
-    # would overflow it and 500 an anonymous request. 320 is the max email
-    # length; a longer input never resolves an account anyway.
-    |> put_session(:magic_link_email, if(byte_size(email) <= 320, do: email, else: ""))
-    |> put_session(:magic_link_expires_at, magic_link_expiry())
-    |> put_magic_return_to(return_to)
-    |> redirect(to: ~p"/sign_in/magic?sent=1")
-  end
-
-  defp magic_request_present?(conn) do
-    is_binary(get_session(conn, :magic_link_token_id)) and
-      is_binary(get_session(conn, :magic_link_nonce))
   end
 
   @doc """
-  Code path — completes sign-in after `MagicLinkLive` verified the typed code.
-  The LiveView redirects here with a short-lived signed `handoff` carrying the
-  user; it is bound to the still-present magic cookie (same browser), so a leaked
-  handoff URL is useless elsewhere and a replay fails once the cookie is cleared.
+  A new workspace. The submission is validated and its intent — the workspace
+  and owner names — rides the code server-side; nothing exists until the code
+  comes back (`Emisar.Auth.complete_sign_up/3`).
+  """
+  def sign_up_start(conn, params) do
+    attrs = sign_up_params(params)
+    address = submitted_address(attrs)
+    billing_intent = verified_billing_intent(params["billing_intent"])
+    client_ip = RequestContext.client_ip(conn)
+
+    with {:ip, :ok} <-
+           {:ip, Throttle.check("sign_up", client_ip, @sign_up_limit, @sign_up_window_ms)},
+         {:address, :ok} <- {:address, check_address_budget(address)},
+         {:ok, request} <- Auth.request_sign_up_code(attrs, RequestContext.from_conn(conn)) do
+      conn
+      |> clear_magic_request()
+      |> replace_billing_intent(billing_intent)
+      |> put_code_request({:ok, request})
+      |> finish_code_request(address, sign_up_path(billing_intent))
+    else
+      {:ip, {:error, :rate_limited}} ->
+        sign_up_refused(
+          conn,
+          billing_intent,
+          "Too many signup attempts. Wait a while, then try again."
+        )
+
+      {:address, {:error, :rate_limited}} ->
+        sign_up_refused(
+          conn,
+          billing_intent,
+          @address_rate_limited <> " Wait a few minutes, then try signup again."
+        )
+
+      {:error, _invalid} ->
+        sign_up_refused(conn, billing_intent, "Check your details and try again.")
+    end
+  end
+
+  defp sign_up_refused(conn, billing_intent, message) do
+    conn
+    |> put_flash(:error, message)
+    |> redirect(to: sign_up_path(billing_intent))
+  end
+
+  @doc """
+  A fresh code for the one this browser holds, re-issued exactly as the first —
+  same Member, address or sign-up intent — under the same address budget. A
+  decoy or lapsed code gets a decoy again, behind the same page.
+  """
+  def magic_link_resend(conn, _params) do
+    address = get_session(conn, :magic_link_email)
+    token_id = get_session(conn, :magic_link_token_id)
+
+    cond do
+      not (is_binary(address) and is_binary(token_id)) ->
+        redirect(conn, to: ~p"/sign_in")
+
+      check_address_budget(address) == :ok ->
+        conn
+        |> put_code_request(Auth.resend_email_code(token_id, RequestContext.from_conn(conn)))
+        |> put_session(:magic_link_expires_at, magic_link_expiry())
+        |> redirect(to: ~p"/sign_in/magic?sent=1")
+
+      true ->
+        conn
+        |> put_flash(:error, @address_rate_limited <> " Wait a few minutes, then resend.")
+        |> redirect(to: ~p"/sign_in/magic?sent=1")
+    end
+  end
+
+  @doc """
+  Code path — completes the sign-in after `MagicLinkLive` verified the typed
+  code. The LiveView redirects here with a short-lived signed handoff naming the
+  Member (nil for a sign-up) and the verified code; it is bound to the
+  still-present magic cookie naming the same code, so a leaked handoff URL is
+  useless elsewhere and a replay fails once the cookie is cleared.
   """
   def magic_link_complete(conn, %{"handoff" => handoff}) do
-    with {:ok, {user_id, token_id}} <- MagicLinkHandoff.verify(handoff),
+    with {:ok, {membership_id, token_id}} <- MagicLinkHandoff.verify(handoff),
          {:ok, cookie_token_id, _nonce} <- read_magic_cookie(conn),
-         true <- cookie_token_id == token_id do
-      complete_magic_sign_in(
-        conn,
-        user_id,
-        token_id,
-        RequestContext.from_conn(conn)
-      )
+         true <- Plug.Crypto.secure_compare(cookie_token_id, token_id) do
+      complete_code(conn, membership_id, token_id)
     else
       _ -> conn |> delete_resp_cookie(@magic_cookie) |> restart_magic_sign_in()
     end
@@ -284,91 +215,18 @@ defmodule EmisarWeb.UserSessionController do
 
   def magic_link_complete(conn, _params), do: redirect(conn, to: ~p"/sign_in/magic")
 
-  @doc """
-  Completes an MFA sign-in challenge (the second factor `MfaChallengeLive` just
-  verified). Requires BOTH the signed handoff — carrying the opaque proof, which
-  `Auth` re-checks against the locked user row — AND a matching
-  `:mfa_pending_user_id` session marker (the browser that passed factor one), so
-  a handoff alone can't manufacture a session. The proof's user id is only that
-  browser binding; `Auth` reads the credential state itself, mints the session,
-  and hands back the user it signed in. This installs it, or restarts the
-  sign-in fail-closed.
-  """
-  def mfa_complete(conn, %{"handoff" => handoff}) do
-    with {:ok, proof} <- MfaChallengeHandoff.verify(handoff),
-         user_id when is_binary(user_id) <- Auth.mfa_proof_user_id(proof),
-         ^user_id <- get_session(conn, :mfa_pending_user_id),
-         token_id when is_binary(token_id) <- get_session(conn, :mfa_pending_magic_link_token_id),
-         true <- mfa_pending_fresh?(conn) do
-      context = RequestContext.from_conn(conn)
-      account_ref = branded_account_ref(get_session(conn, :user_return_to))
-
-      case Auth.complete_magic_link_mfa_sign_in(
-             proof,
-             token_id,
-             account_ref,
-             context,
-             presented_session_digest(conn)
-           ) do
-        {:ok, user, token, target, registered?} ->
-          install_magic_link_session(
-            conn
-            |> clear_mfa_pending()
-            |> Analytics.track_sign_up_started(registered?),
-            target,
-            user,
-            token,
-            registered?,
-            &UserAuth.log_in_magic_link_mfa_user/4
-          )
-
-        {:error, {:account_disabled, account}} ->
-          conn |> clear_mfa_pending() |> redirect_to_disabled_account(account)
-
-        {:error, reason} when reason in [:already_member, :member_link_invalid] ->
-          member_link_failed(conn, reason)
-
-        {:error, :invitation_invalid} ->
-          invitation_failed(conn)
-
-        {:error, _reason} ->
-          conn |> clear_mfa_pending() |> restart_mfa_sign_in()
-      end
-    else
-      _ -> conn |> clear_mfa_pending() |> restart_mfa_sign_in()
-    end
-  end
-
-  def mfa_complete(conn, _params), do: redirect(conn, to: ~p"/sign_in/magic")
-
-  @doc "Link path — the email link carries `token_id` + the secret; the nonce is the cookie's."
-  def magic_link_confirm(conn, %{"token_id" => token_id, "secret" => secret} = params),
-    do: finish_magic_link(conn, secret, &put_return_to(&1, params), token_id)
-
-  def delete(conn, _params) do
-    conn
-    |> put_flash(:info, "Signed out.")
-    |> UserAuth.log_out_user()
-  end
-
-  # The email-link path: read the cookie's nonce, verify BOTH
-  # halves (the URL's secret + the cookie's nonce) against the URL's token, sign
-  # in. `prep` threads the link's `?return_to` into the session before login. (The
-  # typed-code path verifies in `MagicLinkLive` and completes via
-  # `magic_link_complete` — it never reaches here.)
-  defp finish_magic_link(conn, secret, prep, link_token_id) do
+  @doc "Link path — the email link carries the token id and the code; the nonce is the cookie's."
+  def magic_link_confirm(conn, %{"token_id" => token_id, "secret" => secret})
+      when is_binary(token_id) and is_binary(secret) do
+    # The emailed link already carries the canonical uppercase code, so upcasing
+    # is a no-op; trim guards a stray copy-paste space.
+    secret = secret |> String.trim() |> String.upcase()
     context = RequestContext.from_conn(conn)
-    # The emailed link already carries the canonical uppercase secret, so upcasing
-    # is a no-op; trim guards a stray copy-paste space. The code alphabet is
-    # uppercase letters + digits (Emisar.Crypto).
-    secret = secret |> to_string() |> String.trim() |> String.upcase()
 
     with {:ok, cookie_token_id, nonce} <- read_magic_cookie(conn),
-         true <- cookie_token_id == link_token_id,
-         {:ok, user} <- Auth.verify_magic_link(link_token_id, secret, nonce, context) do
-      conn
-      |> prep.()
-      |> complete_magic_sign_in(user.id, link_token_id, context)
+         true <- Plug.Crypto.secure_compare(cookie_token_id, token_id),
+         {:ok, membership_id} <- Auth.verify_magic_link(token_id, secret, nonce, context) do
+      complete_code(conn, membership_id, token_id)
     else
       _ ->
         conn
@@ -381,13 +239,231 @@ defmodule EmisarWeb.UserSessionController do
     end
   end
 
-  defp put_magic_cookie(conn, token_id, nonce) do
-    put_resp_cookie(
-      conn,
-      @magic_cookie,
-      "#{token_id}:#{nonce}",
-      magic_cookie_opts()
+  @doc """
+  Completes an MFA sign-in challenge (the second factor `MfaChallengeLive` just
+  verified). Requires BOTH the signed handoff — carrying the opaque proof, which
+  `Auth` re-checks against the locked Member row — AND a matching, fresh
+  `:mfa_pending_membership_id` marker (the browser that passed factor one), so
+  a handoff alone can't manufacture a session.
+  """
+  def mfa_complete(conn, %{"handoff" => handoff}) do
+    with {:ok, proof} <- MfaChallengeHandoff.verify(handoff),
+         membership_id when is_binary(membership_id) <- Auth.mfa_proof_membership_id(proof),
+         ^membership_id <- get_session(conn, :mfa_pending_membership_id),
+         token_id when is_binary(token_id) <- get_session(conn, :mfa_pending_magic_link_token_id),
+         true <- mfa_pending_fresh?(conn) do
+      {conn, browser_id} = UserAuth.fetch_browser_id(conn)
+      context = RequestContext.from_conn(conn)
+
+      case Auth.complete_magic_link_mfa_sign_in(proof, token_id, browser_id, context) do
+        {:ok, :sso_required, %{account: account, proof: invitation_proof}} ->
+          conn |> clear_mfa_pending() |> continue_invitation_with_sso(account, invitation_proof)
+
+        {:ok, %Accounts.Membership{} = membership, token} ->
+          conn
+          |> clear_mfa_pending()
+          |> UserAuth.log_in_magic_link_mfa_member(membership, token, false)
+
+        {:error, reason} ->
+          conn |> clear_mfa_pending() |> code_sign_in_failed(reason, &restart_mfa_sign_in/1)
+      end
+    else
+      _ -> conn |> clear_mfa_pending() |> restart_mfa_sign_in()
+    end
+  end
+
+  def mfa_complete(conn, _params), do: redirect(conn, to: ~p"/sign_in")
+
+  def delete(conn, _params) do
+    conn
+    |> put_flash(:info, "Signed out.")
+    |> UserAuth.log_out_user()
+  end
+
+  # Factor one is verified; `Auth` decides everything else from the current
+  # rows under their locks — whether a second factor is still owed, whether the
+  # workspace still accepts the code, and whether a session may be minted at
+  # all — and hands back the Member it signed in. A sign-up code (no Member
+  # yet) creates the workspace and its owner in the same transaction.
+  defp complete_code(conn, nil, token_id) do
+    {conn, browser_id} = UserAuth.fetch_browser_id(conn)
+
+    case Auth.complete_sign_up(token_id, browser_id, RequestContext.from_conn(conn)) do
+      {:ok, owner, token} ->
+        conn
+        |> clear_magic_request()
+        |> Analytics.track_sign_up_started(true)
+        |> UserAuth.log_in_magic_link_member(owner, token, true)
+
+      {:error, _reason} ->
+        restart_magic_sign_in(conn)
+    end
+  end
+
+  defp complete_code(conn, membership_id, token_id) do
+    {conn, browser_id} = UserAuth.fetch_browser_id(conn)
+    context = RequestContext.from_conn(conn)
+
+    case Auth.complete_magic_link_sign_in(membership_id, token_id, browser_id, context) do
+      {:ok, :sso_required, %{account: account, proof: invitation_proof}} ->
+        conn |> clear_magic_request() |> continue_invitation_with_sso(account, invitation_proof)
+
+      {:ok, %Accounts.Membership{} = membership, token} ->
+        conn
+        |> clear_magic_request()
+        |> UserAuth.log_in_magic_link_member(membership, token, false)
+
+      # The verified id only names the partial-auth marker, which grants no
+      # access: it mints no session, so every workspace route stays closed.
+      {:error, :mfa_required} ->
+        conn
+        |> clear_magic_request()
+        |> put_session(:mfa_pending_membership_id, membership_id)
+        |> put_session(:mfa_pending_magic_link_token_id, token_id)
+        |> put_session(:mfa_pending_at, System.system_time(:second))
+        |> redirect(to: ~p"/sign_in/mfa")
+
+      {:error, reason} ->
+        code_sign_in_failed(conn, reason, &restart_magic_sign_in/1)
+    end
+  end
+
+  defp code_sign_in_failed(conn, {:account_disabled, account}, _restart) do
+    conn
+    |> clear_magic_request()
+    |> delete_session(:user_return_to)
+    |> redirect(to: ~p"/app/#{account}/sign_in")
+  end
+
+  # The invitation stopped being acceptable between the email and its code:
+  # accepted, revoked, resent or expired. Nothing was signed in.
+  defp code_sign_in_failed(conn, :invitation_invalid, _restart) do
+    conn
+    |> clear_magic_request()
+    |> put_flash(
+      :error,
+      "This invitation can no longer be accepted. Sign in if you already joined, or ask for a fresh invitation."
     )
+    |> redirect(to: ~p"/sign_in")
+  end
+
+  # The workspace turned on Require SSO after the code was sent.
+  defp code_sign_in_failed(conn, :sso_required, _restart) do
+    back_to = get_session(conn, :magic_link_back_to) || ~p"/sign_in"
+
+    conn
+    |> clear_magic_request()
+    |> put_flash(:error, "This workspace now signs in through single sign-on only.")
+    |> redirect(to: back_to)
+  end
+
+  defp code_sign_in_failed(conn, _reason, restart), do: restart.(conn)
+
+  # The workspace accepts its Members only through its identity provider. The
+  # invited inbox is proved, and the proof — bound to this browser — waits in
+  # the encrypted session (never a URL) for the SSO step that accepts the
+  # invitation, which the workspace's sign-in page offers.
+  defp continue_invitation_with_sso(conn, account, invitation_proof) do
+    conn
+    |> put_session(:invitation_sso_proof, invitation_proof)
+    |> redirect(to: ~p"/app/#{account}/sign_in")
+  end
+
+  defp restart_magic_sign_in(conn) do
+    conn
+    |> put_flash(:error, "That sign-in couldn't be completed. Enter the code again or resend.")
+    |> redirect(to: ~p"/sign_in/magic?sent=1")
+  end
+
+  defp restart_mfa_sign_in(conn) do
+    conn
+    |> put_flash(:error, "That sign-in couldn't be completed. Start again.")
+    |> redirect(to: ~p"/sign_in")
+  end
+
+  # -- The code request in this browser --------------------------------
+
+  defp submitted_address(%{"email" => email}) when is_binary(email), do: String.trim(email)
+  defp submitted_address(_params), do: ""
+
+  defp member_params(%{"member" => %{} = member}), do: member
+  defp member_params(_params), do: %{}
+
+  defp sign_up_params(%{"sign_up" => %{} = attrs}), do: attrs
+  defp sign_up_params(_params), do: %{}
+
+  # An ETS bucket key, not a database lookup (citext owns that comparison), so
+  # the address is normalized here.
+  defp check_address_budget(address),
+    do: Throttle.check("magic_link", String.downcase(address), @address_limit, @address_window_ms)
+
+  defp put_code_request(conn, {:ok, %{token_id: token_id, nonce: nonce}}),
+    do: put_magic_request(conn, token_id, nonce)
+
+  defp put_code_request(conn, {:error, _refused}), do: put_decoy_magic_request(conn)
+
+  # A rate-limited start must not replace a still-live code with a decoy; with
+  # none, the browser gets the decoy every refused request gets.
+  defp keep_or_decoy_code_request(conn, address, back_to) do
+    if magic_request_present?(conn) do
+      conn
+    else
+      conn
+      |> clear_magic_request()
+      |> put_decoy_magic_request()
+      |> put_sent_state(address, back_to)
+    end
+  end
+
+  # The browser id is minted when a sign-in starts, so two tabs completing at
+  # once present the same id and a later sign-out reaches both sessions.
+  defp finish_code_request(conn, address, back_to) do
+    {conn, _browser_id} = UserAuth.fetch_browser_id(conn)
+
+    conn
+    |> put_sent_state(address, back_to)
+    |> redirect(to: ~p"/sign_in/magic?sent=1")
+  end
+
+  # The sent page shows the address, counts the code down, offers Resend
+  # without a retype, and links back to where the request began (a path this
+  # server built). The address and the window are the same for any address
+  # alike, so neither says whether it can sign in.
+  defp put_sent_state(conn, address, back_to) do
+    stored_address = if byte_size(address) <= @max_address_bytes, do: address, else: ""
+
+    conn
+    |> put_session(:magic_link_email, stored_address)
+    |> put_session(:magic_link_expires_at, magic_link_expiry())
+    |> put_session(:magic_link_back_to, back_to)
+  end
+
+  defp magic_link_expiry do
+    DateTime.utc_now()
+    |> DateTime.add(Auth.magic_link_validity_in_minutes() * 60, :second)
+    |> DateTime.to_iso8601()
+  end
+
+  defp magic_request_present?(conn) do
+    is_binary(get_session(conn, :magic_link_token_id)) and
+      is_binary(get_session(conn, :magic_link_nonce))
+  end
+
+  # The LiveView verifies the typed code (the nonce isn't readable from JS), so
+  # it reads the token id and nonce from the encrypted session; the cookie stays
+  # for the email-link path and binds completion to this browser.
+  defp put_magic_request(conn, token_id, nonce) do
+    conn
+    |> put_resp_cookie(@magic_cookie, "#{token_id}:#{nonce}", magic_cookie_opts())
+    |> put_session(:magic_link_token_id, token_id)
+    |> put_session(:magic_link_nonce, nonce)
+  end
+
+  # A refused request carries indistinguishable browser state, but the random
+  # id resolves to no database row and therefore grants nothing.
+  defp put_decoy_magic_request(conn) do
+    %{token_id: token_id, nonce: nonce} = Auth.magic_link_decoy()
+    put_magic_request(conn, token_id, nonce)
   end
 
   defp magic_cookie_opts do
@@ -398,39 +474,30 @@ defmodule EmisarWeb.UserSessionController do
     )
   end
 
-  defp put_magic_request(conn, token_id, nonce) do
-    conn
-    |> put_magic_cookie(token_id, nonce)
-    |> put_session(:magic_link_token_id, token_id)
-    |> put_session(:magic_link_nonce, nonce)
-  end
+  defp read_magic_cookie(conn) do
+    conn = fetch_cookies(conn, signed: [@magic_cookie])
 
-  # An unknown/unavailable request carries indistinguishable browser state, but
-  # the random id resolves to no database row and therefore grants nothing.
-  defp put_decoy_magic_request(conn) do
-    %{token_id: token_id, nonce: nonce} = Auth.magic_link_decoy()
-    put_magic_request(conn, token_id, nonce)
-  end
-
-  defp put_magic_return_to(conn, nil), do: conn
-  defp put_magic_return_to(conn, path), do: put_session(conn, :user_return_to, path)
-
-  # A fresh signup submission must present the signed choice again; this keeps
-  # an abandoned Team click from leaking into a later ordinary sign-in. A resend
-  # has no handoff field, so it may inherit the still-live choice only while the
-  # same browser still carries the factor it is replacing.
-  defp requested_billing_intent(conn, params, prior_token_id) do
-    case verified_billing_intent(params["billing_intent"]) do
-      token when is_binary(token) ->
-        token
-
-      nil ->
-        if is_binary(prior_token_id) and magic_request_present?(conn),
-          do: verified_billing_intent(get_session(conn, :billing_intent)),
-          else: nil
+    with value when is_binary(value) <- conn.cookies[@magic_cookie],
+         [token_id, nonce] when token_id != "" and nonce != "" <-
+           String.split(value, ":", parts: 2) do
+      {:ok, token_id, nonce}
+    else
+      _ -> :error
     end
   end
 
+  defp clear_magic_request(conn) do
+    conn
+    |> delete_resp_cookie(@magic_cookie)
+    |> delete_session(:magic_link_token_id)
+    |> delete_session(:magic_link_nonce)
+    |> delete_session(:magic_link_email)
+    |> delete_session(:magic_link_expires_at)
+    |> delete_session(:magic_link_back_to)
+  end
+
+  # A fresh submission must present the signed plan choice again; this keeps an
+  # abandoned Team click from leaking into a later ordinary sign-in.
   defp verified_billing_intent(token) do
     case BillingIntent.verify(token) do
       {:ok, _intent} -> token
@@ -446,175 +513,20 @@ defmodule EmisarWeb.UserSessionController do
   defp sign_up_path(token) when is_binary(token), do: ~p"/sign_up?billing_intent=#{token}"
   defp sign_up_path(nil), do: ~p"/sign_up"
 
-  defp read_magic_cookie(conn) do
-    conn = fetch_cookies(conn, signed: [@magic_cookie])
-
-    case conn.cookies[@magic_cookie] do
-      value when is_binary(value) ->
-        case String.split(value, ":", parts: 2) do
-          [token_id, nonce] when token_id != "" and nonce != "" ->
-            {:ok, token_id, nonce}
-
-          _ ->
-            :error
-        end
-
-      _ ->
-        :error
-    end
-  end
-
-  # A magic link requested from a branded page (/app/:slug/sign_in) threads a
-  # `?return_to=/app/<slug>` so it lands on THAT team. `ReturnTo` whitelists it to
-  # a local /app/<slug> path — never an open redirect; the slug gate re-authorizes
-  # membership on arrival, so a forged ref 404s.
-  defp put_return_to(conn, %{"return_to" => rt}) do
-    case ReturnTo.app_path(rt) do
-      nil -> conn
-      path -> put_session(conn, :user_return_to, path)
-    end
-  end
-
-  defp put_return_to(conn, _params), do: conn
-
-  defp owner_registration(handoff, %Users.User{id: user_id})
-       when is_binary(handoff) do
-    case RegistrationHandoff.verify(handoff) do
-      {:ok, {^user_id, account_name, full_name}}
-      when is_binary(account_name) and (is_binary(full_name) or is_nil(full_name)) ->
-        %{account_name: account_name, full_name: full_name}
-
-      _ ->
-        nil
-    end
-  end
-
-  defp owner_registration(_handoff, %Users.User{}), do: nil
-
-  defp clear_magic_request(conn) do
-    conn
-    |> delete_resp_cookie(@magic_cookie)
-    |> delete_session(:magic_link_token_id)
-    |> delete_session(:magic_link_nonce)
-    |> delete_session(:magic_link_email)
-    |> delete_session(:magic_link_expires_at)
-  end
-
-  # A sign-in begun on a team's branded page carries a `/app/<slug>` return_to.
-  # `Auth.resolve_post_auth_account/2` decides the landing account; when the
-  # operator isn't a member we drop the branded target so they don't land on a
-  # bare 404 after a successful sign-in.
-  #
-  # That decision collapses a non-member, an unknown team, and a stale membership
-  # into one `:not_member` (the deliberate no-leak property), so the denial flash
-  # never names the team — naming it would confirm a tenant exists on the
-  # slug-probing path.
-  # Factor one is verified (the magic link proved inbox possession); `Auth`
-  # decides everything else from the CURRENT user row — whether a second factor
-  # is still owed, which account to land on, and whether a session may be minted
-  # at all — and hands back the user it signed in, which is what gets installed.
-  # The verified id is only a name for the partial-auth marker, which grants no
-  # access: it mints no `:user_token`, so `require_authenticated_user` blocks
-  # every /app route.
-  defp complete_magic_sign_in(conn, user_id, token_id, context)
-       when is_binary(user_id) and is_binary(token_id) do
-    account_ref = branded_account_ref(get_session(conn, :user_return_to))
-
-    case Auth.complete_magic_link_sign_in(
-           user_id,
-           token_id,
-           account_ref,
-           context,
-           presented_session_digest(conn)
-         ) do
-      {:ok, user, token, target, registered?} ->
-        install_magic_link_session(
-          conn
-          |> clear_magic_request()
-          |> Analytics.track_sign_up_started(registered?),
-          target,
-          user,
-          token,
-          registered?,
-          &UserAuth.log_in_magic_link_user/4
-        )
-
-      {:error, :mfa_required} ->
-        conn
-        |> clear_magic_request()
-        |> put_session(:mfa_pending_user_id, user_id)
-        |> put_session(:mfa_pending_magic_link_token_id, token_id)
-        |> put_session(:mfa_pending_at, System.system_time(:second))
-        |> redirect(to: ~p"/sign_in/mfa")
-
-      {:error, {:account_disabled, account}} ->
-        conn |> clear_magic_request() |> redirect_to_disabled_account(account)
-
-      {:error, reason} when reason in [:already_member, :member_link_invalid] ->
-        member_link_failed(conn, reason)
-
-      {:error, :invitation_invalid} ->
-        invitation_failed(conn)
-
-      {:error, _reason} ->
-        restart_magic_sign_in(conn)
-    end
-  end
-
-  # A member-link factor completes only from the browser whose member-only
-  # session asked for it; this is that browser's session-cookie digest.
-  defp presented_session_digest(%{assigns: %{current_auth: %Auth.UserToken{token: digest}}}),
-    do: digest
-
-  defp presented_session_digest(_conn), do: nil
-
-  # A refused link leaves this browser's own session as it was; its workspace,
-  # or the sign-in page when that session has ended, says what happens next.
-  defp member_link_failed(conn, reason) do
-    conn
-    |> clear_magic_request()
-    |> clear_mfa_pending()
-    |> delete_session(:member_link_handoff)
-    |> put_flash(:error, member_link_failure_message(reason))
-    |> redirect(to: ~p"/app")
-  end
-
-  # The invitation stopped being acceptable between the email and its code:
-  # accepted, revoked, resent or expired, or the login is already a member.
-  # Nothing was signed in.
-  defp invitation_failed(conn) do
-    conn
-    |> clear_magic_request()
-    |> clear_mfa_pending()
-    |> put_flash(
-      :error,
-      "This invitation can no longer be accepted. Sign in if you already joined, or ask for a fresh invitation."
-    )
-    |> redirect(to: ~p"/sign_in")
-  end
-
-  defp member_link_failure_message(:already_member) do
-    "That personal login is already a member of this workspace. Link a different email address."
-  end
-
-  defp member_link_failure_message(:member_link_invalid),
-    do: "Your personal login couldn't be linked. Start again from your profile."
-
-  defp member_link_failure_message(:rate_limited),
-    do: "Too many sign-in emails from here. Wait a while, then try again."
+  # -- The second-factor marker -----------------------------------------
 
   defp clear_mfa_pending(conn) do
     conn
-    |> delete_session(:mfa_pending_user_id)
+    |> delete_session(:mfa_pending_membership_id)
     |> delete_session(:mfa_pending_magic_link_token_id)
     |> delete_session(:mfa_pending_at)
   end
 
   # Factor one remains as the exact server-side factor the final session mint
-  # consumes, while this marker is the browser's right to add factor two. Without
-  # a deadline, someone who walked away from a shared machine mid-challenge would
-  # leave a standing half-authentication for the life of the browser session.
-  # Ten minutes matches the verified inbox factor's own completion window.
+  # consumes, while this marker is the browser's right to add factor two.
+  # Without a deadline, someone who walked away from a shared machine
+  # mid-challenge would leave a standing half-authentication for the life of
+  # the browser session. Ten minutes matches the verified code's own window.
   @mfa_pending_ttl_seconds 600
 
   defp mfa_pending_fresh?(conn) do
@@ -625,68 +537,5 @@ defmodule EmisarWeb.UserSessionController do
       _ ->
         false
     end
-  end
-
-  # `log_in` installs the session token `Auth` already minted — the two captures
-  # (`log_in_magic_link_user/4`, `log_in_magic_link_mfa_user/4`) are what fix the
-  # second-factor provenance, so nothing here decides it.
-  defp install_magic_link_session(conn, {:member, account}, user, token, registered?, log_in) do
-    # Cookie write is a resp_cookie — separate from the session, so the session
-    # renewal inside `log_in` keeps it (same as the SSO callback).
-    conn
-    |> RecentAccounts.put(%{slug: account.slug, name: account.name})
-    |> log_in.(user, token, registered?)
-  end
-
-  # `log_in` redirects, which sends the response, so the flash is set before it.
-  # The session renewal inside `log_in` keeps the conn's flash.
-  defp install_magic_link_session(conn, :not_member, user, token, registered?, log_in) do
-    conn
-    |> delete_session(:user_return_to)
-    |> put_flash(
-      :info,
-      "Signed you in. You don't have access to that team's workspace yet — ask an admin for an invite."
-    )
-    |> log_in.(user, token, registered?)
-  end
-
-  defp install_magic_link_session(conn, :no_target, user, token, registered?, log_in),
-    do: log_in.(conn, user, token, registered?)
-
-  # The linked Member's workspace, now reached through the personal login too.
-  # `log_in` redirects, so the landing and the flash are set before it.
-  defp install_magic_link_session(conn, {:linked, account}, user, token, registered?, log_in) do
-    conn
-    |> RecentAccounts.put(%{slug: account.slug, name: account.name})
-    |> put_session(:user_return_to, ~p"/app/#{account}")
-    |> put_flash(:info, "Personal login linked.")
-    |> log_in.(user, token, registered?)
-  end
-
-  defp restart_magic_sign_in(conn) do
-    conn
-    |> put_flash(:error, "That sign-in couldn't be completed. Enter the code again or resend.")
-    |> redirect(to: ~p"/sign_in/magic?sent=1")
-  end
-
-  defp restart_mfa_sign_in(conn) do
-    conn
-    |> put_flash(:error, "That sign-in couldn't be completed. Start again below.")
-    |> redirect(to: ~p"/sign_in/magic")
-  end
-
-  defp branded_account_ref("/app/" <> path) do
-    case String.split(path, "/", parts: 2) do
-      [ref | _rest] when ref != "" -> ref
-      _ -> nil
-    end
-  end
-
-  defp branded_account_ref(_return_to), do: nil
-
-  defp redirect_to_disabled_account(conn, account) do
-    conn
-    |> delete_session(:user_return_to)
-    |> redirect(to: ~p"/app/#{account}/sign_in")
   end
 end

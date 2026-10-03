@@ -8,7 +8,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
 
   describe "GET /app/:account/audit/download" do
     test "streams the filtered trail as CSV and self-logs the export", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _} =
@@ -59,7 +59,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
     end
 
     test "a free-plan account is redirected to billing, exporting nothing", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, _} = Audit.log(account.id, "user.invited", actor_kind: "user", actor_label: "x")
 
       conn = get(conn, ~p"/app/#{account}/audit/download")
@@ -75,7 +75,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
     test "a view over the row cap is REFUSED with guidance — never silently truncated", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
 
       Emisar.Config.put_override(:emisar, :audit_csv_max_rows, 2)
@@ -101,7 +101,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
     test "an empty view redirects with 'nothing to export' instead of a bare header file", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
 
       conn = get(conn, ~p"/app/#{account}/audit/download?event_type=runbook.published")
@@ -110,21 +110,30 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "No audit events to export."
     end
 
-    test "another account's slug 404s before any data is read", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
+    test "another workspace's slug goes to its sign-in before any data is read", %{conn: conn} do
+      {conn, _owner, _account} = register_and_log_in(conn)
       other_account = Fixtures.Accounts.create_account(plan: "team")
 
-      # The slug gate treats a non-membership like an unknown account — a hard
-      # 404 before the controller (or any data read) runs.
+      # This browser holds no session for the other workspace, so the workspace
+      # gate sends it to that workspace's sign-in before the controller (or any
+      # data read) runs.
+      conn = get(conn, ~p"/app/#{other_account}/audit/download")
+
+      assert redirected_to(conn) == ~p"/app/#{other_account}/sign_in"
+    end
+
+    test "an unknown workspace slug 404s", %{conn: conn} do
+      {conn, _owner, _account} = register_and_log_in(conn)
+
       assert_error_sent 404, fn ->
-        get(conn, ~p"/app/#{other_account}/audit/download")
+        get(conn, ~p"/app/no-such-workspace/audit/download")
       end
     end
 
     test "formula-leading audit values are exported as text, not spreadsheet formulas", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
 
       {:ok, _} =
@@ -140,7 +149,7 @@ defmodule EmisarWeb.AuditDownloadControllerTest do
     end
 
     test "strips hostile metadata from historical CSV rows", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.create_subscription(account, "team")
 
       _event =

@@ -1,73 +1,59 @@
 defmodule EmisarWeb.EndAllSessionsDisconnectTest do
   @moduledoc """
-  Workspace session revocation remounts the affected browser after commit.
-  The exact Member's grants disappear, while the bearer and independently proved
-  workspaces remain usable. Topics are captured before the grants are deleted;
-  the real web disconnect handler delivers the resulting Phoenix broadcast.
+  An administrator ending a Member's sessions deletes every session of that
+  Member and remounts its browsers after commit. The same person's Member of
+  another workspace is another Member: its session and socket are untouched.
+  The real web disconnect handler delivers the Phoenix broadcast.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Auth, Fixtures}
+  alias Emisar.{Accounts, Auth, Crypto, Fixtures}
 
   setup do
     account = Fixtures.Accounts.create_account()
-    owner = Fixtures.Users.create_user()
-
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: owner.id,
-      role: "owner"
-    )
-
-    owner_subject = Fixtures.Subjects.subject_for(owner, account, role: :owner)
-
-    member = Fixtures.Users.create_user()
-
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "operator"
-      )
+    owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     sibling = Fixtures.Accounts.create_account()
 
     sibling_member =
-      Fixtures.Memberships.create_membership(account_id: sibling.id, user_id: member.id)
+      Fixtures.Memberships.create_membership(account_id: sibling.id, email: membership.email)
 
-    token = Fixtures.Auth.create_session_token!(member, :magic_link, nil)
-    topic = Auth.live_socket_topic_for_session(token)
-    EmisarWeb.Endpoint.subscribe(topic)
+    tokens = for _device <- 1..2, do: Fixtures.Auth.create_session_token!(membership)
+    sibling_token = Fixtures.Auth.create_session_token!(sibling_member)
+
+    for token <- [sibling_token | tokens],
+        do: EmisarWeb.Endpoint.subscribe(Auth.live_socket_topic(Crypto.hash(token)))
 
     %{
-      owner_subject: owner_subject,
+      owner_subject: Fixtures.Subjects.subject_for(owner),
       membership: membership,
       sibling_member: sibling_member,
-      token: token,
-      topic: topic
+      tokens: tokens,
+      sibling_token: sibling_token
     }
   end
 
-  test "ending workspace sessions reconnects the browser without deleting sibling authority", %{
+  test "ending a Member's sessions disconnects each of its browsers and spares the namesake", %{
     owner_subject: owner_subject,
     membership: membership,
     sibling_member: sibling_member,
-    token: token,
-    topic: topic
+    tokens: tokens,
+    sibling_token: sibling_token
   } do
     assert Accounts.end_all_sessions_for(membership, owner_subject) == :ok
 
-    assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
-    assert {:ok, session} = Auth.fetch_session_by_token(token)
+    for token <- tokens do
+      topic = Auth.live_socket_topic(Crypto.hash(token))
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}, 500
+      assert Auth.fetch_session_by_token(token, membership.account_id) == {:error, :not_found}
+    end
 
-    assert Accounts.fetch_membership_by_account_id_or_slug(membership.account_id, session) ==
-             {:error, :not_found}
+    sibling_topic = Auth.live_socket_topic(Crypto.hash(sibling_token))
+    refute_receive %Phoenix.Socket.Broadcast{topic: ^sibling_topic, event: "disconnect"}, 100
 
-    assert {:ok, survivor} =
-             Accounts.fetch_membership_by_account_id_or_slug(
-               sibling_member.account_id,
-               session
-             )
+    assert {:ok, %{membership_id: survivor_id}} =
+             Auth.fetch_session_by_token(sibling_token, sibling_member.account_id)
 
-    assert survivor.id == sibling_member.id
+    assert survivor_id == sibling_member.id
   end
 end

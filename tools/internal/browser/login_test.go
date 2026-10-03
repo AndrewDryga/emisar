@@ -19,10 +19,12 @@ import (
 )
 
 // signInFixture plays the Portal's passwordless sign-in surface as the browser sees it: the
-// /sign_in form, the controller's redirect to the "sent" page (with the recipient-throttle flash
-// when refused, or a bare 429 when the per-IP plug rejects), the dev mailbox, the emailed magic
-// link, and a cookie-gated console. It records how many sign-in requests and emails one session
-// spends, which is what the throttle counts.
+// /sign_in workspace picker (no email form), each workspace's own /app/<slug>/sign_in page with
+// its email form (posting to /app/<slug>/sign_in/email), the controller's redirect to the "sent"
+// page (with the recipient-throttle flash when refused, or a bare 429 when the per-IP plug
+// rejects), the dev mailbox, the emailed magic link, and a console whose pages need that
+// workspace's own session cookie. It records how many sign-in requests and emails one session
+// spends, which is what the throttle counts, and which workspace each request named.
 type signInFixture struct {
 	server *httptest.Server
 
@@ -33,9 +35,11 @@ type signInFixture struct {
 	mailFail    bool
 	mailNever   bool
 	starts      int
+	startSlugs  []string // the workspace each sign-in request was posted to, in order
 	messages    []mailboxMessage
 	secret      string
 	staleFlash  bool
+	ssoOnly     bool          // the workspace sign-in page offers single sign-on only
 	linkExpired bool          // the magic link bounces back to the sent page instead of signing in
 	linkStall   time.Duration // how long the magic link holds its response before answering
 	linkOpened  chan struct{} // receives once when the magic link is requested, if set
@@ -44,31 +48,61 @@ type signInFixture struct {
 
 const fixtureSecret = "SECRET-CODE-DO-NOT-LOG"
 
+// fixtureWorkspaces are the slugs the fixture serves; any other slug is an unknown workspace.
+var fixtureWorkspaces = map[string]bool{"demo": true, "acme": true}
+
+func sessionCookie(slug string) string { return "session-" + slug }
+
+func signedIn(r *http.Request, slug string) bool {
+	cookie, err := r.Cookie(sessionCookie(slug))
+	return err == nil && cookie.Value == "signed-in"
+}
+
 func newSignInFixture(t *testing.T) *signInFixture {
 	t.Helper()
 	fixture := &signInFixture{secret: fixtureSecret, staleFlash: true}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sign_in", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprint(w, `<!doctype html><html><body><h1>Sign in</h1><form action="/sign_in" method="post"><input name="workspace[slug]"><button>Continue</button></form></body></html>`)
+	})
+	mux.HandleFunc("/app/{slug}/sign_in", func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		if !fixtureWorkspaces[slug] {
+			http.NotFound(w, r)
+			return
+		}
+		if signedIn(r, slug) {
+			http.Redirect(w, r, "/app/"+slug, http.StatusFound)
+			return
+		}
 		fixture.mu.Lock()
-		stale := fixture.staleFlash
+		stale, ssoOnly := fixture.staleFlash, fixture.ssoOnly
 		fixture.mu.Unlock()
 		flash := ""
 		if stale {
-			// The redirect that lands an anonymous console visit on /sign_in carries this flash;
-			// it is on the page BEFORE the form is submitted and must never read as a refusal.
-			flash = `<div id="flash-error" role="alert" data-flash><p>Something went wrong</p><p>You must log in to access this page.</p></div>`
+			// The redirect that lands an anonymous console visit on its workspace's sign-in page
+			// carries this flash; it is on the page BEFORE the form is submitted and must never
+			// read as a refusal.
+			flash = `<div id="flash-error" role="alert" data-flash><p>Something went wrong</p><p>You must sign in to access that page.</p></div>`
+		}
+		form := fmt.Sprintf(`<form action="/app/%s/sign_in/email" method="post"><input type="email" name="user[email]" required><button>Send sign-in link</button></form>`, slug)
+		if ssoOnly {
+			form = `<p>This workspace requires single sign-on.</p><a href="/sign_in/sso/provider-1">Continue with Okta</a>`
 		}
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = fmt.Fprintf(w, `<!doctype html><html><body>%s<form action="/sign_in/magic/start" method="post"><input type="email" name="user[email]" required><button>Send sign-in link</button></form></body></html>`, flash)
+		_, _ = fmt.Fprintf(w, `<!doctype html><html><body>%s%s</body></html>`, flash, form)
 	})
-	mux.HandleFunc("/sign_in/magic/start", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/app/{slug}/sign_in/email", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method", http.StatusMethodNotAllowed)
 			return
 		}
+		slug := r.PathValue("slug")
 		email := r.FormValue("user[email]")
 		fixture.mu.Lock()
 		fixture.starts++
+		fixture.startSlugs = append(fixture.startSlugs, slug)
 		refuse := fixture.refuse
 		delay := fixture.mailDelay
 		never := fixture.mailNever
@@ -112,6 +146,10 @@ func newSignInFixture(t *testing.T) *signInFixture {
 		expired := fixture.linkExpired
 		stall := fixture.linkStall
 		opened := fixture.linkOpened
+		slug := "demo"
+		if count := len(fixture.startSlugs); count > 0 {
+			slug = fixture.startSlugs[count-1]
+		}
 		fixture.mu.Unlock()
 		if opened != nil {
 			select {
@@ -124,8 +162,8 @@ func newSignInFixture(t *testing.T) *signInFixture {
 			http.Redirect(w, r, "/sign_in/magic", http.StatusFound)
 			return
 		}
-		http.SetCookie(w, &http.Cookie{Name: "session", Value: "signed-in", Path: "/"})
-		http.Redirect(w, r, "/app/demo", http.StatusFound)
+		http.SetCookie(w, &http.Cookie{Name: sessionCookie(slug), Value: "signed-in", Path: "/"})
+		http.Redirect(w, r, "/app/"+slug, http.StatusFound)
 	})
 	mux.HandleFunc("/dev/mailbox/json", func(w http.ResponseWriter, r *http.Request) {
 		fixture.mu.Lock()
@@ -142,8 +180,9 @@ func newSignInFixture(t *testing.T) *signInFixture {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": fixture.messages})
 	})
 	mux.HandleFunc("/app/", func(w http.ResponseWriter, r *http.Request) {
-		if cookie, err := r.Cookie("session"); err != nil || cookie.Value != "signed-in" {
-			http.Redirect(w, r, "/sign_in", http.StatusFound)
+		slug, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/app/"), "/")
+		if !signedIn(r, slug) {
+			http.Redirect(w, r, "/app/"+slug+"/sign_in", http.StatusFound)
 			return
 		}
 		fixture.mu.Lock()
@@ -173,6 +212,12 @@ func (f *signInFixture) mailCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.messages)
+}
+
+func (f *signInFixture) startedSlugs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.startSlugs...)
 }
 
 // signInBrowser starts one isolated Chromium for a test and hands out fresh, cookie-less tabs
@@ -213,6 +258,13 @@ func shortMagicLinkWait(t *testing.T, wait time.Duration) {
 	t.Cleanup(func() { magicLinkWait = previous })
 }
 
+func shortEmailFormWait(t *testing.T, wait time.Duration) {
+	t.Helper()
+	previous := emailFormWait
+	emailFormWait = wait
+	t.Cleanup(func() { emailFormWait = previous })
+}
+
 func TestLoginReportsTheRefusalTheSignInResponseShowed(t *testing.T) {
 	fixture := newSignInFixture(t)
 	browser := signInBrowser(t, fixture.server.URL)
@@ -222,7 +274,7 @@ func TestLoginReportsTheRefusalTheSignInResponseShowed(t *testing.T) {
 		fixture.set(func(f *signInFixture) { f.refuse = "throttle"; f.mailNever = true })
 		session, _ := freshTab(t, browser)
 		started := time.Now()
-		err := session.Login("demo@emisar.dev")
+		err := session.Login("demo", "demo@emisar.dev")
 		elapsed := time.Since(started)
 		if !errors.Is(err, ErrSignInRefused) {
 			t.Fatalf("login error = %v, want a refusal", err)
@@ -238,7 +290,7 @@ func TestLoginReportsTheRefusalTheSignInResponseShowed(t *testing.T) {
 	t.Run("per-IP rate limit", func(t *testing.T) {
 		fixture.set(func(f *signInFixture) { f.refuse = "ip"; f.mailNever = true })
 		session, _ := freshTab(t, browser)
-		err := session.Login("demo@emisar.dev")
+		err := session.Login("demo", "demo@emisar.dev")
 		if !errors.Is(err, ErrSignInRefused) || !strings.Contains(err.Error(), "429") {
 			t.Fatalf("login error = %v, want a 429 refusal", err)
 		}
@@ -253,7 +305,7 @@ func TestLoginDistinguishesMailOutcomes(t *testing.T) {
 	t.Run("delayed email still signs in", func(t *testing.T) {
 		fixture.set(func(f *signInFixture) { f.refuse = ""; f.mailNever = false; f.mailDelay = 1500 * time.Millisecond })
 		session, _ := freshTab(t, browser)
-		if err := session.Login("demo@emisar.dev"); err != nil {
+		if err := session.Login("demo", "demo@emisar.dev"); err != nil {
 			t.Fatalf("login: %v", err)
 		}
 		current, _ := session.CurrentURL()
@@ -265,7 +317,7 @@ func TestLoginDistinguishesMailOutcomes(t *testing.T) {
 	t.Run("no email is not a refusal", func(t *testing.T) {
 		fixture.set(func(f *signInFixture) { f.refuse = ""; f.mailNever = true })
 		session, _ := freshTab(t, browser)
-		err := session.Login("demo@emisar.dev")
+		err := session.Login("demo", "demo@emisar.dev")
 		if err == nil || errors.Is(err, ErrSignInRefused) || !strings.Contains(err.Error(), "no magic-link email") {
 			t.Fatalf("login error = %v, want a no-email report", err)
 		}
@@ -283,7 +335,7 @@ func TestLoginDistinguishesMailOutcomes(t *testing.T) {
 			fixture.set(func(f *signInFixture) { f.mailFail = true })
 		}()
 		t.Cleanup(func() { fixture.set(func(f *signInFixture) { f.mailFail = false }) })
-		err := session.Login("demo@emisar.dev")
+		err := session.Login("demo", "demo@emisar.dev")
 		if err == nil || errors.Is(err, ErrSignInRefused) || !strings.Contains(err.Error(), "/dev/mailbox") || !strings.Contains(err.Error(), "HTTP 500") {
 			t.Fatalf("login error = %v, want the mailbox failure", err)
 		}
@@ -298,7 +350,7 @@ func TestLoginDistinguishesMailOutcomes(t *testing.T) {
 			cancel()
 		}()
 		started := time.Now()
-		err := session.Login("demo@emisar.dev")
+		err := session.Login("demo", "demo@emisar.dev")
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("login error = %v, want context.Canceled", err)
 		}
@@ -323,7 +375,7 @@ func TestLoginDistinguishesMailOutcomes(t *testing.T) {
 			cancel()
 		}()
 		started := time.Now()
-		err := session.Login("demo@emisar.dev")
+		err := session.Login("demo", "demo@emisar.dev")
 		if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "HTTP") {
 			t.Fatalf("login error = %v, want context.Canceled", err)
 		}
@@ -346,7 +398,7 @@ func TestLoginDistinguishesMailOutcomes(t *testing.T) {
 			cancel()
 		}()
 		started := time.Now()
-		err := session.Login("demo@emisar.dev")
+		err := session.Login("demo", "demo@emisar.dev")
 		if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "no magic-link email") {
 			t.Fatalf("login error = %v, want context.Canceled", err)
 		}
@@ -378,7 +430,7 @@ func TestLoginDistinguishesMailOutcomes(t *testing.T) {
 			cancel()
 		}()
 		started := time.Now()
-		err := session.Login("demo@emisar.dev")
+		err := session.Login("demo", "demo@emisar.dev")
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("login error = %v, want context.Canceled", err)
 		}
@@ -391,6 +443,106 @@ func TestLoginDistinguishesMailOutcomes(t *testing.T) {
 	})
 }
 
+// The workspace in the URL is the one the sign-in goes to: Login posts to that workspace's own
+// page, leaves a tab already inside it alone, and names a page that offers no email sign-in.
+func TestLoginSignsInThroughTheWorkspacePage(t *testing.T) {
+	fixture := newSignInFixture(t)
+	browser := signInBrowser(t, fixture.server.URL)
+	shortMagicLinkWait(t, 4*time.Second)
+	shortEmailFormWait(t, 2*time.Second)
+	fixture.set(func(f *signInFixture) { f.refuse = ""; f.mailNever = false; f.mailDelay = 0 })
+
+	t.Run("posts to the named workspace and lands in it", func(t *testing.T) {
+		session, _ := freshTab(t, browser)
+		if err := session.Login("acme", "owner@acme.test"); err != nil {
+			t.Fatalf("login: %v", err)
+		}
+		if slugs := fixture.startedSlugs(); len(slugs) == 0 || slugs[len(slugs)-1] != "acme" {
+			t.Fatalf("sign-in requests went to %v; want the last one at acme", slugs)
+		}
+		current, _ := session.CurrentURL()
+		if slug, rest := appSlug(current); slug != "acme" || rest != "" {
+			t.Fatalf("login left the tab on %s", current)
+		}
+	})
+
+	t.Run("a signed-in workspace spends no sign-in", func(t *testing.T) {
+		session, _ := freshTab(t, browser)
+		if err := session.Login("demo", "demo@emisar.dev"); err != nil {
+			t.Fatalf("first login: %v", err)
+		}
+		starts := fixture.startCount()
+		if err := session.Navigate("/app/demo/runs"); err != nil {
+			t.Fatal(err)
+		}
+		if err := session.Login("demo", "demo@emisar.dev"); err != nil {
+			t.Fatalf("login inside the workspace: %v", err)
+		}
+		// From the picker the workspace page itself sends the signed-in tab on into it.
+		if err := session.Navigate("/sign_in"); err != nil {
+			t.Fatal(err)
+		}
+		if err := session.Login("demo", "demo@emisar.dev"); err != nil {
+			t.Fatalf("login from the picker: %v", err)
+		}
+		if got := fixture.startCount(); got != starts {
+			t.Fatalf("a signed-in workspace spent %d more sign-in requests", got-starts)
+		}
+		// Another workspace still needs its own sign-in, even from inside the first one.
+		if err := session.Navigate("/app/demo/runs"); err != nil {
+			t.Fatal(err)
+		}
+		if err := session.Login("acme", "owner@acme.test"); err != nil {
+			t.Fatalf("login to a second workspace: %v", err)
+		}
+		if got := fixture.startCount(); got != starts+1 {
+			t.Fatalf("the second workspace spent %d sign-in requests; want one", got-starts)
+		}
+	})
+
+	t.Run("a page without email sign-in is a refusal", func(t *testing.T) {
+		for _, slug := range []string{"acme", "nowhere"} {
+			fixture.set(func(f *signInFixture) { f.ssoOnly = slug == "acme" })
+			session, _ := freshTab(t, browser)
+			starts := fixture.startCount()
+			err := session.Login(slug, "owner@acme.test")
+			if !errors.Is(err, ErrSignInRefused) || !strings.Contains(err.Error(), "/app/"+slug+"/sign_in offers no email sign-in") {
+				t.Fatalf("login to %s = %v, want a refusal naming the page", slug, err)
+			}
+			if fixture.startCount() != starts {
+				t.Fatalf("login to %s sent a sign-in request", slug)
+			}
+		}
+		fixture.set(func(f *signInFixture) { f.ssoOnly = false })
+	})
+
+	t.Run("a shot signs in to the workspace its path lands in", func(t *testing.T) {
+		session, _ := freshTab(t, browser)
+		if _, err := session.Shot(ShotOptions{Path: "/app/acme/runs", Label: "acme-runs", Email: "owner@acme.test", Out: t.TempDir()}); err != nil {
+			t.Fatalf("shot: %v", err)
+		}
+		if slugs := fixture.startedSlugs(); slugs[len(slugs)-1] != "acme" {
+			t.Fatalf("the shot signed in to %v; want acme", slugs)
+		}
+	})
+}
+
+func TestSignInSlugPrefersTheLandingWorkspace(t *testing.T) {
+	for _, tc := range []struct{ current, path, want string }{
+		{"https://localhost:4000/app/acme/sign_in", "/app/acme/runs", "acme"},
+		{"https://localhost:4000/app/acme/sign_in?x=1", "/app/demo", "acme"},
+		// A slugless path lands on the picker; its shorthand segment is no workspace.
+		{"https://localhost:4000/sign_in", "/app/runs", "demo"},
+		{"https://localhost:4000/sign_in", "/oauth/authorize?client_id=x", "demo"},
+		{"https://localhost:4000/sign_in/magic", "/app/globex/approvals", "globex"},
+		{"https://localhost:4000/sign_in/magic", "/sign_in/magic", "demo"},
+	} {
+		if got := signInSlug(tc.current, tc.path); got != tc.want {
+			t.Errorf("signInSlug(%q, %q) = %q; want %q", tc.current, tc.path, got, tc.want)
+		}
+	}
+}
+
 // A sign-in that fails late (the magic link opened but never signed the tab in) must not print
 // the link: its path carries the secret half of the split code.
 func TestLoginErrorsNeverCarryTheMagicLinkSecret(t *testing.T) {
@@ -399,7 +551,7 @@ func TestLoginErrorsNeverCarryTheMagicLinkSecret(t *testing.T) {
 	shortMagicLinkWait(t, 4*time.Second)
 	fixture.set(func(f *signInFixture) { f.refuse = ""; f.mailNever = false; f.mailDelay = 0; f.linkExpired = true })
 	session, _ := freshTab(t, browser)
-	err := session.Login("demo@emisar.dev")
+	err := session.Login("demo", "demo@emisar.dev")
 	if err == nil {
 		t.Fatal("login succeeded through an expired link")
 	}

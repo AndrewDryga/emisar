@@ -4,22 +4,17 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
   alias Emisar.{CalendarMonth, Mail, Repo}
   alias Emisar.Fixtures
 
-  # A confirmed owner + one successful run inside the prior-month window — the
+  # A verified owner + one successful run inside the prior-month window — the
   # minimum an account needs to earn a report.
   defp active_account(opts \\ []) do
     account = Fixtures.Accounts.create_account()
 
     owner =
-      Fixtures.Users.create_user(
-        full_name: Keyword.get(opts, :owner_name, "Olivia Owner"),
-        email: Keyword.get(opts, :owner_email, Fixtures.Random.unique_email())
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "owner",
+        display_name: "Olivia Owner"
       )
-
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: owner.id,
-      role: "owner"
-    )
 
     for _ <- 1..Keyword.get(opts, :runs, 1) do
       Fixtures.Runs.create_run(
@@ -39,23 +34,6 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
   end
 
   describe "execute/1" do
-    test "personal changes do not redirect workspace reports or change their greeting" do
-      %{account: account, owner: owner} =
-        active_account(owner_name: "Workspace Owner", owner_email: "work@example.test")
-
-      owner
-      |> Ecto.Changeset.change(email: "private@example.test", full_name: "Private Name")
-      |> Repo.update!()
-
-      assert MonthlyReports.execute([]) == :ok
-      assert_received {:email, email}
-      assert email.to == [{"", "work@example.test"}]
-      assert email.text_body =~ "Workspace Owner"
-      refute email.text_body =~ "Private Name"
-      refute email.text_body =~ "private@example.test"
-      assert Repo.reload!(account).last_report_sent_at
-    end
-
     test "emails the owner the prior month's summary and stamps the account" do
       %{account: account, owner: owner} = active_account(runs: 3)
 
@@ -68,6 +46,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       assert email.to == [{"", owner.email}]
       assert email.subject == "Your emisar report for #{account.name} — #{period}"
       assert email.reply_to == {"", "support@emisar.dev"}
+      assert email.text_body =~ "Hi Olivia Owner,"
       assert email.text_body =~ "3 runs recorded"
       assert email.text_body =~ "3 dispatched"
       assert email.text_body =~ ~r/Succeeded\s+3$/m
@@ -152,13 +131,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
 
     test "an account with no usage in the window receives nothing" do
       account = Fixtures.Accounts.create_account()
-      owner = Fixtures.Users.create_user()
-
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
       assert MonthlyReports.execute([]) == :ok
 
@@ -166,14 +139,13 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       refute Repo.reload(account).last_report_sent_at
     end
 
-    test "an account with no confirmed owner receives nothing" do
+    test "an account whose only Owner has an unverified address receives nothing" do
       account = Fixtures.Accounts.create_account()
-      unconfirmed = Fixtures.Users.create_user(confirmed?: false)
 
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: unconfirmed.id,
-        role: "owner"
+        role: "owner",
+        email_verified?: false
       )
 
       Fixtures.Runs.create_run(account_id: account.id, status: :success, inserted_at: in_window())
@@ -182,6 +154,22 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
 
       refute_received {:email, _}
       refute Repo.reload(account).last_report_sent_at
+    end
+
+    test "an Owner with an unverified address is skipped while verified Owners get the report" do
+      %{account: account, owner: owner} = active_account()
+
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        role: "owner",
+        email_verified?: false
+      )
+
+      assert MonthlyReports.execute([]) == :ok
+      assert_received {:email, email}
+      assert email.to == [{"", owner.email}]
+      refute_received {:email, _}
+      assert Repo.reload!(account).last_report_sent_at
     end
 
     test "a suppressed owner address receives nothing and stays unstamped" do
@@ -239,15 +227,6 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
     end
   end
 
-  defp add_owner(account) do
-    owner = Fixtures.Users.create_user()
-
-    Fixtures.Memberships.create_membership(
-      account_id: account.id,
-      user_id: owner.id,
-      role: "owner"
-    )
-
-    owner
-  end
+  defp add_owner(account),
+    do: Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 end

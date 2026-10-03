@@ -3,13 +3,13 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
   alias Emisar.{Fixtures, Policies}
 
   setup %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     %{
       conn: conn,
-      user: user,
+      user: owner,
       account: account,
-      subject: Fixtures.Subjects.subject_for(user, account)
+      subject: Fixtures.Subjects.subject_for(owner)
     }
   end
 
@@ -124,8 +124,8 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     Fixtures.Runners.create_runner(account_id: account.id, group: "free", connected?: false)
     Fixtures.Runners.create_runner(account_id: account.id, group: "other", connected?: false)
     membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-    admin = Fixtures.Subjects.membership_subject(membership)
-    {:ok, lv, _} = live(log_in_user(conn, admin.actor), ~p"/app/#{account}/policies")
+    admin = Fixtures.Subjects.subject_for(membership)
+    {:ok, lv, _} = live(log_in_member(conn, admin.actor), ~p"/app/#{account}/policies")
     render_click(lv, "open_ruleset", %{"uid" => policy.id})
     render_click(lv, "add_ruleset", %{})
     uid = List.last(assigns(lv).rulesets).uid
@@ -416,7 +416,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
       policy =
         Fixtures.Policies.create_policy(
           account_id: account.id,
-          created_by_id: user.id,
+          updated_by_membership_id: user.id,
           scope_type: :runner,
           scope_value: runner.id
         )
@@ -424,8 +424,8 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
       Fixtures.Memberships.force_runner_access(member, access)
-      member_subject = Fixtures.Subjects.membership_subject(member)
-      conn = log_in_user(conn, member_subject.actor)
+      member_subject = Fixtures.Subjects.subject_for(member)
+      conn = log_in_member(conn, member_subject.actor)
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/policies")
       settle(lv)
       hold_next_preview(account.id)
@@ -434,7 +434,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
 
       case unquote(invalidation) do
         :action_scope ->
-          owner = Fixtures.Subjects.subject_for(user, account)
+          owner = Fixtures.Subjects.subject_for(user)
 
           {:ok, _} =
             Emisar.Accounts.update_membership_runner_access(
@@ -559,7 +559,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
   defp scoped(account, user, group) do
     Fixtures.Policies.create_policy(
       account_id: account.id,
-      created_by_id: user.id,
+      updated_by_membership_id: user.id,
       scope_type: :group,
       scope_value: group
     )

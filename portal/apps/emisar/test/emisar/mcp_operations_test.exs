@@ -9,17 +9,11 @@ defmodule Emisar.MCPOperationsTest do
   @pack_ref "linux-core@1.0.0/sha256:" <> String.duplicate("b", 64)
 
   setup do
-    user = Fixtures.Users.create_user()
     account = Fixtures.Accounts.create_account()
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    owner_subject = Fixtures.Subjects.membership_subject(membership)
+    owner_subject = Fixtures.Subjects.subject_for(membership)
     {:ok, _raw, key} = ApiKeys.create_key(%{name: "MCP"}, owner_subject)
     key_subject = Auth.Subject.for_api_key(key, account)
 
@@ -184,17 +178,15 @@ defmodule Emisar.MCPOperationsTest do
       other_subject = Auth.Subject.for_api_key(other_key, account)
       refute MCPOperations.operation_id(request, other_subject) == operation_id
 
-      foreign_user = Fixtures.Users.create_user()
       foreign_account = Fixtures.Accounts.create_account()
 
       foreign_membership =
         Fixtures.Memberships.create_membership(
           account_id: foreign_account.id,
-          user_id: foreign_user.id,
           role: "owner"
         )
 
-      foreign_owner = Fixtures.Subjects.membership_subject(foreign_membership)
+      foreign_owner = Fixtures.Subjects.subject_for(foreign_membership)
       {:ok, _raw, foreign_key} = ApiKeys.create_key(%{name: "Foreign MCP"}, foreign_owner)
       foreign_subject = Auth.Subject.for_api_key(foreign_key, foreign_account)
       refute MCPOperations.operation_id(request, foreign_subject) == operation_id
@@ -263,17 +255,15 @@ defmodule Emisar.MCPOperationsTest do
       assert MCPOperations.fetch_recovery(@operation_id, other_lineage_subject) ==
                {:error, :not_found}
 
-      other_user = Fixtures.Users.create_user()
       other_account = Fixtures.Accounts.create_account()
 
       other_membership =
         Fixtures.Memberships.create_membership(
           account_id: other_account.id,
-          user_id: other_user.id,
           role: "owner"
         )
 
-      other_owner = Fixtures.Subjects.membership_subject(other_membership)
+      other_owner = Fixtures.Subjects.subject_for(other_membership)
       {:ok, _raw, foreign_key} = ApiKeys.create_key(%{name: "Foreign MCP"}, other_owner)
       foreign_subject = Auth.Subject.for_api_key(foreign_key, other_account)
 

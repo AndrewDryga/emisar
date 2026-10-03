@@ -347,7 +347,7 @@ func captureLoopTake(ctx context.Context, manager *Manager, config DocsConfig) (
 	if err := session.Navigate("/app/demo"); err != nil {
 		return nil, err
 	}
-	if err := session.Login("jordan@emisar.dev"); err != nil {
+	if err := session.Login("demo", "jordan@emisar.dev"); err != nil {
 		return nil, err
 	}
 	if err := session.Navigate("/app/demo/approvals"); err != nil {
@@ -1164,11 +1164,9 @@ func CaptureDocs(ctx context.Context, manager *Manager, config DocsConfig) error
 		if err := session.Navigate("/app/demo"); err != nil {
 			return err
 		}
-		current, _ := session.CurrentURL()
-		if !strings.Contains(current, "/app/") {
-			if err := session.Login(config.Email); err != nil {
-				return err
-			}
+		// A signed-out profile lands on /app/demo/sign_in; Login leaves a signed-in one as it is.
+		if err := session.Login("demo", config.Email); err != nil {
+			return err
 		}
 		for _, s := range portalShots {
 			color, captureErr := captureShot(session, config, s)

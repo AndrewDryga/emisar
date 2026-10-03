@@ -1,11 +1,11 @@
 defmodule EmisarWeb.MfaEnrollment do
   @moduledoc """
   The socket state an MFA enrollment walks through, shared by the two pages that
-  run it: `MfaSetupLive` when an account enforces MFA, `ProfileLive` when a
-  member opts in themselves.
+  run it: `MfaSetupLive` when a workspace enforces MFA, `ProfileLive` when a
+  Member opts in themselves.
 
   Both drive the same `Emisar.Auth` functions in the same order, and each had
-  grown its own copy of these steps — `assign_current_mfa_proof/2` was
+  grown its own copy of these steps — `assign_current_proof/2` was
   byte-identical in both, and `prepare_authenticator/2` differed only by whether
   `MfaQr` was aliased.
 
@@ -20,18 +20,21 @@ defmodule EmisarWeb.MfaEnrollment do
   """
 
   import Phoenix.Component, only: [assign: 3]
-  alias Emisar.Auth
+  alias Emisar.{Accounts, Auth}
   alias EmisarWeb.MfaQr
 
   @doc """
-  Moves the enrollment to its authenticator step, minting a fresh secret.
+  Moves the enrollment to its authenticator step, minting a fresh secret. The
+  authenticator entry is labelled with the workspace and the Member, because the
+  factor belongs to exactly that Member in exactly that workspace.
 
   A new secret every time is deliberate: an enrollment that was abandoned and
   restarted must not be completable with the QR code from the first attempt.
   """
   def prepare_authenticator(socket, proof) do
+    %{current_account: account, current_membership: membership} = socket.assigns
     secret = Auth.generate_mfa_secret()
-    uri = MfaQr.provisioning_uri(socket.assigns.current_user.email, secret)
+    uri = MfaQr.provisioning_uri(account.name, member_label(membership), secret)
 
     socket
     |> assign(:mfa_enrollment_step, :totp)
@@ -41,6 +44,13 @@ defmodule EmisarWeb.MfaEnrollment do
     |> assign(:mfa_qr_svg, MfaQr.svg(uri))
     |> assign(:mfa_error, nil)
   end
+
+  @doc "The Member's email when it has one, otherwise the name this workspace shows for it."
+  def member_label(%Accounts.Membership{email: email}) when is_binary(email) and email != "",
+    do: email
+
+  def member_label(%Accounts.Membership{} = membership),
+    do: Accounts.member_display_name(membership) || "member"
 
   @doc """
   Returns the enrollment to its idle state, clearing the secret and every error.
@@ -62,22 +72,26 @@ defmodule EmisarWeb.MfaEnrollment do
   @doc """
   Carries a just-completed enrollment into the live socket's own authority.
 
-  Without this the page keeps rendering from the subject it mounted with, which
-  still says the member has no second factor — so a freshly enrolled operator
-  would be told to enrol again by the very page that just enrolled them.
+  Without this the page keeps rendering from the Member and Subject it mounted
+  with, which still say there is no second factor — so a freshly enrolled
+  operator would be told to enrol again by the very page that just enrolled them.
   """
-  def assign_current_proof(socket, user) do
+  def assign_current_proof(socket, %Accounts.Membership{} = membership) do
     subject = %{
       socket.assigns.current_subject
-      | actor: user,
+      | actor: membership,
         mfa: true,
-        mfa_enrollment_verified_at: user.mfa_enabled_at
+        mfa_enrollment_verified_at: membership.mfa_enabled_at
     }
 
-    auth = %{socket.assigns.current_auth | mfa_enrollment_verified_at: user.mfa_enabled_at}
+    auth = %{
+      socket.assigns.current_auth
+      | membership: membership,
+        mfa_enrollment_verified_at: membership.mfa_enabled_at
+    }
 
     socket
-    |> assign(:current_user, user)
+    |> assign(:current_membership, membership)
     |> assign(:current_subject, subject)
     |> assign(:current_auth, auth)
   end

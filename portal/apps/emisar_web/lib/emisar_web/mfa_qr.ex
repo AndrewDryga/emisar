@@ -10,9 +10,15 @@ defmodule EmisarWeb.MfaQr do
 
   def setup_key(secret) when is_binary(secret), do: Base.encode32(secret, padding: false)
 
-  def provisioning_uri(email, secret) when is_binary(email) and is_binary(secret) do
+  @doc """
+  The `otpauth://` URI for one Member's factor. The factor belongs to one Member
+  in one workspace, so the authenticator entry names both:
+  `emisar:<Workspace> (<email or name>)`.
+  """
+  def provisioning_uri(account_name, member_label, secret)
+      when is_binary(account_name) and is_binary(member_label) and is_binary(secret) do
     encoded = setup_key(secret)
-    label = URI.encode(email, &URI.char_unreserved?/1)
+    label = URI.encode("#{account_name} (#{member_label})", &URI.char_unreserved?/1)
     "otpauth://totp/#{@issuer}:#{label}?secret=#{encoded}&issuer=#{@issuer}"
   end
 

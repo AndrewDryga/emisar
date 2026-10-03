@@ -8,9 +8,9 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   alias Emisar.{Accounts, Catalog, Runners}
 
   setup %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-    %{conn: conn, user: user, account: account, runner: runner}
+    %{conn: conn, user: owner, account: account, runner: runner}
   end
 
   test "renders the runner with its actions and recent runs", %{
@@ -89,8 +89,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     user: user,
     account: account
   } do
-    account.id
-    |> Fixtures.Memberships.fetch_membership(user.id)
+    user
     |> Fixtures.Memberships.force_role("admin")
 
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
@@ -122,8 +121,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     {:ok, postgres_only} =
       Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
 
-    account.id
-    |> Fixtures.Memberships.fetch_membership(user.id)
+    user
     |> Fixtures.Memberships.force_runner_access(postgres_only)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
@@ -148,8 +146,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     user: user,
     account: account
   } do
-    account.id
-    |> Fixtures.Memberships.fetch_membership(user.id)
+    user
     |> Fixtures.Memberships.force_role("admin")
 
     runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
@@ -161,8 +158,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     {:ok, web_only} = Accounts.RunnerAccess.restricted(["web"], [])
 
     membership =
-      account.id
-      |> Fixtures.Memberships.fetch_membership(user.id)
+      user
       |> Fixtures.Memberships.force_runner_access(web_only)
 
     send(
@@ -365,7 +361,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     action = Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime")
 
     {:ok, _disabled} =
-      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user, account))
+      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user))
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
@@ -396,7 +392,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account
   } do
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user)
 
     pack_version =
       Fixtures.Catalog.create_trusted_pack_version(
@@ -480,26 +476,22 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     in_scope_runner = Fixtures.Runners.create_runner(account_id: account.id)
 
-    operator = Fixtures.Users.create_user()
-
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+    operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     {:ok, access} = Emisar.Accounts.RunnerAccess.restricted([], [in_scope_runner.id])
-    Fixtures.Memberships.force_runner_access(membership, access)
+    Fixtures.Memberships.force_runner_access(operator, access)
     Fixtures.Catalog.create_action(runner: runner)
 
-    operator_conn = build_conn() |> log_in_user(operator)
+    operator_conn = build_conn() |> log_in_member(operator)
 
     assert {:ok, _lv, _html} =
              live(operator_conn, ~p"/app/#{account}/runners/#{in_scope_runner.id}")
 
     assert {:ok, lv, html} =
-             live(build_conn() |> log_in_user(operator), ~p"/app/#{account}/runners/#{runner.id}")
+             live(
+               build_conn() |> log_in_member(operator),
+               ~p"/app/#{account}/runners/#{runner.id}"
+             )
 
     assert html =~ runner.name
     assert has_element?(lv, "#actions")
@@ -540,7 +532,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    subject = Fixtures.Subjects.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user)
     assert {:ok, _deleted} = Runners.delete_runner(runner, subject)
 
     render_click(lv, "disable", %{})
@@ -582,7 +574,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     # The fixture account is on "free" (limit 3): disable the target, then
     # fill the remaining slots so re-enabling would exceed the plan.
-    subject = Fixtures.Subjects.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user)
     {:ok, _disabled} = Runners.disable_runner(runner, subject)
     for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id)
 
@@ -596,17 +588,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    viewer = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+    viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
     {:ok, lv, _html} =
-      build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners/#{runner.id}")
+      build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/runners/#{runner.id}")
 
     assert render_click(lv, "disable", %{}) =~ "You don&#39;t have permission to do that."
     refute Emisar.Repo.reload!(runner).disabled_at
@@ -621,17 +606,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    operator = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+    operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     {:ok, lv, _html} =
-      build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners/#{runner.id}")
+      build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/runners/#{runner.id}")
 
     assert render_click(lv, "delete", %{}) =~ "You don&#39;t have permission to do that."
     refute Emisar.Repo.reload!(runner).deleted_at
@@ -662,7 +640,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
   } do
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
-    subject = Fixtures.Subjects.subject_for(user, account)
+    subject = Fixtures.Subjects.subject_for(user)
     assert {:ok, _deleted} = Runners.delete_runner(runner, subject)
 
     render_click(lv, "delete", %{})
@@ -719,17 +697,10 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     account: account,
     runner: runner
   } do
-    operator = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+    operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     {:ok, _lv, html} =
-      build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners/#{runner.id}")
+      build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/runners/#{runner.id}")
 
     # The page loads (operator holds view_runners)…
     assert html =~ runner.name
@@ -749,7 +720,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     runner: runner
   } do
     {:ok, _disabled} =
-      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user, account))
+      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user))
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 
@@ -779,19 +750,12 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     runner: runner
   } do
     {:ok, _disabled} =
-      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(owner, account))
+      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(owner))
 
-    operator = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+    operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     {:ok, lv, _html} =
-      build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners/#{runner.id}")
+      build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/runners/#{runner.id}")
 
     assert render_click(lv, "enable", %{}) =~ "You don&#39;t have permission to do that."
     assert Emisar.Repo.reload!(runner).disabled_at
@@ -809,7 +773,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     runner: runner
   } do
     {:ok, _disabled} =
-      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user, account))
+      Runners.disable_runner(runner, Fixtures.Subjects.subject_for(user))
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
 

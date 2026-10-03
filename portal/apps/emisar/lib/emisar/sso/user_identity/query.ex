@@ -24,9 +24,6 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_account_id(queryable, account_id),
     do: where(queryable, [identities: i], i.account_id == ^account_id)
 
-  def excluding_account_id(queryable, account_id),
-    do: where(queryable, [identities: i], i.account_id != ^account_id)
-
   # The (provider, sub) binding lookup — the only way an OIDC login resolves
   # to an identity. Never matched by email.
   def by_provider_and_identifier(queryable, provider_id, identifier) do
@@ -47,82 +44,10 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_membership_ids(queryable, membership_ids),
     do: where(queryable, [identities: i], i.membership_id in ^membership_ids)
 
-  @doc """
-  Identities bound to any seat of this personal login, live or removed. A
-  subquery rather than a join, so a caller's row lock takes identities only.
-  """
-  def by_member_user_id(queryable, user_id) do
-    seat_ids =
-      Emisar.Accounts.Membership.Query.all()
-      |> Emisar.Accounts.Membership.Query.by_user_id(user_id)
-      |> Emisar.Accounts.Membership.Query.select_ids()
-
-    where(queryable, [identities: i], i.membership_id in subquery(seat_ids))
-  end
-
-  @doc """
-  The identities a person may continue with at `seat`: those on their own
-  seats, plus those on a removed seat of the same workspace that never had a
-  personal login and carried the same contact address — a Member without a
-  login, removed and invited back to that address. The provider still has to
-  prove the exact identity before one moves.
-  """
-  def by_member_user_id_or_invited_back(queryable, user_id, %Emisar.Accounts.Membership{
-        account_id: account_id,
-        email: email
-      })
-      when is_binary(email) do
-    own_seats =
-      Emisar.Accounts.Membership.Query.all()
-      |> Emisar.Accounts.Membership.Query.by_user_id(user_id)
-      |> Emisar.Accounts.Membership.Query.select_ids()
-
-    removed_seats =
-      Emisar.Accounts.Membership.Query.removed()
-      |> Emisar.Accounts.Membership.Query.without_personal_login()
-      |> Emisar.Accounts.Membership.Query.by_account_id(account_id)
-      |> Emisar.Accounts.Membership.Query.by_email(email)
-      |> Emisar.Accounts.Membership.Query.select_ids()
-
-    where(
-      queryable,
-      [identities: i],
-      i.membership_id in subquery(own_seats) or i.membership_id in subquery(removed_seats)
-    )
-  end
-
-  def by_member_user_id_or_invited_back(queryable, user_id, _seat),
-    do: by_member_user_id(queryable, user_id)
-
-  @doc """
-  One identity, preferring the one on this seat. A person can hold two at one
-  provider: an older one left on a seat they were removed from, and one on
-  their current seat.
-  """
-  def seat_first(queryable, membership_id) do
-    queryable
-    |> order_by([identities: i],
-      desc: i.membership_id == ^membership_id,
-      desc: i.inserted_at,
-      desc: i.id
-    )
-    |> limit(1)
-  end
-
   def with_live_membership(queryable) do
     queryable
     |> with_joined_membership_profile()
     |> where([profile_membership: m], not is_nil(m.id) and is_nil(m.deleted_at))
-  end
-
-  def with_authorized_membership(queryable) do
-    queryable
-    |> with_live_membership()
-    |> where(
-      [profile_membership: m],
-      is_nil(m.disabled_at) and
-        not (is_nil(m.invitation_accepted_at) and not is_nil(m.invitation_token_digest))
-    )
   end
 
   def by_directory_group(queryable, group_id, account_id, provider_id) do
@@ -154,41 +79,8 @@ defmodule Emisar.SSO.UserIdentity.Query do
     |> where([provider: p], p.scim_enabled == true)
   end
 
-  @doc """
-  Identities an ADMIN approved, rather than ones the directory itself asserted.
-  These are the bindings made through a link approval, which is the only path
-  where a person inside emisar decides that a credential belongs to someone.
-  """
-  def admin_approved(queryable \\ all()),
-    do: where(queryable, [identities: i], i.created_by == :admin)
-
-  @doc """
-  Live OIDC bindings whose authority came from an emisar administrator.
-
-  `created_by` follows the current OIDC binding rather than the row's original
-  provisioning path. The forward migration normalizes pre-field-semantics
-  directory rebinds once; future approvals set it directly.
-  """
-  def admin_approved_provider_identifiers(queryable \\ all()) do
-    queryable
-    |> provider_identifier_active()
-    |> admin_approved()
-  end
-
   @doc "Just the ids, for a caller that needs them before and after a bulk write."
   def select_ids(queryable), do: select(queryable, [identities: i], i.id)
-
-  # Identities whose live provider is enabled and shares this issuer — the
-  # federation set. An `:sso` session proves the person at one issuer, so it is
-  # authority in every account that CURRENTLY enables a provider with that same
-  # issuer and holds an identity for the person. A disabled or differently-issued
-  # provider does not match, so a workspace that turned that SSO off, or federates
-  # with a different IdP, is not reachable.
-  def by_active_provider_issuer(queryable, issuer) when is_binary(issuer) do
-    queryable
-    |> with_joined_provider()
-    |> where([provider: p], p.enabled == true and p.issuer == ^issuer)
-  end
 
   @doc "Distinct account ids the matched identities belong to."
   def select_account_ids(queryable),
@@ -252,9 +144,6 @@ defmodule Emisar.SSO.UserIdentity.Query do
   def by_provider_id(queryable, provider_id),
     do: where(queryable, [identities: i], i.provider_id == ^provider_id)
 
-  def excluding_provider_id(queryable, provider_id),
-    do: where(queryable, [identities: i], i.provider_id != ^provider_id)
-
   def with_enabled_provider(queryable) do
     queryable
     |> with_joined_provider()
@@ -263,9 +152,6 @@ defmodule Emisar.SSO.UserIdentity.Query do
 
   def select_membership_ids(queryable \\ all()),
     do: select(queryable, [identities: i], i.membership_id)
-
-  def select_membership_and_account_ids(queryable \\ all()),
-    do: select(queryable, [identities: i], {i.membership_id, i.account_id})
 
   # {provider_id, count} rows — the per-connection synced-user tallies for the
   # overview. Group by provider so one query covers every connection.

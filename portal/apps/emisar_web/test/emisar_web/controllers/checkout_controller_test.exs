@@ -45,49 +45,56 @@ defmodule EmisarWeb.CheckoutControllerTest do
       assert html =~ ~s(data-sandbox="true")
     end
 
-    test "an origin UUID pins both return links without needing a session", %{conn: conn} do
+    test "a signed return for this transaction pins both return links, without a session", %{
+      conn: conn
+    } do
       Emisar.Config.put_override(:emisar, :paddle_client_token, "live_tok_123")
       account_id = Ecto.UUID.generate()
+      checkout = Emisar.Crypto.checkout_return(account_id, "txn_123")
 
       html =
         conn
-        |> get(~p"/checkout?_ptxn=txn_123&emisar_account_id=#{account_id}")
+        |> get(~p"/checkout", %{"_ptxn" => "txn_123", "emisar_return" => checkout})
         |> html_response(200)
 
-      assert html =~
-               ~s(data-success-url="#{EmisarWeb.Endpoint.url()}/app/#{account_id}/checkout/success")
-
+      success_url = EmisarWeb.Endpoint.url() <> ~p"/app/checkout/success?#{[checkout: checkout]}"
+      assert html =~ ~s(data-success-url="#{success_url}")
       assert html =~ ~s(href="/app/#{account_id}/settings/billing")
-
-      incomplete =
-        conn
-        |> get(~p"/checkout?emisar_account_id=#{account_id}")
-        |> html_response(200)
-
-      assert incomplete =~ ~s(href="/app/#{account_id}/settings/billing")
-      refute incomplete =~ "paddle.js"
     end
 
-    test "malformed origins cannot supply return paths", %{conn: conn} do
+    test "a tampered, expired, other-checkout or unsigned return gets only the neutral links (review revision 11)",
+         %{conn: conn} do
       Emisar.Config.put_override(:emisar, :paddle_client_token, "live_tok_123")
+      account_id = Ecto.UUID.generate()
+      valid = Emisar.Crypto.checkout_return(account_id, "txn_123")
 
-      for origin <- [
-            "",
-            "demo",
-            "sixteen-raw-bytes",
-            "https://evil.example/",
-            "../other",
-            ["bad"],
-            %{"id" => "bad"}
+      expired =
+        Phoenix.Token.sign(
+          Application.fetch_env!(:emisar, :email_link_secret),
+          "checkout return",
+          {account_id, "txn_123"},
+          signed_at: System.system_time(:second) - 25 * 60 * 60
+        )
+
+      for params <- [
+            # Edited in transit: the signature no longer holds.
+            %{"emisar_return" => tamper(valid)},
+            %{"emisar_return" => expired},
+            # Another checkout's valid return pasted onto this transaction.
+            %{"emisar_return" => Emisar.Crypto.checkout_return(account_id, "txn_other")},
+            # The plain account id older links carried is no longer read.
+            %{"emisar_account_id" => account_id},
+            %{"emisar_return" => ["bad"]},
+            %{}
           ] do
         html =
           conn
-          |> get(~p"/checkout", %{"_ptxn" => "txn_123", "emisar_account_id" => origin})
+          |> get(~p"/checkout", Map.put(params, "_ptxn", "txn_123"))
           |> html_response(200)
 
         assert html =~ ~s(data-success-url="#{EmisarWeb.Endpoint.url()}/app/checkout/success")
         assert html =~ ~s(href="/app/billing")
-        refute html =~ "evil.example"
+        refute html =~ account_id
       end
     end
 
@@ -117,103 +124,82 @@ defmodule EmisarWeb.CheckoutControllerTest do
   end
 
   describe "GET /app/checkout/success" do
-    test "an old unscoped return gives neutral guidance, even with a spoofed path parameter", %{
+    test "a valid return goes to that workspace's billing page, never claiming payment", %{
       conn: conn
     } do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
+      checkout = Emisar.Crypto.checkout_return(account.id, "txn_123")
 
-      conn = get(conn, ~p"/app/checkout/success?account_id_or_slug=#{account.id}")
+      conn = get(conn, ~p"/app/checkout/success?#{[checkout: checkout]}")
 
-      assert redirected_to(conn) == "/app/#{account.slug}/settings/billing"
-      # Never claim money was received on a bare redirect — the webhook-backed
-      # subscription on the billing page is the source of truth.
+      assert redirected_to(conn) == ~p"/app/#{account.id}/settings/billing"
       flash = Phoenix.Flash.get(conn.assigns.flash, :info)
-      assert flash == "Choose the workspace you upgraded to check its billing status."
+      assert flash =~ "once your payment and subscription are confirmed"
       refute flash =~ "Payment received"
 
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(owner)
       assert {:ok, %{plan: "free"}} = Emisar.Billing.billing_summary(account, subject)
     end
 
-    test "an anonymous return bounces to sign-in", %{conn: conn} do
-      conn = get(conn, ~p"/app/checkout/success")
+    test "a tampered, expired or missing return gets neutral guidance", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      valid = Emisar.Crypto.checkout_return(account.id, "txn_123")
 
-      assert redirected_to(conn) =~ "/sign_in"
-    end
-  end
+      expired =
+        Phoenix.Token.sign(
+          Application.fetch_env!(:emisar, :email_link_secret),
+          "checkout return",
+          {account.id, "txn_123"},
+          signed_at: System.system_time(:second) - 25 * 60 * 60
+        )
 
-  describe "GET /app/:account_id_or_slug/checkout/success" do
-    test "returns to the origin after another tab switches accounts and the origin is renamed", %{
-      conn: conn
-    } do
-      {conn, user, origin} = register_and_log_in(conn)
-      selected = Fixtures.Accounts.create_account()
+      for params <- [
+            %{"checkout" => tamper(valid)},
+            %{"checkout" => expired},
+            %{"account_id_or_slug" => account.id},
+            %{}
+          ] do
+        neutral = get(conn, ~p"/app/checkout/success", params)
 
-      Fixtures.Memberships.create_membership(
-        account_id: selected.id,
-        user_id: user.id,
-        role: "owner"
-      )
+        assert redirected_to(neutral) == ~p"/app/billing"
 
-      subject = Fixtures.Subjects.subject_for(user, origin)
-      new_slug = Fixtures.Random.unique_slug()
-      assert {:ok, renamed} = Emisar.Accounts.update_account(origin, %{slug: new_slug}, subject)
-
-      conn =
-        conn
-        |> put_session(:current_account_id, selected.id)
-        |> get(~p"/app/#{origin.id}/checkout/success")
-
-      assert redirected_to(conn) == ~p"/app/#{renamed}/settings/billing"
-      assert get_session(conn, :current_account_id) == origin.id
-
-      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~
-               "once your payment and subscription are confirmed"
-
-      assert {:ok, %{plan: "free"}} = Emisar.Billing.billing_summary(renamed, subject)
-
-      assert {:ok, %{plan: "free"}} =
-               Emisar.Billing.billing_summary(
-                 selected,
-                 Fixtures.Subjects.subject_for(user, selected)
-               )
-    end
-
-    test "an absent or foreign origin never falls back to the selected account", %{conn: conn} do
-      {conn, _user, _account} = register_and_log_in(conn)
-      foreign = Fixtures.Accounts.create_account()
-
-      for origin_id <- [foreign.id, Ecto.UUID.generate()] do
-        assert_error_sent 404, fn -> get(conn, ~p"/app/#{origin_id}/checkout/success") end
+        assert Phoenix.Flash.get(neutral.assigns.flash, :info) ==
+                 "Choose the workspace you upgraded to check its billing status."
       end
     end
 
-    test "a suspended origin membership never falls back to another active membership", %{
+    test "another workspace's valid return still needs that workspace's own session", %{
       conn: conn
     } do
-      {conn, user, selected} = register_and_log_in(conn)
-      origin = Fixtures.Accounts.create_account()
+      {conn, _owner, _account} = register_and_log_in(conn)
+      {_other_owner, other, _subject} = Fixtures.Subjects.owner_subject()
+      checkout = Emisar.Crypto.checkout_return(other.id, "txn_123")
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: origin.id,
-          user_id: user.id,
-          role: "owner"
-        )
+      returned = get(conn, ~p"/app/checkout/success?#{[checkout: checkout]}")
+      assert redirected_to(returned) == ~p"/app/#{other.id}/settings/billing"
 
-      Fixtures.Memberships.suspend_membership(membership)
-      conn = put_session(conn, :current_account_id, selected.id)
-
-      assert_error_sent 404, fn -> get(conn, ~p"/app/#{origin.id}/checkout/success") end
+      # The billing page authorizes on its own: this browser has no session there.
+      billing = returned |> recycle() |> get(~p"/app/#{other.id}/settings/billing")
+      assert redirected_to(billing) == ~p"/app/#{other}/sign_in"
     end
 
-    test "an anonymous return preserves the exact origin for sign-in", %{conn: conn} do
-      origin_id = Ecto.UUID.generate()
-      path = ~p"/app/#{origin_id}/checkout/success"
+    test "an anonymous return goes to sign-in and keeps the exact return", %{conn: conn} do
+      checkout = Emisar.Crypto.checkout_return(Ecto.UUID.generate(), "txn_123")
+      path = ~p"/app/checkout/success?#{[checkout: checkout]}"
+
       conn = get(conn, path)
 
-      assert redirected_to(conn) =~ "/sign_in"
+      assert redirected_to(conn) == ~p"/sign_in"
       assert get_session(conn, :user_return_to) == path
     end
+  end
+
+  # The signed return with its last character changed: the signature no longer holds.
+  # Edit the first character: every bit of it is data. The last character of
+  # base64url can carry ignored padding bits, so flipping its low bit may leave
+  # the signature valid and make this test flaky.
+  defp tamper(token) do
+    {first, rest} = String.split_at(token, 1)
+    if(first == "A", do: "B", else: "A") <> rest
   end
 end

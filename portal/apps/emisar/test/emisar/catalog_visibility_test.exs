@@ -47,7 +47,7 @@ defmodule Emisar.CatalogVisibilityTest do
           role: unquote(role)
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       {:ok, selected} =
         Accounts.RunnerAccess.new(:restricted, ["staging"], [], :restricted, ["staging"])
@@ -91,17 +91,18 @@ defmodule Emisar.CatalogVisibilityTest do
 
   test "held subjects lose catalog reads when the current identity or read role is lost",
        %{account: _, runner: _} = context do
-    for change <- [:suspended, :deleted, :billing, :deleted_user] do
+    for change <- [:suspended, :deleted, :billing, :revoked_session] do
       membership =
         Fixtures.Memberships.create_membership(account_id: context.account.id, role: "admin")
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      session = Fixtures.Auth.create_session_token!(membership)
+      subject = Fixtures.Subjects.subject_for(membership, session: session)
 
       case change do
         :suspended -> Fixtures.Memberships.suspend_membership(membership)
         :deleted -> Fixtures.Memberships.mark_membership_as_deleted(membership)
         :billing -> Fixtures.Memberships.force_role(membership, "billing_manager")
-        :deleted_user -> Fixtures.Users.mark_user_as_deleted(subject.actor)
+        :revoked_session -> Fixtures.Auth.delete_session_token!(session)
       end
 
       for result <- [
@@ -132,7 +133,7 @@ defmodule Emisar.CatalogVisibilityTest do
       membership =
         Fixtures.Memberships.create_membership(account_id: context.account.id, role: "admin")
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       staging = Fixtures.Runners.create_runner(account_id: context.account.id, group: "staging")
 
       Fixtures.Catalog.create_action(

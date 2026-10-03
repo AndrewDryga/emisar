@@ -43,8 +43,6 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # real decision path instead of a fixture flipping request columns without a
   # vote row — the ledger lists only votes that were actually cast.
   defp gated_run(account, requested_by, attrs \\ %{}) do
-    initiating_membership = Fixtures.Memberships.fetch_membership(account.id, requested_by.id)
-
     runner =
       Fixtures.Runners.create_runner(
         account_id: account.id,
@@ -60,7 +58,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
       Map.merge(
         %{
           runner_id: runner.id,
-          initiating_membership_id: initiating_membership.id,
+          initiating_membership_id: requested_by.id,
           status: :pending_approval,
           requires_approval: true,
           policy_decision: "require_approval",
@@ -76,16 +74,14 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # A named member who can decide — distinct full names keep each ledger row
   # attributable (every other fixture user is "Test User").
   defp reviewer(account, full_name, role \\ "admin") do
-    user = Fixtures.Users.create_user(full_name: full_name)
-
     membership =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: user.id,
-        role: role
+        role: role,
+        display_name: full_name
       )
 
-    Fixtures.Subjects.membership_subject(membership)
+    Fixtures.Subjects.subject_for(membership)
   end
 
   defp output_index(html, needle) do
@@ -96,7 +92,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   defp output_count(html, needle), do: length(:binary.matches(html, needle))
 
   test "View audit trail links the dispatch's request_id trace", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -112,7 +108,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "the Arguments panel shows exact numbers and redacts every sensitive value", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     run =
       run_with(account, %{
@@ -129,7 +125,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "arguments that no longer decode render no panel instead of raw bytes", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{})
     Fixtures.Runs.put_malformed_args_raw(run, ~s({"canary":"secret-value",}))
 
@@ -140,7 +136,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a removed runner renders an unlinked label that keeps the full id", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, name: "runner-1")
     run = run_with(account, %{runner_id: runner.id})
     Fixtures.Runners.mark_deleted(runner)
@@ -154,7 +150,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "the header runner subtitle hides on phones; the Runner fact still names it", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -167,7 +163,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "the policy panel explains the policy source and decision in one sentence",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     run =
       run_with(account, %{
@@ -187,8 +183,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "an approved run's request details record the vote — who, when, why",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    run = gated_run(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "reload after validation")
 
     {:ok, _} =
@@ -201,7 +197,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     request_id = request.id
 
     {:ok, %{^request_id => %{final: event_id}}} =
-      Audit.approval_event_refs([request_id], owner_subject(user, account))
+      Audit.approval_event_refs([request_id], Fixtures.Subjects.subject_for(owner))
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
@@ -222,8 +218,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "the first paint omits the Approval row instead of naming a former member",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    run = gated_run(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "reload after validation")
 
     {:ok, _} =
@@ -245,8 +241,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "a finalization with no recorded Member keeps its time and note without naming anyone",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    run = gated_run(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "reload after validation")
 
     Fixtures.Approvals.approve_request(request, nil, "validated config, deploy window open")
@@ -265,8 +261,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "a multi-approver hold lists each vote with its note and the running tally",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    run = gated_run(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "needs two", min_approvals: 2)
 
     {:ok, {%Approvals.Request{status: :pending}, :pending}} =
@@ -299,8 +295,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # the approver wrote, which is the one claim this ledger must not make.
   test "a note cut by the receipt's byte bound is marked, never quoted as whole",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    run = gated_run(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "reload after validation")
 
     # Well inside the 2000-grapheme note ceiling an approver may type, and past
@@ -324,8 +320,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # ledger would sit on its mount-time paint until something else moved the run.
   test "a vote that leaves the hold short of quorum repaints the open ledger",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    run = gated_run(account, user)
+    {conn, owner, account} = register_and_log_in(conn)
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "needs three", min_approvals: 3)
 
     {:ok, {%Approvals.Request{status: :pending}, :pending}} =
@@ -350,8 +346,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "an owner's override closes the ledger as its own receipt, never a vote",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn, %{user: %{full_name: "Maya Owner"}})
-    run = gated_run(account, user)
+    {conn, owner, account} = register_and_log_in(conn, %{member: %{display_name: "Maya Owner"}})
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "needs three", min_approvals: 3)
 
     {:ok, _} =
@@ -361,7 +357,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
       Approvals.override_request(
         request,
         "Reviewers are unavailable during the incident.",
-        owner_subject(user, account)
+        Fixtures.Subjects.subject_for(owner)
       )
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -390,12 +386,16 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "an override whose receipt retention pruned still never reads as a vote",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn, %{user: %{full_name: "Maya Owner"}})
-    run = gated_run(account, user)
+    {conn, owner, account} = register_and_log_in(conn, %{member: %{display_name: "Maya Owner"}})
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "needs one")
 
     {:ok, {%Approvals.Request{status: :approved}, _run}} =
-      Approvals.override_request(request, "Nobody else is on call.", owner_subject(user, account))
+      Approvals.override_request(
+        request,
+        "Nobody else is on call.",
+        Fixtures.Subjects.subject_for(owner)
+      )
 
     Fixtures.Approvals.prune_override_receipt(request)
 
@@ -411,13 +411,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "unknown historical finalization keeps its status without inventing an approver",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn, %{user: %{full_name: "Maya Owner"}})
-    run = gated_run(account, user)
+    {conn, owner, account} = register_and_log_in(conn, %{member: %{display_name: "Maya Owner"}})
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "needs one")
 
     request
     |> Fixtures.Approvals.approve_request(
-      Fixtures.Memberships.fetch_membership(account.id, user.id).id,
+      owner.id,
       "Emergency release."
     )
     |> Fixtures.Approvals.clear_finalization_provenance()
@@ -433,22 +433,20 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "a viewer reads a completed review by its exact Member's retained local name",
        %{conn: conn} do
-    {_conn, user, account} = register_and_log_in(conn)
-    run = gated_run(account, user)
+    {_conn, owner, account} = register_and_log_in(conn)
+    run = gated_run(account, owner)
     {:ok, request} = Approvals.create_request(run, "needs one")
     jordan = reviewer(account, "Jordan Approver")
     {:ok, _} = Approvals.approve_request(request, jordan, "looks fine")
 
-    viewer = Fixtures.Users.create_user(full_name: "Vic Viewer")
-
-    _ =
+    viewer =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
+        role: "viewer",
+        display_name: "Vic Viewer"
       )
 
-    conn = log_in_user(conn, viewer)
+    conn = log_in_member(conn, viewer)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
@@ -457,8 +455,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert has_element?(lv, "#run-approval", "“looks fine”")
 
     # The label is the membership's fact, never a guess from a global profile.
-    account.id
-    |> Fixtures.Memberships.fetch_membership(jordan.actor.id)
+    jordan.actor
     |> Fixtures.Memberships.mark_membership_as_deleted()
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -470,7 +467,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "request details render optional evidence and expected outcome only when present",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     with_chain =
       run_with(account, %{
@@ -505,13 +502,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a denied run surfaces the denial + reason, not a bare cancellation", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     run =
       run_with(account, %{
         status: :pending_approval,
         requires_approval: true,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id
+        initiating_membership_id: owner.id
       })
 
     {:ok, request} = Emisar.Approvals.create_request(run, "deploy")
@@ -519,7 +516,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {:ok, _} =
       Emisar.Approvals.deny_request(
         request,
-        owner_subject(user, account),
+        Fixtures.Subjects.subject_for(owner),
         "not during the change freeze"
       )
 
@@ -543,13 +540,13 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "the held-run approval CTA uses the shared arrow, not a literal glyph", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     run =
       run_with(account, %{
         status: :pending_approval,
         requires_approval: true,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id
+        initiating_membership_id: owner.id
       })
 
     {:ok, _request} = Emisar.Approvals.create_request(run, "deploy")
@@ -564,11 +561,15 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "existing approval expiry reasons display as a sentence", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: :pending})
 
     {:ok, run} =
-      Runs.cancel_run(run, owner_subject(user, account), "approval expired without decision")
+      Runs.cancel_run(
+        run,
+        Fixtures.Subjects.subject_for(owner),
+        "approval expired without decision"
+      )
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
@@ -577,10 +578,10 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "user-written cancellation reasons keep their original case", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: :pending})
     reason = "iOS rollout paused by SRE"
-    {:ok, run} = Runs.cancel_run(run, owner_subject(user, account), reason)
+    {:ok, run} = Runs.cancel_run(run, Fixtures.Subjects.subject_for(owner), reason)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
@@ -588,7 +589,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "omits the policy summary when no decision was recorded", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -597,21 +598,20 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "an MCP run leads with the accountable human, key as via context", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
-    owner = Fixtures.Users.create_user(full_name: "Jordan Vale")
+    {conn, _owner, account} = register_and_log_in(conn)
 
-    _ =
+    owner =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
+        role: "owner",
+        display_name: "Jordan Vale"
       )
 
     {_raw, key} =
       Fixtures.ApiKeys.create_api_key(
         account_id: account.id,
         name: "Claude Code",
-        created_by_id: owner.id
+        created_by_membership_id: owner.id
       )
 
     run = run_with(account, %{source: "mcp", api_key_id: key.id})
@@ -626,7 +626,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "the channel is the operator-named key + the client version, not the client name",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id, name: "prod-mcp")
 
     run =
@@ -647,7 +647,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "renders self-reported client metadata, labeled as not verified posture", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     run =
       run_with(account, %{
@@ -666,7 +666,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "hides the client-metadata block for a run with none", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{source: "mcp"})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -675,7 +675,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "marks an executed command that the runner truncated", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
@@ -694,7 +694,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "keeps the complete executed-command annotation quiet", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
@@ -712,7 +712,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "warns when the runner could not persist its terminal audit event", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
@@ -731,7 +731,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "does not show a runner audit warning for a healthy terminal result", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
@@ -750,7 +750,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # Metadata keys/values are attacker-influenced (a hostile MCP client controls
   # them), so they must render ESCAPED — never via raw/1 (IL-16).
   test "escapes attacker-influenced client metadata (no stored XSS)", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     run =
       run_with(account, %{
@@ -766,7 +766,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
   test "renders output as a single pre with chunks as inline spans (no double spacing)",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     # Progress arrives while the run is live; append rejects terminal runs.
     run = run_with(account, %{status: "running"})
 
@@ -812,7 +812,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # never `raw/1`. Asserting the literal `<script>` is absent and the escaped
   # entity is present proves no stored XSS.
   test "attacker-influenced output is HTML-escaped (no stored XSS)", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     # Progress arrives while the run is live; append rejects terminal runs.
     run = run_with(account, %{status: "running"})
 
@@ -833,7 +833,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "typed output offers a client-side text and formatted JSON view", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     schema = %{
       "type" => "object",
@@ -914,7 +914,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # converges to via `stream_insert(limit: -500)` — so with 501 chunks the
   # newest 500 render and the oldest falls outside the window.
   test "the output panel renders a bounded, streamed event slice (not unbounded)", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "success"})
 
     now = DateTime.utc_now()
@@ -947,7 +947,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a terminal run pages its earlier trimmed output back in on demand", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "success"})
     now = DateTime.utc_now()
 
@@ -981,7 +981,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "load earlier pages back through multiple windows in order", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "success"})
     now = DateTime.utc_now()
 
@@ -1022,7 +1022,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a running run shows the trim note, not a load-earlier control", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running"})
 
     {:ok, _} =
@@ -1047,7 +1047,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # well past the 500-event window (evicted as newer chunks arrive) does not.
   test "the live event stream is client-bounded (a chatty run can't grow the DOM without bound)",
        %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running"})
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1074,7 +1074,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "an unknown run id bounces to the runs index", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     dest = ~p"/app/#{account}/runs"
 
@@ -1085,7 +1085,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a cross-account run reads as not-found", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     foreign_account = Fixtures.Accounts.create_account()
     foreign_run = run_with(foreign_account, %{})
@@ -1097,7 +1097,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "cancel sends the cancellation and confirms", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1112,9 +1112,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
        %{
          conn: conn
        } do
-    {conn, user, account} = register_and_log_in(conn)
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    membership = Fixtures.Memberships.force_role(membership, "admin")
+    {conn, owner, account} = register_and_log_in(conn)
+    owner = Fixtures.Memberships.force_role(owner, "admin")
     run = run_with(account, %{status: "running"})
 
     assert {:ok, _event} =
@@ -1129,8 +1128,8 @@ defmodule EmisarWeb.RunDetailLiveTest do
     assert has_element?(lv, "#cancel-run-confirm:not([disabled])")
     output_state = :sys.get_state(lv.pid).socket.assigns.output_state
 
-    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.none())
-    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
+    Fixtures.Memberships.force_runner_access(owner, Emisar.Accounts.RunnerAccess.none())
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", owner.id})
     assert render(lv) =~ "Cancelling requires action access"
     assert render(lv) =~ "Output remains readable"
     assert has_element?(lv, "#cancel-run-confirm[disabled]")
@@ -1139,19 +1138,19 @@ defmodule EmisarWeb.RunDetailLiveTest do
     render_click(lv, "cancel", %{})
     assert Repo.reload!(run).status == :running
 
-    Fixtures.Memberships.force_runner_access(membership, Emisar.Accounts.RunnerAccess.all())
-    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", membership.id})
+    Fixtures.Memberships.force_runner_access(owner, Emisar.Accounts.RunnerAccess.all())
+    send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", owner.id})
     render(lv)
     assert has_element?(lv, "#cancel-run-confirm:not([disabled])")
   end
 
   test "an approval hold can be cancelled before it reaches the runner", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     run =
       run_with(account, %{
         status: :pending_approval,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id
+        initiating_membership_id: owner.id
       })
 
     {:ok, request} = Approvals.create_request(run, "please review")
@@ -1177,12 +1176,12 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a stale held-run page reports a current in-flight cancellation truthfully", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     run =
       run_with(account, %{
         status: :pending_approval,
-        initiating_membership_id: Fixtures.Memberships.fetch_membership(account.id, user.id).id
+        initiating_membership_id: owner.id
       })
 
     {:ok, request} = Approvals.create_request(run, "please review")
@@ -1191,7 +1190,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     Fixtures.Approvals.approve_request(
       request,
-      Fixtures.Memberships.fetch_membership(account.id, user.id).id
+      owner.id
     )
 
     Fixtures.Runs.put_status(run, :sent)
@@ -1211,7 +1210,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   # vanished between render and the cancel click), the handler gives a recovery
   # message instead of crashing.
   test "a cancel that fails asks the operator to refresh its status", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "pending"})
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1228,17 +1227,10 @@ defmodule EmisarWeb.RunDetailLiveTest do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
-    viewer = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+    viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
     {:ok, lv, _html} =
-      build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runs/#{run.id}")
+      build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/runs/#{run.id}")
 
     refute has_element?(lv, "#cancel-run")
 
@@ -1248,7 +1240,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a run_event broadcast streams into the live terminal", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running"})
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1267,7 +1259,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "an errored run that produced no output hides the empty terminal", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
@@ -1284,7 +1276,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "an errored run that DID produce output keeps the panel", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running"})
 
     {:ok, _} =
@@ -1309,7 +1301,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a run_updated broadcast refreshes the status chip", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1329,7 +1321,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "a refused run surfaces the reason and hides the (never-produced) output panel", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
@@ -1354,7 +1346,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a failed run's cause panel is titled by its status, never 'Error'", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
@@ -1376,7 +1368,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "an error run's cause panel keeps the 'Error' title (the system-side status)", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, _} =
@@ -1395,7 +1387,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "the cancel button renders for an in-flight run (status compared as an atom)", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "sent"})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1406,7 +1398,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a terminal run has no cancellation control", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "success"})
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1415,7 +1407,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a stale cancellation reports an already finished run", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running"})
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1427,7 +1419,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "an in-flight run whose runner is offline shows the disconnected banner", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running", runner_connected?: false})
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1443,7 +1435,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a queued run whose runner is offline explains why it's stuck", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "pending", runner_connected?: false})
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1454,7 +1446,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "an in-flight run on a connected runner shows no disconnect banner", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
     run = run_with(account, %{status: "running", runner_id: runner.id})
 
@@ -1464,7 +1456,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "shows a streaming pill while in flight, gone once terminal", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{status: "running"})
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
@@ -1484,7 +1476,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   test "the pre-connect render says it is loading, never that no output was captured", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{})
 
     {:ok, finished} =
@@ -1519,7 +1511,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
   end
 
   test "a terminal run that really captured nothing still says so", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     run = run_with(account, %{})
 
     {:ok, finished} =

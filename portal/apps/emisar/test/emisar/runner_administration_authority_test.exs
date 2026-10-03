@@ -4,19 +4,27 @@ defmodule Emisar.RunnerAdministrationAuthorityTest do
   alias Emisar.Accounts.RunnerAccess
 
   setup do
-    {user, account, _owner} = Fixtures.Subjects.owner_subject()
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    membership = Fixtures.Memberships.force_role(membership, "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    {owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+    membership = Fixtures.Memberships.force_role(owner, "admin")
+    session = Fixtures.Auth.create_session_token!(membership)
+    subject = Fixtures.Subjects.subject_for(membership, session: session)
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
     {_raw, token} = Fixtures.Runners.create_token(runner)
     runner = Fixtures.Runners.set_connection_credential(runner, token)
 
     {_raw, key} =
-      Fixtures.Runners.create_enrollment_key(account_id: account.id, user_id: user.id)
+      Fixtures.Runners.create_enrollment_key(account_id: account.id, membership: owner)
 
     Fixtures.Accounts.force_runner_inactive_retention_hours(account, 24)
-    %{account: account, membership: membership, subject: subject, runner: runner, key: key}
+
+    %{
+      account: account,
+      membership: membership,
+      session: session,
+      subject: subject,
+      runner: runner,
+      key: key
+    }
   end
 
   for invalidation <- [
@@ -24,7 +32,7 @@ defmodule Emisar.RunnerAdministrationAuthorityTest do
         :suspended,
         :deleted,
         :directory_pending,
-        :deleted_user,
+        :revoked_session,
         :disabled_account
       ] do
     test "all administration rejects #{invalidation} current authority without side effects",
@@ -168,8 +176,8 @@ defmodule Emisar.RunnerAdministrationAuthorityTest do
   defp invalidate(context, :directory_pending),
     do: Fixtures.Memberships.mark_directory_authorization_pending(context.membership, 1)
 
-  defp invalidate(context, :deleted_user),
-    do: Fixtures.Users.mark_user_as_deleted(context.subject.actor)
+  defp invalidate(context, :revoked_session),
+    do: Fixtures.Auth.delete_session_token!(context.session)
 
   defp invalidate(context, :disabled_account),
     do: Fixtures.Accounts.disable_account(context.account)

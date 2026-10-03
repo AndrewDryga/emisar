@@ -54,23 +54,6 @@ defmodule Emisar.Accounts.Account.Query do
     )
   end
 
-  @doc """
-  Restrict to the accounts of these exact memberships — joins through
-  membership and includes only memberships that currently grant authority.
-  Used by the account picker, so suspended, tombstoned, and unresolved invited
-  seats do not surface a tenant.
-  """
-  def by_authorized_membership_ids(queryable, membership_ids) do
-    authorized_memberships = Emisar.Accounts.Membership.Query.authorized()
-
-    queryable
-    |> join(:inner, [accounts: a], m in ^authorized_memberships,
-      on: m.account_id == a.id,
-      as: :memberships
-    )
-    |> where([memberships: m], m.id in ^membership_ids)
-  end
-
   # -- Pagination ------------------------------------------------------
 
   @impl Emisar.Repo.Query

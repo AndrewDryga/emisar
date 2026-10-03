@@ -5,7 +5,7 @@ defmodule Emisar.PolicyManagementAuthorityTest do
 
   test "group policies require complete current coverage, including individual grants" do
     membership = Fixtures.Memberships.create_membership(role: "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
 
     first =
       Fixtures.Runners.create_runner(
@@ -50,10 +50,10 @@ defmodule Emisar.PolicyManagementAuthorityTest do
     assert {:ok, _deleted} = Policies.delete_scoped_policy(updated, subject)
   end
 
-  for invalidation <- [:demoted, :pending, :deleted_user, :suspended] do
+  for invalidation <- [:demoted, :pending, :removed_member, :suspended] do
     test "policy writes reject #{invalidation} current identity and keep the saved rules" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       runner = Fixtures.Runners.create_runner(account_id: subject.account.id, connected?: false)
 
       policy =
@@ -63,7 +63,7 @@ defmodule Emisar.PolicyManagementAuthorityTest do
           scope_value: runner.id
         )
 
-      invalidate(membership, subject, unquote(invalidation))
+      invalidate(membership, unquote(invalidation))
 
       assert {:error, :unauthorized} = Policies.save_rules(Policies.default_rules(), subject)
 
@@ -79,7 +79,7 @@ defmodule Emisar.PolicyManagementAuthorityTest do
 
   test "unsaved previews remain readable after action scope changes, but mutation stays denied" do
     membership = Fixtures.Memberships.create_membership(role: "admin")
-    subject = Fixtures.Subjects.membership_subject(membership)
+    subject = Fixtures.Subjects.subject_for(membership)
 
     runner =
       Fixtures.Runners.create_runner(
@@ -101,15 +101,13 @@ defmodule Emisar.PolicyManagementAuthorityTest do
              {:error, :not_found}
   end
 
-  defp invalidate(membership, _subject, :demoted),
-    do: Fixtures.Memberships.force_role(membership, "viewer")
+  defp invalidate(membership, :demoted), do: Fixtures.Memberships.force_role(membership, "viewer")
 
-  defp invalidate(membership, _subject, :pending),
+  defp invalidate(membership, :pending),
     do: Fixtures.Memberships.mark_directory_authorization_pending(membership, 1)
 
-  defp invalidate(membership, _subject, :suspended),
-    do: Fixtures.Memberships.suspend_membership(membership)
+  defp invalidate(membership, :suspended), do: Fixtures.Memberships.suspend_membership(membership)
 
-  defp invalidate(_membership, subject, :deleted_user),
-    do: Fixtures.Users.mark_user_as_deleted(subject.actor)
+  defp invalidate(membership, :removed_member),
+    do: Fixtures.Memberships.mark_membership_as_deleted(membership)
 end

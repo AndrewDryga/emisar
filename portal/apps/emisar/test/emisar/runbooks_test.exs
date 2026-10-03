@@ -157,13 +157,13 @@ defmodule Emisar.RunbooksTest do
 
   describe "list_runbooks/2" do
     test "lists one row per runbook and applies filters" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       never_published = create_runbook(subject, title: "Draft")
 
       live =
         subject |> create_runbook(title: "Published") |> Fixtures.Runbooks.publish_runbook()
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
       _other = create_runbook(other_subject, title: "Other")
 
       assert {:ok, runbooks, _metadata} =
@@ -174,7 +174,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a runbook carrying unpublished changes over a live release matches both states" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       live = subject |> create_runbook(slug: "alpha") |> Fixtures.Runbooks.publish_runbook()
       revised = put_in(definition(), ["context_markdown"], "Inspect twice.")
@@ -191,7 +191,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "lists every runbook in the account, ordered by title" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       beta = create_runbook(subject, slug: "beta", title: "Beta")
       alpha = create_runbook(subject, slug: "alpha", title: "Alpha")
 
@@ -201,9 +201,9 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "another account's runbook with the same slug stays out of the list" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       mine = create_runbook(subject, slug: "shared")
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
       _theirs = create_runbook(other_subject, slug: "shared")
 
       assert {:ok, runbooks, _metadata} = Runbooks.list_runbooks(subject)
@@ -236,7 +236,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "risk_by_runbooks/2" do
     test "maps each runbook to the worst risk across its steps" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
       Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "critical")
@@ -251,7 +251,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "reads the live release, falling back to the draft while nothing is live" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "low")
       Fixtures.Catalog.create_action(runner: runner, action_id: "linux.reboot", risk: "critical")
@@ -275,7 +275,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "an unobserved step leaves the whole runbook unresolved" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       Fixtures.Catalog.create_action(runner: runner, action_id: "linux.uptime", risk: "critical")
 
@@ -288,9 +288,9 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "omits deleted and cross-account runbooks a caller still holds" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       deleted = create_runbook(subject) |> delete(subject)
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
       other = create_runbook(other_subject)
 
       assert Runbooks.risk_by_runbooks([deleted, other], subject) == {:ok, %{}}
@@ -299,7 +299,7 @@ defmodule Emisar.RunbooksTest do
     test "denies a principal without view permission, including for an empty list" do
       account = Fixtures.Accounts.create_account()
       subject = Fixtures.Subjects.permissionless_subject(account)
-      {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(other_subject)
 
       assert Runbooks.risk_by_runbooks([], subject) == {:error, :unauthorized}
@@ -307,7 +307,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "accepts a full batch and refuses anything larger or unbounded" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject)
 
       assert {:ok, _risks} = Runbooks.risk_by_runbooks(List.duplicate(runbook, 64), subject)
@@ -321,7 +321,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "list_model_visible_runbooks/1" do
     test "trusted releases remain readable without executable targets, but scope and availability still block compilation" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, owner, connected?: false)
       Fixtures.Runners.disable_runner(runner)
       runbook = create_runbook(owner) |> Fixtures.Runbooks.publish_runbook()
@@ -349,7 +349,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "returns every live runbook and skips the never-published" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       live =
@@ -365,7 +365,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "an unpublished change never suppresses the release running behind it" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       live =
@@ -382,7 +382,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "drops a live runbook once its pack trust is revoked" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       runbook =
@@ -412,7 +412,7 @@ defmodule Emisar.RunbooksTest do
     # fleet and catalog reads behind it are shared across the whole page: eight
     # runbooks must not cost eight compiles.
     test "reads the fleet and catalog once for the whole page, not once per runbook" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       Enum.each(1..8, fn index ->
@@ -451,7 +451,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "list_model_draft_runbooks/1" do
     test "returns every runbook carrying an unpublished change, available or not" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       live =
@@ -473,11 +473,11 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "excludes a runbook with nothing unpublished and another account's drafts" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       _shipped = subject |> create_runbook(slug: "shipped") |> Fixtures.Runbooks.publish_runbook()
       working = create_runbook(subject, slug: "working")
 
-      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
       _theirs = create_runbook(other_subject, slug: "theirs")
 
       assert {:ok, [draft]} = Runbooks.list_model_draft_runbooks(subject)
@@ -494,7 +494,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "fetch_model_visible_runbook/2" do
     test "returns the live runbook until its contract stops resolving" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       live =
@@ -512,7 +512,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "hides never-published runbooks, unknown slugs, and another account's" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       _never_published =
@@ -526,7 +526,7 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.fetch_model_visible_runbook("draft-only", subject) == {:error, :not_found}
       assert Runbooks.fetch_model_visible_runbook("missing", subject) == {:error, :not_found}
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.fetch_model_visible_runbook("versioned", other_subject) ==
                {:error, :not_found}
@@ -545,7 +545,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "fetch_model_runbook_draft/2" do
     test "returns the unpublished change even when its target is unavailable" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
       working = create_runbook(subject, slug: "working", definition: definition(runner.group))
 
@@ -560,13 +560,13 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "hides a runbook with nothing unpublished and another account's" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       _shipped = subject |> create_runbook(slug: "shipped") |> Fixtures.Runbooks.publish_runbook()
       _working = create_runbook(subject, slug: "working")
 
       assert Runbooks.fetch_model_runbook_draft("shipped", subject) == {:error, :not_found}
 
-      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.fetch_model_runbook_draft("working", other_subject) == {:error, :not_found}
     end
@@ -584,10 +584,10 @@ defmodule Emisar.RunbooksTest do
 
   describe "fetch_runbook_by_id/2" do
     test "returns an owned row and hides invalid, deleted, and cross-account ids" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       owned = create_runbook(subject)
       deleted = create_runbook(subject) |> delete(subject)
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
       other = create_runbook(other_subject)
 
       assert {:ok, fetched} = Runbooks.fetch_runbook_by_id(owned.id, subject)
@@ -610,7 +610,7 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.fetch_execution_by_id("not-a-uuid", fixture.subject) ==
                {:error, :not_found}
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.fetch_execution_by_id(fixture.execution_id, other_subject) ==
                {:error, :not_found}
@@ -619,8 +619,8 @@ defmodule Emisar.RunbooksTest do
     test "keeps execution history after current runner scope changes" do
       fixture = mcp_execution_fixture()
 
-      fixture.account.id
-      |> Fixtures.Memberships.fetch_membership(fixture.owner.actor.id)
+      fixture.owner.actor
+      |> Repo.reload!()
       |> Fixtures.Memberships.force_runner_access(Emisar.Accounts.RunnerAccess.none())
 
       assert {:ok, execution} =
@@ -664,12 +664,12 @@ defmodule Emisar.RunbooksTest do
       assert result.runbook.deleted_at != nil
       assert [%{runner_id: runner_id}] = result.execution.items
       assert runner_id == fixture.runner.id
-      {_user, _account, foreign} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, foreign} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.fetch_execution_result(fixture.execution_id, foreign) ==
                {:error, :not_found}
 
-      membership = Fixtures.Memberships.fetch_membership(fixture.account.id, reader.actor.id)
+      membership = Repo.reload!(reader.actor)
       Fixtures.Memberships.suspend_membership(membership)
 
       assert Runbooks.fetch_execution_result(fixture.execution_id, reader) ==
@@ -697,7 +697,7 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.fetch_execution_result(fixture.execution_id, runner_subject) ==
                {:error, :unauthorized}
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.fetch_execution_result(fixture.execution_id, other_subject) ==
                {:error, :not_found}
@@ -1005,8 +1005,8 @@ defmodule Emisar.RunbooksTest do
 
       assert execution.id == fixture.execution_id
 
-      fixture.account.id
-      |> Fixtures.Memberships.fetch_membership(fixture.owner.actor.id)
+      fixture.owner.actor
+      |> Repo.reload!()
       |> Fixtures.Memberships.force_runner_access(Emisar.Accounts.RunnerAccess.none())
 
       assert {:ok, [execution_after_scope_change]} =
@@ -1031,7 +1031,7 @@ defmodule Emisar.RunbooksTest do
       assert execution.runbook.id == fixture.runbook.id
       assert execution.runbook.title == fixture.runbook.title
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
       assert Runbooks.list_recent_executions(other_subject, 5) == {:ok, []}
     end
 
@@ -1045,7 +1045,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "execution_who_via/1" do
     test "names the requesting operator account-locally with no channel" do
-      {user, account, owner} = Fixtures.Subjects.owner_subject()
+      {member, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, owner)
       Runners.subscribe_runner_transport(runner)
@@ -1060,8 +1060,8 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, result} = Runbooks.fetch_execution_result(execution_id, owner)
       assert Runbooks.execution_who_via(result.execution) == {"Test User", nil}
 
-      account.id
-      |> Fixtures.Memberships.fetch_membership(user.id)
+      member
+      |> Repo.reload!()
       |> Fixtures.Memberships.sync_display_name("Directory Ops")
 
       assert {:ok, renamed} = Runbooks.fetch_execution_result(execution_id, owner)
@@ -1079,11 +1079,10 @@ defmodule Emisar.RunbooksTest do
 
     test "a removed membership keeps its exact historical local profile" do
       fixture = mcp_execution_fixture()
-      owner_user = fixture.owner.actor
       admin = membership_subject(fixture.account, "admin")
 
-      fixture.account.id
-      |> Fixtures.Memberships.fetch_membership(owner_user.id)
+      fixture.owner.actor
+      |> Repo.reload!()
       |> Fixtures.Memberships.mark_membership_as_deleted()
 
       assert {:ok, result} = Runbooks.fetch_execution_result(fixture.execution_id, admin)
@@ -1093,7 +1092,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "missing actor rows degrade honestly" do
-      {user, account, owner} = Fixtures.Subjects.owner_subject()
+      {member, account, owner} = Fixtures.Subjects.owner_subject()
       reader = membership_subject(account, "viewer")
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, owner)
@@ -1106,8 +1105,8 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, %{execution_id: execution_id}} =
                Runbooks.dispatch_runbook(runbook, "inspect fleet", owner)
 
-      # Erasing the person hard-deletes their seats; the history keeps no name.
-      assert {:ok, _user} = Emisar.Users.delete_by_id(user.id)
+      # An erased Member's row is gone, so the history keeps no name.
+      Fixtures.Memberships.hard_delete_membership(member)
 
       assert Runbooks.fetch_execution_result(execution_id, owner) == {:error, :unauthorized}
       assert {:ok, result} = Runbooks.fetch_execution_result(execution_id, reader)
@@ -1130,13 +1129,13 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a foreign membership never supplies its directory name" do
-      {user, account, owner} = Fixtures.Subjects.owner_subject()
+      {member, account, owner} = Fixtures.Subjects.owner_subject()
       other_account = Fixtures.Accounts.create_account()
 
       foreign_membership =
         Fixtures.Memberships.create_membership(
           account_id: other_account.id,
-          user_id: user.id,
+          email: member.email,
           role: "operator"
         )
 
@@ -1161,7 +1160,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, fetched} = Runbooks.fetch_runbook_for_execution(execution, fixture.owner)
       assert fetched.id == fixture.runbook.id
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.fetch_runbook_for_execution(execution, other_subject) ==
                {:error, :not_found}
@@ -1182,16 +1181,15 @@ defmodule Emisar.RunbooksTest do
   end
 
   describe "create_runbook/2" do
-    for loss <- [:demotion, :deleted_user, :suspension] do
+    for loss <- [:demotion, :removal, :suspension] do
       test "even an empty draft refuses a stale author after #{loss}" do
-        {user, account, subject} = Fixtures.Subjects.owner_subject()
+        {owner, _account, subject} = Fixtures.Subjects.owner_subject()
         existing = create_runbook(subject, definition: Map.put(definition(), "stages", []))
-        membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
 
         case unquote(loss) do
-          :demotion -> Fixtures.Memberships.force_role(membership, "viewer")
-          :deleted_user -> Fixtures.Users.mark_user_as_deleted(user)
-          :suspension -> Fixtures.Memberships.suspend_membership(membership)
+          :demotion -> Fixtures.Memberships.force_role(owner, "viewer")
+          :removal -> Fixtures.Memberships.mark_membership_as_deleted(owner)
+          :suspension -> Fixtures.Memberships.suspend_membership(owner)
         end
 
         audit_count = Repo.aggregate(Emisar.Audit.Event, :count)
@@ -1214,7 +1212,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a current scoped author can save an empty draft and a granted pre-enrollment target, not an uncovered whole group" do
-      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
       first = Fixtures.Runners.create_runner(account_id: account.id, group: "database")
       Fixtures.Runners.create_runner(account_id: account.id, group: "database", connected?: false)
       {:ok, access} = Emisar.Accounts.RunnerAccess.restricted(["future"], [first.id])
@@ -1233,7 +1231,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "creates a never-published runbook holding its first draft, derives its slug, audits it" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Runbooks.subscribe_account_runbooks(account.id)
       attrs = runbook_attrs(title: "Database Health", slug: "")
 
@@ -1255,7 +1253,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "persists an incomplete draft but keeps publication on the strict contract" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       incomplete =
         definition()
@@ -1272,7 +1270,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "client attribution cannot replace the authenticated Member or account" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       foreign = Fixtures.Memberships.create_membership()
 
       attrs =
@@ -1286,7 +1284,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a second runbook on a slug the account already uses" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       assert {:ok, _first} = Runbooks.create_runbook(runbook_attrs(slug: "taken"), subject)
 
       assert {:error, changeset} = Runbooks.create_runbook(runbook_attrs(slug: "taken"), subject)
@@ -1319,7 +1317,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a first draft whose step is outside the author's access" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, subject, group: "database")
       trusted_runner(account, subject, group: "web")
 
@@ -1334,7 +1332,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "import_runbook/3" do
     test "strictly imports canonical JSON as an account-scoped first draft" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       definition = definition()
 
       assert {:ok, runbook} =
@@ -1347,12 +1345,12 @@ defmodule Emisar.RunbooksTest do
       assert runbook.live_version == nil
       assert runbook.draft_definition == definition
 
-      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
       assert Runbooks.fetch_runbook_by_id(runbook.id, other_subject) == {:error, :not_found}
     end
 
     test "rejects invalid definitions before persistence" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
 
       assert {:error, [%{path: "/stages"}]} =
                Runbooks.import_runbook(
@@ -1379,7 +1377,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "create_or_replay_mcp_draft/2" do
     test "an expired key cannot create an empty draft or reserve an operation" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "Expired author")
       facts = mcp_draft_facts(definition: Map.put(definition(), "stages", []))
       Fixtures.ApiKeys.backdate_api_key_expiry(subject.actor)
@@ -1389,7 +1387,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "creates and replays exactly once, then rejects changed facts" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "draft replay")
       facts = mcp_draft_facts(title: "Agent draft")
       Runbooks.subscribe_account_runbooks(account.id)
@@ -1417,7 +1415,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a re-derived id after the dedup row is pruned conflicts instead of crashing" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "retention conflict")
       facts = mcp_draft_facts()
 
@@ -1439,7 +1437,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "reports an incomplete operation when the committed draft is missing" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "incomplete draft")
       facts = mcp_draft_facts()
 
@@ -1452,7 +1450,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "concurrent identical first attempts create exactly one draft" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "concurrent draft")
       facts = mcp_draft_facts()
 
@@ -1476,7 +1474,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "rolls the reservation back with an invalid definition" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "invalid draft")
       facts = mcp_draft_facts(definition: %{"schema_version" => 1})
 
@@ -1488,7 +1486,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "denies before reporting definition issues" do
-      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
       subject = membership_subject(account, :operator)
       facts = mcp_draft_facts(definition: %{"schema_version" => 1})
 
@@ -1499,7 +1497,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a step targeting a runner group outside the minting member's access" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, owner, group: "database")
       trusted_runner(account, owner, group: "web")
 
@@ -1521,7 +1519,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a step naming a pack outside the minting member's access" do
-      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
 
       {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["other-pack"])
       operator = scoped_membership_subject(account, "operator", access)
@@ -1535,7 +1533,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "isolates the same operation id across lineages and accounts" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "own draft")
       facts = mcp_draft_facts()
 
@@ -1549,7 +1547,7 @@ defmodule Emisar.RunbooksTest do
       assert {:ok, :created, peer} = Runbooks.create_or_replay_mcp_draft(peer_facts, peer_subject)
       refute peer.resource_id == created.resource_id
 
-      {_other_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
+      {_other_owner, other_account, other_owner} = Fixtures.Subjects.owner_subject()
       other_subject = api_client_subject(other_account, other_owner, "foreign draft")
 
       assert {:ok, :created, foreign} = Runbooks.create_or_replay_mcp_draft(facts, other_subject)
@@ -1560,7 +1558,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "create_or_replay_mcp_draft_update/2" do
     test "updates the runbook's one draft once and rejects a stale base digest" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
       revision = put_in(definition(), ["context_markdown"], "Inspect twice.")
@@ -1590,7 +1588,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "writes a draft over a live release while that release keeps running" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "draft update")
       runner = trusted_runner(account, owner)
 
@@ -1613,7 +1611,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "rolls back stale digests and hides cross-account runbooks" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
 
@@ -1625,7 +1623,7 @@ defmodule Emisar.RunbooksTest do
       assert Runbooks.create_or_replay_mcp_draft_update(stale_digest, subject) ==
                {:error, :draft_changed}
 
-      {_other_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
+      {_other_owner, other_account, other_owner} = Fixtures.Subjects.owner_subject()
       other_subject = api_client_subject(other_account, other_owner, "foreign update")
 
       assert Runbooks.create_or_replay_mcp_draft_update(
@@ -1637,7 +1635,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "conflicts when changed facts reuse the operation identity" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
       facts = mcp_draft_update_facts(source)
@@ -1653,7 +1651,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "denies a caller holding neither draft nor manage authority" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
       facts = mcp_draft_update_facts(source)
@@ -1675,7 +1673,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "accepts a canonical draft that is not yet publishable" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       subject = api_client_subject(account, owner, "draft update")
       source = create_runbook(owner, slug: "health-review")
 
@@ -1699,7 +1697,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a restricted key rewriting someone else's draft with an out-of-scope step" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, owner, group: "database")
       trusted_runner(account, owner, group: "web")
       source = create_runbook(owner, slug: "health-review", definition: definition("database"))
@@ -1717,7 +1715,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a step naming a pack outside the minting member's access" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       source = create_runbook(owner, slug: "health-review")
 
       {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["other-pack"])
@@ -1736,7 +1734,7 @@ defmodule Emisar.RunbooksTest do
     # manage, so the console's save stays closed to it at the DOMAIN layer, not
     # merely by which tools the MCP wiring happens to expose today.
     test "denies an MCP key, which holds draft but not manage" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(owner, slug: "manage-gate")
 
       assert Runbooks.save_draft(
@@ -1748,7 +1746,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "writes the draft in place, audits it, and isolates cross-account callers" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject, slug: "immutable")
       Runbooks.subscribe_account_runbooks(account.id)
 
@@ -1772,14 +1770,14 @@ defmodule Emisar.RunbooksTest do
       assert updated_event.payload["from_title"] == runbook.title
       assert updated_event.payload["title"] == "Second"
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.save_draft(runbook, attrs, base_sha(saved), other_subject) ==
                {:error, :not_found}
     end
 
     test "refuses a save written on top of someone else's" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject, slug: "sha-locked")
       stale_sha = base_sha(runbook)
 
@@ -1794,7 +1792,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "locks the base digest to the live release once the draft is gone" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook(slug: "published") |> Fixtures.Runbooks.publish_runbook()
 
       assert live.draft_definition == nil
@@ -1810,7 +1808,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a metadata-only save lands in place and creates no unpublished change" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook(slug: "published") |> Fixtures.Runbooks.publish_runbook()
 
       assert {:ok, saved} =
@@ -1822,7 +1820,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "freezes the slug once a release exists" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook(slug: "frozen") |> Fixtures.Runbooks.publish_runbook()
 
       assert {:error, changeset} =
@@ -1833,7 +1831,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "an operator saves the draft in place — authoring is the operator tier" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject)
       operator = membership_subject(account, "operator")
 
@@ -1849,7 +1847,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "denies a viewer, who may read runbooks but never write one" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject)
       viewer = membership_subject(account, "viewer")
 
@@ -1858,7 +1856,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a step targeting a runner group outside the author's access" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, subject, group: "database")
       trusted_runner(account, subject, group: "web")
       runbook = create_runbook(subject)
@@ -1876,7 +1874,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a step naming a pack outside the author's access" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject)
 
       {:ok, access} = Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["other-pack"])
@@ -1891,7 +1889,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "publish_draft/2" do
     test "mints the next release, promotes the draft, and clears it" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       runbook = create_runbook(subject, definition: definition(runner.group))
@@ -1923,8 +1921,13 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "author and publisher remain exact Members after offboarding and rejoining" do
-      {user, account, author} = Fixtures.Subjects.owner_subject()
-      publisher = Fixtures.Subjects.subject_for(Fixtures.Users.create_user(), account)
+      {author_member, account, author} = Fixtures.Subjects.owner_subject()
+
+      publisher =
+        Fixtures.Subjects.subject_for(
+          Fixtures.Memberships.create_membership(account_id: account.id, role: :owner)
+        )
+
       Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, author)
       runbook = create_runbook(author, definition: definition(runner.group))
@@ -1934,12 +1937,12 @@ defmodule Emisar.RunbooksTest do
       assert release.published_by_membership_id == publisher.membership_id
 
       retired =
-        account.id
-        |> Fixtures.Memberships.fetch_membership(user.id)
+        author_member
+        |> Repo.reload!()
         |> Fixtures.Memberships.mark_membership_as_deleted()
 
       replacement =
-        Fixtures.Memberships.create_membership(account_id: account.id, user_id: user.id)
+        Fixtures.Memberships.create_membership(account_id: account.id, email: retired.email)
 
       refute replacement.id == retired.id
 
@@ -1951,7 +1954,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "publishes more than 32 steps when the definition fits the safety envelope" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       steps = Enum.map(1..40, &step("observe-#{&1}", runner.group))
@@ -1963,7 +1966,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "counts publishes, not saves" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       runbook = create_runbook(subject, definition: definition(runner.group))
@@ -1985,7 +1988,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a runbook with nothing unpublished" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
 
@@ -1998,7 +2001,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "rechecks readiness from fresh domain state, not the caller's snapshot" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       runbook = create_runbook(subject, definition: definition(runner.group))
@@ -2016,7 +2019,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "an operator publishes a draft that sits inside their own access" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       runbook = create_runbook(subject, definition: definition(runner.group))
@@ -2029,7 +2032,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses to publish a draft whose step is outside the publisher's access" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject, group: "web")
       trusted_runner(account, subject, group: "database")
@@ -2043,7 +2046,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "denies a viewer, who may read a runbook but never publish one" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject)
       viewer = membership_subject(account, "viewer")
 
@@ -2051,19 +2054,19 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "denies cross-account mutation" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       runbook = create_runbook(subject, definition: definition(runner.group))
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
       assert Runbooks.publish_draft(runbook, other_subject) == {:error, :not_found}
     end
   end
 
   describe "discard_draft/2" do
     test "drops the unpublished change and leaves the live release running" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook(slug: "keeper") |> Fixtures.Runbooks.publish_runbook()
       revised = put_in(definition(), ["context_markdown"], "Inspect twice.")
 
@@ -2092,7 +2095,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a never-published runbook, whose draft is all there is" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject)
 
       assert Runbooks.discard_draft(runbook, subject) == {:error, :never_published}
@@ -2100,14 +2103,14 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a live runbook with nothing unpublished" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook() |> Fixtures.Runbooks.publish_runbook()
 
       assert Runbooks.discard_draft(live, subject) == {:error, :no_draft}
     end
 
     test "an operator discards the unpublished change" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook() |> Fixtures.Runbooks.publish_runbook()
       operator = membership_subject(account, "operator")
 
@@ -2121,7 +2124,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "denies a viewer, who may read a runbook but never drop its pending change" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook() |> Fixtures.Runbooks.publish_runbook()
       viewer = membership_subject(account, "viewer")
 
@@ -2129,9 +2132,9 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "denies cross-account mutation" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook() |> Fixtures.Runbooks.publish_runbook()
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.discard_draft(live, other_subject) == {:error, :not_found}
     end
@@ -2141,7 +2144,7 @@ defmodule Emisar.RunbooksTest do
     # Same domain-layer invariant as save_draft/4: delete is the manage verb an
     # MCP key must never reach.
     test "denies an MCP key, which holds draft but not manage" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(owner, slug: "delete-gate")
 
       assert Runbooks.delete_runbook(
@@ -2151,7 +2154,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "soft-deletes the row and retains its releases" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       live = subject |> create_runbook(slug: "family") |> Fixtures.Runbooks.publish_runbook()
       Runbooks.subscribe_account_runbooks(account.id)
 
@@ -2164,9 +2167,9 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "does not delete another account's runbook" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       runbook = create_runbook(subject)
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.delete_runbook(runbook, other_subject) == {:error, :not_found}
       assert {:ok, _fetched} = Runbooks.fetch_runbook_by_id(runbook.id, subject)
@@ -2175,8 +2178,8 @@ defmodule Emisar.RunbooksTest do
 
   describe "subscribe_account_runbooks/1" do
     test "delivers exact account-local list changes" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
-      {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
       assert Runbooks.subscribe_account_runbooks(account.id) == :ok
       assert {:ok, _other} = Runbooks.create_runbook(runbook_attrs(), other_subject)
       refute_receive {:list_changed, :runbook, _, _}
@@ -2253,7 +2256,7 @@ defmodule Emisar.RunbooksTest do
     # single clause is all that stops a :viewer's open socket from a crafted
     # phx-submit fanning a runbook out across the fleet. Nothing exercised it.
     test "denies a viewer, who can read runbooks but not dispatch" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
 
@@ -2272,7 +2275,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "creates the durable execution and first physical attempt" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       Runners.subscribe_runner_transport(runner)
@@ -2292,7 +2295,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "rejects a blank reason and a runbook from another account" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
 
@@ -2303,14 +2306,14 @@ defmodule Emisar.RunbooksTest do
 
       assert Runbooks.dispatch_runbook(runbook, "  ", subject) == {:error, :reason_required}
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.dispatch_runbook(runbook, "cross account", other_subject) ==
                {:error, :not_found}
     end
 
     test "refuses a runbook that has never been published" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       runbook = create_runbook(subject, definition: definition(runner.group))
@@ -2320,7 +2323,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "snapshots the live definition and its release number onto the execution" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       Runners.subscribe_runner_transport(runner)
@@ -2343,7 +2346,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a runbook soft-deleted after it was read" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
 
@@ -2363,7 +2366,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "compiled execution admission" do
     test "keeps the exact reviewed release and selected targets when unrelated current facts advance" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
@@ -2408,9 +2411,9 @@ defmodule Emisar.RunbooksTest do
       refute Repo.exists?(Runs.ActionRun)
     end
 
-    for loss <- [:demotion, :deleted_user, :suspension, :foreign_member, :attenuation] do
+    for loss <- [:demotion, :removal, :suspension, :foreign_member, :attenuation] do
       test "composed creation rechecks #{loss} before inserting any execution effects" do
-        {user, account, owner} = Fixtures.Subjects.owner_subject()
+        {membership, account, owner} = Fixtures.Subjects.owner_subject()
         Fixtures.Policies.create_policy(account_id: account.id)
         trusted_runner(account, owner)
         runbook = create_runbook(owner) |> Fixtures.Runbooks.publish_runbook()
@@ -2418,7 +2421,6 @@ defmodule Emisar.RunbooksTest do
         assert {:ok, compiled} =
                  Runbooks.Compiler.compile(runbook.definition, %{}, "fixed-seed", owner)
 
-        membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
         execution_id = Repo.generate_id()
 
         subject =
@@ -2449,7 +2451,7 @@ defmodule Emisar.RunbooksTest do
 
         case unquote(loss) do
           :demotion -> Fixtures.Memberships.force_role(membership, "viewer")
-          :deleted_user -> Fixtures.Users.mark_user_as_deleted(user)
+          :removal -> Fixtures.Memberships.mark_membership_as_deleted(membership)
           :suspension -> Fixtures.Memberships.suspend_membership(membership)
           _ -> :ok
         end
@@ -2467,17 +2469,14 @@ defmodule Emisar.RunbooksTest do
 
     for change <- [:partial_group, :pack_scope, :malformed_pack, :moved_target, :deleted_target] do
       test "compiled target #{change} never creates a partial execution or substitutes a new plan" do
-        {user, account, owner} = Fixtures.Subjects.owner_subject()
+        {owner_member, account, owner} = Fixtures.Subjects.owner_subject()
         Fixtures.Policies.create_policy(account_id: account.id)
         runner = trusted_runner(account, owner)
         second = trusted_runner(account, owner)
         runbook = create_runbook(owner) |> Fixtures.Runbooks.publish_runbook()
+        membership = Fixtures.Memberships.force_role(owner_member, "admin")
 
-        membership =
-          Fixtures.Memberships.fetch_membership(account.id, user.id)
-          |> Fixtures.Memberships.force_role("admin")
-
-        subject = Fixtures.Subjects.membership_subject(membership)
+        subject = Fixtures.Subjects.subject_for(membership)
 
         assert {:ok, compiled} =
                  Runbooks.Compiler.compile(runbook.definition, %{}, "fixed-seed", subject)
@@ -2533,7 +2532,7 @@ defmodule Emisar.RunbooksTest do
   describe "dispatch_runbook/4 reviewed plans" do
     for change <- [:added, :removed] do
       test "requires a new review when a group runner is #{change}" do
-        {_user, account, subject} = Fixtures.Subjects.owner_subject()
+        {_owner, account, subject} = Fixtures.Subjects.owner_subject()
         Fixtures.Policies.create_policy(account_id: account.id)
         trusted_runner(account, subject)
         second = trusted_runner(account, subject)
@@ -2558,7 +2557,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a replacement runner with the same public ref still needs a new review" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Policies.create_policy(account_id: account.id)
       original = trusted_runner(account, subject)
       runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
@@ -2586,7 +2585,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a newer trusted pack cannot replace the reviewed pack" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
       runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
@@ -2602,7 +2601,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a trust gap cannot silently narrow the reviewed target set" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Policies.create_policy(account_id: account.id)
       trusted_runner(account, subject)
       trusted_runner(account, subject, version: "1.4.3")
@@ -2625,7 +2624,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "sensitive input changes invalidate review even when the redacted plan is identical" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Policies.create_policy(account_id: account.id)
       sensitive_arg = Map.put(arg("seconds", "integer"), "sensitive", true)
       runner = trusted_runner(account, subject, args: [sensitive_arg])
@@ -2651,7 +2650,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "binds release identity even when its executable plan is unchanged" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Policies.create_policy(account_id: account.id)
       trusted_runner(account, subject)
       original = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
@@ -2674,13 +2673,13 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "review receipts do not bypass permissions or account isolation" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Policies.create_policy(account_id: account.id)
       trusted_runner(account, subject)
       runbook = create_runbook(subject) |> Fixtures.Runbooks.publish_runbook()
       assert {:ok, preview} = Runbooks.resolve_plan(runbook, subject)
       viewer = membership_subject(account, "viewer")
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.dispatch_runbook(runbook, "review", viewer,
                review_digest: preview.review_digest
@@ -2777,7 +2776,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "concurrent identical first attempts create exactly one execution" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = api_client_subject(account, owner, "concurrent execution")
       runner = trusted_runner(account, owner)
@@ -2807,7 +2806,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "rolls the reservation back when the fresh preflight fails" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = api_client_subject(account, owner, "failed preflight")
       runner = trusted_runner(account, owner)
@@ -2844,7 +2843,7 @@ defmodule Emisar.RunbooksTest do
                membership_subject(fixture.account, :viewer)
              ) == {:error, :unauthorized}
 
-      {_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
+      {_owner, other_account, other_owner} = Fixtures.Subjects.owner_subject()
       other_subject = api_client_subject(other_account, other_owner, "foreign execution")
 
       assert Runbooks.create_or_replay_mcp_execution(facts, other_subject) ==
@@ -2858,7 +2857,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "create_or_replay_mcp_execution/2 with allow_draft" do
     test "executes the exact consented draft through the scheduler and replays it" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = api_client_subject(account, owner, "draft test")
       runner = trusted_runner(account, owner)
@@ -2901,12 +2900,12 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "hides another account's draft without persisting an operation" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, owner)
       runbook = create_runbook(owner, slug: "draft-test", definition: definition(runner.group))
 
-      {_other_user, other_account, other_owner} = Fixtures.Subjects.owner_subject()
+      {_other_owner, other_account, other_owner} = Fixtures.Subjects.owner_subject()
       _other_policy = Fixtures.Policies.create_policy(account_id: other_account.id)
       other_subject = api_client_subject(other_account, other_owner, "foreign draft test")
 
@@ -2920,7 +2919,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "rejects a stale content digest and each missing authority" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       subject = api_client_subject(account, owner, "draft test")
       runner = trusted_runner(account, owner)
@@ -2956,7 +2955,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "retains the whole-execution approval gate and draft-test identity" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
 
       _policy =
         Fixtures.Policies.create_policy(
@@ -3003,7 +3002,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "resolve_plan/2" do
     test "returns the exact frozen blast radius without dispatching" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject)
 
@@ -3024,7 +3023,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "resolve_plan/3" do
     test "binds typed input values and reports validation at the input path" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       runner = trusted_runner(account, subject, args: [arg("seconds", "integer")])
 
@@ -3047,7 +3046,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "resolve_plan/4" do
     test "uses the same one-group runner for preview and dispatch" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       trusted_runner(account, subject, group: "workers")
       trusted_runner(account, subject, group: "workers")
@@ -3089,7 +3088,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "denies a member who may read runbooks but not dispatch one" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       runbook =
@@ -3104,7 +3103,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "refuses a runbook from another account, blast radius and all" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
 
       runbook =
@@ -3112,7 +3111,7 @@ defmodule Emisar.RunbooksTest do
         |> create_runbook(definition: definition(runner.group))
         |> Fixtures.Runbooks.publish_runbook()
 
-      {_other_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
       seed = Runbooks.new_target_selection_seed()
 
       assert Runbooks.resolve_plan(runbook, %{}, seed, other_subject) == {:error, :not_found}
@@ -3132,7 +3131,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "resolve_definition_plan/3" do
     test "compiles an unsaved definition through the caller's current scope" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
       assert {:ok, runner_ref} = Runners.public_ref(runner)
 
@@ -3142,7 +3141,7 @@ defmodule Emisar.RunbooksTest do
       assert get_in(plan, ["stages", Access.at(0), "items", Access.at(0), "runner_ref"]) ==
                runner_ref
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert {:error, [_issue]} =
                Runbooks.resolve_definition_plan(definition(runner.group), %{}, other_subject)
@@ -3368,7 +3367,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "editor_projection/1" do
     test "projects the online fleet and the trusted actions it can execute" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject)
       _offline = trusted_runner(account, subject, connected?: false, group: "cold")
 
@@ -3388,10 +3387,10 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "another account's fleet and catalog stay out of the projection" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, subject)
 
-      {_user, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, projection} = Runbooks.editor_projection(other_subject)
       assert projection.targets == []
@@ -3399,7 +3398,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a subject without view_runbooks is denied" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
       no_view = %Subject{account: account, role: :runner, permissions: MapSet.new()}
 
       assert Runbooks.editor_projection(no_view) == {:error, :unauthorized}
@@ -3408,7 +3407,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "editor_target_runners/3" do
     test "resolves a group, an exact runner, and one random group member" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       first = trusted_runner(account, subject, group: "workers")
       second = trusted_runner(account, subject, group: "workers")
 
@@ -3432,7 +3431,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "an offline, unknown, or malformed selection does not resolve" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       offline = trusted_runner(account, subject, connected?: false)
       assert {:ok, offline_ref} = Runners.public_ref(offline)
       assert {:ok, projection} = Runbooks.editor_projection(subject)
@@ -3454,7 +3453,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "editor_actions/3" do
     test "offers an action every selected runner supports at its own exact version" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       trusted_runner(account, subject, group: "workers", version: "1.4.2")
       trusted_runner(account, subject, group: "workers", version: "1.5.0")
@@ -3472,7 +3471,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "runners exposing different risk make the action unavailable, as the compiler does" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       trusted_runner(account, subject, group: "workers", version: "1.4.2")
       trusted_runner(account, subject, group: "workers", version: "2.0.0", risk: "critical")
@@ -3488,7 +3487,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "runners exposing different arguments make the action unavailable" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, subject, group: "workers", version: "1.4.2")
 
       trusted_runner(account, subject,
@@ -3502,7 +3501,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "an untrusted deployment on one selected runner narrows the group, never blocks it" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       _policy = Fixtures.Policies.create_policy(account_id: account.id)
       trusted = trusted_runner(account, subject, group: "workers", version: "1.4.2")
 
@@ -3532,7 +3531,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "unresolved targets offer no action at all" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, subject)
 
       assert {:ok, projection} = Runbooks.editor_projection(subject)
@@ -3582,7 +3581,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "carries the trusted descriptor's arguments and risk" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, subject, args: [arg("seconds", "integer")])
 
       assert {:ok, projection} = Runbooks.editor_projection(subject)
@@ -3601,7 +3600,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a stale saved choice resolves to nothing, so it carries no risk or arguments" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       trusted_runner(account, subject)
 
       assert {:ok, projection} = Runbooks.editor_projection(subject)
@@ -3618,7 +3617,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "validate_definition/2" do
     test "returns the canonical definition and rejects malformed stages before preflight" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       definition = definition()
 
       assert {:ok, ^definition} = Runbooks.validate_definition(definition, subject)
@@ -3630,7 +3629,7 @@ defmodule Emisar.RunbooksTest do
     end
 
     test "a subject without view_runbooks is denied" do
-      {_user, account, _subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
       no_view = Fixtures.Subjects.build_subject(account: account, role: :runner)
 
       assert Runbooks.validate_definition(definition(), no_view) == {:error, :unauthorized}
@@ -3639,7 +3638,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "preview_definition_plan/2" do
     test "uses deterministic placeholders for required unsaved inputs" do
-      {_user, account, subject} = Fixtures.Subjects.owner_subject()
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       runner = trusted_runner(account, subject, args: [arg("seconds", "integer")])
 
       assert {:ok, %{total: 1, plan: plan}} =
@@ -3659,7 +3658,7 @@ defmodule Emisar.RunbooksTest do
 
       assert cancelled.status == :cancelled
 
-      {_user, _account, other_subject} = Fixtures.Subjects.owner_subject()
+      {_owner, _account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.cancel_execution(fixture.execution_id, other_subject) ==
                {:error, :not_found}
@@ -3699,8 +3698,8 @@ defmodule Emisar.RunbooksTest do
 
   describe "activate_pending_approval/2" do
     test "activates the exact pending execution inside the caller transaction" do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject()
-      request = Fixtures.Approvals.create_execution_request(account, user)
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      request = Fixtures.Approvals.create_execution_request(account, owner)
 
       assert {:ok, {:ok, activated}} =
                Repo.transaction(fn ->
@@ -3720,8 +3719,8 @@ defmodule Emisar.RunbooksTest do
 
   describe "halt_pending_approval_in_multi/4" do
     test "halts the execution and every pending stage in one transaction" do
-      {user, account, _subject} = Fixtures.Subjects.owner_subject()
-      request = Fixtures.Approvals.create_execution_request(account, user)
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      request = Fixtures.Approvals.create_execution_request(account, owner)
 
       assert {:ok, _changes} =
                Multi.new()
@@ -3786,7 +3785,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "subject_can_view_runbooks?/1" do
     test "reflects the subject's permissions" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
 
       assert Runbooks.subject_can_view_runbooks?(owner)
 
@@ -3798,7 +3797,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "subject_can_author_runbooks?/1" do
     test "operators author; viewers and MCP keys do not" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       operator = membership_subject(account, "operator")
       viewer = membership_subject(account, "viewer")
       api_client = api_client_subject(account, owner, "authoring client")
@@ -3814,7 +3813,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "subject_can_manage_runbooks?/1" do
     test "deleting stays with owners and admins, above the authoring tier" do
-      {_user, account, owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
       operator = membership_subject(account, "operator")
       viewer = membership_subject(account, "viewer")
 
@@ -3826,7 +3825,7 @@ defmodule Emisar.RunbooksTest do
 
   describe "subject_can_cancel_execution?/1" do
     test "distinguishes operators from viewers" do
-      {_user, account, _owner} = Fixtures.Subjects.owner_subject()
+      {_owner, account, _owner_subject} = Fixtures.Subjects.owner_subject()
       operator = membership_subject(account, "operator")
       viewer = membership_subject(account, "viewer")
 
@@ -4073,43 +4072,29 @@ defmodule Emisar.RunbooksTest do
     do: %{subject | permissions: MapSet.delete(subject.permissions, permission)}
 
   defp membership_subject(account, role) do
-    user = Fixtures.Users.create_user()
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: role)
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: role
-      )
-
-    Fixtures.Subjects.membership_subject(membership)
+    Fixtures.Subjects.subject_for(membership)
   end
 
   # A member whose runner/pack access is narrower than the account. The subject
   # carries only the membership id; every authoring gate re-reads the persisted
   # access, so the forced scope is what decides.
   defp scoped_membership_subject(account, role, access) do
-    user = Fixtures.Users.create_user()
-
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: role
-      )
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: role)
 
     Fixtures.Memberships.force_runner_access(membership, access)
-    Fixtures.Subjects.membership_subject(membership)
+    Fixtures.Subjects.subject_for(membership)
   end
 
   defp mcp_execution_fixture do
-    {_user, account, owner} = Fixtures.Subjects.owner_subject()
+    {_owner, account, owner} = Fixtures.Subjects.owner_subject()
 
     owner =
-      account.id
-      |> Fixtures.Memberships.fetch_membership(owner.actor.id)
+      owner.actor
+      |> Repo.reload!()
       |> Fixtures.Memberships.force_role("admin")
-      |> Fixtures.Subjects.membership_subject()
+      |> Fixtures.Subjects.subject_for()
 
     _policy = Fixtures.Policies.create_policy(account_id: account.id)
     subject = api_client_subject(account, owner, "execution client")

@@ -1,7 +1,9 @@
 defmodule EmisarWeb.AccountRedirectControllerTest do
   @moduledoc """
-  Slugless `/app` URLs forward to the current account's canonical slugged pages,
-  so installers, CLIs, and public docs can deep-link without knowing the account.
+  Slugless `/app` URLs forward to a signed-in workspace's canonical slugged
+  page, so installers, CLIs, and public docs can deep-link without knowing the
+  workspace: with one signed-in workspace they redirect, with several they ask
+  which one, keeping the page asked for.
   """
   use EmisarWeb.ConnCase, async: true
 
@@ -29,9 +31,9 @@ defmodule EmisarWeb.AccountRedirectControllerTest do
     {"/app/billing", "/settings/billing"}
   ]
 
-  describe "current-account redirects" do
-    test "each shorthand forwards to the current account's canonical page", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+  describe "slugless redirects" do
+    test "with one signed-in workspace each shorthand forwards to its page", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
 
       Enum.reduce(@current_account_redirects, conn, fn {source, destination}, request_conn ->
         redirected_conn = get(request_conn, source)
@@ -46,6 +48,33 @@ defmodule EmisarWeb.AccountRedirectControllerTest do
         assert redirected_to(redirected_conn) == ~p"/sign_in"
         recycle(redirected_conn)
       end)
+    end
+
+    test "with several signed-in workspaces each shorthand asks which, keeping the page", %{
+      conn: conn
+    } do
+      {conn, _owner_a, account_a} = register_and_log_in(conn, %{account: %{name: "Alpha Ops"}})
+      {conn, _owner_b, account_b} = register_and_log_in(conn, %{account: %{name: "Bravo Ops"}})
+
+      for {source, destination} <- @current_account_redirects do
+        document = conn |> get(source) |> html_response(200) |> LazyHTML.from_document()
+
+        assert document |> LazyHTML.query("h1") |> LazyHTML.text() =~ "Choose a workspace"
+
+        for account <- [account_a, account_b] do
+          link = LazyHTML.query(document, ~s(a[href="/app/#{account.slug}#{destination}"]))
+          assert LazyHTML.text(link) =~ account.name, "#{source} lost #{destination}"
+        end
+
+        assert document |> LazyHTML.query(~s(a[href="/sign_in"])) |> Enum.count() == 1
+      end
+    end
+
+    test "an unauthenticated visitor's shorthand is remembered for after sign-in", %{conn: conn} do
+      conn = get(conn, ~p"/app/runs")
+
+      assert redirected_to(conn) == ~p"/sign_in"
+      assert get_session(conn, :user_return_to) == ~p"/app/runs"
     end
   end
 end

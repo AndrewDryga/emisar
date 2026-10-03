@@ -327,7 +327,7 @@ defmodule Emisar.Policies do
 
   @doc """
   Changeset for the policy editor form (no Subject — like
-  `Users.change_user`). Validates the assembled `rules` map so the
+  `Accounts.change_sign_up/1`). Validates the assembled `rules` map so the
   LiveView can render the rules-level error inline; the persisted write
   still goes through `save_rules/2`.
   """
@@ -819,10 +819,11 @@ defmodule Emisar.Policies do
   # -- Internal helpers (no Subject needed) ---------------------------
 
   @doc """
-  Internal account-bootstrap helper called from `Accounts.create_account_with_owner/2`
-  + seeds + test fixtures. The owner-of-the-new-account is the only one
-  who can hit this path; the LV-facing save uses `save_rules/2` and
-  goes through the Subject pipeline.
+  Internal account-bootstrap helper called when a workspace is created
+  (`Accounts.put_sign_up_account/2`, `Accounts.create_account_with_invited_owner/3`)
+  + seeds + test fixtures. The owner-of-the-new-account is the only one who can
+  hit this path; the LV-facing save uses `save_rules/2` and goes through the
+  Subject pipeline.
   """
   def seed_policy(account_id, membership_id, rules \\ @default_rules) do
     Policy.Changeset.create(%{

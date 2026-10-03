@@ -115,17 +115,16 @@ defmodule Emisar.Billing.RunnerQuantityConcurrencyTest do
   defp unboxed_quantity(opts \\ [], fun) do
     Sandbox.unboxed_run(Repo, fn ->
       suffix = Ecto.UUID.generate()
-      user = Fixtures.Users.create_user(%{email: "quantity-race-#{suffix}@example.test"})
       account = Fixtures.Accounts.create_account(%{name: "Quantity race #{suffix}"})
 
-      _membership =
+      membership =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: user.id,
-          role: "owner"
+          role: "owner",
+          email: "quantity-race-#{suffix}@example.test"
         )
 
-      subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       runner =
         if Keyword.get(opts, :runner?, true),
@@ -151,17 +150,10 @@ defmodule Emisar.Billing.RunnerQuantityConcurrencyTest do
       Emisar.Config.put_override(:emisar, :quantity_race_agent, agent)
 
       try do
-        fun.(%{
-          account: account,
-          user: user,
-          subject: subject,
-          runner: runner,
-          subscription: subscription
-        })
+        fun.(%{account: account, subject: subject, runner: runner, subscription: subscription})
       after
         if Process.alive?(agent), do: Agent.stop(agent)
         Repo.delete_all(from(account in Account, where: account.id == ^account.id))
-        Repo.delete_all(from(user in Emisar.Users.User, where: user.id == ^user.id))
       end
     end)
   end

@@ -9,9 +9,8 @@ defmodule Emisar.Auth.Subject do
 
     * `account` — the active `%Accounts.Account{}` (nil only for the
       rare actor-only case — a self-service edit that reads just `actor`)
-    * `actor` — `%Users.User{}` for a Member linked to a personal login, the
-      `%Accounts.Membership{}` itself for a Member without one, `%ApiKey{}`,
-      or `%Runner{}`
+    * `actor` — the `%Accounts.Membership{}` a person acts as, `%ApiKey{}`, or
+      `%Runner{}`
     * `role` — atom role identifier (`:owner | :admin | :operator |
       :viewer | :api_client | :runner`)
     * `permissions` — `MapSet.t()` of `{module, action}` tuples; the
@@ -24,28 +23,27 @@ defmodule Emisar.Auth.Subject do
       :sso`), or nil for an API key / runner (the actor IS the credential).
       Stamped onto every audit row.
     * `mfa` — whether a second factor is verified for this session (TOTP, or an
-      IdP assertion). `true`/`false` for a user session, nil otherwise. Local
-      proof is bound to the current enrollment; SSO proof remains the assurance
-      recorded at authentication time. Account policy checks the provider's
-      current setting separately. The raw `mfa_verified_at` stays on the session
-      row for forensics.
+      IdP assertion). `true`/`false` for a session, nil otherwise. Local
+      proof is bound to the current enrollment; SSO proof is the assurance
+      recorded at authentication time while the provider still satisfies MFA.
+      The raw `mfa_verified_at` stays on the session row for forensics.
     * `mfa_enrollment_verified_at` — the exact local-TOTP enrollment epoch this
-      session proved, or nil. Consumers compare it with the actor's current
+      session proved, or nil. Consumers compare it with the Member's current
       `mfa_enabled_at`; carrying the epoch rather than a boolean lets a locked
       re-read reject a disable/re-enroll race.
     * `user_identity_id` — the `%SSO.UserIdentity{}` behind an `:sso`
       session; nil otherwise.
-    * `session_token_id` / `member_grant_id` — exact live bearer and frozen
-      workspace authority. User Subjects without these cannot act in a workspace.
+    * `session_token_id` — the exact live session row this Member acts
+      through. A Member Subject without one cannot act in a workspace.
   """
-  alias Emisar.{Accounts, RequestContext, Users}
+  alias Emisar.{Accounts, RequestContext}
+  alias Emisar.Auth.UserToken
 
   @type role :: :owner | :admin | :operator | :viewer | :api_client | :runner
   @type permission :: {module(), atom()}
   @type auth_method :: :magic_link | :sso
   @type actor ::
-          Emisar.Users.User.t()
-          | Emisar.Accounts.Membership.t()
+          Emisar.Accounts.Membership.t()
           | Emisar.ApiKeys.ApiKey.t()
           | Emisar.Runners.Runner.t()
 
@@ -60,8 +58,7 @@ defmodule Emisar.Auth.Subject do
           mfa: boolean() | nil,
           mfa_enrollment_verified_at: DateTime.t() | nil,
           user_identity_id: binary() | nil,
-          session_token_id: binary() | nil,
-          member_grant_id: binary() | nil
+          session_token_id: binary() | nil
         }
 
   defstruct account: nil,
@@ -74,18 +71,14 @@ defmodule Emisar.Auth.Subject do
             mfa: nil,
             mfa_enrollment_verified_at: nil,
             user_identity_id: nil,
-            session_token_id: nil,
-            member_grant_id: nil
+            session_token_id: nil
 
   @doc """
-  Build a subject for a workspace `%Accounts.Membership{}` acting in `account`.
-  The actor is the Member's personal `%Users.User{}`, preloaded on
-  `membership.user`, or the Member itself when it has no personal login.
-  `opts` carry session provenance — `:auth_method` (how this
-  session was authenticated), `:mfa` (was a second factor verified),
-  `:mfa_enrollment_verified_at` (which local enrollment this session proved), and
-  `:user_identity_id` (the SSO identity behind it) — threaded from the
-  session row so every audit row records it.
+  Build a subject for a workspace `%Accounts.Membership{}` acting in `account`;
+  the Member is the actor. `opts` carry session provenance — `:auth_method`,
+  `:mfa`, `:mfa_enrollment_verified_at`, `:user_identity_id` and
+  `:session_token_id` — threaded from the session row so every audit row
+  records it.
   """
   def for_member(
         %Accounts.Membership{} = membership,
@@ -97,7 +90,7 @@ defmodule Emisar.Auth.Subject do
 
     %__MODULE__{
       account: account,
-      actor: member_actor(membership),
+      actor: membership,
       role: role,
       membership_id: membership.id,
       permissions: Emisar.Auth.Permissions.for_role(role),
@@ -106,14 +99,56 @@ defmodule Emisar.Auth.Subject do
       mfa: Keyword.get(opts, :mfa),
       mfa_enrollment_verified_at: Keyword.get(opts, :mfa_enrollment_verified_at),
       user_identity_id: Keyword.get(opts, :user_identity_id),
-      session_token_id: Keyword.get(opts, :session_token_id),
-      member_grant_id: Keyword.get(opts, :member_grant_id)
+      session_token_id: Keyword.get(opts, :session_token_id)
     }
   end
 
-  # A linked Member must arrive with its personal login loaded.
-  defp member_actor(%Accounts.Membership{user_id: nil} = membership), do: membership
-  defp member_actor(%Accounts.Membership{user: %Users.User{} = user}), do: user
+  @doc """
+  Build the Subject one live session authenticates: its Member, acting in its
+  workspace, with the session's provenance. The session must arrive with its
+  authority preloaded (`UserToken.Query.with_preloaded_authority/1`). Local MFA
+  counts only while the session's proof matches the Member's current enrollment
+  and has not expired; IdP MFA counts only while the provider still satisfies
+  MFA. Pure: the caller already ran the per-request predicate.
+  """
+  def for_session(
+        %UserToken{
+          membership: %Accounts.Membership{account: %Accounts.Account{} = account} = membership
+        } = session,
+        %RequestContext{} = context
+      ) do
+    local_epoch = local_mfa_epoch(membership, session)
+
+    for_member(membership, account, context,
+      auth_method: session.auth_method,
+      mfa: not is_nil(local_epoch) or idp_mfa?(session),
+      mfa_enrollment_verified_at: local_epoch,
+      user_identity_id: session.user_identity_id,
+      session_token_id: session.id
+    )
+  end
+
+  defp local_mfa_epoch(
+         %Accounts.Membership{mfa_enabled_at: %DateTime{} = enabled_at},
+         %UserToken{
+           mfa_enrollment_verified_at: %DateTime{} = verified_enrollment,
+           local_mfa_expires_at: %DateTime{} = expires_at
+         }
+       )
+       when enabled_at == verified_enrollment do
+    if DateTime.after?(expires_at, DateTime.utc_now()), do: enabled_at
+  end
+
+  defp local_mfa_epoch(_membership, _session), do: nil
+
+  defp idp_mfa?(%UserToken{
+         auth_method: :sso,
+         mfa_verified_at: %DateTime{},
+         user_identity: %{provider: %{satisfies_mfa: true}}
+       }),
+       do: true
+
+  defp idp_mfa?(%UserToken{}), do: false
 
   @doc """
   Rebuild locked Member/account facts, keeping the bearer's actor and session
@@ -174,30 +209,10 @@ defmodule Emisar.Auth.Subject do
   # -- Helpers used by every context's `ensure_X_in_subject_account` -
 
   @doc """
-  The refusal a personal-login action gives any other actor:
-  `{:error, :personal_login_required}` for a Member without a personal login,
-  `{:error, :unauthorized}` otherwise.
-  """
-  def personal_denial(%__MODULE__{actor: %Accounts.Membership{}}),
-    do: {:error, :personal_login_required}
-
-  def personal_denial(%__MODULE__{}), do: {:error, :unauthorized}
-
-  @doc """
-  Personal self-service requires the live bearer's independent first-party
-  proof. Selecting a workspace's SSO route does not erase personal proof;
-  workspace roles, IdP assertions and local factors do not manufacture it.
-  """
-  def ensure_personal_user(%__MODULE__{} = subject),
-    do: Emisar.Auth.ensure_personal_session(subject)
-
-  @doc """
   String label for the subject's audit actor kind. A person acts in a workspace
-  as its exact Member (`"membership"`, see `human_membership_id/1`), never as
-  the personal login behind it; an API key stays `"api_key"` even though it
-  records its creator's Member.
+  as its exact Member (`"membership"`, see `human_membership_id/1`); an API key
+  stays `"api_key"` even though it records its creator's Member.
   """
-  def actor_kind(%__MODULE__{actor: %Users.User{}}), do: "membership"
   def actor_kind(%__MODULE__{actor: %Accounts.Membership{}}), do: "membership"
   def actor_kind(%__MODULE__{actor: %Emisar.ApiKeys.ApiKey{}}), do: "api_key"
   def actor_kind(%__MODULE__{actor: %Emisar.Runners.Runner{}}), do: "runner"
@@ -211,17 +226,7 @@ defmodule Emisar.Auth.Subject do
   def actor_id(%__MODULE__{actor: %{id: id}}), do: id
   def actor_id(%__MODULE__{}), do: nil
 
-  @doc """
-  The acting personal login's id, or `nil` when the actor isn't one (a Member
-  without a personal login, API key, runner or system). Use this — not
-  `actor_id/1` — for a `belongs_to :user` attribution column: an API-key
-  actor's `actor_id` is the key id, which would violate a users FK.
-  """
-  def user_id(%__MODULE__{actor: %Users.User{id: id}}), do: id
-  def user_id(%__MODULE__{}), do: nil
-
   @doc "The exact acting human Member, never an API key's owner or a system actor."
-  def human_membership_id(%__MODULE__{actor: %Users.User{}, membership_id: id}), do: id
   def human_membership_id(%__MODULE__{actor: %Accounts.Membership{}, membership_id: id}), do: id
   def human_membership_id(%__MODULE__{}), do: nil
 

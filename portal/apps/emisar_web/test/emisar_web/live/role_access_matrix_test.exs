@@ -15,14 +15,8 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
 
   setup do
     account = Fixtures.Accounts.create_account()
-    owner = Fixtures.Users.create_user()
 
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: owner.id,
-        role: "owner"
-      )
+    owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
     runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
 
@@ -30,41 +24,34 @@ defmodule EmisarWeb.RoleAccessMatrixTest do
       Fixtures.Runs.create_run(
         account_id: account.id,
         runner_id: runner.id,
-        initiating_membership_id: membership.id
+        initiating_membership_id: owner.id
       )
 
     approval = Fixtures.Approvals.create_request(account_id: account.id, run_id: run.id)
-    Fixtures.Policies.create_policy(account_id: account.id, created_by_id: owner.id)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
 
-    role_users =
+    role_members =
       Enum.reduce(@roles, %{"owner" => owner}, fn
-        "owner", users ->
-          users
+        "owner", members ->
+          members
 
-        role, users ->
-          user = Fixtures.Users.create_user()
-
-          Fixtures.Memberships.create_membership(
-            account_id: account.id,
-            user_id: user.id,
-            role: role
-          )
-
-          Map.put(users, role, user)
+        role, members ->
+          member = Fixtures.Memberships.create_membership(account_id: account.id, role: role)
+          Map.put(members, role, member)
       end)
 
-    %{account: account, approval: approval, role_users: role_users, runner: runner, run: run}
+    %{account: account, approval: approval, role_members: role_members, runner: runner, run: run}
   end
 
   test "every membership role gets a clean direct-route outcome", %{
     account: account,
     approval: approval,
-    role_users: role_users,
+    role_members: role_members,
     runner: runner,
     run: run
   } do
     for role <- @roles do
-      conn = log_in_user(build_conn(), role_users[role])
+      conn = log_in_member(build_conn(), role_members[role])
       authorized? = role != "billing_manager"
 
       assert_detail_route(

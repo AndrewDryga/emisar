@@ -8,7 +8,7 @@ defmodule Emisar.SSOSCIMTest do
   functions take a provider explicitly and carry no `%Subject{}`.
   """
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, ApiKeys, Crypto, Repo, SSO, Users}
+  alias Emisar.{Accounts, ApiKeys, Crypto, Repo, SSO}
   alias Emisar.Fixtures
   alias Emisar.SSO.{IdentityProvider, LinkRequest, SCIMUser, SCIMUserUpdate}
 
@@ -105,19 +105,18 @@ defmodule Emisar.SSOSCIMTest do
       scim_provider()
     end
 
-    test "creates a Member without a personal login and its identity at default_role" do
+    test "creates an unverified Member and its identity at default_role" do
       %{provider: provider, account: account} = scim_provider(%{default_role: :operator})
       attrs = scim_attrs(%{external_id: "okta|prov-1", email: "prov@acme.test"})
 
       assert {:ok, %{identity: identity, membership: membership}} =
                SSO.scim_provision_user(provider, attrs)
 
-      # The directory's name and address are this workspace's profile; no
-      # personal login exists or is reserved for the address.
-      assert is_nil(membership.user_id)
+      # The directory's name and address are this workspace's profile; a
+      # directory never proves an address, so email sign-in stays closed.
       assert membership.display_name == "Dir User"
       assert membership.email == "prov@acme.test"
-      assert Users.fetch_user_by_email("prov@acme.test") == {:error, :not_found}
+      refute membership.email_verified_at
 
       assert identity.created_by == :provider
       assert identity.provisioned_via == :scim
@@ -144,32 +143,12 @@ defmodule Emisar.SSOSCIMTest do
       assert identity.scim_external_id == "okta|nomail"
     end
 
-    test "reserves no personal login: the mailbox owner signs up with no seat here", %{
-      provider: provider,
-      account: account
-    } do
-      email = Fixtures.Random.unique_email()
-      attrs = scim_attrs(%{external_id: "okta|mailbox", email: email})
-
-      assert {:ok, %{membership: membership}} = SSO.scim_provision_user(provider, attrs)
-      assert Users.fetch_user_by_email(email) == {:error, :not_found}
-
-      assert {:ok, %Users.User{email: ^email} = user} =
-               Accounts.begin_owner_registration(
-                 %{email: email, full_name: "Mailbox Owner"},
-                 Fixtures.Accounts.account_attrs()
-               )
-
-      assert is_nil(Accounts.peek_sync_membership(account.id, user.id))
-      assert is_nil(Repo.reload!(membership).user_id)
-    end
-
     test "an address one live Member here uses parks a link request for that Member", %{
       provider: provider,
       account: account
     } do
       member =
-        Fixtures.Memberships.create_unlinked_membership(
+        Fixtures.Memberships.create_membership(
           account_id: account.id,
           email: "Shared@Acme.test"
         )
@@ -192,15 +171,19 @@ defmodule Emisar.SSOSCIMTest do
       account: account
     } do
       %{account: other_account} = scim_provider()
-      login = Fixtures.Users.create_user(email: "elsewhere@acme.test")
-      Fixtures.Memberships.create_membership(account_id: other_account.id, user_id: login.id)
+
+      login =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          email: "elsewhere@acme.test"
+        )
+
       attrs = scim_attrs(%{external_id: "okta|elsewhere-person", email: login.email})
 
       assert {:ok, %{membership: membership}} = SSO.scim_provision_user(provider, attrs)
       assert membership.account_id == account.id
-      assert is_nil(membership.user_id)
       assert link_requests(provider) == []
-      assert is_nil(Accounts.peek_sync_membership(account.id, login.id))
+      assert Accounts.peek_sync_membership_by_id(account.id, login.id) == nil
     end
 
     test "a re-POST of a deprovisioned (suspended) user reactivates them (#4)", %{
@@ -228,28 +211,6 @@ defmodule Emisar.SSOSCIMTest do
       refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
-    test "a re-POST after a person detached their login keeps the seat without one", %{
-      provider: provider
-    } do
-      attrs = scim_attrs(%{external_id: "okta|detached", email: "detached@acme.test"})
-      assert {:ok, %{membership: member}} = SSO.scim_provision_user(provider, attrs)
-
-      # The person linked this seat, as the member-link flow does, then detached it.
-      person = Fixtures.Users.create_user()
-      member |> Ecto.Changeset.change(user_id: person.id) |> Repo.update!()
-      raw = Fixtures.Auth.create_session_token!(person, :magic_link, nil)
-      {:ok, session} = Emisar.Auth.fetch_session_by_token(raw)
-      subject = %Emisar.Auth.Subject{actor: person, session_token_id: session.id}
-      assert {:ok, _detached} = Accounts.detach_personal_login(member.id, subject)
-
-      assert {:ok, %{membership: reposted}} = SSO.scim_provision_user(provider, attrs)
-      assert {reposted.id, reposted.user_id} == {member.id, nil}
-
-      Fixtures.Memberships.mark_membership_as_deleted(reposted)
-      assert {:ok, %{membership: recreated}} = SSO.scim_provision_user(provider, attrs)
-      assert is_nil(recreated.user_id)
-    end
-
     test "a re-POST after the membership was removed re-creates it (#10)", %{
       provider: provider,
       account: account
@@ -265,14 +226,13 @@ defmodule Emisar.SSOSCIMTest do
 
       refute Accounts.peek_sync_membership_by_id(account.id, membership.id)
 
-      # The re-POST re-provisions a fresh Member, still without a personal login,
-      # at the removed seat's profile, and moves the identity to it.
+      # The re-POST re-provisions a fresh Member at the removed seat's profile
+      # and moves the identity to it.
       assert {:ok, %{membership: new_membership, identity: rebound}} =
                SSO.scim_provision_user(provider, attrs)
 
       refute new_membership.id == membership.id
       refute new_membership.disabled_at
-      assert is_nil(new_membership.user_id)
       assert new_membership.email == "removed@acme.test"
       assert new_membership.display_name == "Dir User"
       assert rebound.id == identity.id
@@ -434,8 +394,10 @@ defmodule Emisar.SSOSCIMTest do
       {:ok, %{membership: member, identity: identity}} = SSO.scim_provision_user(provider, attrs)
 
       # The directory-provisioned Member signs in through SSO and mints a key.
-      raw_session = Fixtures.Auth.create_member_session_token!(member, identity)
-      member_subject = Fixtures.Subjects.unlinked_member_subject(member, raw_session)
+      raw_session =
+        Fixtures.Auth.create_session_token!(member, :sso, nil, %{}, user_identity_id: identity.id)
+
+      member_subject = Fixtures.Subjects.subject_for(member, session: raw_session)
       assert {:ok, _raw, key} = ApiKeys.mint_quick_key(member_subject)
 
       assert {:ok, %{membership: membership, identity: deactivated}} =
@@ -497,7 +459,7 @@ defmodule Emisar.SSOSCIMTest do
     end
   end
 
-  describe "a directory Member without a personal login" do
+  describe "a directory Member's lifecycle" do
     setup do
       scim_provider()
     end
@@ -507,7 +469,7 @@ defmodule Emisar.SSOSCIMTest do
     } do
       attrs = scim_attrs(%{external_id: "okta|life", email: "life@acme.test"})
 
-      assert {:ok, %{membership: %{user_id: nil, id: member_id}, identity: %{id: id}}} =
+      assert {:ok, %{membership: %{id: member_id}, identity: %{id: id}}} =
                SSO.scim_provision_user(provider, attrs)
 
       assert {:ok, %SCIMUser{id: ^id, user_name: "life@acme.test", active: true}} =
@@ -539,7 +501,6 @@ defmodule Emisar.SSOSCIMTest do
                SSO.scim_provision_user(provider, attrs)
 
       assert revived.id == member_id
-      assert is_nil(revived.user_id)
       refute revived.disabled_at
       assert {:ok, %SCIMUser{active: true}} = SSO.scim_fetch_user(provider, id)
     end
@@ -578,7 +539,7 @@ defmodule Emisar.SSOSCIMTest do
     end
 
     test "a Team account cannot enable SCIM — directory sync is Enterprise-only" do
-      {_user, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
       provider = %IdentityProvider{id: Ecto.UUID.generate()}
 
       assert SSO.enable_scim(provider, subject) == {:error, :directory_sync_not_available}
@@ -587,16 +548,9 @@ defmodule Emisar.SSOSCIMTest do
     test "a non-admin (no manage_sso) cannot enable SCIM" do
       {_owner, account, _owner_subject} = enterprise_owner()
       provider = provider_fixture(account)
-      viewer = Fixtures.Users.create_user()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
 
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: :viewer
-        )
-
-      viewer_subject = Fixtures.Subjects.subject_for(viewer, account, role: :viewer)
+      viewer_subject = Fixtures.Subjects.subject_for(viewer)
 
       assert SSO.enable_scim(provider, viewer_subject) == {:error, :unauthorized}
     end

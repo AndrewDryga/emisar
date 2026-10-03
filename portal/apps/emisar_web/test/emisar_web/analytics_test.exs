@@ -309,22 +309,40 @@ defmodule EmisarWeb.AnalyticsTest do
 
   describe "identity" do
     setup do
-      {:ok, user} =
-        Emisar.Users.register_user(%{
-          email: "id-#{System.unique_integer([:positive])}@example.com",
-          full_name: "Jane Op"
-        })
+      account = Fixtures.Accounts.create_account()
 
-      {:ok, user: Fixtures.Users.confirm_user(user)}
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "id-#{System.unique_integer([:positive])}@example.com",
+          display_name: "Jane Op"
+        )
+
+      {:ok, member: member, account: account}
     end
 
-    test "a magic-link sign-in sets the profile and fires signed_in with the user id", %{
+    # The code's link from the mailbox, opened in the browser that asked for it.
+    defp follow_code_link(conn) do
+      assert_received {:email, sent}
+      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+      conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+    end
+
+    defp sign_up_params do
+      %{
+        "sign_up" => %{
+          "email" => "founder-#{System.unique_integer([:positive])}@example.com",
+          "full_name" => "Analytics Owner",
+          "account_name" => "Analytics Co #{System.unique_integer([:positive])}"
+        }
+      }
+    end
+
+    test "a code sign-in sets the Member's profile and fires signed_in with the Member id", %{
       conn: conn,
-      user: user
+      member: member,
+      account: account
     } do
-      # Drive the real passwordless flow: request the link, pull token_id + the
-      # 6-character secret from the email, then confirm from the same browser (the
-      # nonce cookie rides `recycle`). `log_in_user` fires the analytics event.
       enable_x_conversions()
 
       conn =
@@ -338,23 +356,21 @@ defmodule EmisarWeb.AnalyticsTest do
       conn =
         conn
         |> recycle()
-        |> post(~p"/sign_in/magic/start", %{"user" => %{"email" => user.email}})
+        |> post(~p"/app/#{account}/sign_in/email", %{"user" => %{"email" => member.email}})
+        |> follow_code_link()
 
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      conn = conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
       refute get_session(conn, :analytics_campaign_attribution)
 
       assert_receive {:mixpanel_engage, [%{"$distinct_id" => id, "$set" => set} = update]}
 
-      assert id == user.id
-      assert set["$email"] == user.email
+      assert id == member.id
+      assert set["$email"] == member.email
       assert set["$name"] == "Jane Op"
       refute Map.has_key?(update, "$set_once")
 
       assert_receive {:mixpanel_track, [%{"event" => "signed_in", "properties" => props}]}
-      assert props["distinct_id"] == user.id
-      assert props["$user_id"] == user.id
+      assert props["distinct_id"] == member.id
+      assert props["$user_id"] == member.id
       assert props["auth_method"] == "magic_link"
       assert props["mfa"] == false
       assert props["utm_source"] == "x"
@@ -364,10 +380,9 @@ defmodule EmisarWeb.AnalyticsTest do
       refute_receive {:x_ads_signup, _conversion}
     end
 
-    test "a completed registration carries first-touch attribution", %{conn: conn} do
-      user = Fixtures.Users.create_user(confirmed?: false)
-
+    test "a completed sign-up carries first-touch attribution", %{conn: conn} do
       enable_x_conversions()
+      params = sign_up_params()
 
       conn =
         conn
@@ -376,20 +391,10 @@ defmodule EmisarWeb.AnalyticsTest do
 
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
 
-      conn =
-        conn
-        |> recycle()
-        |> post(~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" =>
-            EmisarWeb.RegistrationHandoff.sign(user.id, "Analytics Co", "Analytics Owner")
-        })
-
+      started = conn |> recycle() |> post(~p"/sign_up", params)
       refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
 
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      conn |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+      follow_code_link(started)
 
       assert_receive {:mixpanel_track, [%{"event" => "sign_up_started", "properties" => started}]}
       assert started["auth_method"] == "magic_link"
@@ -400,7 +405,7 @@ defmodule EmisarWeb.AnalyticsTest do
       assert started["$initial_referring_domain"] == "partner.example"
 
       assert_receive {:mixpanel_engage, [set_update, %{"$set_once" => set_once}]}
-      assert set_update["$set"]["$email"] == user.email
+      assert set_update["$set"]["$email"] == params["sign_up"]["email"]
       assert set_once["initial_utm_source"] == "x"
       assert set_once["initial_utm_medium"] == "paid_social"
       assert set_once["initial_utm_campaign"] == "launch"
@@ -417,35 +422,19 @@ defmodule EmisarWeb.AnalyticsTest do
 
       assert_receive {:x_ads_signup, conversion}
       assert conversion.x_click_id == "x-click-123"
-      refute inspect(conversion) =~ user.email
+      refute inspect(conversion) =~ params["sign_up"]["email"]
     end
 
-    test "GPC on registration completion prevents an attributed X conversion", %{
-      conn: conn
-    } do
-      user = Fixtures.Users.create_user(confirmed?: false)
+    test "GPC on sign-up completion prevents an attributed X conversion", %{conn: conn} do
       enable_x_conversions()
 
       conn = get(conn, "/?utm_source=x&utm_campaign=launch&twclid=gpc-before-complete")
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
 
-      conn =
-        conn
-        |> recycle()
-        |> post(~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" =>
-            EmisarWeb.RegistrationHandoff.sign(user.id, "Analytics Co", "Analytics Owner")
-        })
-
+      started = conn |> recycle() |> post(~p"/sign_up", sign_up_params())
       refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
 
-      conn
-      |> recycle()
-      |> put_req_header("sec-gpc", "1")
-      |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+      follow_code_link_with_gpc(started)
 
       assert_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
       assert_receive {:mixpanel_engage, _updates}
@@ -453,62 +442,50 @@ defmodule EmisarWeb.AnalyticsTest do
       refute_receive {:x_ads_signup, _conversion}
     end
 
-    test "a magic-link resend does not duplicate sign_up_started", %{conn: conn} do
-      user = Fixtures.Users.create_user(confirmed?: false)
-
-      conn =
+    test "a resent code does not duplicate sign_up_started", %{conn: conn} do
+      started =
         conn
         |> get("/?utm_source=x&utm_campaign=launch")
         |> recycle()
-        |> post(~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email},
-          "registration_handoff" =>
-            EmisarWeb.RegistrationHandoff.sign(user.id, "Analytics Co", "Analytics Owner")
-        })
+        |> post(~p"/sign_up", sign_up_params())
 
       refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
       assert_received {:email, _first_sent}
 
-      resent =
-        conn
-        |> recycle()
-        |> post(~p"/sign_in/magic/start", %{
-          "user" => %{"email" => user.email}
-        })
-
+      resent = started |> recycle() |> post(~p"/sign_in/magic/resend")
       refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
-      assert_received {:email, second_sent}
 
-      [_, token_id, secret] =
-        Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", second_sent.text_body)
-
-      resent |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
+      follow_code_link(resent)
 
       assert_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
       refute_receive {:mixpanel_track, [%{"event" => "sign_up_started"}]}
     end
 
-    test "logout fires signed_out", %{conn: conn, user: user} do
-      conn |> log_in_user(user) |> delete(~p"/sign_out")
+    test "sign-out fires signed_out once per Member that ended", %{conn: conn, member: member} do
+      other = Fixtures.Memberships.create_membership(email: member.email)
+      conn |> log_in_member(member) |> log_in_member(other) |> delete(~p"/sign_out")
 
-      assert_receive {:mixpanel_track, [%{"event" => "signed_out", "properties" => props}]}
-      assert props["distinct_id"] == user.id
+      for _member <- 1..2 do
+        assert_receive {:mixpanel_track, [%{"event" => "signed_out", "properties" => props}]}
+        assert props["distinct_id"] in [member.id, other.id]
+      end
+
+      refute_receive {:mixpanel_track, [%{"event" => "signed_out"}]}
     end
   end
 
   describe "console (LiveView) pageviews" do
     test "a console mount fires page_viewed — authenticated, with the path", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      assert is_nil(membership.last_active_at)
+      {conn, owner, account} = register_and_log_in(conn)
+      assert is_nil(owner.last_active_at)
 
       {:ok, _lv, _html} = live(conn, ~p"/app/#{account.slug}")
 
-      assert %DateTime{} = Emisar.Repo.reload!(membership).last_active_at
+      assert %DateTime{} = Emisar.Repo.reload!(owner).last_active_at
       assert_receive {:mixpanel_track, [%{"event" => "page_viewed", "properties" => props}]}
       assert props["authenticated"] == true
-      assert props["distinct_id"] == user.id
-      assert props["$user_id"] == user.id
+      assert props["distinct_id"] == owner.id
+      assert props["$user_id"] == owner.id
       # Path is normalized — the account slug collapses to :account so console
       # pages aggregate (UUID detail segments collapse to :id the same way).
       assert props["path"] == "/app/:account"
@@ -520,14 +497,23 @@ defmodule EmisarWeb.AnalyticsTest do
     end
 
     test "the disconnected render does not touch membership activity", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
+      {conn, owner, account} = register_and_log_in(conn)
 
       conn = get(conn, ~p"/app/#{account.slug}")
 
       assert html_response(conn, 200)
-      assert is_nil(Emisar.Repo.reload!(membership).last_active_at)
+      assert is_nil(Emisar.Repo.reload!(owner).last_active_at)
     end
+  end
+
+  defp follow_code_link_with_gpc(started) do
+    assert_received {:email, sent}
+    [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
+
+    started
+    |> recycle()
+    |> put_req_header("sec-gpc", "1")
+    |> get(~p"/sign_in/magic/#{token_id}/#{secret}")
   end
 
   defp enable_x_conversions do

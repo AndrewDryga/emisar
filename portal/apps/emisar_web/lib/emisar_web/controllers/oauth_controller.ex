@@ -11,7 +11,8 @@ defmodule EmisarWeb.OAuthController do
       deprecated but still supported. Public; the client self-registers
       and gets back a `client_id`.
     * `GET  /oauth/authorize` — renders a consent screen to the
-      logged-in operator (behind `:require_authenticated_user`).
+      signed-in operator (behind `:require_signed_in`), who picks which of
+      this browser's signed-in workspaces the grant lands in.
     * `POST /oauth/authorize` — records the consent decision; on approve
       mints a single-use code bound to the PKCE challenge and redirects
       back to the client.
@@ -180,12 +181,12 @@ defmodule EmisarWeb.OAuthController do
     end
   end
 
-  # The consent form posts which account the operator chose to grant. The
-  # backing key is minted under a membership THEY hold in that account —
-  # resolved fresh against their non-suspended memberships, never trusted from
-  # the form. The rendered form always posts an explicit account_id (select or
-  # hidden field), so a request without one is a stale or handcrafted form —
-  # it must not silently mint into the session's account.
+  # The consent form posts which workspace the operator chose to grant. The
+  # backing key is minted under the Member of this browser's live session in
+  # that workspace — resolved fresh from the cookie entry and its row, never
+  # trusted from the form. The rendered form always posts an explicit
+  # account_id (select or hidden field), so a request without one is a stale or
+  # handcrafted form — it must not silently mint into some default workspace.
   defp consent_subject(conn, %{"account_id" => account_id})
        when is_binary(account_id) and account_id != "",
        do: UserAuth.subject_for_account(conn, account_id)
@@ -212,6 +213,7 @@ defmodule EmisarWeb.OAuthController do
 
   defp render_consent(conn, client, params) do
     requested = scopes(params["scope"])
+    sessions = consent_sessions(conn)
 
     conn
     |> allow_oauth_form_navigation(params["redirect_uri"])
@@ -221,14 +223,12 @@ defmodule EmisarWeb.OAuthController do
       # registration — so the operator authorizes a concrete callback, not just
       # a self-reported (spoofable) client name.
       callback_origin: callback_label(params["redirect_uri"]),
-      account_name: account_label(conn),
-      # Which account the grant lands in: a picker when the operator belongs to
-      # several (the key used to silently ride the session default — an easy
-      # way to connect Claude.ai to the wrong, empty account), preselecting the
-      # session-current one.
-      accounts: consent_accounts(conn),
-      selected_account_id: conn.assigns.current_account.id,
-      user_email: user_email(conn),
+      # Which workspace the grant lands in: the browser's one signed-in
+      # workspace is preselected and hidden; with several, the operator picks
+      # at the point of decision (no default — the key used to silently ride a
+      # session default, an easy way to connect Claude.ai to the wrong, empty
+      # workspace).
+      sessions: sessions,
       scopes: requested,
       # Echoed back verbatim as hidden fields on the consent form.
       params: %{
@@ -404,28 +404,19 @@ defmodule EmisarWeb.OAuthController do
   defp client_label(%{client_name: name}) when is_binary(name) and name != "", do: name
   defp client_label(_), do: "An MCP client"
 
-  defp account_label(conn) do
-    case conn.assigns[:current_account] do
-      %{name: name} when is_binary(name) -> name
-      _ -> "your workspace"
-    end
+  # The consent picker's options: each workspace this browser is signed in to,
+  # named with the Member the grant would belong to there. `require_signed_in`
+  # already pruned dead entries and sorted by workspace name.
+  defp consent_sessions(conn) do
+    Enum.map(conn.assigns.signed_in_sessions, fn %{membership: membership} ->
+      %{account: membership.account, member_label: member_label(membership)}
+    end)
   end
 
-  defp user_email(conn) do
-    case conn.assigns[:current_user] do
-      %{email: email} when is_binary(email) -> email
-      _ -> nil
-    end
-  end
+  defp member_label(%Accounts.Membership{email: email}) when is_binary(email), do: email
 
-  # Every (non-suspended) account the operator belongs to — the consent
-  # picker's options.
-  defp consent_accounts(conn) do
-    {:ok, accounts, _meta} =
-      Accounts.list_accounts_for_user(conn.assigns.current_subject, page: [limit: 100])
-
-    accounts
-  end
+  defp member_label(%Accounts.Membership{} = membership),
+    do: Accounts.member_display_name(membership)
 
   defp append_query(uri_string, extra) do
     uri = URI.parse(uri_string)

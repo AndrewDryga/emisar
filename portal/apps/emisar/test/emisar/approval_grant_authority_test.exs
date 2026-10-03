@@ -4,15 +4,17 @@ defmodule Emisar.ApprovalGrantAuthorityTest do
   alias Emisar.{Approvals, Audit, Fixtures, Repo, Runners, Runs}
 
   setup do
-    {user, account, owner} = Fixtures.Subjects.owner_subject()
-    membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-    membership = Fixtures.Memberships.force_role(membership, "admin")
-    admin = Fixtures.Subjects.membership_subject(membership)
+    {member, account, _owner_subject} = Fixtures.Subjects.owner_subject()
+    membership = Fixtures.Memberships.force_role(member, "admin")
+    admin = Fixtures.Subjects.subject_for(membership)
 
     {_secret, key} =
-      Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+      Fixtures.ApiKeys.create_api_key(
+        account_id: account.id,
+        created_by_membership_id: membership.id
+      )
 
-    %{account: account, owner: owner, admin: admin, membership: membership, key: key}
+    %{account: account, admin: admin, membership: membership, key: key}
   end
 
   describe "revoke_grant/2" do
@@ -127,7 +129,7 @@ defmodule Emisar.ApprovalGrantAuthorityTest do
       assert length(events) == 257
     end
 
-    test "stale role, user and explicit attenuation never grant revocation",
+    test "stale role, removed Member and explicit attenuation never grant revocation",
          %{account: _, admin: _, membership: _, key: _} = context do
       grant = grant(context, nil)
       attenuated = %{context.admin | permissions: MapSet.new()}
@@ -137,8 +139,12 @@ defmodule Emisar.ApprovalGrantAuthorityTest do
       Fixtures.Memberships.force_role(context.membership, "operator")
       assert Approvals.revoke_grant(grant, context.admin) == {:error, :unauthorized}
       assert Approvals.revoke_all_grants(context.admin) == {:error, :unauthorized}
-      context.membership |> Repo.reload!() |> Fixtures.Memberships.force_role("admin")
-      Fixtures.Users.mark_user_as_deleted(context.admin.actor)
+
+      context.membership
+      |> Repo.reload!()
+      |> Fixtures.Memberships.force_role("admin")
+      |> Fixtures.Memberships.mark_membership_as_deleted()
+
       assert Approvals.revoke_grant(grant, context.admin) == {:error, :unauthorized}
       assert Approvals.revoke_all_grants(context.admin) == {:error, :unauthorized}
       refute Repo.reload!(grant).revoked_at
@@ -163,14 +169,14 @@ defmodule Emisar.ApprovalGrantAuthorityTest do
       requester =
         [account_id: context.account.id, role: "admin"]
         |> Fixtures.Memberships.create_membership()
-        |> Fixtures.Subjects.membership_subject()
+        |> Fixtures.Subjects.subject_for()
 
       request = pending_request(context.account, requester)
       foreign = Fixtures.Memberships.create_membership(role: "admin")
 
       for forged <- [
             %{context.admin | membership_id: foreign.id},
-            %{context.admin | actor: Fixtures.Users.create_user()}
+            %{context.admin | actor: foreign}
           ] do
         assert Approvals.approve_request(request, forged) == {:error, :unauthorized}
       end
@@ -245,7 +251,7 @@ defmodule Emisar.ApprovalGrantAuthorityTest do
         [
           account_id: context.account.id,
           api_key_id: context.key.id,
-          granted_by_id: context.admin.actor.id,
+          granted_by_membership_id: context.admin.actor.id,
           runner_id: runner_id,
           pack_ref: "postgres@1.0.0/sha256:" <> String.duplicate("a", 64)
         ],

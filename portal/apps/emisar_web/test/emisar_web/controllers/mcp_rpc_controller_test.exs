@@ -9,16 +9,10 @@ defmodule EmisarWeb.MCPRpcControllerTest do
 
   setup do
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
-    _membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user)
     {:ok, raw, key} = ApiKeys.create_key(%{name: "rpc", kind: :mcp}, subject)
 
     {:ok, account: account, user: user, subject: subject, raw: raw, key: key}
@@ -99,15 +93,13 @@ defmodule EmisarWeb.MCPRpcControllerTest do
     end
 
     test "a pending invitee's static key is unauthorized without usage side effects", %{
-      account: account,
       user: user,
       key: key,
       raw: raw
     } do
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
       {_token, digest} = Crypto.user_invite_token()
 
-      membership
+      user
       |> Ecto.Changeset.change(invitation_token_digest: digest, invitation_accepted_at: nil)
       |> Repo.update!()
 

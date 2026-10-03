@@ -10,28 +10,6 @@ defmodule Emisar.Users.User.Query do
   def by_id(queryable, id),
     do: where(queryable, [users: u], u.id == ^id)
 
-  def by_ids(queryable, ids),
-    do: where(queryable, [users: u], u.id in ^ids)
-
-  def ordered_by_id(queryable),
-    do: order_by(queryable, [users: u], asc: u.id)
-
-  # `email` is citext — the column compares case-insensitively; no
-  # app-side downcase (the index is the guarantee, not normalization).
-  def by_email(queryable, email),
-    do: where(queryable, [users: u], u.email == ^email)
-
-  @doc """
-  `FOR UPDATE` on the user row, for a caller whose decision depends on which
-  accounts a person belongs to.
-
-  `FOR NO KEY UPDATE` is the wrong mode here and was a real defect: PostgreSQL
-  makes it compatible with the `FOR KEY SHARE` an FK check takes, so a membership
-  insert referencing this user proceeds straight past it. Only `FOR UPDATE`
-  conflicts with that check.
-  """
-  def lock_for_update(queryable), do: lock(queryable, "FOR UPDATE")
-
   @doc """
   `Audit.resolve_references/2` helper — narrow to ids, project
   `{id, label_field}` tuples. Plain SQL composition for label lookup

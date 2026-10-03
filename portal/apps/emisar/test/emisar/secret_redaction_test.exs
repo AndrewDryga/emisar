@@ -18,7 +18,7 @@ defmodule Emisar.SecretRedactionTest do
     {Emisar.ApiKeys.ApiKey, [:key_hash]},
     {Emisar.ApiKeys.DeviceGrant, [:device_code_digest, :user_code_digest]},
     {Emisar.Billing.CustomerLinkCode, [:code_digest]},
-    {Emisar.Auth.UserToken, [:token]},
+    {Emisar.Auth.UserToken, [:token, :browser_digest]},
     {Emisar.Runners.EnrollmentKey, [:key_hash]},
     {Emisar.Runners.Token, [:token_hash]},
     {Emisar.OAuth.Token, [:access_token_hash, :refresh_token_hash]},

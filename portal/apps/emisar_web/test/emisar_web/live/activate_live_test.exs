@@ -17,7 +17,7 @@ defmodule EmisarWeb.ActivateLiveTest do
 
   describe "GET /app/:slug/activate" do
     test "a URL-carried code resolves straight into the approval card", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {_device_code, user_code, _grant} = open_grant(["claude-code", "cursor"])
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
@@ -35,7 +35,7 @@ defmodule EmisarWeb.ActivateLiveTest do
     end
 
     test "CLI-only and mixed approvals name where credentials will be stored", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {_device_code, cli_code, _grant} = open_grant(["emisar-mcp-cli"])
 
       {:ok, _lv, cli_html} = live(conn, ~p"/app/#{account}/activate?code=#{cli_code}")
@@ -49,7 +49,7 @@ defmodule EmisarWeb.ActivateLiveTest do
     end
 
     test "an unknown or expired code shows the inline dead-code message", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/activate?code=XXXX-2418")
       assert html =~ "No pending request matches this code"
@@ -62,7 +62,7 @@ defmodule EmisarWeb.ActivateLiveTest do
     end
 
     test "a near-miss hand-typed code re-renders in the box for correction", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/activate")
 
@@ -75,7 +75,7 @@ defmodule EmisarWeb.ActivateLiveTest do
     end
 
     test "the code form looks a request up by hand, normalizing the input", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {_device_code, user_code, _grant} = open_grant()
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/activate")
@@ -88,7 +88,7 @@ defmodule EmisarWeb.ActivateLiveTest do
     end
 
     test "approve flips the grant, and the poll then delivers keys", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {device_code, user_code, _grant} = open_grant(["codex"])
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
@@ -113,7 +113,7 @@ defmodule EmisarWeb.ActivateLiveTest do
     end
 
     test "deny kills the request — the poll reports access_denied", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {device_code, user_code, _grant} = open_grant()
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
@@ -127,11 +127,11 @@ defmodule EmisarWeb.ActivateLiveTest do
 
     test "a crafted approve event cannot bypass a throttled lookup", %{conn: conn} do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       {_device_code, user_code, grant} = open_grant()
 
       for _attempt <- 1..20 do
-        assert Throttle.check("device_code_lookup", user.id, 20, 900_000) == :ok
+        assert Throttle.check("device_code_lookup", owner.id, 20, 900_000) == :ok
       end
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
@@ -143,11 +143,11 @@ defmodule EmisarWeb.ActivateLiveTest do
 
     test "a crafted deny event cannot bypass a throttled lookup", %{conn: conn} do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       {_device_code, user_code, grant} = open_grant()
 
       for _attempt <- 1..20 do
-        assert Throttle.check("device_code_lookup", user.id, 20, 900_000) == :ok
+        assert Throttle.check("device_code_lookup", owner.id, 20, 900_000) == :ok
       end
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
@@ -158,10 +158,9 @@ defmodule EmisarWeb.ActivateLiveTest do
     end
 
     test "a viewer gets the honest role note and no approval card", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       # Downgrade to viewer AFTER login so the session stays valid.
-      membership = Fixtures.Memberships.fetch_membership(account.id, user.id)
-      Fixtures.Memberships.force_role(membership, "viewer")
+      Fixtures.Memberships.force_role(owner, "viewer")
 
       {_device_code, user_code, _grant} = open_grant()
 
@@ -175,7 +174,7 @@ defmodule EmisarWeb.ActivateLiveTest do
     end
 
     test "a single-account approver sees the named destination, not a selector", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {_device_code, user_code, _grant} = open_grant()
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
@@ -184,24 +183,31 @@ defmodule EmisarWeb.ActivateLiveTest do
       assert html =~ account.name
     end
 
-    test "a multi-account approver picks the workspace; the pick keeps the code", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-
+    test "an approver signed in to several workspaces picks one; the pick keeps the code", %{
+      conn: conn
+    } do
+      {conn, owner, account} = register_and_log_in(conn)
       other_account = Fixtures.Accounts.create_account(name: "Second Workspace")
 
-      Fixtures.Memberships.create_membership(
-        account_id: other_account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+      other_owner =
+        Fixtures.Memberships.create_membership(
+          account_id: other_account.id,
+          email: owner.email,
+          role: "owner"
+        )
+
+      # A workspace this browser is not signed in to is never offered.
+      unsigned = Fixtures.Accounts.create_account(name: "Unsigned Workspace")
+      Fixtures.Memberships.create_membership(account_id: unsigned.id, email: owner.email)
 
       {_device_code, user_code, _grant} = open_grant()
 
-      conn = conn |> log_in_user(user) |> put_session(:current_account_id, account.id)
+      conn = log_in_member(conn, other_owner)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
 
       assert has_element?(lv, "select#activate-account")
       assert html =~ "Second Workspace"
+      refute html =~ "Unsigned Workspace"
 
       render_change(lv, "pick_account", %{"account" => other_account.slug})
       assert_redirect(lv, "/app/#{other_account.slug}/activate?code=#{user_code}")
@@ -210,15 +216,27 @@ defmodule EmisarWeb.ActivateLiveTest do
 
   describe "GET /activate (slugless forward)" do
     test "forwards into the current account's activate page, keeping the code", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       conn = get(conn, ~p"/activate?code=FKZQ-2418")
       assert redirected_to(conn) == "/app/#{account.slug}/activate?code=FKZQ-2418"
     end
 
-    test "an anonymous visitor is sent to sign-in", %{conn: conn} do
+    test "with several signed-in workspaces it asks which, keeping the code", %{conn: conn} do
+      {conn, _owner_a, account_a} = register_and_log_in(conn, %{account: %{name: "Alpha Ops"}})
+      {conn, _owner_b, account_b} = register_and_log_in(conn, %{account: %{name: "Bravo Ops"}})
+
+      html = conn |> get(~p"/activate?code=FKZQ-2418") |> html_response(200)
+
+      assert html =~ "Choose a workspace"
+      assert html =~ ~s(href="/app/#{account_a.slug}/activate?code=FKZQ-2418")
+      assert html =~ ~s(href="/app/#{account_b.slug}/activate?code=FKZQ-2418")
+    end
+
+    test "an anonymous visitor is sent to sign-in and returns with the code", %{conn: conn} do
       conn = get(conn, ~p"/activate?code=FKZQ-2418")
       assert redirected_to(conn) == ~p"/sign_in"
+      assert get_session(conn, :user_return_to) == ~p"/activate?code=FKZQ-2418"
     end
   end
 end

@@ -4,7 +4,7 @@ defmodule Emisar.RetentionBatchesTest do
   alias Emisar.Catalog.PackBaseline
 
   setup do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject()
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject()
     %{account: account, subject: subject}
   end
 
@@ -148,7 +148,7 @@ defmodule Emisar.RetentionBatchesTest do
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       {:ok, access} = Accounts.RunnerAccess.restricted([runner.group], [])
       Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       assert Runners.list_visible_pack_deployments(
                [{"absent", "v", "h"}, {"late", "v", "h"}],
@@ -240,7 +240,7 @@ defmodule Emisar.RetentionBatchesTest do
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       {:ok, access} = Accounts.RunnerAccess.restricted(["db"], [])
       Fixtures.Memberships.force_runner_access(membership, access)
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       candidates = [
         {"p", "v", "h"},
@@ -266,7 +266,7 @@ defmodule Emisar.RetentionBatchesTest do
       first = stale_version(account, "first", "v1")
       second = stale_version(account, "second", "v1")
       membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       id = {__MODULE__, self(), make_ref()}
 
       :telemetry.attach(
@@ -622,7 +622,7 @@ defmodule Emisar.RetentionBatchesTest do
 
     Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
     |> Fixtures.Memberships.force_runner_access(access)
-    |> Fixtures.Subjects.membership_subject()
+    |> Fixtures.Subjects.subject_for()
   end
 
   defp subscription(account) do

@@ -2,7 +2,7 @@ defmodule Emisar.CatalogManagementConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Catalog, Fixtures, Repo, Runners, Users}
+  alias Emisar.{Accounts, Catalog, Fixtures, Repo, Runners}
 
   @moduletag timeout: 60_000
 
@@ -75,21 +75,14 @@ defmodule Emisar.CatalogManagementConcurrencyTest do
   defp unboxed_catalog(fun) do
     Sandbox.unboxed_run(Repo, fn ->
       account = Fixtures.Accounts.create_account()
-      user = Fixtures.Users.create_user()
 
       on_exit(fn ->
         Sandbox.unboxed_run(Repo, fn ->
           Repo.delete_all(from(row in Accounts.Account, where: row.id == ^account.id))
-          Repo.delete_all(from(row in Users.User, where: row.id == ^user.id))
         end)
       end)
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: user.id,
-          role: "admin"
-        )
+      membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
 
@@ -103,12 +96,11 @@ defmodule Emisar.CatalogManagementConcurrencyTest do
       {:ok, _runner} = Runners.apply_state(runner, %{"packs" => advertisement(version)})
       {:ok, access} = Accounts.RunnerAccess.new(:restricted, ["staging"], [])
       membership = Fixtures.Memberships.force_runner_access(membership, access)
-      admin = Fixtures.Subjects.membership_subject(membership)
+      admin = Fixtures.Subjects.subject_for(membership)
 
       try do
         fun.(%{
           account: account,
-          user: user,
           membership: membership,
           runner: runner,
           admin: admin,
@@ -116,7 +108,6 @@ defmodule Emisar.CatalogManagementConcurrencyTest do
         })
       after
         Repo.delete_all(from(row in Accounts.Account, where: row.id == ^account.id))
-        Repo.delete_all(from(row in Users.User, where: row.id == ^user.id))
       end
     end)
   end

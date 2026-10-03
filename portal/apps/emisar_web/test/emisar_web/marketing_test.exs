@@ -150,13 +150,18 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ ~r/<body[^>]*\bmarketing\b/
   end
 
-  test "marketing nav swaps to a Dashboard link when the visitor is signed in",
+  test "marketing nav swaps to a Dashboard link while the cookie holds a workspace session",
        %{conn: conn} do
-    {conn, _user, _account} = register_and_log_in(conn)
+    {conn, _owner, _account} = register_and_log_in(conn)
     html = conn |> get(~p"/") |> html_response(200)
 
     assert html =~ "Dashboard"
+    # /app picks among the signed-in workspaces.
     assert html =~ ~s(href="/app")
+
+    signed_out = conn |> delete(~p"/sign_out") |> recycle() |> get(~p"/") |> html_response(200)
+    refute signed_out =~ ~s(href="/app")
+    assert signed_out =~ "Sign in"
   end
 
   test "pricing page mentions the three tiers", %{conn: conn} do
@@ -624,8 +629,9 @@ defmodule EmisarWeb.MarketingTest do
   test "health probes are reachable with no session/auth/CSRF and never leak the revision", %{
     conn: conn
   } do
-    # The route rides the bare :api pipeline (no fetch_session / fetch_current_user
-    # / protect_from_forgery), so infrastructure probes need no cookies. The exact
+    # The route rides the bare :api pipeline (no fetch_session /
+    # fetch_session_entries / protect_from_forgery), so infrastructure probes need
+    # no cookies. The exact
     # deployed Git revision stays out of the anonymous body (the repo is public).
     version = EmisarWeb.AppVersion.version()
 
@@ -635,7 +641,7 @@ defmodule EmisarWeb.MarketingTest do
 
       assert body == %{"status" => "ok", "version" => version}
       refute Map.has_key?(body, "revision")
-      refute conn.assigns[:current_user]
+      refute Map.has_key?(conn.assigns, :signed_in?)
       assert conn.req_cookies == %{}
     end
   end

@@ -1,240 +1,213 @@
 defmodule EmisarWeb.AcceptInvitationLiveTest do
+  @moduledoc """
+  The invitation page (plan §3 "Invitations"): an invitation names an address
+  and a pending Member, and whoever proves that address in this browser joins as
+  that Member. Two states: unavailable, or the name form, which posts to the
+  invitation's code request; the code goes to the invited address only, and
+  using it in this browser accepts the invitation and adds that workspace's
+  session. Nothing is accepted before the code completes, so a forwarded link
+  changes nothing. (An SSO-only workspace's continue-with-SSO step is in
+  `SSOControllerTest`.)
+  """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, Auth}
+  alias Emisar.{Accounts, Auth, Repo}
 
-  # Mints a pending invitation and returns its token. The invitee is a
-  # brand-new email (anonymous-accept flow), so the accept page renders
-  # the name-only join form (passwordless — a sign-in link is emailed on accept).
-  defp invitation_token(account, owner) do
+  @code_link ~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})"
+
+  defp invite(owner, attrs \\ %{}) do
     email = "invitee-#{System.unique_integer([:positive])}@example.com"
-    subject = owner_subject(owner, account)
 
-    {:ok, %{invitation_token: token}} =
+    {:ok, %{membership: invitation, invitation_token: token}} =
       Accounts.invite_user_to_account(
         Fixtures.Accounts.invitation_attrs(
-          email: email,
-          role: "operator",
-          runner_access_mode: "all"
+          Map.merge(%{email: email, role: "operator", runner_access_mode: "all"}, attrs)
         ),
-        subject
+        Fixtures.Subjects.subject_for(owner)
       )
 
-    token
+    {invitation, token}
   end
 
-  describe "token gate" do
-    test "an invitation neither exposes nor changes an existing personal name", %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      person = Fixtures.Users.create_user(full_name: "Private Personal Name")
-      elsewhere = Fixtures.Memberships.create_membership(user_id: person.id)
+  # The armed form's POST: the invitation token and the name, never an address.
+  defp request_code(conn, token, name),
+    do: post(conn, ~p"/accept_invitation/#{token}", %{"member" => %{"display_name" => name}})
 
-      {:ok, invitation} =
-        Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(email: person.email, role: "viewer"),
-          owner_subject(owner, account)
-        )
+  defp complete(requested) do
+    assert_received {:email, sent}
+    [_, token_id, code] = Regex.run(@code_link, sent.text_body)
+    {sent, requested |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{code}")}
+  end
 
-      {:ok, lv, html} = live(build_conn(), ~p"/accept_invitation/#{invitation.invitation_token}")
-      refute html =~ "Private Personal Name"
-      assert has_element?(lv, "#accept_form", "Your name in this workspace")
+  describe "the token gate" do
+    test "a bogus or blank token renders a cause-neutral unavailable page", %{conn: conn} do
+      for token <- ["not-a-real-token", "   "] do
+        {:ok, _lv, html} = live(conn, ~p"/accept_invitation/#{token}")
 
-      lv |> form("#accept_form", member: %{display_name: "Work Name"}) |> render_submit()
-      assert is_nil(Emisar.Repo.reload!(invitation.membership).display_name)
-
-      requested =
-        request_invitation_code(build_conn(), invitation.invitation_token, account, "Work Name")
-
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-
-      assert get_session(
-               get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}"),
-               :user_token
-             )
-
-      assert Emisar.Repo.reload!(invitation.membership).display_name == "Work Name"
-      assert Emisar.Repo.reload!(person).full_name == "Private Personal Name"
-      assert Emisar.Repo.reload!(elsewhere).display_name == elsewhere.display_name
-    end
-
-    test "a bogus token renders the Invitation-unavailable page with cause-neutral copy", %{
-      conn: _conn
-    } do
-      {:ok, _lv, html} = live(build_conn(), ~p"/accept_invitation/not-a-real-token")
-
-      # The state renders ON the page (inline-errors house rule) with a
-      # recovery action. Cause-neutral: a mistyped/garbage token shouldn't
-      # claim "expired", and the page names no account.
-      assert html =~ "Invitation unavailable"
-      assert html =~ "isn&#39;t valid or is no longer available"
-      assert html =~ "Go to sign in"
-      refute html =~ "expired"
-    end
-
-    test "a blank (whitespace-only) token renders the same unavailable page", %{conn: _conn} do
-      # the route carries the token as a path segment, so the
-      # empty case is a whitespace-only token: `fetch_invitation_by_token` requires a
-      # real (non-empty) binary and never matches one — same cause-neutral page,
-      # no invite resolvable from a blank token.
-      {:ok, _lv, html} = live(build_conn(), ~p"/accept_invitation/#{"   "}")
-
-      assert html =~ "Invitation unavailable"
+        # Inline state with a recovery action; it neither claims "expired" nor
+        # names a workspace.
+        assert html =~ "Invitation unavailable"
+        assert html =~ "isn&#39;t valid or is no longer available"
+        assert html =~ "Go to sign in"
+        refute html =~ "expired"
+      end
     end
 
     test "an expired invitation names the state and asks for a fresh one", %{conn: conn} do
       {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
-
-      {:ok, membership} = Accounts.fetch_invitation_by_token(token)
+      {invitation, token} = invite(owner)
       nine_days_ago = DateTime.add(DateTime.utc_now(), -9 * 24 * 3600, :second)
-
-      {:ok, _} =
-        membership |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Emisar.Repo.update()
+      invitation |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Repo.update!()
 
       {:ok, _lv, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
 
       # The bearer holds the real emailed token, so naming the expiry is not an
-      # enumeration oracle — but the page still names no account.
+      # enumeration oracle — but the page still names no workspace.
       assert html =~ "Invitation expired"
       assert html =~ "send a fresh one"
       refute html =~ account.name
     end
   end
 
-  # The armed form's POST: the invitation token and name, never an address.
-  defp request_invitation_code(conn, token, account, name) do
-    post(conn, ~p"/sign_in/magic/start", %{
-      "invitation_token" => token,
-      "member" => %{"display_name" => name},
-      "return_to" => ~p"/app/#{account}"
-    })
-  end
-
-  describe "anonymous accept" do
-    test "renders the join offer; a valid name arms the code request and accepts nothing", %{
-      conn: conn
-    } do
+  describe "accepting" do
+    setup %{conn: conn} do
       {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
+      {invitation, token} = invite(owner)
+      %{owner: owner, account: account, invitation: invitation, token: token}
+    end
 
+    test "the join offer names the workspace, role and address; a valid name arms the code request and accepts nothing",
+         %{account: account, invitation: invitation, token: token} do
       {:ok, lv, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
 
       assert html =~ account.name
       # The human role label, never the raw atom.
       assert html =~ "Operator"
-      assert html =~ "invitee-"
-      # Passwordless: the join form sets a name, not a password.
-      refute html =~ ~s|name="user[password]"|
+      assert html =~ invitation.email
+      refute html =~ "password"
 
-      params = %{"member" => %{"display_name" => "New Person"}}
+      form = form(lv, "#accept_form", %{"member" => %{"display_name" => "New Person"}})
+      assert render_submit(form) =~ "phx-trigger-action"
+      assert has_element?(lv, ~s(#accept_form[action="/accept_invitation/#{token}"]))
 
-      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token)
-      assert is_nil(pending_membership.user_id)
-
-      # A valid name arms the hidden POST to the magic-link start
-      # (phx-trigger-action), which emails the invited address a code.
-      html = lv |> form("#accept_form", params) |> render_submit()
-      assert html =~ "phx-trigger-action"
-      assert html =~ ~s|action="/sign_in/magic/start"|
-      assert html =~ ~s|name="invitation_token" value="#{token}"|
-      assert html =~ ~s|name="return_to" value="/app/#{account.slug}"|
-
-      # Nothing is accepted or created until that code is used in this browser.
-      assert {:ok, still_pending} = Accounts.fetch_invitation_by_token(token)
-      assert is_nil(still_pending.user_id)
-
-      assert Emisar.Users.fetch_user_by_email(pending_membership.email) ==
-               {:error, :not_found}
+      # Nothing is accepted until the invited address's code is used here.
+      assert Repo.reload!(invitation) == invitation
+      assert {:ok, _still_pending} = Accounts.fetch_invitation_by_token(token)
     end
 
-    test "the invitee finishes with the emailed sign-in and opens the workspace", %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
-      {:ok, invitation} = Accounts.fetch_invitation_by_token(token)
-
+    test "the invitee finishes with the emailed code and opens the workspace", %{
+      account: account,
+      invitation: invitation,
+      token: token
+    } do
       {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+      form = form(lv, "#accept_form", %{"member" => %{"display_name" => "New Person"}})
+      render_submit(form)
 
-      lv
-      |> form("#accept_form", %{"member" => %{"display_name" => "New Person"}})
-      |> render_submit()
+      requested = follow_trigger_action(form, build_conn())
+      assert redirected_to(requested) == ~p"/sign_in/magic?sent=1"
+      {sent, completed} = complete(requested)
 
-      requested = request_invitation_code(build_conn(), token, account, "New Person")
-      assert_received {:email, sent}
       assert sent.to == [{"", invitation.email}]
-      assert is_nil(Emisar.Repo.reload!(invitation).user_id)
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      completed = get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}")
+      assert redirected_to(completed) == ~p"/app/#{account}"
 
-      assert get_session(completed, :user_token)
-      {:ok, user} = Emisar.Users.fetch_user_by_email(invitation.email)
-      assert user.confirmed_at
-      assert Emisar.Repo.reload!(invitation).user_id == user.id
+      accepted = Repo.reload!(invitation)
+      assert accepted.display_name == "New Person"
+      assert %DateTime{} = accepted.invitation_accepted_at
+      assert %DateTime{} = accepted.email_verified_at
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+
+      [{account_id, session_token}] = get_session(completed, :sessions)
+      assert account_id == account.id
+
+      assert {:ok, %{membership_id: membership_id}} =
+               Auth.fetch_session_by_token(session_token, account.id)
+
+      assert membership_id == invitation.id
       assert html_response(get(recycle(completed), ~p"/app/#{account}"), 200) =~ "New Person"
     end
 
-    test "a signed-out visitor pushing accept_existing is a no-op, not a crash", %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
+    test "a browser signed in to other workspaces gains one more session", %{
+      account: account,
+      token: token
+    } do
+      {elsewhere, _other_owner, other_account} = register_and_log_in(build_conn())
 
-      {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+      {_sent, completed} = elsewhere |> request_code(token, "Joiner") |> complete()
 
-      # `mark_invitation_accepted/3` requires a `%Users.User{}`; with no signed-in
-      # user this push used to raise FunctionClauseError and kill the socket.
-      render_click(lv, "accept_existing", %{})
+      assert redirected_to(completed) == ~p"/app/#{account}"
 
-      assert render(lv) =~ "accept_form"
-      assert {:ok, _membership} = Accounts.fetch_invitation_by_token(token)
+      assert get_session(completed, :sessions) |> Enum.map(&elem(&1, 0)) == [
+               other_account.id,
+               account.id
+             ]
     end
 
-    test "an accept that lost the race to a second link-holder lands on the terminal state", %{
-      conn: conn
+    test "a forwarded link opened in another browser changes nothing", %{
+      invitation: invitation,
+      token: token
     } do
-      {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
+      # The holder submits a name; the code goes to the invited mailbox only.
+      _holder = request_code(build_conn(), token, "Holder Name")
+      assert_received {:email, holder_sent}
+      assert holder_sent.to == [{"", invitation.email}]
+      assert Repo.reload!(invitation) == invitation
 
+      # The invitee still joins from their own browser, exactly once.
+      {_sent, completed} = build_conn() |> request_code(token, "Real Name") |> complete()
+
+      assert [_entry] = get_session(completed, :sessions)
+      assert Repo.reload!(invitation).display_name == "Real Name"
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+    end
+
+    test "a crafted payload naming another address still mails only the invited one", %{
+      invitation: invitation,
+      token: token
+    } do
       {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
 
-      # The invitee accepts it signed in elsewhere while this tab sits on the
-      # form, burning the token.
-      {:ok, membership} = Accounts.fetch_invitation_by_token(token)
+      crafted = %{
+        "user" => %{"email" => "attacker@evil.test"},
+        "member" => %{"email" => "attacker@evil.test", "display_name" => "New Person"}
+      }
 
-      invitee =
-        Fixtures.Users.create_user(email: membership.email)
-        |> Fixtures.Users.confirm_user()
+      render_submit(lv, "accept", crafted)
+      post(build_conn(), ~p"/accept_invitation/#{token}", crafted)
 
-      {:ok, _} = Accounts.mark_invitation_accepted(membership, token, invitee)
+      assert_received {:email, sent}
+      assert sent.to == [{"", invitation.email}]
+      refute_received {:email, _another}
+    end
+
+    test "an accept that lost the race to the invitee's other browser lands on the terminal state",
+         %{token: token} do
+      {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+      {_sent, _completed} = build_conn() |> request_code(token, "First Browser") |> complete()
 
       html =
         lv
-        |> form("#accept_form", %{"member" => %{"display_name" => "Second Acceptor"}})
+        |> form("#accept_form", %{"member" => %{"display_name" => "Second Browser"}})
         |> render_submit()
 
-      # Terminal state with a recovery action — not a transient flash over a
-      # form that can never succeed.
+      # Terminal state with a recovery action, never a flash over a form that
+      # can no longer succeed.
       assert html =~ "Invitation unavailable"
-      assert html =~ "no longer available"
       assert html =~ "Go to sign in"
       refute html =~ "accept_form"
     end
 
-    test "a mounted old link cannot accept after an administrator resends", %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      subject = owner_subject(owner, account)
-
-      {:ok, %{membership: membership, invitation_token: old_token}} =
-        Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(
-            email: "rotated-#{System.unique_integer([:positive])}@example.com",
-            role: "operator",
-            runner_access_mode: "all"
-          ),
-          subject
-        )
-
+    test "a mounted old link cannot accept after an administrator resends", %{
+      owner: owner,
+      invitation: invitation,
+      token: old_token
+    } do
       {:ok, old_live, _html} = live(build_conn(), ~p"/accept_invitation/#{old_token}")
 
       assert {:ok, %{invitation_token: new_token}} =
-               Accounts.resend_account_invitation(membership, subject)
+               Accounts.resend_account_invitation(
+                 invitation,
+                 Fixtures.Subjects.subject_for(owner)
+               )
 
       old_html =
         old_live
@@ -242,7 +215,6 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
         |> render_submit()
 
       assert old_html =~ "Invitation unavailable"
-      refute old_html =~ "accept_form"
 
       {:ok, new_live, _html} = live(build_conn(), ~p"/accept_invitation/#{new_token}")
 
@@ -252,389 +224,66 @@ defmodule EmisarWeb.AcceptInvitationLiveTest do
         |> render_submit()
 
       assert new_html =~ "phx-trigger-action"
-      assert new_html =~ ~s|name="invitation_token" value="#{new_token}"|
-    end
-
-    test "a forwarded link opened in another browser changes nothing", %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
-      {:ok, invitation} = Accounts.fetch_invitation_by_token(token)
-
-      # The holder submits a name; the code goes to the invited mailbox.
-      _holder = request_invitation_code(build_conn(), token, account, "Holder Name")
-      assert_received {:email, holder_sent}
-      assert holder_sent.to == [{"", invitation.email}]
-
-      reloaded = Emisar.Repo.reload!(invitation)
-      assert {reloaded.user_id, reloaded.display_name} == {nil, nil}
-      assert {:ok, _still_pending} = Accounts.fetch_invitation_by_token(token)
-
-      # The invitee still joins from their own browser, exactly once.
-      requested = request_invitation_code(build_conn(), token, account, "Real Name")
-      assert_received {:email, sent}
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      completed = get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}")
-
-      assert get_session(completed, :user_token)
-      accepted = Emisar.Repo.reload!(invitation)
-      assert accepted.display_name == "Real Name"
-      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
     end
 
     test "an invitation rotated after the code was sent fails closed at completion", %{
-      conn: conn
+      owner: owner,
+      invitation: invitation,
+      token: token
     } do
-      {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
-      {:ok, invitation} = Accounts.fetch_invitation_by_token(token)
-      requested = request_invitation_code(build_conn(), token, account, "Late Name")
-      assert_received {:email, sent}
+      requested = request_code(build_conn(), token, "Late Name")
 
       assert {:ok, _resent} =
-               Accounts.resend_account_invitation(invitation, owner_subject(owner, account))
+               Accounts.resend_account_invitation(
+                 invitation,
+                 Fixtures.Subjects.subject_for(owner)
+               )
 
-      [_, token_id, secret] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", sent.text_body)
-      refused = get(recycle(requested), ~p"/sign_in/magic/#{token_id}/#{secret}")
+      {_sent, refused} = complete(requested)
 
       assert redirected_to(refused) == ~p"/sign_in"
       assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "can no longer be accepted"
-      refute get_session(refused, :user_token)
-      assert is_nil(Emisar.Repo.reload!(invitation).user_id)
+      refute get_session(refused, :sessions)
+      assert is_nil(Repo.reload!(invitation).invitation_accepted_at)
     end
 
-    test "a login that moved off the invited address neither sees nor accepts the invitation",
-         %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      original_email = "old-link-#{System.unique_integer([:positive])}@example.com"
-      current_email = "current-#{System.unique_integer([:positive])}@example.com"
-      moved = Fixtures.Users.create_user(email: original_email)
-
-      {:ok, %{invitation_token: token}} =
-        Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(
-            email: original_email,
-            role: "operator",
-            runner_access_mode: "all"
-          ),
-          owner_subject(owner, account)
-        )
-
-      moved = moved |> Fixtures.Users.update_email(current_email) |> Fixtures.Users.confirm_user()
-
-      # The invitation still belongs to its address, and names only that address.
-      {:ok, _live, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
-      assert html =~ original_email
-      refute html =~ current_email
-
-      signed_in = log_in_user(build_conn(), moved)
-      {:ok, _live, html} = live(signed_in, ~p"/accept_invitation/#{token}")
-      assert html =~ "Sign in with your invited email"
-
-      rejected = post(signed_in, ~p"/accept_invitation/#{token}", %{})
-      assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
-      assert {:ok, pending} = Accounts.fetch_invitation_by_token(token)
-      assert is_nil(pending.user_id)
-    end
-  end
-
-  describe "invited email is fixed" do
-    test "a tampered hidden email is ignored — the server keeps the invited address", %{
-      conn: conn
+    test "an invitation revoked before the code is requested sends nothing", %{
+      invitation: invitation,
+      token: token
     } do
-      # the anonymous form shows the invited email as a
-      # read-only hidden field, but acceptance casts ONLY the workspace name
-      # (never an email), so a client that rewrites the hidden value
-      # can't redirect the invitation onto a different address: the
-      # registered/confirmed user still carries the membership's invited email.
-      {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
-
-      {:ok, invited} = Accounts.fetch_invitation_by_token(token)
-      invited_email = invited.email
-
       {:ok, lv, _html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+      Fixtures.Memberships.mark_membership_as_deleted(invitation)
 
-      # Dispatch the `accept` event and the code request directly with crafted
-      # payloads naming an attacker-chosen address, bypassing the form, to prove
-      # the SERVER takes the address from the invitation.
-      params = %{
-        "user" => %{"email" => "attacker@evil.test"},
-        "member" => %{
-          "email" => "attacker@evil.test",
-          "display_name" => "New Person"
-        }
-      }
-
-      render_submit(lv, "accept", params)
-
-      post(
-        build_conn(),
-        ~p"/sign_in/magic/start",
-        Map.merge(params, %{"invitation_token" => token, "return_to" => ~p"/app/#{account}"})
-      )
-
-      assert_received {:email, sent}
-      assert sent.to == [{"", invited_email}]
-      assert Emisar.Users.fetch_user_by_email("attacker@evil.test") == {:error, :not_found}
-    end
-  end
-
-  describe "member-only SSO session" do
-    test "is asked to sign out first and cannot accept from this browser", %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      token = invitation_token(account, owner)
-      {:ok, invitation} = Accounts.fetch_invitation_by_token(token)
-
-      {_sso_owner, sso_account, _subject} = Fixtures.Subjects.owner_subject(%{plan: "team"})
-      provider = Fixtures.SSO.create_identity_provider(account_id: sso_account.id)
-      member = Fixtures.Memberships.create_unlinked_membership(account_id: sso_account.id)
-
-      identity =
-        Fixtures.SSO.create_user_identity(
-          account_id: sso_account.id,
-          provider_id: provider.id,
-          membership: member
-        )
-
-      member_only =
-        build_conn()
-        |> init_test_session(%{})
-        |> put_session(:user_token, Fixtures.Auth.create_member_session_token!(member, identity))
-
-      {:ok, lv, html} = live(member_only, ~p"/accept_invitation/#{token}")
-
-      assert html =~ invitation.email
-      assert html =~ "without a personal login"
-      assert html =~ "Sign out"
-      refute has_element?(lv, "#accept_form")
-      refute has_element?(lv, "#accept_existing_form")
-
-      # The rendered branch is not the gate: a crafted accept is a no-op, and
-      # HTTP acceptance needs a personal login.
-      render_click(lv, "accept", %{"member" => %{"display_name" => "Member Only"}})
-      rejected = post(member_only, ~p"/accept_invitation/#{token}", %{})
-      assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
-
-      assert Emisar.Repo.reload!(invitation) == invitation
-
-      assert Emisar.Users.fetch_user_by_email(invitation.email) ==
-               {:error, :not_found}
-    end
-  end
-
-  describe "signed-in accept" do
-    setup %{conn: conn} do
-      {_conn, owner, account} = register_and_log_in(conn)
-      %{owner: owner, account: account}
-    end
-
-    test "HTTP acceptance preserves existing proof and opens the new workspace after fresh sign-in",
-         %{
-           owner: owner,
-           account: account
-         } do
-      # The invitee is already signed in to a different account. Accepting must
-      # target the invitation instead of following the stale account session.
-      invitee = Fixtures.Users.create_user()
-      old_account = Fixtures.Accounts.create_account()
-
-      Fixtures.Memberships.create_membership(
-        account_id: old_account.id,
-        user_id: invitee.id,
-        role: "owner"
-      )
-
-      {:ok, %{membership: invitation, invitation_token: token}} =
-        Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(
-            email: invitee.email,
-            role: "viewer",
-            runner_access_mode: "all"
-          ),
-          owner_subject(owner, account)
-        )
-
-      signed_in =
-        build_conn()
-        |> log_in_user(invitee)
-        |> put_session(:current_account_id, old_account.id)
-
-      {:ok, lv, html} = live(signed_in, ~p"/accept_invitation/#{token}")
-
-      assert html =~ "You&#39;re signed in as"
-      assert has_element?(lv, "#accept_existing_form[action='/accept_invitation/#{token}']")
-      raw = get_session(signed_in, :user_token)
-      other = log_in_user(build_conn(), invitee)
-      other_raw = get_session(other, :user_token)
-      shown = get(signed_in, ~p"/accept_invitation/#{token}")
-
-      [csrf] =
-        shown.resp_body
-        |> LazyHTML.from_document()
-        |> LazyHTML.query("#accept_existing_form input[name='_csrf_token']")
-        |> LazyHTML.attribute("value")
-
-      protected = shown |> recycle() |> put_private(:plug_skip_csrf_protection, false)
-      assert_error_sent(403, fn -> post(protected, ~p"/accept_invitation/#{token}", %{}) end)
-      assert {:ok, _pending} = Accounts.fetch_invitation_by_token(token)
-      accepted = post(protected, ~p"/accept_invitation/#{token}", %{_csrf_token: csrf})
-      assert redirected_to(accepted) == ~p"/session/recover"
-      assert Emisar.Repo.reload!(invitation).user_id == invitee.id
-      assert get_session(accepted, :user_token) == raw
-      assert html_response(get(accepted, ~p"/session/recover"), 200) =~ "Invitation accepted"
-      assert html_response(get(accepted, ~p"/app/#{old_account}"), 200)
-
-      for existing <- [raw, other_raw] do
-        assert {:ok, session} = Auth.fetch_session_by_token(existing)
-
-        assert Accounts.fetch_membership_by_account_id_or_slug(account.id, session) ==
-                 {:error, :not_found}
-      end
-
-      replayed = post(accepted, ~p"/accept_invitation/#{token}", %{_csrf_token: csrf})
-      assert redirected_to(replayed) == ~p"/accept_invitation/#{token}"
-
-      restarted = post(accepted, ~p"/session/recover", %{_csrf_token: csrf})
-      assert redirected_to(restarted) == ~p"/sign_in"
-      assert {:error, :not_found} = Auth.fetch_session_by_token(raw)
-      assert {:ok, _} = Auth.fetch_session_by_token(other_raw)
-      fresh = restarted |> recycle() |> log_in_user(invitee)
-      assert html_response(get(fresh, ~p"/app/#{account}"), 200)
-      assert html_response(get(fresh, ~p"/app/#{old_account}"), 200)
-
-      # Accepted: the token is burned.
-      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
-    end
-
-    test "an accept whose invitation was revoked mid-session lands on the terminal state", %{
-      owner: owner,
-      account: account
-    } do
-      invitee = Fixtures.Users.create_user()
-
-      {:ok, %{invitation_token: token}} =
-        Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(
-            email: invitee.email,
-            role: "viewer",
-            runner_access_mode: "all"
-          ),
-          owner_subject(owner, account)
-        )
-
-      signed_in = build_conn() |> log_in_user(invitee)
-      {:ok, _lv, _html} = live(signed_in, ~p"/accept_invitation/#{token}")
-
-      # An admin revokes the invitation while the invitee's tab sits open.
-      {:ok, membership} = Accounts.fetch_invitation_by_token(token)
-      Fixtures.Memberships.mark_membership_as_deleted(membership)
-
-      rejected = post(signed_in, ~p"/accept_invitation/#{token}", %{})
-      assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
-      html = rejected |> get(~p"/accept_invitation/#{token}") |> html_response(200)
+      html =
+        lv
+        |> form("#accept_form", %{"member" => %{"display_name" => "Too Late"}})
+        |> render_submit()
 
       assert html =~ "Invitation unavailable"
-      assert html =~ "Go to sign in"
-      refute html =~ "Accept invitation"
+
+      refused = request_code(build_conn(), token, "Too Late")
+      assert redirected_to(refused) == ~p"/accept_invitation/#{token}"
+      refute_received {:email, _code}
     end
 
-    test "an invited address matches the signed-in login's in any letter case", %{
+    test "an address that is a Member elsewhere joins as a new Member of this workspace", %{
       owner: owner,
       account: account
     } do
-      invitee =
-        Fixtures.Users.create_user(
-          email: "casey-#{System.unique_integer([:positive])}@example.com"
-        )
+      {_conn, elsewhere, _other_account} =
+        register_and_log_in(build_conn(), %{member: %{display_name: "Elsewhere Name"}})
 
-      {:ok, %{membership: invitation, invitation_token: token}} =
-        Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(email: String.upcase(invitee.email), role: "viewer"),
-          owner_subject(owner, account)
-        )
+      {invitation, token} = invite(owner, %{email: elsewhere.email})
 
-      signed_in = build_conn() |> log_in_user(invitee)
-      {:ok, lv, html} = live(signed_in, ~p"/accept_invitation/#{token}")
+      {:ok, _lv, html} = live(build_conn(), ~p"/accept_invitation/#{token}")
+      refute html =~ "Elsewhere Name"
 
-      assert html =~ "You&#39;re signed in as"
-      assert has_element?(lv, "#accept_existing_form")
+      {_sent, completed} = build_conn() |> request_code(token, "Work Name") |> complete()
 
-      accepted = post(signed_in, ~p"/accept_invitation/#{token}", %{})
-      assert redirected_to(accepted) == ~p"/session/recover"
-      assert Emisar.Repo.reload!(invitation).user_id == invitee.id
-    end
-
-    test "a login that already holds a seat is told so, and the invitation stays open", %{
-      owner: owner,
-      account: account
-    } do
-      seated = Fixtures.Users.create_user()
-
-      # The seat lists another contact, so the address reached an invitation.
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: seated.id,
-        email: "work-#{System.unique_integer([:positive])}@example.com"
-      )
-
-      {:ok, %{membership: invitation, invitation_token: token}} =
-        Accounts.invite_user_to_account(
-          Fixtures.Accounts.invitation_attrs(email: seated.email, role: "admin"),
-          owner_subject(owner, account)
-        )
-
-      rejected = build_conn() |> log_in_user(seated) |> post(~p"/accept_invitation/#{token}", %{})
-
-      assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
-
-      assert Phoenix.Flash.get(rejected.assigns.flash, :error) ==
-               EmisarWeb.AcceptInvitationLive.already_member_message()
-
-      assert Emisar.Repo.reload!(invitation) == invitation
-    end
-
-    test "a DIFFERENT signed-in user gets the wrong-account screen, not the accept", %{
-      owner: owner,
-      account: account
-    } do
-      token = invitation_token(account, owner)
-
-      bystander = Fixtures.Users.create_user()
-
-      {:ok, _lv, html} =
-        build_conn() |> log_in_user(bystander) |> live(~p"/accept_invitation/#{token}")
-
-      assert html =~ "Sign in with your invited email"
-      assert html =~ "Sign out"
-      refute html =~ "accept_existing_form"
-    end
-
-    test "a signed-in stranger cannot burn the invitation with a crafted accept", %{
-      owner: owner,
-      account: account
-    } do
-      token = invitation_token(account, owner)
-      {:ok, pending_membership} = Accounts.fetch_invitation_by_token(token)
-      bystander = Fixtures.Users.create_user()
-
-      {:ok, lv, _html} =
-        build_conn() |> log_in_user(bystander) |> live(~p"/accept_invitation/#{token}")
-
-      # The wrong-account screen renders no accept control, but the HANDLER is
-      # the gate: the anonymous branch would otherwise provision the invitee
-      # and write the bystander's name onto the invited membership.
-      render_click(lv, "accept", %{"member" => %{"display_name" => "Bystander"}})
-
-      for attempted <- [build_conn(), log_in_user(build_conn(), bystander)] do
-        rejected = post(attempted, ~p"/accept_invitation/#{token}", %{})
-        assert redirected_to(rejected) == ~p"/accept_invitation/#{token}"
-      end
-
-      assert {:ok, _still_pending} = Accounts.fetch_invitation_by_token(token)
-      assert Emisar.Repo.reload!(pending_membership) == pending_membership
-
-      assert Emisar.Users.fetch_user_by_email(pending_membership.email) ==
-               {:error, :not_found}
+      assert redirected_to(completed) == ~p"/app/#{account}"
+      assert Repo.reload!(invitation).display_name == "Work Name"
+      # One address, two Members: the other workspace's Member is untouched.
+      assert Repo.reload!(elsewhere) == elsewhere
     end
   end
 end

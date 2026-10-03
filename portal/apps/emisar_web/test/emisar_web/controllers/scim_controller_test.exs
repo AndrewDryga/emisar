@@ -10,7 +10,7 @@ defmodule EmisarWeb.SCIMControllerTest do
   per-provider bearer via `SSO.enable_scim/2` and drive everything over HTTP.
   """
   use EmisarWeb.ConnCase, async: true
-  alias Emisar.{Accounts, ApiKeys, Repo, SSO, Users}
+  alias Emisar.{Accounts, ApiKeys, Repo, SSO}
   alias Emisar.SSO.{IdentityProvider, SCIMUserUpdate}
   alias EmisarWeb.SCIM.Resource
   alias EmisarWeb.SCIM.UserController
@@ -20,7 +20,7 @@ defmodule EmisarWeb.SCIMControllerTest do
   # Enterprise account + a provider with directory sync enabled. Returns the
   # provider, its raw bearer (shown once), the owner subject, and the account.
   defp scim_provider(provider_attrs \\ %{}) do
-    {_user, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+    {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
     provider = provider_fixture(account, provider_attrs)
     {:ok, provider, raw_token} = SSO.enable_scim(provider, subject)
     %{provider: provider, token: raw_token, subject: subject, account: account}
@@ -272,7 +272,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       scim_provider()
     end
 
-    test "provisions a Member (201) with the SCIM User resource, never a personal login", %{
+    test "provisions a Member (201) with the SCIM User resource and an unproved address", %{
       conn: conn,
       token: token,
       provider: provider,
@@ -297,9 +297,10 @@ defmodule EmisarWeb.SCIMControllerTest do
 
       member = directory_member(provider, "okta|new")
       assert member.account_id == account.id
-      assert is_nil(member.user_id)
       assert member.email == "new@acme.test"
-      assert Users.fetch_user_by_email("new@acme.test") == {:error, :not_found}
+      # A directory never proves an address, so the seat cannot sign in by
+      # email: a stolen SCIM token mints no email-code credential.
+      assert is_nil(member.email_verified_at)
     end
 
     test "a POST with active:false provisions the user already suspended (deactivated in the IdP)",
@@ -352,18 +353,13 @@ defmodule EmisarWeb.SCIMControllerTest do
       payload = user_payload("okta|reinvited", email: "reinvited@acme.test")
       assert conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(201)
 
-      # The person linked their own login to the directory's Member, then was
-      # removed and their address invited back by hand. The invitation names only
-      # the address, so it is not the person's seat, but one address is one
-      # Member here: the push is refused until the invitation is gone.
-      user = Fixtures.Users.create_user(email: "reinvited@acme.test")
-
-      {:ok, membership} =
-        Accounts.link_personal_login(Repo, directory_member(provider, "okta|reinvited"), user)
-
+      # The directory's Member was removed and its address invited back by
+      # hand. The invitation is another Member, but one address is one Member
+      # here: the push is refused until the invitation is gone.
+      membership = directory_member(provider, "okta|reinvited")
       assert {:ok, _removed} = Accounts.delete_membership(membership, subject)
 
-      invitation_attrs = Fixtures.Accounts.invitation_attrs(email: user.email)
+      invitation_attrs = Fixtures.Accounts.invitation_attrs(email: "reinvited@acme.test")
 
       assert {:ok, %{membership: invitation}} =
                Accounts.invite_user_to_account(invitation_attrs, subject)
@@ -384,8 +380,9 @@ defmodule EmisarWeb.SCIMControllerTest do
       body = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(201)
 
       assert body["active"]
-      assert %{user_id: user_id} = directory_member(provider, "okta|reinvited")
-      assert user_id == user.id
+      readded = directory_member(provider, "okta|reinvited")
+      assert is_nil(readded.deleted_at)
+      assert readded.email == "reinvited@acme.test"
     end
 
     test "an address a member here uses answers 409 and parks a link", %{
@@ -393,10 +390,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       token: token,
       account: account
     } do
-      Fixtures.Memberships.create_unlinked_membership(
-        account_id: account.id,
-        email: "shared@acme.test"
-      )
+      Fixtures.Memberships.create_membership(account_id: account.id, email: "shared@acme.test")
 
       payload = user_payload("okta|shared", email: "shared@acme.test")
       pending = conn |> scim_post(token, ~p"/scim/v2/Users", payload) |> json_response(409)

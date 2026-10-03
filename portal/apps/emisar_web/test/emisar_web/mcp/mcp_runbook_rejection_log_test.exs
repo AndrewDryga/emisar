@@ -13,16 +13,10 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     on_exit(fn -> Logger.delete_application_level(:emisar_web) end)
 
     account = Fixtures.Accounts.create_account()
-    user = Fixtures.Users.create_user()
 
-    _membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "owner"
-      )
+    user = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
 
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    subject = Fixtures.Subjects.subject_for(user)
     {:ok, raw, key} = ApiKeys.create_key(%{name: "runbook-rejects", kind: :mcp}, subject)
 
     %{conn: authorize(conn, raw), account: account, subject: subject, key: key, raw: raw}
@@ -139,18 +133,11 @@ defmodule EmisarWeb.MCPRunbookRejectionLogTest do
     conn: conn,
     account: account
   } do
-    user = Fixtures.Users.create_user()
-
-    membership =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: user.id,
-        role: "operator"
-      )
+    membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, ["database"], [])
     Fixtures.Memberships.force_runner_access(membership, access)
-    restricted = Fixtures.Subjects.membership_subject(membership)
+    restricted = Fixtures.Subjects.subject_for(membership)
     {:ok, _raw, key} = ApiKeys.create_key(%{name: "restricted-author", kind: :mcp}, restricted)
     conn = Plug.Conn.assign(conn, :current_subject, Subject.for_api_key(key, account))
 

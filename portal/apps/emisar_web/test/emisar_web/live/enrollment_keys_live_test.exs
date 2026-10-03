@@ -6,16 +6,14 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   use EmisarWeb.ConnCase, async: true
   alias Emisar.Runners
 
-  test "manual and install keys show only the creator's workspace profile", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
-
-    creator =
-      Fixtures.Users.create_user(full_name: "Private Person", email: "private@example.test")
+  test "manual and install keys keep their creator Member's label after it is removed", %{
+    conn: conn
+  } do
+    {conn, _owner, account} = register_and_log_in(conn)
 
     member =
       Fixtures.Memberships.create_membership(
         account_id: account.id,
-        user_id: creator.id,
         role: "admin",
         display_name: "Workspace Operator",
         email: "work@example.test"
@@ -25,9 +23,11 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     Fixtures.Runners.create_install_key(membership: member)
     Fixtures.Memberships.mark_membership_as_deleted(member)
 
+    # A new seat for the same address is another Member; it never inherits the
+    # removed Member's keys.
     Fixtures.Memberships.create_membership(
       account_id: account.id,
-      user_id: creator.id,
+      email: "work@example.test",
       display_name: "Replacement Seat"
     )
 
@@ -40,14 +40,12 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
              |> String.split("Workspace Operator")
            ) == 3
 
-    refute html =~ "Private Person"
-    refute html =~ creator.email
     refute html =~ "Replacement Seat"
   end
 
   test "hides revoked keys by default; the All option shows them", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, _, live_key} =
       Runners.create_enrollment_key(%{reusable: true, description: "live-key-aaa"}, subject)
@@ -86,7 +84,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # a brand-new account with no enrollment keys renders the
   # "No active enrollment keys" onboarding empty state.
   test "no enrollment keys → onboarding empty state", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
 
@@ -102,8 +100,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # {:error, …}; `load/1` retries once with clean params (first page) rather than
   # recursing forever or raising. The page renders.
   test "a bad cursor in the URL falls back to the first page, not a crash", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
     {:ok, _raw, _key} = Runners.create_enrollment_key(%{description: "still-here"}, subject)
 
     {:ok, _lv, html} =
@@ -113,10 +111,10 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "Source hides setup keys without losing their revocation controls in All", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
 
     {_, console} =
-      Fixtures.Runners.create_install_key(account_id: account.id, user_id: user.id)
+      Fixtures.Runners.create_install_key(account_id: account.id, membership: owner)
 
     Fixtures.Runners.create_enrollment_key(
       account_id: account.id,
@@ -138,7 +136,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
     assert has_element?(
              lv,
-             ~s([data-preference-key="enrollment-key-source:#{user.id}:#{account.id}"])
+             ~s([data-preference-key="enrollment-key-source:#{owner.id}:#{account.id}"])
            )
 
     assert has_element?(lv, ~s(select[name="status"] option[value="active"][selected]))
@@ -171,7 +169,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "a saved Source restores only when the URL has no explicit selection", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
     render_hook(lv, "restore_source_filter", %{"source" => "manual"})
     assert_patched(lv, ~p"/app/#{account}/runners/keys?source=manual")
@@ -187,7 +185,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "Active hides spent and expired keys, while All labels both states", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     past = DateTime.add(DateTime.utc_now(), -60, :second)
 
     Fixtures.Runners.create_enrollment_key(
@@ -222,19 +220,19 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "key metadata shows use limits and plain expiry wording", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
+    {conn, owner, account} = register_and_log_in(conn)
     future = DateTime.add(DateTime.utc_now(), 19 * 60 * 60, :second)
 
     Fixtures.Runners.create_enrollment_key(
       account_id: account.id,
-      user_id: user.id,
+      membership: owner,
       expires_at: future
     )
 
     {_, capped} =
       Fixtures.Runners.create_enrollment_key(
         account_id: account.id,
-        user_id: user.id,
+        membership: owner,
         reusable: true,
         max_uses: 5
       )
@@ -244,7 +242,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
     {_, unlimited} =
       Fixtures.Runners.create_enrollment_key(
         account_id: account.id,
-        user_id: user.id,
+        membership: owner,
         reusable: true
       )
 
@@ -263,7 +261,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "the create page explains key choices separately from setup-key cleanup", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     assert html =~ "Create a key to register new runners"
@@ -292,8 +290,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # value; a single-use key (and a blank value) drops it (the single-use key
   # self-caps at 1 via the schema's not-reusable rule).
   test "max_uses is kept for a reusable+positive key, dropped otherwise", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
@@ -331,7 +329,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "create form shows validation errors inline on the field, not in a flash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     too_long = String.duplicate("x", 201)
@@ -348,8 +346,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "a malformed expiry is refused on the field and mints no key", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
@@ -366,8 +364,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "a zero max_uses is refused on the field and mints no key", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
@@ -393,8 +391,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # single click fires `revoke` and the retired key drops out of the default
   # (status=active) list.
   test "revoke retires a key through a plain (no-typing) confirm dialog", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, _raw, key} =
       Runners.create_enrollment_key(%{description: "bootstrap for prod image"}, subject)
@@ -414,7 +412,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "the reveal shows the domain-built install command, leading space and all", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     conn = %{conn | host: "localhost", port: 4000}
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
@@ -448,7 +446,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   test "public HTTP keeps the explicit key reveal but refuses the convenience command", %{
     conn: conn
   } do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     html =
@@ -468,7 +466,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # only "show secret again" affordance is the dismiss (which clears it) — the
   # raw secret is never re-rendered after dismiss.
   test "a dismissed secret cannot be re-revealed", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
     html =
@@ -492,20 +490,13 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   test "a viewer cannot mint an enrollment key", %{conn: conn} do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
 
-    viewer = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+    viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
     # Manage-only page: a viewer is bounced at LOAD time with the honest
     # why-not, never reaching the form to fail on submit — on both the list
     # and the issue page (the mount gate covers the whole LV).
     dest = ~p"/app/#{account}/runners"
-    viewer_conn = log_in_user(build_conn(), viewer)
+    viewer_conn = log_in_member(build_conn(), viewer)
 
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              live(viewer_conn, ~p"/app/#{account}/runners/keys")
@@ -517,8 +508,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "a list_changed broadcast refreshes the key list", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
     refute html =~ "minted-elsewhere"
@@ -530,8 +521,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "last-used renders through <.local_time> — 'never' until used, then a time", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     # A fresh key has never been used → <.local_time> renders its "never"
     # placeholder as a <span> (so "last used" is followed by the placeholder
@@ -554,7 +545,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # cap-warning banner: a key minted here is useless once a runner bounces off a
   # 402. The free plan caps at 3 runners; fill all three.
   test "at the runner limit, the cap-warning banner renders", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     for _ <- 1..3, do: Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
@@ -566,7 +557,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # (the near-limit half) — one slot short of the cap shows
   # the softer amber "one slot left" variant, not the at-limit rose one.
   test "near the runner limit, the amber 'one slot left' banner renders", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     for _ <- 1..2, do: Fixtures.Runners.create_runner(account_id: account.id)
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners/keys")
@@ -579,8 +570,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # as UTC: the changeset appends ":00Z" before parsing, so "2030-12-25 at
   # 10:30" persists as 10:30:00 UTC.
   test "expires_at from a datetime-local field is stored as UTC", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
@@ -602,8 +593,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # (no cross-account id), and its one-time secret is the only place the raw
   # value appears (the persisted row stores only the hash + prefix).
   test "a created key is bound to the current account", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys/new")
 
@@ -630,20 +621,13 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   test "an operator is redirected at mount — the page is manage-only", %{conn: conn} do
     {_owner_conn, _owner, account} = register_and_log_in(conn)
 
-    operator = Fixtures.Users.create_user()
-
-    _ =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: operator.id,
-        role: "operator"
-      )
+    operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
     dest = ~p"/app/#{account}/runners"
 
     assert {:error, {:live_redirect, %{to: ^dest, flash: flash}}} =
              build_conn()
-             |> log_in_user(operator)
+             |> log_in_member(operator)
              |> live(~p"/app/#{account}/runners/keys")
 
     assert flash["error"] == "Only owners and admins can manage enrollment keys."
@@ -654,7 +638,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # explained in place; the Revoke control stays.
   test "a runner-restricted admin can audit and revoke keys but cannot create", %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
-    owner_subject = Fixtures.Subjects.subject_for(owner, account)
+    owner_subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, _raw, key} =
       Runners.create_enrollment_key(%{description: "existing-key"}, owner_subject)
@@ -665,7 +649,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
       Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       |> Fixtures.Memberships.force_runner_access(production)
 
-    admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+    admin_conn = log_in_member(build_conn(), membership)
 
     {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/runners/keys")
 
@@ -697,7 +681,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
       Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       |> Fixtures.Memberships.force_runner_access(production)
 
-    admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+    admin_conn = log_in_member(build_conn(), membership)
 
     {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/runners/keys")
 
@@ -713,7 +697,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # manage_enrollment_keys; the domain-level denial lives in runners_test.
   test "a runner-restricted admin's revoke event succeeds", %{conn: conn} do
     {_owner_conn, owner, account} = register_and_log_in(conn)
-    owner_subject = Fixtures.Subjects.subject_for(owner, account)
+    owner_subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, _raw, key} =
       Runners.create_enrollment_key(%{description: "existing-key"}, owner_subject)
@@ -724,7 +708,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
       Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       |> Fixtures.Memberships.force_runner_access(production)
 
-    admin_conn = log_in_user(build_conn(), Emisar.Repo.preload(membership, :user).user)
+    admin_conn = log_in_member(build_conn(), membership)
     {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/runners/keys")
 
     html = render_click(lv, "revoke", %{"id" => key.id})
@@ -738,8 +722,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # a `revoke` with a foreign B-account key id is a quiet no-op (the id isn't in
   # `socket.assigns.enrollment_keys`), so only account-A keys are revocable.
   test "cross-account — only A's keys are listed and revocable", %{conn: conn} do
-    {conn, user_a, account_a} = register_and_log_in(conn)
-    subject_a = Fixtures.Subjects.subject_for(user_a, account_a)
+    {conn, owner_a, account_a} = register_and_log_in(conn)
+    subject_a = Fixtures.Subjects.subject_for(owner_a)
 
     {:ok, _raw, _key_a} =
       Runners.create_enrollment_key(%{description: "alpha-key"}, subject_a)
@@ -770,8 +754,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # carries the "Revoked" chip instead. The "gone key → no-op" half is the
   # absent-id case below (the genuine `do_revoke` guard).
   test "a revoked key shows the Revoked chip and no Revoke control", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, _raw, key} = Runners.create_enrollment_key(%{description: "spent-key"}, subject)
     {:ok, _} = Runners.revoke_enrollment_key(key, subject)
@@ -792,7 +776,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   # quiet no-op: `do_revoke` finds nothing in `socket.assigns.enrollment_keys` and
   # returns the socket untouched (no flash, no crash).
   test "revoking an absent key id is a quiet no-op", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
 
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
 
@@ -804,8 +788,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
 
   test "the dead/pre-connect render shows a loading placeholder, not an empty list",
        %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account, role: :owner)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
     {:ok, _raw, _key} = Runners.create_enrollment_key(%{description: "live-key"}, subject)
 
     # A plain GET is the disconnected render: the list read is deferred (IL-18),
@@ -818,8 +802,8 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "re-revoking an already-revoked key is idempotent (no timestamp change)", %{conn: conn} do
-    {conn, user, account} = register_and_log_in(conn)
-    subject = Fixtures.Subjects.subject_for(user, account)
+    {conn, owner, account} = register_and_log_in(conn)
+    subject = Fixtures.Subjects.subject_for(owner)
 
     {:ok, _raw, key} = Runners.create_enrollment_key(%{description: "spent-key"}, subject)
     {:ok, _} = Runners.revoke_enrollment_key(key, subject)
@@ -834,7 +818,7 @@ defmodule EmisarWeb.EnrollmentKeysLiveTest do
   end
 
   test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/keys")
 
     # The payload is the operator's own socket, so this is self-inflicted — but

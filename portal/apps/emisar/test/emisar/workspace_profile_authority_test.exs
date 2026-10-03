@@ -1,6 +1,6 @@
 defmodule Emisar.WorkspaceProfileAuthorityTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Accounts, Fixtures, Repo, SSO, Users}
+  alias Emisar.{Accounts, Fixtures, Repo, SSO}
   alias Emisar.SSO.SCIMUserUpdate
 
   describe "fetch_own_member_profile/1" do
@@ -8,7 +8,7 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
       {person, account, subject} = Fixtures.Subjects.owner_subject()
 
       elsewhere =
-        Fixtures.Memberships.create_membership(user_id: person.id, display_name: "Elsewhere")
+        Fixtures.Memberships.create_membership(email: person.email, display_name: "Elsewhere")
 
       assert {:ok, %{membership: member, editable?: true}} =
                Accounts.fetch_own_member_profile(subject)
@@ -26,8 +26,8 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     end
 
     test "marks a directory-owned name read-only" do
-      {_provider, _person, _identity, member} = provisioned()
-      subject = Fixtures.Subjects.membership_subject(member)
+      {_provider, _identity, member} = provisioned()
+      subject = Fixtures.Subjects.subject_for(member)
       assert {:ok, %{editable?: false}} = Accounts.fetch_own_member_profile(subject)
     end
   end
@@ -57,22 +57,18 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
   describe "update_own_member_profile/2" do
     test "changes and audits only the local name, including clearing it" do
       {person, account, subject} = Fixtures.Subjects.owner_subject()
-      elsewhere = Fixtures.Memberships.create_membership(user_id: person.id)
+      elsewhere = Fixtures.Memberships.create_membership(email: person.email)
 
       assert {:ok, updated} =
                Accounts.update_own_member_profile(
-                 %{
-                   display_name: "Work Name",
-                   email: "stolen@example.test",
-                   user_id: Ecto.UUID.generate()
-                 },
+                 %{display_name: "Work Name", email: "stolen@example.test", role: :viewer},
                  subject
                )
 
       assert updated.id == subject.membership_id
       assert updated.display_name == "Work Name"
       assert updated.email == person.email
-      assert Repo.reload!(person) == person
+      assert updated.role == :owner
       assert Repo.reload!(elsewhere) == elsewhere
 
       event =
@@ -89,8 +85,8 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     end
 
     test "directory management, removed memberships, API credentials and crossed member IDs deny writes" do
-      {_provider, _person, _identity, member} = provisioned()
-      subject = Fixtures.Subjects.membership_subject(member)
+      {_provider, _identity, member} = provisioned()
+      subject = Fixtures.Subjects.subject_for(member)
 
       assert {:error, :directory_managed_profile} =
                Accounts.update_own_member_profile(%{display_name: "Spoof"}, subject)
@@ -98,7 +94,7 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
       assert Repo.reload!(member).display_name == "Directory Name"
 
       {person, _account, ordinary} = Fixtures.Subjects.owner_subject()
-      elsewhere = Fixtures.Memberships.create_membership(user_id: person.id)
+      elsewhere = Fixtures.Memberships.create_membership(email: person.email)
 
       assert {:error, :unauthorized} =
                Accounts.update_own_member_profile(%{display_name: "Spoof"}, %{
@@ -112,25 +108,13 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
                  | actor: %Emisar.ApiKeys.ApiKey{}
                })
 
-      member = Fixtures.Memberships.fetch_membership(ordinary.account.id, person.id)
+      member = Repo.reload!(person)
       Fixtures.Memberships.mark_membership_as_deleted(member)
 
       assert {:error, :unauthorized} =
                Accounts.update_own_member_profile(%{display_name: "Spoof"}, ordinary)
 
       assert Repo.reload!(elsewhere) == elsewhere
-    end
-  end
-
-  describe "peek_membership_profile/2" do
-    test "uses only the requested account, preserving removed-member display facts" do
-      member = Fixtures.Memberships.create_membership(display_name: "Work Name")
-      Fixtures.Memberships.mark_membership_as_deleted(member)
-
-      assert Accounts.peek_membership_profile(member.account_id, member.user_id).display_name ==
-               "Work Name"
-
-      assert Accounts.peek_membership_profile(Ecto.UUID.generate(), member.user_id) == nil
     end
   end
 
@@ -157,7 +141,7 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
   test "a stale administrator cannot rename after losing their role" do
     {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
     admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-    subject = Fixtures.Subjects.membership_subject(admin)
+    subject = Fixtures.Subjects.subject_for(admin)
     target = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
     Fixtures.Memberships.force_role(admin, "viewer")
 
@@ -167,12 +151,9 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     assert Repo.reload!(target) == target
   end
 
-  test "workspace approval mail uses the local contact and name, never the personal profile" do
-    person = Fixtures.Users.create_user(email: "private@example.test", full_name: "Private Name")
-
+  test "workspace approval mail uses the Member's own contact and name" do
     member =
       Fixtures.Memberships.create_membership(
-        user_id: person.id,
         display_name: "Work Name",
         email: "work@example.test"
       )
@@ -187,8 +168,7 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
     assert {:ok, _} = Emisar.Mailers.UserNotifier.deliver_approval_decision(member, request)
     assert_received {:email, email}
     assert email.to == [{"", "work@example.test"}]
-    refute email.text_body =~ "Private Name"
-    refute email.text_body =~ "private@example.test"
+    assert email.text_body =~ "Work Name"
 
     assert {:error, :no_contact_email} =
              Emisar.Mailers.UserNotifier.deliver_approval_decision(
@@ -201,9 +181,14 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
 
   test "a workspace administrator changes only this member's local name" do
     {_owner, account, subject} = Fixtures.Subjects.owner_subject()
-    person = Fixtures.Users.create_user(full_name: "Personal Name")
-    member = Fixtures.Memberships.create_membership(account_id: account.id, user_id: person.id)
-    elsewhere = Fixtures.Memberships.create_membership(user_id: person.id)
+
+    member =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        display_name: "Personal Name"
+      )
+
+    elsewhere = Fixtures.Memberships.create_membership(email: member.email)
 
     assert {:ok, _} =
              Accounts.update_member_profile_as_admin(
@@ -212,92 +197,18 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
                subject
              )
 
-    assert Repo.reload!(person).full_name == "Personal Name"
     assert Repo.reload!(member).display_name == "Workspace Name"
     assert Repo.reload!(elsewhere) == elsewhere
   end
 
-  test "personal changes retain audit facts without sharing private values" do
-    {person, account, subject} = Fixtures.Subjects.owner_subject()
-    {_other_owner, other_account, other_reader} = Fixtures.Subjects.owner_subject()
-
-    member = Fixtures.Memberships.fetch_membership(account.id, person.id)
-    member |> Ecto.Changeset.change(display_name: "Work A") |> Repo.update!()
-
-    other_member =
-      Fixtures.Memberships.create_membership(
-        account_id: other_account.id,
-        user_id: person.id,
-        display_name: "Work B"
-      )
-
-    context = %Emisar.RequestContext{
-      ip_address: "203.0.113.17",
-      user_agent: "Private Browser",
-      request_id: "personal-profile-request"
-    }
-
-    personal = %{subject | auth_method: :magic_link, context: context}
-    assert {:ok, _} = Users.update_user_profile(%{full_name: "Private Updated Name"}, personal)
-
-    assert {:ok, _} =
-             Ecto.Multi.new()
-             |> Users.put_email_change(
-               Repo.reload!(person),
-               "private-updated@example.test",
-               context
-             )
-             |> Repo.commit_multi()
-
-    opts = [filter: [event_type: ["user.profile_updated", "user.email_changed"]]]
-
-    for {reader, label, member_id} <- [
-          {subject, "Work A", member.id},
-          {other_reader, "Work B", other_member.id}
-        ] do
-      assert {:ok, events, _} = Emisar.Audit.list_events(reader, opts)
-      assert length(events) == 2
-      assert Enum.all?(events, &(&1.actor_id == member_id and &1.target_id == member_id))
-      assert Enum.all?(events, &(&1.target_label == label and &1.payload == %{}))
-      assert Enum.all?(events, &is_nil(&1.actor_label))
-      assert Enum.all?(events, &(&1.ip_address == nil and &1.user_agent == nil))
-      assert Enum.all?(events, &(&1.request_id == context.request_id))
-    end
-  end
-
-  test "directory reads and filters keep local contact and name after a personal profile change" do
-    {provider, person, identity, _member} = provisioned()
-
-    {:ok, _} =
-      person
-      |> Ecto.Changeset.change(email: "private@example.test", full_name: "Private Name")
-      |> Repo.update()
-
-    assert {:ok, resource} = SSO.scim_fetch_user(provider, identity.id)
-    assert resource.user_name == "directory@example.test"
-    assert resource.display_name == "Directory Name"
-
-    assert {:ok, [%{id: id}], 1} =
-             SSO.scim_list_users(provider, scim_filter: {:user_name, "directory@example.test"})
-
-    assert id == identity.id
-
-    assert {:ok, [], 0} =
-             SSO.scim_list_users(provider, scim_filter: {:user_name, "private@example.test"})
-  end
-
-  test "directory partial rename merges local facts and never rewrites even a sole personal user" do
-    {provider, person, identity, member} = provisioned()
-
-    {:ok, _} =
-      person |> Users.User.Changeset.profile(%{full_name: "Private Surname"}) |> Repo.update()
+  test "a directory partial rename merges into the Member's directory-owned name" do
+    {provider, identity, member} = provisioned()
 
     assert {:ok, _} =
              SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{
                name: {:merge, %{family: "Changed"}}
              })
 
-    assert Repo.reload!(person).full_name == "Private Surname"
     assert Repo.reload!(member).display_name == "Directory Changed"
   end
 
@@ -313,10 +224,6 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
         full_name: "Directory Name"
       })
 
-    # The directory creates the Member; the person linked their own login to it
-    # by proving the mailbox.
-    person = Fixtures.Users.create_user(email: "directory@example.test", full_name: "Own Name")
-    {:ok, member} = Accounts.link_personal_login(Repo, member, person)
-    {provider, person, identity, member}
+    {provider, identity, member}
   end
 end

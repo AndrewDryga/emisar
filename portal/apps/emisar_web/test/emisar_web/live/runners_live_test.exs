@@ -3,12 +3,14 @@ defmodule EmisarWeb.RunnersLiveTest do
   alias Emisar.Runners
 
   describe "GET /app/runners" do
-    test "redirects anonymous users to /sign_in", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(conn, ~p"/app/anon/runners")
+    test "redirects anonymous users to the workspace sign-in", %{conn: conn} do
+      account = Fixtures.Accounts.create_account()
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/runners")
+      assert to == ~p"/app/#{account}/sign_in"
     end
 
     test "an empty fleet drops straight into the inline install wizard", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       conn = %{conn | host: "localhost", port: 4000}
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
 
@@ -36,7 +38,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "the fleet's sub-features ride the title row — Enrollment keys next to Connect a runner",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runners")
@@ -46,7 +48,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "one active run is singular; more than one is plural", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       one = Fixtures.Runners.create_runner(account_id: account.id, name: "one", connected?: true)
 
       many =
@@ -79,7 +81,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "heartbeat metadata patches the visible row without reloading inventory", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
       refute html =~ "6 active runs"
@@ -100,7 +102,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "topology bursts reload inventory on the debounce tick", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
       refute html =~ "autoscaled-runner"
 
@@ -123,7 +125,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "the dead/pre-connect empty render shows a loading placeholder, not the wizard",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       # A plain GET is the disconnected render — connected?/1 is false, so the
       # installer (and the live credential it mints) is deferred behind a loading
@@ -134,7 +136,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "lists runners grouped by their `group` field", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       Fixtures.Runners.create_runner(
         account_id: account.id,
@@ -162,7 +164,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "one filter searches runner groups or names", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "kept-runner", group: "keep")
       Fixtures.Runners.create_runner(account_id: account.id, name: "gone-runner", group: "gone")
 
@@ -181,7 +183,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     test "a search with no matches renders an empty result instead of loading forever", %{
       conn: conn
     } do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "present-runner")
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners?group_or_name=missing")
@@ -193,7 +195,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "an enforcing runner shows a Signed-only chip on the index", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       Fixtures.Runners.create_runner(
         account_id: account.id,
@@ -213,7 +215,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "shows the fleet signed-only notice when every active runner enforces", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "a", enforce_signatures: true)
       Fixtures.Runners.create_runner(account_id: account.id, name: "b", enforce_signatures: true)
 
@@ -223,8 +225,8 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "a disabled plain runner doesn't suppress the fleet signed-only notice", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       Fixtures.Runners.create_runner(account_id: account.id, name: "a", enforce_signatures: true)
       plain = Fixtures.Runners.create_runner(account_id: account.id, name: "b")
@@ -237,7 +239,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "an offline runner's 'last seen' heartbeat renders through <.local_time>", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
 
       # An offline runner with connect history → the "last seen <time>" branch
       # (not "just connected", which needs live presence). Stamping the column
@@ -266,7 +268,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     # though both exist. (The slug gate's foreign-account 404 is covered in
     # account_slug_authz_test; this asserts the in-account data scoping.)
     test "cross-account — A's operator sees only A's runners, never B's", %{conn: conn} do
-      {conn, _user, account_a} = register_and_log_in(conn)
+      {conn, _owner, account_a} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account_a.id, name: "alpha-runner")
 
       account_b = Fixtures.Accounts.create_account()
@@ -285,17 +287,10 @@ defmodule EmisarWeb.RunnersLiveTest do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "viewable-runner")
 
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/runners")
 
       assert html =~ "viewable-runner"
       # "Connect a runner" points at a mint the viewer can't perform — hidden
@@ -310,16 +305,11 @@ defmodule EmisarWeb.RunnersLiveTest do
     test "an empty-fleet viewer sees the viewer empty state without attempting an install mint",
          %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      viewer = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: viewer.id,
-        role: "viewer"
-      )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/runners")
 
       assert html =~ "No runners yet."
       assert html =~ "A runner is the program that runs actions"
@@ -336,18 +326,17 @@ defmodule EmisarWeb.RunnersLiveTest do
     test "a member with no runner access sees an empty fleet without an install key",
          %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      member = Fixtures.Users.create_user()
 
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        user_id: member.id,
-        role: "operator",
-        runner_access_mode: "none"
-      )
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          role: "operator",
+          runner_access_mode: "none"
+        )
 
       {:ok, lv, html} =
         build_conn()
-        |> log_in_user(member)
+        |> log_in_member(member)
         |> live(~p"/app/#{account}/runners")
 
       assert html =~ "No runners yet."
@@ -366,21 +355,15 @@ defmodule EmisarWeb.RunnersLiveTest do
     test "an empty restricted scope does not claim that the account has no runners", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
       runner = Fixtures.Runners.create_runner(account_id: account.id, group: "staging")
-      member = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
-      Fixtures.Memberships.force_runner_access(membership, restricted)
+      Fixtures.Memberships.force_runner_access(member, restricted)
 
       {:ok, lv, html} =
         build_conn()
-        |> log_in_user(member)
+        |> log_in_member(member)
         |> live(~p"/app/#{account}/runners")
 
       assert html =~ runner.name
@@ -398,14 +381,8 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "a restricted member's empty search remains a filter result", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      member = Fixtures.Users.create_user()
 
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: member.id,
-          role: "operator"
-        )
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       Fixtures.Runners.create_runner(
         account_id: account.id,
@@ -414,11 +391,11 @@ defmodule EmisarWeb.RunnersLiveTest do
       )
 
       {:ok, restricted} = Emisar.Accounts.RunnerAccess.restricted(["production"], [])
-      Fixtures.Memberships.force_runner_access(membership, restricted)
+      Fixtures.Memberships.force_runner_access(member, restricted)
 
       {:ok, lv, html} =
         build_conn()
-        |> log_in_user(member)
+        |> log_in_member(member)
         |> live(~p"/app/#{account}/runners?group_or_name=missing")
 
       assert html =~ "No runners match this search."
@@ -432,7 +409,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     # params (first page) rather than recursing forever or rendering the
     # load-error/empty state. With a runner present, the retry shows it.
     test "a bad cursor in the URL falls back to the first page, not a crash", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, name: "still-listed")
 
       {:ok, _lv, html} =
@@ -460,21 +437,14 @@ defmodule EmisarWeb.RunnersLiveTest do
           group: "shared-group"
         )
 
-      operator = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       # Scope the operator to just the in-scope runner.
       {:ok, access} = Emisar.Accounts.RunnerAccess.restricted([], [in_scope.id])
-      Fixtures.Memberships.force_runner_access(membership, access)
+      Fixtures.Memberships.force_runner_access(operator, access)
 
       {:ok, _lv, html} =
-        build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/runners")
+        build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/runners")
 
       assert html =~ "in-scope-runner"
       assert html =~ "out-of-scope-runner"
@@ -482,8 +452,8 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "the fleet health strip summarizes the whole account's runner states", %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
-      subject = owner_subject(user, account)
+      {conn, owner, account} = register_and_log_in(conn)
+      subject = Fixtures.Subjects.subject_for(owner)
 
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
       disabled = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
@@ -510,7 +480,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
     test "help and housekeeping stay in document flow after the fleet",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
@@ -542,7 +512,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "an owner turns the retention window on from the select", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners")
@@ -563,7 +533,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "the 1-hour and 6-hour windows are offered and read correctly", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
@@ -593,7 +563,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "the 1-day window still reads in the singular", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
@@ -610,7 +580,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "Clean up now soft-deletes runners offline past the window", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
       Fixtures.Runners.create_runner(account_id: account.id, name: "live-host", connected?: true)
       _offline = offline_runner!(account, "stale-host")
@@ -626,7 +596,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "Clean up now with cleanup off explains the prerequisite", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
@@ -639,17 +609,10 @@ defmodule EmisarWeb.RunnersLiveTest do
       Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
       offline = offline_runner!(account, "stale-host")
 
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       {:ok, lv, html} =
-        build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/runners")
+        build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/runners")
 
       # The schedule they can't set is still ON the page as a value, with the
       # requirement on the lock's tooltip rather than a prose tail.
@@ -669,7 +632,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "a malformed window is refused and the stored one is untouched", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.set_runner_inactive_retention_hours(account, 720)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
@@ -689,19 +652,12 @@ defmodule EmisarWeb.RunnersLiveTest do
       in_scope = offline_runner!(account, "db-host", group: "db")
       out_of_scope = offline_runner!(account, "app-host", group: "app")
 
-      admin = Fixtures.Users.create_user()
-
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: admin.id,
-          role: "admin"
-        )
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
 
       {:ok, db_only} = Emisar.Accounts.RunnerAccess.restricted(["db"], [])
-      Fixtures.Memberships.force_runner_access(membership, db_only)
+      Fixtures.Memberships.force_runner_access(admin, db_only)
 
-      {:ok, lv, html} = build_conn() |> log_in_user(admin) |> live(~p"/app/#{account}/runners")
+      {:ok, lv, html} = build_conn() |> log_in_member(admin) |> live(~p"/app/#{account}/runners")
 
       assert html =~ "After 30 days offline"
       assert html =~ "Only owners and admins can change this."
@@ -719,7 +675,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "an unusable stored window renders as off", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       Fixtures.Accounts.force_runner_inactive_retention_hours(account, 0)
       Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
 
@@ -733,7 +689,7 @@ defmodule EmisarWeb.RunnersLiveTest do
   describe "GET /app/runners/install" do
     test "always renders the install wizard with a pre-minted command",
          %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       conn = %{conn | host: "localhost", port: 4000}
 
       # Pre-existing runner shouldn't bypass the wizard — the user can
@@ -756,7 +712,7 @@ defmodule EmisarWeb.RunnersLiveTest do
     end
 
     test "reveals a troubleshooting checklist if no runner joins in time", %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       conn = %{conn | host: "localhost", port: 4000}
 
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/runners/install")
@@ -779,15 +735,16 @@ defmodule EmisarWeb.RunnersLiveTest do
              )
     end
 
-    test "redirects anonymous users to /sign_in", %{conn: conn} do
-      assert {:error, {:redirect, %{to: "/sign_in"}}} =
-               live(conn, ~p"/app/anon/runners/install")
+    test "redirects anonymous users to the workspace sign-in", %{conn: conn} do
+      account = Fixtures.Accounts.create_account()
+      assert {:error, {:redirect, %{to: to}}} = live(conn, ~p"/app/#{account}/runners/install")
+      assert to == ~p"/app/#{account}/sign_in"
     end
   end
 
   describe "GET /app/runners/:id" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       %{conn: conn, account: account}
     end
 
@@ -812,7 +769,7 @@ defmodule EmisarWeb.RunnersLiveTest do
 
   describe "fleet-offline nav alert (Option B)" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       %{conn: conn, account: account}
     end
 
@@ -840,7 +797,7 @@ defmodule EmisarWeb.RunnersLiveTest do
   # test.exs policy: < 0.0.1 unsupported, [0.0.1, 0.1.0) outdated, >= 0.1.0 supported.
   describe "stale-version chip" do
     setup %{conn: conn} do
-      {conn, _user, account} = register_and_log_in(conn)
+      {conn, _owner, account} = register_and_log_in(conn)
       %{conn: conn, account: account}
     end
 
@@ -930,7 +887,7 @@ defmodule EmisarWeb.RunnersLiveTest do
   end
 
   test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners")
 
     # The payload is the operator's own socket, so this is self-inflicted — but

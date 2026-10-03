@@ -10,10 +10,10 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
   describe "SIEM export keys" do
     setup %{conn: conn} do
-      {conn, user, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       # Export (SIEM + CSV) is Team+ — these tests exercise the feature itself.
       Fixtures.Accounts.create_subscription(account, "team")
-      %{conn: conn, user: user, account: account}
+      %{conn: conn, user: owner, account: account}
     end
 
     test "mint shows the secret once, list updates, revoke retires it", %{
@@ -21,7 +21,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       user: user,
       account: account
     } do
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/export")
 
       # Mint: the raw emk- secret is rendered exactly once.
@@ -76,11 +76,11 @@ defmodule EmisarWeb.AuditExportLiveTest do
            account: account
          } do
       keys = create_export_keys(account, user, 101)
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       {:ok, _revoked} = Emisar.ApiKeys.revoke_api_key(List.last(keys), subject)
 
       {_, agent_key} =
-        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_id: user.id)
+        Fixtures.ApiKeys.create_api_key(account_id: account.id, created_by_membership_id: user.id)
 
       foreign = Fixtures.Accounts.create_account(plan: "team")
 
@@ -131,7 +131,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       {_, external} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: user.id,
           kind: :audit_export
         )
 
@@ -208,10 +208,10 @@ defmodule EmisarWeb.AuditExportLiveTest do
            account: account
          } do
       [key] = create_export_keys(account, user, 1)
-      {foreign_user, foreign, foreign_subject} = Fixtures.Subjects.owner_subject()
+      {foreign_owner, foreign, foreign_subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Accounts.create_subscription(foreign, "team")
 
-      for key <- create_export_keys(foreign, foreign_user, 2) do
+      for key <- create_export_keys(foreign, foreign_owner, 2) do
         Fixtures.ApiKeys.backdate_api_key_inserted_at(key, ~U[2000-01-01 00:00:00.000000Z])
       end
 
@@ -289,7 +289,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       user: user,
       account: account
     } do
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       {:ok, _raw, active} =
         Emisar.ApiKeys.create_key(%{name: "active-export", kind: :audit_export}, subject)
@@ -309,35 +309,28 @@ defmodule EmisarWeb.AuditExportLiveTest do
       assert siem_card =~ "Revoked"
     end
 
-    test "a key keeps its workspace creator label without disclosing the deleted personal profile",
-         %{
-           conn: conn,
-           account: account
-         } do
-      # A second admin mints the export token, then their user row is soft-deleted
-      # (we stay logged in as the original owner so the page still mounts).
-      other_admin =
-        Fixtures.Users.create_user(
-          email: "departing-admin@example.com",
-          full_name: "Private Admin"
-        )
+    test "a key keeps its creator's workspace label after the Member is removed", %{
+      conn: conn,
+      account: account
+    } do
+      # A second admin mints the export token, then their Member row is
+      # soft-deleted (we stay logged in as the original owner so the page still
+      # mounts).
 
-      _ =
+      other_admin =
         Fixtures.Memberships.create_membership(
           account_id: account.id,
-          user_id: other_admin.id,
           role: "admin",
           display_name: "Workspace Administrator",
           email: "local-admin@example.test"
         )
 
-      other_subject = Fixtures.Subjects.subject_for(other_admin, account, role: :admin)
+      other_subject = Fixtures.Subjects.subject_for(other_admin)
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(%{name: "orphan-export", kind: :audit_export}, other_subject)
 
-      # Historical attribution belongs to the exact workspace membership,
-      # independent of the personal profile's lifecycle.
+      # Historical attribution belongs to the exact workspace membership.
       other_admin
       |> Ecto.Changeset.change(deleted_at: DateTime.utc_now())
       |> Emisar.Repo.update!()
@@ -347,23 +340,14 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
       assert siem_card =~ "orphan-export"
       assert siem_card =~ "Workspace Administrator"
-      refute siem_card =~ "departing-admin@example.com"
-      refute siem_card =~ "Private Admin"
     end
 
     test "a viewer cannot mint an export key", %{account: account} do
-      viewer = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: viewer.id,
-          role: "viewer"
-        )
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
       # A viewer never reaches the mint UI — denied at mount.
       assert {:error, {:live_redirect, %{to: to}}} =
-               build_conn() |> log_in_user(viewer) |> live(~p"/app/#{account}/audit/export")
+               build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/audit/export")
 
       assert to == ~p"/app/#{account}/audit"
     end
@@ -376,7 +360,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/export")
 
       # A key minted elsewhere (another tab/admin) appears via the broadcast.
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       {:ok, _raw, key} =
         Emisar.ApiKeys.create_key(
@@ -394,7 +378,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
     } do
       # An owner-minted export token; the operator below must not be able to
       # retire it from a crafted event (managing keys needs admin+).
-      owner_subject = Fixtures.Subjects.subject_for(owner, account)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
 
       {:ok, _raw, _key} =
         Emisar.ApiKeys.create_key(
@@ -402,19 +386,12 @@ defmodule EmisarWeb.AuditExportLiveTest do
           owner_subject
         )
 
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       # The operator never mounts the page (redirected), so there is no LV to
       # craft the event through; the handler stays Permissions-gated as depth.
       assert {:error, {:live_redirect, _}} =
-               build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/audit/export")
+               build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/audit/export")
 
       # The token is untouched — still active.
       {:ok, [reread], _meta} =
@@ -446,8 +423,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       # Account A (a different tenant) has its own export token. The admin of B
       # fires revoke with A's real key id — the subject-gated fetch scopes to B,
       # so A's key is never found and never revoked.
-      {a_user, account_a, a_subject} = Fixtures.Subjects.owner_subject()
-      _ = a_user
+      {_a_owner, account_a, a_subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Accounts.create_subscription(account_a, "team")
 
       {:ok, _raw, a_key} =
@@ -474,7 +450,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       # This page lists and mints only :audit_export tokens. An admin crafting
       # revoke_export_key with a same-account MCP agent key's id — which the list
       # never shows — must not revoke it; it reads as a missing row (silent no-op).
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       {:ok, _raw, mcp_key} = Emisar.ApiKeys.create_key(%{name: "Agent bridge token"}, subject)
 
@@ -490,7 +466,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
 
     test "a revoked export token returns 401 from the export endpoint on its next call",
          %{conn: conn, user: user, account: account} do
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/export")
 
       # Mint via the page; the raw secret only exists in the reveal once, so
@@ -517,7 +493,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
     test "a free-plan owner can inspect cleanup but cannot mint a continuous-export token", %{
       conn: _conn
     } do
-      {conn, _user, account} = register_and_log_in(build_conn())
+      {conn, _owner, account} = register_and_log_in(build_conn())
 
       assert {:ok, lv, html} = live(conn, ~p"/app/#{account}/audit/export")
 
@@ -526,20 +502,13 @@ defmodule EmisarWeb.AuditExportLiveTest do
     end
 
     test "the SIEM card is hidden from a non-manager (operator)", %{account: account} do
-      operator = Fixtures.Users.create_user()
-
-      _ =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          user_id: operator.id,
-          role: "operator"
-        )
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       # An operator can read the audit log but not manage keys — the export
       # page redirects them back to the trail rather than rendering a dead
       # shell (the mint/revoke handlers stay Permissions-gated as depth).
       assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
-               build_conn() |> log_in_user(operator) |> live(~p"/app/#{account}/audit/export")
+               build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/audit/export")
 
       assert to == ~p"/app/#{account}/audit"
       assert %{"error" => "You need an owner or admin role to manage export tokens."} = flash
@@ -548,8 +517,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
     test "another account's export tokens never appear in this account's SIEM list",
          %{conn: conn, account: account_b} do
       # Account A mints a distinctively-named export token.
-      {a_user, account_a, a_subject} = Fixtures.Subjects.owner_subject()
-      _ = a_user
+      {_a_owner, account_a, a_subject} = Fixtures.Subjects.owner_subject()
       Fixtures.Accounts.create_subscription(account_a, "team")
 
       {:ok, _raw, _a_key} =
@@ -568,7 +536,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       user: user,
       account: account
     } do
-      subject = Fixtures.Subjects.subject_for(user, account)
+      subject = Fixtures.Subjects.subject_for(user)
 
       # An export token (kind: :audit_export) and an MCP token (kind: :mcp). The
       # audit page shows the export one; the agents page shows the MCP one — the
@@ -599,7 +567,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
   end
 
   test "a crafted event that drops its required key is a no-op, not a crash", %{conn: conn} do
-    {conn, _user, account} = register_and_log_in(conn)
+    {conn, _owner, account} = register_and_log_in(conn)
     {:ok, lv, _html} = live(conn, ~p"/app/#{account}/audit/export")
 
     # The payload is the operator's own socket, so this is self-inflicted — but
@@ -619,7 +587,7 @@ defmodule EmisarWeb.AuditExportLiveTest do
       {_, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: account.id,
-          created_by_id: user.id,
+          created_by_membership_id: user.id,
           kind: :audit_export,
           name: "Export #{index}"
         )

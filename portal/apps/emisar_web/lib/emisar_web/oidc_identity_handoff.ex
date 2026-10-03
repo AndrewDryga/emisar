@@ -2,8 +2,9 @@ defmodule EmisarWeb.OIDCIdentityHandoff do
   @moduledoc """
   Short-lived, CSRF-protected handoff from an inline LiveView step-up to the
   controller that can write the OIDC transaction into the encrypted session.
-  The domain rechecks every embedded identity, purpose, proof, and session
-  binding before redirect and again before the callback mutation.
+  The payload names the acting Member, its workspace and session digest, the
+  provider and the local proof; the controller and the domain recheck every one
+  of them before redirect and again before the callback mutation.
   """
   @salt "oidc identity handoff"
   @max_age_seconds 120

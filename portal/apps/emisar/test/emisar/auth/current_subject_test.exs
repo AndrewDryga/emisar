@@ -11,7 +11,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
   describe "fetch_current_subject/2 for a human" do
     test "resolves live browser authority once for a protected read" do
       membership = Fixtures.Memberships.create_membership(role: "operator")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       observe_queries()
 
       assert {:ok, _current} = Auth.fetch_current_subject(@view, subject)
@@ -20,19 +20,19 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "an active member needs no runner or pack grants to keep read authority" do
       membership = Fixtures.Memberships.create_membership(role: "operator")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Memberships.force_runner_access(membership, Accounts.RunnerAccess.none())
 
       assert {:ok, current} = Auth.fetch_current_subject(@view, subject)
       assert current.permissions == subject.permissions
       assert current.membership_id == membership.id
       assert current.account.id == membership.account_id
-      assert current.actor.id == membership.user_id
+      assert current.actor.id == membership.id
     end
 
     test "demotion removes an old permission while retaining the current role's reads" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Memberships.force_role(membership, "viewer")
 
       assert Auth.fetch_current_subject(@manage, subject) == {:error, :unauthorized}
@@ -43,7 +43,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "a billing demotion returns the narrowed audit subject, not the old full trail" do
       membership = Fixtures.Memberships.create_membership(role: "owner")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Memberships.force_role(membership, "billing_manager")
 
       assert {:ok, current} =
@@ -57,7 +57,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "refresh never restores an intentionally attenuated permission" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       subject = %{subject | permissions: MapSet.new([@view])}
 
       assert {:ok, current} = Auth.fetch_current_subject(@view, subject)
@@ -67,7 +67,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "a later promotion cannot enlarge the original permission snapshot" do
       membership = Fixtures.Memberships.create_membership(role: "viewer")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Memberships.force_role(membership, "admin")
 
       assert {:ok, current} = Auth.fetch_current_subject(@view, subject)
@@ -78,7 +78,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "directory authorization pending uses the existing effective Viewer role" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Memberships.mark_directory_authorization_pending(membership, 1)
 
       assert {:ok, current} = Auth.fetch_current_subject(@view, subject)
@@ -88,7 +88,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "refresh keeps request and destination SSO proof while reloading the actor" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      original = Fixtures.Subjects.membership_subject(membership)
+      original = Fixtures.Subjects.subject_for(membership)
       Fixtures.Accounts.maybe_seed_plan(original.account, "team")
 
       provider =
@@ -102,19 +102,22 @@ defmodule Emisar.Auth.CurrentSubjectTest do
         Fixtures.SSO.create_user_identity(%{
           account_id: original.account.id,
           provider_id: provider.id,
-          user_id: original.actor.id
+          membership: original.actor
         }).id
 
       context = RequestContext.new(request_id: "current-subject", ip_address: "127.0.0.1")
 
+      # The IdP satisfies MFA, so the sign-in stamped the session's second factor.
       subject =
-        Fixtures.Subjects.subject_for(original.actor, original.account,
+        Fixtures.Subjects.subject_for(original.actor,
           context: context,
           auth_method: :sso,
+          mfa: true,
           user_identity_id: identity_id
         )
 
-      actor = Fixtures.Users.set_mfa_state(original.actor, mfa_enabled_at: DateTime.utc_now())
+      actor =
+        Fixtures.Memberships.set_mfa_state(original.actor, mfa_enabled_at: DateTime.utc_now())
 
       assert {:ok, current} = Auth.fetch_current_subject(@view, subject)
       assert current.actor.mfa_enabled_at == actor.mfa_enabled_at
@@ -124,30 +127,29 @@ defmodule Emisar.Auth.CurrentSubjectTest do
       assert current.mfa_enrollment_verified_at == nil
       assert current.user_identity_id == identity_id
       assert current.session_token_id == subject.session_token_id
-      assert current.member_grant_id == subject.member_grant_id
     end
 
-    test "revoked grant denies held context reads and cannot be replaced by another bearer" do
+    test "an ended session denies held context reads and cannot borrow a newer bearer" do
       {owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
       member = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-      held = Fixtures.Subjects.membership_subject(member)
+      held = Fixtures.Subjects.subject_for(member)
 
       assert {:ok, _rows, _page} = Runners.list_runners_for_account(held)
       assert :ok = Accounts.end_all_sessions_for(member, owner_subject)
       assert Runners.list_runners_for_account(held) == {:error, :unauthorized}
       assert Auth.fetch_current_subject(@view, held) == {:error, :unauthorized}
-      assert Auth.ensure_personal_session(held) == :ok
 
-      replacement = Fixtures.Subjects.subject_for(held.actor, account)
+      replacement = Fixtures.Subjects.subject_for(member)
       assert {:ok, _current} = Auth.fetch_current_subject(@view, replacement)
       assert Auth.fetch_current_subject(@view, held) == {:error, :unauthorized}
 
+      # A Subject names its session by id: pointed at another Member, or at no
+      # session, it is refused. Another live session of the same Member is that
+      # Member acting through that session, not an escalation.
       for altered <- [
-            %{held | session_token_id: replacement.session_token_id},
-            %{held | member_grant_id: replacement.member_grant_id},
             %{replacement | actor: owner},
-            %{replacement | session_token_id: nil},
-            %{replacement | member_grant_id: nil}
+            %{replacement | actor: owner, membership_id: owner.id},
+            %{replacement | session_token_id: nil}
           ] do
         assert Auth.fetch_current_subject(@view, altered) == {:error, :unauthorized}
       end
@@ -155,7 +157,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "one_of cannot join a cached permission to a different permission in the current role" do
       member = Fixtures.Memberships.create_membership(role: "owner")
-      held = Fixtures.Subjects.membership_subject(member)
+      held = Fixtures.Subjects.subject_for(member)
       held = %{held | permissions: MapSet.new([@audit])}
       Fixtures.Memberships.force_role(member, "billing_manager")
 
@@ -165,7 +167,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "current security requirements deny held reads and writes but keep accurate step-up diagnosis" do
       for {setting, reason} <- [require_mfa: :mfa_required, require_sso: :sso_required] do
-        {_user, account, held} = Fixtures.Subjects.owner_subject(%{plan: "team"})
+        {_owner, account, held} = Fixtures.Subjects.owner_subject(%{plan: "team"})
         Fixtures.SSO.create_identity_provider(account_id: account.id)
         updated = Fixtures.Accounts.set_account_settings(account, %{setting => true})
 
@@ -175,19 +177,18 @@ defmodule Emisar.Auth.CurrentSubjectTest do
         assert Accounts.update_account(updated, %{name: "Denied"}, held) ==
                  {:error, :unauthorized}
 
-        assert Auth.ensure_personal_session(held) == :ok
-
-        assert {:ok, _member} =
-                 Accounts.fetch_membership_by_account_id_or_slug(account.id, held)
+        # The session itself stays live: compliance is judged per request, so
+        # the Member can still reach the page that satisfies the requirement.
+        assert {:ok, _session} = Auth.fetch_current_session(held)
       end
     end
 
     test "suspended and deleted memberships refuse held subjects" do
       suspended = Fixtures.Memberships.create_membership(role: "admin")
-      suspended_subject = Fixtures.Subjects.membership_subject(suspended)
+      suspended_subject = Fixtures.Subjects.subject_for(suspended)
       Fixtures.Memberships.suspend_membership(suspended)
       deleted = Fixtures.Memberships.create_membership(role: "admin")
-      deleted_subject = Fixtures.Subjects.membership_subject(deleted)
+      deleted_subject = Fixtures.Subjects.subject_for(deleted)
       Fixtures.Memberships.mark_membership_as_deleted(deleted)
 
       assert Auth.fetch_current_subject(@view, suspended_subject) == {:error, :unauthorized}
@@ -201,39 +202,37 @@ defmodule Emisar.Auth.CurrentSubjectTest do
           invitation_token_digest: "pending-current-subject"
         )
 
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       subject = %{subject | role: :admin, permissions: Auth.Permissions.for_role(:admin)}
 
       assert Auth.fetch_current_subject(@view, subject) == {:error, :unauthorized}
     end
 
-    test "disabled or deleted accounts and deleted users refuse held subjects" do
-      for state <- [:disabled_account, :deleted_account, :deleted_user] do
+    test "disabled or deleted accounts refuse held subjects" do
+      for state <- [:disabled_account, :deleted_account] do
         membership = Fixtures.Memberships.create_membership(role: "admin")
-        subject = Fixtures.Subjects.membership_subject(membership)
+        subject = Fixtures.Subjects.subject_for(membership)
 
         case state do
           :disabled_account -> Fixtures.Accounts.disable_account(subject.account)
           :deleted_account -> Fixtures.Accounts.mark_account_as_deleted(subject.account)
-          :deleted_user -> Fixtures.Users.mark_user_as_deleted(subject.actor)
         end
 
         assert Auth.fetch_current_subject(@view, subject) == {:error, :unauthorized}
       end
     end
 
-    test "account, user, membership, bearer and grant cannot be swapped independently" do
+    test "account, Member, membership id and bearer cannot be swapped independently" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       foreign_membership = Fixtures.Memberships.create_membership(role: "admin")
-      foreign = Fixtures.Subjects.membership_subject(foreign_membership)
+      foreign = Fixtures.Subjects.subject_for(foreign_membership)
 
       for mismatched <- [
             %{subject | account: foreign.account},
             %{subject | actor: foreign.actor},
             %{subject | membership_id: foreign.membership_id},
-            %{subject | session_token_id: foreign.session_token_id},
-            %{subject | member_grant_id: foreign.member_grant_id}
+            %{subject | session_token_id: foreign.session_token_id}
           ] do
         assert Auth.fetch_current_subject(@view, mismatched) == {:error, :unauthorized}
       end
@@ -241,12 +240,12 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "a replacement membership cannot revive the old subject" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       Fixtures.Memberships.mark_membership_as_deleted(membership)
 
       Fixtures.Memberships.create_membership(
         account_id: membership.account_id,
-        user_id: membership.user_id,
+        email: membership.email,
         role: "admin"
       )
 
@@ -294,12 +293,12 @@ defmodule Emisar.Auth.CurrentSubjectTest do
   describe "fetch_current_subject/2 for an API key" do
     test "an owner's key retains only fixed API permissions and its request context" do
       membership = Fixtures.Memberships.create_membership(role: "owner")
-      owner = Fixtures.Subjects.membership_subject(membership)
+      owner = Fixtures.Subjects.subject_for(membership)
 
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: owner.account.id,
-          created_by_id: owner.actor.id
+          created_by_membership_id: owner.actor.id
         )
 
       context =
@@ -323,12 +322,12 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "current origin role must still be allowed to use the key kind" do
       membership = Fixtures.Memberships.create_membership(role: "operator")
-      owner = Fixtures.Subjects.membership_subject(membership)
+      owner = Fixtures.Subjects.subject_for(membership)
 
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: owner.account.id,
-          created_by_id: owner.actor.id
+          created_by_membership_id: owner.actor.id
         )
 
       subject = Subject.for_api_key(key, owner.account)
@@ -342,17 +341,16 @@ defmodule Emisar.Auth.CurrentSubjectTest do
             :directory_pending,
             :suspended_member,
             :deleted_member,
-            :deleted_user,
             :disabled_account,
             :deleted_account
           ] do
         membership = Fixtures.Memberships.create_membership(role: "admin")
-        owner = Fixtures.Subjects.membership_subject(membership)
+        owner = Fixtures.Subjects.subject_for(membership)
 
         {_raw, key} =
           Fixtures.ApiKeys.create_api_key(
             account_id: owner.account.id,
-            created_by_id: owner.actor.id
+            created_by_membership_id: owner.actor.id
           )
 
         subject = Subject.for_api_key(key, owner.account)
@@ -366,9 +364,6 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
           :deleted_member ->
             Fixtures.Memberships.mark_membership_as_deleted(membership)
-
-          :deleted_user ->
-            Fixtures.Users.mark_user_as_deleted(owner.actor)
 
           :disabled_account ->
             Fixtures.Accounts.disable_account(owner.account)
@@ -384,12 +379,12 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "a no-action key refreshes mutable facts without restoring attenuated permissions" do
       membership = Fixtures.Memberships.create_membership(role: "operator")
-      owner = Fixtures.Subjects.membership_subject(membership)
+      owner = Fixtures.Subjects.subject_for(membership)
 
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: owner.account.id,
-          created_by_id: owner.actor.id
+          created_by_membership_id: owner.actor.id
         )
 
       subject = Subject.for_api_key(key, owner.account)
@@ -406,17 +401,17 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "a key cannot be rebound to another account, member, kind or recovery lineage" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      owner = Fixtures.Subjects.membership_subject(membership)
+      owner = Fixtures.Subjects.subject_for(membership)
 
       {_raw, key} =
         Fixtures.ApiKeys.create_api_key(
           account_id: owner.account.id,
-          created_by_id: owner.actor.id
+          created_by_membership_id: owner.actor.id
         )
 
       subject = Subject.for_api_key(key, owner.account)
       foreign_membership = Fixtures.Memberships.create_membership(role: "admin")
-      foreign = Fixtures.Subjects.membership_subject(foreign_membership)
+      foreign = Fixtures.Subjects.subject_for(foreign_membership)
 
       for mismatched <- [
             %{subject | account: foreign.account},
@@ -433,7 +428,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
   describe "early denial" do
     test "single, all-required and one-of snapshot permission denials execute no SQL" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
       subject = %{subject | permissions: MapSet.new([@view])}
       observe_queries()
 
@@ -446,7 +441,7 @@ defmodule Emisar.Auth.CurrentSubjectTest do
 
     test "malformed, actorless and accountless subjects fail without SQL" do
       membership = Fixtures.Memberships.create_membership(role: "admin")
-      subject = Fixtures.Subjects.membership_subject(membership)
+      subject = Fixtures.Subjects.subject_for(membership)
 
       subjects = [
         %{subject | membership_id: nil},

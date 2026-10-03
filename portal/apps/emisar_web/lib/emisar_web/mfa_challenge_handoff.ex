@@ -5,18 +5,19 @@ defmodule EmisarWeb.MfaChallengeHandoff do
   auth session cookie — to `UserSessionController.mfa_complete`, which can.
 
   What it carries is the opaque proof `Emisar.Auth.verify_mfa_challenge/3`
-  returned — bound to the exact enrollment that was verified — not a bare user
-  id. `Emisar.Auth` re-checks that proof against the locked user row before it
-  mints anything, so signing the proof (rather than a name) is what stops a
-  handoff from outliving the credential state it was issued for.
+  returned — bound to the exact Member and enrollment that was verified — not a
+  bare id. `Emisar.Auth` re-checks that proof against the locked Member row
+  before it mints anything, so signing the proof (rather than a name) is what
+  stops a handoff from outliving the credential state it was issued for.
 
   Signed with the endpoint secret, valid for 120 seconds (a slow authenticator
   lookup; the redirect itself is immediate). It is NOT a bearer credential on its
-  own: `mfa_complete` also requires the still-present `:mfa_pending_user_id`
-  session marker to match the proof's user — binding completion to the browser
-  that passed factor one. So a leaked handoff is useless without that partial
-  session, and it can't manufacture a session for a user who never entered a
-  second factor (the token is proof the LiveView actually ran the verification).
+  own: `mfa_complete` also requires the still-present
+  `:mfa_pending_membership_id` session marker to match the proof's Member —
+  binding completion to the browser that passed factor one. So a leaked handoff
+  is useless without that partial session, and it can't manufacture a session
+  for a Member who never entered a second factor (the token is proof the
+  LiveView actually ran the verification).
 
   One seam wrapping `Phoenix.Token` (IL-19) so the handoff crypto has a single,
   testable review surface.
