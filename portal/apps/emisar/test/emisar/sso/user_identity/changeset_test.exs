@@ -35,9 +35,7 @@ defmodule Emisar.SSO.UserIdentity.ChangesetTest do
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
 
       identity =
-        account.id
-        |> UserIdentity.Changeset.create(provider.id, membership, @attrs)
-        |> Repo.insert!()
+        Fixtures.SSO.create_user_identity(membership: membership, provider_id: provider.id)
 
       changeset = UserIdentity.Changeset.bind_membership(identity, service_account)
 

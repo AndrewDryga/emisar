@@ -1448,18 +1448,15 @@ defmodule EmisarWeb.TeamLive do
   # Added is a page STATE like a sent invite: the receipt names the reach the
   # service account starts with and how an app connects as it.
   defp do_add_service_account(socket, params) do
-    case Accounts.create_service_account(params, socket.assigns.current_subject) do
-      {:ok, service_account} ->
-        access =
-          [service_account]
-          |> Accounts.runner_access_for_memberships()
-          |> Map.fetch!(service_account.id)
+    subject = socket.assigns.current_subject
 
-        {:noreply,
-         socket
-         |> assign(:added_service_account, service_account)
-         |> assign(:added_service_account_access, access)}
-
+    with {:ok, service_account} <- Accounts.create_service_account(params, subject),
+         {:ok, facts} <- Accounts.fetch_team_member_facts(service_account.id, subject) do
+      {:noreply,
+       socket
+       |> assign(:added_service_account, service_account)
+       |> assign(:added_service_account_access, facts.runner_access)}
+    else
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply,
          assign(socket, :service_account_form, to_form(changeset, as: "service_account"))}

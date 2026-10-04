@@ -1264,8 +1264,13 @@ defmodule Emisar.ApiKeysTest do
       service_account =
         Fixtures.Memberships.create_service_account(account_id: account.id, runner_access: scoped)
 
+      ApiKeys.subscribe_account_api_keys(account.id)
+
       assert {:ok, raw, %ApiKey{} = key} =
                ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject)
+
+      created_key_id = key.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^created_key_id}
 
       assert key.kind == :mcp
       assert key.created_by_membership_id == service_account.id

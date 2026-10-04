@@ -149,7 +149,7 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Scoping the person also scopes their agents. To limit an agent, use an Admin or Operator
+        Scoping a member also scopes the agents that act as them. To limit an agent, use an Admin or Operator
         membership and narrow that member's access
         on the <.link
           navigate={~p"/docs/teams-and-access"}
@@ -158,8 +158,8 @@
         use the fixed API-client permissions and pass policy, approval, and trust checks.
         Promoting a scoped member to Owner expands their connected agents' access without
         replacing credentials or reconnecting. You do not tune keys one by one.
-        Remove that member's access to stop every key they
-        issued from resolving to a runner. An unbound key is never usable.
+        Remove that member's access to stop every key that acts as them
+        from resolving to a runner. An unbound key is never usable.
       </p>
 
       <.docs_h2 id="minting">Minting a key</.docs_h2>
@@ -237,11 +237,12 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Rotating someone else's key.</strong>
-            The replacement key goes to you, so you can rotate a teammate's or a service
-            account's key only when your own runner and pack access covers theirs. emisar
-            records you as the person the replacement was issued to. Anyone who can manage the
-            key can still revoke it.
+            <strong class="text-zinc-200">Manually rotating someone else's key.</strong>
+            Manual rotation shows the replacement key to you, so you can do it for a teammate's
+            or a service account's key only when your own runner and pack access covers theirs,
+            and emisar records you as the person the replacement was issued to. Automatic
+            rotation hands the new key to the agent instead. Anyone who can manage the key can
+            still revoke it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

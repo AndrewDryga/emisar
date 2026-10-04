@@ -3894,7 +3894,7 @@ defmodule Emisar.ApprovalsTest do
                |> Audit.Event.Query.by_event_type("approval.overridden")
                |> Repo.one()
 
-      assert payload["self_approval_waived"]
+      assert payload["self_approval_waived"] == true
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end
 

@@ -2464,14 +2464,51 @@ defmodule EmisarWeb.AgentsLiveTest do
                "Ryker"
              )
 
+      ApiKeys.subscribe_account_api_keys(account.id)
+
       lv
       |> form("#api_key_form", %{
         "api_key" => %{"name" => "Ryker", "acts_as" => service_account.id}
       })
       |> render_submit()
 
-      assert [%ApiKey{created_by_membership_id: created_by}] = Repo.all(ApiKey)
+      assert [%ApiKey{id: key_id, created_by_membership_id: created_by}] = Repo.all(ApiKey)
       assert created_by == service_account.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
+      flush_key_broadcast(lv)
+    end
+
+    test "a service account removed after the form opened is never swapped for a personal key",
+         %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      {:ok, lv, _} =
+        live(conn, ~p"/app/#{account}/agents/connect?#{[acts_as: service_account.id]}")
+
+      Fixtures.Memberships.mark_membership_as_deleted(service_account)
+      params = %{"api_key" => %{"name" => "Ryker", "acts_as" => service_account.id}}
+
+      html = lv |> form("#api_key_form", params) |> render_submit()
+      assert html =~ "That service account is no longer available."
+
+      assert has_element?(
+               lv,
+               ~s(#api_key_acts_as option[value="#{service_account.id}"][selected])
+             )
+
+      lv |> form("#api_key_form", params) |> render_submit()
+      assert Repo.all(ApiKey) == []
+    end
+
+    test "a link to a service account the admin can't use opens no key form", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      elsewhere = Fixtures.Memberships.create_service_account()
+
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect?#{[acts_as: elsewhere.id]}")
+
+      assert render(lv) =~ "That service account isn&#39;t available to you."
+      refute has_element?(lv, "#api_key_form")
     end
 
     test "the Team page's link opens the form acting as the service account", %{conn: conn} do
@@ -2516,7 +2553,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "an operator's key acts as themselves, with no choice offered", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
-      Fixtures.Memberships.create_service_account(account_id: account.id)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
       operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
 
       {:ok, lv, _} =
@@ -2528,6 +2565,12 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert has_element?(lv, "#api_key_form")
       refute has_element?(lv, "#api_key_acts_as")
+
+      render_submit(lv, "create", %{
+        "api_key" => %{"name" => "Ryker", "acts_as" => service_account.id}
+      })
+
+      assert Repo.all(ApiKey) == []
     end
   end
 

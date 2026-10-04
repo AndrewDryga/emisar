@@ -152,6 +152,9 @@ defmodule EmisarWeb.OAuthController do
       {:error, :unauthorized} ->
         render_invalid(conn, unauthorized_message(grantee))
 
+      {:error, :not_found} ->
+        render_invalid(conn, not_found_message(grantee))
+
       {:error, :runner_access_exceeds_subject} ->
         render_invalid(
           conn,
@@ -187,9 +190,9 @@ defmodule EmisarWeb.OAuthController do
   end
 
   # The consent form posts which workspace the operator chose to grant. The
-  # backing key is minted under the Member of this browser's live session in
-  # that workspace — resolved fresh from the cookie entry and its row, never
-  # trusted from the form. The rendered form always posts an explicit
+  # consenting Member is this browser's live session in that workspace —
+  # resolved fresh from the cookie entry and its row, never trusted from the
+  # form; the grant acts as them or as a service account they chose. The rendered form always posts an explicit
   # account_id (select or hidden field), so a request without one is a stale or
   # handcrafted form — it must not silently mint into some default workspace.
   defp consent_subject(conn, %{"account_id" => account_id})
@@ -212,6 +215,14 @@ defmodule EmisarWeb.OAuthController do
 
   defp unauthorized_message(_grantee),
     do: "Only owners and admins can connect an app as a service account."
+
+  defp not_found_message({:service_account, _id}) do
+    "That service account isn't available in the workspace you chose. Restart the " <>
+      "connection and choose another."
+  end
+
+  defp not_found_message(_grantee),
+    do: "That connection couldn't be authorized. Reload the page and try again."
 
   # -- Token endpoint -------------------------------------------------
 
@@ -428,7 +439,7 @@ defmodule EmisarWeb.OAuthController do
   defp client_label(_), do: "An MCP client"
 
   # The consent picker's options: each workspace this browser is signed in to,
-  # named with the Member the grant would belong to there. `require_signed_in`
+  # named with the Member who would consent there. `require_signed_in`
   # already pruned dead entries and sorted by workspace name.
   defp consent_sessions(conn) do
     Enum.map(conn.assigns.signed_in_sessions, fn %{membership: membership} ->

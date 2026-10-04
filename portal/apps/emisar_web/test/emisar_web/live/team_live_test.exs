@@ -1178,6 +1178,7 @@ defmodule EmisarWeb.TeamLiveTest do
     test "an owner adds one and sees the reach it starts with", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/service-accounts/new")
+      subscribe_team(account)
 
       assert html =~ "It starts with your runner and pack access."
 
@@ -1197,6 +1198,7 @@ defmodule EmisarWeb.TeamLiveTest do
         |> Emisar.Repo.one()
 
       assert service_account.display_name == "Ryker"
+      assert_team_broadcast(lv, "service_account.created", service_account.id)
 
       assert has_element?(
                lv,

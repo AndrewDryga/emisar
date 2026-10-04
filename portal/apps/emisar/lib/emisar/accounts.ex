@@ -4671,8 +4671,8 @@ defmodule Emisar.Accounts do
       Multi.new()
       |> put_membership_account_lock(account_id)
       |> put_current_actor(subject, Authorizer.manage_team_permission())
-      |> Multi.run(:service_account, fn repo, %{account: account, actor: actor} ->
-        insert_service_account(repo, account, attrs, actor)
+      |> Multi.merge(fn %{account: account, actor: actor} ->
+        put_service_account(Multi.new(), account, attrs, actor)
       end)
       |> Repo.commit_multi(after_commit: &broadcast_service_account_created(&1.service_account))
       |> case do
@@ -4709,25 +4709,39 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — adds a service account inside the caller's transaction, which
-  already holds `account`'s row lock; OAuth consent uses it to create the account
+  Internal — adds the steps that create a service account in `account` to the
+  caller's `multi`: `:service_account`, its runner and pack access, and its
+  `:service_account_audit` row naming `subject`. Merge it into a transaction that
+  already holds the workspace row lock; OAuth consent does, to create the account
   an app connects as. The service account starts with `subject`'s current runner
-  and pack access, and the audit row names `subject`. Requires `manage_team`.
-
-  Returns `{:ok, %Membership{}}` or `{:error, %Ecto.Changeset{} | :unauthorized}`.
+  and pack access. Requires `manage_team` and `subject` in `account`; otherwise
+  the `:service_account` step fails with `:unauthorized`.
   """
-  def insert_service_account(repo, %Account{} = account, attrs, %Subject{} = subject)
+  def put_service_account(%Multi{} = multi, %Account{} = account, attrs, %Subject{} = subject)
       when is_map(attrs) do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
-         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
-         access = runner_access_for_subject(subject),
-         changeset = Membership.Changeset.create_service_account(account.id, attrs, access),
-         {:ok, service_account} <- repo.insert(changeset),
-         {:ok, _access} <- replace_runner_access_rows(repo, service_account.id, access),
-         {:ok, _event} <-
-           repo.insert(Audit.Events.service_account_created(subject, service_account, access)) do
-      {:ok, service_account}
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
+      multi
+      |> Multi.run(:service_account_access, fn _repo, _changes ->
+        {:ok, runner_access_for_subject(subject)}
+      end)
+      |> Multi.insert(:service_account, fn %{service_account_access: access} ->
+        Membership.Changeset.create_service_account(account.id, attrs, access)
+      end)
+      |> Multi.run(:service_account_scopes, fn repo,
+                                               %{service_account: service_account} = changes ->
+        replace_runner_access_rows(repo, service_account.id, changes.service_account_access)
+      end)
+      |> Multi.insert(:service_account_audit, fn %{service_account: service_account} = changes ->
+        Audit.Events.service_account_created(
+          subject,
+          service_account,
+          changes.service_account_access
+        )
+      end)
+    else
+      {:error, reason} -> Multi.error(multi, :service_account, reason)
     end
   end
 
@@ -4745,7 +4759,13 @@ defmodule Emisar.Accounts do
     with :ok <-
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          true <- Repo.valid_uuid?(id),
-         {:ok, service_account} <- lock_service_account(repo, id, subject),
+         queryable =
+           Membership.Query.authorized()
+           |> Membership.Query.by_id(id)
+           |> Membership.Query.by_kind(:service_account)
+           |> Membership.Query.lock_for_update()
+           |> Authorizer.for_subject(subject),
+         {:ok, service_account} <- repo.fetch(queryable, Membership.Query),
          access = load_runner_access(repo, service_account),
          :ok <- ensure_runner_access_grant_allowed(subject, access) do
       {:ok, service_account}
@@ -4753,15 +4773,6 @@ defmodule Emisar.Accounts do
       false -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  defp lock_service_account(repo, id, %Subject{} = subject) do
-    Membership.Query.authorized()
-    |> Membership.Query.by_id(id)
-    |> Membership.Query.by_kind(:service_account)
-    |> Membership.Query.lock_for_update()
-    |> Authorizer.for_subject(subject)
-    |> repo.fetch(Membership.Query)
   end
 
   # -- Internal (Billing flows) ----------------------------------------

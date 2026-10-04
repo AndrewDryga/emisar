@@ -1912,6 +1912,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       challenge: challenge
     } do
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      Emisar.ApiKeys.subscribe_account_api_keys(account.id)
 
       conn =
         conn
@@ -1930,7 +1931,41 @@ defmodule EmisarWeb.OAuthControllerTest do
         })
 
       assert redirected_to(conn, 302) =~ "code="
-      assert Repo.one(Emisar.ApiKeys.ApiKey).created_by_membership_id == service_account.id
+      key = Repo.one(Emisar.ApiKeys.ApiKey)
+      assert key.created_by_membership_id == service_account.id
+
+      key_id = key.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
+    end
+
+    test "a service account from another signed-in workspace is refused with its reason", %{
+      conn: conn,
+      account: account,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      elsewhere = Fixtures.Memberships.create_service_account()
+
+      conn =
+        conn
+        |> log_in_member(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => account.id,
+          "connect_as" => elsewhere.id,
+          "decision" => "approve"
+        })
+
+      assert html_response(conn, 400) =~
+               "That service account isn&#39;t available in the workspace you chose."
+
+      refute Repo.one(Emisar.ApiKeys.ApiKey)
     end
 
     test "approving as a new service account creates one named after the app", %{
@@ -1940,6 +1975,9 @@ defmodule EmisarWeb.OAuthControllerTest do
       client: client,
       challenge: challenge
     } do
+      Emisar.Accounts.subscribe_account_team(account.id)
+      Emisar.ApiKeys.subscribe_account_api_keys(account.id)
+
       conn =
         conn
         |> log_in_member(user)
@@ -1960,6 +1998,11 @@ defmodule EmisarWeb.OAuthControllerTest do
       key = Repo.one(Emisar.ApiKeys.ApiKey)
       service_account = Repo.get!(Emisar.Accounts.Membership, key.created_by_membership_id)
       assert %{kind: :service_account, display_name: "Claude"} = service_account
+
+      key_id = key.id
+      service_account_id = service_account.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
+      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
     end
 
     test "an operator's crafted service-account grant is refused", %{

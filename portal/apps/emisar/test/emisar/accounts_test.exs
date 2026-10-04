@@ -6733,6 +6733,7 @@ defmodule Emisar.AccountsTest do
     test "adds a named operator seat with the subject's own reach, audited and announced" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       Accounts.subscribe_account_team(account.id)
+      Audit.subscribe_account_audit(account.id)
 
       assert {:ok, %Membership{} = service_account} =
                Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
@@ -6762,6 +6763,9 @@ defmodule Emisar.AccountsTest do
       assert event.actor_id == subject.membership_id
       assert event.target_label == "Ryker"
       assert event.payload["runner_access"]["mode"] == "all"
+
+      event_id = event.id
+      assert_receive {:audit_event, %AuditEvent{id: ^event_id}}
     end
 
     test "a scoped admin's service account starts with that admin's reach" do
@@ -6854,21 +6858,23 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "insert_service_account/4" do
-    test "adds a service account inside the caller's transaction" do
+  describe "put_service_account/4" do
+    test "adds the service account, its access and its audit row to the caller's transaction" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
 
-      assert {:ok, %{service_account: %Membership{kind: :service_account} = service_account}} =
+      assert {:ok, %{service_account: service_account, service_account_audit: event}} =
                Multi.new()
-               |> Multi.run(:service_account, fn repo, _changes ->
-                 Accounts.insert_service_account(repo, account, %{display_name: "Ryker"}, subject)
-               end)
+               |> Accounts.put_service_account(account, %{display_name: "Ryker"}, subject)
                |> Repo.commit_multi()
 
+      assert %Membership{kind: :service_account, display_name: "Ryker"} = service_account
       assert service_account.account_id == account.id
 
       assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
                RunnerAccess.all()
+
+      assert %AuditEvent{event_type: "service_account.created"} = event
+      assert event.target_id == service_account.id
     end
 
     test "an operator cannot add one" do
@@ -6878,21 +6884,20 @@ defmodule Emisar.AccountsTest do
         Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
         |> Fixtures.Subjects.subject_for()
 
-      assert Accounts.insert_service_account(Repo, account, %{display_name: "Ryker"}, subject) ==
-               {:error, :unauthorized}
+      multi =
+        Accounts.put_service_account(Multi.new(), account, %{display_name: "Ryker"}, subject)
+
+      assert Repo.commit_multi(multi) == {:error, :unauthorized}
     end
 
     test "never adds one to another account" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       other_account = Fixtures.Accounts.create_account()
+      attrs = %{display_name: "Ryker"}
 
-      assert Accounts.insert_service_account(
-               Repo,
-               other_account,
-               %{display_name: "Ryker"},
-               subject
-             ) == {:error, :unauthorized}
+      multi = Accounts.put_service_account(Multi.new(), other_account, attrs, subject)
 
+      assert Repo.commit_multi(multi) == {:error, :unauthorized}
       refute Membership.Query.all() |> Membership.Query.by_kind(:service_account) |> Repo.one()
     end
   end

@@ -20,10 +20,11 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   def select_ids(queryable),
     do: select(queryable, [api_keys: k], k.id)
 
-  @doc "Selects `{key_id, last_used_at}` for the Agents page's bounded activity poll."
+  @doc "Selects the key's issuer membership id — see `ApiKey`'s `issued_by_membership`."
   def select_issuer_id(queryable),
     do: select(queryable, [api_keys: k], k.issued_by_membership_id)
 
+  @doc "Selects `{key_id, last_used_at}` for the Agents page's bounded activity poll."
   def select_usage_timestamps(queryable),
     do: select(queryable, [api_keys: k], {k.id, k.last_used_at})
 

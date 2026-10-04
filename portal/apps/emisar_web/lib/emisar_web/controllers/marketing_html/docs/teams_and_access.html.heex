@@ -126,8 +126,9 @@
         >Team → Add service account</a>. It has the Operator role and starts with your runner and
         pack access; narrow it with Actions → Edit access like any member's. It has no email
         address and cannot sign in, so it is never invited, never enrolls MFA, and never links an
-        SSO identity. Only owners and admins add and manage service accounts, and only within
-        their own runner and pack access.
+        SSO identity. Only owners and admins add and manage service accounts. Giving one access,
+        connecting an app as it, or creating its keys also needs runner and pack access that
+        covers the service account's.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         An app connects as a service account in one of two ways:
@@ -152,8 +153,9 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         emisar records who connected each app or created each key for a service account. When a
         policy doesn't allow self-approval, that person can't approve the requests the service
-        account makes through that app or key; another approver must. Suspending or removing a
-        service account revokes every key and connection that acts as it.
+        account makes through that app or key. Another approver can, or an owner or admin can
+        override with a reason the audit log records. Suspending or removing a service account
+        revokes every key and connection that acts as it.
       </p>
 
       <.docs_h2 id="profiles">Member profiles</.docs_h2>

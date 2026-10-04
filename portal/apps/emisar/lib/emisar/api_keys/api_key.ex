@@ -4,8 +4,9 @@ defmodule Emisar.ApiKeys.ApiKey do
   (Claude, Cursor, custom runners) and SIEM audit-export tokens. The key is
   identity + expiry + audit attribution only — it carries NO per-key
   authorization scope. What it may do is decided by account Policy + approval;
-  which runners it may see and reach is the minting operator's explicit runner
-  access, resolved from `created_by_membership` at call time. `kind`
+  which runners it may see and reach is the explicit runner access of the member
+  it acts as — the operator who minted it, or a service account — resolved from
+  `created_by_membership` at call time. `kind`
   is the sole capability discriminator: `:mcp` reaches the MCP tool surface,
   `:audit_export` the read-only `/api/audit` stream.
   """
@@ -57,18 +58,18 @@ defmodule Emisar.ApiKeys.ApiKey do
     # rotation (operator or auto) — never from user input. First use of this
     # key proves the client swapped, so the replaced chain is retired then.
     belongs_to :replaces, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
-    # Membership of the user who minted this key. MCP dispatch resolves
-    # this membership's per-user runner scope at call-time so revoking
-    # the operator's scope shrinks every key they ever issued. Historical
-    # rows may be nil because the FK uses `on_delete: :nilify_all`, but an
-    # unbound key is never usable.
+    # The member this key acts as: whoever minted it for themselves, or the
+    # service account it was minted for. MCP dispatch resolves this member's
+    # runner scope at call time, so narrowing that member shrinks every key
+    # acting as them. Historical rows may be nil because the FK uses
+    # `on_delete: :nilify_all`, but an unbound key is never usable.
     belongs_to :created_by_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
     # The person who received this key when it acts as another member: a
     # service account's key, or a successor someone rotated for a teammate.
     # Nil when the key's own member issued it. Never cast, and it outlives the
     # mint's audit row, so a long-lived credential always names a human — and
     # that human's approvals count as self-approvals of the requests it makes.
-    belongs_to :issued_by_membership, Emisar.Accounts.Membership
+    belongs_to :issued_by_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
 
     timestamps()
   end

@@ -264,9 +264,7 @@ defmodule Emisar.OAuth do
       |> Multi.run(:subject, fn _repo, changes ->
         rebuild_consenting_subject(changes, subject)
       end)
-      |> Multi.run(:grantee, fn repo, changes ->
-        fetch_or_create_grantee(repo, changes, grantee)
-      end)
+      |> Multi.merge(&grantee_multi(&1, grantee))
       |> Multi.run(:key, fn _repo, changes ->
         mint_backing_key(changes)
       end)
@@ -286,18 +284,26 @@ defmodule Emisar.OAuth do
     end
   end
 
-  # The membership the connection acts as. Its own reach and attribution follow
-  # every call the client makes; the consenting operator stays the audit actor.
-  defp fetch_or_create_grantee(_repo, %{membership: membership}, :member), do: {:ok, membership}
+  # The membership the connection acts as, in `:grantee`. Its own reach and
+  # attribution follow every call the client makes; the consenting operator
+  # stays the audit actor and the key's issuer.
+  defp grantee_multi(%{membership: membership}, :member),
+    do: Multi.put(Multi.new(), :grantee, membership)
 
-  defp fetch_or_create_grantee(repo, %{subject: subject}, {:service_account, id}),
-    do: Accounts.fetch_and_lock_service_account(repo, id, subject)
+  defp grantee_multi(%{subject: subject}, {:service_account, id}) do
+    Multi.run(Multi.new(), :grantee, fn repo, _changes ->
+      Accounts.fetch_and_lock_service_account(repo, id, subject)
+    end)
+  end
 
-  defp fetch_or_create_grantee(repo, changes, :new_service_account) do
-    %{account: account, client: client, subject: subject} = changes
+  defp grantee_multi(%{account: account, client: client, subject: subject}, :new_service_account) do
     attrs = %{display_name: client.client_name || "MCP client"}
 
-    Accounts.insert_service_account(repo, account, attrs, subject)
+    Multi.new()
+    |> Accounts.put_service_account(account, attrs, subject)
+    |> Multi.run(:grantee, fn _repo, %{service_account: service_account} ->
+      {:ok, service_account}
+    end)
   end
 
   # Announce the new backing key so an open agents list reflows to show the

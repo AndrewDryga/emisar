@@ -553,7 +553,12 @@ defmodule Emisar.ApiKeys do
   def create_service_account_key(service_account_id, attrs, %Subject{account: account} = subject) do
     input_changeset = change_key(attrs)
 
-    with {:ok, input} <- Ecto.Changeset.apply_action(input_changeset, :insert),
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.issue_quick_key_permission()
+           ),
+         {:ok, input} <- Ecto.Changeset.apply_action(input_changeset, :insert),
          :ok <- ensure_agent_key_kind(input.kind) do
       {raw, prefix, hash} = mint_for_kind(:mcp)
 
@@ -827,7 +832,9 @@ defmodule Emisar.ApiKeys do
   # A browser/session subject is a snapshot. Every key mint re-locks the seat
   # it names and rebuilds its permissions before any key row is inserted or
   # locked, so a concurrent suspension, removal, or demotion either lands first
-  # and refuses this request or lands second and revokes what this request made.
+  # and refuses this request or lands second. Landing second revokes what the
+  # request minted for that seat itself; a key it minted for a service account
+  # follows the service account instead.
   defp put_current_subject(multi, %Subject{actor: actor} = subject)
        when is_struct(actor, Accounts.Membership) do
     Multi.run(multi, :current_subject, fn repo, %{active_account: account} ->

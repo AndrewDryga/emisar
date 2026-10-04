@@ -511,11 +511,15 @@ defmodule EmisarWeb.AgentsLive do
            "That service account can reach runners or packs you can't, so you can't create a key for it."
          )}
 
+      # The form keeps the gone choice selected, so resubmitting fails the same
+      # way rather than quietly minting a key that acts as the admin.
       {:error, :not_found} ->
         {:noreply,
-         socket
-         |> assign_acts_as_options()
-         |> put_flash(:error, "That service account is no longer available.")}
+         put_flash(
+           socket,
+           :error,
+           "That service account is no longer available. Choose who the key acts as."
+         )}
 
       # The form mints `:mcp`, but `create_key/2` picks its permission from the
       # posted kind — a crafted `audit_export` post from this page is refused
@@ -898,21 +902,19 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   # The Team page sends an admin here to create a key for the service account
-  # it just added: open the custom key form acting as it.
+  # it just added: open the custom key form acting as it. A link naming one this
+  # admin can't use opens nothing, so it never falls back to a personal key.
   defp preselect_acts_as(%{assigns: %{live_action: :connect}} = socket, %{"acts_as" => id})
        when is_binary(id) do
-    if ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject) do
-      socket =
-        socket
-        |> assign(:selected_client, "custom")
-        |> assign(:selected_sandbox, nil)
-        |> assign_acts_as_options()
+    socket = assign_acts_as_options(socket)
 
-      if acts_as_option?(socket.assigns.acts_as_options, id),
-        do: assign(socket, :acts_as, id),
-        else: socket
-    else
+    if acts_as_option?(socket.assigns.acts_as_options, id) do
       socket
+      |> assign(:selected_client, "custom")
+      |> assign(:selected_sandbox, nil)
+      |> assign(:acts_as, id)
+    else
+      put_flash(socket, :error, "That service account isn't available to you.")
     end
   end
 

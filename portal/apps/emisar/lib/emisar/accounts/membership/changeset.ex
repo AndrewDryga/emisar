@@ -8,6 +8,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
                     invited_by_membership_id invitation_token_digest
                     invitation_accepted_at]a
   @update_fields ~w[role]a
+  @profile_fields ~w[display_name]a
 
   def create(attrs) do
     %Membership{}
@@ -36,7 +37,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
   """
   def create_service_account(account_id, attrs, %RunnerAccess{} = access) do
     %Membership{kind: :service_account, role: :operator}
-    |> cast(attrs, [:display_name])
+    |> cast(attrs, @profile_fields)
     |> put_change(:account_id, account_id)
     |> validate_required([:account_id])
     |> validate_profile()
@@ -53,7 +54,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
 
   def profile(%Membership{} = membership, attrs) do
     membership
-    |> cast(attrs, [:display_name])
+    |> cast(attrs, @profile_fields)
     |> validate_profile()
   end
 
