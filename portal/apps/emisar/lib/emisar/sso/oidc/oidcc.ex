@@ -245,12 +245,14 @@ defmodule Emisar.SSO.OIDC.Oidcc do
 
   # RFC 9207 mix-up defense (R2): when the IdP echoes `iss` in the response, it
   # MUST equal the provider's configured issuer. (oidcc validates the ID-token
-  # `iss` claim; this guards the authorization response itself.)
+  # `iss` claim; this guards the authorization response itself.) An `iss` that is
+  # present but not one string (`iss[]=…`) is malformed, never "not sent".
   defp ensure_response_issuer(%{"iss" => iss}, %IdentityProvider{issuer: issuer})
        when is_binary(iss) do
     if iss == issuer, do: :ok, else: {:error, :issuer_mismatch}
   end
 
+  defp ensure_response_issuer(%{"iss" => _malformed}, _provider), do: {:error, :issuer_mismatch}
   defp ensure_response_issuer(_params, _provider), do: :ok
 
   defp fetch_code(%{"code" => code}) when is_binary(code) and code != "", do: {:ok, code}

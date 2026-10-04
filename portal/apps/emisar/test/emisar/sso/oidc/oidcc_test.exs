@@ -33,6 +33,18 @@ defmodule Emisar.SSO.OIDC.OidccTest do
                {:error, :issuer_mismatch}
     end
 
+    test "rejects a present issuer that is not one string before contacting the provider" do
+      provider = provider()
+
+      params = %{
+        "state" => "expected-state",
+        "iss" => ["https://different-idp.example"],
+        "code" => "authorization-code"
+      }
+
+      assert Oidcc.verify_callback(provider, params, stashed()) == {:error, :issuer_mismatch}
+    end
+
     test "rejects a callback with no authorization code" do
       provider = provider()
       params = %{"state" => "expected-state", "iss" => provider.issuer}
@@ -124,6 +136,25 @@ defmodule Emisar.SSO.OIDC.OidccTest do
 
       assert_receive {:adapter_request, "/"}
       refute_receive {:adapter_request, "/"}, 1_100
+    end
+
+    test "asks the IdP to end each connection with its response" do
+      profile = start_httpc_profile(:emisar_oidcc_close_test)
+      url = start_http_policy_probe(:ok)
+
+      assert {:ok, {{:json, %{}}, _headers}} =
+               :oidcc_http_util.request(
+                 :get,
+                 {url, []},
+                 %{topic: [:emisar, :oidcc_close_test]},
+                 %{
+                   timeout: 1_000,
+                   http_adapter: {Emisar.SSO.OIDC.BoundedHTTPAdapter, %{profile: profile}}
+                 }
+               )
+
+      assert_receive {:adapter_request_headers, headers}
+      assert headers =~ "\r\nconnection: close"
     end
 
     test "does not follow a redirect outside the caller's request lifetime" do
@@ -401,6 +432,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
       {:ok, socket} ->
         request = read_request(socket)
         send(test_pid, {:adapter_request, request.path})
+        send(test_pid, {:adapter_request_headers, request.headers})
         :ok = :gen_tcp.send(socket, http_policy_response(mode, request.path, port))
         :ok = :gen_tcp.close(socket)
         serve_http_policy_probe(listener, test_pid, mode, port)
@@ -434,6 +466,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
   end
 
   defp http_policy_response(:redirect, "/followed", _port), do: http_response(200, "{}")
+  defp http_policy_response(:ok, _path, _port), do: http_response(200, "{}")
 
   defp serve(listener, test_pid, issuer, jwks_uri) do
     case :gen_tcp.accept(listener) do
@@ -483,7 +516,7 @@ defmodule Emisar.SSO.OIDC.OidccTest do
     [method, target, _version] = String.split(request_line, " ", parts: 3)
     [path | _query] = String.split(target, "?", parts: 2)
 
-    %{method: method, path: path, body: body}
+    %{method: method, path: path, headers: String.downcase(headers), body: body}
   end
 
   defp content_length(headers) do

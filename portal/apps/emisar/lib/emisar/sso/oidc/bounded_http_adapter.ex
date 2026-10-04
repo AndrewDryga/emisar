@@ -19,10 +19,20 @@ defmodule Emisar.SSO.OIDC.BoundedHTTPAdapter do
 
     :httpc.request(
       method,
-      request,
+      close_after_response(request),
       [{:autoredirect, false}, {:autoretry, 0} | http_options],
       request_options,
       profile
     )
   end
+
+  # One request per connection: the IdP ends it with its response, so a fetch
+  # hands its Guard tunnel back the moment it finishes rather than idling in it.
+  # The Guard's pool is sized on one tunnel per operation at a time.
+  defp close_after_response({url, headers}), do: {url, with_close(headers)}
+
+  defp close_after_response({url, headers, content_type, body}),
+    do: {url, with_close(headers), content_type, body}
+
+  defp with_close(headers), do: [{~c"connection", ~c"close"} | headers]
 end
