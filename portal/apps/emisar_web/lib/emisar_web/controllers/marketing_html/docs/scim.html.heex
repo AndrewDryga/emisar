@@ -176,6 +176,28 @@
             first.
           </span>
         </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            An offboarding reaches emisar when your provider sends it, and Entra sends changes
+            about every 40 minutes. For an urgent one, also choose
+            <strong class="text-zinc-200">Suspend access</strong>
+            on the <.link
+              navigate={~p"/docs/teams-and-access" <> "#sessions"}
+              class="text-brand-400 hover:text-brand-300"
+            >Team page</.link>. Directory sync never lifts that hold.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            Unassigning the wrong group in your provider suspends everyone in it, and
+            reinstating them does not bring back their agent keys or standing approvals. Turn on
+            your provider's safeguard where it has one: in Entra,
+            <strong class="text-zinc-200">Prevent accidental deletions</strong>
+            holds a large batch of deactivations until an admin allows it.
+          </span>
+        </li>
       </ul>
 
       <.docs_h3 id="disable-sync">Rotate or disable directory sync</.docs_h3>
@@ -452,6 +474,11 @@
         — it stays a deliberate human assignment.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
+        A mapping covers only the members your provider sends for that group. Entra sends the
+        direct members of an assigned group, never the members of a group nested inside it, so
+        assign and map the groups that contain the people directly.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
         Directory sync cannot grant or remove Owner privileges or narrow an Owner's runner
         and pack access. It can still suspend an Owner, subject to the last-owner safeguard.
         To hand an Owner's role and access back to the directory, another Owner chooses
@@ -529,8 +556,20 @@
                 The bearer has not authenticated successfully yet. Run the IdP connector's test,
                 then check that provisioning is enabled and assigned. After the first request,
                 emisar shows <strong class="text-zinc-200">Last request</strong> with its age.
-                This records an authenticated request, not a successful synchronization. Check
-                your identity provider's provisioning logs for operation results.
+                This records an authenticated request, not a successful synchronization.
+              </td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 font-semibold text-zinc-100">
+                Someone is not added, updated, or suspended
+              </td>
+              <td class="px-4 py-3">
+                Look under <strong class="text-zinc-200">Refused changes</strong>
+                on the connection's page. It lists each change emisar refused in the last 7 days,
+                with the reason and the fix. Your provider retries a refused change until it
+                succeeds; emisar records it once a day as
+                <strong class="text-zinc-200">Directory change refused</strong>
+                in the audit log.
               </td>
             </tr>
             <tr>

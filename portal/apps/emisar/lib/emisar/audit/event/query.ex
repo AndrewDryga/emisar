@@ -225,6 +225,7 @@ defmodule Emisar.Audit.Event.Query do
        {"membership.role_synced_via_scim", "Role synced", "Member role synced (SCIM)"},
        {"membership.runner_access_synced_via_scim", "Runner access synced",
         "Member runner access synced (SCIM)"},
+       {"directory_sync.change_refused", "Change refused", "Directory change refused (SCIM)"},
        {"sso.group_mapping_created", "Group role mapping created",
         "SSO group role mapping created"},
        {"sso.group_mapping_updated", "Group role mapping updated",
@@ -293,8 +294,8 @@ defmodule Emisar.Audit.Event.Query do
   # surfaces. `:warn` keeps what it always meant minus the denials: something
   # existing was taken away or throttled (revoked, deleted, suspended, expired,
   # rate-limited) — a caution to look at, not the gate saying no.
-  @danger_suffixes ~w[_failed .failed .error .timed_out _halted .denied .refused .rejected _rejected
-                      .unknown_action]
+  @danger_suffixes ~w[_failed .failed .error .timed_out _halted .denied .refused _refused .rejected
+                      _rejected .unknown_action]
   @warn_suffixes ~w[.revoked _revoked _rate_limited .disabled .deleted _deleted .removed .suspended
                     .expired .cancelled .closed .erased]
   @pass_suffixes ~w[.success .succeeded .approved _approved .grant_used .consent_granted]
@@ -507,6 +508,17 @@ defmodule Emisar.Audit.Event.Query do
 
   def by_actor_id(queryable, id),
     do: where(queryable, [events: e], e.actor_id == ^id)
+
+  @doc "Events whose payload carries each of these string values as a top-level field."
+  def by_payload_values(queryable, values) when is_map(values) do
+    Enum.reduce(values, queryable, fn {field, value}, queryable ->
+      where(
+        queryable,
+        [events: e],
+        fragment("?->>? = ?", e.payload, ^to_string(field), ^value)
+      )
+    end)
+  end
 
   @doc "A query that matches no audit events."
   def none(queryable), do: where(queryable, false)
@@ -1057,6 +1069,9 @@ defmodule Emisar.Audit.Event.Query do
     "membership.runner_access_synced_via_scim" =>
       {true, false, true,
        "A member's runner access was recomputed from directory group mappings."},
+    "directory_sync.change_refused" =>
+      {false, false, true,
+       "emisar refused a change the identity provider pushed over SCIM; the provider retries it."},
     "sso.group_mapping_created" =>
       {true, true, true, "An admin mapped a directory group to a workspace role."},
     "sso.group_mapping_updated" =>

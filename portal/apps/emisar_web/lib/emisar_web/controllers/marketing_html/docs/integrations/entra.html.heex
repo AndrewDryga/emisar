@@ -278,7 +278,9 @@
           <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
           <p class="mt-1.5">
             Under <strong class="text-zinc-200">Users and groups</strong>, assign each person who
-            needs an emisar account. Then, on <strong class="text-zinc-200">Provisioning → Settings</strong>, set
+            needs an emisar account, or a group that contains them directly. Entra provisions
+            only the direct members of an assigned group, never the members of a group nested
+            inside it. Then, on <strong class="text-zinc-200">Provisioning → Settings</strong>, set
             <strong class="text-zinc-200">Scope</strong>
             to <strong class="text-zinc-200">Sync only assigned users and groups</strong>
             and turn <strong class="text-zinc-200">Provisioning Status</strong>
@@ -286,6 +288,9 @@
             sends the entire directory regardless of assignment. Entra syncs roughly every 40
             minutes. New members appear under <strong class="text-zinc-200">Members</strong>
             after the next cycle, not immediately. Their Entra groups then appear under <strong class="text-zinc-200">Groups &amp; access</strong>.
+            An offboarding also waits for the next cycle. For an urgent one, also choose
+            <strong class="text-zinc-200">Suspend access</strong>
+            on emisar's Team page; directory sync never lifts that hold.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/entra-assign-users.webp"
@@ -293,6 +298,19 @@
             caption="The certification group is assigned here and was provisioned to emisar."
             alt="The Users and groups page of the emisar SCIM enterprise application, with Add user/group visible and the assigned emisar certification members group outlined in green."
           />
+        </.docs_step>
+        <.docs_step n={5}>
+          <.docs_step_venue>Entra</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Guard against a mistaken unassignment.</p>
+          <p class="mt-1.5">
+            On the same <strong class="text-zinc-200">Provisioning → Settings</strong>
+            page, check <strong class="text-zinc-200">Prevent accidental deletions</strong>,
+            set a threshold above your usual offboardings per cycle, and fill in <strong class="text-zinc-200">Notification Email</strong>. When one cycle would
+            disable or delete more users than that, Entra pauses provisioning and emails you
+            to allow or reject the batch. Without it, unassigning the wrong group suspends
+            everyone in it in emisar and revokes their agent keys and standing approvals.
+            Assigning the group again restores their access, but not those credentials.
+          </p>
         </.docs_step>
       </ol>
 

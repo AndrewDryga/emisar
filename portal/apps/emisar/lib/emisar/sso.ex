@@ -24,7 +24,7 @@ defmodule Emisar.SSO do
   alias Emisar.SSO.GroupAccess
   alias Emisar.SSO.GroupRoleMapping
   alias Emisar.SSO.GroupRunnerAccessMapping
-  alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC, ProviderKind}
+  alias Emisar.SSO.{IdentityProvider, IssuerUrl, LinkRequest, OIDC, ProviderKind, RefusedChange}
   alias Emisar.SSO.SCIM
   alias Emisar.SSO.UserIdentity
   require Logger
@@ -281,6 +281,61 @@ defmodule Emisar.SSO do
 
     Repo.exists?(queryable)
   end
+
+  @refused_change_days 7
+  @refused_change_limit 10
+
+  @doc """
+  The changes `provider`'s directory pushed over SCIM that emisar refused in the
+  last seven days, newest first, at most ten — what the connection page lists so
+  an admin can see why someone was not added, updated or suspended without the
+  identity provider's logs. Requires `manage_sso`; another workspace's connection
+  is `{:error, :not_found}`. Returns `{:ok, [%RefusedChange{}]}`.
+  """
+  def list_refused_changes(%IdentityProvider{} = provider, %Subject{} = subject) do
+    with {:ok, provider} <- fetch_provider_by_id(provider.id, subject) do
+      since = DateTime.add(DateTime.utc_now(), -@refused_change_days, :day)
+
+      refused =
+        provider.account_id
+        |> Audit.directory_change_refusals(provider.id,
+          since: since,
+          limit: @refused_change_limit
+        )
+        |> Enum.flat_map(&refused_change/1)
+
+      {:ok, refused}
+    end
+  end
+
+  # A recorded value outside the vocabulary is never made an atom; the row is
+  # skipped instead.
+  defp refused_change(%Audit.Event{id: id, payload: payload, occurred_at: refused_at}) do
+    with %{"change" => change, "reason" => reason, "resource" => resource} <- payload,
+         {:ok, change} <- vocabulary_atom(change, RefusedChange.changes()),
+         {:ok, reason} <- vocabulary_atom(reason, RefusedChange.reasons()) do
+      [
+        %RefusedChange{
+          id: id,
+          change: change,
+          reason: reason,
+          resource: resource,
+          refused_at: refused_at
+        }
+      ]
+    else
+      _unknown -> []
+    end
+  end
+
+  defp vocabulary_atom(value, vocabulary) when is_binary(value) do
+    case Enum.find(vocabulary, &(Atom.to_string(&1) == value)) do
+      nil -> :error
+      atom -> {:ok, atom}
+    end
+  end
+
+  defp vocabulary_atom(_value, _vocabulary), do: :error
 
   @doc """
   The members provisioned through `provider` — its `UserIdentity` rows (SCIM sync,

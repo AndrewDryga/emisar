@@ -2101,6 +2101,24 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "fallback, not a minimum"
     end
 
+    test "directory-sync docs state the safeguards an offboarding depends on", %{conn: conn} do
+      scim = conn |> get(~p"/docs/scim") |> html_response(200) |> squish()
+      entra = conn |> get(~p"/docs/integrations/entra") |> html_response(200) |> squish()
+
+      # A mistaken bulk unassignment revokes agent keys that reinstating never
+      # restores, nested groups never arrive, and an urgent offboarding cannot
+      # wait for the next cycle.
+      for html <- [scim, entra] do
+        assert html =~ "Prevent accidental deletions"
+        assert html =~ "never the members of a group nested inside it"
+        assert html =~ "Suspend access"
+      end
+
+      # A refusal shows on the connection page, not only in the provider's logs.
+      assert scim =~ "Refused changes"
+      assert scim =~ "Directory change refused"
+    end
+
     test "the JumpCloud guide explains its externalId-less probe lifecycle", %{conn: conn} do
       html = conn |> get(~p"/docs/integrations/jumpcloud") |> html_response(200) |> squish()
 

@@ -2,7 +2,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   use EmisarWeb, :live_view
   alias Emisar.{Accounts, Runners, SSO}
   alias EmisarWeb.{ConfirmDialog, DirectoryGroups, GroupAccessForm, LiveForm, LiveTable}
-  alias EmisarWeb.{MailTo, MemberErrors, OIDCStepUp, Permissions, RunnerScope}
+  alias EmisarWeb.{MailTo, MemberErrors, OIDCStepUp, Permissions, RefusedChange, RunnerScope}
   alias EmisarWeb.{SSODirectoryComponents, SSOProviderKind}
   alias Phoenix.LiveView.JS
 
@@ -79,6 +79,8 @@ defmodule EmisarWeb.SSOSettingsLive do
       |> assign(:synced_members, [])
       |> assign(:synced_member_metadata, empty_metadata())
       |> assign(:synced_members_load_error?, false)
+      # The connection's recent SCIM refusals, loaded on :show and each refresh.
+      |> assign(:refused_changes, [])
       |> assign(:edit_form, nil)
       # The :new/:show create form. Only those actions assign it, but test_connection
       # reads it and is reachable over the socket from any route (IL-15), so default
@@ -198,6 +200,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         |> assign(:adding_runner_access_mapping, false)
         |> load_group_mappings(provider, params)
         |> load_synced_members(provider, params)
+        |> load_refused_changes(provider)
         |> load_runners()
         |> load_sign_in_verification(provider)
         |> assign_form(SSO.change_provider(socket.assigns.current_subject))
@@ -277,6 +280,15 @@ defmodule EmisarWeb.SSOSettingsLive do
     end
   end
 
+  # A failed read shows nothing rather than a stale list: the refusals are a
+  # pointer to the identity provider's logs, never the only record.
+  defp load_refused_changes(socket, provider) do
+    case SSO.list_refused_changes(provider, socket.assigns.current_subject) do
+      {:ok, refused_changes} -> assign(socket, :refused_changes, refused_changes)
+      {:error, _reason} -> assign(socket, :refused_changes, [])
+    end
+  end
+
   # Edit: its own page (like /new) so the form gets the full width — one
   # connection, pre-filled. A cross-account or unknown id falls back to the
   # overview, same as :show.
@@ -352,6 +364,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           )
           |> load_sign_in_verification(provider)
           |> load_synced_members(provider, socket.assigns.mapping_filter_params)
+          |> load_refused_changes(provider)
 
         if provider.scim_enabled and socket.assigns.can_configure_directory_sync? do
           socket
@@ -2037,6 +2050,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 provider={@provider}
                 scim_base_url={@scim_base_url}
                 scim_token={@scim_token}
+                refused_changes={@refused_changes}
               />
 
               <%!-- Keep capability and plan limits with provisioning. Neither
@@ -2753,6 +2767,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   attr :provider, :map, required: true
   attr :scim_base_url, :string, required: true
   attr :scim_token, :map, default: nil
+  attr :refused_changes, :list, default: []
 
   # Directory sync separates configuration state from authenticated request
   # history. The timestamp does not prove a completed sync or a live connection.
@@ -2865,6 +2880,42 @@ defmodule EmisarWeb.SSOSettingsLive do
             </.confirm_button>
           </div>
         </div>
+
+        <%!-- SCIM sends each change once and the provider retries a refused one,
+             so without this list a refusal shows only in the provider's logs. --%>
+        <.event_block
+          :if={@provider.scim_enabled && @refused_changes != []}
+          id={"scim-refused-changes-#{@provider.id}"}
+          icon="state.denied"
+          tone={:rose}
+          title="Refused changes"
+        >
+          <:body>
+            Your identity provider retries each one until the cause is fixed. Last 7 days.
+          </:body>
+          <ul class="mt-3 space-y-3">
+            <li
+              :for={refused <- @refused_changes}
+              id={"scim-refused-change-#{refused.id}"}
+              class="min-w-0"
+            >
+              <div class="flex min-w-0 items-baseline justify-between gap-4">
+                <p class="min-w-0 truncate text-sm text-zinc-200" title={refused.resource}>
+                  {refused.resource}
+                </p>
+                <.local_time
+                  id={"scim-refused-at-#{refused.id}"}
+                  value={refused.refused_at}
+                  mode={:relative}
+                  class="shrink-0 text-xs text-zinc-500"
+                />
+              </div>
+              <p class="mt-0.5 text-xs leading-relaxed text-zinc-400">
+                {RefusedChange.outcome(refused.change)}. {RefusedChange.reason(refused.reason)}
+              </p>
+            </li>
+          </ul>
+        </.event_block>
 
         <%!-- The one-time token reveal — only for the provider whose token was
              just minted. Dismissing it (or any reload) drops it for good. --%>

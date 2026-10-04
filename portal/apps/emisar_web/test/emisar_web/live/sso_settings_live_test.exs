@@ -1963,6 +1963,45 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute has_element?(lv, "#synced-groups-#{provider.id}")
     end
 
+    test "lists the changes emisar refused once a refresh finds one, with the fix", %{
+      conn: conn,
+      account: account,
+      user: user,
+      provider: provider
+    } do
+      {:ok, provider, _token} = SSO.enable_scim(provider, Fixtures.Subjects.subject_for(user))
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
+      refute has_element?(lv, "#scim-refused-changes-#{provider.id}")
+
+      {:ok, %{identity: identity}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "directory-title",
+          email: "title@example.com",
+          full_name: "Title Person"
+        })
+
+      title = [%{"op" => "replace", "path" => "title", "value" => "CTO"}]
+
+      assert SSO.scim_patch_user(provider, identity.id, title) ==
+               {:error, :unsupported_scim_patch}
+
+      refresh_directory(lv)
+
+      assert has_element?(lv, "#scim-refused-changes-#{provider.id}", "Refused changes")
+
+      assert has_element?(
+               lv,
+               "#scim-refused-changes-#{provider.id} li p[title]",
+               "title@example.com"
+             )
+
+      assert has_element?(
+               lv,
+               "#scim-refused-changes-#{provider.id} li",
+               "Not updated. The update changed an attribute emisar does not sync."
+             )
+    end
+
     test "a non-admin viewer cannot enable directory sync", %{
       conn: conn,
       account: account,

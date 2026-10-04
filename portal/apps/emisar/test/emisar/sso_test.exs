@@ -692,6 +692,48 @@ defmodule Emisar.SSOTest do
 
   # -- list_synced_users/3 --------------------------------------------
 
+  describe "list_refused_changes/2" do
+    test "lists this connection's refusals from the last seven days, newest first" do
+      %{provider: provider, subject: subject, account: account} = scim_provider()
+      %{identity: older} = provision(provider, "okta|older", %{email: "older@acme.test"})
+      %{identity: newer} = provision(provider, "okta|newer", %{email: "newer@acme.test"})
+      %{identity: stale} = provision(provider, "okta|stale", %{email: "stale@acme.test"})
+      title = [%{"op" => "replace", "path" => "title", "value" => "CTO"}]
+
+      assert SSO.scim_patch_user(provider, stale.id, title) == {:error, :unsupported_scim_patch}
+      assert SSO.scim_patch_user(provider, older.id, title) == {:error, :unsupported_scim_patch}
+      assert SSO.scim_patch_user(provider, newer.id, title) == {:error, :unsupported_scim_patch}
+      backdate_refusal(account.id, "stale@acme.test", hours: 8 * 24)
+      backdate_refusal(account.id, "older@acme.test", hours: 2)
+
+      # A second connection in the same workspace keeps its own refusals.
+      other = provider_fixture(account, %{kind: :jumpcloud, name: "JumpCloud"})
+      {:ok, other, _token} = SSO.enable_scim(other, subject)
+      %{identity: elsewhere} = provision(other, "jc|elsewhere", %{email: "elsewhere@acme.test"})
+      assert SSO.scim_patch_user(other, elsewhere.id, title) == {:error, :unsupported_scim_patch}
+
+      assert {:ok, refused} = SSO.list_refused_changes(provider, subject)
+
+      assert Enum.map(refused, &{&1.resource, &1.change, &1.reason}) == [
+               {"newer@acme.test", :update_user, :unsupported_scim_patch},
+               {"older@acme.test", :update_user, :unsupported_scim_patch}
+             ]
+    end
+
+    test "a viewer (no manage_sso) is denied" do
+      %{provider: provider, account: account} = scim_provider()
+
+      assert SSO.list_refused_changes(provider, viewer_in(account)) == {:error, :unauthorized}
+    end
+
+    test "another account's subject can't read the provider (:not_found)" do
+      %{provider: provider} = scim_provider()
+      {_ub, _account_b, sb} = enterprise_owner()
+
+      assert SSO.list_refused_changes(provider, sb) == {:error, :not_found}
+    end
+  end
+
   describe "list_synced_users/3" do
     test "returns the provider's provisioned members with the member preloaded" do
       %{provider: provider, subject: subject} = scim_provider()
@@ -9773,5 +9815,15 @@ defmodule Emisar.SSOTest do
     |> Repo.all()
     |> Enum.reject(&(&1.id == keep_membership_id))
     |> Enum.each(&Fixtures.Memberships.force_role(&1, "admin"))
+  end
+
+  # Moves the refusal recorded for `resource` back by `hours`, as if the
+  # provider had sent it then.
+  defp backdate_refusal(account_id, resource, hours: hours) do
+    Emisar.Audit.Event.Query.all()
+    |> Emisar.Audit.Event.Query.by_account_id(account_id)
+    |> Emisar.Audit.Event.Query.by_event_type("directory_sync.change_refused")
+    |> Emisar.Audit.Event.Query.by_payload_values(%{resource: resource})
+    |> Repo.update_all(set: [occurred_at: DateTime.add(DateTime.utc_now(), -hours, :hour)])
   end
 end

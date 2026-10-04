@@ -15,7 +15,9 @@ defmodule Emisar.SSO.SCIM do
   alias Emisar.SSO.{DirectoryGroup, DirectoryGroupMember, GroupRoleMapping}
   alias Emisar.SSO.GroupRunnerAccessMapping
   alias Emisar.SSO.IdentityProvider
-  alias Emisar.SSO.{SCIMGroupPatch, SCIMUser, SCIMUserPatch, SCIMUserUpdate, UserIdentity}
+  alias Emisar.SSO.{RefusedChange, SCIMGroupPatch, SCIMUser, SCIMUserPatch, SCIMUserUpdate}
+  alias Emisar.SSO.UserIdentity
+  require Logger
   @identifier_constraints ~w[
     sso_user_identities_active_provider_identifier_index
     sso_user_identities_scim_external_id_index
@@ -150,8 +152,11 @@ defmodule Emisar.SSO.SCIM do
   or re-add whose address another live Member holds by then is refused with
   `{:error, :member_email_taken}`. `{:ok, %{identity, membership}}`.
   """
-  def scim_provision_user(%IdentityProvider{} = provider, attrs),
-    do: provision_or_load(provider, attrs, :may_retry)
+  def scim_provision_user(%IdentityProvider{} = provider, attrs) do
+    provider
+    |> provision_or_load(attrs, :may_retry)
+    |> record_refusal(provider, :add_user, {:new_user, attrs})
+  end
 
   # `retry` is bookkeeping for the race convergence below, not something a caller
   # chooses — it stays off the public surface.
@@ -699,8 +704,9 @@ defmodule Emisar.SSO.SCIM do
   """
   def scim_patch_user(%IdentityProvider{} = provider, id, operations)
       when is_list(operations) do
-    with {:ok, update} <- SCIMUserPatch.reduce(operations) do
-      scim_update_user(provider, id, update)
+    case SCIMUserPatch.reduce(operations) do
+      {:ok, update} -> scim_update_user(provider, id, update)
+      refused -> record_refusal(refused, provider, :update_user, {:user, id})
     end
   end
 
@@ -719,6 +725,15 @@ defmodule Emisar.SSO.SCIM do
   `{:ok, %{identity: identity, membership: membership | nil}}`.
   """
   def scim_update_user(%IdentityProvider{} = provider, id, %SCIMUserUpdate{} = update) do
+    provider
+    |> update_scim_user(id, update)
+    |> record_refusal(provider, user_change(update), {:user, id})
+  end
+
+  defp user_change(%SCIMUserUpdate{active: false}), do: :suspend_user
+  defp user_change(%SCIMUserUpdate{}), do: :update_user
+
+  defp update_scim_user(provider, id, update) do
     multi =
       Multi.new()
       |> put_current_scim_provider(provider)
@@ -749,6 +764,12 @@ defmodule Emisar.SSO.SCIM do
   are retired with the resource so old mapped grants cannot return on revival.
   """
   def scim_delete_user(%IdentityProvider{} = provider, id) do
+    provider
+    |> delete_scim_user(id)
+    |> record_refusal(provider, :suspend_user, {:user, id})
+  end
+
+  defp delete_scim_user(provider, id) do
     multi =
       Multi.new()
       |> put_current_scim_provider(provider)
@@ -1274,6 +1295,12 @@ defmodule Emisar.SSO.SCIM do
   values are server-issued User ids; unknown in-scope-shaped ids are ignored.
   """
   def scim_upsert_group(%IdentityProvider{} = provider, attrs) do
+    provider
+    |> upsert_scim_group(attrs)
+    |> record_refusal(provider, :add_group, {:new_group, attrs})
+  end
+
+  defp upsert_scim_group(provider, attrs) do
     external_group_id = attrs[:external_id]
     display = attrs[:display]
     member_ids = attrs[:member_ids] || []
@@ -1302,6 +1329,14 @@ defmodule Emisar.SSO.SCIM do
   allowing body identity fields to redirect the write.
   """
   def scim_replace_group(%IdentityProvider{} = provider, id, attrs) do
+    provider
+    |> replace_scim_group(id, attrs)
+    |> record_refusal(provider, :update_group, {:group, id})
+  end
+
+  # A PATCH that rewrites the whole group lands here too, through
+  # `apply_scim_group_patch/3`; `scim_patch_group/3` records its own refusal.
+  defp replace_scim_group(provider, id, attrs) do
     external_group_id = attrs[:external_id]
     display = attrs[:display]
     member_ids = attrs[:member_ids] || []
@@ -1346,6 +1381,12 @@ defmodule Emisar.SSO.SCIM do
   invented by the delete path.
   """
   def scim_delete_group(%IdentityProvider{} = provider, id) do
+    provider
+    |> delete_scim_group(id)
+    |> record_refusal(provider, :remove_group, {:group, id})
+  end
+
+  defp delete_scim_group(provider, id) do
     multi =
       provider
       |> scim_group_multi()
@@ -1479,6 +1520,12 @@ defmodule Emisar.SSO.SCIM do
   """
   def scim_patch_group(%IdentityProvider{} = provider, id, operations)
       when is_list(operations) do
+    provider
+    |> patch_scim_group(id, operations)
+    |> record_refusal(provider, :update_group, {:group, id})
+  end
+
+  defp patch_scim_group(provider, id, operations) do
     with {:ok, group} <- scim_fetch_group(provider, id),
          {:ok, command} <- SCIMGroupPatch.reduce(operations, group) do
       apply_scim_group_patch(provider, id, command)
@@ -1507,7 +1554,7 @@ defmodule Emisar.SSO.SCIM do
       member_ids: member_ids
     }
 
-    scim_replace_group(provider, id, attrs)
+    replace_scim_group(provider, id, attrs)
   end
 
   defp apply_scim_group_patch(
@@ -1837,5 +1884,129 @@ defmodule Emisar.SSO.SCIM do
     |> Repo.update_all(set: [external_group_display: display, updated_at: now])
 
     :ok
+  end
+
+  # -- Refused changes ---------------------------------------------------
+  #
+  # SCIM sends each change once, and the identity provider retries a refused one
+  # on its own schedule, so a change emisar refuses stays wrong until someone
+  # reads the provider's logs. Each refusal an admin can act on is recorded in the
+  # trail, where the connection page lists it. A provider can retry for days, so
+  # one change, reason and resource is recorded once a day. The transaction that
+  # refused it rolled back, so the row is its own insert, written only once the
+  # refused resource resolves: a change to something this connection does not
+  # hold concerns nobody here. A row that cannot be written is logged, and the
+  # directory still gets its answer.
+  @recorded_refusals RefusedChange.reasons() -- [:invalid_value]
+
+  @refusal_repeat_window_seconds 86_400
+
+  @refused_resource_max_bytes 255
+
+  defp record_refusal({:error, %Ecto.Changeset{}} = refused, provider, change, resource),
+    do: put_refusal(refused, provider, change, :invalid_value, resource)
+
+  defp record_refusal({:error, reason} = refused, provider, change, resource)
+       when reason in @recorded_refusals,
+       do: put_refusal(refused, provider, change, reason, resource)
+
+  defp record_refusal(result, _provider, _change, _resource), do: result
+
+  defp put_refusal(refused, %IdentityProvider{} = provider, change, reason, resource) do
+    with {label, member} when is_binary(label) <- refused_resource(provider, resource),
+         false <- refused_recently?(provider, change, reason, label),
+         {:error, _not_recorded} <-
+           Audit.record(
+             Audit.Events.directory_change_refused(provider, change, reason, label, member)
+           ) do
+      Logger.warning("scim refusal not audited change=#{change} reason=#{reason}")
+    end
+
+    refused
+  end
+
+  # The label the directory knows the person or group by. A Member's address is
+  # unique in the workspace, so it names them exactly; a create names whom the
+  # directory tried to add.
+  defp refused_resource(_provider, {:new_user, attrs}),
+    do: {refused_label(attrs[:email] || attrs[:external_id]), nil}
+
+  defp refused_resource(%IdentityProvider{} = provider, {:user, id}) do
+    case peek_scim_identity(provider, id) do
+      %UserIdentity{membership: %Accounts.Membership{} = member} ->
+        {refused_label(member.email || Accounts.member_display_name(member)), member}
+
+      %UserIdentity{} = identity ->
+        {refused_label(identity.provider_identifier), nil}
+
+      nil ->
+        {nil, nil}
+    end
+  end
+
+  defp refused_resource(_provider, {:new_group, attrs}),
+    do: {refused_label(attrs[:display] || attrs[:external_id]), nil}
+
+  defp refused_resource(%IdentityProvider{} = provider, {:group, id}) do
+    case peek_scim_group(provider, id) do
+      %DirectoryGroup{} = group -> {refused_label(group.display || group.external_group_id), nil}
+      nil -> {nil, nil}
+    end
+  end
+
+  defp peek_scim_identity(%IdentityProvider{} = provider, id) do
+    if Repo.valid_uuid?(id) do
+      UserIdentity.Query.not_deleted()
+      |> UserIdentity.Query.scim_not_deleted()
+      |> UserIdentity.Query.by_account_id(provider.account_id)
+      |> UserIdentity.Query.by_provider_id(provider.id)
+      |> UserIdentity.Query.by_id(id)
+      |> UserIdentity.Query.with_preloaded_membership()
+      |> Repo.peek()
+    end
+  end
+
+  defp peek_scim_group(%IdentityProvider{} = provider, id) do
+    if Repo.valid_uuid?(id) do
+      DirectoryGroup.Query.not_deleted()
+      |> DirectoryGroup.Query.by_account_id(provider.account_id)
+      |> DirectoryGroup.Query.by_provider_id(provider.id)
+      |> DirectoryGroup.Query.by_id(id)
+      |> Repo.peek()
+    end
+  end
+
+  # The directory sent this value, so it is bounded in bytes before it is
+  # stored: the first graphemes that fit, never a split character.
+  defp refused_label(value) when is_binary(value) and value != "" do
+    value
+    |> String.slice(0, @refused_resource_max_bytes)
+    |> String.graphemes()
+    |> Enum.reduce_while({[], 0}, fn grapheme, {kept, size} ->
+      size = size + byte_size(grapheme)
+
+      if size <= @refused_resource_max_bytes,
+        do: {:cont, {[grapheme | kept], size}},
+        else: {:halt, {kept, size}}
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+    |> Enum.join()
+    |> case do
+      "" -> nil
+      label -> label
+    end
+  end
+
+  defp refused_label(_value), do: nil
+
+  defp refused_recently?(%IdentityProvider{} = provider, change, reason, label) do
+    since = DateTime.add(DateTime.utc_now(), -@refusal_repeat_window_seconds, :second)
+
+    Audit.directory_change_refusals(provider.account_id, provider.id,
+      since: since,
+      limit: 1,
+      matching: %{change: Atom.to_string(change), reason: Atom.to_string(reason), resource: label}
+    ) != []
   end
 end

@@ -1871,6 +1871,49 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc """
+  A change the identity provider pushed over SCIM that emisar refused. `change`
+  and `reason` come from `SSO.RefusedChange`'s vocabulary, `resource` is the
+  bounded label the directory knows the person or group by, and `member` is the
+  Member the change concerned — nil for a refused create, which concerns nobody
+  yet, and for a group.
+  """
+  def directory_change_refused(
+        %SSO.IdentityProvider{} = provider,
+        change,
+        reason,
+        resource,
+        member
+      )
+      when is_atom(change) and is_atom(reason) and is_binary(resource) do
+    Audit.changeset(
+      provider.account_id,
+      "directory_sync.change_refused",
+      [
+        actor_kind: "directory_sync",
+        actor_id: provider.id,
+        actor_label: provider.name,
+        payload: %{
+          provider_id: provider.id,
+          provider_kind: to_string(provider.kind),
+          change: Atom.to_string(change),
+          reason: Atom.to_string(reason),
+          resource: resource
+        }
+      ] ++ refused_change_target(member)
+    )
+  end
+
+  defp refused_change_target(%Accounts.Membership{} = member) do
+    [
+      target_kind: "membership",
+      target_id: member.id,
+      target_label: Accounts.member_display_name(member)
+    ]
+  end
+
+  defp refused_change_target(nil), do: []
+
   defp directory_sync_membership_event(
          %Accounts.Membership{} = membership,
          %SSO.IdentityProvider{} = provider,

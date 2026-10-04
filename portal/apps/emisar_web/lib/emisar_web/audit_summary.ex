@@ -8,7 +8,7 @@ defmodule EmisarWeb.AuditSummary do
   """
 
   alias Emisar.{Audit, Auth}
-  alias EmisarWeb.{TimeHelpers, TransportReason}
+  alias EmisarWeb.{RefusedChange, TimeHelpers, TransportReason}
 
   @account_fields [
     name: "Name",
@@ -470,6 +470,14 @@ defmodule EmisarWeb.AuditSummary do
   end
 
   # Routine lifecycle events need no duplicate status or invented historical fact.
+  defp summarize("directory_sync.change_refused", p) do
+    pairs(
+      resource: get(p, :resource),
+      outcome: get(p, :change) && RefusedChange.outcome(get(p, :change)),
+      reason: get(p, :reason) && RefusedChange.reason(get(p, :reason))
+    )
+  end
+
   defp summarize(_type, _payload), do: []
 
   # -- Helpers ---------------------------------------------------------

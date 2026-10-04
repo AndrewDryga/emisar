@@ -481,6 +481,27 @@ defmodule Emisar.Audit do
   defp approval_receipt_actor_key(%Event{}), do: nil
 
   @doc """
+  Internal — the `directory_sync.change_refused` events one connection's SCIM
+  pushes produced since `:since`, newest first, at most `:limit`. Takes an
+  already-authorized `account_id` rather than a `%Subject{}` (§1.4) and scopes
+  every row to it, so another workspace's connection id finds nothing.
+  `:matching` narrows to payload fields — how a repeated refusal finds the row
+  it would duplicate.
+  """
+  def directory_change_refusals(account_id, provider_id, opts)
+      when is_binary(account_id) and is_binary(provider_id) do
+    Event.Query.all()
+    |> Event.Query.by_account_id(account_id)
+    |> Event.Query.by_event_type("directory_sync.change_refused")
+    |> Event.Query.by_actor_id(provider_id)
+    |> Event.Query.occurred_at_or_after(Keyword.fetch!(opts, :since))
+    |> Event.Query.by_payload_values(Keyword.get(opts, :matching, %{}))
+    |> Event.Query.ordered_by_recent()
+    |> Event.Query.limit_to(Keyword.fetch!(opts, :limit))
+    |> Repo.all()
+  end
+
+  @doc """
   Selects a decision's retained note or event reference from an already-loaded
   receipt map by its deciding Member, an empty note included. A vote with no
   recorded Member has no receipt.

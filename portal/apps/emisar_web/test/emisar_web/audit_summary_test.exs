@@ -14,6 +14,23 @@ defmodule EmisarWeb.AuditSummaryTest do
 
   defp ev(type, payload), do: %{event_type: type, payload: payload}
 
+  describe "directory_sync.change_refused" do
+    test "names the resource, what did not happen, and the fix" do
+      assert AuditSummary.summary_pairs(
+               ev("directory_sync.change_refused", %{
+                 "change" => "suspend_user",
+                 "reason" => "last_owner",
+                 "resource" => "ana@acme.test"
+               })
+             ) == [
+               {"Resource", "ana@acme.test"},
+               {"Outcome", "Not suspended"},
+               {"Reason",
+                "This is the workspace's last active owner. Make someone else an owner, then retry in your identity provider."}
+             ]
+    end
+  end
+
   describe "membership.role_changed" do
     test "renders from → to" do
       assert AuditSummary.summary_pairs(

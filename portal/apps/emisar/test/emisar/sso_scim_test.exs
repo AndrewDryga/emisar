@@ -601,6 +601,119 @@ defmodule Emisar.SSOSCIMTest do
 
   # -- Helpers ---------------------------------------------------------
 
+  # -- Refused changes ------------------------------------------------
+
+  describe "a refused directory change" do
+    test "is recorded against its connection and member, once a day while it repeats" do
+      %{provider: provider, account: account} = scim_provider()
+
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(provider, scim_attrs(%{email: "owner@acme.test"}))
+
+      Fixtures.Memberships.force_role(member, "owner")
+      demote_other_owners(account.id, except: member.id)
+
+      # The provider retries a refused change on its own schedule.
+      for _retry <- 1..2 do
+        assert SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false}) ==
+                 {:error, :last_owner}
+      end
+
+      assert SSO.scim_delete_user(provider, identity.id) == {:error, :last_owner}
+
+      assert [refused] = refused_changes(account.id)
+
+      assert {refused.actor_kind, refused.actor_id, refused.target_kind, refused.target_id} ==
+               {"directory_sync", provider.id, "membership", member.id}
+
+      assert refused.payload == %{
+               "provider_id" => provider.id,
+               "provider_kind" => "okta",
+               "change" => "suspend_user",
+               "reason" => "last_owner",
+               "resource" => "owner@acme.test"
+             }
+
+      Emisar.Audit.Event.Query.all()
+      |> Emisar.Audit.Event.Query.by_id(refused.id)
+      |> Repo.update_all(set: [occurred_at: DateTime.add(DateTime.utc_now(), -25, :hour)])
+
+      assert SSO.scim_delete_user(provider, identity.id) == {:error, :last_owner}
+      assert length(refused_changes(account.id)) == 2
+    end
+
+    test "a refused create names the address the directory sent, and no member" do
+      %{provider: provider, account: account} = scim_provider()
+      Fixtures.Memberships.create_membership(account_id: account.id, email: "taken@acme.test")
+
+      assert SSO.scim_provision_user(provider, scim_attrs(%{email: "taken@acme.test"})) ==
+               {:error, :identity_pending_approval}
+
+      assert [refused] = refused_changes(account.id)
+      assert {refused.target_kind, refused.target_id} == {nil, nil}
+
+      assert Map.take(refused.payload, ~w[change reason resource]) == %{
+               "change" => "add_user",
+               "reason" => "identity_pending_approval",
+               "resource" => "taken@acme.test"
+             }
+    end
+
+    test "a PATCH carrying an attribute emisar does not sync is recorded as an update" do
+      %{provider: provider, account: account} = scim_provider()
+
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(provider, scim_attrs(%{email: "title@acme.test"}))
+
+      title = [%{"op" => "replace", "path" => "title", "value" => "CTO"}]
+
+      assert SSO.scim_patch_user(provider, identity.id, title) ==
+               {:error, :unsupported_scim_patch}
+
+      assert [refused] = refused_changes(account.id)
+      assert refused.target_id == member.id
+
+      assert Map.take(refused.payload, ~w[change reason]) == %{
+               "change" => "update_user",
+               "reason" => "unsupported_scim_patch"
+             }
+    end
+
+    test "a change that lands, or addresses nothing this connection holds, records nothing" do
+      %{provider: provider, account: account} = scim_provider()
+      %{identity: identity} = provisioned(provider, "okta|lands", "Lands")
+      unknown = Ecto.UUID.generate()
+      title = [%{"op" => "replace", "path" => "title", "value" => "CTO"}]
+
+      assert {:ok, _deactivated} =
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
+
+      assert SSO.scim_update_user(provider, unknown, %SCIMUserUpdate{active: false}) ==
+               {:error, :not_found}
+
+      assert SSO.scim_patch_user(provider, unknown, title) == {:error, :unsupported_scim_patch}
+      assert refused_changes(account.id) == []
+    end
+
+    test "a refused group push is recorded under its name, cut to whole characters" do
+      %{provider: provider, account: account} = scim_provider()
+      # 300 two-byte characters: past the 255-character column, so the push is
+      # refused, and past the 255-byte label the trail keeps.
+      display = String.duplicate("é", 300)
+
+      assert SSO.scim_upsert_group(provider, %{display: display, member_ids: []}) ==
+               {:error, :invalid_scim_group}
+
+      assert [refused] = refused_changes(account.id)
+
+      assert Map.take(refused.payload, ~w[change reason resource]) == %{
+               "change" => "add_group",
+               "reason" => "invalid_scim_group",
+               "resource" => String.duplicate("é", 127)
+             }
+    end
+  end
+
   defp demote_other_owners(account_id, except: keep_membership_id) do
     Accounts.Membership.Query.not_deleted()
     |> Accounts.Membership.Query.by_account_id(account_id)
@@ -614,5 +727,11 @@ defmodule Emisar.SSOSCIMTest do
     Emisar.Audit.Event.Query.all()
     |> Emisar.Audit.Event.Query.by_account_id(account_id)
     |> Repo.all()
+  end
+
+  defp refused_changes(account_id) do
+    account_id
+    |> audit_events_for()
+    |> Enum.filter(&(&1.event_type == "directory_sync.change_refused"))
   end
 end

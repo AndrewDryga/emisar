@@ -1440,6 +1440,51 @@ defmodule Emisar.AuditTest do
     end
   end
 
+  describe "directory_change_refusals/3" do
+    test "reads one connection's refusals in its account, newest first, narrowed by payload" do
+      {_owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      {_other_owner, other_account, _other_subject} = Fixtures.Subjects.owner_subject()
+      provider_id = Ecto.UUID.generate()
+      now = DateTime.utc_now()
+
+      refusal = fn account_id, actor_id, hours_ago, change ->
+        {:ok, event} =
+          Audit.log(account_id, "directory_sync.change_refused",
+            actor_kind: "directory_sync",
+            actor_id: actor_id,
+            occurred_at: DateTime.add(now, -hours_ago, :hour),
+            payload: %{change: change, reason: "last_owner", resource: "ana@acme.test"}
+          )
+
+        event
+      end
+
+      older = refusal.(account.id, provider_id, 2, "suspend_user")
+      newer = refusal.(account.id, provider_id, 1, "update_user")
+      _past_the_window = refusal.(account.id, provider_id, 9 * 24, "suspend_user")
+      _another_connection = refusal.(account.id, Ecto.UUID.generate(), 1, "suspend_user")
+      _another_workspace = refusal.(other_account.id, provider_id, 1, "suspend_user")
+
+      {:ok, _other_type} =
+        Audit.log(account.id, "membership.deprovisioned_via_scim",
+          actor_kind: "directory_sync",
+          actor_id: provider_id
+        )
+
+      since = DateTime.add(now, -7 * 24, :hour)
+      read = &Audit.directory_change_refusals(account.id, provider_id, &1)
+
+      assert Enum.map(read.(since: since, limit: 10), & &1.id) == [newer.id, older.id]
+      assert Enum.map(read.(since: since, limit: 1), & &1.id) == [newer.id]
+
+      assert Enum.map(
+               read.(since: since, limit: 10, matching: %{change: "suspend_user"}),
+               & &1.id
+             ) ==
+               [older.id]
+    end
+  end
+
   describe "approval_decision_receipt/2" do
     test "reads a vote by its Member, an empty note included, and never a vote with no Member" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
