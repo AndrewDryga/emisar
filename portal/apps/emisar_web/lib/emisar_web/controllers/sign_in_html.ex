@@ -38,7 +38,7 @@ defmodule EmisarWeb.SignInHTML do
         />
         <.error :if={@error}>{@error}</.error>
         <p class="text-xs leading-relaxed text-zinc-400">
-          For <code class="text-zinc-300">app.emisar.dev/app/acme</code>, enter <code class="text-zinc-300">acme</code>. Check a workspace link your team shared,
+          For <code class="text-zinc-300">emisar.dev/app/acme</code>, enter <code class="text-zinc-300">acme</code>. Check a workspace link your team shared,
           or ask your administrator if you don't know the address.
         </p>
         <:actions>
