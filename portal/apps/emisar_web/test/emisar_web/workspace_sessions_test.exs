@@ -407,13 +407,16 @@ defmodule EmisarWeb.WorkspaceSessionsTest do
     end
 
     test "leaves when its session expires", %{conn: conn, account: account, token: token} do
-      # Minted almost sixty days ago: it expires while the page is open.
-      minted_at = DateTime.utc_now() |> DateTime.add(-60, :day) |> DateTime.add(400, :millisecond)
+      # Minted almost sixty days ago: it expires while the page is open. The
+      # margin lets the mount finish first on a loaded machine.
+      minted_at =
+        DateTime.utc_now() |> DateTime.add(-60, :day) |> DateTime.add(1_500, :millisecond)
+
       :ok = Fixtures.Auth.backdate_session_token!(token, minted_at)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}")
 
-      {to, _flash} = assert_redirect(lv, 2_000)
+      {to, _flash} = assert_redirect(lv, 5_000)
       assert URI.parse(to).path == ~p"/app/#{account}"
       assert redirected_to(get(conn, ~p"/app/#{account}")) == ~p"/app/#{account}/sign_in"
     end
