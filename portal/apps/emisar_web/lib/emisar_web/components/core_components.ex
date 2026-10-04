@@ -3709,7 +3709,7 @@ defmodule EmisarWeb.CoreComponents do
   Escape, or backdrop click, resetting the typed value each time so a stale entry
   can't pre-enable Confirm. The field also clears in the browser each time the
   dialog opens (the `DialogFocus` hook), because LiveView leaves a focused
-  input's value alone when the server's reset lands after `focus_first`.
+  input's value alone when the server's reset lands after the dialog focused it.
 
   `on_confirm` is the JS/event the enabled Confirm runs — build it at the call
   site so the destructive event carries its own value and closes the dialog with
@@ -3914,8 +3914,9 @@ defmodule EmisarWeb.CoreComponents do
       time: 200,
       transition: {"transition-opacity ease-out duration-200", "opacity-0", "opacity-100"}
     )
-    # First focusable = the type-to-confirm input when present, else Cancel —
-    # never the destructive Confirm.
+    # First focusable = Cancel, never the destructive Confirm. A typed dialog's
+    # copy control precedes its input, so `show_confirm_dialog/2` then focuses
+    # the input itself.
     |> JS.focus_first(to: "##{id}")
   end
 
@@ -4019,8 +4020,12 @@ defmodule EmisarWeb.CoreComponents do
   value (so a prior entry can't pre-enable Confirm), and focuses the
   type-to-confirm input. Wire it to the trigger's `phx-click`.
   """
-  def show_confirm_dialog(js \\ %JS{}, id),
-    do: js |> JS.push("confirm_reset") |> fade_dialog_in(id)
+  def show_confirm_dialog(js \\ %JS{}, id) do
+    js
+    |> JS.push("confirm_reset")
+    |> fade_dialog_in(id)
+    |> JS.focus(to: "##{id} [data-typed-confirm]")
+  end
 
   # Closes a TYPED `<.confirm_dialog>` and resets the page's typed value — the
   # dialog's own Cancel, backdrop, and Escape. Its Confirm closes with
@@ -4034,8 +4039,7 @@ defmodule EmisarWeb.CoreComponents do
   control (`copyable_id`'s dim clipboard) sits right after it, so an operator
   pastes a long name instead of retyping it. The match ignores case and
   surrounding whitespace (`EmisarWeb.ConfirmDialog.matches?/2`); the deliberate
-  step is the paste and the Confirm. Rendered by `confirm_dialog` and the OIDC
-  unlink step-up.
+  step is the paste and the Confirm. Rendered by `confirm_dialog`.
   """
   attr :id, :string, required: true, doc: "the input's id — the label points at it"
   attr :name, :string, default: "confirm_token"

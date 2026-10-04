@@ -7,7 +7,7 @@ export const DialogFocus = {
       const active = document.activeElement
       if (active && active !== document.body && !this.el.contains(active)) this.opener = active
       // A typed confirmation opens empty. The server clears the typed value
-      // too, but its patch lands after focus_first has focused the field, and
+      // too, but its patch lands after the dialog has focused the field, and
       // LiveView leaves a focused input's text alone.
       this.el.querySelectorAll("[data-typed-confirm]").forEach((input) => { input.value = "" })
     }
