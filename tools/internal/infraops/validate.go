@@ -435,10 +435,11 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		"group: emisar-admin", "max_risk: critical",
 		"- /var/lib/emisar-admin-runner/packs", `- "beam.*"`,
 		"/var/lib/emisar-admin-runner/packs/emisar-admin/pack.yaml",
-		// The broad glob allows admit two actions that return this root,
-		// portal-colocated host's own secrets. Pin the subtraction so a later
+		// The broad glob allows admit three actions that return secrets from
+		// this root, portal-colocated host: its environment, a container's, and
+		// a raw trace of the portal's own calls. Pin the subtraction so a later
 		// allow-list edit cannot quietly restore them.
-		"deny:", `- "debugging.pid_environ"`, `- "docker.inspect"`,
+		"deny:", `- "debugging.pid_environ"`, `- "docker.inspect"`, `- "beam.recon_trace_calls"`,
 	}
 	portalNeedles = append(portalNeedles, pins...)
 	if err := requireText("Portal cloud-init", rendered, portalNeedles...); err != nil {

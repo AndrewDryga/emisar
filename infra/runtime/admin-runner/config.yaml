@@ -47,6 +47,11 @@ admission:
   deny:
     - "debugging.pid_environ"
     - "docker.inspect"
+    # With include_args or include_return it prints the traced terms raw, and
+    # the one release this runner reaches is the portal: a trace of the
+    # endpoint returns every tenant's session cookie, and the staff cookie,
+    # past redaction that does not parse BEAM terms.
+    - "beam.recon_trace_calls"
     # TFE_TOKEN is an organization-owner token (HCP Free has no RBAC), and
     # Confirm & Apply in HCP is the one human deploy gate the delivery runbook
     # promises: GitHub never calls the apply API. Neither may this runner,
