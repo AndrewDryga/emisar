@@ -25,6 +25,8 @@ const usageText = `usage: ./run ops <command> [args]
                                      verify trusted release workflow commit pins and WIF literals;
                                      --resolve-comments also resolves every action pin's version
                                      comment against upstream tags (network, outside the gate)
+  verify-runtime-releases            fail while builds.hex.pm has a newer Erlang/OTP or Elixir
+                                     release of a line .tool-versions pins (network, outside the gate)
 `
 
 type usageError struct{ message string }
@@ -47,6 +49,7 @@ type App struct {
 	Root      string
 	Infra     string
 	GitHubAPI string
+	HexBuilds string
 }
 
 // New creates an infrastructure operations application.
@@ -55,6 +58,7 @@ func New(root string, in io.Reader, out, errOut io.Writer) *App {
 		Runner: toolutil.Runner{In: in, Out: out, Err: errOut, LookPath: exec.LookPath},
 		Root:   root, Infra: filepath.Join(root, "infra"),
 		GitHubAPI: githubAPI,
+		HexBuilds: hexBuilds,
 	}
 }
 
@@ -105,6 +109,11 @@ func (a *App) Run(ctx context.Context, args []string) error {
 			return nil
 		}
 		return a.checkReleasePinComments(ctx)
+	case "verify-runtime-releases":
+		if len(args) != 1 {
+			return usage("usage: ./run ops verify-runtime-releases")
+		}
+		return a.checkRuntimeReleases(ctx)
 	case "help", "-h", "--help":
 		fmt.Fprint(a.Out, usageText)
 		return nil

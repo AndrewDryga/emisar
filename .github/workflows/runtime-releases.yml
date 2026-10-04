@@ -1,0 +1,44 @@
+name: Runtime releases
+
+# NOT A GATE, for the same reason as pin-comments.yml: whether a newer Erlang/OTP
+# or Elixir release exists is answered only by builds.hex.pm, so a gate would
+# fail an unchanged tree the day a release lands, and every workstation would
+# need the network (.agent/kb/rules/shared-checks-live-in-the-canonical-gate.md).
+# It runs daily instead. Production ran OTP 29.0.6 for twelve days after 29.1.1
+# fixed a critical TLS 1.3 server-authentication bypass (CVE-2026-89422): no
+# scanner sees the Erlang runtime, and nothing watched its pins. A failed run is
+# the signal to move .tool-versions and portal/Dockerfile's builder together.
+on:
+  schedule:
+    - cron: "43 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: runtime-releases
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    name: Watch Erlang/OTP and Elixir releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
+      - name: Compare the pins with the published releases
+        run: ./run ops verify-runtime-releases
