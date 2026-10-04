@@ -150,7 +150,7 @@ defmodule Emisar.AccountsTest do
       refute Repo.reload(owner)
     end
 
-    test "retires the standing approval grants the erased Member issued, with their audit rows" do
+    test "retires the standing grants and pending votes the erased Member gave, with audit rows" do
       account = Fixtures.Accounts.create_account()
       _owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       approver = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
@@ -163,8 +163,20 @@ defmodule Emisar.AccountsTest do
           granted_by_membership_id: approver.id
         )
 
+      pending = Fixtures.Approvals.create_request(account_id: account.id)
+      pending |> Ecto.Changeset.change(min_approvals: 2) |> Repo.update!()
+
+      vote =
+        Emisar.Approvals.Decision.Changeset.create(account.id, pending.id, approver.id, %{
+          decision: :approve,
+          decided_at: DateTime.utc_now()
+        })
+        |> Repo.insert!()
+
       assert {:ok, %{account: nil}} = Accounts.erase_member(account.id, approver.id)
 
+      refute Repo.reload(vote)
+      assert [_retired] = member_security_events(account.id, "approval.decision_revoked")
       assert Repo.reload!(grant).revoked_at
 
       assert %AuditEvent{target_id: revoked_id} =

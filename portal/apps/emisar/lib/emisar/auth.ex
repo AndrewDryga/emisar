@@ -2376,8 +2376,12 @@ defmodule Emisar.Auth do
       )
       when is_binary(secret) and is_binary(otp) and is_binary(proof) and
              is_binary(presented_digest) do
+    # One instant judges the code and becomes the enrollment's replay stamp, so
+    # the 30-second step that is spent is the one the code was valid in.
+    at = DateTime.utc_now()
+
     with {:ok, enrollment} <- verify_mfa_enrollment_proof(proof, membership_id),
-         true <- Crypto.valid_totp?(secret, otp) do
+         true <- Crypto.valid_totp?(secret, otp, at) do
       {plain_codes, digests} = generate_recovery_codes()
 
       Multi.new()
@@ -2391,7 +2395,7 @@ defmodule Emisar.Auth do
       |> Multi.run(:session, fn repo, _changes ->
         lock_enrolling_session(repo, presented_digest, subject, enrollment)
       end)
-      |> Multi.run(:enabled_at, fn _repo, _changes -> {:ok, DateTime.utc_now()} end)
+      |> Multi.put(:enabled_at, at)
       |> Multi.merge(fn %{membership: locked, session: session, enabled_at: enabled_at} ->
         Multi.new()
         |> Accounts.put_member_mfa_enrollment(

@@ -3837,6 +3837,11 @@ defmodule Emisar.SSO do
         not Auth.Permissions.role_covers_role?(approver_role, matched_membership.role) ->
           {:error, :link_target_outranks_approver}
 
+        # While the directory reconciles this member its stored reach reads as
+        # none, and the reconciliation may grant more: judge it once settled.
+        is_integer(matched_membership.directory_authorization_pending_version) ->
+          {:error, :link_target_authorization_pending}
+
         not reaches_link_target?(subject, matched_membership) ->
           {:error, :link_target_reach_exceeds_approver}
 

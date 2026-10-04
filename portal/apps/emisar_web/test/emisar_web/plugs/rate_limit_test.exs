@@ -102,6 +102,17 @@ defmodule EmisarWeb.Plugs.RateLimitTest do
     assert %{halted: false} = RateLimit.call(conn, opts)
   end
 
+  test ":bearer without a credential counts an IPv6 client by its /64", %{conn: conn} do
+    enable_rate_limiting()
+    opts = RateLimit.init(bucket: unique_bucket(), limit: 1, window_ms: 60_000, by: :bearer)
+
+    first = put_req_header(conn, "x-forwarded-for", "2001:db8:5:6::1, 8.233.97.247")
+    sibling = put_req_header(conn, "x-forwarded-for", "2001:db8:5:6::2, 8.233.97.247")
+
+    assert %{halted: false} = RateLimit.call(first, opts)
+    assert %{halted: true} = RateLimit.call(sibling, opts)
+  end
+
   test "the suite-wide disable flag bypasses the limiter entirely", %{conn: conn} do
     # Default test config: rate_limit_enabled: false — no env flip here.
     opts = RateLimit.init(bucket: unique_bucket(), limit: 1, window_ms: 60_000, by: :ip)

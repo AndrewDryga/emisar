@@ -8388,6 +8388,28 @@ defmodule Emisar.SSOTest do
       refute Repo.one(UserIdentity)
     end
 
+    test "no one links an identity onto a member while the directory reconciles its access", %{
+      account: account,
+      provider: provider
+    } do
+      # Mid-reconciliation the stored reach reads as none, and the directory may
+      # grant more once it settles, so the reach check cannot judge it yet.
+      {:ok, db_only} = RunnerAccess.restricted(["db"], [])
+      admin = scoped_admin(account, db_only)
+
+      reconciling =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Ecto.Changeset.change(directory_authorization_pending_version: 1)
+        |> Repo.update!()
+
+      request = capture_matched_request(provider, reconciling)
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+               {:error, :link_target_authorization_pending}
+
+      refute Repo.one(UserIdentity)
+    end
+
     test "a scoped admin can still link an identity onto a member inside their reach", %{
       account: account,
       provider: provider

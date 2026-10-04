@@ -92,7 +92,7 @@ defmodule EmisarWeb.Plugs.RateLimit do
   defp key_for(conn, :bearer) do
     case EmisarWeb.SCIM.Auth.credential(get_req_header(conn, "authorization")) do
       {:ok, token} -> "key:" <> Emisar.Crypto.hash_hex(token)
-      :error -> RequestContext.client_ip(conn)
+      :error -> client_key(conn)
     end
   end
 
