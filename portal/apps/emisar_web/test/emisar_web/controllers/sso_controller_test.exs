@@ -1263,6 +1263,29 @@ defmodule EmisarWeb.SSOControllerTest do
       assert {:ok, _kept} = Auth.fetch_session_by_token(kept_token, signed_in_account.id)
     end
 
+    test "a Team choice survives the SSO sign-in it needed to resume the billing selector", %{
+      conn: conn
+    } do
+      account = enterprise_account()
+      provider = provider_fixture(account)
+      intent = EmisarWeb.BillingIntent.sign("team", :year)
+
+      conn =
+        conn
+        |> init_test_session(%{billing_intent: intent, user_return_to: ~p"/app/billing/start"})
+        |> stash_callback(provider)
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => "okta|billing-resume",
+            "email" => "billing-resume@acme.test",
+            "email_verified" => "true"
+          }
+        })
+
+      assert redirected_to(conn) == ~p"/app/billing/start"
+      assert get_session(conn, :billing_intent) == intent
+    end
+
     test "a first sign-in creates an SSO-only Member and signs it in", %{conn: conn} do
       account = enterprise_account()
       provider = provider_fixture(account)

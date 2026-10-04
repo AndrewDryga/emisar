@@ -83,7 +83,7 @@ defmodule EmisarWeb.UserSessionController do
 
         conn
         |> clear_magic_request()
-        |> replace_billing_intent(verified_billing_intent(params["billing_intent"]))
+        |> replace_billing_intent(sign_in_billing_intent(conn, params))
         |> put_code_request(request)
         |> finish_code_request(address, back_to)
 
@@ -503,6 +503,16 @@ defmodule EmisarWeb.UserSessionController do
       {:ok, _intent} -> token
       {:error, :invalid} -> nil
     end
+  end
+
+  # A workspace sign-in form posts no plan choice of its own. One this browser
+  # already holds survives only when the sign-in resumes the billing selector
+  # it was made for (an expired session sent the browser here from it); an
+  # abandoned choice does not steer a later ordinary sign-in.
+  defp sign_in_billing_intent(conn, params) do
+    verified_billing_intent(params["billing_intent"]) ||
+      if get_session(conn, :user_return_to) == ~p"/app/billing/start",
+        do: verified_billing_intent(get_session(conn, :billing_intent))
   end
 
   defp replace_billing_intent(conn, token) when is_binary(token),

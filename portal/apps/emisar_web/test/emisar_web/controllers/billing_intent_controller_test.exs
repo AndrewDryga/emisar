@@ -131,6 +131,31 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     refute get_session(bounced, :sessions)
   end
 
+  test "a browser whose only session expired gets its choice back after signing in again", %{
+    conn: conn
+  } do
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Auth.delete_session_token!(session_token(conn, account))
+    token = BillingIntent.sign("team", :year)
+    captured = get(conn, ~p"/start/team/#{token}")
+    bounced = get(recycle(captured), ~p"/app/billing/start")
+    assert redirected_to(bounced) == ~p"/sign_in"
+
+    started =
+      bounced
+      |> recycle()
+      |> post(~p"/app/#{account}/sign_in/email", %{"user" => %{"email" => owner.email}})
+
+    assert_received {:email, %{text_body: body}}
+    [_, token_id, code] = Regex.run(~r"/sign_in/magic/([^/]+)/([0-9A-Z]{6})", body)
+    signed_in = started |> recycle() |> get(~p"/sign_in/magic/#{token_id}/#{code}")
+    assert redirected_to(signed_in) == ~p"/app/billing/start"
+
+    chooser = get(recycle(signed_in), ~p"/app/billing/start")
+    assert html_response(chooser, 200) =~ account.name
+    assert get_session(chooser, :billing_intent) == token
+  end
+
   test "cancel clears the choice without changing plan", %{conn: conn} do
     {conn, _owner, _account} = register_and_log_in(conn)
     token = BillingIntent.sign("team", :month)

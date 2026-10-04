@@ -197,11 +197,14 @@ defmodule EmisarWeb.UserAuth do
   defp record_sign_up(_membership, false, _attribution), do: :ok
 
   # A return path the sign-in page or the workspace plug stored wins over a
-  # stale pricing choice. Otherwise the renewal would clear the valid opaque
-  # intent before the workspace selector can consume it, so restore that one
-  # key after renewal.
-  defp maybe_restore_billing_intent(conn, nil, token) when is_binary(token),
-    do: put_session(conn, :billing_intent, token)
+  # stale pricing choice, unless that path is the billing selector the choice
+  # was made for. Otherwise the renewal would clear the valid opaque intent
+  # before the selector can consume it, so restore that one key after renewal.
+  defp maybe_restore_billing_intent(conn, return_to, token) when is_binary(token) do
+    if is_nil(return_to) or return_to == ~p"/app/billing/start",
+      do: put_session(conn, :billing_intent, token),
+      else: conn
+  end
 
   defp maybe_restore_billing_intent(conn, _return_to, _token), do: conn
 

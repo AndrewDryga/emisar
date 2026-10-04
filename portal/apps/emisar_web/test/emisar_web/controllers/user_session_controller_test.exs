@@ -373,6 +373,23 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refute get_session(abandoned, :billing_intent)
     end
 
+    test "a Team choice survives the sign-in it needed to resume the billing selector", %{
+      conn: conn,
+      member: member,
+      account: account
+    } do
+      intent = BillingIntent.sign("team", :year)
+
+      resumed =
+        conn
+        |> init_test_session(%{billing_intent: intent, user_return_to: ~p"/app/billing/start"})
+        |> start_sign_in(account, member.email)
+        |> confirm_link()
+
+      assert redirected_to(resumed) == ~p"/app/billing/start"
+      assert get_session(resumed, :billing_intent) == intent
+    end
+
     test "returns to this workspace's page or a page naming no workspace, never another workspace's",
          %{conn: conn, member: member, account: account} do
       {_other_member, other} = member()
