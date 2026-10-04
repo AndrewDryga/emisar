@@ -1296,8 +1296,9 @@ defmodule Emisar.ApiKeysTest do
       account = Fixtures.Accounts.create_account()
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      ApiKeys.subscribe_account_api_keys(account.id)
 
-      {:ok, raw, _key} =
+      {:ok, raw, key} =
         ApiKeys.create_service_account_key(
           service_account.id,
           %{name: "Ryker"},
@@ -1307,18 +1308,30 @@ defmodule Emisar.ApiKeysTest do
       Fixtures.Memberships.mark_membership_as_deleted(admin)
 
       assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(raw)
+
+      key_id = key.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
     end
 
     test "the key stops working while its service account is suspended" do
-      {_owner, account, subject} = owner_subject_pair()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      ApiKeys.subscribe_account_api_keys(account.id)
 
-      {:ok, raw, _key} =
-        ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject)
+      {:ok, raw, key} =
+        ApiKeys.create_service_account_key(
+          service_account.id,
+          %{name: "Ryker"},
+          Fixtures.Subjects.subject_for(owner)
+        )
 
       Fixtures.Memberships.suspend_membership(service_account)
 
       assert ApiKeys.peek_api_key_by_secret(raw) == nil
+
+      key_id = key.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
     end
 
     test "an operator cannot mint one" do
@@ -1618,7 +1631,8 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a scoped admin can't rotate a key that reaches further than them" do
-      {owner, account, _owner_subject} = owner_subject_pair()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       {_raw, key} = Fixtures.ApiKeys.create_api_key(created_by_membership_id: owner.id)
       {:ok, scoped} = Accounts.RunnerAccess.restricted(["web"], [])
 
@@ -1639,12 +1653,18 @@ defmodule Emisar.ApiKeysTest do
         Fixtures.ApiKeys.create_api_key(created_by_membership_id: operator.id)
 
       {_raw, own_key} = Fixtures.ApiKeys.create_api_key(created_by_membership_id: owner.id)
+      ApiKeys.subscribe_account_api_keys(account.id)
 
       assert {:ok, _raw, successor} = ApiKeys.rotate_api_key(operator_key, owner_subject)
       assert successor.issued_by_membership_id == owner_subject.membership_id
 
       assert {:ok, _raw, own_successor} = ApiKeys.rotate_api_key(own_key, owner_subject)
       assert own_successor.issued_by_membership_id == nil
+
+      successor_id = successor.id
+      own_successor_id = own_successor.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^successor_id}
+      assert_receive {:list_changed, :api_key, "api_key.created", ^own_successor_id}
     end
   end
 
@@ -1901,22 +1921,29 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a service account key's successor keeps who issued it" do
-      {owner, account, subject} = owner_subject_pair()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
-      soon = DateTime.add(DateTime.utc_now(), 3, :day)
-      attrs = %{name: "Ryker", expires_at: soon}
 
-      {:ok, _raw, key} =
-        ApiKeys.create_service_account_key(service_account.id, attrs, subject)
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          created_by_membership_id: service_account.id,
+          issued_by_membership_id: owner.id,
+          expires_at: DateTime.add(DateTime.utc_now(), 3, :day)
+        )
 
       {_raw, prefix, hash} = Crypto.mint("emk-", 12)
       key_subject = Subject.for_api_key(key, account)
+      ApiKeys.subscribe_account_api_keys(account.id)
 
       assert {:ok, successor} =
                ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
 
       assert successor.created_by_membership_id == service_account.id
       assert successor.issued_by_membership_id == owner.id
+
+      successor_id = successor.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^successor_id}
     end
   end
 
@@ -2833,7 +2860,8 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a key that acts as a service account records who consented" do
-      {owner, account, _subject} = owner_subject_pair()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
 
       {:ok, key} =
@@ -2853,13 +2881,17 @@ defmodule Emisar.ApiKeysTest do
 
   describe "peek_api_key_issuer_id/1" do
     test "names who issued a key that acts as another member" do
-      {owner, account, subject} = owner_subject_pair()
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
 
-      {:ok, _raw, key} =
-        ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject)
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          created_by_membership_id: service_account.id,
+          issued_by_membership_id: owner.id
+        )
 
-      {:ok, _raw, own_key} = ApiKeys.create_key(%{name: "mine"}, subject)
+      {_raw, own_key} = Fixtures.ApiKeys.create_api_key(created_by_membership_id: owner.id)
 
       assert ApiKeys.peek_api_key_issuer_id(key.id) == owner.id
       assert ApiKeys.peek_api_key_issuer_id(own_key.id) == nil

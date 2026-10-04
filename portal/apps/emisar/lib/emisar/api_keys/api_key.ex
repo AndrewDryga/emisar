@@ -5,10 +5,10 @@ defmodule Emisar.ApiKeys.ApiKey do
   identity + expiry + audit attribution only — it carries NO per-key
   authorization scope. What it may do is decided by account Policy + approval;
   which runners it may see and reach is the explicit runner access of the member
-  it acts as — the operator who minted it, or a service account — resolved from
-  `created_by_membership` at call time. `kind`
-  is the sole capability discriminator: `:mcp` reaches the MCP tool surface,
-  `:audit_export` the read-only `/api/audit` stream.
+  it acts as — a person or a service account — resolved from
+  `created_by_membership` at call time. `kind` is the sole capability
+  discriminator: `:mcp` reaches the MCP tool surface, `:audit_export` the
+  read-only `/api/audit` stream.
   """
   use Emisar, :schema
 
@@ -58,8 +58,8 @@ defmodule Emisar.ApiKeys.ApiKey do
     # rotation (operator or auto) — never from user input. First use of this
     # key proves the client swapped, so the replaced chain is retired then.
     belongs_to :replaces, Emisar.ApiKeys.ApiKey, where: [deleted_at: nil]
-    # The member this key acts as: whoever minted it for themselves, or the
-    # service account it was minted for. MCP dispatch resolves this member's
+    # The member this key acts as: a person or a service account. Rotation
+    # keeps it, whoever rotates the key. MCP dispatch resolves this member's
     # runner scope at call time, so narrowing that member shrinks every key
     # acting as them. Historical rows may be nil because the FK uses
     # `on_delete: :nilify_all`, but an unbound key is never usable.

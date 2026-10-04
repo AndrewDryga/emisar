@@ -159,8 +159,8 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
 
   @doc """
   Audit owner-label lookup: `{key_id, owner label}` for `ids`, naming the member
-  an API-key/MCP actor acts as — the person who minted it, or a service account —
-  the way `account_id` knows them. Joins the key's EXACT acting membership —
+  an API-key/MCP actor acts as — a person or a service account — the way
+  `account_id` knows them. Joins the key's EXACT acting membership —
   another membership of the same person never stands in — using only its
   workspace name or contact. An INNER join: a key whose acting membership is
   gone, suspended, or in another account resolves no row, and the trail

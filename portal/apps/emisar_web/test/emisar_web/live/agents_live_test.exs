@@ -2572,7 +2572,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.aggregate(ApiKey, :count) == 1
     end
 
-    test "an operator's key acts as themselves, with no choice offered", %{conn: conn} do
+    test "an operator gets no Acts as choice, and a crafted one mints nothing", %{conn: conn} do
       {_owner_conn, _owner, account} = register_and_log_in(conn)
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
       operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")

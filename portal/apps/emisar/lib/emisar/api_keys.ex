@@ -267,13 +267,13 @@ defmodule Emisar.ApiKeys do
 
   @doc """
   Internal — label resolver for audit attribution: batch `%{key_id => label}`
-  naming the member each key acts as — the person who minted it, or a service
-  account — the way `account_id` knows them (directory name → nonblank full
-  name → email). Takes ids and an explicit already-authorized `account_id`
-  rather than a `%Subject{}` — the caller is Audit's subject-less reference
-  resolver. A key outside the account, or one whose acting membership is gone,
-  suspended, or in another account, resolves to no label, so the caller falls
-  back to the key's own name.
+  naming the member each key acts as — a person or a service account — the way
+  `account_id` knows them (directory name → nonblank full name → email). Takes
+  ids and an explicit already-authorized `account_id` rather than a
+  `%Subject{}` — the caller is Audit's subject-less reference resolver. A key
+  outside the account, or one whose acting membership is gone, suspended, or in
+  another account, resolves to no label, so the caller falls back to the key's
+  own name.
   """
   def owner_labels_for_ids(ids, account_id) when is_list(ids) and is_binary(account_id) do
     ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
@@ -1044,9 +1044,10 @@ defmodule Emisar.ApiKeys do
   # An MCP key a member mints for themselves grants nothing they don't already
   # hold: it authenticates as `:api_client` and resolves their own membership
   # scope at call time, so authoring its name and expiry is the same act as
-  # taking a quick key. (A key for a service account also needs reach covering
-  # the service account's; Accounts checks that.) An `:audit_export` token is a different capability — the whole
-  # account's audit stream rather than this member's runner scope — so it keeps
+  # taking a quick key. (A key for a service account also needs `manage_team`
+  # and reach covering the service account's; Accounts checks both.) An
+  # `:audit_export` token is a different capability — the whole account's audit
+  # stream rather than this member's runner scope — so it keeps
   # `manage_api_keys` on top. Picking the permission LIST from the value being
   # granted keeps one `ensure_has_permissions/2` at the boundary; a crafted
   # `kind` from an operator's form post is refused here, not in the template.

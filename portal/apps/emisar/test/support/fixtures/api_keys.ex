@@ -33,6 +33,8 @@ defmodule Emisar.Fixtures.ApiKeys do
   @doc """
   Creates an API key. Returns `{raw, key}`. `:created_by_membership_id` names
   the exact Member minting it; by default a new owner of `:account_id` does.
+  With `:issued_by_membership_id`, that Member mints it instead, for the
+  service account `:created_by_membership_id` names.
   """
   def create_api_key(attrs \\ %{}) do
     attrs = Map.new(attrs)
@@ -55,8 +57,17 @@ defmodule Emisar.Fixtures.ApiKeys do
         expires_at: attrs[:expires_at]
       }
 
-    subject = Fixtures.Subjects.subject_for(creator)
-    {:ok, raw, key} = ApiKeys.create_key(create_attrs, subject)
+    {:ok, raw, key} =
+      case attrs[:issued_by_membership_id] do
+        nil ->
+          ApiKeys.create_key(create_attrs, Fixtures.Subjects.subject_for(creator))
+
+        issuer_id ->
+          issuer = Repo.get!(Membership, issuer_id)
+          subject = Fixtures.Subjects.subject_for(issuer)
+          ApiKeys.create_service_account_key(creator.id, create_attrs, subject)
+      end
+
     {raw, key}
   end
 

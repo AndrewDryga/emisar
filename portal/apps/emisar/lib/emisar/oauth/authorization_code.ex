@@ -1,7 +1,7 @@
 defmodule Emisar.OAuth.AuthorizationCode do
   @moduledoc """
   A single-use, short-lived (~60s) authorization code bound to the
-  consenting operator's membership + a PKCE challenge. Exchanged once at
+  membership the connection acts as + a PKCE challenge. Exchanged once at
   the token endpoint for access + refresh tokens.
   """
   use Emisar, :schema

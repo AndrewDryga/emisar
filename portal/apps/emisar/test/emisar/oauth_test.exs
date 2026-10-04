@@ -782,6 +782,7 @@ defmodule Emisar.OAuthTest do
          %{owner: owner, account: account, subject: subject, client: client} do
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
       {verifier, challenge} = pkce()
+      Emisar.ApiKeys.subscribe_account_api_keys(account.id)
 
       assert {:ok, code, @redirect} =
                OAuth.issue_code(
@@ -814,21 +815,29 @@ defmodule Emisar.OAuthTest do
                |> Emisar.Audit.Event.Query.by_account_id(account.id)
                |> Emisar.Audit.Event.Query.by_event_type("oauth.consent_granted")
                |> Repo.one()
+
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
     end
 
-    test "connecting as yourself names no other issuer", %{subject: subject, client: client} do
+    test "connecting as yourself names no other issuer",
+         %{account: account, subject: subject, client: client} do
       {_verifier, challenge} = pkce()
+      Emisar.ApiKeys.subscribe_account_api_keys(account.id)
 
       assert {:ok, _code, @redirect} =
                OAuth.issue_code(client, authorization_params(challenge), :member, subject)
 
-      assert %ApiKey{issued_by_membership_id: nil} = Repo.one(ApiKey)
+      assert %ApiKey{issued_by_membership_id: nil} = key = Repo.one(ApiKey)
+
+      key_id = key.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
     end
 
     test "creates a service account named after the app, starting with the operator's access",
          %{account: account, subject: subject, client: client} do
       {_verifier, challenge} = pkce()
       Accounts.subscribe_account_team(account.id)
+      Emisar.ApiKeys.subscribe_account_api_keys(account.id)
 
       assert {:ok, _code, @redirect} =
                OAuth.issue_code(
@@ -853,7 +862,9 @@ defmodule Emisar.OAuthTest do
       assert key.created_by_membership_id == service_account.id
 
       service_account_id = service_account.id
+      key_id = key.id
       assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
     end
 
     test "the connection outlives the admin who authorized it",
@@ -861,6 +872,7 @@ defmodule Emisar.OAuthTest do
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
       {verifier, challenge} = pkce()
+      Emisar.ApiKeys.subscribe_account_api_keys(account.id)
 
       {:ok, code, @redirect} =
         OAuth.issue_code(
@@ -880,8 +892,11 @@ defmodule Emisar.OAuthTest do
 
       Fixtures.Memberships.mark_membership_as_deleted(admin)
 
-      assert {:ok, %{api_key: %ApiKey{}}} =
+      assert {:ok, %{api_key: %ApiKey{} = key}} =
                OAuth.resolve_access_token(tokens.access_token, @resource)
+
+      key_id = key.id
+      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
     end
 
     test "an operator can connect only as themselves", %{account: account, client: client} do

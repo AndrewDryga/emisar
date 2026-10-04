@@ -3063,13 +3063,13 @@ defmodule EmisarWeb.TeamLive do
                     <% "remove" -> %>
                       <%= if @pending_member_action.facts.service_account? do %>
                         Permanently removes
-                        <span class="font-medium text-rose-100">
+                        <span class="font-medium text-zinc-200">
                           {Accounts.member_display_name(membership)}
                         </span>
                         from the team. Every app connected as it loses access immediately.
                       <% else %>
                         Permanently removes
-                        <span class="font-medium text-rose-100">
+                        <span class="font-medium text-zinc-200">
                           {Accounts.member_display_name(membership) || "this member"}
                         </span>
                         from the team. They lose access immediately, and their agent credentials and

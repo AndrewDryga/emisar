@@ -232,8 +232,8 @@ The runner-side guarantees above pair with the control plane's own model:
   S256 only). It carries no per-key authorization scope of its own: what
   it may do is decided by the account's policy, the approval gate, and
   the runner and pack ACL of the member it acts as, which narrows the
-  hosts and packs it can act on. That member is the operator who minted
-  it, or a service account: a Member an app connects as, with no address,
+  hosts and packs it can act on. That member is the person the key belongs
+  to, or a service account: a Member an app connects as, with no address,
   invitation or MFA factor, so nothing signs in as it.
 - Operator sign-in supports TOTP MFA with one-shot hashed recovery
   codes; approvals and credential lifecycles are all audited.

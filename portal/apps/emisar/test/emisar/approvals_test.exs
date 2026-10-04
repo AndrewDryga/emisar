@@ -551,11 +551,10 @@ defmodule Emisar.ApprovalsTest do
     issuer_subject = Fixtures.Subjects.subject_for(owner)
     service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
 
-    {:ok, _raw, key} =
-      Emisar.ApiKeys.create_service_account_key(
-        service_account.id,
-        %{name: "Ryker"},
-        issuer_subject
+    {_raw, key} =
+      Fixtures.ApiKeys.create_api_key(
+        created_by_membership_id: service_account.id,
+        issued_by_membership_id: owner.id
       )
 
     runner = Fixtures.Runners.create_runner(account_id: account.id)
