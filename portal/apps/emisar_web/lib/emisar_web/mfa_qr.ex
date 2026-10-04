@@ -18,8 +18,22 @@ defmodule EmisarWeb.MfaQr do
   def provisioning_uri(account_name, member_label, secret)
       when is_binary(account_name) and is_binary(member_label) and is_binary(secret) do
     encoded = setup_key(secret)
-    label = URI.encode("#{account_name} (#{member_label})", &URI.char_unreserved?/1)
+    label = encoded_label("#{account_name} (#{member_label})")
     "otpauth://totp/#{@issuer}:#{label}?secret=#{encoded}&issuer=#{@issuer}"
+  end
+
+  # A QR code holds at most 2,952 bytes and a name may be 255 characters of
+  # four-byte emoji, which percent-encode to 3,060. The label is only what the
+  # authenticator app shows, so it gives up characters from its end until it
+  # fits; the secret and issuer never do.
+  @max_label_bytes 512
+
+  defp encoded_label(text) do
+    encoded = URI.encode(text, &URI.char_unreserved?/1)
+
+    if byte_size(encoded) <= @max_label_bytes,
+      do: encoded,
+      else: text |> String.graphemes() |> Enum.drop(-1) |> Enum.join() |> encoded_label()
   end
 
   # `viewbox: true` (singular w/o explicit width) emits a viewBox-only

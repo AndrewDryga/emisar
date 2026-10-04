@@ -24,4 +24,12 @@ defmodule EmisarWeb.MfaQrTest do
     assert uri ==
              "otpauth://totp/emisar:Ops%26issuer%3Devil%20%28ops%26issuer%3Dother%40example.com%29?secret=IFBEGMRTGQ&issuer=emisar"
   end
+
+  test "a 255-emoji name still renders a scannable code with the whole secret" do
+    secret = :crypto.strong_rand_bytes(20)
+    uri = MfaQr.provisioning_uri("Acme", String.duplicate("😀", 255), secret)
+
+    assert uri =~ "?secret=#{MfaQr.setup_key(secret)}&issuer=emisar"
+    assert MfaQr.svg(uri) =~ "<svg"
+  end
 end
