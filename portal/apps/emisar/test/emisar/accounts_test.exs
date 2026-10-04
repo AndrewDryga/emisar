@@ -6777,11 +6777,54 @@ defmodule Emisar.AccountsTest do
         |> Fixtures.Memberships.force_runner_access(scoped)
 
       subject = Fixtures.Subjects.subject_for(admin)
+      Accounts.subscribe_account_team(account.id)
 
       assert {:ok, service_account} =
                Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
 
       assert Accounts.runner_access_for_membership(account.id, service_account.id) == scoped
+
+      service_account_id = service_account.id
+      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
+    end
+
+    test "leaves out runners deleted while they sat in the creator's scope" do
+      account = Fixtures.Accounts.create_account()
+      kept = Fixtures.Runners.create_runner(account_id: account.id)
+      deleted = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, scoped} = RunnerAccess.restricted([], [kept.id, deleted.id])
+      {:ok, expected} = RunnerAccess.restricted([], [kept.id])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      Fixtures.Runners.mark_deleted(deleted)
+      subject = Fixtures.Subjects.subject_for(admin)
+
+      assert {:ok, service_account} =
+               Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) == expected
+    end
+
+    test "reaches nothing when every runner in the creator's scope is gone" do
+      account = Fixtures.Accounts.create_account()
+      deleted = Fixtures.Runners.create_runner(account_id: account.id)
+      {:ok, scoped} = RunnerAccess.restricted([], [deleted.id])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      Fixtures.Runners.mark_deleted(deleted)
+      subject = Fixtures.Subjects.subject_for(admin)
+
+      assert {:ok, service_account} =
+               Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
+               RunnerAccess.none()
     end
 
     test "a service account needs a name" do
@@ -6861,6 +6904,7 @@ defmodule Emisar.AccountsTest do
   describe "put_service_account/4" do
     test "adds the service account, its access and its audit row to the caller's transaction" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      Audit.subscribe_account_audit(account.id)
 
       assert {:ok, %{service_account: service_account, service_account_audit: event}} =
                Multi.new()
@@ -6875,6 +6919,9 @@ defmodule Emisar.AccountsTest do
 
       assert %AuditEvent{event_type: "service_account.created"} = event
       assert event.target_id == service_account.id
+
+      event_id = event.id
+      assert_receive {:audit_event, %AuditEvent{id: ^event_id}}
     end
 
     test "an operator cannot add one" do

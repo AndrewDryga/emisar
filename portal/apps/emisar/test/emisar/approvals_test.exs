@@ -543,7 +543,6 @@ defmodule Emisar.ApprovalsTest do
     Fixtures.Subjects.subject_for(membership)
   end
 
-  # Count of distinct approve votes recorded on a request.
   # An MCP run requested through a service account's key, issued by an owner,
   # under a policy that forbids self-approval.
   defp service_account_gated_request do
@@ -584,6 +583,7 @@ defmodule Emisar.ApprovalsTest do
     %{account: account, issuer_subject: issuer_subject, request: request}
   end
 
+  # Count of distinct approve votes recorded on a request.
   defp approved_count(request_id) do
     Repo.one(Decision.Query.approved_distinct_decider_count(request_id))
   end

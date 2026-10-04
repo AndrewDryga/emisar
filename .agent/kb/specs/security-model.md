@@ -308,7 +308,7 @@ available.
   credential acts as, and the threat table covers reach and attribution through a
   service account, including the recorded issuer, the issuer's self-approval
   exclusion and the rotation reach check (verified against
-  `Accounts.fetch_and_lock_service_account/3`, `Accounts.insert_service_account/4`,
+  `Accounts.fetch_and_lock_service_account/3`, `Accounts.put_service_account/4`,
   `OAuth.issue_code/4`, `ApiKeys.create_service_account_key/3`,
   `ApiKeys.rotate_api_key/2`, `Approvals` self-approval checks and migration
   `20261120000000`).

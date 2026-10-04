@@ -66,9 +66,10 @@ defmodule Emisar.ApiKeys.ApiKey do
     belongs_to :created_by_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
     # The person who received this key when it acts as another member: a
     # service account's key, or a successor someone rotated for a teammate.
-    # Nil when the key's own member issued it. Never cast, and it outlives the
-    # mint's audit row, so a long-lived credential always names a human — and
-    # that human's approvals count as self-approvals of the requests it makes.
+    # Nil when the key's own member issued it, or once staff erase the issuer.
+    # Never cast, and it outlives the mint's audit row, so a long-lived
+    # credential keeps naming its human — and that human's approvals count as
+    # self-approvals of the requests it makes.
     belongs_to :issued_by_membership, Emisar.Accounts.Membership, where: [deleted_at: nil]
 
     timestamps()

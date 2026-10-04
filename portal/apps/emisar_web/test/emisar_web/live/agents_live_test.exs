@@ -2501,6 +2501,29 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert Repo.all(ApiKey) == []
     end
 
+    test "a rejected submit keeps what was posted, including who the key acts as", %{
+      conn: conn
+    } do
+      {conn, _owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
+      render_click(lv, "select_client", %{"client" => "custom"})
+
+      Fixtures.Memberships.mark_membership_as_deleted(service_account)
+
+      render_submit(lv, "create", %{
+        "api_key" => %{"name" => "Ryker bot", "acts_as" => service_account.id}
+      })
+
+      assert has_element?(
+               lv,
+               ~s(#api_key_acts_as option[value="#{service_account.id}"][selected])
+             )
+
+      assert has_element?(lv, ~s(#api_key_form input[value="Ryker bot"]))
+      assert Repo.all(ApiKey) == []
+    end
+
     test "a link to a service account the admin can't use opens no key form", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       elsewhere = Fixtures.Memberships.create_service_account()
@@ -2528,9 +2551,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
     test "a scoped admin can't rotate a key that reaches further than them", %{conn: conn} do
       {_owner_conn, owner, account} = register_and_log_in(conn)
-
-      {:ok, _raw, key} =
-        ApiKeys.create_key(%{name: "owner-agent"}, Fixtures.Subjects.subject_for(owner))
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(created_by_membership_id: owner.id)
 
       {:ok, scoped} = Emisar.Accounts.RunnerAccess.restricted(["web"], [])
 

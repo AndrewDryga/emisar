@@ -27,7 +27,8 @@ defmodule Emisar.Repo.Migrations.AddServiceAccounts do
 
     # The person who received a key acting as another member — a service
     # account's key, or a successor someone rotated for a teammate. It outlives
-    # the audit row of the mint, so a long-lived connection always names a human.
+    # the audit row of the mint, so a long-lived connection keeps naming a human
+    # until staff erase that person.
     alter table(:api_keys) do
       add :issued_by_membership_id,
           references(:account_memberships,

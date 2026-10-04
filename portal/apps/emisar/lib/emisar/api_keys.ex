@@ -608,9 +608,13 @@ defmodule Emisar.ApiKeys do
   the replaced chain automatically (`api_key.retired_by_rotation` in the
   audit trail). The operator can still revoke the old key by hand sooner.
   `%Subject{}` needs `manage_api_keys`, or — on a key it minted itself — the
-  permission that minting that kind of key required. For an `:audit_export`
-  source it also needs the account's paid audit-export entitlement (the
-  successor is a fresh export credential). Returns `{:ok, raw_secret, new_key}`.
+  permission that minting that kind of key required. Rotating someone else's key
+  also needs runner and pack access covering the key owner's, since the
+  successor's secret goes to the subject, which is recorded as its issuer. For
+  an `:audit_export` source it also needs the account's paid audit-export
+  entitlement (the successor is a fresh export credential). Returns
+  `{:ok, raw_secret, new_key}` or `{:error, :runner_access_exceeds_subject}` among
+  the other refusals.
   """
   def rotate_api_key(%ApiKey{} = key, %Subject{} = subject) do
     # Cheap snapshot checks preserve the public error contract; the locked
@@ -1636,7 +1640,7 @@ defmodule Emisar.ApiKeys do
   Internal — called from `Emisar.OAuth` during the authorize step (the
   operator's consent is the authorization), to mint a backing MCP key
   for an OAuth grant. Scoped to actions:read + actions:execute and owned
-  by the consenting member's membership, so the existing MCP
+  by the member the connection acts as, so the existing MCP
   scope/attribution logic applies unchanged. The raw secret is generated
   then DISCARDED — the OAuth client never sees it; it authenticates with
   OAuth access tokens that resolve to this key. Returns `{:ok, key}`.

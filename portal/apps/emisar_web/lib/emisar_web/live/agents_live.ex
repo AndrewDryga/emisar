@@ -482,6 +482,13 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   defp do_create(socket, params) do
+    # Every refusal below re-renders what was posted, so a rejected submit never
+    # resets the form, or the member the key acts as, to the stored defaults.
+    socket =
+      socket
+      |> assign(:acts_as, Map.get(params, "acts_as", socket.assigns.acts_as))
+      |> assign_form(ApiKeys.change_key(params))
+
     # A Custom key is a plain `:mcp` key — identity + expiry only. It carries no
     # per-key scope: account Policy + the runner scope of the member it acts as
     # decide what it may do, same as a quick-mint. ApiKeys owns how the posted

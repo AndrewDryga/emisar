@@ -4662,7 +4662,8 @@ defmodule Emisar.Accounts do
   connects as. It starts with the subject's own current runner and pack access,
   which the Team page narrows like any member's. Requires `manage_team`.
 
-  Returns `{:ok, %Membership{}}` or `{:error, %Ecto.Changeset{} | :unauthorized}`.
+  Returns `{:ok, %Membership{}}` or
+  `{:error, %Ecto.Changeset{} | :unauthorized | :not_found}`.
   """
   def create_service_account(attrs, %Subject{account: %Account{id: account_id}} = subject)
       when is_map(attrs) do
@@ -4723,8 +4724,8 @@ defmodule Emisar.Accounts do
            Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
          :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized) do
       multi
-      |> Multi.run(:service_account_access, fn _repo, _changes ->
-        {:ok, runner_access_for_subject(subject)}
+      |> Multi.run(:service_account_access, fn repo, _changes ->
+        {:ok, drop_deleted_runners(repo, account.id, runner_access_for_subject(subject))}
       end)
       |> Multi.insert(:service_account, fn %{service_account_access: access} ->
         Membership.Changeset.create_service_account(account.id, attrs, access)
@@ -4744,6 +4745,20 @@ defmodule Emisar.Accounts do
       {:error, reason} -> Multi.error(multi, :service_account, reason)
     end
   end
+
+  # The copied grant keeps only runners that still exist: a runner deleted while
+  # it sat in the creator's scope reaches nothing, and scope rows must name live
+  # runners.
+  defp drop_deleted_runners(repo, account_id, %RunnerAccess{runner_ids: [_ | _]} = access) do
+    live_ids = repo |> runner_facts(account_id, [], access.runner_ids) |> MapSet.new(& &1.id)
+
+    case {access.groups, Enum.filter(access.runner_ids, &MapSet.member?(live_ids, &1))} do
+      {[], []} -> RunnerAccess.none()
+      {_groups, runner_ids} -> %{access | runner_ids: runner_ids}
+    end
+  end
+
+  defp drop_deleted_runners(_repo, _account_id, %RunnerAccess{} = access), do: access
 
   @doc """
   Internal — locks the subject's service account `id` inside the caller's
