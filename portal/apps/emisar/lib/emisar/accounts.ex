@@ -4458,9 +4458,9 @@ defmodule Emisar.Accounts do
   invitation past its window (the bearer holds the emailed token, so naming
   the state is not an enumeration oracle), or `{:error, :not_found}` for
   everything else — garbage, revoked, and accepted-then-burned tokens are
-  deliberately indistinguishable (acceptance clears the digest). An invitation
-  issued before invitations recorded their address names none that anyone could
-  prove, so it is `:not_found` too.
+  deliberately indistinguishable (acceptance clears the digest). A suspended
+  invitation is frozen, so it is `:not_found` too, as is an invitation issued
+  before invitations recorded their address (it names none anyone could prove).
 
   Options: `preload:` — associations the caller renders (`:account`); omit
   when only the row itself is needed.
@@ -4473,6 +4473,7 @@ defmodule Emisar.Accounts do
 
     queryable =
       Membership.Query.not_deleted()
+      |> Membership.Query.not_disabled()
       |> Membership.Query.by_invitation_token_digest(digest)
       |> Membership.Query.pending_invitation()
       |> Membership.Query.invitation_not_expired()
@@ -4489,10 +4490,12 @@ defmodule Emisar.Accounts do
   def fetch_invitation_by_token(_, _opts), do: {:error, :not_found}
 
   # The happy-path fetch above missed: tell a lapsed-but-real pending invitation
-  # apart from a token that resolves to nothing actionable.
+  # apart from a token that resolves to nothing actionable. A suspended
+  # invitation is frozen, not lapsed: it reads as nothing to accept.
   defp classify_dead_invitation(digest) do
     queryable =
       Membership.Query.not_deleted()
+      |> Membership.Query.not_disabled()
       |> Membership.Query.by_invitation_token_digest(digest)
       |> Membership.Query.with_email()
       |> Membership.Query.with_joined_account()
@@ -4574,15 +4577,16 @@ defmodule Emisar.Accounts do
   Internal — lock one pending invitation in the caller's transaction, by its
   account, its Member and the digest of the token that invited it, so a
   decision about it still holds at commit. `{:error, :not_found}` once it is no
-  longer pending (accepted, expired, revoked, re-sent under another token, or
-  removed) or names no address anyone could prove; the accept races resolve
-  here. No `%Subject{}`: the invite token and the proved inbox are the
+  longer pending (accepted, expired, revoked, re-sent under another token,
+  suspended or removed) or names no address anyone could prove; the accept races
+  resolve here. No `%Subject{}`: the invite token and the proved inbox are the
   authority.
   """
   def fetch_and_lock_pending_invitation(repo, account_id, membership_id, digest)
       when is_binary(digest) do
     if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(membership_id) do
       Membership.Query.not_deleted()
+      |> Membership.Query.not_disabled()
       |> Membership.Query.by_id(membership_id)
       |> Membership.Query.by_account_id(account_id)
       |> Membership.Query.by_invitation_token_digest(digest)

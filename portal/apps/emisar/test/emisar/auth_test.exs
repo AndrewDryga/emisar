@@ -1117,6 +1117,31 @@ defmodule Emisar.AuthTest do
       |> Repo.all()
     end
 
+    test "a suspended invitation gets no code, and a code proved before the suspension accepts nothing" do
+      %{account: account, invitation: invitation, subject: subject} =
+        fixture = invitation_fixture()
+
+      factor_id = verify_invitation_code(fixture.intent)
+      {:ok, _suspended} = Accounts.suspend_membership(invitation, subject)
+
+      assert Auth.request_invitation_code(fixture.intent, %RequestContext{}) ==
+               {:error, :not_found}
+
+      refute_received {:email, _sent}
+
+      assert {:error, _refused} =
+               Auth.complete_magic_link_sign_in(
+                 invitation.id,
+                 factor_id,
+                 browser_id(),
+                 %RequestContext{}
+               )
+
+      assert is_nil(Repo.reload!(invitation).invitation_accepted_at)
+      assert accepted_events(account) == []
+      assert events_of_type("user.signed_in") == []
+    end
+
     test "requesting and verifying accept nothing; completion accepts once, verifies the address and grants the seat" do
       %{account: account, invitation: invitation} = fixture = invitation_fixture()
       factor_id = verify_invitation_code(fixture.intent)

@@ -549,6 +549,24 @@ defmodule Emisar.InvitationTest do
       assert Accounts.fetch_invitation_by_token("") == {:error, :not_found}
     end
 
+    test "a suspended invitation is frozen: nothing to accept, even past its window", %{
+      membership: membership,
+      token: token,
+      account: account
+    } do
+      {_owner, subject} = inviter_subject(account)
+      {:ok, suspended} = Accounts.suspend_membership(membership, subject)
+
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+
+      assert Accounts.prepare_invitation_acceptance(token, %{"display_name" => "Bob"}) ==
+               {:error, :not_found}
+
+      nine_days_ago = DateTime.add(DateTime.utc_now(), -9 * 24 * 3600, :second)
+      {:ok, _} = suspended |> Ecto.Changeset.change(inserted_at: nine_days_ago) |> Repo.update()
+      assert Accounts.fetch_invitation_by_token(token) == {:error, :not_found}
+    end
+
     test "an expired invitation reports :expired (the bearer holds the real token)",
          %{membership: membership, token: token} do
       # inserted_at IS the invite time (re-invites insert fresh rows) —
