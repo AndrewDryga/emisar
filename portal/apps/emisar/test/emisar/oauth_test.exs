@@ -872,6 +872,7 @@ defmodule Emisar.OAuthTest do
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
       {verifier, challenge} = pkce()
+      subject = Fixtures.Subjects.subject_for(admin)
       Emisar.ApiKeys.subscribe_account_api_keys(account.id)
 
       {:ok, code, @redirect} =
@@ -879,7 +880,7 @@ defmodule Emisar.OAuthTest do
           client,
           authorization_params(challenge),
           {:service_account, service_account.id},
-          Fixtures.Subjects.subject_for(admin)
+          subject
         )
 
       {:ok, tokens} =

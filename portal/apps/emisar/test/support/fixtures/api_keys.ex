@@ -60,7 +60,8 @@ defmodule Emisar.Fixtures.ApiKeys do
     {:ok, raw, key} =
       case attrs[:issued_by_membership_id] do
         nil ->
-          ApiKeys.create_key(create_attrs, Fixtures.Subjects.subject_for(creator))
+          subject = Fixtures.Subjects.subject_for(creator)
+          ApiKeys.create_key(create_attrs, subject)
 
         issuer_id ->
           issuer = Repo.get!(Membership, issuer_id)

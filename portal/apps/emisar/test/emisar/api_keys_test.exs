@@ -1296,14 +1296,11 @@ defmodule Emisar.ApiKeysTest do
       account = Fixtures.Accounts.create_account()
       admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(admin)
       ApiKeys.subscribe_account_api_keys(account.id)
 
       {:ok, raw, key} =
-        ApiKeys.create_service_account_key(
-          service_account.id,
-          %{name: "Ryker"},
-          Fixtures.Subjects.subject_for(admin)
-        )
+        ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject)
 
       Fixtures.Memberships.mark_membership_as_deleted(admin)
 
@@ -1317,14 +1314,11 @@ defmodule Emisar.ApiKeysTest do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(owner)
       ApiKeys.subscribe_account_api_keys(account.id)
 
       {:ok, raw, key} =
-        ApiKeys.create_service_account_key(
-          service_account.id,
-          %{name: "Ryker"},
-          Fixtures.Subjects.subject_for(owner)
-        )
+        ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject)
 
       Fixtures.Memberships.suspend_membership(service_account)
 

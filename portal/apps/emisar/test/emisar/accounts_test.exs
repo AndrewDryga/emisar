@@ -6892,9 +6892,9 @@ defmodule Emisar.AccountsTest do
       Fixtures.Memberships.create_service_account(account_id: account.id, display_name: "Wide")
 
       narrow_id = narrow.id
+      subject = Fixtures.Subjects.subject_for(admin)
 
-      assert {:ok, [%Membership{id: ^narrow_id}]} =
-               Accounts.list_service_accounts(Fixtures.Subjects.subject_for(admin))
+      assert {:ok, [%Membership{id: ^narrow_id}]} = Accounts.list_service_accounts(subject)
     end
 
     test "an operator cannot list them" do
