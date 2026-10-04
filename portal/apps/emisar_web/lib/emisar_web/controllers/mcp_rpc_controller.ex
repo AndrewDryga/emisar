@@ -66,6 +66,18 @@ defmodule EmisarWeb.MCPRpcController do
   @server_name "emisar"
   @operation_id ~r/\Aop_[0-7][0-9A-HJKMNP-TV-Z]{25}\z/
 
+  # Two limits, as in front of SCIM. The per-key one is the real budget, but it
+  # buckets what the caller PRESENTS, and a made-up key parses as well as a real
+  # one, so rotating keys bought a fresh allowance every time. This per-address
+  # cap sits in front, before any parsing or authentication, and bounds that;
+  # it is far above what the agents behind one address send.
+  plug EmisarWeb.Plugs.RateLimit,
+    bucket: "mcp_ip",
+    limit: 1_200,
+    window_ms: 60_000,
+    by: :ip,
+    on_reject: {EmisarWeb.MCP.BoundaryResponse, :rate_limited}
+
   # A leaked key is the abuse vector — cap per key (falls back to IP for
   # unauthenticated hammering). 300/min is generous for a real AI agent.
   plug EmisarWeb.Plugs.RateLimit,

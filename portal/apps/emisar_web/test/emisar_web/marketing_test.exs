@@ -1805,6 +1805,11 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "gets its own audit record"
       assert squish(html) =~ "a person's exact membership in this account"
       refute html =~ "type a confirmation"
+
+      # Approval mail goes to a directory-supplied address unconfirmed, by
+      # decision; this page is where an admin learns to keep it correct.
+      assert squish(html) =~
+               "trusts the provider for that address and does not send it a confirmation code"
     end
 
     test "the runbooks page names the LLM tools it exposes", %{conn: conn} do
@@ -3142,6 +3147,9 @@ defmodule EmisarWeb.MarketingTest do
       # observable consequence is a status code, not a slower page.
       assert html =~ "60 requests a minute per token"
       assert html =~ "429"
+
+      # Agents behind one NAT share the per-address cap in front of each per-key one.
+      assert squish(html) =~ "1,200 a minute from one IP address"
     end
 
     test "the changelog stays the release notes the upgrade page points at", %{conn: conn} do

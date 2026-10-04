@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="policies-and-approvals"
-      updated="September 23, 2026"
+      updated="October 4, 2026"
       toc={[
         {"how-decisions", "How a decision is made"},
         {"first-policy", "A sensible first policy"},
@@ -157,6 +157,12 @@
         held and an approval request is created. Owners, admins, and operators get an email
         with a direct link, and the request appears under <strong>Approvals</strong>
         in the console with a live badge.
+      </p>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A member your identity provider added, at first SSO sign-in or through SCIM, gets
+        approval emails at the address the provider supplied. emisar trusts the provider for that
+        address and does not send it a confirmation code. The emails show the action, runner,
+        reason, and redacted arguments, so keep members' addresses correct in your directory.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Requests, votes, and grants belong to a person's exact membership in this account.

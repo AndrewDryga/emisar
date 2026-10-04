@@ -44,6 +44,14 @@ defmodule EmisarWeb.AuditExportController do
   alias Emisar.{Audit, Billing, PublicUrl}
   alias EmisarWeb.BearerAuth
 
+  # The per-key budget buckets whatever key the caller presents, made-up ones
+  # included, so a per-address cap sits in front of it (see the MCP endpoint).
+  plug EmisarWeb.Plugs.RateLimit,
+    bucket: "audit_export_ip",
+    limit: 1_200,
+    window_ms: 60_000,
+    by: :ip
+
   plug EmisarWeb.Plugs.RateLimit,
     bucket: "audit_export",
     limit: 60,

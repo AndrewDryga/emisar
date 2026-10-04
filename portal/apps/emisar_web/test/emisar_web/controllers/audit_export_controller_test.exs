@@ -92,6 +92,28 @@ defmodule EmisarWeb.AuditExportControllerTest do
       assert json_response(conn, 401) == %{"error" => "unauthorized"}
     end
 
+    test "made-up keys buy no fresh allowance past the per-address cap", %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      group = System.unique_integer([:positive]) |> rem(0xFFFF) |> Integer.to_string(16)
+      address = "2001:db8:#{group}::1"
+      client = EmisarWeb.RequestContext.rate_limit_key(address)
+
+      for _ <- 1..1_200 do
+        assert Emisar.RateLimiter.check({"audit_export_ip", client}, 1_200, 60_000) == :ok
+      end
+
+      response =
+        conn
+        |> put_req_header("x-forwarded-for", "#{address}, 8.233.97.247")
+        |> bearer("emk-" <> Base.encode16(:crypto.strong_rand_bytes(24)))
+        |> get(~p"/api/audit")
+
+      assert json_response(response, 429) == %{
+               "error" => "rate_limited",
+               "message" => "Too many requests. Retry in 60s."
+             }
+    end
+
     test "401 when bearer token doesn't match any key", %{conn: conn} do
       conn = conn |> bearer("emk-bogus-not-a-real-key") |> get(~p"/api/audit")
       assert json_response(conn, 401)["error"] == "unauthorized"
