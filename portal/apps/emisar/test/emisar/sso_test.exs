@@ -3701,7 +3701,6 @@ defmodule Emisar.SSOTest do
                state: "s",
                nonce: "n",
                pkce_verifier: "v",
-               invitation_proof: fixture.proof,
                account_id: fixture.account.id,
                membership_id: fixture.invitation.id,
                invitation_token_digest: Crypto.user_invite_token_digest(fixture.invitation_token),
@@ -3753,7 +3752,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "complete_invitation_sso_sign_in/4" do
+  describe "complete_invitation_sso_sign_in/5" do
     test "accepts the invitation, binds the returned identity and mints the Member's SSO session in one transaction, once" do
       fixture = invitation_sso_fixture()
       {:ok, begun} = begin_invitation_sso(fixture)
@@ -3764,6 +3763,7 @@ defmodule Emisar.SSOTest do
                SSO.complete_invitation_sso_sign_in(
                  callback(claims),
                  begun,
+                 fixture.proof,
                  fixture.browser_id,
                  %RequestContext{}
                )
@@ -3803,13 +3803,14 @@ defmodule Emisar.SSOTest do
         assert type in event_types
       end
 
-      # A replayed callback finds the invitation accepted and the code gone.
+      # A replayed callback finds the proved code spent.
       assert SSO.complete_invitation_sso_sign_in(
                callback(claims),
                begun,
+               fixture.proof,
                fixture.browser_id,
                %RequestContext{}
-             ) == {:error, :invitation_invalid}
+             ) == {:error, :invalid_or_expired}
 
       assert session_count(accepted) == 1
     end
@@ -3825,6 +3826,7 @@ defmodule Emisar.SSOTest do
         assert SSO.complete_invitation_sso_sign_in(
                  callback(claims),
                  begun,
+                 fixture.proof,
                  fixture.browser_id,
                  %RequestContext{}
                ) == {:error, :invitation_sso_invalid}
@@ -3837,22 +3839,26 @@ defmodule Emisar.SSOTest do
       fixture = invitation_sso_fixture()
       {:ok, begun} = begin_invitation_sso(fixture)
 
-      complete = fn stash, browser_id ->
+      complete = fn stash, proof, browser_id ->
         SSO.complete_invitation_sso_sign_in(
           callback(invitee_claims(fixture, "okta|invitee")),
           stash,
+          proof,
           browser_id,
           %RequestContext{}
         )
       end
 
-      assert complete.(begun, Crypto.random_secret()) == {:error, :invitation_sso_invalid}
-
-      assert complete.(%{begun | membership_id: Ecto.UUID.generate()}, fixture.browser_id) ==
+      assert complete.(begun, fixture.proof, Crypto.random_secret()) ==
                {:error, :invitation_sso_invalid}
 
-      assert complete.(Map.delete(begun, :invitation_proof), fixture.browser_id) ==
-               {:error, :invitation_sso_invalid}
+      assert complete.(
+               %{begun | membership_id: Ecto.UUID.generate()},
+               fixture.proof,
+               fixture.browser_id
+             ) == {:error, :invitation_sso_invalid}
+
+      assert complete.(begun, nil, fixture.browser_id) == {:error, :invitation_sso_invalid}
 
       repointed = %{
         begun
@@ -3860,10 +3866,11 @@ defmodule Emisar.SSOTest do
             {"https://other.test", fixture.provider.client_id, fixture.provider.identifier_claim}
       }
 
-      assert complete.(repointed, fixture.browser_id) == {:error, :identity_namespace_changed}
+      assert complete.(repointed, fixture.proof, fixture.browser_id) ==
+               {:error, :identity_namespace_changed}
 
       Fixtures.SSO.disable_provider(fixture.provider)
-      assert complete.(begun, fixture.browser_id) == {:error, :provider_disabled}
+      assert complete.(begun, fixture.proof, fixture.browser_id) == {:error, :provider_disabled}
 
       assert_invitation_untouched(fixture)
     end
@@ -3885,6 +3892,7 @@ defmodule Emisar.SSOTest do
       assert SSO.complete_invitation_sso_sign_in(
                callback(invitee_claims(fixture, "okta|held")),
                begun,
+               fixture.proof,
                fixture.browser_id,
                %RequestContext{}
              ) == {:error, :identity_already_linked}
@@ -3898,6 +3906,7 @@ defmodule Emisar.SSOTest do
                SSO.complete_invitation_sso_sign_in(
                  callback(invitee_claims(fixture, "okta|held")),
                  begun,
+                 fixture.proof,
                  fixture.browser_id,
                  %RequestContext{}
                )
@@ -3978,6 +3987,7 @@ defmodule Emisar.SSOTest do
       assert SSO.complete_invitation_sso_sign_in(
                callback(invitee_claims(fixture, "okta|invitee")),
                begun,
+               fixture.proof,
                fixture.browser_id,
                %RequestContext{}
              ) == {:error, :identity_already_linked}
@@ -9532,6 +9542,7 @@ defmodule Emisar.SSOTest do
       SSO.complete_invitation_sso_sign_in(
         callback(invitee_claims(fixture, sub)),
         begun,
+        fixture.proof,
         fixture.browser_id,
         %RequestContext{}
       )

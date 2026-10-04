@@ -1228,12 +1228,11 @@ defmodule Emisar.AuthTest do
 
       assert {:ok, continuation} = Auth.verify_invitation_sso_proof(proof, browser)
 
+      # The proof is ids only; the name and address stay on the proved code.
       assert continuation == %{
                account_id: account.id,
                membership_id: invitation.id,
                token_digest: fixture.intent.token_digest,
-               display_name: "Invited Name",
-               sent_to: fixture.email,
                code_id: factor_id
              }
     end
@@ -1462,15 +1461,13 @@ defmodule Emisar.AuthTest do
            account_id: Ecto.UUID.generate(),
            membership_id: Ecto.UUID.generate(),
            token_digest: "digest",
-           display_name: "Name",
-           sent_to: "person@example.test",
            code_id: Ecto.UUID.generate(),
            browser_digest: Crypto.hash(browser)
          }}
 
       fresh = Phoenix.Token.sign(signing_secret, "invitation sso proof", payload)
 
-      assert {:ok, %{sent_to: "person@example.test"} = continuation} =
+      assert {:ok, %{token_digest: "digest"} = continuation} =
                Auth.verify_invitation_sso_proof(fresh, browser)
 
       refute Map.has_key?(continuation, :browser_digest)
@@ -1485,6 +1482,49 @@ defmodule Emisar.AuthTest do
 
       assert Auth.verify_invitation_sso_proof(expired, browser) ==
                {:error, :invitation_sso_invalid}
+    end
+  end
+
+  describe "peek_invitation_sso_acceptance/1" do
+    test "reads the name and address from the proved code of that invitation only" do
+      %{account: account, invitation: invitation, email: email} = fixture = invitation_fixture()
+      code_id = verify_invitation_code(fixture.intent)
+
+      proved = %{
+        account_id: account.id,
+        membership_id: invitation.id,
+        token_digest: fixture.intent.token_digest,
+        code_id: code_id
+      }
+
+      assert Auth.peek_invitation_sso_acceptance(proved) ==
+               {:ok, Map.merge(proved, %{display_name: "Invited Name", sent_to: email})}
+
+      for wrong <- [
+            %{proved | code_id: Ecto.UUID.generate()},
+            %{proved | membership_id: Ecto.UUID.generate()},
+            %{proved | token_digest: "another-invitation"}
+          ] do
+        assert Auth.peek_invitation_sso_acceptance(wrong) == {:error, :invalid_or_expired}
+      end
+    end
+
+    test "refuses a code past its verified window" do
+      %{account: account, invitation: invitation} = fixture = invitation_fixture()
+      code_id = verify_invitation_code(fixture.intent)
+      code = Repo.get!(UserToken, code_id)
+      stale = DateTime.utc_now() |> DateTime.add(-11 * 60) |> DateTime.to_iso8601()
+
+      code
+      |> Ecto.Changeset.change(metadata: Map.put(code.metadata, "verified_at", stale))
+      |> Repo.update!()
+
+      assert Auth.peek_invitation_sso_acceptance(%{
+               account_id: account.id,
+               membership_id: invitation.id,
+               token_digest: fixture.intent.token_digest,
+               code_id: code_id
+             }) == {:error, :invalid_or_expired}
     end
   end
 

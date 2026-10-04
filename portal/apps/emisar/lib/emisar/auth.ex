@@ -1427,8 +1427,10 @@ defmodule Emisar.Auth do
   # The SSO step may only finish this exact acceptance: the workspace, the
   # pending Member, its invitation token, the verified code that proved the
   # invited inbox, and the browser that proved it. The name the invitee typed
-  # and the address rode the code; the code is re-checked and consumed when the
-  # step completes.
+  # and the address stay on the code (`peek_invitation_sso_acceptance/1`), so
+  # the proof is a few ids in a session cookie already holding up to six
+  # workspace sessions; the code is re-checked and consumed when the step
+  # completes.
   defp invitation_sso_proof(invitation, %UserToken{} = code, browser_id) do
     Phoenix.Token.sign(
       mfa_proof_secret(),
@@ -1438,8 +1440,6 @@ defmodule Emisar.Auth do
          account_id: invitation.account_id,
          membership_id: invitation.membership_id,
          token_digest: invitation.token_digest,
-         display_name: invitation.display_name,
-         sent_to: code.sent_to,
          code_id: code.id,
          browser_digest: Crypto.hash(browser_id)
        }}
@@ -1449,9 +1449,9 @@ defmodule Emisar.Auth do
   @doc """
   Internal — the SSO step of an invitation in a workspace that refuses email
   sign-in checks the proof `complete_magic_link_sign_in/4` returned, from the
-  same browser, within the verified code's window. Returns `{:ok, invitation}`
-  — `%{account_id, membership_id, token_digest, display_name, sent_to,
-  code_id}` — or `{:error, :invitation_sso_invalid}`.
+  same browser, within the verified code's window. Returns `{:ok, proved}` —
+  `%{account_id, membership_id, token_digest, code_id}` — or
+  `{:error, :invitation_sso_invalid}`.
   """
   def verify_invitation_sso_proof(proof, browser_id)
       when is_binary(proof) and is_binary(browser_id) do
@@ -1471,8 +1471,45 @@ defmodule Emisar.Auth do
   def verify_invitation_sso_proof(_proof, _browser_id), do: {:error, :invitation_sso_invalid}
 
   @doc """
+  Internal — what an invitation's SSO step accepts with: the name the invitee
+  typed and the address its code proved, read from the verified code `proved`
+  names (`verify_invitation_sso_proof/2`), which is still this invitation's and
+  inside its window. An unlocked read: `put_invitation_sso_session/5` locks and
+  re-checks that exact code in the accepting transaction. Returns
+  `{:ok, invitation}` — `proved` plus `display_name` and `sent_to` — or
+  `{:error, :invalid_or_expired}` once the code is spent, lapsed or another
+  invitation's, as that transaction would find it.
+  """
+  def peek_invitation_sso_acceptance(
+        %{
+          account_id: account_id,
+          membership_id: membership_id,
+          token_digest: digest,
+          code_id: code_id
+        } =
+          proved
+      ) do
+    UserToken.Query.by_id(code_id)
+    |> UserToken.Query.by_membership(account_id, membership_id)
+    |> UserToken.Query.by_context("magic_link_verified")
+    |> Repo.peek()
+    |> case do
+      %UserToken{
+        sent_to: sent_to,
+        metadata: %{"invitation_token_digest" => ^digest, "invitation_display_name" => name}
+      } = code ->
+        if verified_code_fresh?(code),
+          do: {:ok, Map.merge(proved, %{display_name: name, sent_to: sent_to})},
+          else: {:error, :invalid_or_expired}
+
+      _gone_or_another_invitation ->
+        {:error, :invalid_or_expired}
+    end
+  end
+
+  @doc """
   Internal — compose the end of an invitation's SSO step into
-  `SSO.complete_invitation_sso_sign_in/4`'s transaction, after
+  `SSO.complete_invitation_sso_sign_in/5`'s transaction, after
   `Accounts.put_invitation_acceptance/3` (`:accepted`) and the identity binding
   (`:identity`, through the provider locked as `:locked_provider`). Locks and
   consumes the exact verified code the proof names — still the accepted

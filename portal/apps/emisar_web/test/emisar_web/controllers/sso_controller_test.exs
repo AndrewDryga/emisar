@@ -46,6 +46,26 @@ defmodule EmisarWeb.SSOControllerTest do
     defp normalize_numeric_auth_time(claims), do: claims
   end
 
+  # OIDC secrets at their real lengths: a 43-character state and nonce and a
+  # 128-character PKCE verifier, the RFC 7636 maximum.
+  defmodule RealLengthOIDC do
+    @behaviour Emisar.SSO.OIDC
+
+    @impl Emisar.SSO.OIDC
+    def begin_authorization(_provider, _opts) do
+      {:ok,
+       %{
+         authorize_url: "https://idp.test/auth",
+         state: String.duplicate("s", 43),
+         nonce: String.duplicate("n", 43),
+         pkce_verifier: String.duplicate("v", 128)
+       }}
+    end
+
+    @impl Emisar.SSO.OIDC
+    defdelegate verify_callback(provider, params, stashed), to: StubOIDC
+  end
+
   # A stub whose callback failure has no tailored operator copy — the log still
   # classifies the transport boundary without exposing the dependency value.
   defmodule FailingOIDC do
@@ -985,6 +1005,60 @@ defmodule EmisarWeb.SSOControllerTest do
                |> UserIdentity.Query.by_provider_id(fixture.provider.id)
                |> UserIdentity.Query.by_membership_id(fixture.invitation.id)
                |> Repo.one()
+    end
+
+    test "a browser holding six sessions and a full return path finishes the step at the input limits",
+         %{conn: conn} do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RealLengthOIDC)
+
+      conn =
+        Enum.reduce(1..6, conn, fn _n, conn ->
+          {conn, _owner, _account} = register_and_log_in(conn)
+          conn
+        end)
+
+      other = Fixtures.Accounts.create_account()
+      prefix = "/app/#{other.slug}/runs?source="
+      conn = get(conn, prefix <> String.duplicate("x", 1024 - byte_size(prefix)))
+      assert byte_size(get_session(conn, :user_return_to)) == 1024
+
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
+      provider = provider_fixture(account)
+
+      email =
+        "invitee-#{System.unique_integer([:positive])}-#{String.duplicate("a", 200)}@acme.test"
+
+      {:ok, %{invitation_token: token}} =
+        Accounts.invite_user_to_account(
+          Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
+          subject
+        )
+
+      Fixtures.Accounts.set_account_settings(account, %{require_sso: true})
+
+      requested =
+        conn
+        |> recycle()
+        |> post(~p"/accept_invitation/#{token}", %{
+          "member" => %{"display_name" => String.duplicate("語", 255)}
+        })
+
+      assert_received {:email, sent}
+      [_, code_id, code] = Regex.run(@code_link, sent.text_body)
+      proved = requested |> recycle() |> get(~p"/sign_in/magic/#{code_id}/#{code}")
+      assert redirected_to(proved) == ~p"/app/#{account}/sign_in"
+
+      begun =
+        proved
+        |> recycle()
+        |> post(~p"/sign_in/sso/invitation", %{"provider_id" => provider.id})
+
+      assert redirected_to(begun) == "https://idp.test/auth"
+      assert byte_size(begun.resp_cookies["_emisar_web_key"].value) < 4096
+
+      completed = begun |> recycle() |> invitee_callback(%{email: email})
+      assert redirected_to(completed) == ~p"/app/#{account}"
+      assert length(get_session(completed, :sessions)) == 6
     end
 
     test "the step is offered only to the proof's browser and workspace", %{conn: conn} do

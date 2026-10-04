@@ -161,7 +161,7 @@ defmodule EmisarWeb.UserAuth do
   end
 
   @doc """
-  Installs the SSO session `SSO.complete_invitation_sso_sign_in/4` minted when
+  Installs the SSO session `SSO.complete_invitation_sso_sign_in/5` minted when
   an invitee joined through the workspace's identity provider.
   """
   def log_in_invitation_sso_member(conn, %Accounts.Membership{} = membership, token),

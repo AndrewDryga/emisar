@@ -2251,10 +2251,12 @@ defmodule Emisar.SSO do
   fresh sign-in (`prompt=login`, `max_age=0`), so an IdP session already open in
   a shared browser cannot be bound to the invitee. Returns `{:ok, begun}` — the
   authorization URL plus the state the boundary keeps in its encrypted session
-  for `complete_invitation_sso_sign_in/4`, bound to the workspace, the pending
+  for `complete_invitation_sso_sign_in/5`, bound to the workspace, the pending
   Member, its invitation token, the provider and its namespace, the OIDC state,
   nonce and PKCE verifier, and the start time — or
-  `{:error, :invitation_sso_invalid | :not_found}`.
+  `{:error, :invitation_sso_invalid | :not_found}`. The proof itself stays where
+  the boundary already keeps it; the completion is handed it again, so the
+  session never carries two copies.
   """
   def begin_invitation_sso_sign_in(proof, provider_id, redirect_uri, browser_id)
       when is_binary(redirect_uri) do
@@ -2268,7 +2270,6 @@ defmodule Emisar.SSO do
            ) do
       {:ok,
        Map.merge(begun, %{
-         invitation_proof: proof,
          account_id: invitation.account_id,
          membership_id: invitation.membership_id,
          invitation_token_digest: invitation.token_digest,
@@ -2293,23 +2294,30 @@ defmodule Emisar.SSO do
   binds the returned identity to that Member — refused while another live
   Member holds it; consumes the proved code; and mints the Member's SSO session
   for that identity. No Subject: the invitation, the proved code and the
-  callback are the authentication. `browser_id` as in
-  `Auth.complete_sso_sign_in/5`; the proof must come from the same browser.
+  callback are the authentication. `proof` is the one the step began with, and
+  must come from the same browser (`browser_id` as in
+  `Auth.complete_sso_sign_in/5`); the name and address it accepts with are read
+  from the proved code (`Auth.peek_invitation_sso_acceptance/1`).
 
   Returns `{:ok, raw_token, %Accounts.Membership{account: account}}`, or
   `{:error, :invitation_sso_invalid | :invitation_invalid | :invalid_or_expired |
   :identity_already_linked | :provider_disabled | :sso_not_available | term()}`.
   """
-  def complete_invitation_sso_sign_in(params, stashed, browser_id, %RequestContext{} = context)
+  def complete_invitation_sso_sign_in(
+        params,
+        stashed,
+        proof,
+        browser_id,
+        %RequestContext{} = context
+      )
       when is_map(params) and is_map(stashed) and is_binary(browser_id) do
-    proof = Map.get(stashed, :invitation_proof)
-
-    with {:ok, invitation} <- Auth.verify_invitation_sso_proof(proof, browser_id),
-         :ok <- ensure_invitation_sso_stash(stashed, invitation),
+    with {:ok, proved} <- Auth.verify_invitation_sso_proof(proof, browser_id),
+         :ok <- ensure_invitation_sso_stash(stashed, proved),
          {:ok, provider} <- fetch_identity_link_provider_from_stash(stashed),
          {:ok, %{identifier: identifier, claims: claims}} <-
            OIDC.verify_callback(provider, params, stashed),
-         {:ok, _auth_time} <- fresh_invitation_sign_in(claims, stashed) do
+         {:ok, _auth_time} <- fresh_invitation_sign_in(claims, stashed),
+         {:ok, invitation} <- Auth.peek_invitation_sso_acceptance(proved) do
       commit_invitation_sso_sign_in(
         provider,
         identifier,

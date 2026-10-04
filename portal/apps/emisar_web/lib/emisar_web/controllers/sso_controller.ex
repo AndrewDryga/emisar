@@ -298,8 +298,9 @@ defmodule EmisarWeb.SSOController do
     context = RequestContext.from_conn(conn)
 
     with browser_id when is_binary(browser_id) <- UserAuth.browser_id(conn),
+         proof = get_session(conn, :invitation_sso_proof),
          {:ok, token, membership} <-
-           SSO.complete_invitation_sso_sign_in(params, stash, browser_id, context) do
+           SSO.complete_invitation_sso_sign_in(params, stash, proof, browser_id, context) do
       UserAuth.log_in_invitation_sso_member(conn, membership, token)
     else
       reason ->
