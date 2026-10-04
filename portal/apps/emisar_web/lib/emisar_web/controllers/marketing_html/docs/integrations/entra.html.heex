@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="integrations-entra"
-      updated="September 7, 2026"
+      updated="October 4, 2026"
       evidence="Live-tested against a Microsoft Entra tenant on August 25, 2026."
       toc={[
         {"sso", "Single sign-on"},
@@ -104,6 +104,18 @@
           />
         </.docs_step>
         <.docs_step n={5}>
+          <.docs_step_venue>Entra</.docs_step_venue>
+          <p class="font-semibold text-zinc-100">Add the sign-in time claim.</p>
+          <p class="mt-1.5">
+            Under <strong class="text-zinc-200">Manage → Token configuration</strong>, select <strong class="text-zinc-200">Add optional claim</strong>, choose the
+            <strong class="text-zinc-200">ID</strong>
+            token type, select <.docs_inline_code>auth_time</.docs_inline_code>, and select <strong class="text-zinc-200">Add</strong>. Entra leaves this claim out by default.
+            emisar checks it whenever it asks Entra for a fresh sign-in: verifying the connection,
+            accepting an invitation in a workspace that requires SSO, and setting up or resetting
+            multi-factor authentication. Without it, those steps fail.
+          </p>
+        </.docs_step>
+        <.docs_step n={6}>
           <.docs_step_venue>emisar</.docs_step_venue>
           <p class="font-semibold text-zinc-100">Paste them into the connection.</p>
           <p class="mt-1.5">

@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="sso"
-      updated="September 23, 2026"
+      updated="October 4, 2026"
       toc={[
         {"sso-login", "Setting up SSO login"},
         {"signing-in", "How members sign in"},
@@ -134,11 +134,11 @@
         cannot control assignments that tightly.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Either way, single sign-on adds a member to this workspace, not an emisar login. The member
-        signs in through your provider and reaches only this workspace. For email sign-in, their own
-        sessions and multi-factor authentication, a member links a personal login from Profile:
-        emisar emails a code to the address they enter. If that address already has a login with
-        multi-factor authentication, the member also enters a code from it.
+        Either way, single sign-on adds a member to this workspace. The member signs in through
+        your provider and reaches only this workspace. A verified email from the provider becomes
+        the member's contact address but does not turn on email sign-in, so the member keeps
+        signing in through the provider. To set up an authenticator, the member signs in at the
+        provider again instead of confirming an emailed code.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Turning on
@@ -198,7 +198,8 @@
           navigate={~p"/docs/authentication" <> "#enforcement"}
           class="text-brand-400 hover:text-brand-300"
         >Enforce
-        account sign-in</.link>.
+        account sign-in</.link>. Turning it off ends the sessions that signed in through the
+        connection, so those members sign in again.
       </p>
 
       <.docs_screenshot
@@ -210,10 +211,11 @@
 
       <.docs_h2 id="signing-in">How members sign in</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        On the sign-in page, members select
-        <strong class="text-zinc-200">“Continue with single sign-on”</strong>
-        (<.docs_inline_code>/sign_in/sso</.docs_inline_code>), enter the
-        team's address, choose the provider, authenticate there, and return signed in.
+        Members open the workspace's sign-in page, <.docs_inline_code>app.emisar.dev/app/&lt;workspace&gt;/sign_in</.docs_inline_code>, or enter
+        the workspace address at <.docs_inline_code>/sign_in</.docs_inline_code>. They select
+        <strong class="text-zinc-200">Continue with</strong>
+        and the connection's display name, authenticate at the provider, and return signed in to
+        that workspace.
       </p>
 
       <.docs_h3 id="subject-not-email">When the email already belongs to someone</.docs_h3>
@@ -222,7 +224,8 @@
         address. People change addresses, and an address can be reassigned; a subject cannot.
         Matching on email would let whoever controls an address inherit the membership behind
         it, so a first SSO sign-in never silently merges into an existing one. emisar compares
-        its verified email only with the contact addresses of this workspace's members:
+        its verified email only with the contact addresses of this workspace's members, and no
+        two members of a workspace share an address:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex gap-3">
@@ -235,16 +238,8 @@
             >Team → Pending access requests</a>. Approving binds
             that existing member to the SSO identity — it does not create a second person, and
             their role and runner access are left as they are. If their team invitation is still
-            pending, they must accept its emailed link before an administrator can approve the SSO
-            identity.
-          </span>
-        </li>
-        <li class="flex gap-3">
-          <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
-          <span>
-            <strong class="text-zinc-200">Several members use the address.</strong>
-            The sign-in is refused, because emisar cannot tell which member it is. Remove the
-            member who should not have that address; the next sign-in is then held for approval.
+            pending, they accept the invitation first; only then can an administrator approve the
+            SSO identity.
           </span>
         </li>
         <li class="flex gap-3">
@@ -265,7 +260,8 @@
         <strong class="text-zinc-200">Check issuer</strong>
         checks discovery and reachability only — not user assignment, callback acceptance, or
         claims — so it can pass on a connection nobody can actually sign in through. Keep an
-        owner browser with valid SSO proof for this workspace open while you test. Then open
+        owner signed in to this workspace through SSO while you test: turning the requirement on
+        signs out every email sign-in session, including your own. Then open
         <a
           href={~p"/app/team"}
           class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
@@ -273,13 +269,16 @@
         and turn on <strong class="text-zinc-200">Require single sign-on</strong>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Once required, a browser needs eligible SSO proof for this workspace. Without it,
-        the member must complete SSO step-up before continuing. A member who was removed and
-        later invited back at the same address accepts the emailed invitation, then completes the same step-up,
-        which moves their existing SSO identity to the new membership. Personal proof keeps its
-        original expiry. The fresh SSO proof also covers the member's other workspaces where
-        they sign in with the same identity-provider account (the same issuer and subject).
-        Access to the rest keeps its original expiry.
+        Once required, members sign in only through SSO, and the sign-in page stops offering
+        email. An invited person confirms the code sent to the invited address, then signs in at
+        the provider, which links that identity to the new membership. A member who was removed
+        and later invited back at the same address does the same, which moves their existing SSO
+        identity to the new membership. Entra must send the
+        <.docs_inline_code>auth_time</.docs_inline_code>
+        claim for this step; see the <.link
+          navigate={~p"/docs/integrations/entra"}
+          class="text-brand-400 hover:text-brand-300"
+        >Entra guide</.link>.
         This option
         cannot be enabled with no active SSO connection, and emisar refuses to disable or
         delete the last active connection while the requirement remains on. Turn off Require
@@ -319,13 +318,12 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Disabling a connection stops new sign-ins but keeps the configuration, so you can
         enable it again later. Deleting retires it and dismisses any manual-approval requests
-        still waiting on it. Either way, its existing sign-in proof for this workspace is
-        removed. Other sign-in proof and access to other workspaces remain available, and
-        users and audit history are kept. Re-enabling the connection does not restore retired
-        proof; members must sign in again if no other valid proof remains. A member without a
-        personal login that is left with no other way to sign in also loses its API keys, the
-        agent connections built on them, and its approved device access; re-enabling does not
-        bring them back.
+        still waiting on it. Either way, the sessions that signed in through it end; members and
+        audit history are kept, and email sign-in sessions remain. Re-enabling the connection
+        does not restore those sessions; members sign in again. A member left with no other way
+        to sign in — no verified email address and no other enabled connection — also loses its
+        API keys, the agent connections built on them, and its approved device access;
+        re-enabling does not bring them back.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An account can have several provider types, but only one enabled connection of each type.
@@ -539,19 +537,19 @@
                 connection restricts an email domain or needs email-based linking, include an
                 explicitly verified email; Google Workspace may instead use a matching
                 <code>hd</code>
-                for its tenant boundary. UserInfo-only email or profile claims are not read. If
-                several members of this workspace use the verified email, remove the extra member;
+                for its tenant boundary. UserInfo-only email or profile claims are not read. A
+                verified email that already belongs to a member holds the sign-in for approval;
                 see <a href="#subject-not-email" class="text-brand-400 hover:text-brand-300">When the email already belongs to someone</a>.
               </td>
             </tr>
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">
-                Members loop back to SSO after Require SSO
+                Members cannot sign in after Require SSO
               </td>
               <td class="px-4 py-3">
-                Use an owner browser with valid SSO proof for this workspace to turn off Require SSO,
-                then test provider sign-in before enabling it again. An email-only session cannot
-                change this setting while SSO is required. If no such owner browser remains, contact <a
+                Use an owner's SSO session in this workspace to turn off Require SSO, then test
+                provider sign-in before enabling it again. While SSO is required, the sign-in page
+                offers no email sign-in. If no owner can sign in through SSO, contact <a
                   href={EmisarWeb.MailTo.support()}
                   class="text-brand-400 hover:text-brand-300"
                 >support</a>.

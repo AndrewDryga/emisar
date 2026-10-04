@@ -2,8 +2,8 @@
 name: portal-token-map
 description: every bearer credential the portal mints, its table, prefix, owning context, and mint/verify/revoke entry points — there is deliberately no single tokens table
 subsystem: portal
-sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar/lib/emisar/runners.ex, portal/apps/emisar/lib/emisar/auth.ex, portal/apps/emisar/lib/emisar/accounts.ex, portal/apps/emisar/lib/emisar/sso.ex, portal/apps/emisar/lib/emisar/crypto.ex]
-updated: 2026-09-23
+sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar/lib/emisar/runners.ex, portal/apps/emisar/lib/emisar/auth.ex, portal/apps/emisar/lib/emisar/auth/user_token/query.ex, portal/apps/emisar/lib/emisar/accounts.ex, portal/apps/emisar/lib/emisar/sso.ex, portal/apps/emisar/lib/emisar/admin.ex, portal/apps/emisar/lib/emisar/crypto.ex]
+updated: 2026-10-04
 ---
 
 The token map — the one place to understand every bearer credential emisar
@@ -25,26 +25,26 @@ them inline.
 | OAuth access / refresh token & auth code | `oauth_tokens`, `oauth_authorization_codes` | `emo-` / `emor-` / `emoc-` | `Emisar.OAuth` | `issue_code/3` → `exchange_code/1`, `refresh/1` | `resolve_access_token/2` | expiry sweeps (`delete_expired_authorization_codes/1`, `delete_unused_clients/1`) |
 | Runner enrollment key | `runner_enrollment_keys` | `emkey-enroll-` | `Emisar.Runners` | `create_enrollment_key/2` | `register_via_enrollment_key/3` claims a use inside its transaction (`peek_enrollment_key_by_secret/1` is a read-only inspector, not the gate) | `revoke_enrollment_key/2` |
 | Runner session token | `runner_tokens` | `rnrtok-` | `Emisar.Runners` | `mint_runner_token/3` | `verify_runner_token/1` | disable or delete the runner; a 90-day `expires_at` refused at verify, rotated by `refresh_runner_token/1` |
-| User session, magic-link, email-confirm | `auth_user_tokens` | binary (unprefixed) | `Emisar.Auth` | `complete_magic_link_sign_in/5`, `complete_sso_account_sign_in/4`, `complete_sso_session_step_up/4`, `request_magic_link/3`, `deliver_confirmation_instructions/1` | `fetch_session_by_token/1`, `verify_magic_link/4` | `complete_session_sign_out/2`, `delete_session_token/1`, `revoke_session/2`, `delete_all_session_tokens/1` |
-| New sign-in address proof (`email_change_new`) | `auth_user_tokens` | split browser nonce and emailed code | `Emisar.Auth` | `confirm_email_change/4` after current-inbox or TOTP proof | `complete_email_change/5` with the browser nonce and a live personal session | successful completion, replacement, or 15-minute expiry |
+| Workspace session, emailed sign-in and sign-up codes, MFA enrollment and provider-verification codes | `auth_user_tokens` (every row but `sign_up` belongs to one workspace and one Member) | binary (unprefixed); codes are split into a browser nonce and an emailed code | `Emisar.Auth` | `request_magic_link/3`, `request_invitation_code/2`, `request_sign_up_code/2`, `resend_email_code/2`; sessions from `complete_magic_link_sign_in/4`, `complete_magic_link_mfa_sign_in/4`, `complete_sign_up/3`, `complete_sso_sign_in/5`, `SSO.complete_invitation_sso_sign_in/4` | `fetch_session_by_token/2` (the token AND the workspace in the URL), `list_live_sessions/1`, `verify_magic_link/4`; every request re-applies `UserToken.Query.authorized/1` | `complete_browser_sign_out/3` (every session of the browser), `revoke_session_tokens/3` (displaced or evicted cookie entries), `revoke_session/2`, `revoke_and_disconnect_other_sessions/2`, `delete_membership_sessions/2`, `delete_identity_sessions/2`, `delete_account_email_sessions/2`; 60-day absolute expiry |
+| Staff sign-in code and staff session | `admin_staff_tokens` | binary (unprefixed); the sign-in code is split like the workspace code | `Emisar.Admin` | `request_staff_sign_in/2`, then `complete_staff_sign_in/5` (emailed code AND authenticator code) | `fetch_staff_session/1`, `refresh_staff_session/1` | `delete_staff_session/1`, `reset_staff/1`, `remove_staff/1` (box commands); 12-hour absolute expiry |
 | Account invitation | `account_memberships.invitation_token_digest` | binary (unprefixed) | `Emisar.Accounts` | `invite_user_to_account/2`, `resend_account_invitation/2` | `fetch_invitation_by_token/2`; final acceptance rechecks the exact digest and invited address | acceptance, resend, membership removal, or seven-day expiry |
 
-## Session authority is not another credential
+## One session, one Member
 
-`auth_member_grants` binds a browser token to exact account Memberships;
-`auth_member_grant_routes` records its independently aged personal or SSO proofs.
-These rows are non-secret authorization state, not additional bearer credentials.
-Reading memberships or switching accounts does not create proof. SSO step-up rotates
-the browser token and preserves surviving proofs with their original deadlines;
-it cannot renew personal mailbox or local-MFA proof. Authorized workspace creation
-adds only its new owner Membership to the exact personally proved browser.
+A workspace session row names its workspace and Member, and an SSO session also
+freezes the identity's issuer and subject; the per-request predicate re-checks the
+Member (live, not suspended, not pending), the workspace (live, not disabled) and,
+for SSO, that identity and its provider. Nothing else carries session authority.
+The browser keeps up to six `{workspace, token}` entries in its cookie and a
+per-browser id whose digest every session stores, so sign-out ends every session of
+that browser, including one a racing tab minted. A cookie entry displaced by a new
+sign-in or evicted by the cap is revoked in the same request and audited.
 
-Member revocation deletes that Membership's grants. Provider or identity retirement
-removes only its proof routes. Other independently proved access survives, although
-affected sockets disconnect to refresh their authority. Personal sign-out/session
-revocation and administrator/support MFA reset delete whole browser tokens.
-Re-enabling a disabled account can restore still-valid proof; re-enabling a provider
-does not recreate retired routes.
+Removing or suspending a Member, retiring or re-linking its SSO identity, and turning
+`require_sso` on (for email-code sessions) delete the affected rows and disconnect
+their sockets. A disabled workspace's sessions stop passing the predicate and its open
+LiveViews leave on the lifecycle broadcast. A connected LiveView also leaves at the
+session's absolute expiry.
 
 ## Credentials that are NOT token tables
 
@@ -57,13 +57,11 @@ Account invitation digests live on their pending membership row because the
 membership owns the acceptance, rotation, address binding, and expiry as one
 lifecycle.
 
-A sign-in email change leaves the current address unchanged until the requesting
-browser proves the new mailbox. Its pending proof binds the MFA enrollment that
-authorized it; completion also needs the browser nonce and a live personal session.
-Refreshing the page loses the nonce and requires restarting; the old address
-remains usable. An abandoned proof stays inert until replaced or expired.
-
 ## Changelog
+
+- 2026-10-04: one session row per workspace Member (Firezone model); member grants,
+  personal proof routes, email change and confirmation tokens are gone; added the
+  staff realm's tokens.
 
 - 2026-09-23: new-address proof binds only the MFA enrollment and has no explicit
   cancel; replacement and expiry retire an abandoned proof.

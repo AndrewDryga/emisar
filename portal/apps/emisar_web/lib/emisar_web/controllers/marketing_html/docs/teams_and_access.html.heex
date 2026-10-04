@@ -4,11 +4,11 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="teams-and-access"
-      updated="September 23, 2026"
+      updated="October 4, 2026"
       toc={[
         {"roles", "Roles"},
         {"inviting", "Inviting your team"},
-        {"profiles", "Workspace and personal profiles"},
+        {"profiles", "Member profiles"},
         {"runner-scopes", "Per-member scope: runners and packs"},
         {"mfa", "MFA"},
         {"sessions", "Sessions & credentials"}
@@ -90,15 +90,16 @@
           href={~p"/app/team/invite"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team → Invite</a>, enter an email, choose a role, runner access, and pack access, and
-        send the invitation. Accepting it activates the pending membership; the account's
-        sign-in requirements still apply. It does not add access to an existing browser session.
-        If you're already signed in, accept the invitation, then sign out and sign in again
-        to open the new workspace. Only an owner can grant the owner role
+        send the invitation. The invited person opens the link, enters their name, and confirms a
+        code sent to the invited address; that accepts the invitation and signs them in to this
+        workspace. When the workspace requires SSO, they then sign in at the identity provider,
+        which links that identity to the new member. The workspace's MFA requirement still
+        applies. Only an owner can grant the owner role
         or manage another owner. Admins can invite and manage members up to admin.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        An invitation stays bound to the address it was sent to. Resending replaces its old
-        link; it does not follow a later change to the person's sign-in email. If emisar says
+        An invitation stays bound to the address it was sent to, and only that mailbox can accept
+        it. Resending replaces its old link. If emisar says
         the invitation can no longer be resent, remove that pending invitation and send a new
         one to the address you intend to invite.
       </p>
@@ -111,19 +112,16 @@
         preview_h="max-h-[32rem]"
       />
 
-      <.docs_h2 id="profiles">Workspace and personal profiles</.docs_h2>
+      <.docs_h2 id="profiles">Member profiles</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each workspace keeps its own display name and contact address for a member. These
-        identify the person in the team, activity and audit views, and receive workspace
-        notifications. Changing a personal name or sign-in email does not change those
-        workspace details.
+        A member's display name and email address belong to this workspace. They identify the
+        person in the team, activity and audit views, and the address receives workspace
+        notifications and sign-in codes. The address is the one the person was invited at or
+        signed up with, or the one your identity provider supplied; Profile shows it read-only.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        Edit your workspace name from Profile, or a teammate's name from Team if your role
-        allows it. Directory-managed names are read-only here; update them in the identity
-        provider. Personal name, sign-in email and global session controls require unexpired
-        personal email-link proof in this browser. SSO step-up preserves existing personal
-        proof until its original expiry; SSO alone does not supply it.
+        Edit your display name from Profile, or a teammate's from Team if your role allows it.
+        Directory-managed names are read-only here; update them in the identity provider.
       </p>
 
       <.docs_h2 id="runner-scopes">Per-member scope: runners and packs</.docs_h2>
@@ -188,8 +186,8 @@
       <.docs_h2 id="mfa">MFA</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Require MFA</strong>
-        requires the current browser to prove the member's active factor before it can use the
-        account. Members can use an authenticator app or a sign-in through an SSO connection
+        requires each session to prove the member's active factor before it can use the
+        workspace. Members can use an authenticator app or a sign-in through an SSO connection
         configured to satisfy MFA. The Team page's Authenticator count shows local enrollment,
         not whether every member satisfies the account's MFA requirement. Factor setup and
         the SSO exemption are in <.link
@@ -198,17 +196,18 @@
         >Enforce account sign-in</.link>.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        A member's authenticator belongs to the person, not to one account. An owner or admin
-        can reset it from the Team page only while this account is the only one the member
-        belongs to; a member of other accounts resets it themselves with a recovery code, or
-        asks Emisar support. An administrator or Emisar support reset ends every session
-        the member has.
+        A member's authenticator belongs to that member in this workspace; someone in two
+        workspaces sets up each one separately. An owner or admin can reset a teammate's
+        authenticator from the Team page if their role allows it, after entering their own
+        authenticator or recovery code, or signing in again through an SSO connection that
+        satisfies MFA. Emisar support can also reset it. A reset ends every session the member
+        has in this workspace.
       </p>
 
       <.docs_h2 id="sessions">Sessions &amp; credentials</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Suspend access blocks access to this workspace, ends the member's existing browser
-        access to it, and revokes the membership's agent credentials and standing approvals.
+        Suspend access blocks access to this workspace, ends the member's sessions, and
+        revokes the membership's agent credentials and standing approvals.
         Restore access restores membership
         access, but does not restore those credentials or approvals. A manual suspension stays
         in place across directory sync; a directory-deactivated member must first be reactivated

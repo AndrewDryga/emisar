@@ -3,7 +3,7 @@ name: elixir-web-is-an-adapter
 description: EmisarWeb calls top-level contexts only — no nested domain modules, no changeset construction; carriers and Auth.Subject are the named exceptions
 subsystem: portal
 sources: [portal/credo/checks/web_no_nested_domain_calls.ex, portal/credo/checks/web_no_changeset_construction.ex, portal/apps/emisar/test/emisar/web_boundary_checks_test.exs]
-updated: 2026-08-04
+updated: 2026-10-04
 ---
 
 # Rule: the web is an adapter — top-level contexts only
@@ -83,7 +83,7 @@ These are exactly three, and nothing else joins the list without a rule change:
    function head or a `:if`. They carry a shape, they run no domain code.
 3. **`Emisar.Auth.Subject`** — the universal auth carrier. The web
    authentication boundary is where a Subject is *minted*
-   (`Subject.for_member/4`, `for_api_key/3`), so it may call it
+   (`Subject.for_session/2`, `for_api_key/3`), so it may call it
    fully qualified or aliased.
 
 `EmisarWeb.*` is the web's own namespace and is never matched.
@@ -91,23 +91,27 @@ These are exactly three, and nothing else joins the list without a rule change:
 ## ✅ Good
 
 ```elixir
-# apps/emisar_web/lib/emisar_web/live/onboarding_live.ex
-case Accounts.create_account_with_owner_from_name(name, user) do
-  {:ok, account} -> ...
-  {:error, %Ecto.Changeset{data: %Accounts.Account{}} = changeset} ->
-    {:noreply, assign_form(socket, changeset)}
+# apps/emisar_web/lib/emisar_web/live/user_sign_up_live.ex
+case Accounts.validate_sign_up(params) do
+  {:ok, _sign_up} -> ...
+  {:error, %Ecto.Changeset{} = changeset} -> {:noreply, assign_form(socket, changeset)}
 end
 ```
 
 ```elixir
 # apps/emisar/lib/emisar/accounts.ex — the rule lives with the domain that owns it
-def create_account_with_owner_from_name(name, %Users.User{} = user) do
-  case create_account_with_owner(%{name: name, slug: suggest_unique_slug(name)}, user) do
-    {:ok, account} -> {:ok, account}
-    {:error, %Ecto.Changeset{data: %Account{}} = changeset} ->
-      {:error, surface_slug_error_on_name(changeset)}
-    {:error, reason} -> {:error, reason}
-  end
+def validate_sign_up(attrs) do
+  changeset = SignUpInput.changeset(attrs)
+
+  # A workspace name that derives no usable slug is reported on the one field
+  # the operator controls.
+  changeset
+  |> Ecto.Changeset.get_field(:account_name)
+  |> sign_up_account_errors()
+  |> Enum.reduce(changeset, fn {message, opts}, changeset ->
+    Ecto.Changeset.add_error(changeset, :account_name, message, opts)
+  end)
+  |> Ecto.Changeset.apply_action(:insert)
 end
 ```
 
@@ -115,12 +119,12 @@ end
 
 ```elixir
 # The adapter deriving the slug AND patching the domain's changeset.
-case Accounts.create_account_with_owner(%{name: name, slug: Accounts.suggest_unique_slug(name)}, user) do
-  {:error, changeset} -> assign_form(socket, surface_slug_error_on_name(changeset))
-end
+slug = Accounts.suggest_unique_slug(params["account_name"])
+changeset = Accounts.change_sign_up(params)
+assign_form(socket, surface_slug_error_on_name(changeset, slug))
 
-defp surface_slug_error_on_name(changeset) do
-  Ecto.Changeset.add_error(changeset, :name, message, opts)
+defp surface_slug_error_on_name(changeset, slug) do
+  Ecto.Changeset.add_error(changeset, :account_name, message, opts)
 end
 ```
 

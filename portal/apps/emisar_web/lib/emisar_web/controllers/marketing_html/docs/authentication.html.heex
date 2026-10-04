@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="authentication"
-      updated="September 23, 2026"
+      updated="October 4, 2026"
       toc={[
         {"sign-in", "Choose a sign-in method"},
         {"enforcement", "Enforce account sign-in"},
@@ -20,6 +20,12 @@
           directory or an emisar administrator owns the member lifecycle.
         </:dek>
       </.docs_header>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        Each workspace has its own sign-in page at <.docs_inline_code>app.emisar.dev/app/&lt;workspace&gt;/sign_in</.docs_inline_code>, and a
+        member signs in to each workspace separately: a member exists only inside its workspace,
+        with its own email address, MFA, and sessions. Someone who belongs to two workspaces is
+        two members and signs in to each.
+      </p>
 
       <.docs_h2 id="sign-in">Choose a sign-in method</.docs_h2>
       <div class="mt-5 overflow-hidden rounded-xl border border-zinc-800">
@@ -33,10 +39,11 @@
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <tr>
-              <td class="whitespace-nowrap px-4 py-3 font-semibold text-zinc-100">Magic link</td>
+              <td class="whitespace-nowrap px-4 py-3 font-semibold text-zinc-100">Email</td>
               <td class="px-4 py-3">
-                A single-use, expiring code goes to the member's email, paired with a nonce
-                held by the browser that started the sign-in.
+                A one-time link and a 6-character code go to the member's verified email
+                address. Either works only in the browser that asked for it, and both expire in
+                15 minutes.
               </td>
               <td class="px-4 py-3">
                 You do not need organization-managed sign-in, or you are testing account access
@@ -48,10 +55,7 @@
               <td class="px-4 py-3">
                 emisar redirects the member to your identity provider to sign in, and matches
                 the returning identity by the provider's stable subject, never by email. The
-                session may also open another workspace where the member signs in with the same
-                identity-provider account (the same issuer and subject) when that workspace's
-                sign-in rules allow access. Eligible workspaces are recorded at sign-in. The switcher
-                does not add access merely because a membership or identity link was added later.
+                session opens only the workspace that owns the connection.
               </td>
               <td class="px-4 py-3">
                 Your identity provider owns authentication and its MFA policy.
@@ -62,9 +66,11 @@
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Magic-link codes are stored hashed, and an intercepted email is not enough to sign
-        in — the browser nonce is required. Sign-in is rate-limited by IP and email address,
-        and failed attempts appear in the audit log. To connect an identity provider,
+        Sign-in codes are stored hashed, and an intercepted email is not enough to sign in —
+        the browser that asked for it must finish the sign-in. Each code allows five tries.
+        Sign-in is rate-limited by IP and email address, and failed attempts appear in the
+        audit log. A browser stays signed in to at most six workspaces at once; signing out
+        ends every workspace session in that browser. To connect an identity provider,
         continue with <.link
           navigate={~p"/docs/sso"}
           class="text-brand-400 hover:text-brand-300"
@@ -77,29 +83,27 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Require MFA</strong>
-            requires this browser to prove the member's current TOTP enrollment before they can
-            use the account. Members without TOTP set it up with any standard authenticator app;
-            other unproved sessions enter an authenticator or recovery code. Completing setup
-            proves only that browser, and disabling then re-enrolling invalidates earlier session
-            proofs.
-            Before emisar reveals an authenticator secret, the member confirms a code sent to
-            their current email address. A member without a personal login, such as one added by
-            single sign-on or directory sync, first links one on the same page. An SSO connection
-            satisfies the requirement only when you mark that provider as enforcing MFA; otherwise
-            emisar still asks for TOTP. Recovery codes are shown once and each works once.
-            Regenerating a new set requires a current authenticator or recovery code;
-            the old set works until the new one is issued.
+            requires every session in this workspace to prove the member's current
+            authenticator (TOTP). A member without one sets it up with any standard authenticator
+            app before continuing; other sessions enter an authenticator or recovery code.
+            Completing setup proves only that session, and disabling then re-enrolling
+            invalidates earlier session proofs. Before emisar reveals an authenticator secret, the
+            member proves the sign-in is still theirs: a code sent to their verified email
+            address or, for a member who signs in only through single sign-on, a fresh sign-in at
+            the identity provider. An SSO connection satisfies the requirement only when you mark
+            that provider as enforcing MFA; otherwise emisar still asks for TOTP. Recovery codes
+            are shown once and each works once. Regenerating a new set requires a current
+            authenticator or recovery code; the old set works until the new one is issued.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Require SSO</strong>
-            requires eligible SSO proof for this workspace. A browser without that proof must
-            complete SSO step-up before continuing. Personal proof keeps its original expiry.
-            The fresh SSO proof also refreshes this browser's access to your other workspaces
-            where you sign in with the same identity-provider account (the same issuer and
-            subject). Access to the rest keeps its original expiry.
+            makes members sign in through one of this workspace's SSO connections. Turning it on
+            ends every email sign-in session in the workspace, and the sign-in page then offers
+            only SSO. An invited person first confirms a code sent to the invited address, then
+            signs in at the identity provider, which links that identity to their new membership.
           </span>
         </li>
       </ul>
@@ -118,8 +122,9 @@
       <.docs_callout kind={:warn} title="Complete a real SSO sign-in before requiring it">
         <p>
           Save the connection, then choose Verify sign-in to complete a real provider sign-in.
-          Keep an owner browser with valid SSO proof for this workspace open while you check it,
+          Sign in to this workspace through SSO in another browser, keep that owner session open,
           and only then turn on Require SSO from <a href={~p"/app/team"}>Team → Security</a>.
+          Turning it on signs out every email sign-in session, including your own.
         </p>
       </.docs_callout>
 
@@ -246,21 +251,18 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Profile lists your active sessions with device information while this browser has
-            unexpired personal email-link proof. You can sign out one session or every session
-            except the current one after confirming. SSO step-up preserves existing personal
-            proof until its original expiry; SSO alone does not supply it. An administrator can
-            suspend a membership, which ends its existing browser access to this workspace and
-            revokes API keys issued from it. Independently proved access to other workspaces
-            remains available.
+            Profile lists your active sessions in this workspace with device information. You
+            can sign out one session or every session except the current one after confirming.
+            A session lasts at most 60 days. An administrator can suspend a member, which ends
+            that member's sessions and revokes API keys issued from it. The person's members in
+            other workspaces are not affected.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Disabling or deleting an SSO connection stops new sign-ins through it and removes
-            its existing sign-in proof for this workspace. Other sign-in proof and access to
-            other workspaces remain available. The
+            Disabling or deleting an SSO connection stops new sign-ins through it and ends the
+            sessions that signed in through it. Email sign-in sessions remain. The
             connection lifecycle is in <.link
               navigate={~p"/docs/sso" <> "#disable-provider"}
               class="text-brand-400 hover:text-brand-300"
@@ -278,8 +280,8 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Offboarding ends the membership's existing browser access to this workspace and
-        revokes every API key issued from it — audit-export tokens included. Enrollment keys, SCIM bearers, signing
+        Offboarding ends the member's sessions in this workspace and revokes every API key
+        issued from it — audit-export tokens included. Enrollment keys, SCIM bearers, signing
         keys, and keys held by other members keep working — rotate or revoke those through <.link
           navigate={~p"/docs/credentials"}
           class="text-brand-400 hover:text-brand-300"

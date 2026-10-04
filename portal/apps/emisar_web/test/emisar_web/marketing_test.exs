@@ -403,15 +403,13 @@ defmodule EmisarWeb.MarketingTest do
     # The registered callback the operator must wire up.
     assert html =~ "/sign_in/sso/callback"
     # The headline security posture (must match the built behavior): SSO adds a
-    # workspace member, not a login, and a colliding address resolves only against
-    # this workspace's member contacts — one member is linked by an admin, several
-    # are refused.
+    # member of this workspace only, and a colliding address resolves only against
+    # this workspace's member contacts, which an admin links.
     assert html =~ "by the identifier claim, not by their email"
-    assert squish(html) =~ "single sign-on adds a member to this workspace, not an emisar login"
+    assert squish(html) =~ "single sign-on adds a member to this workspace"
+    assert squish(html) =~ "does not turn on email sign-in"
     assert html =~ "Pending access requests"
-
-    assert squish(html) =~
-             "The sign-in is refused, because emisar cannot tell which member it is."
+    assert squish(html) =~ "no two members of a workspace share an address"
 
     assert squish(html) =~
              "Each HTTPS request for discovery, JWKS, pushed authorization, or token exchange must complete within 15 seconds. Emisar closes an OIDC connection after 30 seconds or 1 MiB of combined encrypted request-and-response traffic, including protocol overhead. Endpoints must respond directly; automatic redirects and Retry-After retries are not followed."
@@ -491,6 +489,9 @@ defmodule EmisarWeb.MarketingTest do
     note = document |> LazyHTML.query("#scim + p + div") |> LazyHTML.text() |> squish()
 
     assert html =~ "directory sync is not required for this verification"
+    # Every fresh-sign-in ceremony fails closed without `auth_time`, which Entra
+    # sends only as an optional claim.
+    assert squish(html) =~ "Entra leaves this claim out by default"
     assert note =~ "Provision members before their first sign-in"
     assert note =~ "With directory sync enabled"
     assert note =~ "email_verified"
@@ -511,11 +512,11 @@ defmodule EmisarWeb.MarketingTest do
     # Provisioning creates a member, never a login; deprovisioning suspends, never
     # deletes (must match the built behavior).
     assert squish(html) =~ "creates a workspace member at the connection's default role"
-    assert squish(html) =~ "It creates no emisar login"
+    assert squish(html) =~ "The member then signs in through the connection"
     assert html =~ "suspends"
     refute html =~ "deletes the user"
     assert squish(html) =~ "keys issued from that membership are revoked immediately"
-    assert squish(html) =~ "Independently proved access to other workspaces remains available"
+    assert squish(html) =~ "Their members in other workspaces are not affected"
     # Owner is never assignable via sync.
     assert html =~ "Owner is never assignable through"
     assert html =~ "Role mapping"
@@ -2006,7 +2007,7 @@ defmodule EmisarWeb.MarketingTest do
     test "the authentication hub separates sign-in, enforcement, and lifecycle", %{conn: conn} do
       html = conn |> get(~p"/docs/authentication") |> html_response(200)
 
-      assert html =~ "Magic link"
+      assert html =~ "A one-time link and a 6-character code"
       assert html =~ "OIDC SSO"
       assert html =~ "Require MFA"
       assert html =~ "Before emisar reveals an authenticator secret"
@@ -2014,18 +2015,18 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Regenerating a new set requires a current"
       assert html =~ "the old set works until the new one is issued"
 
-      assert squish(html) =~ "such as one added by single sign-on or directory sync"
+      assert squish(html) =~
+               "for a member who signs in only through single sign-on, a fresh sign-in at the identity provider"
+
       assert html =~ "Require SSO"
       assert html =~ "SCIM directory sync"
       assert html =~ "Sessions and offboarding"
-      assert squish(html) =~ "Eligible workspaces are recorded at sign-in"
-
-      assert squish(html) =~
-               "does not add access merely because a membership or identity link was added later"
-
-      assert squish(html) =~ "unexpired personal email-link proof"
-      assert squish(html) =~ "complete SSO step-up before continuing"
-      assert squish(html) =~ "Independently proved access to other workspaces remains available"
+      assert squish(html) =~ "a member signs in to each workspace separately"
+      assert squish(html) =~ "The session opens only the workspace that owns the connection"
+      assert squish(html) =~ "A browser stays signed in to at most six workspaces at once"
+      assert squish(html) =~ "Turning it on ends every email sign-in session in the workspace"
+      assert squish(html) =~ "Profile lists your active sessions in this workspace"
+      refute html =~ "personal"
       refute html =~ "unavailable to SSO sessions"
       refute html =~ "in SSO-only workspaces"
 
@@ -2053,19 +2054,24 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Require SSO for the account"
       assert html =~ "Rotate a client secret"
       assert html =~ "Disable or delete a connection"
-      assert html =~ "Other sign-in proof and access to other workspaces remain available"
-      assert html =~ "Re-enabling the connection does not restore retired proof"
+      assert html =~ "the sessions that signed in through it end"
+      assert html =~ "Re-enabling the connection does not restore those sessions"
       assert html =~ "Troubleshooting"
-      assert html =~ "owner browser with valid SSO proof for this workspace"
-      assert html =~ "An email-only session cannot change this setting while SSO is required"
+      assert html =~ "Keep an owner signed in to this workspace through SSO while you test"
+      assert html =~ "While SSO is required, the sign-in page offers no email sign-in"
+      refute html =~ "personal login"
       assert html =~ "controls which hosts a new member can act on"
       refute html =~ "can see and use"
     end
 
-    test "team invitations explain fresh sign-in without expanding an old browser", %{conn: conn} do
+    test "team invitations accept with a code sent to the invited address", %{conn: conn} do
       html = conn |> get(~p"/docs/teams-and-access") |> html_response(200) |> squish()
-      assert html =~ "It does not add access to an existing browser session"
-      assert html =~ "accept the invitation, then sign out and sign in again"
+
+      assert html =~
+               "confirms a code sent to the invited address; that accepts the invitation and signs them in to this workspace"
+
+      assert html =~ "only that mailbox can accept it"
+      refute html =~ "sign out and sign in again"
     end
 
     test "the SCIM page publishes the wire and directory authorization contracts", %{conn: conn} do
@@ -2099,10 +2105,10 @@ defmodule EmisarWeb.MarketingTest do
 
     test "authentication docs expose review dates without a dead edit action", %{conn: conn} do
       review_dates = [
-        {"/docs/authentication", "September 23, 2026"},
-        {"/docs/teams-and-access", "September 23, 2026"},
-        {"/docs/sso", "September 23, 2026"},
-        {"/docs/scim", "September 23, 2026"}
+        {"/docs/authentication", "October 4, 2026"},
+        {"/docs/teams-and-access", "October 4, 2026"},
+        {"/docs/sso", "October 4, 2026"},
+        {"/docs/scim", "October 4, 2026"}
       ]
 
       for {route, date} <- review_dates do
@@ -2884,9 +2890,11 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Replacing the secret does not end existing sessions"
 
       assert html =~
-               "API keys and OAuth credentials stay active, except for a member without a personal login"
+               "API keys and OAuth credentials stay active, except for a member left with no other way to sign in"
 
-      assert html =~ "Other sign-in proof and access to other workspaces remain available"
+      assert html =~
+               "Email sign-in sessions remain, and neither action suspends or deletes members"
+
       assert html =~ "Rotation replaces the bearer immediately with no overlap"
     end
 

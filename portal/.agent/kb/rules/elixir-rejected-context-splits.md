@@ -35,10 +35,10 @@ of each half, at two different seam definitions:
 | the audit's full band | 37 | 74 | 46 | **21** |
 
 Narrowing the seam does not reduce the sharing; it stays around twenty either
-way. Among the shared helpers are `ensure_can_manage_sso` — an **authorization**
-helper, so the new context's authz would defer to the old one's —
-`prepare_provider_authorization_change`, `provider_identities`, `peek_identity`,
-`capture_link_request` and `capture_member_link`.
+way. The shared helpers included `ensure_can_manage_sso`, an **authorization**
+helper, so the new context's authz would defer to the old one's, and
+`prepare_provider_authorization_change`; several others named at the time have
+since been folded away.
 
 Every Directory function is also scoped by an `%IdentityProvider{}`, which stays
 in SSO. A context whose every entry point pattern-matches another context's

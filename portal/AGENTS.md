@@ -6,8 +6,8 @@ For concrete production examples, inspect Runbooks and Policies. Use the fiction
 Widgets templates in the reference to learn the shape without copying incidental
 production complexity.
 
-Emisar.Users owns cross-account identity and self-service through the Subject actor.
-Emisar.Accounts owns tenancy, memberships, invitations, permission semantics, and audit.
+Emisar.Auth owns sign-in, per-workspace sessions, MFA and the Subject. Emisar.Accounts
+owns tenancy, Members (the only person record), invitations, permissions, and audit.
 
 ## Required reading by task
 

@@ -43,7 +43,7 @@ end
 ```elixir
 def magic_link_verify_code(conn, %{"code" => code}) do
   case Auth.verify_magic_link(...) do
-    {:ok, user} -> log_in_user(conn, user)
+    {:ok, membership_id} -> complete_sign_in(conn, membership_id)
     _ ->
       conn
       |> put_flash(:error, "That code didn't match. Resend a fresh one below.")
