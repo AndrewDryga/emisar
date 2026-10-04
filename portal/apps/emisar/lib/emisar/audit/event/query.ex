@@ -157,7 +157,7 @@ defmodule Emisar.Audit.Event.Query do
        {"membership.personal_login_detached", "Personal login detached",
         "Member's personal login detached"},
        {"membership.removed", "Member removed", "Member removed"},
-       {"membership.erased", "User account deleted", "Member’s user account deleted"},
+       {"membership.erased", "Member erased", "Member erased by Emisar staff"},
        {"membership.suspended", "Member suspended", "Member suspended"},
        {"membership.reinstated", "Member reinstated", "Member reinstated"},
        {"membership.runner_access_changed", "Runner access changed", "Runner access changed"}
@@ -952,7 +952,7 @@ defmodule Emisar.Audit.Event.Query do
     "membership.removed" => {true, true, true, "An admin removed a member from the workspace."},
     "membership.erased" =>
       {false, false, true,
-       "Emisar staff erased this member's user account, so their seat here went with it."},
+       "Emisar staff erased this member's seat in the workspace, on a verified erasure request."},
     "membership.suspended" =>
       {true, true, true, "An admin suspended a member — they can't sign into this workspace."},
     "membership.reinstated" => {true, true, true, "An admin reinstated a suspended member."},
