@@ -18,15 +18,16 @@ defmodule EmisarWeb.MarketingAttribution do
   @stored_params @campaign_touch_params ++ @referrer_params
   @value_max_bytes 255
   # The session cookie also carries up to six workspace sessions, a return path
-  # and a sign-in ceremony within its 4 KB, so the whole map is bounded too:
-  # values past this budget are left out, in the order `@stored_params` lists.
+  # and a sign-in ceremony within its 4 KB, so the whole map is bounded too.
+  # What is already stored keeps its place (first touch); newly seen values take
+  # only the room left, in the order `@stored_params` lists.
   @total_max_bytes 512
 
   @doc "Persist bounded first-touch campaign and external-referrer attribution."
   def capture(conn) do
     stored = session_params(conn)
     current = current_params(conn)
-    attribution = stored |> merge_first_touch(current) |> bound_total()
+    attribution = stored |> merge_first_touch(current) |> bound_total(stored)
 
     if attribution != stored do
       put_session(conn, @session_key, attribution)
@@ -182,23 +183,22 @@ defmodule EmisarWeb.MarketingAttribution do
 
   defp normalize(_params), do: %{}
 
-  defp bound_total(attribution) do
-    {bounded, _left} =
-      Enum.reduce(@stored_params, {%{}, @total_max_bytes}, fn key, {bounded, left} ->
-        case Map.get(attribution, key) do
-          nil ->
-            {bounded, left}
-
-          value ->
-            size = byte_size(key) + byte_size(value)
-
-            if size <= left,
-              do: {Map.put(bounded, key, value), left - size},
-              else: {bounded, left}
-        end
-      end)
-
+  defp bound_total(attribution, stored) do
+    {kept, left} = admit(stored, %{}, @total_max_bytes)
+    {bounded, _left} = admit(Map.drop(attribution, Map.keys(kept)), kept, left)
     bounded
+  end
+
+  defp admit(values, bounded, left) do
+    Enum.reduce(@stored_params, {bounded, left}, fn key, {bounded, left} ->
+      with {:ok, value} <- Map.fetch(values, key),
+           size = byte_size(key) + byte_size(value),
+           true <- size <= left do
+        {Map.put(bounded, key, value), left - size}
+      else
+        _absent_or_too_big -> {bounded, left}
+      end
+    end)
   end
 
   defp put_value(attribution, key, value) do

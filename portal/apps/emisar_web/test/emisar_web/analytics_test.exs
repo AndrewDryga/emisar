@@ -140,6 +140,44 @@ defmodule EmisarWeb.AnalyticsTest do
       refute inspect(stored) =~ "private-path"
     end
 
+    test "a later campaign never evicts the first referrer; it takes only the room left", %{
+      conn: conn
+    } do
+      conn =
+        conn
+        |> put_req_header("referer", "https://partner.example/")
+        |> get(~p"/pricing")
+
+      campaign = String.duplicate("c", 255)
+
+      query =
+        URI.encode_query(%{
+          "utm_source" => "partner",
+          "utm_medium" => "email",
+          "utm_campaign" => campaign,
+          "utm_content" => String.duplicate("d", 172)
+        })
+
+      conn =
+        conn
+        |> recycle()
+        |> put_req_header("user-agent", @browser_user_agent)
+        |> get("/security?" <> query)
+
+      conn =
+        conn
+        |> recycle()
+        |> put_req_header("user-agent", @browser_user_agent)
+        |> put_req_header("referer", "https://t.co/")
+        |> get(~p"/pricing")
+
+      stored = get_session(conn, :analytics_campaign_attribution)
+      assert stored["$initial_referrer"] == "https://partner.example/"
+      assert stored["$initial_referring_domain"] == "partner.example"
+      assert stored["utm_campaign"] == campaign
+      refute Map.has_key?(stored, "utm_content")
+    end
+
     test "the stored attribution keeps to its share of the session cookie", %{conn: conn} do
       long = String.duplicate("c", 255)
 
