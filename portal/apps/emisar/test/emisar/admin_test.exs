@@ -816,6 +816,12 @@ defmodule Emisar.AdminTest do
       assert result.id == account.id
       assert result.slug == account.slug
       assert result.billing.plan == "free"
+
+      # The customer sees the read, as from the console; the team, not a person.
+      assert [viewed] = staff_views(account)
+
+      assert {viewed.actor_kind, viewed.actor_label, viewed.actor_id} ==
+               {"staff", "Emisar staff", nil}
     end
 
     test "account.create makes a workspace whose owner is an invitation, once" do
@@ -903,6 +909,7 @@ defmodule Emisar.AdminTest do
       assert diagnosis.email_verified
       refute diagnosis.mfa_enabled
       assert diagnosis.active_sessions == 1
+      assert [_viewed] = staff_views(account)
     end
 
     test "runs the member support verbs with a platform subject" do
@@ -1316,5 +1323,12 @@ defmodule Emisar.AdminTest do
       "000000" -> "111111"
       _current -> "000000"
     end
+  end
+
+  defp staff_views(account) do
+    Audit.Event.Query.all()
+    |> Audit.Event.Query.by_account_id(account.id)
+    |> Audit.Event.Query.by_event_type("staff.account_viewed")
+    |> Repo.all()
   end
 end

@@ -305,6 +305,32 @@ defmodule Emisar.AuthSignUpTest do
       assert is_nil(sign_up.full_name)
     end
 
+    test "judges the derived slug's shape without reading which slugs are taken" do
+      # The sign-up form submits this unauthenticated, on every save.
+      test_pid = self()
+      handler = {__MODULE__, test_pid, make_ref()}
+
+      :ok =
+        :telemetry.attach(
+          handler,
+          [:emisar, :repo, :query],
+          fn _event, _measurements, metadata, _config ->
+            if self() == test_pid, do: send(test_pid, {:sign_up_query, metadata.query})
+          end,
+          nil
+        )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      assert {:ok, _sign_up} =
+               Accounts.validate_sign_up(%{
+                 "email" => "owner@example.test",
+                 "account_name" => "Acme"
+               })
+
+      refute_received {:sign_up_query, _query}
+    end
+
     test "refuses a missing address or workspace name, and a name whose slug the workspace would refuse" do
       assert {:error, changeset} = Accounts.validate_sign_up(%{})
       assert %{email: [_ | _], account_name: [_ | _]} = errors_on(changeset)

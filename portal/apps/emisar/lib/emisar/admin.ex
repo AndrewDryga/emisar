@@ -242,7 +242,8 @@ defmodule Emisar.Admin do
 
       {:error, reason} ->
         Logger.warning(
-          "staff sign-in code not delivered staff_id=#{staff.id} reason=#{inspect(reason)}"
+          "staff sign-in code not delivered staff_id=#{staff.id} " <>
+            "reason=#{Mailers.UserNotifier.failure_label(reason)}"
         )
     end
   end
@@ -512,8 +513,8 @@ defmodule Emisar.Admin do
   longer live. The account is found by id or slug, disabled ones included.
 
   The overview is a map of sections, each carrying whole structs: `:account`,
-  `:billing` (`Billing.support_plan/1`), `:members` (memberships with their
-  user, suspended and unaccepted invitations included), `:sso` (identity
+  `:billing` (`Billing.support_plan/1`), `:members` (every Member, suspended
+  and unaccepted invitations included), `:sso` (identity
   providers — an account may hold one per kind), `:fleet` (`:counts` by
   connection state plus up to 50 `:runners`, most recently connected first),
   `:runs` (`:count_30d` and the 10 most recent), `:mcp` (`:active_api_keys`
@@ -622,7 +623,8 @@ defmodule Emisar.Admin do
 
   defp dispatch("emisar.admin.account.show", args) do
     with {:ok, account} <- fetch_account(args),
-         {:ok, plan} <- Billing.support_plan(account) do
+         {:ok, plan} <- Billing.support_plan(account),
+         {:ok, _event} <- Audit.record(Audit.Events.staff_account_viewed_by_support(account)) do
       result = account |> account_result() |> Map.put(:billing, plan)
       {:ok, result}
     end
@@ -698,7 +700,8 @@ defmodule Emisar.Admin do
          %{"member" => member} = args
        ) do
     with {:ok, account} <- fetch_account(args),
-         {:ok, membership} <- fetch_membership(account.id, member) do
+         {:ok, membership} <- fetch_membership(account.id, member),
+         {:ok, _event} <- Audit.record(Audit.Events.staff_account_viewed_by_support(account)) do
       {:ok,
        %{
          account: account_result(account),

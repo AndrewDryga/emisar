@@ -28,17 +28,29 @@ defmodule Emisar.Audit.Events do
 
   # -- Account ---------------------------------------------------------
 
-  def account_created(%Accounts.Account{} = account, %Accounts.Membership{} = owner) do
-    Audit.changeset(account.id, "account.created",
-      actor_kind: "membership",
-      actor_id: owner.id,
-      target_kind: "account",
-      target_id: account.id,
-      target_label: account.name,
-      # A brand-new account has no subscription yet, so it is always on the
-      # free plan at creation — recorded literally to avoid a cross-context
-      # Billing call from the audit layer.
-      payload: %{plan: "free", slug: account.slug}
+  def account_created(%Accounts.Account{} = account, %Accounts.Membership{} = owner),
+    do: account_created_event(account, actor_kind: "membership", actor_id: owner.id)
+
+  # Staff create a workspace for an owner who is only invited and has done
+  # nothing yet, so the row is the platform's (`system`), like the invitation
+  # beside it — never the invitee's.
+  def account_created(%Accounts.Account{} = account, %Subject{} = subject),
+    do: account_created_event(account, actor(subject))
+
+  defp account_created_event(%Accounts.Account{} = account, actor_fields) do
+    Audit.changeset(
+      account.id,
+      "account.created",
+      actor_fields ++
+        [
+          target_kind: "account",
+          target_id: account.id,
+          target_label: account.name,
+          # A brand-new account has no subscription yet, so it is always on the
+          # free plan at creation — recorded literally to avoid a cross-context
+          # Billing call from the audit layer.
+          payload: %{plan: "free", slug: account.slug}
+        ]
     )
   end
 
@@ -192,7 +204,18 @@ defmodule Emisar.Audit.Events do
   `%Subject{}` to derive the actor from; the `%Admin.Staff{}` head still holds
   so a caller cannot record a view without a resolved staff login.
   """
-  def staff_account_viewed(%Admin.Staff{}, %Accounts.Account{} = account) do
+  def staff_account_viewed(%Admin.Staff{}, %Accounts.Account{} = account),
+    do: staff_account_view(account)
+
+  @doc """
+  Emisar staff read an account through the private admin pack: the same row a
+  console view writes, so a customer sees every staff read of its workspace.
+  The run that read it, and who asked, is the management workspace's record.
+  """
+  def staff_account_viewed_by_support(%Accounts.Account{} = account),
+    do: staff_account_view(account)
+
+  defp staff_account_view(%Accounts.Account{} = account) do
     Audit.changeset(account.id, "staff.account_viewed",
       actor_kind: "staff",
       actor_label: @staff_actor_label,

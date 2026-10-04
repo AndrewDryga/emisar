@@ -240,7 +240,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
   } do
     secret = Auth.generate_mfa_secret()
     sibling_token = Fixtures.Auth.create_session_token!(member)
-    {:ok, enrolled, _codes} = Fixtures.Memberships.enroll_mfa(secret, subject)
+    {enrolled, _codes} = Fixtures.Memberships.enable_mfa!(secret, subject)
 
     {:ok, lv, html} = live(conn, setup_path(account))
     assert html =~ "Enter an authenticator or recovery code to continue."

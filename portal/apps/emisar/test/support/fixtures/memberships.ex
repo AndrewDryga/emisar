@@ -296,9 +296,21 @@ defmodule Emisar.Fixtures.Memberships do
     proof
   end
 
-  @doc "Enrolls MFA as test setup, unwrapping `enroll_mfa/3` to `{membership, recovery_codes}`."
+  @doc """
+  Enrolls MFA as test setup, unwrapping `enroll_mfa/3` to `{membership,
+  recovery_codes}`. Enrollment spends the code that proved it, so setup leaves
+  the factor enrolled one 30-second step ago: a test can answer a challenge
+  with the current code straight away.
+  """
   def enable_mfa!(secret, %Subject{} = subject, opts \\ []) when is_binary(secret) do
     {:ok, membership, codes} = enroll_mfa(secret, subject, opts)
-    {membership, codes}
+    {enrolled_a_step_ago(membership), codes}
   end
+
+  @doc """
+  Moves a fresh enrollment's replay stamp one 30-second step back, as if the
+  factor were enrolled a step ago, so a test can answer with the current code.
+  """
+  def enrolled_a_step_ago(%Membership{mfa_last_used_at: %DateTime{} = stamped} = membership),
+    do: set_mfa_state(membership, mfa_last_used_at: DateTime.add(stamped, -30, :second))
 end

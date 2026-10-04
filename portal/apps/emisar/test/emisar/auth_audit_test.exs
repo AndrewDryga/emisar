@@ -114,7 +114,7 @@ defmodule Emisar.AuthAuditTest do
       proof: proof,
       session_token: session_token
     } do
-      {:ok, _enabled, _} =
+      {:ok, enabled, _} =
         Auth.enable_mfa(
           secret,
           Fixtures.Auth.totp_code(secret),
@@ -122,6 +122,8 @@ defmodule Emisar.AuthAuditTest do
           Crypto.hash(session_token),
           subject
         )
+
+      Fixtures.Memberships.enrolled_a_step_ago(enabled)
 
       :ok = Audit.subscribe_account_audit(account.id)
       assert {:ok, _} = Auth.disable_mfa(Fixtures.Auth.totp_code(secret), subject)
@@ -169,6 +171,8 @@ defmodule Emisar.AuthAuditTest do
           subject
         )
 
+      enabled = Fixtures.Memberships.enrolled_a_step_ago(enabled)
+
       assert {:ok, _proof} =
                Auth.verify_mfa_challenge(enabled.id, {:totp, Fixtures.Auth.totp_code(secret)})
 
@@ -192,6 +196,8 @@ defmodule Emisar.AuthAuditTest do
           Crypto.hash(session_token),
           subject
         )
+
+      enabled = Fixtures.Memberships.enrolled_a_step_ago(enabled)
 
       assert {:ok, mfa_proof} =
                Auth.verify_mfa_challenge(enabled.id, {:totp, Fixtures.Auth.totp_code(secret)})
@@ -317,7 +323,7 @@ defmodule Emisar.AuthAuditTest do
       proof: proof,
       session_token: session_token
     } do
-      {:ok, _enabled, _} =
+      {:ok, enabled, _} =
         Auth.enable_mfa(
           secret,
           Fixtures.Auth.totp_code(secret),
@@ -325,6 +331,8 @@ defmodule Emisar.AuthAuditTest do
           Crypto.hash(session_token),
           subject
         )
+
+      Fixtures.Memberships.enrolled_a_step_ago(enabled)
 
       :ok = Audit.subscribe_account_audit(account.id)
 
@@ -716,9 +724,11 @@ defmodule Emisar.AuthAuditTest do
                  %{full_name: "Emisar Support"}
                )
 
+      # The invitee has done nothing yet: the platform created the workspace.
       assert [created] = events_of(account, "account.created")
       assert created.payload == %{"plan" => "free", "slug" => slug}
-      assert created.actor_id == owner.id
+      assert created.actor_kind == "system"
+      assert created.actor_id == nil
 
       assert [invited] = events_of(account, "user.invited")
       assert invited.target_id == owner.id

@@ -150,6 +150,32 @@ defmodule Emisar.AccountsTest do
       refute Repo.reload(owner)
     end
 
+    test "retires the standing approval grants the erased Member issued, with their audit rows" do
+      account = Fixtures.Accounts.create_account()
+      _owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      approver = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+
+      grant =
+        Fixtures.Approvals.create_grant(
+          account_id: account.id,
+          api_key_id: key.id,
+          granted_by_membership_id: approver.id
+        )
+
+      assert {:ok, %{account: nil}} = Accounts.erase_member(account.id, approver.id)
+
+      assert Repo.reload!(grant).revoked_at
+
+      assert %AuditEvent{target_id: revoked_id} =
+               AuditEvent.Query.all()
+               |> AuditEvent.Query.by_account_id(account.id)
+               |> AuditEvent.Query.by_event_type("approval.grant_revoked")
+               |> Repo.one()
+
+      assert revoked_id == grant.id
+    end
+
     test "refuses an owner whose workspace has other Members and no other owner" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
@@ -2264,6 +2290,27 @@ defmodule Emisar.AccountsTest do
       viewer_fact = Enum.find(viewer_facts, &(&1.membership.id == suspended.id))
       refute Map.has_key?(viewer_fact, :suspended_by_label)
       assert is_nil(viewer_fact.membership.disabled_by_membership_id)
+    end
+
+    test "a manager demoted since its socket mounted reads the roster as a viewer", %{
+      account: account,
+      subject: owner_subject
+    } do
+      target = Fixtures.Memberships.create_membership(account_id: account.id)
+      assert {:ok, _suspended} = Accounts.suspend_membership(target, owner_subject)
+
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      held = Fixtures.Subjects.subject_for(admin)
+      assert {:ok, _viewer} = Accounts.update_membership_role(admin, "viewer", owner_subject)
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, held)
+
+      refute facts
+             |> Enum.find(&(&1.membership.id == target.id))
+             |> Map.has_key?(:suspended_by_label)
+
+      assert {:ok, fact} = Accounts.fetch_team_member_facts(target.id, held)
+      refute Map.has_key?(fact, :suspended_by_label)
     end
 
     test "a former suspension author retains exact local history after a rejoin", %{
@@ -4771,7 +4818,8 @@ defmodule Emisar.AccountsTest do
       assert enrolled.mfa_secret == mfa_reset_secret()
       assert enrolled.mfa_enabled_at == enabled_at
       assert enrolled.mfa_recovery_codes == ["digest-a", "digest-b"]
-      assert is_nil(enrolled.mfa_last_used_at)
+      # The code that proved the enrollment is spent with it.
+      assert enrolled.mfa_last_used_at == enabled_at
       assert event.event_type == "user.mfa_enabled"
 
       assert {event.account_id, event.actor_id, event.target_id} ==
@@ -4796,6 +4844,23 @@ defmodule Emisar.AccountsTest do
 
       assert Accounts.disable_member_mfa(disabled, audit: audit) == {:error, :mfa_not_enabled}
       assert [_same] = member_security_events(member.account_id, "user.mfa_disabled")
+    end
+
+    test "a factor proved before a reset and a new enrollment cannot turn the new one off" do
+      proved = Fixtures.Memberships.create_membership() |> enroll_member_mfa()
+      audit = &Audit.Events.member_security_event(&1, "user.mfa_disabled", %RequestContext{})
+
+      # Between the proof and the disable: a reset, then a fresh enrollment.
+      replacement =
+        Fixtures.Memberships.set_mfa_state(proved,
+          mfa_secret: "KRSXG5CTMVRXEZLU",
+          mfa_enabled_at: DateTime.add(proved.mfa_enabled_at, 60, :second),
+          mfa_recovery_codes: ["digest-c"]
+        )
+
+      assert Accounts.disable_member_mfa(proved, audit: audit) == {:error, :mfa_proof_stale}
+      assert Repo.reload!(replacement).mfa_enabled_at == replacement.mfa_enabled_at
+      assert member_security_events(proved.account_id, "user.mfa_disabled") == []
     end
   end
 
@@ -6234,6 +6299,31 @@ defmodule Emisar.AccountsTest do
       assert sent.text_body =~ "Operator"
       assert sent.text_body =~ "Invitation expires:"
       assert is_binary(sent.html_body)
+    end
+
+    test "a seat that may not invite spends none of the workspace's hourly budget" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      {owner, account, owner_subject} = Fixtures.Subjects.owner_subject()
+
+      viewer =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+        |> Fixtures.Subjects.subject_for()
+
+      for n <- 1..100 do
+        attrs = Fixtures.Accounts.invitation_attrs(email: "denied-#{n}@example.test")
+
+        assert Accounts.invite_user_to_account_and_deliver(attrs, owner, viewer) ==
+                 {:error, :unauthorized}
+      end
+
+      email = "after-denials-#{System.unique_integer([:positive])}@example.test"
+
+      assert {:ok, %{delivery: {:ok, :sent}}} =
+               Accounts.invite_user_to_account_and_deliver(
+                 Fixtures.Accounts.invitation_attrs(email: email, role: "operator"),
+                 owner,
+                 owner_subject
+               )
     end
 
     test "a workspace that spent its hourly invitation budget is refused before any write" do

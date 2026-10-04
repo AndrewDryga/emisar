@@ -183,7 +183,8 @@ defmodule Emisar.Accounts.Membership.Changeset do
   @doc """
   Turn the Member's TOTP on or off. `secret` and `enabled_at` both set enable
   it; both nil disable it. `recovery_codes` is the digest list, replaced every
-  time so old codes never survive a toggle, and the replay stamp starts clean.
+  time so old codes never survive a toggle. The replay stamp starts at
+  `enabled_at`: the code that proved the enrollment is spent with it.
   """
   def mfa(%Membership{} = membership, secret, enabled_at, recovery_codes)
       when is_list(recovery_codes) do
@@ -191,7 +192,7 @@ defmodule Emisar.Accounts.Membership.Changeset do
       mfa_secret: secret,
       mfa_enabled_at: enabled_at,
       mfa_recovery_codes: recovery_codes,
-      mfa_last_used_at: nil
+      mfa_last_used_at: enabled_at
     )
   end
 

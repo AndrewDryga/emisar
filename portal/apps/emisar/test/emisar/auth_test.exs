@@ -1,5 +1,6 @@
 defmodule Emisar.AuthTest do
   use Emisar.DataCase, async: true
+  import ExUnit.CaptureLog
   alias Emisar.{Accounts, Audit, Auth, Crypto, Fixtures, Mail, RequestContext}
   alias Emisar.Accounts.{Account, Membership}
   alias Emisar.Auth.{SecurityAttemptWindow, Subject, UserToken}
@@ -457,6 +458,35 @@ defmodule Emisar.AuthTest do
       send(sender, :release)
       assert_receive {:email, %{to: [{"", address}]}}, 2_000
       assert address == member.email
+    end
+
+    test "a failed send logs the code's token and a label, never the provider's body", %{
+      member: member,
+      account: account
+    } do
+      Emisar.Config.put_override(:emisar, :email_codes_async?, true)
+      parent = self()
+
+      # Postmark's refusal names the address it refused.
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, fn _email ->
+        send(parent, {:sending, self()})
+        {:error, {422, %{"Message" => "Found inactive addresses: #{member.email}."}}}
+      end)
+
+      log =
+        capture_log(fn ->
+          assert {:ok, %{token_id: token_id}} =
+                   Auth.request_magic_link(account, member.email, %RequestContext{})
+
+          assert_receive {:sending, sender}, 2_000
+          ref = Process.monitor(sender)
+          assert_receive {:DOWN, ^ref, :process, ^sender, _reason}, 2_000
+          send(parent, {:token_id, token_id})
+        end)
+
+      assert_received {:token_id, token_id}
+      assert log =~ "sign-in code not delivered token_id=#{token_id} reason=http_422"
+      refute log =~ member.email
     end
 
     test "the address is matched case-insensitively", %{member: member, account: account} do
@@ -2118,6 +2148,20 @@ defmodule Emisar.AuthTest do
       }
     end
 
+    test "spends the code that proved the enrollment: it cannot answer a challenge next", %{
+      secret: secret,
+      subject: subject,
+      session_token: session_token
+    } do
+      proof = Fixtures.Memberships.mfa_enrollment_proof(subject)
+      otp = Fixtures.Auth.totp_code(secret)
+
+      assert {:ok, enrolled, _codes} =
+               Auth.enable_mfa(secret, otp, proof, Crypto.hash(session_token), subject)
+
+      assert Auth.verify_mfa_challenge(enrolled.id, {:totp, otp}) == {:error, :replay}
+    end
+
     test "with the correct OTP persists the secret + returns recovery codes, stamping only this session",
          %{
            account: account,
@@ -2532,7 +2576,7 @@ defmodule Emisar.AuthTest do
       secret: secret,
       subject: subject
     } do
-      {:ok, _member, [old_code | _]} = Fixtures.Memberships.enroll_mfa(secret, subject)
+      {_member, [old_code | _]} = Fixtures.Memberships.enable_mfa!(secret, subject)
       otp = Fixtures.Auth.totp_code(secret)
 
       assert {:ok, %Membership{mfa_enabled_at: %DateTime{}} = member, new_codes} =
@@ -2581,7 +2625,7 @@ defmodule Emisar.AuthTest do
       secret: secret,
       subject: subject
     } do
-      {:ok, member, _codes} = Fixtures.Memberships.enroll_mfa(secret, subject)
+      {member, _codes} = Fixtures.Memberships.enable_mfa!(secret, subject)
       otp = Fixtures.Auth.totp_code(secret)
 
       results =
@@ -2900,7 +2944,7 @@ defmodule Emisar.AuthTest do
 
       # The capped attempt never reached verification: the genuine code was
       # refused without being consumed (a verify would have stamped the row).
-      assert Repo.reload!(member).mfa_last_used_at == nil
+      assert Repo.reload!(member).mfa_last_used_at == member.mfa_last_used_at
     end
 
     test "the cap is per Member — an exhausted window doesn't throttle another Member", %{

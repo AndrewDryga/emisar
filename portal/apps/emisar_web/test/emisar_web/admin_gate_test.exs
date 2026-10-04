@@ -245,6 +245,18 @@ defmodule EmisarWeb.AdminGateTest do
       assert flash["error"] == "Your staff session has ended. Sign in again."
     end
 
+    test "an open dashboard re-checks the session before every page change", %{conn: conn} do
+      # LiveDashboard moves between pages by patching, with no event to hook.
+      {conn, staff_session} = log_in_staff(conn)
+      {:ok, live, _html} = live(conn, "/ops/live/home")
+
+      Repo.delete!(staff_session)
+      render_patch(live, "/ops/live/ecto_stats")
+
+      flash = assert_redirect(live, ~p"/admin/sign_in")
+      assert flash["error"] == "Your staff session has ended. Sign in again."
+    end
+
     test "an open console leaves when its session expires", %{conn: conn} do
       {conn, staff_session} = log_in_staff(conn)
       {:ok, live, _html} = live(conn, ~p"/admin")

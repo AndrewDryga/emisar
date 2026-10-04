@@ -753,7 +753,7 @@ defmodule Emisar.Auth do
     with {:ok, %{account: account, membership: membership, token: token}} <-
            issue_magic_link(target, digest, context) do
       delivery =
-        deliver_code(fn ->
+        deliver_code(token.id, fn ->
           Mailers.UserNotifier.deliver_magic_link(membership, token.id, secret, context, account)
         end)
 
@@ -766,20 +766,29 @@ defmodule Emisar.Auth do
   # times the form which addresses belong to the workspace. The mail goes out on
   # the domain's task supervisor (drained on shutdown) and a failure is logged
   # there. Tests send inline (`:email_codes_async?` false) to observe the outcome.
-  defp deliver_code(send) do
+  defp deliver_code(token_id, send) do
     if Emisar.Config.get_env(:emisar, :email_codes_async?, true) do
       supervisor = Application.fetch_env!(:emisar, :task_supervisor)
-      {:ok, _pid} = Task.Supervisor.start_child(supervisor, fn -> log_code_delivery(send.()) end)
+
+      {:ok, _pid} =
+        Task.Supervisor.start_child(supervisor, fn -> log_code_delivery(send.(), token_id) end)
+
       {:ok, :queued}
     else
       send.() |> delivery_outcome()
     end
   end
 
-  defp log_code_delivery({:error, reason}),
-    do: Logger.warning("sign-in code not delivered reason=#{inspect(reason)}")
+  # The code's token id ties a failure to the request; the reason is only its
+  # label, because a provider's error body can echo the recipient's address.
+  defp log_code_delivery({:error, reason}, token_id) do
+    Logger.warning(
+      "sign-in code not delivered token_id=#{token_id} " <>
+        "reason=#{Mailers.UserNotifier.failure_label(reason)}"
+    )
+  end
 
-  defp log_code_delivery(_sent_or_suppressed), do: :ok
+  defp log_code_delivery(_sent_or_suppressed, _token_id), do: :ok
 
   # Mints the split-code token: the caller keeps `nonce` browser-side, the
   # `secret` (a short alphanumeric code) is emailed alongside a link carrying

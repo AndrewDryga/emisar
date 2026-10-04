@@ -527,8 +527,11 @@ defmodule Emisar.Accounts do
     |> Ecto.Changeset.apply_action(:insert)
   end
 
+  # The slug's shape alone: which free suffix it gets is chosen when the proved
+  # sign-up creates the workspace, so this unauthenticated form never walks the
+  # taken-slug chain, a query per suffix, on every submit.
   defp sign_up_account_errors(name) when is_binary(name) do
-    account_changeset = Account.Changeset.create(%{name: name, slug: suggest_unique_slug(name)})
+    account_changeset = Account.Changeset.create(%{name: name, slug: slug_base(name)})
 
     case {account_changeset.errors[:name], account_changeset.errors[:slug]} do
       {nil, nil} -> []
@@ -636,8 +639,8 @@ defmodule Emisar.Accounts do
     |> Multi.run(:policy, fn _repo, %{account: account, membership: owner} ->
       Emisar.Policies.seed_policy(account.id, owner.id)
     end)
-    |> Multi.insert(:account_created, fn %{account: account, membership: owner} ->
-      Audit.Events.account_created(account, owner)
+    |> Multi.insert(:account_created, fn %{account: account} ->
+      Audit.Events.account_created(account, %Subject{account: account})
     end)
     |> Multi.insert(:audit, fn %{account: account, membership: owner} ->
       Audit.Events.user_invited(%Subject{account: account}, owner, :owner, RunnerAccess.all())
@@ -1040,10 +1043,9 @@ defmodule Emisar.Accounts do
   Suggests a unique slug for `name`. If the slugified name is taken,
   appends `-1`, `-2`, … until free.
   """
-  def suggest_unique_slug(name) do
-    base = Slug.slugify(name, max_length: 60, default: "team")
-    do_suggest(base, 0)
-  end
+  def suggest_unique_slug(name), do: name |> slug_base() |> do_suggest(0)
+
+  defp slug_base(name), do: Slug.slugify(name, max_length: 60, default: "team")
 
   defp do_suggest(base, attempt) do
     candidate = if attempt == 0, do: base, else: "#{base}-#{attempt}"
@@ -1150,21 +1152,23 @@ defmodule Emisar.Accounts do
   `{:ok, [facts], %Paginator.Metadata{}}`.
   """
   def list_team_member_facts(%Account{id: account_id}, %Subject{} = subject, opts \\ []) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
+    # Manager-only facts follow the authority read now, not the one a held
+    # socket cached: a manager demoted since keeps reading the roster as a viewer.
+    with {:ok, current} <-
+           Auth.Authorizer.fetch_authorized_subject(
              subject,
              Authorizer.view_own_account_permission()
            ),
-         :ok <- Subject.ensure_in_account(subject, account_id, :unauthorized),
-         {:ok, memberships, metadata} <- list_team_memberships(account_id, subject, opts) do
+         :ok <- Subject.ensure_in_account(current, account_id, :unauthorized),
+         {:ok, memberships, metadata} <- list_team_memberships(account_id, current, opts) do
       access_by_membership = runner_access_for_memberships(memberships)
-      manager? = subject_can_manage_team?(subject)
+      manager? = subject_can_manage_team?(current)
       suspended_by_labels = suspended_by_labels(memberships, account_id, manager?)
 
       facts =
         Enum.map(
           memberships,
-          &team_member_facts(&1, access_by_membership, suspended_by_labels, manager?, subject)
+          &team_member_facts(&1, access_by_membership, suspended_by_labels, manager?, current)
         )
 
       {:ok, facts, metadata}
@@ -1188,18 +1192,18 @@ defmodule Emisar.Accounts do
   `{:ok, facts}` or `{:error, :not_found | :unauthorized}`.
   """
   def fetch_team_member_facts(membership_id, %Subject{} = subject) do
-    with :ok <-
-           Auth.Authorizer.ensure_has_permissions(
+    with {:ok, current} <-
+           Auth.Authorizer.fetch_authorized_subject(
              subject,
              Authorizer.view_own_account_permission()
            ),
-         {:ok, membership} <- fetch_team_membership(membership_id, subject) do
+         {:ok, membership} <- fetch_team_membership(membership_id, current) do
       access_by_membership = runner_access_for_memberships([membership])
-      manager? = subject_can_manage_team?(subject)
+      manager? = subject_can_manage_team?(current)
       suspended_by_labels = suspended_by_labels([membership], membership.account_id, manager?)
 
       {:ok,
-       team_member_facts(membership, access_by_membership, suspended_by_labels, manager?, subject)}
+       team_member_facts(membership, access_by_membership, suspended_by_labels, manager?, current)}
     end
   end
 
@@ -1352,10 +1356,15 @@ defmodule Emisar.Accounts do
 
   defp erasure_scope(_repo, %Membership{}), do: :seat
 
-  # The seat's keys are revoked rather than left behind with no creator, and its
-  # sessions are deleted first so their sockets disconnect once it commits.
+  # What the seat delegated is retired as a removal retires it, each with its
+  # audit row, rather than left behind with no author: its keys and device
+  # grants, its standing approval grants and its approve votes on pending
+  # requests. Its sessions are deleted first so their sockets disconnect once
+  # it commits.
   defp erase_seat(repo, %Membership{} = membership) do
     with {:ok, _revoked} <- ApiKeys.revoke_credentials_for_membership(repo, membership.id),
+         {:ok, _grants} <- Approvals.revoke_grants_granted_by_membership(repo, membership),
+         {:ok, _votes} <- Approvals.revoke_decisions_by_membership(repo, membership),
          {:ok, %{socket_topics: topics}} <- Auth.delete_membership_sessions(membership, repo),
          {:ok, _membership} <- repo.delete(membership) do
       {:ok, %{account: nil, socket_topics: topics}}
@@ -3226,19 +3235,31 @@ defmodule Emisar.Accounts do
   Internal — Auth: turn the Member's TOTP off under its row lock, after Auth
   verified a current factor. `opts[:audit]` supplies the event changeset, so
   the factor and its audit row commit together. A Member whose factor is
-  already gone is `{:error, :mfa_not_enabled}`.
+  already gone is `{:error, :mfa_not_enabled}`; one whose factor was replaced
+  since `membership` was verified is `{:error, :mfa_proof_stale}`.
   """
-  def disable_member_mfa(%Membership{} = membership, opts) when is_list(opts) do
+  def disable_member_mfa(%Membership{mfa_enabled_at: verified_epoch} = membership, opts)
+      when is_list(opts) do
     membership
     |> member_mfa_query()
     |> Repo.fetch_and_update(Membership.Query,
       with: fn
-        %Membership{mfa_enabled_at: nil} -> :mfa_not_enabled
-        %Membership{} = locked -> Membership.Changeset.mfa(locked, nil, nil, [])
+        %Membership{mfa_enabled_at: nil} ->
+          :mfa_not_enabled
+
+        # The factor was proved in an earlier transaction: if a reset and a new
+        # enrollment landed since, that proof says nothing about this factor.
+        %Membership{mfa_enabled_at: current} = locked ->
+          if same_instant?(current, verified_epoch),
+            do: Membership.Changeset.mfa(locked, nil, nil, []),
+            else: :mfa_proof_stale
       end,
       audit: Keyword.fetch!(opts, :audit)
     )
   end
+
+  defp same_instant?(%DateTime{} = a, %DateTime{} = b), do: DateTime.compare(a, b) == :eq
+  defp same_instant?(_a, _b), do: false
 
   @doc """
   Internal — Auth: prove a current factor and replace every recovery-code digest
@@ -4200,7 +4221,7 @@ defmodule Emisar.Accounts do
         %Subject{account: %Account{} = account} = subject
       )
       when is_map(attrs) do
-    with :ok <- check_invitation_send_budget(account),
+    with :ok <- check_invitation_send_budget(account, subject),
          {:ok, invitation} <- invite_user_to_account(attrs, subject) do
       {:ok, invited_result(invitation, inviter, account)}
     end
@@ -4213,8 +4234,16 @@ defmodule Emisar.Accounts do
   # every customer's sign-in codes into a relay. Resends share it.
   @invitation_sends_per_hour 100
 
-  defp check_invitation_send_budget(%Account{id: account_id}) do
-    Emisar.Throttle.check("invitation_send", account_id, @invitation_sends_per_hour, 3_600_000)
+  # Only a seat that may invite spends it: otherwise a viewer's refused invites
+  # would use up the hour its owners and admins invite in.
+  defp check_invitation_send_budget(%Account{id: account_id}, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(
+             subject,
+             Authorizer.invite_member_permission()
+           ) do
+      Emisar.Throttle.check("invitation_send", account_id, @invitation_sends_per_hour, 3_600_000)
+    end
   end
 
   # The authoritative gate: the SAME input changeset the form uses, rebuilt
@@ -4383,7 +4412,7 @@ defmodule Emisar.Accounts do
         %{} = inviter,
         %Subject{account: %Account{} = account} = subject
       ) do
-    with :ok <- check_invitation_send_budget(account),
+    with :ok <- check_invitation_send_budget(account, subject),
          {:ok, invitation} <- resend_account_invitation(membership, subject) do
       {:ok, invited_result(invitation, inviter, account)}
     end

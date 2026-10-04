@@ -5,7 +5,7 @@ kind: script
 risk: critical
 description: Permanently delete one workspace member after exact UUID confirmation; an owner who is the workspace's only member takes the workspace along.
 side_effects:
-  - Irreversibly deletes the member, its sessions and its API keys.
+  - Irreversibly deletes the member and its sessions, and revokes its API keys, device grants, standing approval grants and pending approve votes (revoked rows stay in the workspace's history).
   - An owner who is the workspace's only member erases the whole workspace, and only once its billing is cancelled; an owner of a workspace with other members and no other owner is refused until ownership moves.
   - Cannot be undone; use only for a verified erasure request with two-person approval.
 args:

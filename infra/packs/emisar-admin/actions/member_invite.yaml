@@ -4,7 +4,7 @@ title: Invite account member
 kind: script
 risk: high
 description: Create a member invitation with explicit role and full runner access.
-side_effects: [Creates a user placeholder when needed, creates membership, and sends invitation email.]
+side_effects: [Creates a pending member at the invited address and sends the invitation email.]
 args:
   - name: account
     type: string

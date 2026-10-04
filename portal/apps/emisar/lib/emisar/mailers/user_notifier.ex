@@ -936,6 +936,17 @@ defmodule Emisar.Mailers.UserNotifier do
   defp put_extra_headers(email, headers),
     do: Enum.reduce(headers, email, fn {key, value}, acc -> header(acc, key, value) end)
 
+  @doc """
+  Internal — a log-safe label for a failed delivery: its HTTP status, error
+  atom or error type, never the whole reason, because a provider's error body
+  can echo the recipient's address.
+  """
+  def failure_label({status, _body}) when is_integer(status), do: "http_#{status}"
+  def failure_label({kind, _detail}) when is_atom(kind), do: Atom.to_string(kind)
+  def failure_label(reason) when is_atom(reason), do: Atom.to_string(reason)
+  def failure_label(%{__struct__: module}), do: inspect(module)
+  def failure_label(_reason), do: "unclassified"
+
   # Log recipients coarsely — first char + domain — so a suppression line
   # in the drain doesn't carry a full address.
   defp redact_email(email) when is_binary(email) do

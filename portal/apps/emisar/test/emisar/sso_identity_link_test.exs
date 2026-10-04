@@ -101,7 +101,7 @@ defmodule Emisar.SSOIdentityLinkTest do
       subject: subject
     } do
       secret = Auth.generate_mfa_secret()
-      {:ok, enrolled, _codes} = Fixtures.Memberships.enroll_mfa(secret, subject)
+      {enrolled, _codes} = Fixtures.Memberships.enable_mfa!(secret, subject)
 
       assert Auth.begin_oidc_identity_step_up(
                provider.id,
