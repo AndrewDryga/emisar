@@ -33,6 +33,8 @@ defmodule Emisar.Admin.StaffToken.Query do
   @doc "Stored digests, for a DELETE RETURNING that names the sockets to disconnect."
   def select_token_digests(queryable), do: select(queryable, [staff_tokens: t], t.token)
 
+  def select_staff_ids(queryable), do: select(queryable, [staff_tokens: t], t.staff_id)
+
   def lock_for_update(queryable), do: lock(queryable, "FOR NO KEY UPDATE")
 
   @impl Emisar.Repo.Query

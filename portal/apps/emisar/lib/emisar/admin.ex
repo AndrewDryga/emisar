@@ -209,6 +209,10 @@ defmodule Emisar.Admin do
     |> Repo.commit_multi()
     |> case do
       {:ok, %{token: token}} ->
+        Logger.info(
+          "staff sign-in code issued staff_id=#{staff.id} ip=#{inspect(context.ip_address)}"
+        )
+
         :ok = deliver_staff_sign_in_code(staff, code, context)
         {:ok, %{token_id: token.id, nonce: nonce}}
 
@@ -417,13 +421,17 @@ defmodule Emisar.Admin do
 
   @doc "Internal — staff sign-out: deletes the session behind a raw staff cookie token."
   def delete_staff_session(raw) when is_binary(raw) do
-    {_count, _rows} =
+    {_count, staff_ids} =
       raw
       |> Crypto.hash()
       |> StaffToken.Query.by_token_digest()
       |> StaffToken.Query.by_context(:session)
+      |> StaffToken.Query.select_staff_ids()
       |> Repo.delete_all()
 
+    # Cloud Logging is the only staff record, so a session the browser ended is
+    # written down like the sign-in that started it.
+    Enum.each(staff_ids, &Logger.info("staff signed out staff_id=#{&1}"))
     :ok
   end
 
