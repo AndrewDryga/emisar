@@ -190,6 +190,26 @@ defmodule Emisar.SSOTest do
     request
   end
 
+  # A held sign-in by a subject the approver's own IdP made up, carrying the
+  # target's verified address.
+  defp capture_matched_request(provider, %Accounts.Membership{} = target) do
+    request =
+      capture_request(provider, %{
+        "sub" => "okta|impersonator-#{System.unique_integer([:positive])}",
+        "email" => target.email,
+        "email_verified" => true
+      })
+
+    assert request.matched_membership_id == target.id
+    request
+  end
+
+  defp scoped_admin(account, %RunnerAccess{} = access) do
+    Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+    |> Fixtures.Memberships.force_runner_access(access)
+    |> Fixtures.Subjects.subject_for()
+  end
+
   # Accept a pending invitation the way the proved code does, without a session.
   defp accept_invitation(invitation_token, email) do
     {:ok, ^email, intent} =
@@ -8331,6 +8351,60 @@ defmodule Emisar.SSOTest do
 
       refute Repo.one(UserIdentity)
       assert [_still_pending] = link_requests(provider.id)
+    end
+
+    test "a scoped admin can't link an identity onto a member who reaches more runners", %{
+      account: account,
+      provider: provider
+    } do
+      # The binding hands whoever holds the IdP credential the member's reach, so
+      # an approver may bind only onto reach their own seat covers.
+      {:ok, db_only} = RunnerAccess.restricted(["db"], [])
+      admin = scoped_admin(account, db_only)
+      wider = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      request = capture_matched_request(provider, wider)
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+               {:error, :link_target_reach_exceeds_approver}
+
+      refute Repo.one(UserIdentity)
+      assert [_still_pending] = link_requests(provider.id)
+    end
+
+    test "a scoped admin can't link an identity onto a member who reaches more packs", %{
+      account: account,
+      provider: provider
+    } do
+      {:ok, core_packs_only} = RunnerAccess.new(:all, [], [], :restricted, ["linux-core"])
+      admin = scoped_admin(account, core_packs_only)
+      wider = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      request = capture_matched_request(provider, wider)
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
+               {:error, :link_target_reach_exceeds_approver}
+
+      refute Repo.one(UserIdentity)
+    end
+
+    test "a scoped admin can still link an identity onto a member inside their reach", %{
+      account: account,
+      provider: provider
+    } do
+      {:ok, db_only} = RunnerAccess.restricted(["db"], [])
+      admin = scoped_admin(account, db_only)
+
+      narrower =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Memberships.force_runner_access(db_only)
+
+      request = capture_matched_request(provider, narrower)
+
+      assert {:ok, %{membership: linked}} =
+               SSO.approve_link_request(request, RunnerAccess.none(), admin)
+
+      assert linked.id == narrower.id
     end
 
     test "an admin can't link an identity onto a SUSPENDED owner", %{

@@ -3732,7 +3732,8 @@ defmodule Emisar.SSO do
     with :ok <- ensure_can_configure_sso(subject),
          {:ok, request} <- fetch_link_request(id, subject),
          {:ok, provider} <- fetch_provider_for_request(request, subject),
-         :ok <- ensure_link_target_within_authority(request, provider, subject.role, Repo),
+         :ok <-
+           ensure_link_target_within_authority(request, provider, subject.role, subject, Repo),
          :ok <- ensure_approval_runner_access_allowed(request, access, subject) do
       multi = approve_link_request_multi(provider, request, access, subject)
 
@@ -3781,19 +3782,23 @@ defmodule Emisar.SSO do
   # reaching owner. A Member is one seat in this workspace, so nothing the
   # binding reaches lies outside it.
   #
-  # Two limits, both judged on the matched member rather than on the request:
+  # Three limits, all judged on the matched member rather than on the request:
   #
   #   * an unresolved invitation cannot receive an IdP credential before the
   #     invitee proves possession and accepts the account access;
   #   * the approver's permissions must COVER the target's role — the same
   #     no-escalation primitive role changes and invites use — so an admin can
-  #     never bind themselves onto an owner.
+  #     never bind themselves onto an owner;
+  #   * the approver's own runner and pack reach must cover the target's, the
+  #     rule every grant obeys: the binding hands the credential that reach, so
+  #     an admin scoped to some runners can never take on a wider seat.
   #
   # A request with no match provisions a new Member and escalates nothing.
   defp ensure_link_target_within_authority(
          %LinkRequest{matched_membership_id: nil},
          _provider,
          _approver_role,
+         _subject,
          _repo
        ),
        do: :ok
@@ -3802,6 +3807,7 @@ defmodule Emisar.SSO do
          %LinkRequest{} = request,
          %IdentityProvider{} = provider,
          approver_role,
+         %Subject{} = subject,
          repo
        ) do
     with %Accounts.Membership{} = matched <- peek_matched_membership(provider, request),
@@ -3831,6 +3837,9 @@ defmodule Emisar.SSO do
         not Auth.Permissions.role_covers_role?(approver_role, matched_membership.role) ->
           {:error, :link_target_outranks_approver}
 
+        not reaches_link_target?(subject, matched_membership) ->
+          {:error, :link_target_reach_exceeds_approver}
+
         true ->
           :ok
       end
@@ -3838,6 +3847,13 @@ defmodule Emisar.SSO do
       nil -> {:error, :matched_user_unavailable}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  # Read off the locked row itself, suspended or not: the approval may reinstate
+  # it, and the reach it keeps is what the new credential gets.
+  defp reaches_link_target?(%Subject{} = subject, %Accounts.Membership{} = matched) do
+    target_access = Map.fetch!(Accounts.runner_access_for_memberships([matched]), matched.id)
+    Accounts.ensure_runner_access_grant_allowed(subject, target_access) == :ok
   end
 
   defp peek_matched_membership(%IdentityProvider{} = provider, %LinkRequest{} = request),
@@ -4044,7 +4060,8 @@ defmodule Emisar.SSO do
     with :ok <- ensure_request_matches_current_namespace(provider, request),
          :ok <- ensure_matched_request_has_trusted_email(provider, request),
          {:ok, approver_role} <- ensure_approver_still_holds_authority(provider, subject, repo),
-         :ok <- ensure_link_target_within_authority(request, provider, approver_role, repo),
+         :ok <-
+           ensure_link_target_within_authority(request, provider, approver_role, subject, repo),
          %Accounts.Membership{} = member <- peek_matched_membership(provider, request) do
       {:ok, member}
     else

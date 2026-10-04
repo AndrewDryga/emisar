@@ -1972,6 +1972,10 @@ defmodule EmisarWeb.TeamLive do
     "That email belongs to a member whose role you can't manage, so linking an identity to them isn't something this role can approve. An owner can approve it."
   end
 
+  defp approval_error_message(:link_target_reach_exceeds_approver) do
+    "That email belongs to a member who can reach runners or packs you can't, so linking an identity to them isn't something you can approve. An owner can approve it."
+  end
+
   defp approval_error_message(:link_target_in_other_accounts) do
     "That person also belongs to another workspace, so this link cannot be approved from this workspace."
   end
