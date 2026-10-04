@@ -2393,7 +2393,7 @@ defmodule Emisar.SSOTest do
         assert_receive {:oidc_begin, ^provider_id}
       end
 
-      for _attempt <- 1..12 do
+      for _attempt <- 1..52 do
         assert {:ok, _summary} = SSO.test_provider("https://idp.test", subject)
         assert_receive {:oidc_discover, "https://idp.test"}
       end

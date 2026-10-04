@@ -411,22 +411,41 @@ defmodule EmisarWeb.SSOControllerTest do
       provider = provider_fixture(enterprise_account())
       provider_id = provider.id
 
-      for attempt <- 1..20 do
+      for attempt <- 1..60 do
         path_id = if rem(attempt, 2) == 0, do: String.upcase(provider_id), else: provider_id
         response = get(conn_from(attempt), "/sign_in/sso/#{path_id}")
         assert redirected_to(response) == "https://idp.test/auth"
         assert_receive {:oidc_begin, ^provider_id}
       end
 
-      rejected = get(conn_from(21), ~p"/sign_in/sso/#{provider_id}")
+      rejected = get(conn_from(61), ~p"/sign_in/sso/#{provider_id}")
       assert rejected.status == 429
       refute_receive {:oidc_begin, ^provider_id}
 
       other = provider_fixture(enterprise_account())
       other_id = other.id
-      allowed = get(conn_from(22), ~p"/sign_in/sso/#{other.id}")
+      allowed = get(conn_from(62), ~p"/sign_in/sso/#{other.id}")
       assert redirected_to(allowed) == "https://idp.test/auth"
       assert_receive {:oidc_begin, ^other_id}
+    end
+
+    test "one client address cannot use up a provider's sign-ins" do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
+      provider = provider_fixture(enterprise_account())
+      provider_id = provider.id
+
+      for _attempt <- 1..20 do
+        response = get(conn_from(231), ~p"/sign_in/sso/#{provider_id}")
+        assert redirected_to(response) == "https://idp.test/auth"
+        assert_receive {:oidc_begin, ^provider_id}
+      end
+
+      assert get(conn_from(231), ~p"/sign_in/sso/#{provider_id}").status == 429
+
+      allowed = get(conn_from(232), ~p"/sign_in/sso/#{provider_id}")
+      assert redirected_to(allowed) == "https://idp.test/auth"
+      assert_receive {:oidc_begin, ^provider_id}
     end
   end
 
@@ -1273,12 +1292,12 @@ defmodule EmisarWeb.SSOControllerTest do
       provider = provider_fixture(enterprise_account())
       provider_id = provider.id
 
-      begun = get(conn_from(31), ~p"/sign_in/sso/#{provider.id}")
+      begun = get(conn_from(121), ~p"/sign_in/sso/#{provider.id}")
       assert_receive {:oidc_begin, ^provider_id}
 
       _log =
         capture_log(fn ->
-          for attempt <- 32..50 do
+          for attempt <- 122..180 do
             response =
               begun
               |> recycle()
@@ -1292,7 +1311,7 @@ defmodule EmisarWeb.SSOControllerTest do
           rejected =
             begun
             |> recycle()
-            |> put_req_header("x-forwarded-for", "198.51.100.51, 8.233.97.247")
+            |> put_req_header("x-forwarded-for", "198.51.100.181, 8.233.97.247")
             |> get(~p"/sign_in/sso/callback", %{"state" => "s", "code" => "code"})
 
           assert redirected_to(rejected) == ~p"/sign_in"
@@ -1301,7 +1320,7 @@ defmodule EmisarWeb.SSOControllerTest do
 
       other = provider_fixture(enterprise_account())
       other_id = other.id
-      allowed = get(conn_from(52), ~p"/sign_in/sso/#{other.id}")
+      allowed = get(conn_from(182), ~p"/sign_in/sso/#{other.id}")
       assert redirected_to(allowed) == "https://idp.test/auth"
       assert_receive {:oidc_begin, ^other_id}
     end

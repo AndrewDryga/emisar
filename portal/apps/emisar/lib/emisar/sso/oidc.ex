@@ -55,11 +55,13 @@ defmodule Emisar.SSO.OIDC do
   # authenticated reset goes through both the canonical provider budget and its
   # account's aggregate budget. Test-connection discovery spends that same
   # account budget, so rotating providers or entry points cannot fill the Guard
-  # pool. Persistent httpc sessions are disabled, so the adjacent-window account
-  # burst still leaves headroom in that pool.
-  @provider_work_limit 20
+  # pool. Each budget is three times the SSO routes' per-address cap (20 a
+  # minute), so no one client address can use up a workspace's sign-ins.
+  # Persistent httpc sessions are disabled, so the adjacent-window account burst
+  # still leaves headroom in the Guard's pool, which is sized against it.
+  @provider_work_limit 60
   @provider_work_window_ms 60_000
-  @account_work_limit 20
+  @account_work_limit 60
   @account_work_window_ms 60_000
 
   def begin_authorization(provider, opts) do

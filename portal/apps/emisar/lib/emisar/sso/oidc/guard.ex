@@ -46,7 +46,9 @@ defmodule Emisar.SSO.OIDC.Guard do
   # a deliberately large key set while bounding the bytes httpc can buffer from
   # any one opaque keep-alive tunnel (both directions combined).
   @tunnel_max_bytes 1_024 * 1_024
-  @max_tunnels 64
+  # One workspace's adjacent-window burst of OIDC work (`Emisar.SSO.OIDC`, two
+  # windows of 60) leaves 72 tunnels for every other workspace.
+  @max_tunnels 192
   @connect_timeout 10_000
   @max_request_headers 64
   # One CONNECT's whole envelope: a line cap OTP enforces in the packet decoder,
@@ -422,8 +424,8 @@ defmodule Emisar.SSO.OIDC.Guard do
   defp first_token(line), do: line |> String.split(" ", parts: 2) |> hd()
 
   # The acceptor is supervised beside the tunnel tasks. Excluding the current
-  # acceptor process keeps the advertised 64-slot pool literal rather than
-  # silently turning it into 63.
+  # acceptor process keeps the advertised pool size literal rather than
+  # silently one slot smaller.
   defp open_tunnels do
     @tasks
     |> Task.Supervisor.children()

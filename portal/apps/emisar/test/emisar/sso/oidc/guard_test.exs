@@ -27,9 +27,9 @@ defmodule Emisar.SSO.OIDC.GuardTest do
              {:ok, max_sessions: 0}
   end
 
-  test "admits 64 tunnels, refuses the 65th, and reuses a released slot", %{port: port} do
-    held = Enum.map(1..64, fn _index -> open_held_socket(port) end)
-    assert_tunnel_count(64)
+  test "admits 192 tunnels, refuses the 193rd, and reuses a released slot", %{port: port} do
+    held = Enum.map(1..192, fn _index -> open_held_socket(port) end)
+    assert_tunnel_count(192)
 
     {:ok, refused} = connect(port)
     on_exit(fn -> :gen_tcp.close(refused) end)
@@ -37,7 +37,7 @@ defmodule Emisar.SSO.OIDC.GuardTest do
 
     [released | _rest] = held
     :gen_tcp.close(released)
-    assert_tunnel_count(63)
+    assert_tunnel_count(191)
 
     {:ok, admitted} = connect(port)
     on_exit(fn -> :gen_tcp.close(admitted) end)
