@@ -415,6 +415,24 @@ defmodule EmisarWeb.SCIMGroupsControllerTest do
       assert body["scimType"] == "invalidPath"
     end
 
+    test "an operation that is not an object is a SCIM 400, not a crash", %{
+      conn: conn,
+      token: token
+    } do
+      group_id = create_group(conn, token, "grp-malformed-op")["id"]
+
+      for operation <- [nil, 7, "replace"] do
+        body =
+          conn
+          |> scim_send(token, :patch, "/scim/v2/Groups/#{group_id}", %{
+            "Operations" => [operation]
+          })
+          |> json_response(400)
+
+        assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
+      end
+    end
+
     test "a rename sent as `path: displayName` is honored", %{conn: conn, token: token} do
       group_id = create_group(conn, token, "grp")["id"]
 

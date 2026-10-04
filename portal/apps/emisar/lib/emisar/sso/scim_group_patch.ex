@@ -109,6 +109,11 @@ defmodule Emisar.SSO.SCIMGroupPatch do
   # `members` on the floor — the endpoint answered 200 while the people the
   # directory had just removed kept the group's mapped role and runner access.
   # Split it into one operation per attribute so each reaches its own handler.
+  # An operation is an object; `null`, a number or a string is a malformed
+  # request, refused here rather than crashing a handler that reads its fields.
+  defp split_pathless_attributes(operation, _remaining) when not is_map(operation),
+    do: {:error, :invalid_scim_group}
+
   defp split_pathless_attributes(_operation, remaining) when remaining < 1,
     do: {:error, :invalid_scim_group}
 
