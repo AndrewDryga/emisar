@@ -713,36 +713,56 @@ defmodule Emisar.AdminTest do
   end
 
   describe "execute/2" do
-    test "erases a legacy login only when the confirmation matches its id" do
-      login = legacy_login()
+    test "erases a Member only when the confirmation matches its id" do
       {owner, account, _subject} = Fixtures.Subjects.owner_subject()
-      owner |> Ecto.Changeset.change(user_id: login.id) |> Repo.update!()
 
       assert Admin.execute(
-               "emisar.admin.user.erase",
+               "emisar.admin.member.erase",
                [
-                 "user_id=#{login.id}",
-                 "confirmation=not-the-user-id",
+                 "account=#{account.slug}",
+                 "member=#{owner.id}",
+                 "confirmation=not-the-member-id",
                  "reason=typo in the confirmation"
                ]
-             ) == {:error, {:unsupported_admin_action, "emisar.admin.user.erase"}}
+             ) == {:error, {:unsupported_admin_action, "emisar.admin.member.erase"}}
 
-      assert Repo.reload(login)
+      assert Repo.reload(owner)
 
-      assert {:ok, %{erased_user_id: erased}} =
+      assert {:ok, %{erased_member_id: erased, erased_account_id: erased_account}} =
                Admin.execute(
-                 "emisar.admin.user.erase",
+                 "emisar.admin.member.erase",
                  [
-                   "user_id=#{login.id}",
-                   "confirmation=#{login.id}",
+                   "account=#{account.slug}",
+                   "member=#{owner.id}",
+                   "confirmation=#{owner.id}",
                    "reason=verified erasure request"
                  ]
                )
 
-      assert erased == login.id
-      refute Repo.reload(login)
-      # The login's sole-owner workspace goes with it.
+      assert erased == owner.id
+      refute Repo.reload(owner)
+      # The sole owner's workspace goes with it, and the result says so.
+      assert erased_account == account.id
       assert Emisar.Accounts.fetch_account_by_id(account.id) == {:error, :not_found}
+    end
+
+    test "erasing a Member beside another owner keeps the workspace" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+
+      assert {:ok, %{erased_member_id: erased, erased_account_id: nil}} =
+               Admin.execute(
+                 "emisar.admin.member.erase",
+                 [
+                   "account=#{account.id}",
+                   "member=#{owner.id}",
+                   "confirmation=#{owner.id}",
+                   "reason=verified erasure request"
+                 ]
+               )
+
+      assert erased == owner.id
+      assert {:ok, _account} = Emisar.Accounts.fetch_account_by_id(account.id)
     end
 
     test "dispatches a private RPC action from ordinary name-value argv" do
@@ -1251,17 +1271,5 @@ defmodule Emisar.AdminTest do
       "000000" -> "111111"
       _current -> "000000"
     end
-  end
-
-  # The `users` table has no writer left: its rows are history until S3 drops
-  # it, so the erase RPC's input is inserted directly.
-  defp legacy_login do
-    %Emisar.Users.User{}
-    |> Ecto.Changeset.change(
-      email: Fixtures.Random.unique_email(),
-      full_name: "Legacy Login",
-      confirmed_at: DateTime.utc_now()
-    )
-    |> Repo.insert!()
   end
 end

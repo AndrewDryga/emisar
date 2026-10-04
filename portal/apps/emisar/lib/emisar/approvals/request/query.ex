@@ -391,7 +391,7 @@ defmodule Emisar.Approvals.Request.Query do
     )
   end
 
-  @doc "Audit label-lookup helper. See Users.User.Query.select_labels/3."
+  @doc "Audit label-lookup helper: `{id, field}` for the rows `ids` names."
   def select_labels(queryable, ids, field) do
     queryable
     |> where([requests: r], r.id in ^ids)

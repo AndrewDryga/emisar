@@ -2121,10 +2121,10 @@ defmodule EmisarWeb.SSOSettingsLive do
                   phx-click={show_confirm_dialog("delete-provider-#{@provider.id}")}
                 >
                   <:body>
-                    Stops new sign-ins through this connection and removes the access it proved
-                    in this workspace. Access proved another way, including access to other
-                    workspaces, is unchanged. Members with no personal login and no other way to
-                    sign in also lose their API keys and agent connections.
+                    Stops new sign-ins through this connection and ends the sessions that signed
+                    in through it; email sign-in sessions stay. Members with no verified email
+                    and no other enabled connection also lose their API keys and agent
+                    connections.
                   </:body>
                   Delete connection
                 </.confirm_zone>
@@ -2146,10 +2146,9 @@ defmodule EmisarWeb.SSOSettingsLive do
               <:body>
                 Permanently removes the
                 <span class="font-medium text-rose-100">{@provider.name}</span>
-                connection and the access it proved in this workspace. Access proved another
-                way, including access to other workspaces, is unchanged. Members with no
-                personal login and no other way to sign in also lose their API keys and agent
-                connections.
+                connection and ends the sessions that signed in through it; email sign-in
+                sessions stay. Members with no verified email and no other enabled connection
+                also lose their API keys and agent connections.
               </:body>
             </.confirm_dialog>
           </div>
@@ -2603,8 +2602,9 @@ defmodule EmisarWeb.SSOSettingsLive do
             label="Allow members to sign in"
           />
           <p :if={@editing?} class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-            Turning this off also revokes the API keys and agent connections of members with no
-            personal login and no other way to sign in. Turning it back on does not restore them.
+            Turning this off also ends the sessions that signed in through this connection and
+            revokes the API keys and agent connections of members with no verified email and no
+            other enabled connection. Turning it back on does not restore them.
           </p>
         </div>
       </section>

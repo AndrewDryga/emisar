@@ -110,8 +110,8 @@ defmodule Emisar.SSO.Provisioning do
   defp link_match_email(_provider, email, _claims, :scim), do: email
 
   # Email is never identity: an inbound address is compared only with this
-  # account's own workspace contacts, never with a personal login's address, so a
-  # provider can never match another account's members. The live Member holding
+  # account's own Members' addresses, so a provider can never match another
+  # account's members. The live Member holding
   # the address is a link target for the admin; none is a new person.
   def member_contact_match(%IdentityProvider{} = provider, email) when is_binary(email) do
     case Accounts.peek_sync_membership_by_email(provider.account_id, email) do

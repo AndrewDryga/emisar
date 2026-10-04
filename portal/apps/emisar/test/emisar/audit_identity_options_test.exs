@@ -1,7 +1,6 @@
 defmodule Emisar.AuditIdentityOptionsTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Audit, Fixtures, Repo}
-  alias Emisar.Users.User
+  alias Emisar.{Audit, Fixtures}
 
   setup do
     account = Fixtures.Accounts.create_account()
@@ -78,26 +77,6 @@ defmodule Emisar.AuditIdentityOptionsTest do
 
       assert empty_meta.next_page_cursor == nil
       assert empty_meta.previous_page_cursor == nil
-    end
-
-    test "current account name wins over snapshots, including deleted logins and suspended seats",
-         %{account: account, subject: subject} do
-      membership =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          display_name: "Current name"
-        )
-
-      login = legacy_login(membership, deleted_at: DateTime.utc_now())
-      event(account, login.id, "Old name")
-      Fixtures.Memberships.suspend_membership(membership)
-
-      assert {:ok, [{id, "Current name"}], _} = Audit.list_actor_options("user", subject)
-      assert id == login.id
-      assert {:ok, [], _} = Audit.list_actor_options("user", subject, search: "Old")
-
-      Fixtures.Memberships.mark_membership_as_deleted(membership)
-      assert {:ok, [{^id, "Old name"}], _} = Audit.list_actor_options("user", subject)
     end
 
     test "Member choices use the local profile, keep a removed Member, never another account's",
@@ -267,23 +246,6 @@ defmodule Emisar.AuditIdentityOptionsTest do
       end
     end
 
-    test "the account's directory name wins over global and other-account labels", %{
-      account: account,
-      subject: subject
-    } do
-      local = Fixtures.Memberships.create_membership(account_id: account.id)
-      foreign = Fixtures.Memberships.create_membership()
-      login = legacy_login([local, foreign], full_name: "Global name")
-      Fixtures.Memberships.sync_display_name(local, "Local directory")
-      Fixtures.Memberships.sync_display_name(foreign, "Private foreign directory")
-      event(account, login.id, "Old snapshot")
-
-      assert {:ok, [{id, "Local directory"}], _} = Audit.list_target_options("user", subject)
-      assert id == login.id
-      assert {:ok, [], _} = Audit.list_target_options("user", subject, search: "foreign")
-      assert {:ok, [], _} = Audit.list_target_options("user", subject, search: "Global")
-    end
-
     test "draft-test approval labels preserve the queue wording", %{
       account: account,
       owner: owner,
@@ -307,20 +269,18 @@ defmodule Emisar.AuditIdentityOptionsTest do
       account: account,
       subject: subject
     } do
-      login =
-        [account_id: account.id, display_name: "Quiet"]
-        |> Fixtures.Memberships.create_membership()
-        |> legacy_login()
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, display_name: "Quiet")
 
       assert {:ok, [{id, "Quiet"}], _} =
-               Audit.list_actor_options("user", subject, ensure: login.id)
+               Audit.list_actor_options("membership", subject, ensure: member.id)
 
-      assert id == login.id
-      assert {:ok, [], _} = Audit.list_target_options("user", subject, ensure: login.id)
-      event(account, login.id, nil)
+      assert id == member.id
+      assert {:ok, [], _} = Audit.list_target_options("membership", subject, ensure: member.id)
+      event(account, member.id, nil, actor_kind: "membership", target_kind: "membership")
 
       assert {:ok, [{^id, "Quiet"}], _} =
-               Audit.list_target_options("user", subject, ensure: login.id)
+               Audit.list_target_options("membership", subject, ensure: member.id)
     end
 
     test "historical pages, selected fallbacks and searches never cross accounts", %{
@@ -376,18 +336,6 @@ defmodule Emisar.AuditIdentityOptionsTest do
                  Fixtures.Subjects.permissionless_subject(account)
                )
     end
-  end
-
-  # Rows written before Members owned identity name a retired personal login
-  # ("user"); the reader labels it with the name of its Member in this workspace.
-  defp legacy_login(members, attrs \\ []) do
-    login =
-      Repo.insert!(struct!(User, Keyword.put_new(attrs, :email, Fixtures.Random.unique_email())))
-
-    for member <- List.wrap(members),
-        do: member |> Ecto.Changeset.change(user_id: login.id) |> Repo.update!()
-
-    login
   end
 
   defp event(account, id, label, opts \\ []) do

@@ -1,22 +1,27 @@
 schema_version: 1
-id: emisar.admin.user.erase
-title: Permanently erase user
+id: emisar.admin.member.erase
+title: Permanently erase member
 kind: script
 risk: critical
-description: Permanently delete one user and sole-owner accounts after exact UUID confirmation.
+description: Permanently delete one workspace member, or the workspace it solely owns, after exact UUID confirmation.
 side_effects:
-  - Irreversibly deletes the user, memberships, and accounts they solely own.
+  - Irreversibly deletes the member and its sessions; when it is the workspace's sole owner, the whole workspace goes with it.
   - Cannot be undone; use only for a verified erasure request with two-person approval.
 args:
-  - name: user_id
+  - name: account
     type: string
     required: true
-    description: Exact user UUID to erase.
+    description: Exact account UUID or slug the member belongs to.
+    validation: {max_length: 128}
+  - name: member
+    type: string
+    required: true
+    description: Exact membership UUID to erase.
     validation: {pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", max_length: 36}
   - name: confirmation
     type: string
     required: true
-    description: Repeat the exact user UUID.
+    description: Repeat the exact membership UUID.
     validation: {pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", max_length: 36}
   - name: reason
     type: string
@@ -26,8 +31,9 @@ args:
 execution:
   script: {path: scripts/callback.sh, interpreter: /bin/sh}
   argv:
-    - "emisar.admin.user.erase"
-    - "user_id={{ args.user_id }}"
+    - "emisar.admin.member.erase"
+    - "account={{ args.account }}"
+    - "member={{ args.member }}"
     - "confirmation={{ args.confirmation }}"
     - "reason={{ args.reason }}"
   timeout: 2m

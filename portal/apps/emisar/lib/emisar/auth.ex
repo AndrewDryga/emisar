@@ -668,8 +668,9 @@ defmodule Emisar.Auth do
   invited address only — the pending Member still holding the same invitation
   token — so a forwarded invitation link changes nothing until that mailbox
   proves it; the code carries the acceptance, and completing it accepts. Not
-  refused where the workspace requires SSO: accepting there stamps the address
-  verified without minting a session.
+  refused where the workspace requires SSO: there, completing the code hands the
+  browser to the invitation's SSO step (`SSO.begin_invitation_sso_sign_in/4`),
+  which accepts and signs in.
 
   Same success shape as `request_magic_link/3`; `{:error, :not_found}` when the
   invitation is no longer pending or its workspace is not active.

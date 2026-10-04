@@ -3,8 +3,7 @@ defmodule Emisar.Accounts.Membership do
   A workspace Member: one seat in an account with a role, one address and its
   own MFA factor. The same person in three workspaces is three Members. A
   Member signs in through its workspace SSO identity, or by an emailed code
-  once joining proved its address (`email_verified_at`). `user_id` only links
-  the retired personal login for erasure until that table is dropped.
+  once joining proved its address (`email_verified_at`).
   """
   use Emisar, :schema
   alias Emisar.Auth
@@ -51,7 +50,6 @@ defmodule Emisar.Accounts.Membership do
     field :deleted_at, :utc_datetime_usec
 
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
-    belongs_to :user, Emisar.Users.User, where: [deleted_at: nil]
     belongs_to :invited_by_membership, Emisar.Accounts.Membership
     belongs_to :disabled_by_membership, Emisar.Accounts.Membership
 

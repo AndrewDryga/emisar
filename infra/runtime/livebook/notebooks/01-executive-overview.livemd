@@ -22,7 +22,7 @@ pulse =
   SELECT
     (SELECT count(*) FROM accounts WHERE deleted_at IS NULL) AS accounts,
     (SELECT count(*) FROM accounts WHERE deleted_at IS NULL AND inserted_at >= now() - interval '30 days') AS accounts_30d,
-    (SELECT count(*) FROM users WHERE deleted_at IS NULL) AS users,
+    (SELECT count(*) FROM account_memberships WHERE deleted_at IS NULL) AS members,
     (SELECT count(*) FROM runners WHERE deleted_at IS NULL AND disabled_at IS NULL) AS runners,
     (SELECT count(*) FROM api_keys WHERE kind = 'mcp' AND deleted_at IS NULL AND revoked_at IS NULL AND expires_at > now() AND created_by_membership_id IS NOT NULL AND (auto_generated_at IS NULL OR last_used_at IS NOT NULL)) AS active_agents,
     (SELECT count(*) FROM action_runs WHERE inserted_at >= now() - interval '30 days') AS runs_30d,
@@ -44,7 +44,7 @@ success =
 Analytics.kpis([
   {"Accounts", row["accounts"]},
   {"New accounts, 30d", row["accounts_30d"]},
-  {"Users", row["users"]},
+  {"Members", row["members"]},
   {"Enabled runners", row["runners"]},
   {"Active MCP agents", row["active_agents"]},
   {"Runs, 30d", row["runs_30d"]},

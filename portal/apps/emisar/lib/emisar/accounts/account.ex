@@ -22,7 +22,6 @@ defmodule Emisar.Accounts.Account do
     # Soft-deletable associations skip tombstoned rows by default, so a
     # preload never surfaces a deleted membership/runner.
     has_many :memberships, Emisar.Accounts.Membership, where: [deleted_at: nil]
-    has_many :users, through: [:memberships, :user]
     has_many :runners, Emisar.Runners.Runner, where: [deleted_at: nil]
     has_one :subscription, Emisar.Billing.Subscription
 

@@ -38,9 +38,9 @@ defmodule Emisar.Marketing do
     do: Conversions.account_signed_up(owner, attribution)
 
   @doc """
-  Internal — erases the captured signup for `email`, for the user/account
+  Internal — erases the captured signup for `email`, for the Member
   erasure flow. Takes the caller's transaction repo through `:repo` so it
-  commits with the identity it belongs to. The capture list has no account and
+  commits with the Member it belongs to. The capture list has no account and
   no retention sweep, so an erased person's address would otherwise sit here
   forever.
   """

@@ -1,7 +1,6 @@
 defmodule Emisar.AuditIdentityHistoryTest do
   use Emisar.DataCase, async: true
-  alias Emisar.{Audit, Fixtures, Repo}
-  alias Emisar.Users.User
+  alias Emisar.{Audit, Fixtures}
 
   setup do
     account = Fixtures.Accounts.create_account()
@@ -54,17 +53,18 @@ defmodule Emisar.AuditIdentityHistoryTest do
     account: account,
     subject: subject
   } do
-    login =
-      [account_id: account.id, display_name: "Current directory member"]
-      |> Fixtures.Memberships.create_membership()
-      |> legacy_login()
+    member =
+      Fixtures.Memberships.create_membership(
+        account_id: account.id,
+        display_name: "Current directory member"
+      )
 
-    event(account, login.id, nil)
-    event(account, login.id, "   ")
-    expected = [{login.id, "Current directory member"}]
+    member_event(account, member.id, nil)
+    member_event(account, member.id, "   ")
+    expected = [{member.id, "Current directory member"}]
 
     for read <- [&Audit.list_actor_options/3, &Audit.list_target_options/3] do
-      assert {:ok, ^expected, _} = read.("user", subject, search: "directory")
+      assert {:ok, ^expected, _} = read.("membership", subject, search: "directory")
     end
   end
 
@@ -76,20 +76,18 @@ defmodule Emisar.AuditIdentityHistoryTest do
       Fixtures.Memberships.create_membership(account_id: account.id, role: "billing_manager")
       |> Fixtures.Subjects.subject_for()
 
-    [visible_login, hidden_login] =
+    [visible, hidden] =
       for name <- ["Visible member", "Hidden member"] do
-        [account_id: account.id, display_name: name]
-        |> Fixtures.Memberships.create_membership()
-        |> legacy_login()
+        Fixtures.Memberships.create_membership(account_id: account.id, display_name: name)
       end
 
-    event(account, visible_login.id, nil, event_type: "subscription.changed")
-    event(account, hidden_login.id, "Hidden snapshot")
-    expected = [{visible_login.id, "Visible member"}]
+    member_event(account, visible.id, nil, event_type: "subscription.changed")
+    member_event(account, hidden.id, "Hidden snapshot")
+    expected = [{visible.id, "Visible member"}]
 
     for read <- [&Audit.list_actor_options/3, &Audit.list_target_options/3] do
-      assert {:ok, ^expected, _} = read.("user", billing, [])
-      assert {:ok, [], _} = read.("user", billing, search: "Hidden")
+      assert {:ok, ^expected, _} = read.("membership", billing, [])
+      assert {:ok, [], _} = read.("membership", billing, search: "Hidden")
     end
   end
 
@@ -168,15 +166,12 @@ defmodule Emisar.AuditIdentityHistoryTest do
     assert {:ok, [], _} = Audit.list_target_options("user", subject, ensure: actor_id)
   end
 
-  # Rows written before Members owned identity name a retired personal login
-  # ("user"); the reader labels it with the name of its Member in this workspace.
-  defp legacy_login(member) do
-    login = Repo.insert!(%User{email: member.email})
-    member |> Ecto.Changeset.change(user_id: login.id) |> Repo.update!()
-    login
-  end
+  # A Member names itself by its current profile when its stored snapshots are
+  # blank; a "user" row (the retired personal login) has only its snapshots.
+  defp member_event(account, id, label, opts \\ []),
+    do: event(account, id, label, [actor_kind: "membership", target_kind: "membership"] ++ opts)
 
-  defp event(account, id, label, opts \\ []) do
+  defp event(account, id, label, opts) do
     {event_type, attrs} = Keyword.pop(opts, :event_type, "user.updated")
 
     {:ok, event} =

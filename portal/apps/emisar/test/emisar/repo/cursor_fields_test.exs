@@ -21,7 +21,6 @@ defmodule Emisar.Repo.CursorFieldsTest do
   """
   use Emisar.DataCase, async: true
   alias Emisar.{Accounts, Audit, Catalog, Fixtures, Policies, Runners}
-  alias Emisar.Users.User
 
   test "every declared cursor field is NOT NULL on the rows a list can reach" do
     for {query_module, cursor_fields} <- cursor_field_declarations() do
@@ -67,25 +66,22 @@ defmodule Emisar.Repo.CursorFieldsTest do
       )
 
     subject = Fixtures.Subjects.subject_for(unnamed)
-    unnamed_login = legacy_login(unnamed)
     directory = Fixtures.Memberships.create_membership(account_id: account.id)
-    directory_login = legacy_login(directory, full_name: "Global name")
     Fixtures.Memberships.sync_display_name(directory, "Same label")
 
-    deleted =
-      Fixtures.Memberships.create_membership(
-        account_id: account.id,
-        display_name: "Deleted current name"
-      )
+    removed =
+      Fixtures.Memberships.create_membership(account_id: account.id, display_name: "Same label")
 
-    deleted_login = legacy_login(deleted, deleted_at: DateTime.utc_now())
+    Fixtures.Memberships.mark_membership_as_deleted(removed)
     historical_id = Ecto.UUID.generate()
     unknown_id = Ecto.UUID.generate()
     now = DateTime.utc_now()
 
-    identity_event(account, "user", unnamed_login.id, nil)
-    identity_event(account, "user", directory_login.id, "Old directory name")
-    identity_event(account, "user", deleted_login.id, "Old deleted name")
+    # A Member is named by its current profile, a removed one included; a
+    # "user" row (the retired personal login) only by its own snapshots.
+    identity_event(account, "membership", unnamed.id, nil)
+    identity_event(account, "membership", directory.id, "Old directory name")
+    identity_event(account, "membership", removed.id, "Old removed name")
     identity_event(account, "user", historical_id, "Old snapshot", DateTime.add(now, -3))
     identity_event(account, "user", historical_id, "Same label", DateTime.add(now, -2))
     identity_event(account, "user", historical_id, "   ", DateTime.add(now, -1))
@@ -95,20 +91,22 @@ defmodule Emisar.Repo.CursorFieldsTest do
     foreign = Fixtures.Accounts.create_account()
     identity_event(foreign, "user", historical_id, "Foreign snapshot")
 
-    expected =
-      Enum.sort([
-        [unnamed.email, unnamed_login.id],
-        ["Same label", directory_login.id],
-        ["Deleted current name", deleted_login.id],
-        ["Same label", historical_id]
-      ])
+    expected = %{
+      "membership" =>
+        Enum.sort([
+          [unnamed.email, unnamed.id],
+          ["Same label", directory.id],
+          ["Same label", removed.id]
+        ]),
+      "user" => [["Same label", historical_id]]
+    }
 
     events = Audit.Event.Query.all() |> Audit.Authorizer.for_subject(subject)
 
-    for side <- [:actor, :target] do
-      query = Audit.IdentityOption.Query.all("user", side, account.id, events)
+    for {kind, kind_expected} <- expected, side <- [:actor, :target] do
+      query = Audit.IdentityOption.Query.all(kind, side, account.id, events)
       read = query_reader(query, Audit.IdentityOption.Query)
-      assert_projection_pages(Audit.IdentityOption.Query, read, expected)
+      assert_projection_pages(Audit.IdentityOption.Query, read, kind_expected)
     end
 
     {_raw, named_key} =
@@ -295,14 +293,6 @@ defmodule Emisar.Repo.CursorFieldsTest do
 
     assert first_cursor == nil
     rows
-  end
-
-  # Rows written before Members owned identity name a retired personal login
-  # ("user"); the reader labels it with the name of its Member in this workspace.
-  defp legacy_login(member, attrs \\ []) do
-    login = Repo.insert!(struct!(User, Keyword.put_new(attrs, :email, member.email)))
-    member |> Ecto.Changeset.change(user_id: login.id) |> Repo.update!()
-    login
   end
 
   defp identity_event(account, kind, id, label, occurred_at \\ DateTime.utc_now()) do

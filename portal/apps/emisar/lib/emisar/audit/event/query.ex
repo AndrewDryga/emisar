@@ -1083,7 +1083,7 @@ defmodule Emisar.Audit.Event.Query do
     "sso.provider_deleted" => {true, true, true, "An admin removed an identity provider."},
     "membership.credentials_revoked" =>
       {true, true, true,
-       "An admin disabled or removed the SSO connection a member without a personal login signs in through, so its API keys ended."},
+       "An admin disabled or removed the only SSO connection a member without a verified email signs in through, so its API keys ended."},
     "sso.link_request_approved" =>
       {true, true, true, "An admin approved an SSO request and created a user."},
     "sso.link_request_dismissed" =>

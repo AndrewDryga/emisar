@@ -40,7 +40,7 @@ defmodule Emisar.ContextCoverageTest do
 
   @contexts ~w[
     accounts admin api_keys approvals audit auth billing catalog jobs/sweep mail marketing
-    mcp_operations oauth policies runbooks runners runs sso users
+    mcp_operations oauth policies runbooks runners runs sso
   ]a
 
   @otp_lifecycle_callbacks MapSet.new([{"init", 1}, {"start_link", 1}])

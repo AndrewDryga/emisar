@@ -3336,29 +3336,16 @@ defmodule EmisarWeb.TeamLive do
   defp directory_label(nil), do: "your identity provider"
   defp directory_label(directory), do: directory.identity.provider_name
 
-  # The member's display name for a confirm/flash — name, else email, else nil
-  # (the user is always preloaded here). Callers supply the "this member" fallback.
+  # The member's display name for a confirm/flash — name, else email, else nil.
+  # Callers supply the "this member" fallback.
   defp member_name(%Accounts.Membership{} = membership),
     do: Accounts.member_display_name(membership)
 
-  # Membership activity is account-specific. Until a membership has its first
-  # console touch, the user's sign-in timestamp is the conservative fallback:
-  # signing in proves activity, while a global later timestamp must never
-  # overwrite another account's durable membership value.
+  # A sign-in and every console touch advance the Member's own activity stamp,
+  # so a Member that never signed in reads "never active".
   attr :membership, Accounts.Membership, required: true
 
   defp activity_status(%{membership: %{last_active_at: %DateTime{} = ts}} = assigns) do
-    assigns = assign(assigns, :active_at, ts)
-
-    ~H"""
-    last active{" "}<.local_time id={"active-#{@membership.id}"} value={@active_at} mode={:relative} />
-    """
-  end
-
-  defp activity_status(
-         %{membership: %{last_active_at: nil, user: %{last_sign_in_at: %DateTime{} = ts}}} =
-           assigns
-       ) do
     assigns = assign(assigns, :active_at, ts)
 
     ~H"""

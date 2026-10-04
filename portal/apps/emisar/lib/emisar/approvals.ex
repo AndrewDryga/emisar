@@ -859,8 +859,8 @@ defmodule Emisar.Approvals do
   Account-local display labels for the humans an approval surface names —
   `{:ok, %{membership_id => label}}`. Requires `view` on approvals and resolves
   exact recorded Members within the subject's own account, including tombstones
-  for history. Missing or foreign Members have no label; no replacement or
-  personal profile is used.
+  for history. Missing or foreign Members have no label; no replacement seat is
+  used.
   """
   def actor_labels_for_ids(ids, %Subject{} = subject) when is_list(ids) do
     with {:ok, subject} <-
@@ -2451,7 +2451,7 @@ defmodule Emisar.Approvals do
   # leaves the request :pending below the threshold is not news yet. Same
   # detached-task seam as the created-email so a slow SMTP call never sits in
   # front of dispatch. The exact requester Member owns the destination; a
-  # replacement seat or a personal User address is never a fallback.
+  # replacement seat is never a fallback.
   defp notify_requester_of_decision(request, approved_count, event_kind \\ nil)
 
   defp notify_requester_of_decision(

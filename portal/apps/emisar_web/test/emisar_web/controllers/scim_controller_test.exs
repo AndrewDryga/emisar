@@ -1472,7 +1472,7 @@ defmodule EmisarWeb.SCIMControllerTest do
          %{conn: conn, token: token, provider: provider, account: account} do
       ext = "okta|lifecycle"
 
-      # 1. Provision → active member + identity created, no personal login.
+      # 1. Provision → active member + identity created.
       provisioned =
         conn
         |> scim_post(token, ~p"/scim/v2/Users", user_payload(ext, email: "life@acme.test"))
@@ -1484,7 +1484,6 @@ defmodule EmisarWeb.SCIMControllerTest do
       refute id == ext
 
       member = directory_member(provider, ext)
-      assert is_nil(member.user_id)
       refute Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
 
       # 2. Deactivate → membership suspended, identity flagged inactive.

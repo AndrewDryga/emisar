@@ -3,11 +3,10 @@ defmodule Emisar.Admin.Staff do
   An Emisar staff login: the only principal the staff console and LiveDashboard
   accept.
 
-  It is not a workspace Member and not a personal login, and nothing a workspace,
-  an identity provider, a directory or configuration controls can create or
-  change one. Rows are created, reset and removed only by the `Emisar.Release`
-  staff commands run on the production node, which show the authenticator
-  secret once. Every sign-in needs an emailed code and the current authenticator
+  It is not a workspace Member, and nothing a workspace, an identity provider, a
+  directory or configuration controls can create or change one. Rows are
+  created, reset and removed only by the `Emisar.Release` staff commands run on
+  the production node, which show the authenticator secret once. Every sign-in needs an emailed code and the current authenticator
   code; there are no recovery codes.
   """
   use Emisar, :schema

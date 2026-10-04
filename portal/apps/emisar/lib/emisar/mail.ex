@@ -12,7 +12,7 @@ defmodule Emisar.Mail do
   System-side — these functions take no `%Subject{}`: the mailer is an
   internal choke point and the webhook is an unauthenticated provider
   callback (verified by shared secret in the controller). Email suppression
-  is global (an address, not an account), like identity in `Emisar.Users`.
+  is global: it holds an address, not a Member or an account.
   """
   alias Emisar.Mail.{DeliverabilityEvent, Suppression}
   alias Emisar.Repo
@@ -46,9 +46,9 @@ defmodule Emisar.Mail do
   `MapSet.member?(set, member.email)` is an exact hit.
   """
   def suppressed_emails(emails) when is_list(emails) do
-    # Drop nils/blanks before the query — SSO-provisioned members can have no
-    # email (`users.email` is nullable), and an empty/nil-only list must not
-    # reach `email in ^[...]` (it has nothing to match anyway).
+    # Drop nils/blanks before the query — an SSO-provisioned Member can have no
+    # email (`account_memberships.email` is nullable), and an empty/nil-only
+    # list must not reach `email in ^[...]` (it has nothing to match anyway).
     trimmed =
       emails
       |> Enum.filter(&is_binary/1)
@@ -116,9 +116,9 @@ defmodule Emisar.Mail do
   end
 
   @doc """
-  Internal — erases the suppression row for `email`, for the user/account
+  Internal — erases the suppression row for `email`, for the Member
   erasure flow. Takes the caller's transaction repo through `:repo` so it
-  commits with the identity it belongs to. Suppression is operational
+  commits with the Member it belongs to. Suppression is operational
   deliverability state rather than a record we retain: the list re-learns the
   address from the next bounce, and keeping it would leave an erased person's
   address in a table that has no account and no retention sweep.

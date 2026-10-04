@@ -316,7 +316,7 @@ defmodule Emisar.Runs.ActionRun.Query do
 
   def limit_to(queryable, n), do: limit(queryable, ^n)
 
-  @doc "Audit label-lookup helper. See Users.User.Query.select_labels/3."
+  @doc "Audit label-lookup helper: `{id, field}` for the rows `ids` names."
   def select_labels(queryable, ids, field) do
     queryable
     |> where([runs: r], r.id in ^ids)

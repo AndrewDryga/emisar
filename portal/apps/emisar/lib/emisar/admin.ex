@@ -839,12 +839,16 @@ defmodule Emisar.Admin do
   end
 
   defp dispatch(
-         "emisar.admin.user.erase",
-         %{"user_id" => user_id, "confirmation" => confirmation, "reason" => _reason}
+         "emisar.admin.member.erase",
+         %{"member" => member, "confirmation" => confirmation, "reason" => _reason} = args
        )
-       when user_id == confirmation do
-    with {:ok, user} <- Accounts.erase_user_and_owned_accounts(user_id) do
-      {:ok, %{erased_user_id: user.id}}
+       when member == confirmation do
+    with {:ok, account} <- fetch_account(args),
+         {:ok, %{membership: membership, account: erased_account}} <-
+           Accounts.erase_member(account.id, member) do
+      # A sole owner's workspace goes with it; say so rather than leave the
+      # operator to discover the workspace is gone.
+      {:ok, %{erased_member_id: membership.id, erased_account_id: erased_account && account.id}}
     end
   end
 
@@ -1003,7 +1007,6 @@ defmodule Emisar.Admin do
      %{
        since: since,
        accounts_created: aggregate_count(Query.count_accounts_since(since)),
-       users_created: aggregate_count(Query.count_users_since(since)),
        memberships_created: aggregate_count(Query.count_memberships_since(since)),
        runners_created: aggregate_count(Query.count_runners_since(since)),
        runs: aggregate_count(Query.count_runs_since(since)),

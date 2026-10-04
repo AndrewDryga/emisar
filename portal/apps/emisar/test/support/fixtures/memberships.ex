@@ -31,10 +31,6 @@ defmodule Emisar.Fixtures.Memberships do
   """
   def create_membership(attrs \\ %{}) do
     attrs = Map.new(attrs)
-
-    if Map.has_key?(attrs, :user_id),
-      do: raise(ArgumentError, "a Member has no login to link; pass :email instead of :user_id")
-
     account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
 
     params =

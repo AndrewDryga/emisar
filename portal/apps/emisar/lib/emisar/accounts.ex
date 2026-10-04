@@ -1,7 +1,7 @@
 defmodule Emisar.Accounts do
   @moduledoc """
-  The multi-tenant boundary. Manages accounts (orgs), users, and the
-  memberships that join them with a role.
+  The multi-tenant boundary. Manages accounts (workspaces) and their Members,
+  the only person record: one seat in one workspace with a role.
 
   Every read API in the rest of the system is expected to scope by
   account; this context owns the slug-based lookups and signup flow.
@@ -13,8 +13,9 @@ defmodule Emisar.Accounts do
   alias Ecto.Multi
   alias Emisar.Accounts.{Account, Authorizer, InvitationInput, Membership, SignUpInput}
   alias Emisar.Accounts.{MembershipRunnerScope, RunnerAccess}
-  alias Emisar.{ApiKeys, Approvals, Audit, Auth, Billing, Crypto, Mail, Repo, Slug, SSO, Users}
+  alias Emisar.{ApiKeys, Approvals, Audit, Auth, Billing, Crypto, Mail}
   alias Emisar.Auth.Subject
+  alias Emisar.{Marketing, Repo, Slug, SSO}
   alias Emisar.RequestContext
 
   def start_link(opts) do
@@ -126,16 +127,16 @@ defmodule Emisar.Accounts do
   @doc """
   The account's `require_sso` / `require_mfa` decision for one caller — the ONE
   policy the LiveView hooks, the controller plug, and the OAuth consent mint all
-  run, so the enforcement paths can't drift. `account` is the account being
-  entered (the OAuth grant's CHOSEN account, not necessarily the session's), and
-  it must be the subject's own. Returns:
+  run, so the enforcement paths can't drift. `account` is the workspace being
+  entered (for OAuth consent, the one the grant names), and it must be the
+  subject's own. Returns:
 
     * `{:error, :sso_required}` — the account mandates SSO and this session did
-      not authenticate via THAT account's own SSO (a magic-link session, or an
-      SSO session for a different account); the caller sends the operator to the
-      account's step-up.
+      not sign in through one of its SSO connections (an email-code session from
+      before a connection was enabled); the caller drops that session and sends
+      the operator to the workspace's sign-in page.
     * `{:error, :mfa_required}` — the account mandates MFA and this session has
-      neither proved the user's current local enrollment nor authenticated
+      neither proved the Member's current local enrollment nor authenticated
       through an MFA-satisfying IdP of this account; the caller funnels it into
       enrollment or a current-factor challenge.
     * `{:error, :unauthorized}` — the subject cannot view its account.
@@ -422,30 +423,51 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — irreversible admin erasure, invoked from a console session.
-  Deletes the user's sole-owner accounts, removes the user's memberships from
-  other accounts through the user foreign-key cascade, then hard-deletes the
-  user row. The whole operation is atomic.
+  Internal — irreversible staff erasure of one Member, invoked from the private
+  admin pack with the workspace and the Member's id; a removed Member counts.
+  A sole owner's workspace is erased with it, through the account cascade.
+  Any other Member row is hard-deleted on its own: its sessions end and their
+  sockets disconnect after commit, and the surviving workspace's trail records
+  `membership.erased`. The Member's address leaves the deliverability
+  suppression list and the marketing capture list only when no other live
+  Member anywhere still uses it.
+
+  Returns `{:ok, %{membership: erased, account: erased_workspace | nil}}` or
+  `{:error, :not_found}`.
   """
-  def erase_user_and_owned_accounts(user_id) do
-    if Repo.valid_uuid?(user_id) do
+  def erase_member(account_id, membership_id) do
+    if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(membership_id) do
       Multi.new()
-      |> Multi.run(:memberships, fn repo, _changes ->
-        {:ok, active_memberships_for_user(repo, user_id)}
+      |> Multi.run(:account, fn repo, _changes ->
+        fetch_and_lock_account(account_id, repo: repo, include_deleted?: true)
       end)
-      |> Multi.run(:accounts, fn repo, %{memberships: memberships} ->
-        erase_sole_owner_accounts(repo, memberships)
+      |> Multi.run(:membership, fn repo, _changes ->
+        Membership.Query.all()
+        |> Membership.Query.by_account_id(account_id)
+        |> Membership.Query.by_id(membership_id)
+        |> Membership.Query.lock_for_update()
+        |> repo.fetch(Membership.Query)
       end)
-      |> Multi.run(:user, fn repo, _changes ->
-        Users.delete_by_id(user_id, repo: repo)
+      |> Multi.run(:erasure, fn repo, %{account: account, membership: membership} ->
+        erase_seat_or_workspace(repo, account, membership)
       end)
-      |> Multi.run(:audit, fn repo, %{memberships: memberships, accounts: erased_accounts} ->
-        record_membership_erasures(repo, memberships, erased_accounts)
+      |> Multi.run(:audit, fn repo, %{membership: membership, erasure: erasure} ->
+        record_member_erasure(repo, membership, erasure)
       end)
-      |> Repo.commit_multi()
+      |> Multi.run(:address, fn repo, %{membership: membership} ->
+        erase_unshared_address(repo, membership.email)
+      end)
+      |> Repo.commit_multi(
+        after_commit: fn %{erasure: erasure} ->
+          Auth.disconnect_live_socket_topics(erasure.socket_topics)
+        end
+      )
       |> case do
-        {:ok, %{user: user}} -> {:ok, user}
-        {:error, reason} -> {:error, reason}
+        {:ok, %{membership: membership, erasure: erasure}} ->
+          {:ok, %{membership: membership, account: erasure.account}}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     else
       {:error, :not_found}
@@ -1293,45 +1315,49 @@ defmodule Emisar.Accounts do
     end)
   end
 
-  defp active_memberships_for_user(repo, user_id) do
-    Membership.Query.not_deleted()
-    |> Membership.Query.by_user_id(user_id)
-    |> repo.all()
+  # A sole owner's workspace goes whole: the account cascade takes every row it
+  # owns, its Members, sessions and trail included. Any other seat goes on its
+  # own; its sessions are deleted first so their sockets can be disconnected
+  # once the erasure commits.
+  defp erase_seat_or_workspace(repo, %Account{} = account, %Membership{} = membership) do
+    if sole_owner?(repo, membership) do
+      with {:ok, account} <- repo.delete(account) do
+        {:ok, %{account: account, socket_topics: []}}
+      end
+    else
+      with {:ok, %{socket_topics: topics}} <- Auth.delete_membership_sessions(membership, repo),
+           {:ok, _membership} <- repo.delete(membership) do
+        {:ok, %{account: nil, socket_topics: topics}}
+      end
+    end
   end
 
-  defp erase_sole_owner_accounts(repo, memberships) do
-    memberships
-    |> Enum.uniq_by(& &1.account_id)
-    |> Enum.sort_by(& &1.account_id)
-    |> Enum.reduce_while({:ok, []}, fn membership, {:ok, deleted_accounts} ->
-      if sole_owner?(repo, membership) do
-        case delete_by_id(membership.account_id) do
-          {:ok, account} -> {:cont, {:ok, [account | deleted_accounts]}}
-          {:error, reason} -> {:halt, {:error, reason}}
-        end
-      else
-        {:cont, {:ok, deleted_accounts}}
-      end
-    end)
-  end
+  # A seat that just vanishes is indistinguishable from a tampered trail on an
+  # access review, so the surviving workspace records the erasure in the same
+  # transaction. An erased workspace has no trail left to write to.
+  defp record_member_erasure(repo, membership, %{account: nil}),
+    do: repo.insert(Audit.Events.membership_erased_by_support(membership))
 
-  # The user row's FK cascade takes the erased user's seat out of every SURVIVING
-  # account too, and a seat that just vanishes is indistinguishable from a
-  # tampered trail on an access review. The sole-owned accounts are already gone,
-  # so a membership whose account survived is a roster someone else still reads.
-  # A deliberate per-row insert (N = the user's membership count), in the
-  # erasure's own transaction so the rows commit with it or not at all.
-  defp record_membership_erasures(repo, memberships, erased_accounts) do
-    erased_account_ids = MapSet.new(erased_accounts, & &1.id)
+  defp record_member_erasure(_repo, _membership, %{account: %Account{}}), do: {:ok, nil}
 
-    memberships
-    |> Enum.reject(&MapSet.member?(erased_account_ids, &1.account_id))
-    |> Enum.reduce_while({:ok, []}, fn membership, {:ok, events} ->
-      case repo.insert(Audit.Events.membership_erased_by_support(membership)) do
-        {:ok, event} -> {:cont, {:ok, [event | events]}}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
+  # The suppression and marketing lists hold an address, not a person, and no
+  # account cascade reaches them. While another live Member anywhere still uses
+  # the address, its mail keeps that state; the last one takes the rows along.
+  defp erase_unshared_address(_repo, nil), do: {:ok, :no_address}
+
+  defp erase_unshared_address(repo, email) do
+    in_use? =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_email(email)
+      |> repo.exists?()
+
+    if in_use? do
+      {:ok, :in_use}
+    else
+      :ok = Mail.erase_suppression(email, repo: repo)
+      :ok = Marketing.erase_signup(email, repo: repo)
+      {:ok, :erased}
+    end
   end
 
   defp sole_owner?(repo, %Membership{account_id: account_id, role: :owner} = membership) do
@@ -1475,9 +1501,8 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — directory rename of an account-owned profile. The caller supplies
-  `:audit`; a directory never owns the personal User, even for a sole-tenancy
-  member. A name function runs against the locked local row for partial updates.
+  Internal — directory rename of a Member's display name. The caller supplies
+  `:audit`. A name function runs against the locked row for partial updates.
   """
   def sync_member_display_name(account_id, membership_id, display_name, opts)
       when is_binary(account_id) and is_binary(membership_id) do
@@ -1526,9 +1551,8 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  This workspace's name for a member, falling back only to its local contact.
-  Personal User attributes never supply an account-scoped label, including for
-  a removed member whose local profile is no longer available.
+  This workspace's name for a Member: its nonblank display name, else its
+  email. A removed Member keeps the name its row still holds.
   """
   def member_display_name(%Membership{display_name: name, email: email})
       when is_binary(name),
@@ -1546,9 +1570,10 @@ defmodule Emisar.Accounts do
   def secondary_member_email(_membership), do: nil
 
   @doc """
-  A person's own name: their nonblank full name, else their email. Cross-account
-  identity, so an account-scoped surface reaches for `member_display_name/1`
-  first. Pure; `nil` for a shape carrying neither field.
+  A pending SSO sign-in's name as the identity provider or directory asserted
+  it: the nonblank full name, else the email. The Team page names link requests
+  with it; a Member is named by `member_display_name/1`. Pure; `nil` for a
+  shape carrying neither field.
   """
   def user_display_name(%{full_name: name, email: email}) when is_binary(name) do
     if String.trim(name) == "", do: email, else: name
@@ -1558,8 +1583,8 @@ defmodule Emisar.Accounts do
   def user_display_name(_user), do: nil
 
   @doc """
-  A person's email when it is distinct from their display name, else `nil` —
-  the secondary identity line that must not repeat the primary one. Pure.
+  The asserted email when it is distinct from `user_display_name/1`'s label,
+  else `nil` — the secondary line that must not repeat the primary one. Pure.
   """
   def secondary_user_email(%{email: email} = user) when is_binary(email) do
     if user_display_name(user) == email, do: nil, else: email
@@ -1569,8 +1594,8 @@ defmodule Emisar.Accounts do
 
   @doc """
   Internal — exact account-owned Member labels for already-authorized historical
-  attribution. Tombstones retain their local profile; a replacement seat or a
-  private personal User is never a fallback. Missing/foreign ids have no label.
+  attribution. Tombstones retain their profile; a replacement seat is never a
+  fallback. Missing/foreign ids have no label.
   """
   def member_labels_for_ids(ids, account_id) when is_list(ids) and is_binary(account_id) do
     ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
@@ -2125,8 +2150,8 @@ defmodule Emisar.Accounts do
   @doc """
   Internal — SSO provisioning's contact match: the live Member of this account
   whose workspace contact is `email`, nil-or-struct; an account holds at most
-  one. Only this account's own contacts are read, never a personal login's
-  address. Suspended Members and pending invitations count.
+  one. Only this account's own Members are read. Suspended Members and pending
+  invitations count.
   """
   def peek_sync_membership_by_email(account_id, email) when is_binary(email) do
     Membership.Query.not_deleted()
@@ -3066,8 +3091,8 @@ defmodule Emisar.Accounts do
         runner_access_directory_managed: false,
         directory_provider_id: nil,
         directory_authorization_pending_version: nil,
-        # Keep the last workspace-owned profile when returning control to its
-        # operators. A personal profile never silently takes over this account.
+        # Keep the last directory-written profile when returning control to its
+        # operators.
         # The suspension STAYS — the directory's last word was that this person is
         # out — but it stops being the directory's to lift, because there is no
         # longer a directory to lift it. Left set, `reinstate_membership` refused
@@ -3798,7 +3823,7 @@ defmodule Emisar.Accounts do
 
   def fetch_own_member_profile(%Subject{}), do: {:error, :unauthorized}
 
-  @doc "Pure form builder for the workspace display name, not personal credentials or contact."
+  @doc "Pure form builder for the Member's display name; its email is not editable."
   def change_member_profile(%Membership{} = membership, attrs \\ %{}),
     do: Membership.Changeset.profile(membership, attrs)
 
@@ -3830,9 +3855,8 @@ defmodule Emisar.Accounts do
     do: SSO.member_profile_directory_managed?(membership.account_id, membership.id)
 
   @doc """
-  Admin-triggered local profile edit for another member. Owners/admins can fix
-  a teammate's workspace display name, never their personal name or sign-in
-  email. Contact changes are not part of this operation.
+  Admin-triggered profile edit for another member. Owners/admins can fix a
+  teammate's display name; the Member's email is not editable.
 
   Same authorization shape as the rest of `ensure_can_modify_membership`:
   caller must be owner/admin, can't edit self via this path (use
@@ -4106,8 +4130,8 @@ defmodule Emisar.Accounts do
 
   # Email is never identity: an address is already here only when one of this
   # account's own seats — a member, a suspended member or an open invitation —
-  # lists it as its contact (citext, so case-insensitively). No personal login
-  # is consulted; accepting refuses a person who already holds a seat here.
+  # lists it as its contact (citext, so case-insensitively); accepting refuses
+  # a person who already holds a seat here.
   defp ensure_address_unseated(repo, account_id, email) do
     seated =
       Membership.Query.not_deleted()

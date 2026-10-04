@@ -24,8 +24,7 @@ defmodule Emisar.SecretRedactionTest do
     {Emisar.OAuth.Token, [:access_token_hash, :refresh_token_hash]},
     {Emisar.OAuth.AuthorizationCode, [:code_hash]},
     {Emisar.SSO.IdentityProvider,
-     [:client_secret, :scim_token_hash, :sign_in_verified_configuration_digest]},
-    {Emisar.Users.User, [:mfa_secret, :mfa_recovery_codes]}
+     [:client_secret, :scim_token_hash, :sign_in_verified_configuration_digest]}
   ]
 
   for {schema, fields} <- @redacted, field <- fields do

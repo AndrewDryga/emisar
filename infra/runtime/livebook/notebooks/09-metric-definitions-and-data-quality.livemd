@@ -5,7 +5,7 @@
 | Metric | Definition |
 | --- | --- |
 | Account | Non-deleted row in `accounts` |
-| User | Non-deleted global user; account membership is counted separately |
+| Member | Non-deleted row in `account_memberships`; one person in two workspaces is two Members |
 | Active MCP agent | Operator-visible, unrevoked, unexpired, membership-bound API key with `kind = 'mcp'` |
 | Active account | Account with at least one action run in the stated period |
 | Activated account | Account that dispatched its first action |
@@ -94,7 +94,7 @@ Analytics.table(values)
 datasets =
   Analytics.query(db, """
   SELECT 'accounts' AS dataset, count(*) AS rows, max(inserted_at) AS latest_record FROM accounts
-  UNION ALL SELECT 'users', count(*), max(inserted_at) FROM users
+  UNION ALL SELECT 'account_memberships', count(*), max(inserted_at) FROM account_memberships
   UNION ALL SELECT 'runners', count(*), max(inserted_at) FROM runners
   UNION ALL SELECT 'api_keys', count(*), max(inserted_at) FROM api_keys
   UNION ALL SELECT 'action_runs', count(*), max(inserted_at) FROM action_runs

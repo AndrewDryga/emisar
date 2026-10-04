@@ -15,7 +15,7 @@ defmodule Emisar.AccountsTest do
   alias Emisar.RequestContext
   alias Emisar.Runbooks.Runbook
   alias Emisar.Runs.ActionRun
-  alias Emisar.Users.User
+  alias Emisar.SSO.LinkRequest
 
   describe "action_in_runner_access?/3" do
     test "both runner and pack grants must cover the action" do
@@ -136,53 +136,88 @@ defmodule Emisar.AccountsTest do
     end
   end
 
-  describe "erase_user_and_owned_accounts/1" do
-    test "deletes an account when the legacy login is its sole live owner" do
-      login = legacy_login()
+  describe "erase_member/2" do
+    test "erases the workspace with its sole live owner" do
       account = Fixtures.Accounts.create_account()
-      member = legacy_member(account, login, "owner")
-      login_id = login.id
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      member = Fixtures.Memberships.create_membership(account_id: account.id)
       account_id = account.id
+      owner_id = owner.id
 
-      assert {:ok, %User{id: ^login_id}} = Accounts.erase_user_and_owned_accounts(login_id)
+      assert {:ok, %{membership: %Membership{id: ^owner_id}, account: %Account{id: ^account_id}}} =
+               Accounts.erase_member(account.id, owner.id)
 
-      assert Repo.one(User.Query.all() |> User.Query.by_id(login_id)) == nil
-      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account_id)) == nil
+      refute Repo.reload(account)
+      refute Repo.reload(owner)
       refute Repo.reload(member)
     end
 
-    test "keeps an account when another live owner exists and removes this membership" do
-      login = legacy_login()
+    test "erases only the seat when another live owner stays, ending its sessions" do
       account = Fixtures.Accounts.create_account()
-      member = legacy_member(account, login, "owner")
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       other_owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      login_id = login.id
+      Fixtures.Auth.create_session_token!(owner)
+      Fixtures.Auth.create_session_token!(other_owner)
+      owner_id = owner.id
 
-      assert {:ok, %User{id: ^login_id}} = Accounts.erase_user_and_owned_accounts(login_id)
+      assert {:ok, %{membership: %Membership{id: ^owner_id}, account: nil}} =
+               Accounts.erase_member(account.id, owner.id)
 
-      assert Repo.one(User.Query.all() |> User.Query.by_id(login_id)) == nil
-      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account.id)).id == account.id
-      refute Repo.reload(member)
-      assert Repo.reload!(other_owner)
+      assert Repo.reload(account)
+      refute Repo.reload(owner)
+      assert Repo.reload(other_owner)
+      assert [] = Repo.all(UserToken.Query.by_membership(account.id, owner.id))
+      assert [_live] = Repo.all(UserToken.Query.by_membership(account.id, other_owner.id))
+
+      assert [%AuditEvent{target_kind: "membership", target_id: ^owner_id}] =
+               AuditEvent.Query.all()
+               |> AuditEvent.Query.by_account_id(account.id)
+               |> AuditEvent.Query.by_event_type("membership.erased")
+               |> Repo.all()
     end
 
-    test "keeps an account when the login is a non-owner member and removes this membership" do
-      login = legacy_login()
+    test "erases a non-owner seat and a removed one" do
       account = Fixtures.Accounts.create_account()
       Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      member = legacy_member(account, login, "operator")
-      login_id = login.id
+      operator = Fixtures.Memberships.create_membership(account_id: account.id)
+      removed = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      Fixtures.Memberships.mark_membership_as_deleted(removed)
 
-      assert {:ok, %User{id: ^login_id}} = Accounts.erase_user_and_owned_accounts(login_id)
+      for member <- [operator, removed] do
+        assert {:ok, %{account: nil}} = Accounts.erase_member(account.id, member.id)
+        refute Repo.reload(member)
+      end
 
-      assert Repo.one(User.Query.all() |> User.Query.by_id(login_id)) == nil
-      assert Repo.one(Account.Query.all() |> Account.Query.by_id(account.id)).id == account.id
-      refute Repo.reload(member)
+      assert Repo.reload(account)
     end
 
-    test "returns not_found for malformed or unknown ids" do
-      assert Accounts.erase_user_and_owned_accounts("not-a-uuid") == {:error, :not_found}
-      assert Accounts.erase_user_and_owned_accounts(Ecto.UUID.generate()) == {:error, :not_found}
+    test "clears the address from suppression and marketing only once no live Member uses it" do
+      shared = Fixtures.Random.unique_email()
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      first = Fixtures.Memberships.create_membership(account_id: account.id, email: shared)
+      elsewhere = Fixtures.Memberships.create_membership(email: shared)
+      {:ok, _} = Mail.suppress(shared, :hard_bounce, "HardBounce")
+      {:ok, _} = Emisar.Marketing.capture_signup(%{email: shared})
+
+      assert {:ok, _} = Accounts.erase_member(account.id, first.id)
+      assert Mail.suppressed?(shared)
+      assert Repo.one(Emisar.Marketing.Signup.Query.by_email(shared))
+
+      assert {:ok, _} = Accounts.erase_member(elsewhere.account_id, elsewhere.id)
+      refute Mail.suppressed?(shared)
+      refute Repo.one(Emisar.Marketing.Signup.Query.by_email(shared))
+    end
+
+    test "returns not_found for malformed ids, unknown ids and another workspace's Member" do
+      account = Fixtures.Accounts.create_account()
+      foreign = Fixtures.Memberships.create_membership()
+
+      assert Accounts.erase_member("not-a-uuid", foreign.id) == {:error, :not_found}
+      assert Accounts.erase_member(account.id, "not-a-uuid") == {:error, :not_found}
+      assert Accounts.erase_member(account.id, Ecto.UUID.generate()) == {:error, :not_found}
+      assert Accounts.erase_member(account.id, foreign.id) == {:error, :not_found}
+      assert Repo.reload(foreign)
     end
   end
 
@@ -2755,9 +2790,9 @@ defmodule Emisar.AccountsTest do
 
   describe "user_display_name/1" do
     test "uses a nonblank full name and falls back to email" do
-      named = %User{full_name: "Maya Chen", email: "maya@example.com"}
-      blank = %User{full_name: "  ", email: "blank@example.com"}
-      unnamed = %User{full_name: nil, email: "unnamed@example.com"}
+      named = %LinkRequest{full_name: "Maya Chen", email: "maya@example.com"}
+      blank = %LinkRequest{full_name: "  ", email: "blank@example.com"}
+      unnamed = %LinkRequest{full_name: nil, email: "unnamed@example.com"}
 
       assert Accounts.user_display_name(named) == "Maya Chen"
       assert Accounts.user_display_name(blank) == "blank@example.com"
@@ -2768,8 +2803,8 @@ defmodule Emisar.AccountsTest do
 
   describe "secondary_user_email/1" do
     test "returns an email only when the primary display name differs" do
-      named = %User{full_name: "Maya Chen", email: "maya@example.com"}
-      unnamed = %User{full_name: nil, email: "unnamed@example.com"}
+      named = %LinkRequest{full_name: "Maya Chen", email: "maya@example.com"}
+      unnamed = %LinkRequest{full_name: nil, email: "unnamed@example.com"}
 
       assert Accounts.secondary_user_email(named) == "maya@example.com"
       assert Accounts.secondary_user_email(unnamed) == nil
@@ -7166,24 +7201,6 @@ defmodule Emisar.AccountsTest do
       |> Repo.commit_multi(after_commit: &Accounts.after_membership_activation_committed/1)
 
     accepted
-  end
-
-  # The `users` table has no writer left: its rows are history until S3 drops
-  # it, so the erase flow's input is inserted directly.
-  defp legacy_login do
-    %User{}
-    |> Ecto.Changeset.change(
-      email: Fixtures.Random.unique_email(),
-      full_name: "Legacy Login",
-      confirmed_at: DateTime.utc_now()
-    )
-    |> Repo.insert!()
-  end
-
-  defp legacy_member(account, %User{} = login, role) do
-    Fixtures.Memberships.create_membership(account_id: account.id, email: login.email, role: role)
-    |> Ecto.Changeset.change(user_id: login.id)
-    |> Repo.update!()
   end
 
   defp member_mfa_reset_fixture(opts \\ []) do

@@ -1,7 +1,7 @@
 defmodule Emisar.Billing.CheckoutConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Billing, Config, Fixtures, Repo, Users}
+  alias Emisar.{Accounts, Billing, Config, Fixtures, Repo}
   alias Emisar.Billing.{CheckoutIntent, ProcessedEvent, Subscription, SubscriptionRetirements}
   alias Emisar.Fixtures.Billing.Provider
 
@@ -632,8 +632,6 @@ defmodule Emisar.Billing.CheckoutConcurrencyTest do
         Fixtures.Billing.delete_checkout_test_receipts(account.id)
         Fixtures.Billing.delete_recovery_rows(account.id)
         Accounts.delete_by_id(account.id)
-        Users.delete_by_id(member.id)
-        Users.delete_by_id(second_member.id)
       end
     end)
   end

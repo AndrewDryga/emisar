@@ -2995,7 +2995,7 @@ defmodule Emisar.SSOTest do
   # -- complete_auth/3 -------------------------------------------------
 
   describe "complete_auth/3 — resolution + JIT" do
-    test "first login JIT-provisions a Member without a personal login + identity at default_role" do
+    test "first login JIT-provisions a Member + identity at default_role" do
       {_owner, account, subject} = enterprise_owner()
 
       provider =
@@ -3078,7 +3078,7 @@ defmodule Emisar.SSOTest do
       assert first.id == second.id
     end
 
-    test "an identity on a Member without a personal login resolves to that Member alone" do
+    test "an identity on a Member resolves to that Member alone" do
       {_owner, account, _subject} = enterprise_owner()
       provider = provider_fixture(account)
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
@@ -3107,7 +3107,7 @@ defmodule Emisar.SSOTest do
               }} = SSO.complete_auth(provider, callback(claims), %{})
     end
 
-    test "a directory identifier on a Member without a personal login is parked, not matched by email" do
+    test "a directory identifier on a Member is parked, not matched by email" do
       {_owner, account, _subject} = enterprise_owner()
       provider = provider_fixture(account, %{kind: :keycloak})
       membership = Fixtures.Memberships.create_membership(account_id: account.id)
@@ -8311,11 +8311,16 @@ defmodule Emisar.SSOTest do
           "email_verified" => true
         })
 
+      assert request.matched_membership_id == owner_member.id
+
       assert SSO.approve_link_request(
                request,
                %RunnerAccess{mode: :none, groups: [], runner_ids: []},
                admin
              ) == {:error, :link_target_outranks_approver}
+
+      refute Repo.one(UserIdentity)
+      assert [_still_pending] = link_requests(provider.id)
     end
 
     test "an admin can't link an identity onto a SUSPENDED owner", %{
@@ -8910,7 +8915,7 @@ defmodule Emisar.SSOTest do
       assert "already has an identity for this connection" in errors_on(changeset).membership_id
     end
 
-    test "provisions a new Member without a personal login + consumes the request", %{
+    test "provisions a new Member + consumes the request", %{
       account: account,
       subject: subject,
       provider: provider
@@ -9015,7 +9020,7 @@ defmodule Emisar.SSOTest do
       assert link_requests(provider.id) == []
     end
 
-    test "a match to a Member without a personal login links the identity to that Member", %{
+    test "a match to a Member links the identity to that Member", %{
       account: account,
       subject: subject,
       provider: provider
@@ -9049,38 +9054,6 @@ defmodule Emisar.SSOTest do
                SSO.complete_auth(provider, callback(claims), %{})
 
       assert signed_in.id == member.id
-    end
-
-    test "an admin can't link an identity onto an owner without a personal login", %{
-      account: account,
-      provider: provider
-    } do
-      owner =
-        Fixtures.Memberships.create_membership(
-          account_id: account.id,
-          email: "unlinked-owner@acme.test",
-          role: "owner"
-        )
-
-      admin_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-
-      admin = Fixtures.Subjects.subject_for(admin_membership)
-
-      request =
-        capture_request(provider, %{
-          "sub" => "okta|unlinked-owner-impersonator",
-          "email" => "unlinked-owner@acme.test",
-          "email_verified" => true
-        })
-
-      assert request.matched_membership_id == owner.id
-
-      assert SSO.approve_link_request(request, RunnerAccess.none(), admin) ==
-               {:error, :link_target_outranks_approver}
-
-      refute Repo.one(UserIdentity)
-      assert [_still_pending] = link_requests(provider.id)
     end
 
     test "a legacy unverified OIDC match cannot be approved", %{

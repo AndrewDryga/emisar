@@ -1,7 +1,7 @@
 defmodule Emisar.Admin.Query do
   @moduledoc false
   use Emisar, :query
-  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Runners, Runs, SSO, Users}
+  alias Emisar.{Accounts, ApiKeys, Approvals, Audit, Auth, Runners, Runs, SSO}
   alias Emisar.Repo.Like
 
   @non_success_outcome_statuses Runs.ActionRun.terminal_statuses() -- [:success]
@@ -97,9 +97,6 @@ defmodule Emisar.Admin.Query do
 
   def count_accounts_since(since),
     do: count_since(Accounts.Account.Query.not_deleted(), :accounts, since)
-
-  def count_users_since(since),
-    do: count_since(Users.User.Query.not_deleted(), :users, since)
 
   def count_memberships_since(since),
     do: count_since(Accounts.Membership.Query.not_deleted(), :memberships, since)
@@ -283,7 +280,6 @@ defmodule Emisar.Admin.Query do
       as: :accounts,
       select: %{
         accounts: fragment("(SELECT count(*) FROM accounts WHERE deleted_at IS NULL)"),
-        users: fragment("(SELECT count(*) FROM users WHERE deleted_at IS NULL)"),
         memberships:
           fragment("(SELECT count(*) FROM account_memberships WHERE deleted_at IS NULL)"),
         runners: fragment("(SELECT count(*) FROM runners WHERE deleted_at IS NULL)"),

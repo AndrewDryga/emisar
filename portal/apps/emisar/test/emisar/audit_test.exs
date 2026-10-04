@@ -555,8 +555,7 @@ defmodule Emisar.AuditTest do
 
       {:ok, event} = Audit.record(Audit.Events.account_updated(subject, account, updated))
 
-      # Actor identity comes off the subject — the exact Member, not the
-      # personal login behind it…
+      # Actor identity comes off the subject — the exact Member…
       assert event.actor_kind == "membership"
       assert event.actor_id == subject.membership_id
       # …and so does the request metadata — the lever that lets every
@@ -1654,11 +1653,9 @@ defmodule Emisar.AuditTest do
       assert {:ok, [], _metadata} = Audit.list_target_options("approval_grant", subject)
     end
 
-    # a subject id that WAS resolvable when the event was
-    # written but whose row has since gone unresolvable resolves to a nil label
-    # and is rejected, so the picker doesn't offer a dead option. Here the user's
-    # membership is removed after the event, so the user-label resolver (scoped
-    # through `members_of_account`) no longer finds them in the account.
+    # A subject id that resolves to no label in this workspace is rejected, so
+    # the picker doesn't offer a dead option. A removed Member still resolves
+    # (the trail names them); a Member of another workspace never does.
     test "a target whose label cannot resolve in this workspace is dropped from the options" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
@@ -2366,7 +2363,7 @@ defmodule Emisar.AuditTest do
 
       refs = Audit.resolve_references([event], subject)
 
-      refute Map.has_key?(refs["user"], membership.id)
+      refute refs["user"][membership.id]
       assert refs["historical"][{"user", :target}][membership.id] == "Recorded directory name"
       assert {:ok, options, _} = Audit.list_target_options("user", subject)
       assert {membership.id, "Recorded directory name"} in options
@@ -2447,7 +2444,7 @@ defmodule Emisar.AuditTest do
 
       refs = Audit.resolve_references([event], subject)
 
-      refute Map.has_key?(refs["user"], ghost_id)
+      refute refs["user"][ghost_id]
     end
 
     test "an id stamped from another account does not resolve (account-scoped)" do
@@ -2484,7 +2481,7 @@ defmodule Emisar.AuditTest do
 
       refs = Audit.resolve_references([event], subject)
 
-      refute Map.has_key?(refs["user"], member_b.id)
+      refute refs["user"][member_b.id]
       refute Map.has_key?(refs["runner"], runner_b.id)
       refute refs["historical"][{"user", :actor}][member_b.id]
       refute refs["historical"][{"runner", :target}][runner_b.id]
@@ -3336,9 +3333,9 @@ defmodule Emisar.AuditTest do
   #   * through a module-private wrapper that forwards to an entry point
   #     (`member_event(subject, membership, "membership.suspended")` in events.ex,
   #     `log_security_attempt_exhausted(multi, user, "user.mfa_rate_limited", …)`
-  #     in auth.ex). No call-site regex sees those, so the three audit-dense
+  #     in auth.ex). No call-site regex sees those, so the two audit-dense
   #     modules are ALSO scanned whole-file: every dotted literal in them is an
-  #     event type by construction. That scan cannot be widened past those three —
+  #     event type by construction. That scan cannot be widened past those two —
   #     a web module's "action.add" is an icon name and `runs.ex`'s
   #     "postgres.uptime" an action id, neither an event type.
   #
@@ -3349,7 +3346,7 @@ defmodule Emisar.AuditTest do
   defp emitted_event_types do
     read = &File.read!(Path.join(File.cwd!(), &1))
     events = read.("lib/emisar/audit/events.ex")
-    direct = read.("lib/emisar/auth.ex") <> read.("lib/emisar/users.ex")
+    direct = read.("lib/emisar/auth.ex")
     catalog = read.("lib/emisar/catalog.ex")
     runs = read.("lib/emisar/runs.ex")
 

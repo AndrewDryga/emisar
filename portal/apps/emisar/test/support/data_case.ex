@@ -42,9 +42,8 @@ defmodule Emisar.DataCase do
   @doc """
   A helper that transforms changeset errors into a map of messages.
 
-      changeset = Users.change_user(%User{}, %{email: "bad"})
+      {:error, changeset} = Accounts.validate_sign_up(%{"email" => "bad"})
       assert "must have the @ sign and no spaces" in errors_on(changeset).email
-      assert errors_on(changeset) == %{email: ["must have the @ sign and no spaces"]}
 
   """
   def errors_on(changeset) do

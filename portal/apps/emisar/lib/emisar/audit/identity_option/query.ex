@@ -209,21 +209,6 @@ defmodule Emisar.Audit.IdentityOption.Query do
     |> wrap_labels()
   end
 
-  defp current_labels("user", account_id) do
-    Emisar.Users.User.Query.all()
-    |> Emisar.Users.User.Query.members_of_account(account_id)
-    |> select([users: u, memberships: m], %{
-      id: u.id,
-      label:
-        fragment(
-          "COALESCE(NULLIF(BTRIM(?), ''), ?::text)",
-          m.display_name,
-          m.email
-        )
-    })
-    |> wrap_labels()
-  end
-
   defp current_labels("pack_version", account_id) do
     Emisar.Catalog.PackVersion.Query.all()
     |> Emisar.Catalog.PackVersion.Query.by_account_id(account_id)

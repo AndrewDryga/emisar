@@ -224,8 +224,8 @@ defmodule Emisar.Audit.Events do
     do: member_event(subject, membership, "membership.reinstated")
 
   @doc """
-  A Member without a personal login lost its API keys and approved device
-  grants because the SSO connection it signs in through was disabled or deleted.
+  A Member with no verified email lost its API keys and approved device grants
+  because the only SSO connection it signs in through was disabled or deleted.
   """
   def membership_credentials_revoked(
         %Subject{} = subject,

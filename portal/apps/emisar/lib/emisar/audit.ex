@@ -853,16 +853,9 @@ defmodule Emisar.Audit do
       # Exact account-owned Members, including removed ones; another account's
       # Member id resolves nothing.
       "membership" => fetch_member_labels(ids_by_kind, account_id),
-      # Historical rows name the personal User. Users belong to accounts via
-      # memberships, not a column, so they scope through the membership join.
-      "user" =>
-        fetch_labels(
-          Emisar.Users.User.Query,
-          ids_by_kind,
-          "user",
-          :display_name,
-          &Emisar.Users.User.Query.members_of_account(&1, account_id)
-        ),
+      # "user" rows name the retired personal login. Nothing is left to look it
+      # up in: such a row carries its stored name, and the historical fallback
+      # reads the names its identity's other rows stored.
       "runner" =>
         fetch_labels(
           Emisar.Runners.Runner.Query,
