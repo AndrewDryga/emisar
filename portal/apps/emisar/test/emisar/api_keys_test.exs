@@ -1618,8 +1618,8 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a scoped admin can't rotate a key that reaches further than them" do
-      {_owner, account, owner_subject} = owner_subject_pair()
-      {:ok, _raw, key} = ApiKeys.create_key(%{name: "owner-agent"}, owner_subject)
+      {owner, account, _owner_subject} = owner_subject_pair()
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(created_by_membership_id: owner.id)
       {:ok, scoped} = Accounts.RunnerAccess.restricted(["web"], [])
 
       admin =
@@ -1632,10 +1632,13 @@ defmodule Emisar.ApiKeysTest do
     end
 
     test "a successor names who rotated it when that is not its owner" do
-      {_owner, account, owner_subject} = owner_subject_pair()
-      operator_subject = member_subject(account, :operator)
-      {:ok, _raw, operator_key} = ApiKeys.create_key(%{name: "operator-agent"}, operator_subject)
-      {:ok, _raw, own_key} = ApiKeys.create_key(%{name: "owner-agent"}, owner_subject)
+      {owner, account, owner_subject} = owner_subject_pair()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      {_raw, operator_key} =
+        Fixtures.ApiKeys.create_api_key(created_by_membership_id: operator.id)
+
+      {_raw, own_key} = Fixtures.ApiKeys.create_api_key(created_by_membership_id: owner.id)
 
       assert {:ok, _raw, successor} = ApiKeys.rotate_api_key(operator_key, owner_subject)
       assert successor.issued_by_membership_id == owner_subject.membership_id

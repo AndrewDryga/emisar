@@ -177,9 +177,9 @@ defmodule Emisar.Auth.Subject do
       account: account,
       actor: api_key,
       role: :api_client,
-      # Keys mint-time-bound their creator's membership — MCP dispatch
-      # uses this to apply per-user runner ACLs at call-time, so revoking
-      # a user's runner scope immediately shrinks every key they minted.
+      # A key binds the member it acts as — its minter, or a service account —
+      # and MCP dispatch applies that member's runner ACL at call time, so
+      # narrowing that member immediately shrinks every key acting as them.
       membership_id: Map.get(api_key, :created_by_membership_id),
       permissions: Emisar.Auth.Permissions.for_role(:api_client),
       context: context

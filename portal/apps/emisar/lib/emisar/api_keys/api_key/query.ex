@@ -158,12 +158,13 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
   end
 
   @doc """
-  Audit owner-label lookup: `{key_id, owner label}` for `ids`, naming the
-  accountable HUMAN behind an API-key/MCP actor the way `account_id` knows
-  them. Joins the key's EXACT minting membership — another membership of the
-  same person never stands in — using only its workspace name or contact.
-  An INNER join: a key whose minting membership is gone, suspended, or in
-  another account resolves no row, and the trail degrades to the key name.
+  Audit owner-label lookup: `{key_id, owner label}` for `ids`, naming the member
+  an API-key/MCP actor acts as — the person who minted it, or a service account —
+  the way `account_id` knows them. Joins the key's EXACT acting membership —
+  another membership of the same person never stands in — using only its
+  workspace name or contact. An INNER join: a key whose acting membership is
+  gone, suspended, or in another account resolves no row, and the trail
+  degrades to the key name.
   """
   def select_owner_labels(queryable, ids, account_id) do
     owner_membership =

@@ -6801,11 +6801,15 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Runners.mark_deleted(deleted)
       subject = Fixtures.Subjects.subject_for(admin)
+      Accounts.subscribe_account_team(account.id)
 
       assert {:ok, service_account} =
                Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
 
       assert Accounts.runner_access_for_membership(account.id, service_account.id) == expected
+
+      service_account_id = service_account.id
+      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
     end
 
     test "reaches nothing when every runner in the creator's scope is gone" do
@@ -6819,12 +6823,16 @@ defmodule Emisar.AccountsTest do
 
       Fixtures.Runners.mark_deleted(deleted)
       subject = Fixtures.Subjects.subject_for(admin)
+      Accounts.subscribe_account_team(account.id)
 
       assert {:ok, service_account} =
                Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
 
       assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
                RunnerAccess.none()
+
+      service_account_id = service_account.id
+      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
     end
 
     test "a service account needs a name" do
