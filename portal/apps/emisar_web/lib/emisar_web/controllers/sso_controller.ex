@@ -81,6 +81,29 @@ defmodule EmisarWeb.SSOController do
     do: begun |> Map.delete(:authorize_url) |> Map.put(:redirect_uri, redirect_uri)
 
   def begin(conn, %{"provider_id" => provider_id}) do
+    if cross_site_navigation?(conn),
+      do: continue_on_sign_in_page(conn, provider_id),
+      else: start_sign_in(conn, provider_id)
+  end
+
+  # This is a GET, so any page can send a browser here. From another site it
+  # would be a login CSRF (through an IdP the page's author runs, into the
+  # author's workspace) or would wipe a ceremony this browser has in flight, so
+  # it starts nothing: the browser lands on the workspace's sign-in page, where
+  # the same button starts the sign-in from this site. Browsers mark the
+  # navigation with Fetch Metadata; a link from a customer's own portal costs
+  # one click.
+  defp cross_site_navigation?(conn),
+    do: get_req_header(conn, "sec-fetch-site") == ["cross-site"]
+
+  defp continue_on_sign_in_page(conn, provider_id) do
+    case SSO.fetch_provider_for_sign_in(provider_id) do
+      {:ok, provider} -> redirect(conn, to: ~p"/app/#{provider.account_id}/sign_in")
+      {:error, :not_found} -> redirect(conn, to: ~p"/sign_in")
+    end
+  end
+
+  defp start_sign_in(conn, provider_id) do
     # The browser id is minted when a sign-in starts, so two tabs completing at
     # once present the same id and a later sign-out reaches both sessions.
     {conn, _browser_id} = conn |> clear_ceremonies() |> UserAuth.fetch_browser_id()

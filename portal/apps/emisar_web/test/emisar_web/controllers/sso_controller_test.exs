@@ -429,6 +429,33 @@ defmodule EmisarWeb.SSOControllerTest do
       assert_receive {:oidc_begin, ^other_id}
     end
 
+    test "a cross-site navigation starts nothing and leaves this browser's ceremonies alone" do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
+      provider = provider_fixture(enterprise_account())
+      provider_id = provider.id
+
+      conn =
+        build_conn()
+        |> init_test_session(%{
+          "member_mfa_reset_sso" => %{state: "in-flight"},
+          "magic_link_token_id" => "pending-code"
+        })
+        |> put_req_header("sec-fetch-site", "cross-site")
+
+      landed = get(conn, ~p"/sign_in/sso/#{provider_id}")
+
+      assert redirected_to(landed) == ~p"/app/#{provider.account_id}/sign_in"
+      assert get_session(landed, "member_mfa_reset_sso") == %{state: "in-flight"}
+      assert get_session(landed, "magic_link_token_id") == "pending-code"
+      refute get_session(landed, :sso_login)
+      refute_received {:oidc_begin, ^provider_id}
+
+      same_origin = build_conn() |> put_req_header("sec-fetch-site", "same-origin")
+      started = get(same_origin, ~p"/sign_in/sso/#{provider_id}")
+      assert redirected_to(started) == "https://idp.test/auth"
+      assert_received {:oidc_begin, ^provider_id}
+    end
+
     test "one client address cannot use up a provider's sign-ins" do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
       Emisar.Config.put_override(:emisar, :sso_oidc_impl, RecordingOIDC)
