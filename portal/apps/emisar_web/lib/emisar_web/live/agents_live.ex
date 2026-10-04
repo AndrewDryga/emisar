@@ -93,6 +93,10 @@ defmodule EmisarWeb.AgentsLive do
      |> ConfirmDialog.init()
      |> assign(:pending_key_action, nil)
      |> assign(:rotated, nil)
+     # Who a custom key acts as: only an admin with service accounts is offered
+     # a choice, so everyone else's key acts as themselves.
+     |> assign(:acts_as_options, nil)
+     |> assign(:acts_as, "member")
      |> assign_form(ApiKeys.change_key(default_params()))}
   end
 
@@ -105,7 +109,7 @@ defmodule EmisarWeb.AgentsLive do
   # resolved: a deep-linked `?owner=…` has to name the member, not blank out.
   def handle_params(params, _uri, socket) do
     if connected?(socket) do
-      {:noreply, load(socket, params)}
+      {:noreply, socket |> load(params) |> preselect_acts_as(params)}
     else
       {:noreply, prepare_disconnected(socket, params)}
     end
@@ -158,7 +162,8 @@ defmodule EmisarWeb.AgentsLive do
          |> assign(:quick_secret, nil)
          |> assign(:quick_key_id, nil)
          |> assign(:quick_connected?, false)
-         |> clear_connection_wait()}
+         |> clear_connection_wait()
+         |> assign_acts_as_options()}
       end
     )
   end
@@ -297,7 +302,11 @@ defmodule EmisarWeb.AgentsLive do
 
   def handle_event("validate", %{"api_key" => params} = event, socket) do
     changeset = ApiKeys.change_key(params) |> LiveForm.on_change(event)
-    {:noreply, assign_form(socket, changeset)}
+
+    {:noreply,
+     socket
+     |> assign(:acts_as, Map.get(params, "acts_as", socket.assigns.acts_as))
+     |> assign_form(changeset)}
   end
 
   def handle_event("validate", _params, socket), do: {:noreply, socket}
@@ -474,10 +483,10 @@ defmodule EmisarWeb.AgentsLive do
 
   defp do_create(socket, params) do
     # A Custom key is a plain `:mcp` key — identity + expiry only. It carries no
-    # per-key scope: account Policy + the operator's own runner scope decide
-    # what it may do, same as a quick-mint. ApiKeys owns how the posted fields
-    # are read, so the form and the mint can't drift.
-    case ApiKeys.create_key(params, socket.assigns.current_subject) do
+    # per-key scope: account Policy + the runner scope of the member it acts as
+    # decide what it may do, same as a quick-mint. ApiKeys owns how the posted
+    # fields are read, so the form and the mint can't drift.
+    case mint_custom_key(params, socket.assigns.current_subject) do
       {:ok, raw, key} ->
         {:noreply,
          socket
@@ -485,6 +494,7 @@ defmodule EmisarWeb.AgentsLive do
          |> assign(:quick_key_id, key.id)
          |> assign(:quick_connected?, false)
          |> start_connection_wait()
+         |> assign(:acts_as, "member")
          |> assign_form(ApiKeys.change_key(default_params()))
          |> reload()}
 
@@ -492,6 +502,20 @@ defmodule EmisarWeb.AgentsLive do
       # on the form via <.input>/<.error> — no flash dump.
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
+
+      {:error, :runner_access_exceeds_subject} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "That service account can reach runners or packs you can't, so you can't create a key for it."
+         )}
+
+      {:error, :not_found} ->
+        {:noreply,
+         socket
+         |> assign_acts_as_options()
+         |> put_flash(:error, "That service account is no longer available.")}
 
       # The form mints `:mcp`, but `create_key/2` picks its permission from the
       # posted kind — a crafted `audit_export` post from this page is refused
@@ -592,6 +616,16 @@ defmodule EmisarWeb.AgentsLive do
        "Rotation has already started. Waiting for the agent to use its new key."
      )
      |> reload()}
+  end
+
+  defp rotation_error(socket, :runner_access_exceeds_subject) do
+    {:noreply,
+     socket
+     |> assign(:pending_key_action, nil)
+     |> put_flash(
+       :error,
+       "This key reaches runners or packs you can't, so you can't rotate it. You can still revoke it."
+     )}
   end
 
   defp rotation_error(socket, _reason) do
@@ -845,6 +879,50 @@ defmodule EmisarWeb.AgentsLive do
     %{"name" => "", "description" => "", "expires_at" => ""}
   end
 
+  defp mint_custom_key(%{"acts_as" => id} = params, subject) when id not in [nil, "", "member"],
+    do: ApiKeys.create_service_account_key(id, params, subject)
+
+  defp mint_custom_key(params, subject), do: ApiKeys.create_key(params, subject)
+
+  defp assign_acts_as_options(socket) do
+    case Accounts.list_service_accounts(socket.assigns.current_subject) do
+      {:ok, [_ | _] = service_accounts} ->
+        options =
+          Enum.map(service_accounts, &{Accounts.member_display_name(&1), &1.id})
+
+        assign(socket, :acts_as_options, [{"You", "member"}, {"Service accounts", options}])
+
+      _none_or_unauthorized ->
+        socket |> assign(:acts_as_options, nil) |> assign(:acts_as, "member")
+    end
+  end
+
+  # The Team page sends an admin here to create a key for the service account
+  # it just added: open the custom key form acting as it.
+  defp preselect_acts_as(%{assigns: %{live_action: :connect}} = socket, %{"acts_as" => id})
+       when is_binary(id) do
+    if ApiKeys.subject_can_issue_quick_key?(socket.assigns.current_subject) do
+      socket =
+        socket
+        |> assign(:selected_client, "custom")
+        |> assign(:selected_sandbox, nil)
+        |> assign_acts_as_options()
+
+      if acts_as_option?(socket.assigns.acts_as_options, id),
+        do: assign(socket, :acts_as, id),
+        else: socket
+    else
+      socket
+    end
+  end
+
+  defp preselect_acts_as(socket, _params), do: socket
+
+  defp acts_as_option?([_you, {_label, service_accounts}], id),
+    do: Enum.any?(service_accounts, &match?({_name, ^id}, &1))
+
+  defp acts_as_option?(_options, _id), do: false
+
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "api_key"))
 
@@ -1094,6 +1172,8 @@ defmodule EmisarWeb.AgentsLive do
         snippet_open?={@snippet_open?}
         current_account={@current_account}
         form={@form}
+        acts_as={@acts_as}
+        acts_as_options={@acts_as_options}
       />
 
       <%!-- Rotation success — the SAME "here's your key" grammar as the connect
@@ -1162,6 +1242,8 @@ defmodule EmisarWeb.AgentsLive do
             snippet_open?={@snippet_open?}
             current_account={@current_account}
             form={@form}
+            acts_as={@acts_as}
+            acts_as_options={@acts_as_options}
           />
         </div>
       </section>
@@ -1686,6 +1768,8 @@ defmodule EmisarWeb.AgentsLive do
   attr :snippet_open?, :boolean, default: false
   attr :current_account, :any, required: true
   attr :form, :any, default: nil
+  attr :acts_as, :string, default: "member"
+  attr :acts_as_options, :list, default: nil
 
   defp connect_panel(assigns) do
     config =
@@ -1900,7 +1984,11 @@ defmodule EmisarWeb.AgentsLive do
               <% else %>
                 <section id="custom-key-create-step">
                   <.step_header step={1} title="Create a key" />
-                  <.custom_key_panel form={@form} />
+                  <.custom_key_panel
+                    form={@form}
+                    acts_as={@acts_as}
+                    acts_as_options={@acts_as_options}
+                  />
                 </section>
               <% end %>
             </div>
@@ -3076,6 +3164,8 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   attr :form, :any, required: true
+  attr :acts_as, :string, required: true
+  attr :acts_as_options, :list, default: nil
 
   defp custom_key_panel(assigns) do
     ~H"""
@@ -3091,6 +3181,21 @@ defmodule EmisarWeb.AgentsLive do
         phx-change="validate"
         phx-submit="create"
       >
+        <div :if={@acts_as_options}>
+          <.input
+            type="select"
+            id="api_key_acts_as"
+            name="api_key[acts_as]"
+            label="Acts as"
+            value={@acts_as}
+            options={@acts_as_options}
+          />
+          <p class="mt-2 text-xs text-zinc-400">
+            The key uses that member's runner and pack access, and its requests are attributed
+            to them. A service account's key keeps working when people leave.
+          </p>
+        </div>
+
         <%!-- autocomplete="off": this names a KEY, not a person, but the field is
              labeled "Name" — enough for a browser to offer the operator's own. --%>
         <.input

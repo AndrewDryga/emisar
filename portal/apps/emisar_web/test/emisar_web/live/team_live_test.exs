@@ -1174,6 +1174,133 @@ defmodule EmisarWeb.TeamLiveTest do
     end
   end
 
+  describe "service accounts" do
+    test "an owner adds one and sees the reach it starts with", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/service-accounts/new")
+
+      assert html =~ "It starts with your runner and pack access."
+
+      html =
+        lv
+        |> form("#service_account_form", %{"service_account" => %{"display_name" => "Ryker"}})
+        |> render_submit()
+
+      assert html =~ "Ryker is ready"
+      assert html =~ "Operator"
+      assert html =~ "All runners"
+      assert html =~ "All packs"
+
+      service_account =
+        Emisar.Accounts.Membership.Query.all()
+        |> Emisar.Accounts.Membership.Query.by_kind(:service_account)
+        |> Emisar.Repo.one()
+
+      assert service_account.display_name == "Ryker"
+
+      assert has_element?(
+               lv,
+               ~s(a[href="/app/#{account.slug}/agents/connect?acts_as=#{service_account.id}"]),
+               "Create an API key"
+             )
+    end
+
+    test "a blank name stays on the form with its error", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/service-accounts/new")
+
+      html =
+        lv
+        |> form("#service_account_form", %{"service_account" => %{"display_name" => " "}})
+        |> render_submit()
+
+      assert html =~ "can&#39;t be blank"
+      refute html =~ "is ready"
+    end
+
+    test "an operator can't add one, even with a crafted event", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      {:ok, lv, html} =
+        build_conn()
+        |> log_in_member(operator)
+        |> live(~p"/app/#{account}/settings/team/service-accounts/new")
+
+      assert html =~ "You can&#39;t add service accounts"
+
+      render_submit(lv, "add_service_account", %{
+        "service_account" => %{"display_name" => "Ryker"}
+      })
+
+      refute Emisar.Accounts.Membership.Query.all()
+             |> Emisar.Accounts.Membership.Query.by_kind(:service_account)
+             |> Emisar.Repo.one()
+    end
+
+    test "the roster marks a service account and offers only what applies to it", %{
+      conn: conn
+    } do
+      {conn, _owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      row = "#member-row-#{service_account.id}"
+
+      assert has_element?(lv, row, "Service account")
+      assert has_element?(lv, "#member-added-#{service_account.id}")
+      refute has_element?(lv, "#member-joined-#{service_account.id}")
+      assert has_element?(lv, "#member-controls-#{service_account.id}", "Operator")
+
+      assert has_element?(
+               lv,
+               ~s(#{row} a[href="/app/#{account.slug}/agents?owner[]=#{service_account.id}"]),
+               "View connections"
+             )
+
+      refute has_element?(lv, row, "View activity")
+      refute has_element?(lv, row, "End sessions")
+      assert has_element?(lv, row, "Remove service account")
+    end
+
+    test "suspending one warns that its apps lose access; ending sessions is not offered", %{
+      conn: conn
+    } do
+      {conn, _owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+
+      render_click(lv, "open_member_action", %{
+        "action" => "suspend",
+        "membership_id" => service_account.id
+      })
+
+      assert has_element?(lv, "#member-action", "Every app connected as")
+
+      render_click(lv, "open_member_action", %{
+        "action" => "end_sessions",
+        "membership_id" => service_account.id
+      })
+
+      refute has_element?(lv, "#member-action", "End this member")
+    end
+
+    test "only managers see the Add service account action", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert has_element?(lv, "#add-service-account", "Add service account")
+
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+
+      {:ok, viewer_lv, _html} =
+        build_conn()
+        |> log_in_member(viewer)
+        |> live(~p"/app/#{account}/settings/team")
+
+      refute has_element?(viewer_lv, "#add-service-account")
+    end
+  end
+
   describe "GET /app/settings/team as a viewer" do
     test "shows the read-only banner and no invite action", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn, %{account: %{name: "ViewerOrg"}})

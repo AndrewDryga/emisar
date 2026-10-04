@@ -8,6 +8,7 @@
       toc={[
         {"roles", "Roles"},
         {"inviting", "Inviting your team"},
+        {"service-accounts", "Service accounts"},
         {"profiles", "Member profiles"},
         {"runner-scopes", "Per-member scope: runners and packs"},
         {"mfa", "MFA"},
@@ -111,6 +112,49 @@
         alt="The invite form: an email field, then the role choices — owner, admin, billing manager, operator (selected), viewer — each with a one-line description of what it can do, then an Access section offering no runners (selected), all runners, or selected runners, and a Send invite button."
         preview_h="max-h-[32rem]"
       />
+
+      <.docs_h2 id="service-accounts">Service accounts</.docs_h2>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        A service account is a member that an app connects as, such as a team bot. Use one when a
+        connection should not belong to a person: it keeps working when people leave, and the
+        audit log attributes its requests to the service account.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        Add one from <a
+          href={~p"/app/team"}
+          class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
+        >Team → Add service account</a>. It has the Operator role and starts with your runner and
+        pack access; narrow it with Actions → Edit access like any member's. It has no email
+        address and cannot sign in, so it is never invited, never enrolls MFA, and never links an
+        SSO identity. Only owners and admins add and manage service accounts, and only within
+        their own runner and pack access.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        An app connects as a service account in one of two ways:
+      </p>
+      <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">An app that signs in with OAuth.</strong>
+            When the app asks you to authorize it, choose the service account under Connect as,
+            or create a new one named after the app.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">An app that takes an API key.</strong>
+            On AI agents, create a custom key and set Acts as to the service account.
+          </span>
+        </li>
+      </ul>
+      <p class="mt-5 text-base leading-7 text-zinc-400">
+        emisar records who connected each app or created each key for a service account. When a
+        policy doesn't allow self-approval, that person can't approve the requests the service
+        account makes through that app or key; another approver must. Suspending or removing a
+        service account revokes every key and connection that acts as it.
+      </p>
 
       <.docs_h2 id="profiles">Member profiles</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">

@@ -2364,6 +2364,25 @@ defmodule Emisar.AccountsTest do
                filter: [role: ["owner"], status: ["active"]]
              ) == {:error, :unauthorized}
     end
+
+    test "a service account offers no role, session or MFA actions" do
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+
+      assert %{
+               service_account?: true,
+               manageable?: true,
+               role_editable?: false,
+               end_sessions?: false,
+               reset_mfa?: false,
+               resend_invitation?: false
+             } = Enum.find(facts, &(&1.membership.id == service_account.id))
+
+      assert %{service_account?: false, end_sessions?: true} =
+               Enum.find(facts, &(&1.membership.id == owner.id))
+    end
   end
 
   describe "fetch_team_member_facts/2" do
@@ -2677,6 +2696,14 @@ defmodule Emisar.AccountsTest do
       {_other_owner, _other_account, other_subject} = Fixtures.Subjects.owner_subject()
 
       assert {:ok, %{mfa_total: 1}} = Accounts.fetch_team_security_facts(other_subject)
+    end
+
+    test "service accounts are not counted: they never sign in" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      assert {:ok, %{mfa_total: 1, mfa_enrolled: 0, mfa_missing: 1}} =
+               Accounts.fetch_team_security_facts(subject)
     end
   end
 
@@ -3793,6 +3820,16 @@ defmodule Emisar.AccountsTest do
       assert %Membership{role: :operator} =
                Repo.reload!(target_membership)
     end
+
+    test "a service account's role never changes" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      assert Accounts.update_membership_role(service_account, :admin, subject) ==
+               {:error, :service_account_role_fixed}
+
+      assert Repo.reload!(service_account).role == :operator
+    end
   end
 
   describe "subscribe_account_team/1" do
@@ -3831,6 +3868,18 @@ defmodule Emisar.AccountsTest do
       # The mutation happens on B's topic — A's subscriber must hear nothing.
       assert {:ok, _} = Accounts.suspend_membership(target_b, owner_subject_b)
       refute_receive {:list_changed, :team, _event, _membership_id}
+    end
+  end
+
+  describe "broadcast_service_account_created/1" do
+    test "tells the account's open Team pages" do
+      service_account = Fixtures.Memberships.create_service_account()
+      Accounts.subscribe_account_team(service_account.account_id)
+
+      assert Accounts.broadcast_service_account_created(service_account) == :ok
+
+      service_account_id = service_account.id
+      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
     end
   end
 
@@ -6677,6 +6726,241 @@ defmodule Emisar.AccountsTest do
                membership.invitation_token_digest
 
       refute_received {:email, _}
+    end
+  end
+
+  describe "create_service_account/2" do
+    test "adds a named operator seat with the subject's own reach, audited and announced" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      Accounts.subscribe_account_team(account.id)
+
+      assert {:ok, %Membership{} = service_account} =
+               Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
+
+      assert %Membership{
+               kind: :service_account,
+               role: :operator,
+               display_name: "Ryker",
+               email: nil,
+               email_verified_at: nil,
+               invitation_token_digest: nil
+             } = service_account
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
+               RunnerAccess.all()
+
+      service_account_id = service_account.id
+      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
+
+      assert %AuditEvent{target_id: ^service_account_id} =
+               event =
+               AuditEvent.Query.all()
+               |> AuditEvent.Query.by_account_id(account.id)
+               |> AuditEvent.Query.by_event_type("service_account.created")
+               |> Repo.one()
+
+      assert event.actor_id == subject.membership_id
+      assert event.target_label == "Ryker"
+      assert event.payload["runner_access"]["mode"] == "all"
+    end
+
+    test "a scoped admin's service account starts with that admin's reach" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, scoped} = RunnerAccess.restricted(["web"], [])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      subject = Fixtures.Subjects.subject_for(admin)
+
+      assert {:ok, service_account} =
+               Accounts.create_service_account(%{"display_name" => "Ryker"}, subject)
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) == scoped
+    end
+
+    test "a service account needs a name" do
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:error, changeset} =
+               Accounts.create_service_account(%{"display_name" => " "}, subject)
+
+      assert "can't be blank" in errors_on(changeset).display_name
+    end
+
+    test "an operator cannot add one" do
+      account = Fixtures.Accounts.create_account()
+
+      subject =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Subjects.subject_for()
+
+      assert Accounts.create_service_account(%{"display_name" => "Ryker"}, subject) ==
+               {:error, :unauthorized}
+
+      refute Membership.Query.all() |> Membership.Query.by_kind(:service_account) |> Repo.one()
+    end
+  end
+
+  describe "list_service_accounts/1" do
+    test "lists the account's active service accounts by name" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      zed =
+        Fixtures.Memberships.create_service_account(account_id: account.id, display_name: "Zed")
+
+      ryker =
+        Fixtures.Memberships.create_service_account(account_id: account.id, display_name: "Ryker")
+
+      Fixtures.Memberships.create_service_account(account_id: account.id, display_name: "Off")
+      |> Fixtures.Memberships.suspend_membership()
+
+      Fixtures.Memberships.create_membership(account_id: account.id)
+      Fixtures.Memberships.create_service_account(display_name: "Elsewhere")
+
+      assert {:ok, service_accounts} = Accounts.list_service_accounts(subject)
+      assert Enum.map(service_accounts, & &1.id) == [ryker.id, zed.id]
+    end
+
+    test "leaves out a service account that reaches further than the subject" do
+      account = Fixtures.Accounts.create_account()
+      {:ok, scoped} = RunnerAccess.restricted(["web"], [])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      narrow =
+        Fixtures.Memberships.create_service_account(account_id: account.id, runner_access: scoped)
+
+      Fixtures.Memberships.create_service_account(account_id: account.id, display_name: "Wide")
+
+      narrow_id = narrow.id
+
+      assert {:ok, [%Membership{id: ^narrow_id}]} =
+               Accounts.list_service_accounts(Fixtures.Subjects.subject_for(admin))
+    end
+
+    test "an operator cannot list them" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      subject =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Subjects.subject_for()
+
+      assert Accounts.list_service_accounts(subject) == {:error, :unauthorized}
+    end
+  end
+
+  describe "insert_service_account/4" do
+    test "adds a service account inside the caller's transaction" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert {:ok, %{service_account: %Membership{kind: :service_account} = service_account}} =
+               Multi.new()
+               |> Multi.run(:service_account, fn repo, _changes ->
+                 Accounts.insert_service_account(repo, account, %{display_name: "Ryker"}, subject)
+               end)
+               |> Repo.commit_multi()
+
+      assert service_account.account_id == account.id
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
+               RunnerAccess.all()
+    end
+
+    test "an operator cannot add one" do
+      account = Fixtures.Accounts.create_account()
+
+      subject =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Subjects.subject_for()
+
+      assert Accounts.insert_service_account(Repo, account, %{display_name: "Ryker"}, subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "never adds one to another account" do
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      other_account = Fixtures.Accounts.create_account()
+
+      assert Accounts.insert_service_account(
+               Repo,
+               other_account,
+               %{display_name: "Ryker"},
+               subject
+             ) == {:error, :unauthorized}
+
+      refute Membership.Query.all() |> Membership.Query.by_kind(:service_account) |> Repo.one()
+    end
+  end
+
+  describe "fetch_and_lock_service_account/3" do
+    test "locks the subject's service account" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      service_account_id = service_account.id
+
+      assert {:ok, %Membership{id: ^service_account_id}} =
+               Accounts.fetch_and_lock_service_account(Repo, service_account.id, subject)
+    end
+
+    test "a person's seat is not a service account" do
+      {owner, _account, subject} = Fixtures.Subjects.owner_subject()
+
+      assert Accounts.fetch_and_lock_service_account(Repo, owner.id, subject) ==
+               {:error, :not_found}
+    end
+
+    test "a suspended service account is not found" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+
+      service_account =
+        Fixtures.Memberships.create_service_account(account_id: account.id)
+        |> Fixtures.Memberships.suspend_membership()
+
+      assert Accounts.fetch_and_lock_service_account(Repo, service_account.id, subject) ==
+               {:error, :not_found}
+    end
+
+    test "another account's service account is not found" do
+      {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
+      service_account = Fixtures.Memberships.create_service_account()
+
+      assert Accounts.fetch_and_lock_service_account(Repo, service_account.id, subject) ==
+               {:error, :not_found}
+
+      assert Accounts.fetch_and_lock_service_account(Repo, "not-a-uuid", subject) ==
+               {:error, :not_found}
+    end
+
+    test "an operator cannot act as a service account" do
+      account = Fixtures.Accounts.create_account()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      subject =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Subjects.subject_for()
+
+      assert Accounts.fetch_and_lock_service_account(Repo, service_account.id, subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "a scoped admin cannot act as a service account that reaches further" do
+      account = Fixtures.Accounts.create_account()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      {:ok, scoped} = RunnerAccess.restricted(["web"], [])
+
+      subject =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+        |> Fixtures.Subjects.subject_for()
+
+      assert Accounts.fetch_and_lock_service_account(Repo, service_account.id, subject) ==
+               {:error, :runner_access_exceeds_subject}
     end
   end
 

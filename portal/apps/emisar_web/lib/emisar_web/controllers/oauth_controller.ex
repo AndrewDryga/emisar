@@ -101,7 +101,7 @@ defmodule EmisarWeb.OAuthController do
     end
   end
 
-  # `issue_code/3` re-validates the request against the client's own locked row
+  # `issue_code/4` re-validates the request against the client's own locked row
   # and enforces the CHOSEN account's role + require_sso / require_mfa controls,
   # so approval hands it the request whole and maps what comes back. Rendering
   # consent mints nothing, which is why nothing here is gated on the SESSION
@@ -140,8 +140,9 @@ defmodule EmisarWeb.OAuthController do
 
   defp approve_consent(conn, client, params, %Subject{} = subject) do
     state = params["state"]
+    grantee = consent_grantee(params)
 
-    case OAuth.issue_code(client, params, subject) do
+    case OAuth.issue_code(client, params, grantee, subject) do
       {:ok, code, redirect_uri} ->
         redirect_back(conn, redirect_uri, %{code: code, state: state})
 
@@ -149,9 +150,13 @@ defmodule EmisarWeb.OAuthController do
         redirect_error(conn, redirect_uri, error_code, state)
 
       {:error, :unauthorized} ->
+        render_invalid(conn, unauthorized_message(grantee))
+
+      {:error, :runner_access_exceeds_subject} ->
         render_invalid(
           conn,
-          "Your role can't connect an AI agent. Ask a workspace administrator for access."
+          "That service account can reach runners or packs you can't, so you can't connect an " <>
+            "app as it. Ask an owner, or choose another service account."
         )
 
       {:error, :sso_required} ->
@@ -193,6 +198,21 @@ defmodule EmisarWeb.OAuthController do
 
   defp consent_subject(_conn, _params), do: {:error, :not_found}
 
+  # Who the connection acts as. The domain re-checks that a service account
+  # belongs to the chosen workspace and that this member may act for it.
+  defp consent_grantee(%{"connect_as" => "new_service_account"}), do: :new_service_account
+
+  defp consent_grantee(%{"connect_as" => id}) when is_binary(id) and id not in ["", "member"],
+    do: {:service_account, id}
+
+  defp consent_grantee(_params), do: :member
+
+  defp unauthorized_message(:member),
+    do: "Your role can't connect an AI agent. Ask a workspace administrator for access."
+
+  defp unauthorized_message(_grantee),
+    do: "Only owners and admins can connect an app as a service account."
+
   # -- Token endpoint -------------------------------------------------
 
   # POST /oauth/token
@@ -229,6 +249,9 @@ defmodule EmisarWeb.OAuthController do
       # session default, an easy way to connect Claude.ai to the wrong, empty
       # workspace).
       sessions: sessions,
+      # Who the connection acts as, offered only where the member may connect
+      # an app as a service account; nil keeps the page as before.
+      connect_as_options: connect_as_options(sessions, client),
       scopes: requested,
       # Echoed back verbatim as hidden fields on the consent form.
       params: %{
@@ -409,7 +432,58 @@ defmodule EmisarWeb.OAuthController do
   # already pruned dead entries and sorted by workspace name.
   defp consent_sessions(conn) do
     Enum.map(conn.assigns.signed_in_sessions, fn %{membership: membership} ->
-      %{account: membership.account, member_label: member_label(membership)}
+      %{
+        account: membership.account,
+        member_label: member_label(membership),
+        service_accounts: connectable_service_accounts(conn, membership.account)
+      }
+    end)
+  end
+
+  # nil where this browser's member may not connect an app as a service account,
+  # so the page never offers a choice the domain would refuse.
+  defp connectable_service_accounts(conn, account) do
+    with {:ok, subject} <- UserAuth.subject_for_account(conn, account.id),
+         {:ok, service_accounts} <- Accounts.list_service_accounts(subject) do
+      service_accounts
+    else
+      _ -> nil
+    end
+  end
+
+  defp connect_as_options(sessions, client) do
+    case Enum.reject(sessions, &is_nil(&1.service_accounts)) do
+      [] ->
+        nil
+
+      managed ->
+        service_account_options =
+          Enum.flat_map(managed, &service_account_options(&1, sessions)) ++
+            [{new_service_account_label(client), "new_service_account"}]
+
+        [
+          {you_label(sessions), "member"},
+          {"Service accounts", service_account_options}
+        ]
+    end
+  end
+
+  defp new_service_account_label(%{client_name: name}) when is_binary(name) and name != "",
+    do: "New service account named #{name}"
+
+  defp new_service_account_label(_client), do: "New service account"
+
+  defp you_label([session]), do: "You (#{session.member_label})"
+  defp you_label(_sessions), do: "You"
+
+  # With several workspaces signed in, each service account names its own.
+  defp service_account_options(session, [_]),
+    do: Enum.map(session.service_accounts, &{Accounts.member_display_name(&1), &1.id})
+
+  defp service_account_options(session, _sessions) do
+    Enum.map(session.service_accounts, fn service_account ->
+      {"#{Accounts.member_display_name(service_account)} (#{session.account.name})",
+       service_account.id}
     end)
   end
 

@@ -544,6 +544,46 @@ defmodule Emisar.ApprovalsTest do
   end
 
   # Count of distinct approve votes recorded on a request.
+  # An MCP run requested through a service account's key, issued by an owner,
+  # under a policy that forbids self-approval.
+  defp service_account_gated_request do
+    account = Fixtures.Accounts.create_account()
+    owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    issuer_subject = Fixtures.Subjects.subject_for(owner)
+    service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+    {:ok, _raw, key} =
+      Emisar.ApiKeys.create_service_account_key(
+        service_account.id,
+        %{name: "Ryker"},
+        issuer_subject
+      )
+
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    Fixtures.Catalog.create_action(runner: runner)
+    Emisar.Runners.subscribe_runner_transport(runner)
+
+    {:ok, run} =
+      Runs.create_run(%{
+        account_id: account.id,
+        runner_id: runner.id,
+        action_id: "linux.uptime",
+        source: "mcp",
+        api_key_id: key.id,
+        initiating_membership_id: service_account.id,
+        args: %{},
+        args_sha256: "abc123",
+        pack_ref: Fixtures.Catalog.default_pack_ref(),
+        expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
+        status: :pending_approval
+      })
+
+    {:ok, request} =
+      Approvals.create_request(run, "x", min_approvals: 1, allow_self_approval: false)
+
+    %{account: account, issuer_subject: issuer_subject, request: request}
+  end
+
   defp approved_count(request_id) do
     Repo.one(Decision.Query.approved_distinct_decider_count(request_id))
   end
@@ -3841,6 +3881,23 @@ defmodule Emisar.ApprovalsTest do
   end
 
   describe "override_request/3" do
+    test "an override by the issuer of a service account's key records self-approval as waived" do
+      %{account: account, issuer_subject: issuer_subject, request: request} =
+        service_account_gated_request()
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.override_request(request, "Bot fix cannot wait", issuer_subject)
+
+      assert %Audit.Event{payload: payload} =
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_account_id(account.id)
+               |> Audit.Event.Query.by_event_type("approval.overridden")
+               |> Repo.one()
+
+      assert payload["self_approval_waived"]
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+    end
+
     test "an admin releases below quorum with one distinct audit receipt and no extra vote" do
       %{
         account: account,
@@ -4339,6 +4396,22 @@ defmodule Emisar.ApprovalsTest do
 
       assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
                Approvals.approve_request(request, other, "ok")
+
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+    end
+
+    test "ABUSE: whoever issued a service account's key can't approve what it requests" do
+      %{account: account, issuer_subject: issuer_subject, request: request} =
+        service_account_gated_request()
+
+      assert Approvals.approve_request(request, issuer_subject, "via the bot") ==
+               {:error, :self_approval_forbidden}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert approved_count(request.id) == 0
+
+      assert {:ok, {%Request{status: :approved}, %ActionRun{status: :sent}}} =
+               Approvals.approve_request(request, distinct_operator(account), "ok")
 
       assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
     end

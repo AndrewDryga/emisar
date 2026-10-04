@@ -29,10 +29,16 @@
       </li>
     </ul>
 
-    <.consent_note class="mt-5">
+    <.consent_note :if={is_nil(@connect_as_options)} class="mt-5">
       The connection uses your workspace access. Policy decides which actions run,
       wait for approval, or are denied. Action requests are attributed to you and recorded
       in the audit log.
+    </.consent_note>
+    <.consent_note :if={@connect_as_options} class="mt-5">
+      The connection acts as you, or as a service account that keeps working when people
+      leave. It uses that member's runner and pack access, and its requests are attributed
+      to them and recorded in the audit log. Policy decides which actions run, wait for
+      approval, or are denied.
     </.consent_note>
 
     <.form for={%{}} action={~p"/oauth/authorize"} method="post" class="mt-6">
@@ -70,6 +76,22 @@
         name="account_id"
         value={session.account.id}
       />
+
+      <div :if={@connect_as_options} class="mb-5">
+        <.input
+          type="select"
+          id="consent-connect-as"
+          name="connect_as"
+          label="Connect as"
+          label_variant={:eyebrow}
+          value="member"
+          options={@connect_as_options}
+        />
+        <p class="mt-2 text-xs text-zinc-400">
+          A new service account starts with your runner and pack access. You can narrow it
+          on the Team page.
+        </p>
+      </div>
 
       <div class="flex flex-col gap-3">
         <.button type="submit" name="decision" value="approve" class="w-full">

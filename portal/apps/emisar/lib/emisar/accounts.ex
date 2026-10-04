@@ -1232,6 +1232,7 @@ defmodule Emisar.Accounts do
     disabled? = Membership.disabled?(membership)
     mfa_enrolled? = not is_nil(membership.mfa_enabled_at)
     self_owner? = self_owner?(membership, subject)
+    service_account? = membership.kind == :service_account
 
     facts = %{
       # The digest is credential material behind the join link, the TOTP seed
@@ -1248,6 +1249,7 @@ defmodule Emisar.Accounts do
       self_owner?: self_owner?,
       disabled?: disabled?,
       mfa_enrolled?: mfa_enrolled?,
+      service_account?: service_account?,
       runner_access: Map.get(access_by_membership, membership.id, RunnerAccess.none()),
       manageable?: subject_can_manage_member?(membership, subject),
       runner_access_editable?:
@@ -1256,11 +1258,13 @@ defmodule Emisar.Accounts do
           not membership.runner_access_directory_managed,
       role_editable?:
         subject_can_assign_member_role?(membership.role, subject) and not self_owner? and
-          not membership.directory_managed,
+          not membership.directory_managed and not service_account?,
       resend_invitation?: pending_invitation? and not disabled?,
       # The factor belongs to this Member alone, so this workspace's admins may
       # reset it.
-      reset_mfa?: mfa_enrolled? and not pending_invitation?
+      reset_mfa?: mfa_enrolled? and not pending_invitation?,
+      # A service account never signs in, so it has no sessions to end.
+      end_sessions?: not service_account?
     }
 
     if manager? do
@@ -1431,8 +1435,9 @@ defmodule Emisar.Accounts do
   enforcement is on (and whether the caller could turn it on without locking
   themselves out), and whether SSO is required.
 
-  The denominator is every non-deleted membership — suspended and still-pending
-  included — so the count matches the roster rather than one page of it, and the
+  The denominator is every non-deleted person — suspended and still-pending
+  included, service accounts left out — so the count matches the roster's people
+  rather than one page of them, and the
   account row, its settings, and the actor's own enrollment are all re-read here
   rather than taken from a long-lived socket snapshot. `team_managers` shares
   that denominator, so it can never exceed the member count beside it. Requires
@@ -1446,7 +1451,12 @@ defmodule Emisar.Accounts do
              Authorizer.view_own_account_permission()
            ),
          {:ok, account} <- fetch_current_account(subject) do
-      base = Membership.Query.not_deleted() |> Membership.Query.by_account_id(account.id)
+      # Service accounts never sign in, so they hold no factor to count.
+      base =
+        Membership.Query.not_deleted()
+        |> Membership.Query.by_account_id(account.id)
+        |> Membership.Query.by_kind(:human)
+
       manager_roles = Auth.Permissions.roles_with_permission(Authorizer.manage_team_permission())
 
       total = base |> Authorizer.for_subject(subject) |> Repo.aggregate(:count)
@@ -2299,6 +2309,7 @@ defmodule Emisar.Accounts do
       |> Multi.run(:next_access, fn _repo,
                                     %{actor: actor, target: target, previous_access: previous} ->
         with :ok <- ensure_expected_membership_role(target, opts),
+             :ok <- ensure_role_assignable(target),
              :ok <- ensure_role_not_directory_managed(target),
              :ok <- ensure_role_change_allowed(target, new_role, actor),
              :ok <- ensure_demotion_keeps_an_owner(target, new_role),
@@ -2549,6 +2560,14 @@ defmodule Emisar.Accounts do
     )
   end
 
+  @doc "Internal - tell open Team pages a service account joined the roster."
+  def broadcast_service_account_created(%Membership{kind: :service_account} = service_account) do
+    Emisar.PubSub.broadcast(
+      account_team_topic(service_account.account_id),
+      {:list_changed, :team, "service_account.created", service_account.id}
+    )
+  end
+
   # A directory (SCIM) sync owns the role of a synced member — it recomputes it on
   # every push (group→role mapping, else the provider default), so a manual change
   # silently reverts. The `directory_managed` flag on the membership records that
@@ -2558,6 +2577,13 @@ defmodule Emisar.Accounts do
     do: {:error, :role_managed_by_directory}
 
   defp ensure_role_not_directory_managed(%Membership{}), do: :ok
+
+  # A service account's keys authenticate through the operator role, and it
+  # administers nothing, so its role never changes.
+  defp ensure_role_assignable(%Membership{kind: :service_account}),
+    do: {:error, :service_account_role_fixed}
+
+  defp ensure_role_assignable(%Membership{}), do: :ok
 
   # A member the directory (SCIM) has deactivated (`directory_suspended`, set by the
   # SCIM deprovision write path) must stay suspended — reinstating them in emisar
@@ -4627,6 +4653,115 @@ defmodule Emisar.Accounts do
     else
       {:error, :not_found}
     end
+  end
+
+  # -- Service accounts ------------------------------------------------
+
+  @doc """
+  Adds a service account named by `attrs` (`display_name`): the Member an app
+  connects as. It starts with the subject's own current runner and pack access,
+  which the Team page narrows like any member's. Requires `manage_team`.
+
+  Returns `{:ok, %Membership{}}` or `{:error, %Ecto.Changeset{} | :unauthorized}`.
+  """
+  def create_service_account(attrs, %Subject{account: %Account{id: account_id}} = subject)
+      when is_map(attrs) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()) do
+      Multi.new()
+      |> put_membership_account_lock(account_id)
+      |> put_current_actor(subject, Authorizer.manage_team_permission())
+      |> Multi.run(:service_account, fn repo, %{account: account, actor: actor} ->
+        insert_service_account(repo, account, attrs, actor)
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_service_account_created(&1.service_account))
+      |> case do
+        {:ok, %{service_account: service_account}} -> {:ok, service_account}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  The workspace's active service accounts the subject may connect an app as —
+  those whose runner and pack access its own covers — ordered by name. Requires
+  `manage_team`. Returns `{:ok, [%Membership{}]}` or `{:error, :unauthorized}`.
+  """
+  def list_service_accounts(%Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()) do
+      service_accounts =
+        Membership.Query.authorized()
+        |> Membership.Query.by_kind(:service_account)
+        |> Membership.Query.ordered_by_display_name()
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      subject_access = runner_access_for_subject(subject)
+      access_by_id = runner_access_for_memberships(service_accounts)
+
+      {:ok,
+       Enum.filter(
+         service_accounts,
+         &RunnerAccess.covers?(subject_access, Map.fetch!(access_by_id, &1.id))
+       )}
+    end
+  end
+
+  @doc """
+  Internal — adds a service account inside the caller's transaction, which
+  already holds `account`'s row lock; OAuth consent uses it to create the account
+  an app connects as. The service account starts with `subject`'s current runner
+  and pack access, and the audit row names `subject`. Requires `manage_team`.
+
+  Returns `{:ok, %Membership{}}` or `{:error, %Ecto.Changeset{} | :unauthorized}`.
+  """
+  def insert_service_account(repo, %Account{} = account, attrs, %Subject{} = subject)
+      when is_map(attrs) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
+         :ok <- Subject.ensure_in_account(subject, account.id, :unauthorized),
+         access = runner_access_for_subject(subject),
+         changeset = Membership.Changeset.create_service_account(account.id, attrs, access),
+         {:ok, service_account} <- repo.insert(changeset),
+         {:ok, _access} <- replace_runner_access_rows(repo, service_account.id, access),
+         {:ok, _event} <-
+           repo.insert(Audit.Events.service_account_created(subject, service_account, access)) do
+      {:ok, service_account}
+    end
+  end
+
+  @doc """
+  Internal — locks the subject's service account `id` inside the caller's
+  transaction, so the caller can issue a credential that acts as it. Requires
+  `manage_team`, an active service account, and that the subject's current
+  runner and pack access cover the service account's: a credential for it is
+  a credential with its reach.
+
+  Returns `{:ok, %Membership{}}` or
+  `{:error, :not_found | :unauthorized | :runner_access_exceeds_subject}`.
+  """
+  def fetch_and_lock_service_account(repo, id, %Subject{} = subject) do
+    with :ok <-
+           Auth.Authorizer.ensure_has_permissions(subject, Authorizer.manage_team_permission()),
+         true <- Repo.valid_uuid?(id),
+         {:ok, service_account} <- lock_service_account(repo, id, subject),
+         access = load_runner_access(repo, service_account),
+         :ok <- ensure_runner_access_grant_allowed(subject, access) do
+      {:ok, service_account}
+    else
+      false -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp lock_service_account(repo, id, %Subject{} = subject) do
+    Membership.Query.authorized()
+    |> Membership.Query.by_id(id)
+    |> Membership.Query.by_kind(:service_account)
+    |> Membership.Query.lock_for_update()
+    |> Authorizer.for_subject(subject)
+    |> repo.fetch(Membership.Query)
   end
 
   # -- Internal (Billing flows) ----------------------------------------

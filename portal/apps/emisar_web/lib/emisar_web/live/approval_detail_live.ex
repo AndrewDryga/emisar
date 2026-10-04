@@ -544,7 +544,10 @@ defmodule EmisarWeb.ApprovalDetailLive do
     {:noreply,
      socket
      |> assign_decision_fields(params)
-     |> put_flash(:error, "You can't approve your own request.")}
+     |> put_flash(
+       :error,
+       "You can't approve your own request, or one made with a key you issued."
+     )}
   end
 
   # The note is too long to store. Nothing was decided and the request is

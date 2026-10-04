@@ -5,6 +5,7 @@ defmodule Emisar.OAuthTest do
   API key. These are the paths the Claude.ai / ChatGPT connectors drive.
   """
   use Emisar.DataCase, async: true
+  alias Emisar.Accounts
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.{Auth, Fixtures}
   alias Emisar.OAuth
@@ -55,7 +56,7 @@ defmodule Emisar.OAuthTest do
 
   defp issue!(subject, client, challenge, opts \\ []) do
     params = authorization_params(challenge, %{"scope" => opts[:scope] || "mcp offline_access"})
-    {:ok, code, @redirect} = OAuth.issue_code(client, params, subject)
+    {:ok, code, @redirect} = OAuth.issue_code(client, params, :member, subject)
 
     code
   end
@@ -346,7 +347,7 @@ defmodule Emisar.OAuthTest do
     end
   end
 
-  describe "issue_code/3 authorization gate" do
+  describe "issue_code/4 authorization gate" do
     test "a successful consent announces the backing key on the agents topic" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
       client = register!()
@@ -370,7 +371,7 @@ defmodule Emisar.OAuthTest do
           Fixtures.Memberships.create_membership(account_id: account.id, role: :viewer)
         )
 
-      assert OAuth.issue_code(client, authorization_params(challenge), viewer) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, viewer) ==
                {:error, :unauthorized}
     end
 
@@ -380,7 +381,7 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, subject) ==
                {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -394,7 +395,7 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, subject) ==
                {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -407,7 +408,7 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, subject) ==
                {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -426,7 +427,7 @@ defmodule Emisar.OAuthTest do
       # land on the ACTING operator's membership or not at all.
       borrowed = %{subject | membership_id: peer_membership.id}
 
-      assert OAuth.issue_code(client, authorization_params(challenge), borrowed) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, borrowed) ==
                {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -444,7 +445,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       borrowed = %{subject | membership_id: other_membership.id}
 
-      assert OAuth.issue_code(client, authorization_params(challenge), borrowed) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, borrowed) ==
                {:error, :unauthorized}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -457,7 +458,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge, %{"redirect_uri" => "https://attacker.example/cb"})
 
-      assert OAuth.issue_code(client, params, subject) == {:error, :invalid_redirect_uri}
+      assert OAuth.issue_code(client, params, :member, subject) == {:error, :invalid_redirect_uri}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -471,7 +472,8 @@ defmodule Emisar.OAuthTest do
       stale_client = %{client | redirect_uris: [unregistered]}
       params = authorization_params(challenge, %{"redirect_uri" => unregistered})
 
-      assert OAuth.issue_code(stale_client, params, subject) == {:error, :invalid_redirect_uri}
+      assert OAuth.issue_code(stale_client, params, :member, subject) ==
+               {:error, :invalid_redirect_uri}
 
       refute Repo.exists?(ApiKey.Query.all())
       refute Repo.exists?(AuthorizationCode.Query.all())
@@ -483,7 +485,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge) |> Map.delete("redirect_uri")
 
-      assert OAuth.issue_code(client, params, subject) == {:error, :invalid_redirect_uri}
+      assert OAuth.issue_code(client, params, :member, subject) == {:error, :invalid_redirect_uri}
 
       refute Repo.exists?(ApiKey.Query.all())
     end
@@ -494,7 +496,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge, %{"response_type" => "token"})
 
-      assert OAuth.issue_code(client, params, subject) ==
+      assert OAuth.issue_code(client, params, :member, subject) ==
                {:error, {:oauth, "unsupported_response_type", @redirect}}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -511,7 +513,7 @@ defmodule Emisar.OAuthTest do
       for bad <- [nil, "", String.slice(challenge, 0, 42), String.duplicate("+", 43)] do
         params = authorization_params(challenge, %{"code_challenge" => bad})
 
-        assert OAuth.issue_code(client, params, subject) ==
+        assert OAuth.issue_code(client, params, :member, subject) ==
                  {:error, {:oauth, "invalid_request", @redirect}},
                "expected invalid_request for #{inspect(bad)}"
       end
@@ -526,7 +528,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge, %{"code_challenge_method" => "plain"})
 
-      assert OAuth.issue_code(client, params, subject) ==
+      assert OAuth.issue_code(client, params, :member, subject) ==
                {:error, {:oauth, "invalid_request", @redirect}}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -539,7 +541,7 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
       params = authorization_params(challenge, %{"resource" => "https://other.example/mcp"})
 
-      assert OAuth.issue_code(client, params, subject) ==
+      assert OAuth.issue_code(client, params, :member, subject) ==
                {:error, {:oauth, "invalid_target", @redirect}}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -554,7 +556,7 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, subject) ==
                {:error, :sso_required}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -567,7 +569,7 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert OAuth.issue_code(client, authorization_params(challenge), subject) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, subject) ==
                {:error, :mfa_required}
 
       refute Repo.exists?(ApiKey.Query.all())
@@ -588,7 +590,7 @@ defmodule Emisar.OAuthTest do
 
       assert unproved.actor.id == owner.id
 
-      assert OAuth.issue_code(client, authorization_params(challenge), unproved) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, unproved) ==
                {:error, :mfa_required}
 
       refute_oauth_mint(account)
@@ -611,7 +613,7 @@ defmodule Emisar.OAuthTest do
       assert proved.mfa_enrollment_verified_at == enrolled.mfa_enabled_at
 
       assert {:ok, _code, @redirect} =
-               OAuth.issue_code(client, authorization_params(challenge), proved)
+               OAuth.issue_code(client, authorization_params(challenge), :member, proved)
 
       assert Repo.exists?(ApiKey.Query.all())
       assert Repo.exists?(AuthorizationCode.Query.all())
@@ -646,7 +648,7 @@ defmodule Emisar.OAuthTest do
       client = register!()
       {_verifier, challenge} = pkce()
 
-      assert OAuth.issue_code(client, authorization_params(challenge), stale) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, stale) ==
                {:error, :mfa_required}
 
       refute_oauth_mint(account)
@@ -674,7 +676,12 @@ defmodule Emisar.OAuthTest do
       assert sso_subject.mfa_enrollment_verified_at == nil
 
       assert {:ok, _code, @redirect} =
-               OAuth.issue_code(first_client, authorization_params(challenge), sso_subject)
+               OAuth.issue_code(
+                 first_client,
+                 authorization_params(challenge),
+                 :member,
+                 sso_subject
+               )
 
       provider
       |> Ecto.Changeset.change(satisfies_mfa: false)
@@ -682,7 +689,12 @@ defmodule Emisar.OAuthTest do
 
       second_client = register!("Downgraded provider")
 
-      assert OAuth.issue_code(second_client, authorization_params(challenge), sso_subject) ==
+      assert OAuth.issue_code(
+               second_client,
+               authorization_params(challenge),
+               :member,
+               sso_subject
+             ) ==
                {:error, :mfa_required}
 
       assert Repo.aggregate(ApiKey.Query.all(), :count) == 1
@@ -741,7 +753,7 @@ defmodule Emisar.OAuthTest do
 
       assert foreign_sso.mfa
 
-      assert OAuth.issue_code(client, authorization_params(challenge), foreign_sso) ==
+      assert OAuth.issue_code(client, authorization_params(challenge), :member, foreign_sso) ==
                {:error, :unauthorized}
 
       refute_oauth_mint(chosen)
@@ -753,10 +765,181 @@ defmodule Emisar.OAuthTest do
       {_verifier, challenge} = pkce()
 
       assert {:ok, _code, @redirect} =
-               OAuth.issue_code(client, authorization_params(challenge), subject)
+               OAuth.issue_code(client, authorization_params(challenge), :member, subject)
 
       assert Repo.exists?(ApiKey.Query.all())
       assert Repo.exists?(AuthorizationCode.Query.all())
+    end
+  end
+
+  describe "issue_code/4 as a service account" do
+    setup do
+      {owner, account, subject} = Fixtures.Subjects.owner_subject()
+      %{owner: owner, account: account, subject: subject, client: register!("Ryker")}
+    end
+
+    test "connects the app as an existing service account, attributed to it",
+         %{owner: owner, account: account, subject: subject, client: client} do
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {verifier, challenge} = pkce()
+
+      assert {:ok, code, @redirect} =
+               OAuth.issue_code(
+                 client,
+                 authorization_params(challenge),
+                 {:service_account, service_account.id},
+                 subject
+               )
+
+      assert {:ok, tokens} =
+               OAuth.exchange_code(%{
+                 "code" => code,
+                 "client_id" => client.id,
+                 "redirect_uri" => @redirect,
+                 "code_verifier" => verifier
+               })
+
+      assert {:ok, %{api_key: key, token: token}} =
+               OAuth.resolve_access_token(tokens.access_token, @resource)
+
+      assert key.created_by_membership_id == service_account.id
+      assert key.issued_by_membership_id == owner.id
+      assert token.membership_id == service_account.id
+
+      owner_id = owner.id
+      key_id = key.id
+
+      assert %Emisar.Audit.Event{actor_id: ^owner_id, target_id: ^key_id} =
+               Emisar.Audit.Event.Query.all()
+               |> Emisar.Audit.Event.Query.by_account_id(account.id)
+               |> Emisar.Audit.Event.Query.by_event_type("oauth.consent_granted")
+               |> Repo.one()
+    end
+
+    test "connecting as yourself names no other issuer", %{subject: subject, client: client} do
+      {_verifier, challenge} = pkce()
+
+      assert {:ok, _code, @redirect} =
+               OAuth.issue_code(client, authorization_params(challenge), :member, subject)
+
+      assert %ApiKey{issued_by_membership_id: nil} = Repo.one(ApiKey)
+    end
+
+    test "creates a service account named after the app, starting with the operator's access",
+         %{account: account, subject: subject, client: client} do
+      {_verifier, challenge} = pkce()
+      Accounts.subscribe_account_team(account.id)
+
+      assert {:ok, _code, @redirect} =
+               OAuth.issue_code(
+                 client,
+                 authorization_params(challenge),
+                 :new_service_account,
+                 subject
+               )
+
+      service_account =
+        Accounts.Membership.Query.all()
+        |> Accounts.Membership.Query.by_kind(:service_account)
+        |> Repo.one()
+
+      assert service_account.display_name == "Ryker"
+      assert service_account.account_id == account.id
+
+      assert Accounts.runner_access_for_membership(account.id, service_account.id) ==
+               Accounts.RunnerAccess.all()
+
+      assert %ApiKey{} = key = Repo.one(ApiKey)
+      assert key.created_by_membership_id == service_account.id
+
+      service_account_id = service_account.id
+      assert_receive {:list_changed, :team, "service_account.created", ^service_account_id}
+    end
+
+    test "the connection outlives the admin who authorized it",
+         %{account: account, client: client} do
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {verifier, challenge} = pkce()
+
+      {:ok, code, @redirect} =
+        OAuth.issue_code(
+          client,
+          authorization_params(challenge),
+          {:service_account, service_account.id},
+          Fixtures.Subjects.subject_for(admin)
+        )
+
+      {:ok, tokens} =
+        OAuth.exchange_code(%{
+          "code" => code,
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "code_verifier" => verifier
+        })
+
+      Fixtures.Memberships.mark_membership_as_deleted(admin)
+
+      assert {:ok, %{api_key: %ApiKey{}}} =
+               OAuth.resolve_access_token(tokens.access_token, @resource)
+    end
+
+    test "an operator can connect only as themselves", %{account: account, client: client} do
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {_verifier, challenge} = pkce()
+
+      operator =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+        |> Fixtures.Subjects.subject_for()
+
+      for grantee <- [{:service_account, service_account.id}, :new_service_account] do
+        assert OAuth.issue_code(client, authorization_params(challenge), grantee, operator) ==
+                 {:error, :unauthorized}
+      end
+
+      refute_oauth_mint(account)
+      service_account_id = service_account.id
+
+      assert [%Accounts.Membership{id: ^service_account_id}] =
+               Accounts.Membership.Query.all()
+               |> Accounts.Membership.Query.by_kind(:service_account)
+               |> Repo.all()
+    end
+
+    test "another account's service account is not found",
+         %{account: account, subject: subject, client: client} do
+      elsewhere = Fixtures.Memberships.create_service_account()
+      {_verifier, challenge} = pkce()
+
+      assert OAuth.issue_code(
+               client,
+               authorization_params(challenge),
+               {:service_account, elsewhere.id},
+               subject
+             ) == {:error, :not_found}
+
+      refute_oauth_mint(account)
+    end
+
+    test "a scoped admin cannot connect as a service account that reaches further",
+         %{account: account, client: client} do
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, scoped} = Accounts.RunnerAccess.restricted(["web"], [])
+      {_verifier, challenge} = pkce()
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+        |> Fixtures.Subjects.subject_for()
+
+      assert OAuth.issue_code(
+               client,
+               authorization_params(challenge),
+               {:service_account, service_account.id},
+               admin
+             ) == {:error, :runner_access_exceeds_subject}
+
+      refute_oauth_mint(account)
     end
   end
 

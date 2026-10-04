@@ -59,6 +59,23 @@ defmodule Emisar.Fixtures.Memberships do
   end
 
   @doc """
+  Creates a service account: the Member an app connects as. `:account_id`
+  defaults to a new account and `:display_name` to "Ryker"; it reaches every
+  runner and pack unless `:runner_access` names another `%RunnerAccess{}`.
+  """
+  def create_service_account(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    account_id = attrs[:account_id] || Fixtures.Accounts.create_account().id
+    access = Map.get(attrs, :runner_access, RunnerAccess.all())
+    profile = %{display_name: Map.get(attrs, :display_name, "Ryker")}
+
+    account_id
+    |> Membership.Changeset.create_service_account(profile, access)
+    |> Repo.insert!()
+    |> force_runner_access(access)
+  end
+
+  @doc """
   Test-only role override. Production code MUST go through
   `Accounts.update_membership_role/3` with a `%Subject{}`. This bypasses
   the last-owner / self-promotion / role-hierarchy guards, which exist

@@ -209,9 +209,16 @@ defmodule Emisar.OAuth do
 
   @doc """
   Called from the consent POST once a logged-in operator approves. Mints the
-  backing MCP key for their membership and a single-use code bound to the PKCE
-  challenge + redirect_uri + resource. Returns the raw code together with the
-  callback it may be delivered to, proven against the client's registration.
+  backing MCP key for the `grantee` the connection acts as, and a single-use
+  code bound to the PKCE challenge + redirect_uri + resource. Returns the raw
+  code together with the callback it may be delivered to, proven against the
+  client's registration.
+
+  `grantee` is `:member` (the consenting operator), `{:service_account, id}`
+  (one of the account's service accounts), or `:new_service_account` (a service
+  account created now, named after the client, starting with the operator's
+  own access). Connecting as a service account also needs `manage_team` and
+  reach that covers the service account's.
 
   `client` and `subject` are consent-screen SNAPSHOTS, never the authority: the
   request is validated against the locked client row, and the account,
@@ -220,12 +227,14 @@ defmodule Emisar.OAuth do
   rendered blocks the mint before anything is written. Returns
   `{:error, :unauthorized}` when the current role can't issue keys or the seat
   isn't the operator's, `{:error, :sso_required | :mfa_required}` when the
-  account's controls aren't satisfied, and `{:error, :not_found}` when the seat
-  is gone.
+  account's controls aren't satisfied, `{:error, :runner_access_exceeds_subject}`
+  when a service account reaches further than the operator, and
+  `{:error, :not_found}` when the seat or service account is gone.
   """
-  @spec issue_code(Client.t(), map(), Subject.t()) ::
+  @spec issue_code(Client.t(), map(), grantee, Subject.t()) ::
           {:ok, String.t(), String.t()} | {:error, term()}
-  def issue_code(%Client{} = client, params, %Subject{} = subject) do
+        when grantee: :member | :new_service_account | {:service_account, String.t()}
+  def issue_code(%Client{} = client, params, grantee, %Subject{} = subject) do
     # IL-3's pre-DB gate. The backing key carries actions:read + actions:execute,
     # so consenting is exactly as privileged as minting an API key — otherwise a
     # read-only viewer could walk the consent flow into an execute-capable token
@@ -255,6 +264,9 @@ defmodule Emisar.OAuth do
       |> Multi.run(:subject, fn _repo, changes ->
         rebuild_consenting_subject(changes, subject)
       end)
+      |> Multi.run(:grantee, fn repo, changes ->
+        fetch_or_create_grantee(repo, changes, grantee)
+      end)
       |> Multi.run(:key, fn _repo, changes ->
         mint_backing_key(changes)
       end)
@@ -266,15 +278,37 @@ defmodule Emisar.OAuth do
       |> Multi.update(:authorized_client, fn %{client: client} ->
         Client.Changeset.mark_authorized(client, DateTime.utc_now())
       end)
-      # Announce the new backing key so an open agents list reflows to show the
-      # connection the moment consent lands, not on the next 5s tick.
-      |> Repo.commit_multi(after_commit: &ApiKeys.broadcast_backing_key_created(&1.key))
+      |> Repo.commit_multi(after_commit: &announce_consent(&1, grantee))
       |> case do
         {:ok, %{redirect_uri: redirect_uri}} -> {:ok, raw, redirect_uri}
         {:error, reason} -> {:error, reason}
       end
     end
   end
+
+  # The membership the connection acts as. Its own reach and attribution follow
+  # every call the client makes; the consenting operator stays the audit actor.
+  defp fetch_or_create_grantee(_repo, %{membership: membership}, :member), do: {:ok, membership}
+
+  defp fetch_or_create_grantee(repo, %{subject: subject}, {:service_account, id}),
+    do: Accounts.fetch_and_lock_service_account(repo, id, subject)
+
+  defp fetch_or_create_grantee(repo, changes, :new_service_account) do
+    %{account: account, client: client, subject: subject} = changes
+    attrs = %{display_name: client.client_name || "MCP client"}
+
+    Accounts.insert_service_account(repo, account, attrs, subject)
+  end
+
+  # Announce the new backing key so an open agents list reflows to show the
+  # connection the moment consent lands, not on the next 5s tick — and a service
+  # account created for it, so an open Team page lists it.
+  defp announce_consent(%{key: key, grantee: service_account}, :new_service_account) do
+    :ok = ApiKeys.broadcast_backing_key_created(key)
+    Accounts.broadcast_service_account_created(service_account)
+  end
+
+  defp announce_consent(%{key: key}, _grantee), do: ApiKeys.broadcast_backing_key_created(key)
 
   defp fetch_and_lock_client(client_id, repo) do
     Client.Query.all()
@@ -308,20 +342,23 @@ defmodule Emisar.OAuth do
     )
   end
 
-  defp mint_backing_key(%{account: account, membership: membership, client: client}) do
+  defp mint_backing_key(changes) do
+    %{account: account, membership: membership, grantee: grantee, client: client} = changes
     name = "#{client.client_name || "MCP client"} (OAuth)"
 
-    ApiKeys.create_backing_key(account.id, membership.id, name)
+    ApiKeys.create_backing_key(account.id, grantee.id, name,
+      issued_by_membership_id: membership.id
+    )
   end
 
   defp authorization_code_changeset(changes, params, raw) do
-    %{account: account, membership: membership, client: client, key: key} = changes
+    %{account: account, grantee: grantee, client: client, key: key} = changes
 
     AuthorizationCode.Changeset.create(%{
       code_hash: Crypto.hash(raw),
       client_id: client.id,
       account_id: account.id,
-      membership_id: membership.id,
+      membership_id: grantee.id,
       api_key_id: key.id,
       redirect_uri: changes.redirect_uri,
       code_challenge: params["code_challenge"],
@@ -557,7 +594,7 @@ defmodule Emisar.OAuth do
 
   @doc """
   Internal — the OAuth cleanup sweep. Consent mints the backing MCP key up front
-  (`issue_code/3`); an abandoned consent, or a lapsed connection that was never
+  (`issue_code/4`); an abandoned consent, or a lapsed connection that was never
   used, then leaves a permanent "(OAuth)" agent row. Removes OAuth backing keys
   that never authenticated a call and can no longer be reached: a key with no
   token is unreachable (the raw `emk-` secret is discarded at mint, so only an
@@ -634,7 +671,7 @@ defmodule Emisar.OAuth do
   @doc """
   Internal — delete dynamically-registered clients that never
   completed consent and were registered over 30 days ago. A client is stamped
-  `last_authorized_at` the moment an operator consents (`issue_code/3`), so this
+  `last_authorized_at` the moment an operator consents (`issue_code/4`), so this
   only ever removes abandoned drive-by registrations — never a live connection.
   Returns the count deleted.
   """

@@ -35,6 +35,8 @@ defmodule EmisarWeb.MemberErrors do
       "Enable MFA on your own profile first — otherwise you'd lock yourself out.",
     deactivated_in_idp:
       "That member is deactivated in your identity provider — reactivate them there first.",
+    service_account_role_fixed:
+      "A service account always has the Operator role. Change its runner and pack access instead.",
     rate_limited: "This workspace has sent its hourly invitation budget. Try again in an hour."
   }
 

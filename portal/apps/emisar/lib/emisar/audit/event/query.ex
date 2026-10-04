@@ -160,7 +160,8 @@ defmodule Emisar.Audit.Event.Query do
        {"membership.erased", "Member erased", "Member erased by Emisar staff"},
        {"membership.suspended", "Member suspended", "Member suspended"},
        {"membership.reinstated", "Member reinstated", "Member reinstated"},
-       {"membership.runner_access_changed", "Runner access changed", "Runner access changed"}
+       {"membership.runner_access_changed", "Runner access changed", "Runner access changed"},
+       {"service_account.created", "Service account added", "Service account added"}
      ]},
     {"Policy",
      [
@@ -975,6 +976,9 @@ defmodule Emisar.Audit.Event.Query do
        "A user requested a fresh invitation. This does not confirm email delivery."},
     "membership.runner_access_changed" =>
       {true, true, true, "An admin changed which runners a member may target."},
+    "service_account.created" =>
+      {true, true, true,
+       "An admin added a service account, the member an app connects as. It starts with that admin's runner and pack access."},
     "policy.updated" =>
       {true, true, true, "Default rules, action overrides, or approval requirements changed."},
     "policy.scope_deleted" =>

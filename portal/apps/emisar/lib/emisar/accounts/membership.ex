@@ -4,6 +4,10 @@ defmodule Emisar.Accounts.Membership do
   own MFA factor. The same person in three workspaces is three Members. A
   Member signs in through its workspace SSO identity, or by an emailed code
   once joining proved its address (`email_verified_at`).
+
+  A `:service_account` Member is the seat an app connects as. It has a name, the
+  operator role and its own reach, and never an address, invitation or factor,
+  so nothing can sign in as it; only the credentials an admin issues act as it.
   """
   use Emisar, :schema
   alias Emisar.Auth
@@ -13,6 +17,8 @@ defmodule Emisar.Accounts.Membership do
   @pack_access_modes Emisar.Accounts.RunnerAccess.pack_modes()
 
   schema "account_memberships" do
+    # Set at creation and never changed.
+    field :kind, Ecto.Enum, values: [:human, :service_account], default: :human
     field :role, Ecto.Enum, values: @roles, default: :operator
     field :runner_access_mode, Ecto.Enum, values: @runner_access_modes, default: :none
     # The pack dimension of the same grant — which packs the member may run on

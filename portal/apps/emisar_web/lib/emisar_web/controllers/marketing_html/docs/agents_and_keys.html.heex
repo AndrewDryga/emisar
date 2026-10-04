@@ -4,7 +4,7 @@
   <section class="py-12 sm:py-16">
     <.docs_layout
       current="agents-and-keys"
-      updated="September 5, 2026"
+      updated="October 4, 2026"
       toc={[
         {"the-list", "Your connected agents"},
         {"what-is-a-key", "What an agent key is"},
@@ -122,14 +122,15 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An agent key carries no scope of its own — there is no per-key runner list or permission dial
         to set, and none to forget. What a connected agent can do is decided by two things that live
-        on the member who minted the key, not on the key:
+        on the member the key acts as, not on the key. That is the member who minted it, or the
+        service account it was minted for:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Runner access.</strong>
-            The key can reach exactly the runners available to the member who minted it. A member is scoped to runner
+            The key can reach exactly the runners available to the member it acts as. A member is scoped to runner
             groups on the Team page. The key inherits that scope, and emisar resolves it from that
             member on <em>every call</em>, not once at mint time.
           </span>
@@ -194,6 +195,18 @@
             Admins and owners can manage any key in the account.
           </span>
         </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Keys for a service account.</strong>
+            An owner or admin can create a custom key that acts as a <.link
+              navigate={~p"/docs/teams-and-access" <> "#service-accounts"}
+              class="text-brand-400 hover:text-brand-300"
+            >service account</.link>: choose it under Acts as. The key uses the service account's
+            access, its calls are attributed to it, and it keeps working when the person who made
+            it leaves.
+          </span>
+        </li>
       </ul>
 
       <.docs_h2 id="rotating">Rotating a key</.docs_h2>
@@ -219,6 +232,16 @@
             on the
             same row. This cancels the pending request and shows a replacement key once. Copy it
             into the agent's settings. If you lose it, rotate the replacement key's row.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <span class="flex-none text-zinc-500">—</span>
+          <span>
+            <strong class="text-zinc-200">Rotating someone else's key.</strong>
+            The replacement key goes to you, so you can rotate a teammate's or a service
+            account's key only when your own runner and pack access covers theirs. emisar
+            records you as the person the replacement was issued to. Anyone who can manage the
+            key can still revoke it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

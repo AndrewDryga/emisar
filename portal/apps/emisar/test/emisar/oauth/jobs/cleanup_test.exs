@@ -32,6 +32,7 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
           "scope" => "mcp",
           "resource" => Emisar.PublicUrl.url("/api/mcp/rpc")
         },
+        :member,
         subject
       )
   end
@@ -54,6 +55,7 @@ defmodule Emisar.OAuth.Jobs.CleanupTest do
           "scope" => "mcp offline_access",
           "resource" => Emisar.PublicUrl.url("/api/mcp/rpc")
         },
+        :member,
         subject
       )
 
@@ -182,6 +184,7 @@ defmodule Emisar.OAuth.Jobs.CleanupLogTest do
           "scope" => "mcp",
           "resource" => Emisar.PublicUrl.url("/api/mcp/rpc")
         },
+        :member,
         subject
       )
 

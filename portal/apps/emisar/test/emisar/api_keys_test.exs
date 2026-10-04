@@ -1256,6 +1256,125 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
+  describe "create_service_account_key/3" do
+    test "mints an agent key that acts as the service account, with its reach" do
+      {owner, account, subject} = owner_subject_pair()
+      {:ok, scoped} = Accounts.RunnerAccess.restricted(["web"], [])
+
+      service_account =
+        Fixtures.Memberships.create_service_account(account_id: account.id, runner_access: scoped)
+
+      assert {:ok, raw, %ApiKey{} = key} =
+               ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject)
+
+      assert key.kind == :mcp
+      assert key.created_by_membership_id == service_account.id
+      assert key.issued_by_membership_id == owner.id
+      assert DateTime.after?(key.expires_at, DateTime.utc_now())
+
+      key_id = key.id
+      assert %ApiKey{id: ^key_id} = authenticated = ApiKeys.peek_api_key_by_secret(raw)
+
+      mcp_subject = Subject.for_api_key(authenticated, account)
+      assert Accounts.runner_access_for_subject(mcp_subject) == scoped
+
+      owner_id = owner.id
+
+      assert %Audit.Event{actor_id: ^owner_id, target_id: ^key_id} =
+               Audit.Event.Query.all()
+               |> Audit.Event.Query.by_account_id(account.id)
+               |> Audit.Event.Query.by_event_type("api_key.created")
+               |> Repo.one()
+    end
+
+    test "the key keeps working after the admin who minted it leaves" do
+      account = Fixtures.Accounts.create_account()
+      admin = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      {:ok, raw, _key} =
+        ApiKeys.create_service_account_key(
+          service_account.id,
+          %{name: "Ryker"},
+          Fixtures.Subjects.subject_for(admin)
+        )
+
+      Fixtures.Memberships.mark_membership_as_deleted(admin)
+
+      assert %ApiKey{} = ApiKeys.peek_api_key_by_secret(raw)
+    end
+
+    test "the key stops working while its service account is suspended" do
+      {_owner, account, subject} = owner_subject_pair()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      {:ok, raw, _key} =
+        ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject)
+
+      Fixtures.Memberships.suspend_membership(service_account)
+
+      assert ApiKeys.peek_api_key_by_secret(raw) == nil
+    end
+
+    test "an operator cannot mint one" do
+      account = Fixtures.Accounts.create_account()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      subject = member_subject(account, :operator)
+
+      assert ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject) ==
+               {:error, :unauthorized}
+
+      refute Repo.one(ApiKey)
+    end
+
+    test "only the subject's own service accounts" do
+      {owner, account, subject} = owner_subject_pair()
+      elsewhere = Fixtures.Memberships.create_service_account()
+      person = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      for id <- [elsewhere.id, person.id, owner.id, "not-a-uuid"] do
+        assert ApiKeys.create_service_account_key(id, %{name: "Ryker"}, subject) ==
+                 {:error, :not_found}
+      end
+
+      refute Repo.one(ApiKey)
+    end
+
+    test "a scoped admin cannot mint a key for a service account that reaches further" do
+      account = Fixtures.Accounts.create_account()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, scoped} = Accounts.RunnerAccess.restricted(["web"], [])
+
+      subject =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+        |> Fixtures.Subjects.subject_for()
+
+      assert ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject) ==
+               {:error, :runner_access_exceeds_subject}
+    end
+
+    test "a service account gets agent keys only" do
+      {_owner, account, subject} = owner_subject_pair()
+      Fixtures.Accounts.create_subscription(account, "team")
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      attrs = %{name: "siem", kind: :audit_export}
+
+      assert ApiKeys.create_service_account_key(service_account.id, attrs, subject) ==
+               {:error, :unauthorized}
+    end
+
+    test "a blank name is a field error" do
+      {_owner, account, subject} = owner_subject_pair()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      assert {:error, changeset} =
+               ApiKeys.create_service_account_key(service_account.id, %{"name" => ""}, subject)
+
+      assert "can't be blank" in errors_on(changeset).name
+    end
+  end
+
   describe "rotate_api_key/2" do
     test "mints a successor inheriting name + kind; the old key stays usable (overlap)" do
       {_owner, _account, subject} = owner_subject_pair()
@@ -1491,6 +1610,33 @@ defmodule Emisar.ApiKeysTest do
       {_owner_b, _account_b, subject_b} = owner_subject_pair()
 
       assert ApiKeys.rotate_api_key(key_a, subject_b) == {:error, :not_found}
+    end
+
+    test "a scoped admin can't rotate a key that reaches further than them" do
+      {_owner, account, owner_subject} = owner_subject_pair()
+      {:ok, _raw, key} = ApiKeys.create_key(%{name: "owner-agent"}, owner_subject)
+      {:ok, scoped} = Accounts.RunnerAccess.restricted(["web"], [])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+        |> Fixtures.Subjects.subject_for()
+
+      assert ApiKeys.rotate_api_key(key, admin) == {:error, :runner_access_exceeds_subject}
+      assert Repo.reload!(key).rotated_to_id == nil
+    end
+
+    test "a successor names who rotated it when that is not its owner" do
+      {_owner, account, owner_subject} = owner_subject_pair()
+      operator_subject = member_subject(account, :operator)
+      {:ok, _raw, operator_key} = ApiKeys.create_key(%{name: "operator-agent"}, operator_subject)
+      {:ok, _raw, own_key} = ApiKeys.create_key(%{name: "owner-agent"}, owner_subject)
+
+      assert {:ok, _raw, successor} = ApiKeys.rotate_api_key(operator_key, owner_subject)
+      assert successor.issued_by_membership_id == owner_subject.membership_id
+
+      assert {:ok, _raw, own_successor} = ApiKeys.rotate_api_key(own_key, owner_subject)
+      assert own_successor.issued_by_membership_id == nil
     end
   end
 
@@ -1744,6 +1890,25 @@ defmodule Emisar.ApiKeysTest do
 
       assert successor.replaces_id == key.id
       assert successor.credential_lineage_id == key.credential_lineage_id
+    end
+
+    test "a service account key's successor keeps who issued it" do
+      {owner, account, subject} = owner_subject_pair()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      soon = DateTime.add(DateTime.utc_now(), 3, :day)
+      attrs = %{name: "Ryker", expires_at: soon}
+
+      {:ok, _raw, key} =
+        ApiKeys.create_service_account_key(service_account.id, attrs, subject)
+
+      {_raw, prefix, hash} = Crypto.mint("emk-", 12)
+      key_subject = Subject.for_api_key(key, account)
+
+      assert {:ok, successor} =
+               ApiKeys.install_auto_rotation_successor(prefix, hash, key_subject)
+
+      assert successor.created_by_membership_id == service_account.id
+      assert successor.issued_by_membership_id == owner.id
     end
   end
 
@@ -2627,7 +2792,7 @@ defmodule Emisar.ApiKeysTest do
     end
   end
 
-  describe "create_backing_key/3" do
+  describe "create_backing_key/4" do
     test "inserts a non-expiring MCP key scoped read+execute, owned by the membership" do
       {owner, account, _subject} = owner_subject_pair()
       membership = Repo.reload!(owner)
@@ -2657,6 +2822,41 @@ defmodule Emisar.ApiKeysTest do
 
       assert %ApiKey{id: id} = ApiKeys.peek_api_key_by_id(key.id)
       assert id == key.id
+    end
+
+    test "a key that acts as a service account records who consented" do
+      {owner, account, _subject} = owner_subject_pair()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      {:ok, key} =
+        ApiKeys.create_backing_key(account.id, service_account.id, "Ryker (OAuth)",
+          issued_by_membership_id: owner.id
+        )
+
+      {:ok, own_key} =
+        ApiKeys.create_backing_key(account.id, owner.id, "Claude (OAuth)",
+          issued_by_membership_id: owner.id
+        )
+
+      assert key.issued_by_membership_id == owner.id
+      assert own_key.issued_by_membership_id == nil
+    end
+  end
+
+  describe "peek_api_key_issuer_id/1" do
+    test "names who issued a key that acts as another member" do
+      {owner, account, subject} = owner_subject_pair()
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_service_account_key(service_account.id, %{name: "Ryker"}, subject)
+
+      {:ok, _raw, own_key} = ApiKeys.create_key(%{name: "mine"}, subject)
+
+      assert ApiKeys.peek_api_key_issuer_id(key.id) == owner.id
+      assert ApiKeys.peek_api_key_issuer_id(own_key.id) == nil
+      assert ApiKeys.peek_api_key_issuer_id(Ecto.UUID.generate()) == nil
+      assert ApiKeys.peek_api_key_issuer_id(nil) == nil
     end
   end
 

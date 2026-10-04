@@ -393,6 +393,24 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  def service_account_created(
+        %Subject{} = subject,
+        %Accounts.Membership{kind: :service_account} = service_account,
+        %Accounts.RunnerAccess{} = access
+      ) do
+    Audit.changeset(
+      service_account.account_id,
+      "service_account.created",
+      actor(subject) ++
+        [
+          target_kind: "membership",
+          target_id: service_account.id,
+          target_label: Accounts.member_display_name(service_account),
+          payload: %{runner_access: runner_access_payload(access)}
+        ]
+    )
+  end
+
   # Self-service accept (no Subject): the accepting Member is the actor.
   def user_invitation_accepted(%Accounts.Membership{} = membership) do
     Audit.changeset(membership.account_id, "user.invitation_accepted",
@@ -1369,7 +1387,8 @@ defmodule Emisar.Audit.Events do
         %Subject{} = subject,
         %Approvals.Request{} = request,
         reason,
-        approved_count
+        approved_count,
+        self_approval_waived?
       ) do
     Audit.changeset(
       request.account_id,
@@ -1386,9 +1405,7 @@ defmodule Emisar.Audit.Events do
             min_approvals: request.min_approvals,
             remaining_approvals_waived: max(request.min_approvals - approved_count, 0),
             decider_membership_id: subject.membership_id,
-            self_approval_waived:
-              not request.allow_self_approval and
-                request.requested_by_membership_id == subject.membership_id
+            self_approval_waived: self_approval_waived?
           }
         ]
     )

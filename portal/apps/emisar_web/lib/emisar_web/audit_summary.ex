@@ -120,6 +120,15 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize(type, p) when type in ["user.invited", "membership.invitation_resent"],
     do: pairs(invited_role: role_label(get(p, :role)))
 
+  defp summarize("service_account.created", p) do
+    access = map_value(p, :runner_access)
+
+    pairs(
+      runners: access |> get(:mode) |> access_mode(),
+      packs: access |> get(:pack_mode) |> access_mode()
+    )
+  end
+
   defp summarize(type, p)
        when type in ["sso.group_mapping_created", "sso.group_mapping_updated"],
        do: pairs(mapped_role: role_label(get(p, :role)))

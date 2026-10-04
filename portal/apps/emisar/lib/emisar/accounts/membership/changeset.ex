@@ -29,6 +29,22 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> put_change(:directory_suspended, true)
   end
 
+  @doc """
+  A service account: the seat an app connects as. Its name is its only label, it
+  holds the operator role, and it never gets an address, invitation or factor;
+  the database refuses one that does.
+  """
+  def create_service_account(account_id, attrs, %RunnerAccess{} = access) do
+    %Membership{kind: :service_account, role: :operator}
+    |> cast(attrs, [:display_name])
+    |> put_change(:account_id, account_id)
+    |> validate_required([:account_id])
+    |> validate_profile()
+    |> put_runner_access(access)
+    |> check_constraint(:kind, name: :account_memberships_service_account_check)
+    |> put_access_the_role_carries()
+  end
+
   def update(%Membership{} = membership, attrs) do
     membership
     |> cast(attrs, @update_fields)
@@ -41,10 +57,19 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> validate_profile()
   end
 
+  # A person falls back to their address when unnamed; a service account has
+  # no address, so its name is required.
   defp validate_profile(changeset) do
     changeset
+    |> validate_service_account_name()
     |> validate_length(:display_name, max: 255, count: :codepoints)
     |> Emisar.EmailAddress.validate(:email)
+  end
+
+  defp validate_service_account_name(changeset) do
+    if get_field(changeset, :kind) == :service_account,
+      do: validate_required(changeset, [:display_name]),
+      else: changeset
   end
 
   def update_runner_access(%Membership{} = membership, %RunnerAccess{} = access) do

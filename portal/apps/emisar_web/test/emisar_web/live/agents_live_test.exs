@@ -2450,6 +2450,87 @@ defmodule EmisarWeb.AgentsLiveTest do
   # land after teardown as Postgrex disconnect noise, which fails the gate.
   defp flush_key_broadcast(lv), do: render(lv)
 
+  describe "custom keys that act as a service account" do
+    test "an owner mints a key that acts as a service account", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
+
+      render_click(lv, "select_client", %{"client" => "custom"})
+
+      assert has_element?(
+               lv,
+               ~s(#api_key_acts_as option[value="#{service_account.id}"]),
+               "Ryker"
+             )
+
+      lv
+      |> form("#api_key_form", %{
+        "api_key" => %{"name" => "Ryker", "acts_as" => service_account.id}
+      })
+      |> render_submit()
+
+      assert [%ApiKey{created_by_membership_id: created_by}] = Repo.all(ApiKey)
+      assert created_by == service_account.id
+    end
+
+    test "the Team page's link opens the form acting as the service account", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      {:ok, lv, _} =
+        live(conn, ~p"/app/#{account}/agents/connect?#{[acts_as: service_account.id]}")
+
+      assert has_element?(lv, "#api_key_form")
+
+      assert has_element?(
+               lv,
+               ~s(#api_key_acts_as option[value="#{service_account.id}"][selected])
+             )
+    end
+
+    test "a scoped admin can't rotate a key that reaches further than them", %{conn: conn} do
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+
+      {:ok, _raw, key} =
+        ApiKeys.create_key(%{name: "owner-agent"}, Fixtures.Subjects.subject_for(owner))
+
+      {:ok, scoped} = Emisar.Accounts.RunnerAccess.restricted(["web"], [])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      {:ok, lv, _} =
+        build_conn()
+        |> log_in_member(admin)
+        |> live(~p"/app/#{account}/agents")
+
+      html = render_click(lv, "rotate", %{"id" => key.id})
+
+      assert html =~
+               "This key reaches runners or packs you can&#39;t, so you can&#39;t rotate it."
+
+      assert Repo.aggregate(ApiKey, :count) == 1
+    end
+
+    test "an operator's key acts as themselves, with no choice offered", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Memberships.create_service_account(account_id: account.id)
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      {:ok, lv, _} =
+        build_conn()
+        |> log_in_member(operator)
+        |> live(~p"/app/#{account}/agents/connect")
+
+      render_click(lv, "select_client", %{"client" => "custom"})
+
+      assert has_element?(lv, "#api_key_form")
+      refute has_element?(lv, "#api_key_acts_as")
+    end
+  end
+
   defp rendered_text(html) do
     html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")
   end

@@ -541,6 +541,61 @@ defmodule Emisar.ApiKeys do
   end
 
   @doc """
+  Mints an `:mcp` key that acts as the service account `service_account_id`,
+  from internal attrs or the create form's raw browser params, read as
+  `create_key/2` reads them. The key carries the service account's runner and
+  pack access and attributes its calls to it. Requires `issue_quick_key` and
+  `manage_team`, and access that covers the service account's.
+
+  Returns `{:ok, raw_secret, key}` or `{:error, %Ecto.Changeset{} | :unauthorized |
+  :not_found | :runner_access_exceeds_subject}`.
+  """
+  def create_service_account_key(service_account_id, attrs, %Subject{account: account} = subject) do
+    input_changeset = change_key(attrs)
+
+    with {:ok, input} <- Ecto.Changeset.apply_action(input_changeset, :insert),
+         :ok <- ensure_agent_key_kind(input.kind) do
+      {raw, prefix, hash} = mint_for_kind(:mcp)
+
+      Multi.new()
+      |> put_active_account_lock(account.id)
+      |> put_current_subject(subject)
+      |> Multi.run(:authorization, fn _repo, %{current_subject: current_subject} ->
+        case Auth.Authorizer.ensure_has_permissions(
+               current_subject,
+               Authorizer.issue_quick_key_permission()
+             ) do
+          :ok -> {:ok, :authorized}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.run(:service_account, fn repo, %{current_subject: current_subject} ->
+        Accounts.fetch_and_lock_service_account(repo, service_account_id, current_subject)
+      end)
+      |> Multi.insert(:key, fn changes ->
+        %{current_subject: current_subject, service_account: service_account} = changes
+
+        ApiKey.Changeset.create(account.id, service_account.id, prefix, hash, attrs,
+          issued_by_membership_id: Subject.human_membership_id(current_subject)
+        )
+      end)
+      |> Multi.insert(:audit, fn %{current_subject: current_subject, key: key} ->
+        Audit.Events.api_key_created(current_subject, key)
+      end)
+      |> Repo.commit_multi(after_commit: &broadcast_api_key_created(&1.key))
+      |> case do
+        {:ok, %{key: key}} -> {:ok, raw, key}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  # A service account connects agents; the account's audit stream is a
+  # different credential that stays with the people who read it.
+  defp ensure_agent_key_kind(:mcp), do: :ok
+  defp ensure_agent_key_kind(_kind), do: {:error, :unauthorized}
+
+  @doc """
   Mints a fresh successor to an existing key, inheriting its name and kind but
   with a new secret and a fresh default expiry. The successor carries `replaces_id` back to the
   source: the old key keeps working through the overlap window, then the
@@ -561,10 +616,16 @@ defmodule Emisar.ApiKeys do
       |> Multi.run(:kind_available, fn repo, %{active_account: account, source: source} ->
         ensure_key_kind_available(source.kind, account.id, repo)
       end)
+      |> Multi.run(:reach, fn repo, changes ->
+        ensure_rotator_covers_owner(repo, changes.current_subject, changes.key_owner_membership)
+      end)
       |> Multi.run(:credential, fn _repo, %{source: source} ->
         {:ok, mint_for_kind(source.kind)}
       end)
-      |> Multi.insert(:key, fn %{credential: {_raw, prefix, hash}, source: source} ->
+      |> Multi.insert(:key, fn changes ->
+        %{credential: {_raw, prefix, hash}, current_subject: current_subject, source: source} =
+          changes
+
         ApiKey.Changeset.create(
           source.account_id,
           source.created_by_membership_id,
@@ -572,7 +633,8 @@ defmodule Emisar.ApiKeys do
           hash,
           successor_attrs(source),
           replaces_id: source.id,
-          credential_lineage_id: source.credential_lineage_id
+          credential_lineage_id: source.credential_lineage_id,
+          issued_by_membership_id: Subject.human_membership_id(current_subject)
         )
       end)
       |> Multi.update(:rotated_source, fn %{source: source, key: successor} ->
@@ -833,6 +895,7 @@ defmodule Emisar.ApiKeys do
     )
   end
 
+  # The client holding the source receives the successor, so the issuer carries over.
   defp install_or_fetch_successor(repo, %ApiKey{rotated_to_id: nil} = source, prefix, hash) do
     with :ok <- ensure_lineage_within_max_age(repo, source) do
       changeset =
@@ -843,7 +906,8 @@ defmodule Emisar.ApiKeys do
           hash,
           successor_attrs(source),
           replaces_id: source.id,
-          credential_lineage_id: source.credential_lineage_id
+          credential_lineage_id: source.credential_lineage_id,
+          issued_by_membership_id: source.issued_by_membership_id
         )
 
       case repo.insert(changeset) do
@@ -916,6 +980,23 @@ defmodule Emisar.ApiKeys do
 
   defp ensure_rotatable(%ApiKey{} = source) do
     if oauth_backing?(source), do: {:error, :oauth_backing}, else: :ok
+  end
+
+  # A manual successor's secret goes to whoever rotates and acts with the key
+  # owner's reach, so rotating someone else's key needs reach that covers
+  # theirs. Revoking stays open: it only takes access away.
+  defp ensure_rotator_covers_owner(_repo, %Subject{membership_id: id}, %Accounts.Membership{
+         id: id
+       }),
+       do: {:ok, :own_key}
+
+  defp ensure_rotator_covers_owner(repo, %Subject{} = subject, %Accounts.Membership{} = owner) do
+    access = Accounts.runner_access_for_locked_membership(repo, owner)
+
+    case Accounts.ensure_runner_access_grant_allowed(subject, access) do
+      :ok -> {:ok, :covered}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # Rotating and revoking a key is `manage_api_keys` — EXCEPT on a key you
@@ -1031,7 +1112,7 @@ defmodule Emisar.ApiKeys do
     do: Emisar.PubSub.subscribe(account_api_keys_topic(account_id))
 
   @doc """
-  Internal — `Emisar.OAuth.issue_code/3` announces a consent-minted backing key on
+  Internal — `Emisar.OAuth.issue_code/4` announces a consent-minted backing key on
   commit, so an already-open agents list reflows to show the new OAuth connection
   (its own mint is inside the OAuth transaction, not an ApiKeys mutation site).
   """
@@ -1558,8 +1639,11 @@ defmodule Emisar.ApiKeys do
   this key is the operator off-switch. Inheriting the 30-day static-MCP-key
   self-heal would instead break every OAuth connection 30 days after consent
   even while it is actively refreshing.
+
+  Pass `issued_by_membership_id:` the consenting member; a key that acts as
+  someone else (a service account) records it as its issuer.
   """
-  def create_backing_key(account_id, membership_id, name) do
+  def create_backing_key(account_id, membership_id, name, opts \\ []) do
     {_raw, prefix, hash} = Crypto.mint("emk-", @prefix_size)
 
     ApiKey.Changeset.create(
@@ -1568,10 +1652,25 @@ defmodule Emisar.ApiKeys do
       prefix,
       hash,
       %{name: name},
-      default_expiry: false
+      default_expiry: false,
+      issued_by_membership_id: Keyword.get(opts, :issued_by_membership_id)
     )
     |> Repo.insert()
   end
+
+  @doc """
+  Internal — the person who received key `id` when it acts as another member
+  (see `ApiKey`'s `issued_by_membership`), or nil. Approvals reads it so the
+  two-person rule counts a service account's requests as its issuer's own.
+  """
+  def peek_api_key_issuer_id(id) when is_binary(id) do
+    ApiKey.Query.all()
+    |> ApiKey.Query.by_id(id)
+    |> ApiKey.Query.select_issuer_id()
+    |> Repo.peek()
+  end
+
+  def peek_api_key_issuer_id(_id), do: nil
 
   @doc """
   Internal composition step for OAuth refresh-token reuse containment. Locks

@@ -7,7 +7,7 @@ defmodule EmisarWeb.Plugs.EnsureAccountCompliance do
   reach controller surfaces the LiveViews gate.
 
   Wired into the audit CSV download ONLY. The OAuth consent screen enforces the
-  same policy inside `Emisar.OAuth.issue_code/3`'s locked transaction instead,
+  same policy inside `Emisar.OAuth.issue_code/4`'s locked transaction instead,
   because session-account gating would be wrong there (the consent screen has no
   single current account). Do not read this plug as covering OAuth and delete
   that check.

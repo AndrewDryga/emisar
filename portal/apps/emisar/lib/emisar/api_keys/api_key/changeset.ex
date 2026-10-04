@@ -32,6 +32,18 @@ defmodule Emisar.ApiKeys.ApiKey.Changeset do
     |> unique_constraint(:key_prefix)
     |> maybe_put_default_mcp_expiry(opts)
     |> maybe_put_replaces(opts)
+    |> put_issuer(Keyword.get(opts, :issued_by_membership_id), membership_id)
+  end
+
+  # Only a key issued to someone other than the member it acts as records its
+  # issuer; a member's own key names no one else.
+  defp put_issuer(changeset, issuer_id, issuer_id), do: changeset
+  defp put_issuer(changeset, nil, _membership_id), do: changeset
+
+  defp put_issuer(changeset, issuer_id, _membership_id) do
+    changeset
+    |> put_change(:issued_by_membership_id, issuer_id)
+    |> foreign_key_constraint(:issued_by_membership_id)
   end
 
   # The one interpretation of operator-typed key attributes, so the create form

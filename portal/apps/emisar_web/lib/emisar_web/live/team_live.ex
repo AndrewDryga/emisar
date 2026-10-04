@@ -70,7 +70,8 @@ defmodule EmisarWeb.TeamLive do
        Emisar.PublicUrl.base() <> ~p"/app/#{socket.assigns.current_account}/sign_in"
      )
      |> ConfirmDialog.init()
-     |> assign_invite_form()}
+     |> assign_invite_form()
+     |> reset_service_account_form()}
   end
 
   def handle_params(params, _uri, socket) do
@@ -79,6 +80,19 @@ defmodule EmisarWeb.TeamLive do
       # so it skips the connected?/loading dance and shows the form immediately.
       :new ->
         socket = socket |> assign(:page_title, "Invite a member") |> reset_invite_form()
+
+        if connected?(socket) do
+          {:noreply, load_invite_runners(socket)}
+        else
+          {:noreply, assign(socket, :loading?, true)}
+        end
+
+      # Runner names are loaded only to name a restricted reach on the receipt.
+      :new_service_account ->
+        socket =
+          socket
+          |> assign(:page_title, "Add a service account")
+          |> reset_service_account_form()
 
         if connected?(socket) do
           {:noreply, load_invite_runners(socket)}
@@ -534,6 +548,21 @@ defmodule EmisarWeb.TeamLive do
 
   def handle_event("invite_another", _params, socket),
     do: {:noreply, reset_invite_form(socket)}
+
+  def handle_event("validate_service_account", %{"service_account" => params}, socket) do
+    {:noreply, assign(socket, :service_account_form, to_form(params, as: "service_account"))}
+  end
+
+  def handle_event("add_service_account", %{"service_account" => params}, socket) do
+    Permissions.gated(
+      socket,
+      Accounts.subject_can_manage_team?(socket.assigns.current_subject),
+      &do_add_service_account(&1, params)
+    )
+  end
+
+  def handle_event("add_another_service_account", _params, socket),
+    do: {:noreply, reset_service_account_form(socket)}
 
   def handle_event("resend_invitation", %{"membership_id" => id}, socket) do
     case find_member_membership(socket, id) do
@@ -1281,7 +1310,11 @@ defmodule EmisarWeb.TeamLive do
          %{membership: %{id: id}, manageable?: true} = facts
        )
        when id != current_id do
-    action != "suspend" or not facts.disabled?
+    case action do
+      "suspend" -> not facts.disabled?
+      "end_sessions" -> facts.end_sessions?
+      _action -> true
+    end
   end
 
   defp member_action_available?(_socket, _action, _facts), do: false
@@ -1297,10 +1330,14 @@ defmodule EmisarWeb.TeamLive do
 
   defp member_action_label(%{action: "suspend"}), do: "Suspend access"
   defp member_action_label(%{action: "end_sessions"}), do: "End sessions"
+
+  defp member_action_label(%{action: "remove", facts: %{service_account?: true}}),
+    do: "Remove service account"
+
   defp member_action_label(%{action: "remove"}), do: "Remove member"
 
   defp member_action_confirm_token(%{action: "remove", facts: %{membership: membership}}),
-    do: membership.email || membership.id
+    do: membership.email || Accounts.member_display_name(membership) || membership.id
 
   defp member_action_confirm_token(_pending), do: nil
 
@@ -1406,6 +1443,37 @@ defmodule EmisarWeb.TeamLive do
     |> assign(:scope_pack_mode, to_string(access.pack_mode))
     |> assign(:scope_pack_draft, RunnerScope.to_pack_values(access.pack_ids))
     |> assign(:scope_pack_error, nil)
+  end
+
+  # Added is a page STATE like a sent invite: the receipt names the reach the
+  # service account starts with and how an app connects as it.
+  defp do_add_service_account(socket, params) do
+    case Accounts.create_service_account(params, socket.assigns.current_subject) do
+      {:ok, service_account} ->
+        access =
+          [service_account]
+          |> Accounts.runner_access_for_memberships()
+          |> Map.fetch!(service_account.id)
+
+        {:noreply,
+         socket
+         |> assign(:added_service_account, service_account)
+         |> assign(:added_service_account_access, access)}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         assign(socket, :service_account_form, to_form(changeset, as: "service_account"))}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, MemberErrors.message(reason))}
+    end
+  end
+
+  defp reset_service_account_form(socket) do
+    socket
+    |> assign(:service_account_form, to_form(%{"display_name" => ""}, as: "service_account"))
+    |> assign(:added_service_account, nil)
+    |> assign(:added_service_account_access, nil)
   end
 
   defp do_invite(socket, params) do
@@ -2156,6 +2224,9 @@ defmodule EmisarWeb.TeamLive do
           <% :new -> %>
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             Invite a member
+          <% :new_service_account -> %>
+            <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
+            Add a service account
           <% :reset_mfa -> %>
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             Reset member MFA
@@ -2175,6 +2246,15 @@ defmodule EmisarWeb.TeamLive do
           aria-live="polite"
         >
           Copy sign-in link
+        </.button>
+        <.button
+          :if={@can_manage_team?}
+          id="add-service-account"
+          navigate={~p"/app/#{@current_account}/settings/team/service-accounts/new"}
+          variant={:secondary}
+          size={:md}
+        >
+          Add service account
         </.button>
         <.button
           :if={@can_manage_team?}
@@ -2209,6 +2289,16 @@ defmodule EmisarWeb.TeamLive do
         roles={@roles}
         runner_load_error?={@runner_load_error?}
         runners={@runners}
+        runners_by_id={@runners_by_id}
+      />
+
+      <.service_account_form
+        :if={@live_action == :new_service_account}
+        can_manage_team?={@can_manage_team?}
+        current_account={@current_account}
+        form={@service_account_form}
+        added={@added_service_account}
+        access={@added_service_account_access}
         runners_by_id={@runners_by_id}
       />
 
@@ -2517,6 +2607,9 @@ defmodule EmisarWeb.TeamLive do
                             directory={directory}
                             account={@current_account}
                           />
+                          <.chip :if={member.service_account?} tone={:neutral}>
+                            Service account
+                          </.chip>
                           <.chip :if={membership.id == @current_membership.id} tone={:neutral}>
                             You
                           </.chip>
@@ -2580,14 +2673,27 @@ defmodule EmisarWeb.TeamLive do
                               pending
                             </span>
                           </:seg>
-                          <:seg :if={show_activity? and not member.pending_invitation?}>
+                          <:seg :if={member.service_account?}>
+                            added{" "}<.local_time
+                              id={"member-added-#{membership.id}"}
+                              value={membership.inserted_at}
+                              mode={:relative}
+                            />
+                          </:seg>
+                          <:seg :if={
+                            show_activity? and not member.pending_invitation? and
+                              not member.service_account?
+                          }>
                             joined{" "}<.local_time
                               id={"member-joined-#{membership.id}"}
                               value={membership.inserted_at}
                               mode={:relative}
                             />
                           </:seg>
-                          <:seg :if={show_activity? and not member.pending_invitation?}>
+                          <:seg :if={
+                            show_activity? and not member.pending_invitation? and
+                              not member.service_account?
+                          }>
                             <.activity_status membership={membership} />
                           </:seg>
                         </.meta_line>
@@ -2940,9 +3046,16 @@ defmodule EmisarWeb.TeamLive do
                   <% membership = @pending_member_action.facts.membership %>
                   <%= case @pending_member_action.action do %>
                     <% "suspend" -> %>
-                      {RoleCopy.suspend_body(
-                        Accounts.member_display_name(membership) || membership.id
-                      )}
+                      <%= if @pending_member_action.facts.service_account? do %>
+                        Every app connected as
+                        <span class="font-medium">{Accounts.member_display_name(membership)}</span>
+                        loses access, and its keys and connections are revoked. Restoring access
+                        won't restore them, so reconnect those apps afterwards.
+                      <% else %>
+                        {RoleCopy.suspend_body(
+                          Accounts.member_display_name(membership) || membership.id
+                        )}
+                      <% end %>
                     <% "end_sessions" -> %>
                       Ends browser access to this workspace for
                       <span class="font-medium">
@@ -2951,12 +3064,20 @@ defmodule EmisarWeb.TeamLive do
                       on all devices.
                       Access to other workspaces is unchanged.
                     <% "remove" -> %>
-                      Permanently removes
-                      <span class="font-medium text-rose-100">
-                        {Accounts.member_display_name(membership) || "this member"}
-                      </span>
-                      from the team. They lose access immediately, and their agent credentials and
-                      standing approvals are revoked.
+                      <%= if @pending_member_action.facts.service_account? do %>
+                        Permanently removes
+                        <span class="font-medium text-rose-100">
+                          {Accounts.member_display_name(membership)}
+                        </span>
+                        from the team. Every app connected as it loses access immediately.
+                      <% else %>
+                        Permanently removes
+                        <span class="font-medium text-rose-100">
+                          {Accounts.member_display_name(membership) || "this member"}
+                        </span>
+                        from the team. They lose access immediately, and their agent credentials and
+                        standing approvals are revoked.
+                      <% end %>
                   <% end %>
                 </:body>
               </.confirm_dialog>
@@ -2984,6 +3105,104 @@ defmodule EmisarWeb.TeamLive do
         />
       </div>
     </.console_shell>
+    """
+  end
+
+  attr :can_manage_team?, :boolean, required: true
+  attr :current_account, :any, required: true
+  attr :form, :any, required: true
+  attr :added, Accounts.Membership, default: nil
+  attr :access, Accounts.RunnerAccess, default: nil
+  attr :runners_by_id, :map, required: true
+
+  # Adding a service account asks only for its name: it starts with the adding
+  # admin's own reach, which the roster's access editor narrows like any
+  # member's. The receipt states that reach and how an app connects as it.
+  defp service_account_form(assigns) do
+    ~H"""
+    <div class="mt-4 max-w-2xl">
+      <.empty_state
+        :if={not @can_manage_team?}
+        variant={:bare}
+        tone={:danger}
+        icon="state.locked"
+        title="You can't add service accounts"
+      >
+        Only owners and admins can add service accounts.
+      </.empty_state>
+
+      <div :if={@can_manage_team? and @added} data-shot="service-account-added">
+        <.status_note
+          icon="state.success"
+          tone={:brand}
+          title={"#{Accounts.member_display_name(@added)} is ready"}
+          primary
+        >
+          Connect an app as it: choose it when the app asks you to authorize it, or create
+          an API key that acts as it.
+        </.status_note>
+
+        <.meta_strip class="mt-6">
+          <.meta_field label="Role">{Emisar.Auth.role_label(@added.role)}</.meta_field>
+          <.meta_field label="Runners" wrap>
+            {invited_runner_access(@access, @runners_by_id)}
+          </.meta_field>
+          <.meta_field label="Packs" wrap>{invited_pack_access(@access)}</.meta_field>
+        </.meta_strip>
+
+        <div class="mt-7 flex flex-wrap items-center gap-3">
+          <.button
+            navigate={~p"/app/#{@current_account}/agents/connect?#{[acts_as: @added.id]}"}
+            icon="action.add"
+          >
+            Create an API key
+          </.button>
+          <.button phx-click="add_another_service_account" variant={:secondary}>
+            Add another
+          </.button>
+          <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
+            View members
+          </.button>
+        </div>
+      </div>
+
+      <div :if={@can_manage_team? and is_nil(@added)}>
+        <p class="text-sm leading-relaxed text-zinc-400">
+          A service account is a member that apps connect as, such as a team bot. Its
+          connections keep working when people leave, and its requests are attributed to it.
+        </p>
+
+        <.simple_form
+          for={@form}
+          id="service_account_form"
+          phx-change="validate_service_account"
+          phx-submit="add_service_account"
+          class="mt-6 space-y-5"
+        >
+          <div>
+            <.input
+              field={@form[:display_name]}
+              type="text"
+              label="Name"
+              placeholder="e.g. Ryker"
+              autocomplete="off"
+              required
+            />
+            <p class="mt-2 text-xs text-zinc-400">
+              It starts with your runner and pack access. You can narrow it from its row
+              on the Team page.
+            </p>
+          </div>
+
+          <:actions>
+            <.button phx-disable-with="Adding…">Add service account</.button>
+            <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:ghost}>
+              Cancel
+            </.button>
+          </:actions>
+        </.simple_form>
+      </div>
+    </div>
     """
   end
 
@@ -3201,9 +3420,20 @@ defmodule EmisarWeb.TeamLive do
             Actions
             <span class="text-zinc-500 group-open:hidden">▾</span><span class="hidden text-zinc-500 group-open:inline">▴</span>
           </:trigger>
-          <.menu_item navigate={
-            ~p"/app/#{@current_account}/audit?#{[actor_kind: "membership", actor_id: @membership.id]}"
-          }>
+          <%!-- A service account acts only through the keys and connections
+               apps hold for it, so its trail starts at those. --%>
+          <.menu_item
+            :if={@member.service_account?}
+            navigate={~p"/app/#{@current_account}/agents?#{[owner: [@membership.id]]}"}
+          >
+            View connections
+          </.menu_item>
+          <.menu_item
+            :if={not @member.service_account?}
+            navigate={
+              ~p"/app/#{@current_account}/audit?#{[actor_kind: "membership", actor_id: @membership.id]}"
+            }
+          >
             View activity
           </.menu_item>
           <%!-- A synced member's name is the IdP's (the domain refuses the save
@@ -3278,6 +3508,7 @@ defmodule EmisarWeb.TeamLive do
             Reset MFA
           </.menu_item>
           <.menu_item
+            :if={@member.end_sessions?}
             phx-click="open_member_action"
             phx-value-action="end_sessions"
             phx-value-membership_id={@membership.id}
@@ -3294,7 +3525,7 @@ defmodule EmisarWeb.TeamLive do
             phx-value-action="remove"
             phx-value-membership_id={@membership.id}
           >
-            Remove member
+            {if @member.service_account?, do: "Remove service account", else: "Remove member"}
           </.menu_item>
         </.dropdown>
       <% true -> %>

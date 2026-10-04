@@ -32,8 +32,8 @@ defmodule Emisar.Approvals do
   use Supervisor
   alias Ecto.Multi
   alias Emisar.Accounts
+  alias Emisar.{ApiKeys, Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs}
   alias Emisar.Approvals.{Authorizer, Decision, DecisionInput, Grant, GrantLifetimeInput, Request}
-  alias Emisar.{Audit, Auth, Catalog, Repo, Runbooks, Runners, Runs}
   alias Emisar.Auth.Subject
   alias Emisar.EncodedText
   alias Emisar.SafeText
@@ -1542,12 +1542,13 @@ defmodule Emisar.Approvals do
         |> Multi.run(:outcome, fn repo, %{locked: locked} ->
           finalize_override(repo, locked, by_membership_id, reason)
         end)
-        |> Multi.insert(:audit, fn %{locked: locked, outcome: outcome} ->
+        |> Multi.insert(:audit, fn %{locked: locked, outcome: outcome, approval_target: target} ->
           Audit.Events.approval_overridden(
             subject,
             locked,
             reason,
-            outcome.approved_count
+            outcome.approved_count,
+            not locked.allow_self_approval and own_request?(subject, locked, target)
           )
         end)
         |> Repo.commit_multi(after_commit: &after_decision/1)
@@ -1668,6 +1669,9 @@ defmodule Emisar.Approvals do
         end)
         |> Multi.run(:approval_target, fn repo, _changes ->
           lock_approval_target(repo, request)
+        end)
+        |> Multi.run(:issuer_self_approval, fn _repo, %{approval_target: target} ->
+          check_issuer_self_approval(decision, request, subject, target)
         end)
         |> Multi.run(:target_runners, fn repo, %{approval_target: target} ->
           lock_approval_target_runners(repo, request, target)
@@ -1798,6 +1802,33 @@ defmodule Emisar.Approvals do
   end
 
   defp check_self_approval(_decision, _request, _subject), do: :ok
+
+  # The other half of the rule, once the run or execution is locked: a request
+  # made through a credential issued to someone other than the member it acts as
+  # (a service account's key) is also its issuer's own.
+  defp check_issuer_self_approval(
+         :approve,
+         %Request{allow_self_approval: false} = request,
+         subject,
+         target
+       ) do
+    if own_request?(subject, request, target),
+      do: {:error, :self_approval_forbidden},
+      else: {:ok, :not_own}
+  end
+
+  defp check_issuer_self_approval(_decision, _request, _subject, _target),
+    do: {:ok, :not_applicable}
+
+  defp own_request?(%Subject{} = subject, %Request{} = request, target) do
+    self?(subject, request) or issued_to?(subject, target)
+  end
+
+  defp issued_to?(%Subject{membership_id: membership_id}, %{api_key_id: key_id})
+       when is_binary(membership_id) and is_binary(key_id),
+       do: ApiKeys.peek_api_key_issuer_id(key_id) == membership_id
+
+  defp issued_to?(_subject, _target), do: false
 
   defp self?(%Subject{} = subject, %Request{requested_by_membership_id: rb}) when is_binary(rb),
     do: subject.membership_id == rb

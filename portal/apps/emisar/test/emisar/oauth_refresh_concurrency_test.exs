@@ -122,6 +122,7 @@ defmodule Emisar.OAuthRefreshConcurrencyTest do
             "scope" => "mcp offline_access",
             "resource" => @resource
           },
+          :member,
           subject
         )
 

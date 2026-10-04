@@ -25,6 +25,7 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
     ])
     |> validate_length(:provider_identifier, max: @identifier_max_length, count: :codepoints)
     |> validate_length(:scim_external_id, max: @identifier_max_length, count: :codepoints)
+    |> validate_member_signs_in(member)
     |> put_live_constraints()
   end
 
@@ -32,8 +33,16 @@ defmodule Emisar.SSO.UserIdentity.Changeset do
   def bind_membership(changeset_or_identity, %Emisar.Accounts.Membership{} = member) do
     changeset_or_identity
     |> change(membership_id: member.id)
+    |> validate_member_signs_in(member)
     |> put_live_constraints()
   end
+
+  # An identity is a way to sign in as its Member. Bound to a service account, it
+  # would let whoever holds the IdP credential act as the app.
+  defp validate_member_signs_in(changeset, %Emisar.Accounts.Membership{kind: :service_account}),
+    do: add_error(changeset, :membership_id, "is a service account, which never signs in")
+
+  defp validate_member_signs_in(changeset, %Emisar.Accounts.Membership{}), do: changeset
 
   def touch_last_seen(%UserIdentity{} = identity),
     do: change(identity, last_seen_at: DateTime.utc_now())

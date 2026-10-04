@@ -67,7 +67,7 @@ defmodule EmisarWeb.OAuthControllerTest do
         params
       )
 
-    {:ok, code, @redirect} = OAuth.issue_code(client, request, subject)
+    {:ok, code, @redirect} = OAuth.issue_code(client, request, :member, subject)
 
     {client, code}
   end
@@ -530,7 +530,13 @@ defmodule EmisarWeb.OAuthControllerTest do
       # The header still names the one workspace outright, and the footer the
       # Member the grant would act as.
       assert html =~ account.name
-      refute html =~ "<select"
+
+      assert html
+             |> LazyHTML.from_document()
+             |> LazyHTML.query("select[name='account_id']")
+             |> Enum.count() ==
+               0
+
       assert html =~ ~s(type="hidden" name="account_id" value="#{account.id}")
       assert html =~ "Signed in as"
       assert html =~ user.email
@@ -587,7 +593,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert {[account.id], "#{account.name} — #{user.email}"} in options
       assert {[second.id], "Beta Workspace — #{second_member.email}"} in options
       refute html =~ "Gamma Workspace"
-      assert document |> LazyHTML.query("option[selected]") |> Enum.count() == 0
+      assert select |> LazyHTML.query("option[selected]") |> Enum.count() == 0
       refute html =~ ~s(type="hidden" name="account_id")
       refute html =~ "Signed in as"
     end
@@ -792,7 +798,7 @@ defmodule EmisarWeb.OAuthControllerTest do
       text = html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")
 
       assert text =~ "Policy decides which actions run"
-      assert text =~ "attributed to you and recorded in the audit log"
+      assert text =~ "attributed to them and recorded in the audit log"
       assert text =~ "wait for approval, or are denied"
     end
 
@@ -1159,6 +1165,81 @@ defmodule EmisarWeb.OAuthControllerTest do
       assert html_response(conn, 400) =~ "authorize this connection"
       # An error page, not a 302 — there is no Location header to an unvetted origin.
       assert get_resp_header(conn, "location") == []
+    end
+
+    test "an owner chooses whether the app connects as them or as a service account", %{
+      conn: conn,
+      user: user,
+      account: account,
+      client: client,
+      challenge: challenge
+    } do
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      params = %{
+        client_id: client.id,
+        redirect_uri: @redirect,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        resource: @resource
+      }
+
+      html =
+        conn
+        |> log_in_member(user)
+        |> get(~p"/oauth/authorize?#{params}")
+        |> html_response(200)
+
+      select = html |> LazyHTML.from_document() |> LazyHTML.query("select[name='connect_as']")
+
+      options =
+        select
+        |> LazyHTML.query("option")
+        |> Enum.map(&{LazyHTML.attribute(&1, "value"), LazyHTML.text(&1)})
+
+      assert options == [
+               {["member"], "You (#{user.email})"},
+               {[service_account.id], "Ryker"},
+               {["new_service_account"], "New service account named Claude"}
+             ]
+
+      assert select |> LazyHTML.query("option[selected]") |> LazyHTML.attribute("value") == [
+               "member"
+             ]
+
+      assert html =~ "A new service account starts with your runner and pack access."
+    end
+
+    test "an operator connects only as themselves", %{
+      conn: conn,
+      account: account,
+      client: client,
+      challenge: challenge
+    } do
+      Fixtures.Memberships.create_service_account(account_id: account.id)
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      params = %{
+        client_id: client.id,
+        redirect_uri: @redirect,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        resource: @resource
+      }
+
+      html =
+        conn
+        |> log_in_member(operator)
+        |> get(~p"/oauth/authorize?#{params}")
+        |> html_response(200)
+
+      refute html =~ ~s(name="connect_as")
+      refute html =~ "Ryker"
+
+      text = html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")
+      assert text =~ "attributed to you and recorded in the audit log"
     end
   end
 
@@ -1821,6 +1902,126 @@ defmodule EmisarWeb.OAuthControllerTest do
       location = redirected_to(conn, 302)
       assert location =~ "error=invalid_target"
       refute location =~ "access_denied"
+    end
+
+    test "approving as a service account connects the app as it", %{
+      conn: conn,
+      account: account,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      conn =
+        conn
+        |> log_in_member(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "state" => "xyz",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => account.id,
+          "connect_as" => service_account.id,
+          "decision" => "approve"
+        })
+
+      assert redirected_to(conn, 302) =~ "code="
+      assert Repo.one(Emisar.ApiKeys.ApiKey).created_by_membership_id == service_account.id
+    end
+
+    test "approving as a new service account creates one named after the app", %{
+      conn: conn,
+      account: account,
+      user: user,
+      client: client,
+      challenge: challenge
+    } do
+      conn =
+        conn
+        |> log_in_member(user)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => account.id,
+          "connect_as" => "new_service_account",
+          "decision" => "approve"
+        })
+
+      assert redirected_to(conn, 302) =~ "code="
+
+      key = Repo.one(Emisar.ApiKeys.ApiKey)
+      service_account = Repo.get!(Emisar.Accounts.Membership, key.created_by_membership_id)
+      assert %{kind: :service_account, display_name: "Claude"} = service_account
+    end
+
+    test "an operator's crafted service-account grant is refused", %{
+      conn: conn,
+      account: account,
+      client: client,
+      challenge: challenge
+    } do
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
+
+      conn =
+        conn
+        |> log_in_member(operator)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => account.id,
+          "connect_as" => service_account.id,
+          "decision" => "approve"
+        })
+
+      assert html_response(conn, 400) =~
+               "Only owners and admins can connect an app as a service account."
+
+      refute Repo.one(Emisar.ApiKeys.ApiKey)
+    end
+
+    test "a scoped admin cannot connect as a service account that reaches further", %{
+      conn: conn,
+      account: account,
+      client: client,
+      challenge: challenge
+    } do
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, scoped} = Emisar.Accounts.RunnerAccess.restricted(["web"], [])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      conn =
+        conn
+        |> log_in_member(admin)
+        |> post(~p"/oauth/authorize", %{
+          "client_id" => client.id,
+          "redirect_uri" => @redirect,
+          "response_type" => "code",
+          "code_challenge" => challenge,
+          "code_challenge_method" => "S256",
+          "resource" => @resource,
+          "account_id" => account.id,
+          "connect_as" => service_account.id,
+          "decision" => "approve"
+        })
+
+      assert html_response(conn, 400) =~ "can reach runners or packs you can"
+      refute Repo.one(Emisar.ApiKeys.ApiKey)
     end
   end
 

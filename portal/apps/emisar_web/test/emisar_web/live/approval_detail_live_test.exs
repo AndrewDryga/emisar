@@ -861,7 +861,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> form("form[phx-submit='decide']", %{})
       |> render_submit(%{"decision" => "approve", "reason" => note})
 
-    assert html =~ "You can&#39;t approve your own request."
+    assert html =~ "You can&#39;t approve your own request, or one made with a key you issued."
     assert html =~ note
   end
 
