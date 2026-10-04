@@ -1,5 +1,6 @@
 defmodule Emisar.AdminTest do
   use Emisar.DataCase, async: true
+  import ExUnit.CaptureLog
   alias Emisar.Accounts.Membership
   alias Emisar.{Admin, Audit, Billing, Crypto, Fixtures, RequestContext}
 
@@ -205,26 +206,30 @@ defmodule Emisar.AdminTest do
       refute Repo.exists?(Admin.StaffToken.Query.all())
     end
 
-    test "a sixth request from one client address inside 15 minutes sends nothing, and another address still gets a code" do
+    test "a sixth request inside 15 minutes sends nothing, whichever client address asks" do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
       staff = Fixtures.Admin.create_staff()
-      flooding = %RequestContext{ip_address: "198.51.100.#{System.unique_integer([:positive])}"}
+      {pending_id, pending_nonce, pending_code} = request_code(staff)
 
-      for _attempt <- 1..5 do
-        assert {:ok, _challenge} = Admin.request_staff_sign_in(staff.email, flooding)
+      for _attempt <- 2..5 do
+        assert {:ok, _challenge} = Admin.request_staff_sign_in(staff.email, another_address())
         assert_received {:email, _sent}
       end
 
-      assert {:ok, %{token_id: token_id}} = Admin.request_staff_sign_in(staff.email, flooding)
+      log =
+        capture_log(fn ->
+          assert {:ok, %{token_id: token_id}} =
+                   Admin.request_staff_sign_in(staff.email, another_address())
+
+          refute Repo.get(Admin.StaffToken, token_id)
+        end)
+
       refute_received {:email, _sent}
-      refute Repo.get(Admin.StaffToken, token_id)
+      assert log =~ "staff sign-in code throttled staff_id=#{staff.id}"
 
-      # Somebody else asking for codes in staff's name cannot keep staff out.
-      assert {:ok, %{token_id: own_id}} =
-               Admin.request_staff_sign_in(staff.email, %RequestContext{})
-
-      assert_received {:email, _sent}
-      assert Repo.get(Admin.StaffToken, own_id)
+      # The flood holds back a new code but cancels none already sent.
+      otp = Fixtures.Admin.totp_code(staff)
+      assert {:ok, _raw, _session} = sign_in(pending_id, pending_nonce, pending_code, otp)
     end
   end
 
@@ -1299,6 +1304,9 @@ defmodule Emisar.AdminTest do
 
   defp sign_in(token_id, nonce, code, otp),
     do: Admin.complete_staff_sign_in(token_id, nonce, code, otp, %RequestContext{})
+
+  defp another_address,
+    do: %RequestContext{ip_address: "198.51.100.#{System.unique_integer([:positive])}"}
 
   defp other_code("ZZZZZZ"), do: "YYYYYY"
   defp other_code(_code), do: "ZZZZZZ"

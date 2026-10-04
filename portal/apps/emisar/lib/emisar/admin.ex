@@ -165,20 +165,34 @@ defmodule Emisar.Admin do
   `{:ok, %{token_id: id, nonce: nonce}}`, and the caller keeps both in the
   requesting browser, because the code works only together with that nonce.
 
-  A request never cancels another browser's pending code, so nobody can keep
-  staff from signing in by asking for codes in their name. Each login gets at
-  most five codes per 15 minutes from one client address; a throttled request
-  is a decoy too. A completed sign-in cancels the login's other pending codes.
+  Each login gets at most five codes per 15 minutes, whichever client addresses
+  ask, so nobody can flood the staff inbox; a refused request is a decoy too,
+  and is logged. Someone asking for codes in staff's name can hold back a new
+  code until the window passes, but never cancels one already sent: a request
+  leaves every other browser's pending code working. A completed sign-in
+  cancels the login's other pending codes.
   """
   def request_staff_sign_in(email, %RequestContext{} = context) when is_binary(email) do
     {nonce, code, digest} = Crypto.magic_link_token()
-    throttle_key = {"staff_sign_in_code", context.ip_address}
 
     with %Staff{} = staff <- peek_staff_by_email(email),
-         :ok <- Throttle.check(throttle_key, staff.id, 5, 900_000) do
+         :ok <- check_staff_code_budget(staff, context) do
       issue_staff_sign_in(staff, nonce, code, digest, context)
     else
       _decoy -> {:ok, staff_sign_in_decoy(nonce)}
+    end
+  end
+
+  # One budget per login, shared by every client address: a budget per address
+  # let an address pool send the staff inbox as many codes as it had addresses.
+  defp check_staff_code_budget(%Staff{} = staff, context) do
+    with {:error, :rate_limited} = refused <-
+           Throttle.check("staff_sign_in_code", staff.id, 5, 900_000) do
+      Logger.warning(
+        "staff sign-in code throttled staff_id=#{staff.id} ip=#{inspect(context.ip_address)}"
+      )
+
+      refused
     end
   end
 
