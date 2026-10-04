@@ -66,7 +66,9 @@ defmodule Emisar.Repo.Migrations.GiveMembersTheirEmailAndFactor do
 
     # A person with exactly one live Member keeps their authenticator on it. With
     # two or more nothing is copied, so one secret never spans workspaces; those
-    # people enroll again in each workspace.
+    # people enroll again in each workspace. A pending invitation gets nothing
+    # either: accepting it demands the factor while the challenge only answers
+    # an accepted seat, so a copied factor would lock its invitee out for good.
     execute """
     UPDATE account_memberships m
     SET mfa_secret = u.mfa_secret,
@@ -77,6 +79,7 @@ defmodule Emisar.Repo.Migrations.GiveMembersTheirEmailAndFactor do
     WHERE u.id = m.user_id AND u.deleted_at IS NULL AND u.mfa_enabled_at IS NOT NULL
       AND a.id = m.account_id AND a.deleted_at IS NULL
       AND m.deleted_at IS NULL
+      AND NOT (#{@pending})
       AND (
         SELECT count(*)
         FROM account_memberships other
