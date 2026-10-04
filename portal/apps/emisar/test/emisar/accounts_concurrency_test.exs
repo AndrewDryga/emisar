@@ -2,7 +2,7 @@ defmodule Emisar.AccountsConcurrencyTest do
   use Emisar.ConcurrencyCase, async: false
   import Ecto.Query
   alias Ecto.Adapters.SQL.Sandbox
-  alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Repo, RequestContext}
+  alias Emisar.{Accounts, Auth, Config, Crypto, Fixtures, Mail, Marketing, Repo, RequestContext}
   alias Emisar.Accounts.{Account, Membership, RunnerAccess}
   alias Emisar.Audit.Event, as: AuditEvent
   alias Emisar.Auth.UserToken
@@ -319,6 +319,84 @@ defmodule Emisar.AccountsConcurrencyTest do
           :release -> :ok
         end
       end)
+    end)
+  end
+
+  test "two erasures of one address in different workspaces clear it once no Member keeps it" do
+    Sandbox.unboxed_run(Repo, fn ->
+      suffix = Ecto.UUID.generate()
+      address = "erased-#{suffix}@example.test"
+
+      members =
+        for n <- 1..2 do
+          account =
+            Fixtures.Accounts.create_account(%{
+              name: "Erasure #{n} #{suffix}",
+              slug: "erasure-#{n}-#{suffix}"
+            })
+
+          Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+          Fixtures.Memberships.create_membership(account_id: account.id, email: address)
+        end
+
+      {:ok, _} = Mail.suppress(address, :hard_bounce, "HardBounce")
+      {:ok, _} = Marketing.capture_signup(%{email: address})
+      parent = self()
+
+      try do
+        # Holding the address lock parks each erasure after it deleted its
+        # Member and before it checks who still uses the address: the race in
+        # which each one would otherwise see the other Member still live.
+        holder =
+          unboxed_task(fn ->
+            Repo.transaction(fn ->
+              Repo.query!(
+                "SELECT pg_advisory_xact_lock(hashtextextended($1 || lower($2), 0))",
+                ["emisar.accounts.erased_address:", address]
+              )
+
+              send(parent, {:holder_backend, backend_pid()})
+
+              receive do
+                :release -> :ok
+              end
+            end)
+          end)
+
+        assert_receive {:holder_backend, holder_backend}, 5_000
+
+        erasures =
+          for member <- members do
+            member_id = member.id
+
+            erasure =
+              unboxed_task(fn ->
+                send(parent, {:erasure_backend, member_id, backend_pid()})
+                Accounts.erase_member(member.account_id, member_id)
+              end)
+
+            assert_receive {:erasure_backend, ^member_id, erasure_backend}, 5_000
+            await_blocked_by(erasure_backend, holder_backend)
+            erasure
+          end
+
+        send(holder.pid, :release)
+        assert {:ok, :ok} = Task.await(holder, 30_000)
+
+        for erasure <- erasures do
+          assert {:ok, %{account: nil}} = Task.await(erasure, 30_000)
+        end
+
+        refute Mail.suppressed?(address)
+        refute Repo.one(Marketing.Signup.Query.by_email(address))
+      after
+        Repo.delete_all(
+          from(account in Account, where: account.id in ^Enum.map(members, & &1.account_id))
+        )
+
+        Mail.erase_suppression(address)
+        Marketing.erase_signup(address)
+      end
     end)
   end
 

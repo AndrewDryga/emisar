@@ -1343,20 +1343,37 @@ defmodule Emisar.Accounts do
   # The suppression and marketing lists hold an address, not a person, and no
   # account cascade reaches them. While another live Member anywhere still uses
   # the address, its mail keeps that state; the last one takes the rows along.
+  # Two erasures of one address in different workspaces would each see the
+  # other's Member still live and both keep the rows, so the check runs under a
+  # lock on the address: the second waits, then finds the first Member gone.
   defp erase_unshared_address(_repo, nil), do: {:ok, :no_address}
 
   defp erase_unshared_address(repo, email) do
-    in_use? =
-      Membership.Query.not_deleted()
-      |> Membership.Query.by_email(email)
-      |> repo.exists?()
+    with {:ok, :locked} <- lock_erased_address(repo, email) do
+      in_use? =
+        Membership.Query.not_deleted()
+        |> Membership.Query.by_email(email)
+        |> repo.exists?()
 
-    if in_use? do
-      {:ok, :in_use}
-    else
-      :ok = Mail.erase_suppression(email, repo: repo)
-      :ok = Marketing.erase_signup(email, repo: repo)
-      {:ok, :erased}
+      if in_use? do
+        {:ok, :in_use}
+      else
+        :ok = Mail.erase_suppression(email, repo: repo)
+        :ok = Marketing.erase_signup(email, repo: repo)
+        {:ok, :erased}
+      end
+    end
+  end
+
+  # Advisory locks share one namespace per database, so the key is namespaced
+  # and hashed by PostgreSQL itself, on the lowercased address the citext
+  # column compares.
+  defp lock_erased_address(repo, email) do
+    sql = "SELECT pg_advisory_xact_lock(hashtextextended($1 || lower($2), 0))"
+
+    case Ecto.Adapters.SQL.query(repo, sql, ["emisar.accounts.erased_address:", email]) do
+      {:ok, _result} -> {:ok, :locked}
+      {:error, reason} -> {:error, reason}
     end
   end
 
