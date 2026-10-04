@@ -162,7 +162,8 @@ defmodule Emisar.SSOTest do
         SSO.complete_auth(
           provider,
           %{"_barrier" => {owner, ref}, "_claims" => claims},
-          %{}
+          %{},
+          %RequestContext{}
         )
       end)
 
@@ -186,7 +187,9 @@ defmodule Emisar.SSOTest do
 
   # Drive a manual-provider sign-in for an unknown sub → the captured request.
   defp capture_request(provider, claims) do
-    {:pending, %LinkRequest{} = request} = SSO.complete_auth(provider, callback(claims), %{})
+    {:pending, %LinkRequest{} = request} =
+      SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
     request
   end
 
@@ -3012,9 +3015,9 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  # -- complete_auth/3 -------------------------------------------------
+  # -- complete_auth/4 -------------------------------------------------
 
-  describe "complete_auth/3 — resolution + JIT" do
+  describe "complete_auth/4 — resolution + JIT" do
     test "first login JIT-provisions a Member + identity at default_role" do
       {_owner, account, subject} = enterprise_owner()
 
@@ -3033,7 +3036,7 @@ defmodule Emisar.SSOTest do
       }
 
       assert {:ok, %{membership: membership, identity: identity, provider: current_provider}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert current_provider.id == provider.id
       assert membership.display_name == "New Operator"
@@ -3076,7 +3079,7 @@ defmodule Emisar.SSOTest do
       claims = %{"sub" => "okta|other", "email" => "taken@acme.test", "email_verified" => true}
 
       assert {:ok, %{membership: membership}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert membership.account_id == account.id
       assert membership.id != existing.id
@@ -3092,8 +3095,11 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|stable", "email" => "stable@acme.test", "email_verified" => true}
 
-      assert {:ok, %{membership: first}} = SSO.complete_auth(provider, callback(claims), %{})
-      assert {:ok, %{membership: second}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{membership: first}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
+      assert {:ok, %{membership: second}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert first.id == second.id
     end
@@ -3124,7 +3130,7 @@ defmodule Emisar.SSOTest do
               %{
                 membership: %Accounts.Membership{id: ^membership_id},
                 identity: %UserIdentity{id: ^identity_id}
-              }} = SSO.complete_auth(provider, callback(claims), %{})
+              }} = SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
     end
 
     test "a directory identifier on a Member is parked, not matched by email" do
@@ -3149,7 +3155,7 @@ defmodule Emisar.SSOTest do
       }
 
       assert {:pending, %LinkRequest{provider_identifier: "scim-unlinked"}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
     end
 
     test "a no-email IdP JIT-provisions a Member with no contact (identified by sub)" do
@@ -3158,7 +3164,7 @@ defmodule Emisar.SSOTest do
       claims = %{"sub" => "okta|nomail", "name" => "No Email"}
 
       assert {:ok, %{membership: membership, identity: identity}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       refute membership.email
       assert membership.display_name == "No Email"
@@ -3170,7 +3176,9 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|unverified", "email" => "unverified@acme.test"}
 
-      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{membership: membership}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
       refute membership.email
     end
 
@@ -3179,7 +3187,9 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|str", "email" => "str@acme.test", "email_verified" => "true"}
 
-      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{membership: membership}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
       assert membership.email == "str@acme.test"
     end
 
@@ -3197,7 +3207,9 @@ defmodule Emisar.SSOTest do
         "hd" => "acme.test"
       }
 
-      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{membership: membership}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
       assert is_nil(membership.email)
     end
 
@@ -3207,7 +3219,7 @@ defmodule Emisar.SSOTest do
       claims = %{"sub" => "okta|unknown", "email" => "u@acme.test", "email_verified" => true}
 
       assert {:pending, %LinkRequest{} = request} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       # The real sub + claims are captured for the admin; no user/identity yet.
       assert request.provider_identifier == "okta|unknown"
@@ -3230,7 +3242,7 @@ defmodule Emisar.SSOTest do
       claims = %{"sub" => "oid-456"}
 
       assert {:pending, %LinkRequest{} = request} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert request.provider_identifier == "oid-456"
 
@@ -3263,7 +3275,7 @@ defmodule Emisar.SSOTest do
       }
 
       assert {:pending, request} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert request.matched_membership_id == membership.id
       assert request.email == "  JIT@ACME.TEST  "
@@ -3288,7 +3300,7 @@ defmodule Emisar.SSOTest do
           if verified == :absent, do: claims, else: Map.put(claims, "email_verified", verified)
 
         assert {:pending, %LinkRequest{} = request} =
-                 SSO.complete_auth(provider, callback(claims), %{})
+                 SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
         assert request.email == email
         assert request.claims["email"] == email
@@ -3337,7 +3349,8 @@ defmodule Emisar.SSOTest do
 
       claims = %{"sub" => "okta|scoped", "email" => "scoped@acme.test", "email_verified" => true}
 
-      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{membership: membership}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert membership.account_id == account_a.id
       refute membership.id == b_member.id
@@ -3348,7 +3361,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "complete_auth/3 — current provider policy after verification" do
+  describe "complete_auth/4 — current provider policy after verification" do
     test "rejects a changed namespace even when its legacy persisted hash collides" do
       {_owner, account, subject} = enterprise_owner()
 
@@ -3532,7 +3545,8 @@ defmodule Emisar.SSOTest do
         "email_verified" => true
       }
 
-      assert {:ok, %{identity: identity}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{identity: identity}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       {{:ok, updated}, callback_result} =
         callback_after_verified(provider, claims, fn ->
@@ -3545,7 +3559,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "complete_auth/3 — a connection disabled mid-flight" do
+  describe "complete_auth/4 — a connection disabled mid-flight" do
     test "a first login cannot land through a door the account just closed" do
       {_owner, account, subject} = enterprise_owner()
       provider = provider_fixture(account)
@@ -3553,7 +3567,8 @@ defmodule Emisar.SSOTest do
 
       claims = %{"sub" => "okta|mid-flight", "email" => "mf@acme.test", "email_verified" => true}
 
-      assert SSO.complete_auth(disabled, callback(claims), %{}) == {:error, :provider_disabled}
+      assert SSO.complete_auth(disabled, callback(claims), %{}, %RequestContext{}) ==
+               {:error, :provider_disabled}
     end
 
     test "a returning member cannot either" do
@@ -3561,11 +3576,12 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account)
       claims = %{"sub" => "okta|returning", "email" => "ret@acme.test", "email_verified" => true}
 
-      assert {:ok, _} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, _} = SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       {:ok, disabled} = SSO.update_provider(provider, %{enabled: false}, subject)
 
-      assert SSO.complete_auth(disabled, callback(claims), %{}) == {:error, :provider_disabled}
+      assert SSO.complete_auth(disabled, callback(claims), %{}, %RequestContext{}) ==
+               {:error, :provider_disabled}
     end
 
     test "a cancellation committed before callback completion refuses the session" do
@@ -3592,7 +3608,7 @@ defmodule Emisar.SSOTest do
     end
   end
 
-  describe "complete_auth/3 — allowed_email_domain gate (H1)" do
+  describe "complete_auth/4 — allowed_email_domain gate (H1)" do
     setup do
       {_owner, account, _subject} = enterprise_owner()
       %{account: account}
@@ -3601,14 +3617,16 @@ defmodule Emisar.SSOTest do
     test "a verified email in the allowed domain is admitted", %{account: account} do
       provider = provider_fixture(account, allowed_email_domain: "acme.test")
       claims = %{"sub" => "okta|in", "email" => "ok@acme.test", "email_verified" => true}
-      assert {:ok, %{membership: _}} = SSO.complete_auth(provider, callback(claims), %{})
+
+      assert {:ok, %{membership: _}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
     end
 
     test "a verified email outside the allowed domain is refused", %{account: account} do
       provider = provider_fixture(account, allowed_email_domain: "acme.test")
       claims = %{"sub" => "okta|out", "email" => "x@evil.test", "email_verified" => true}
 
-      assert SSO.complete_auth(provider, callback(claims), %{}) ==
+      assert SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{}) ==
                {:error, :email_domain_not_allowed}
     end
 
@@ -3620,7 +3638,10 @@ defmodule Emisar.SSOTest do
         )
 
       claims = %{"sub" => "g|hd", "email" => "x@acme.test", "hd" => "acme.test"}
-      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+
+      assert {:ok, %{membership: membership}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
       assert is_nil(membership.email)
     end
 
@@ -3640,7 +3661,7 @@ defmodule Emisar.SSOTest do
         "hd" => "acme.test"
       }
 
-      assert SSO.complete_auth(provider, callback(claims), %{}) ==
+      assert SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{}) ==
                {:error, :email_domain_not_allowed}
     end
 
@@ -3658,7 +3679,7 @@ defmodule Emisar.SSOTest do
         "hd" => "other.test"
       }
 
-      assert SSO.complete_auth(provider, callback(claims), %{}) ==
+      assert SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{}) ==
                {:error, :email_domain_not_allowed}
     end
 
@@ -3669,7 +3690,7 @@ defmodule Emisar.SSOTest do
         provider = provider_fixture(account, kind: kind, allowed_email_domain: domain)
         claims = %{"sub" => "#{kind}|hd", "email" => "x@#{domain}", "hd" => domain}
 
-        assert SSO.complete_auth(provider, callback(claims), %{}) ==
+        assert SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{}) ==
                  {:error, :email_domain_not_allowed}
       end
     end
@@ -3686,7 +3707,9 @@ defmodule Emisar.SSOTest do
         "hd" => "evil.test"
       }
 
-      assert {:ok, %{membership: membership}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{membership: membership}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
       assert membership.email == "ok@acme.test"
     end
 
@@ -3694,7 +3717,7 @@ defmodule Emisar.SSOTest do
       provider = provider_fixture(account, allowed_email_domain: "acme.test")
       claims = %{"sub" => "okta|nodomain"}
 
-      assert SSO.complete_auth(provider, callback(claims), %{}) ==
+      assert SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{}) ==
                {:error, :email_domain_not_allowed}
     end
   end
@@ -4476,7 +4499,8 @@ defmodule Emisar.SSOTest do
       }
 
       # He gets an admin decision, not Alice's account.
-      assert {:pending, %LinkRequest{}} = SSO.complete_auth(provider, callback(bob_claims), %{})
+      assert {:pending, %LinkRequest{}} =
+               SSO.complete_auth(provider, callback(bob_claims), %{}, %RequestContext{})
 
       # Alice herself still converges — same value, and the verified email names
       # her seat's workspace contact.
@@ -4487,7 +4511,7 @@ defmodule Emisar.SSOTest do
       }
 
       assert {:ok, %{membership: signed_in}} =
-               SSO.complete_auth(provider, callback(alice_claims), %{})
+               SSO.complete_auth(provider, callback(alice_claims), %{}, %RequestContext{})
 
       assert signed_in.id == alice.id
       assert signed_in.account_id == account.id
@@ -4510,7 +4534,7 @@ defmodule Emisar.SSOTest do
       }
 
       assert {:pending, %LinkRequest{} = request} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert request.email == "alice-unverified@acme.test"
       assert is_nil(request.matched_membership_id)
@@ -4533,7 +4557,9 @@ defmodule Emisar.SSOTest do
         "email_verified" => true
       }
 
-      assert {:pending, %LinkRequest{}} = SSO.complete_auth(provider, callback(personal), %{})
+      assert {:pending, %LinkRequest{}} =
+               SSO.complete_auth(provider, callback(personal), %{}, %RequestContext{})
+
       assert Repo.reload!(identity).last_seen_at == identity.last_seen_at
 
       contact = %{
@@ -4543,7 +4569,7 @@ defmodule Emisar.SSOTest do
       }
 
       assert {:ok, %{membership: signed_in}} =
-               SSO.complete_auth(provider, callback(contact), %{})
+               SSO.complete_auth(provider, callback(contact), %{}, %RequestContext{})
 
       assert signed_in.id == member.id
     end
@@ -4564,7 +4590,8 @@ defmodule Emisar.SSOTest do
         "name" => "Okta Cert"
       }
 
-      assert {:ok, %{identity: signed_in}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{identity: signed_in}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert signed_in.id == identity.id
       assert Repo.reload!(identity).last_seen_at
@@ -4589,21 +4616,26 @@ defmodule Emisar.SSOTest do
                SSO.complete_auth(
                  provider,
                  callback(%{claims | "iss" => "https://evil.test"}),
-                 %{}
+                 %{},
+                 %RequestContext{}
                )
 
       assert {:pending, %LinkRequest{}} =
                SSO.complete_auth(
                  provider,
                  callback(Map.put(claims, "email_verified", false)),
-                 %{}
+                 %{},
+                 %RequestContext{}
                )
 
       assert {:ok, %{identity: inactive}} =
                SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
 
       refute inactive.scim_active
-      assert {:pending, %LinkRequest{}} = SSO.complete_auth(provider, callback(claims), %{})
+
+      assert {:pending, %LinkRequest{}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
       assert Repo.reload!(identity).last_seen_at == identity.last_seen_at
     end
 
@@ -4631,7 +4663,8 @@ defmodule Emisar.SSOTest do
         "name" => "Entra Cert"
       }
 
-      assert {:ok, %{identity: signed_in}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:ok, %{identity: signed_in}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert signed_in.id == identity.id
       assert Repo.reload!(identity).last_seen_at
@@ -4664,21 +4697,26 @@ defmodule Emisar.SSOTest do
                SSO.complete_auth(
                  provider,
                  callback(%{claims | "iss" => "https://evil.test"}),
-                 %{}
+                 %{},
+                 %RequestContext{}
                )
 
       assert {:pending, %LinkRequest{}} =
                SSO.complete_auth(
                  provider,
                  callback(Map.put(claims, "email_verified", false)),
-                 %{}
+                 %{},
+                 %RequestContext{}
                )
 
       assert {:ok, %{identity: inactive}} =
                SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{active: false})
 
       refute inactive.scim_active
-      assert {:pending, %LinkRequest{}} = SSO.complete_auth(provider, callback(claims), %{})
+
+      assert {:pending, %LinkRequest{}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
       assert Repo.reload!(identity).last_seen_at == identity.last_seen_at
     end
 
@@ -4703,7 +4741,9 @@ defmodule Emisar.SSOTest do
         "email" => "retired@acme.test"
       }
 
-      assert {:pending, %LinkRequest{}} = SSO.complete_auth(provider, callback(claims), %{})
+      assert {:pending, %LinkRequest{}} =
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
+
       assert Repo.reload!(identity).last_seen_at == identity.last_seen_at
     end
 
@@ -5661,13 +5701,14 @@ defmodule Emisar.SSOTest do
                SSO.complete_auth(
                  provider,
                  callback(%{"sub" => "directory-resource"}),
-                 %{}
+                 %{},
+                 %RequestContext{}
                )
 
       assert signed_in.id == other_member.id
 
       assert {:pending, %LinkRequest{provider_identifier: "admin-linked-subject"}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       identities =
         UserIdentity.Query.not_deleted()
@@ -5753,7 +5794,8 @@ defmodule Emisar.SSOTest do
                    "email" => "session-retire@acme.test",
                    "email_verified" => true
                  }),
-                 %{}
+                 %{},
+                 %RequestContext{}
                )
     end
 
@@ -9059,7 +9101,7 @@ defmodule Emisar.SSOTest do
       }
 
       assert {:ok, %{membership: signed_in}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert signed_in.id == membership.id
     end
@@ -9157,7 +9199,7 @@ defmodule Emisar.SSOTest do
       assert link_requests(provider.id) == []
 
       assert {:ok, %{membership: signed_in}} =
-               SSO.complete_auth(provider, callback(claims), %{})
+               SSO.complete_auth(provider, callback(claims), %{}, %RequestContext{})
 
       assert signed_in.id == member.id
     end

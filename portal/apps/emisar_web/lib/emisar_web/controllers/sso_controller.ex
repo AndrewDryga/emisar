@@ -482,7 +482,7 @@ defmodule EmisarWeb.SSOController do
     with %{provider_id: provider_id} = stash <- get_session(conn, @sign_in_stash_key),
          {:ok, started_provider} <- SSO.fetch_provider_for_sign_in(provider_id),
          {:ok, %{provider: provider} = auth} <-
-           SSO.complete_auth(started_provider, params, stash),
+           SSO.complete_auth(started_provider, params, stash, RequestContext.from_conn(conn)),
          {:ok, account} <-
            Accounts.fetch_account_by_id_or_slug_including_disabled(provider.account_id) do
       conn = delete_session(conn, @sign_in_stash_key)
@@ -606,6 +606,7 @@ defmodule EmisarWeb.SSOController do
   defp failure_reason({:account_disabled, _account}), do: "account_disabled"
   defp failure_reason(:account_disabled), do: "account_disabled"
   defp failure_reason(:email_domain_not_allowed), do: "email_domain_not_allowed"
+  defp failure_reason(:membership_unavailable), do: "membership_unavailable"
   defp failure_reason(:member_email_taken), do: "member_email_taken"
   defp failure_reason(:identity_pending_approval), do: "identity_pending_approval"
   defp failure_reason(:identity_namespace_changed), do: "provider_config_changed"

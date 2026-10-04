@@ -129,7 +129,7 @@ defmodule EmisarWeb.UserAuth do
     do: finish_log_in(conn, membership, token, :magic_link, true, registered?)
 
   @doc """
-  Completes an SSO sign-in: `auth` is `SSO.complete_auth/3`'s verified
+  Completes an SSO sign-in: `auth` is `SSO.complete_auth/4`'s verified
   `%{membership, identity, provider}` and `account` the provider's workspace.
   The domain mints the session under its locks and decides the IdP MFA stamp;
   no web caller chooses it. Returns `{:ok, conn}` or `{:error,

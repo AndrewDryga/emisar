@@ -32,7 +32,13 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
           unboxed_task(fn ->
             Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
             send(parent, {:callback_backend, backend_pid()})
-            SSO.complete_auth(context.provider, %{"_claims" => context.callback_claims}, %{})
+
+            SSO.complete_auth(
+              context.provider,
+              %{"_claims" => context.callback_claims},
+              %{},
+              %RequestContext{}
+            )
           end)
 
         try do
@@ -92,7 +98,13 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
             unboxed_task(fn ->
               Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
               send(parent, {:callback_backend, backend_pid()})
-              SSO.complete_auth(context.provider, %{"_claims" => context.callback_claims}, %{})
+
+              SSO.complete_auth(
+                context.provider,
+                %{"_claims" => context.callback_claims},
+                %{},
+                %RequestContext{}
+              )
             end)
 
           try do
@@ -133,7 +145,13 @@ defmodule Emisar.SSOPolicyConcurrencyTest do
           unboxed_task(fn ->
             Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
             send(parent, {:callback_backend, backend_pid()})
-            SSO.complete_auth(context.provider, %{"_claims" => context.callback_claims}, %{})
+
+            SSO.complete_auth(
+              context.provider,
+              %{"_claims" => context.callback_claims},
+              %{},
+              %RequestContext{}
+            )
           end)
 
         try do

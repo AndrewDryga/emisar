@@ -66,9 +66,39 @@ defmodule Emisar.SSOMembershipBindingTest do
     }
 
     assert {:error, :membership_unavailable} =
-             SSO.complete_auth(provider, %{"claims" => claims}, %{})
+             SSO.complete_auth(provider, %{"claims" => claims}, %{}, %RequestContext{})
 
     assert Repo.reload!(replacement).display_name == "Replacement Member"
+  end
+
+  test "a removed Member's refused SSO sign-in lands in its workspace's trail", %{
+    member: member,
+    subject: subject,
+    identity: identity,
+    provider: provider
+  } do
+    assert {:ok, _removed} = Accounts.delete_membership(member, subject)
+
+    claims = %{
+      "sub" => identity.provider_identifier,
+      "email" => member.email,
+      "email_verified" => true
+    }
+
+    context = %RequestContext{ip_address: "203.0.113.9", user_agent: "offboarded-browser"}
+
+    assert {:error, :membership_unavailable} =
+             SSO.complete_auth(provider, %{"claims" => claims}, %{}, context)
+
+    assert [refused] =
+             Emisar.Audit.Event.Query.all()
+             |> Emisar.Audit.Event.Query.by_account_id(member.account_id)
+             |> Emisar.Audit.Event.Query.by_event_type("user.sign_in_failed")
+             |> Repo.all()
+
+    assert {refused.target_id, refused.ip_address, refused.payload} ==
+             {member.id, "203.0.113.9",
+              %{"method" => "sso", "reason" => "membership_unavailable"}}
   end
 
   test "session mint rechecks the exact membership after callback completion", %{
@@ -149,7 +179,9 @@ defmodule Emisar.SSOMembershipBindingTest do
       "email_verified" => true
     }
 
-    assert {:pending, request} = SSO.complete_auth(provider, %{"claims" => claims}, %{})
+    assert {:pending, request} =
+             SSO.complete_auth(provider, %{"claims" => claims}, %{}, %RequestContext{})
+
     assert request.matched_membership_id == member.id
     replacement = replace_member(member, subject)
 
@@ -159,7 +191,9 @@ defmodule Emisar.SSOMembershipBindingTest do
     assert Repo.reload!(identity).membership_id == member.id
     assert Repo.reload!(request)
 
-    assert {:pending, fresh} = SSO.complete_auth(provider, %{"claims" => claims}, %{})
+    assert {:pending, fresh} =
+             SSO.complete_auth(provider, %{"claims" => claims}, %{}, %RequestContext{})
+
     assert fresh.id == request.id
     assert {:ok, persisted} = SSO.fetch_pending_link_request(fresh.id)
     assert persisted.matched_membership_id == replacement.id
@@ -231,7 +265,7 @@ defmodule Emisar.SSOMembershipBindingTest do
     claims = %{"sub" => identity.provider_identifier, "email" => email, "email_verified" => true}
 
     assert {:error, :membership_unavailable} =
-             SSO.complete_auth(provider, %{"claims" => claims}, %{})
+             SSO.complete_auth(provider, %{"claims" => claims}, %{}, %RequestContext{})
 
     # One address is one live Member: the directory's re-POST is refused while
     # the namesake holds it, and re-seats the person once the address is free.

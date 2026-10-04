@@ -152,7 +152,7 @@ defmodule Emisar.Auth do
   defdelegate fetch_current_session(subject), to: SessionSubject, as: :fetch_session
 
   @doc """
-  Internal — SSO sign-in completion: `SSO.complete_auth/3` verified the
+  Internal — SSO sign-in completion: `SSO.complete_auth/4` verified the
   callback and resolved `membership`, `identity` and `provider`; this mints the
   session for that one Member, so there's no Subject yet. Locks the workspace,
   its SSO entitlement, the provider (still enabled, still at the issuer that

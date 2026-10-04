@@ -2141,7 +2141,7 @@ defmodule Emisar.SSO do
   Build the IdP authorization redirect for an enabled provider. The public
   boundary — the web layer never calls the internal `OIDC` wrapper directly.
   Returns `{:ok, %{authorize_url, state, nonce, pkce_verifier}}`; the web layer
-  stashes the secrets in its encrypted browser session for `complete_auth/3`.
+  stashes the secrets in its encrypted browser session for `complete_auth/4`.
   The callback response clears them; the shared provider-work budget bounds
   replay of a copied pre-response cookie.
   """
@@ -2160,18 +2160,54 @@ defmodule Emisar.SSO do
   refused with `{:error, :member_email_taken}`. Returns
   `{:ok, %{membership, identity, provider}}` — the one Member this identity
   signs in, for `Auth.complete_sso_sign_in/5`; the workspace is the provider's.
+  A validated identity its workspace refuses (seat suspended or removed, email
+  domain no longer allowed, connection changed or disabled) writes
+  `user.sign_in_failed` for that Member, with `context`.
   """
-  def complete_auth(%IdentityProvider{} = provider, params, stashed) do
+  def complete_auth(%IdentityProvider{} = provider, params, stashed, %RequestContext{} = context) do
     with {:ok, %{identifier: identifier, claims: claims}} <-
            OIDC.verify_callback(provider, params, stashed) do
-      commit_verified_auth(
-        provider,
-        callback_namespace(provider),
-        identifier,
-        claims,
-        0
-      )
+      provider
+      |> commit_verified_auth(callback_namespace(provider), identifier, claims, 0)
+      |> record_refused_sign_in(provider, identifier, context)
     end
+  end
+
+  # As a wrong emailed code does, a refused SSO sign-in leaves a row in the
+  # workspace's trail, so an admin sees an offboarded person still trying the
+  # door. The transaction that refused it rolled back, so the row is its own
+  # insert; an identity no Member holds names nobody and is only logged.
+  @attributable_refusals [
+    :membership_unavailable,
+    :email_domain_not_allowed,
+    :identity_namespace_changed,
+    :provider_disabled
+  ]
+
+  defp record_refused_sign_in({:error, reason} = refused, provider, identifier, context)
+       when reason in @attributable_refusals do
+    with %UserIdentity{membership: %Accounts.Membership{} = member} <-
+           peek_identity_member(provider, identifier),
+         {:error, _not_recorded} <-
+           Audit.record(
+             Audit.Events.member_security_event(member, "user.sign_in_failed", context, %{
+               method: "sso",
+               reason: Atom.to_string(reason)
+             })
+           ) do
+      Logger.warning("sso refusal not audited reason=#{reason}")
+    end
+
+    refused
+  end
+
+  defp record_refused_sign_in(result, _provider, _identifier, _context), do: result
+
+  defp peek_identity_member(%IdentityProvider{} = provider, identifier) do
+    UserIdentity.Query.not_deleted()
+    |> UserIdentity.Query.by_provider_and_identifier(provider.id, identifier)
+    |> UserIdentity.Query.with_preloaded_membership()
+    |> Repo.peek()
   end
 
   @verified_auth_retry_limit 1
