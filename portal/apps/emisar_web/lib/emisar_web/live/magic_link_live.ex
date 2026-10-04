@@ -51,7 +51,9 @@ defmodule EmisarWeb.MagicLinkLive do
     %{token_id: token_id, nonce: nonce, request_context: context} = socket.assigns
     code = code |> to_string() |> String.trim() |> String.upcase()
 
-    with :ok <- Throttle.check("magic_link_verify", context.ip_address, 30, 60_000),
+    client = RequestContext.rate_limit_key(context.ip_address)
+
+    with :ok <- Throttle.check("magic_link_verify", client, 30, 60_000),
          {:ok, membership_id} <- Auth.verify_magic_link(token_id, code, nonce, context) do
       handoff = MagicLinkHandoff.sign(membership_id, token_id)
       {:noreply, redirect(socket, to: ~p"/sign_in/magic/complete?#{[handoff: handoff]}")}

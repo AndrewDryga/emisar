@@ -30,6 +30,24 @@ defmodule EmisarWeb.RequestContext do
   def client_ip(conn), do: normalize_ip(forwarded_for(conn) || peer_ip(conn))
 
   @doc """
+  The client a per-address limit counts: an IPv4 address as it is, an IPv6
+  address by its /64. One IPv6 host is normally handed a whole /64, so counting
+  each full address let it step to a fresh one for every request and never meet
+  a per-address cap. Audit keeps the full address (`client_ip/1`).
+  """
+  def rate_limit_key(ip) when is_binary(ip) do
+    case :inet.parse_address(String.to_charlist(ip)) do
+      {:ok, {a, b, c, d, _e, _f, _g, _h}} ->
+        {a, b, c, d, 0, 0, 0, 0} |> :inet.ntoa() |> to_string() |> Kernel.<>("/64")
+
+      _ipv4_or_unparsed ->
+        ip
+    end
+  end
+
+  def rate_limit_key(nil), do: nil
+
+  @doc """
   Request context for a LiveView socket, from its connect info. Carries
   IP + user agent only — request ids are an HTTP-request concern the socket
   doesn't have. Like `from_conn/1`, the client IP comes

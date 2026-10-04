@@ -13,12 +13,13 @@ defmodule EmisarWeb.MfaChallengeLive do
   # (`verify_mfa_challenge/3` — per Member, server-side, so it survives a page
   # reload), on top of TOTP replay protection.
   def mount(_params, session, socket) do
-    case pending_membership_id(session) do
-      {:ok, membership_id} ->
+    case pending_challenge(session) do
+      {:ok, membership_id, verified_token_id} ->
         {:ok,
          socket
          |> assign(:page_title, "Multi-factor authentication")
          |> assign(:membership_id, membership_id)
+         |> assign(:verified_token_id, verified_token_id)
          |> assign(:pending_at, session["mfa_pending_at"])
          |> assign(:mode, :totp)
          |> assign(:error, nil)
@@ -62,11 +63,12 @@ defmodule EmisarWeb.MfaChallengeLive do
   end
 
   defp verify_factor(socket, factor) do
-    %{membership_id: membership_id, request_context: context} = socket.assigns
+    %{membership_id: membership_id, verified_token_id: token_id, request_context: context} =
+      socket.assigns
 
     case Auth.verify_mfa_challenge(membership_id, factor, context) do
       {:ok, proof} ->
-        handoff = MfaChallengeHandoff.sign(proof)
+        handoff = MfaChallengeHandoff.sign(proof, token_id)
         {:noreply, redirect(socket, to: ~p"/sign_in/mfa/complete?#{[handoff: handoff]}")}
 
       {:error, :rate_limited} ->
@@ -81,10 +83,13 @@ defmodule EmisarWeb.MfaChallengeLive do
   # in a shared browser is not a standing invitation to finish signing in later.
   @pending_ttl_seconds 600
 
-  defp pending_membership_id(session) do
+  # The handoff names the emailed code this browser verified, so a challenge
+  # without it has nothing to finish.
+  defp pending_challenge(session) do
     with id when is_binary(id) <- session["mfa_pending_membership_id"],
+         token_id when is_binary(token_id) <- session["mfa_pending_magic_link_token_id"],
          true <- pending_fresh?(session) do
-      {:ok, id}
+      {:ok, id, token_id}
     else
       _ -> :error
     end

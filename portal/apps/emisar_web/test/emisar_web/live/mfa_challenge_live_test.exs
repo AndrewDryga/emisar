@@ -14,13 +14,22 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
     secret = Auth.generate_mfa_secret()
     {member, recovery_codes} = Fixtures.Memberships.enable_mfa!(secret, subject)
 
+    token_id = Ecto.UUID.generate()
+
     conn =
       Plug.Test.init_test_session(conn, %{
         "mfa_pending_membership_id" => member.id,
+        "mfa_pending_magic_link_token_id" => token_id,
         "mfa_pending_at" => System.system_time(:second)
       })
 
-    %{conn: conn, member: member, secret: secret, recovery_codes: recovery_codes}
+    %{
+      conn: conn,
+      member: member,
+      token_id: token_id,
+      secret: secret,
+      recovery_codes: recovery_codes
+    }
   end
 
   describe "mount" do
@@ -31,10 +40,19 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
       stale =
         Plug.Test.init_test_session(build_conn(), %{
           "mfa_pending_membership_id" => member.id,
+          "mfa_pending_magic_link_token_id" => Ecto.UUID.generate(),
           "mfa_pending_at" => System.system_time(:second) - 601
         })
 
       assert {:error, {:redirect, %{to: "/sign_in"}}} = live(stale, ~p"/sign_in/mfa")
+
+      codeless =
+        Plug.Test.init_test_session(build_conn(), %{
+          "mfa_pending_membership_id" => member.id,
+          "mfa_pending_at" => System.system_time(:second)
+        })
+
+      assert {:error, {:redirect, %{to: "/sign_in"}}} = live(codeless, ~p"/sign_in/mfa")
     end
 
     test "a pending session renders the authenticator prompt", %{conn: conn} do
@@ -46,9 +64,10 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
   end
 
   describe "TOTP verification" do
-    test "a correct code redirects to completion with a proof for this Member", %{
+    test "a correct code redirects to completion with a proof for this Member and code", %{
       conn: conn,
       member: member,
+      token_id: token_id,
       secret: secret
     } do
       {:ok, lv, _html} = live(conn, ~p"/sign_in/mfa")
@@ -58,7 +77,7 @@ defmodule EmisarWeb.MfaChallengeLiveTest do
 
       %URI{path: "/sign_in/mfa/complete", query: query} = URI.parse(to)
       %{"handoff" => handoff} = URI.decode_query(query)
-      assert {:ok, proof} = MfaChallengeHandoff.verify(handoff)
+      assert {:ok, {proof, ^token_id}} = MfaChallengeHandoff.verify(handoff)
       assert Auth.mfa_proof_membership_id(proof) == member.id
     end
 

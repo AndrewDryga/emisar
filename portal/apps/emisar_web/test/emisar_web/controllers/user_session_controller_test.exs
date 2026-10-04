@@ -598,6 +598,23 @@ defmodule EmisarWeb.UserSessionControllerTest do
 
     defp from_ip(conn, ip), do: put_req_header(conn, "x-forwarded-for", "#{ip}, 8.233.97.247")
 
+    test "a megabyte-long address is held in the limiter only as its digest", %{conn: conn} do
+      {_member, account} = member()
+      address = String.duplicate("a", 1_000_000) <> "@example.test"
+
+      started = start_sign_in(conn, account, address)
+      assert redirected_to(started) == ~p"/sign_in/magic?sent=1"
+
+      key = String.downcase(address)
+      assert :ets.match_object(Emisar.RateLimiter, {{{"magic_link", key}, :_}, :_, :_}) == []
+
+      assert [_held] =
+               :ets.match_object(
+                 Emisar.RateLimiter,
+                 {{{"magic_link", Emisar.Crypto.hash_hex(key)}, :_}, :_, :_}
+               )
+    end
+
     test "five codes per address in fifteen minutes, across workspaces and flows", %{
       conn: conn,
       ip: ip
@@ -723,11 +740,17 @@ defmodule EmisarWeb.UserSessionControllerTest do
       %{member: owner, account: account, secret: secret, codes: codes, subject: subject}
     end
 
-    defp verified_handoff(member, secret) do
+    # The handoff the challenge would mint in `challenged`, the browser that
+    # verified the emailed code; with no browser it names a code nobody holds.
+    defp verified_handoff(challenged, member, secret) do
       {:ok, proof} =
         Auth.verify_mfa_challenge(member.id, {:totp, Fixtures.Auth.totp_code(secret)})
 
-      MfaChallengeHandoff.sign(proof)
+      token_id =
+        (challenged && get_session(challenged, :mfa_pending_magic_link_token_id)) ||
+          Ecto.UUID.generate()
+
+      MfaChallengeHandoff.sign(proof, token_id)
     end
 
     # Factor one passed for `member`; the browser holds the partial-auth marker.
@@ -769,7 +792,9 @@ defmodule EmisarWeb.UserSessionControllerTest do
       completed =
         challenged
         |> recycle()
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
+        |> get(
+          ~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(challenged, member, secret)]}"
+        )
 
       assert redirected_to(completed) == ~p"/app/#{account}"
       {_account_id, token} = entry(completed, account)
@@ -800,7 +825,9 @@ defmodule EmisarWeb.UserSessionControllerTest do
       completed =
         challenged
         |> recycle()
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
+        |> get(
+          ~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(challenged, member, secret)]}"
+        )
 
       assert redirected_to(completed) == ~p"/app/billing/start"
       assert get_session(completed, :billing_intent) == intent
@@ -814,7 +841,9 @@ defmodule EmisarWeb.UserSessionControllerTest do
         challenged
         |> recycle()
         |> init_test_session(%{mfa_pending_at: System.system_time(:second) - 3_600})
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
+        |> get(
+          ~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(challenged, member, secret)]}"
+        )
 
       assert redirected_to(stale) == ~p"/sign_in"
       refute get_session(stale, :sessions)
@@ -829,7 +858,9 @@ defmodule EmisarWeb.UserSessionControllerTest do
       refused =
         challenged
         |> recycle()
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
+        |> get(
+          ~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(challenged, member, secret)]}"
+        )
 
       refute get_session(refused, :sessions)
       assert redirected_to(refused) == ~p"/app/#{account}/sign_in"
@@ -841,7 +872,9 @@ defmodule EmisarWeb.UserSessionControllerTest do
       %{member: member, secret: secret} = enrolled = enrolled_member()
       %{member: other, secret: other_secret} = enrolled_member()
 
-      bare = get(conn, ~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(member, secret)]}")
+      bare =
+        get(conn, ~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(nil, member, secret)]}")
+
       assert redirected_to(bare) == ~p"/sign_in"
       refute get_session(bare, :sessions)
 
@@ -850,7 +883,9 @@ defmodule EmisarWeb.UserSessionControllerTest do
       crossed =
         challenged
         |> recycle()
-        |> get(~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(other, other_secret)]}")
+        |> get(
+          ~p"/sign_in/mfa/complete?#{[handoff: verified_handoff(challenged, other, other_secret)]}"
+        )
 
       assert redirected_to(crossed) == ~p"/sign_in"
       refute get_session(crossed, :sessions)
@@ -861,7 +896,7 @@ defmodule EmisarWeb.UserSessionControllerTest do
         enrolled = enrolled_member()
 
       challenged = pending_challenge(conn, enrolled)
-      handoff = verified_handoff(member, secret)
+      handoff = verified_handoff(challenged, member, secret)
       assert {:ok, _member} = Auth.disable_mfa(code, subject)
 
       refused = challenged |> recycle() |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
@@ -874,11 +909,37 @@ defmodule EmisarWeb.UserSessionControllerTest do
       %{member: member} = enrolled = enrolled_member()
       challenged = pending_challenge(conn, enrolled)
 
-      for handoff <- ["not-a-real-token", MfaChallengeHandoff.sign(member.id)] do
+      token_id = get_session(challenged, :mfa_pending_magic_link_token_id)
+
+      for handoff <- ["not-a-real-token", MfaChallengeHandoff.sign(member.id, token_id)] do
         refused = challenged |> recycle() |> get(~p"/sign_in/mfa/complete?#{[handoff: handoff]}")
         assert redirected_to(refused) == ~p"/sign_in"
         refute get_session(refused, :sessions)
       end
+    end
+
+    test "a handoff another browser earned is refused, even where the inbox was read", %{
+      conn: conn
+    } do
+      %{member: member, account: account, secret: secret} = enrolled = enrolled_member()
+
+      # Browser A passes both factors; the challenge mints its handoff.
+      first = pending_challenge(conn, enrolled)
+      {:ok, challenge, _html} = first |> recycle() |> live(~p"/sign_in/mfa")
+
+      {:error, {:redirect, %{to: completion}}} =
+        render_hook(challenge, "verify_totp", %{"otp" => Fixtures.Auth.totp_code(secret)})
+
+      signed_in = first |> recycle() |> get(completion)
+      assert redirected_to(signed_in) == ~p"/app/#{account}"
+
+      # Whoever reads the inbox passes factor one in browser B and replays it.
+      second = pending_challenge(build_conn(), enrolled)
+      assert get_session(second, :mfa_pending_membership_id) == member.id
+      replayed = second |> recycle() |> get(completion)
+
+      assert redirected_to(replayed) == ~p"/sign_in"
+      refute get_session(replayed, :sessions)
     end
 
     test "the partial-auth marker opens no workspace page", %{conn: conn} do

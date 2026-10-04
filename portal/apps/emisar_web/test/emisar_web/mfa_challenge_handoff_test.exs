@@ -7,8 +7,8 @@ defmodule EmisarWeb.MfaChallengeHandoffTest do
   alias Emisar.Auth
   alias EmisarWeb.MfaChallengeHandoff
 
-  describe "sign/1 + verify/1" do
-    test "a verified proof round-trips unchanged" do
+  describe "sign/2 + verify/1" do
+    test "a verified proof round-trips unchanged with the code it was earned on" do
       {_owner, _account, subject} = Fixtures.Subjects.owner_subject()
       secret = Auth.generate_mfa_secret()
       {member, _codes} = Fixtures.Memberships.enable_mfa!(secret, subject)
@@ -16,8 +16,17 @@ defmodule EmisarWeb.MfaChallengeHandoffTest do
       assert {:ok, proof} =
                Auth.verify_mfa_challenge(member.id, {:totp, Fixtures.Auth.totp_code(secret)})
 
-      assert {:ok, ^proof} = proof |> MfaChallengeHandoff.sign() |> MfaChallengeHandoff.verify()
+      token_id = Ecto.UUID.generate()
+
+      assert {:ok, {^proof, ^token_id}} =
+               proof |> MfaChallengeHandoff.sign(token_id) |> MfaChallengeHandoff.verify()
+
       assert Auth.mfa_proof_membership_id(proof) == member.id
+    end
+
+    test "a handoff that names no verified code is refused" do
+      bare_proof = Phoenix.Token.sign(EmisarWeb.Endpoint, "mfa signin handoff", "proof")
+      assert MfaChallengeHandoff.verify(bare_proof) == {:error, :invalid}
     end
 
     test "a forged, malformed, or non-binary handoff is refused" do

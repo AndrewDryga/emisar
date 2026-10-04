@@ -133,10 +133,10 @@ defmodule EmisarWeb.UserSessionController do
     attrs = sign_up_params(params)
     address = submitted_address(attrs)
     billing_intent = verified_billing_intent(params["billing_intent"])
-    client_ip = RequestContext.client_ip(conn)
+    client = conn |> RequestContext.client_ip() |> RequestContext.rate_limit_key()
 
     with {:ip, :ok} <-
-           {:ip, Throttle.check("sign_up", client_ip, @sign_up_limit, @sign_up_window_ms)},
+           {:ip, Throttle.check("sign_up", client, @sign_up_limit, @sign_up_window_ms)},
          {:address, :ok} <- {:address, check_address_budget(address)},
          {:ok, request} <- Auth.request_sign_up_code(attrs, RequestContext.from_conn(conn)) do
       conn
@@ -242,15 +242,16 @@ defmodule EmisarWeb.UserSessionController do
   @doc """
   Completes an MFA sign-in challenge (the second factor `MfaChallengeLive` just
   verified). Requires BOTH the signed handoff — carrying the opaque proof, which
-  `Auth` re-checks against the locked Member row — AND a matching, fresh
-  `:mfa_pending_membership_id` marker (the browser that passed factor one), so
-  a handoff alone can't manufacture a session.
+  `Auth` re-checks against the locked Member row, and the emailed code it was
+  earned on — AND fresh session markers naming that same Member and that same
+  code (the browser that passed factor one), so a handoff can't manufacture a
+  session, nor finish another browser's sign-in for whoever reads the inbox.
   """
   def mfa_complete(conn, %{"handoff" => handoff}) do
-    with {:ok, proof} <- MfaChallengeHandoff.verify(handoff),
+    with {:ok, {proof, token_id}} <- MfaChallengeHandoff.verify(handoff),
          membership_id when is_binary(membership_id) <- Auth.mfa_proof_membership_id(proof),
          ^membership_id <- get_session(conn, :mfa_pending_membership_id),
-         token_id when is_binary(token_id) <- get_session(conn, :mfa_pending_magic_link_token_id),
+         ^token_id <- get_session(conn, :mfa_pending_magic_link_token_id),
          true <- mfa_pending_fresh?(conn) do
       {conn, browser_id} = UserAuth.fetch_browser_id(conn)
       context = RequestContext.from_conn(conn)
@@ -394,9 +395,12 @@ defmodule EmisarWeb.UserSessionController do
   defp sign_up_params(_params), do: %{}
 
   # An ETS bucket key, not a database lookup (citext owns that comparison), so
-  # the address is normalized here.
-  defp check_address_budget(address),
-    do: Throttle.check("magic_link", String.downcase(address), @address_limit, @address_window_ms)
+  # the address is normalized here — and hashed: a key lives for the whole
+  # window, and a submitted "address" can be megabytes long.
+  defp check_address_budget(address) do
+    key = address |> String.downcase() |> Emisar.Crypto.hash_hex()
+    Throttle.check("magic_link", key, @address_limit, @address_window_ms)
+  end
 
   defp put_code_request(conn, {:ok, %{token_id: token_id, nonce: nonce}}),
     do: put_magic_request(conn, token_id, nonce)

@@ -11,13 +11,14 @@ defmodule EmisarWeb.MfaChallengeHandoff do
   stops a handoff from outliving the credential state it was issued for.
 
   Signed with the endpoint secret, valid for 120 seconds (a slow authenticator
-  lookup; the redirect itself is immediate). It is NOT a bearer credential on its
-  own: `mfa_complete` also requires the still-present
-  `:mfa_pending_membership_id` session marker to match the proof's Member —
-  binding completion to the browser that passed factor one. So a leaked handoff
-  is useless without that partial session, and it can't manufacture a session
-  for a Member who never entered a second factor (the token is proof the
-  LiveView actually ran the verification).
+  lookup; the redirect itself is immediate). It also names the emailed code this
+  browser verified as factor one, and `mfa_complete` requires both session
+  markers to match it: `:mfa_pending_membership_id` the proof's Member and
+  `:mfa_pending_magic_link_token_id` that exact code. Matching the Member alone
+  was not enough: anyone who reads the inbox can pass factor one in a browser of
+  their own, so a leaked handoff then finished their sign-in without a second
+  factor. A code is consumed by the sign-in it completes, so a handoff finishes
+  one sign-in, in the browser that earned it, and nothing else.
 
   One seam wrapping `Phoenix.Token` (IL-19) so the handoff crypto has a single,
   testable review surface.
@@ -25,12 +26,21 @@ defmodule EmisarWeb.MfaChallengeHandoff do
   @salt "mfa signin handoff"
   @max_age_seconds 120
 
-  @doc "Signs a verified-MFA `proof` into an opaque handoff string."
-  def sign(proof), do: Phoenix.Token.sign(EmisarWeb.Endpoint, @salt, proof)
+  @doc """
+  Signs a verified-MFA `proof`, with the id of the emailed code this browser
+  verified, into an opaque handoff string.
+  """
+  def sign(proof, verified_token_id) when is_binary(verified_token_id),
+    do: Phoenix.Token.sign(EmisarWeb.Endpoint, @salt, {proof, verified_token_id})
 
-  @doc "Verifies a handoff → `{:ok, proof} | {:error, reason}`."
-  def verify(handoff) when is_binary(handoff),
-    do: Phoenix.Token.verify(EmisarWeb.Endpoint, @salt, handoff, max_age: @max_age_seconds)
+  @doc "Verifies a handoff → `{:ok, {proof, verified_token_id}} | {:error, reason}`."
+  def verify(handoff) when is_binary(handoff) do
+    case Phoenix.Token.verify(EmisarWeb.Endpoint, @salt, handoff, max_age: @max_age_seconds) do
+      {:ok, {proof, token_id}} when is_binary(token_id) -> {:ok, {proof, token_id}}
+      {:ok, _other} -> {:error, :invalid}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   def verify(_), do: {:error, :invalid}
 end

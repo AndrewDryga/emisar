@@ -115,9 +115,11 @@ defmodule EmisarWeb.Plugs.RateLimit do
   defp key_for(conn, :device_code) do
     case conn.params["device_code"] do
       code when is_binary(code) and code != "" -> "device:" <> Emisar.Crypto.hash_hex(code)
-      _ -> RequestContext.client_ip(conn)
+      _ -> client_key(conn)
     end
   end
 
-  defp key_for(conn, :ip), do: RequestContext.client_ip(conn)
+  defp key_for(conn, :ip), do: client_key(conn)
+
+  defp client_key(conn), do: conn |> RequestContext.client_ip() |> RequestContext.rate_limit_key()
 end

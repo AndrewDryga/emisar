@@ -72,6 +72,19 @@ defmodule EmisarWeb.RequestContextTest do
     end
   end
 
+  describe "rate_limit_key/1" do
+    test "keeps an IPv4 address and counts an IPv6 address by its /64" do
+      assert Builder.rate_limit_key("203.0.113.7") == "203.0.113.7"
+      assert Builder.rate_limit_key("2001:db8:1:2::1") == "2001:db8:1:2::/64"
+
+      assert Builder.rate_limit_key("2001:db8:1:2:ffff:ee:dd:9") ==
+               "2001:db8:1:2::/64"
+
+      assert Builder.rate_limit_key("not an address") == "not an address"
+      assert Builder.rate_limit_key(nil) == nil
+    end
+  end
+
   describe "from_socket/1" do
     test "joins repeated forwarded header lines like the HTTP path" do
       req_headers = [

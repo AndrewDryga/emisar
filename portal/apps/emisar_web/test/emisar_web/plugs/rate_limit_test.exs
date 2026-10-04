@@ -40,6 +40,20 @@ defmodule EmisarWeb.Plugs.RateLimitTest do
     assert %{halted: false} = RateLimit.call(second, opts)
   end
 
+  test "counts an IPv6 client by its /64, so stepping through its prefix starts no fresh window",
+       %{conn: conn} do
+    enable_rate_limiting()
+    opts = RateLimit.init(bucket: unique_bucket(), limit: 1, window_ms: 60_000, by: :ip)
+
+    first = put_req_header(conn, "x-forwarded-for", "2001:db8:1:2::1, 8.233.97.247")
+    sibling = put_req_header(conn, "x-forwarded-for", "2001:db8:1:2:ffff::9, 8.233.97.247")
+    elsewhere = put_req_header(conn, "x-forwarded-for", "2001:db8:9:9::1, 8.233.97.247")
+
+    assert %{halted: false} = RateLimit.call(first, opts)
+    assert %{halted: true} = RateLimit.call(sibling, opts)
+    assert %{halted: false} = RateLimit.call(elsewhere, opts)
+  end
+
   # The device poll is per authorization, not per IP. Bucketing it by IP meant
   # concurrent installs behind one NAT, VPN or CI egress ate each other's budget
   # and every one of them sat at "Waiting for approval" until the grant expired.
