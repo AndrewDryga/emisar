@@ -3,15 +3,16 @@ id: emisar.admin.member.erase
 title: Permanently erase member
 kind: script
 risk: critical
-description: Permanently delete one workspace member, or the workspace it solely owns, after exact UUID confirmation.
+description: Permanently delete one workspace member after exact UUID confirmation; an owner who is the workspace's only member takes the workspace along.
 side_effects:
-  - Irreversibly deletes the member and its sessions; when it is the workspace's sole owner, the whole workspace goes with it.
+  - Irreversibly deletes the member, its sessions and its API keys.
+  - An owner who is the workspace's only member erases the whole workspace, and only once its billing is cancelled; an owner of a workspace with other members and no other owner is refused until ownership moves.
   - Cannot be undone; use only for a verified erasure request with two-person approval.
 args:
   - name: account
     type: string
     required: true
-    description: Exact account UUID or slug the member belongs to.
+    description: Exact account UUID or slug the member belongs to; a closed account by UUID.
     validation: {max_length: 128}
   - name: member
     type: string

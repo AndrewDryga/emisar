@@ -765,6 +765,43 @@ defmodule Emisar.AdminTest do
       assert {:ok, _account} = Emisar.Accounts.fetch_account_by_id(account.id)
     end
 
+    test "erases a Member of a closed workspace by the workspace's exact UUID" do
+      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
+      operator = Fixtures.Memberships.create_membership(account_id: account.id)
+      {:ok, _closed} = Emisar.Accounts.close_account(account.id, "Customer left", subject)
+
+      assert {:ok, %{erased_member_id: erased, erased_account_id: nil}} =
+               Admin.execute(
+                 "emisar.admin.member.erase",
+                 [
+                   "account=#{account.id}",
+                   "member=#{operator.id}",
+                   "confirmation=#{operator.id}",
+                   "reason=verified erasure request"
+                 ]
+               )
+
+      assert erased == operator.id
+      refute Repo.reload(operator)
+    end
+
+    test "refuses to erase the only owner of a workspace that has other Members" do
+      {owner, account, _subject} = Fixtures.Subjects.owner_subject()
+      Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert Admin.execute(
+               "emisar.admin.member.erase",
+               [
+                 "account=#{account.slug}",
+                 "member=#{owner.id}",
+                 "confirmation=#{owner.id}",
+                 "reason=verified erasure request"
+               ]
+             ) == {:error, :sole_owner}
+
+      assert {:ok, _account} = Emisar.Accounts.fetch_account_by_id(account.id)
+    end
+
     test "dispatches a private RPC action from ordinary name-value argv" do
       account = Fixtures.Accounts.create_account()
 

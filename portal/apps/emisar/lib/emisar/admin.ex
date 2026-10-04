@@ -843,12 +843,12 @@ defmodule Emisar.Admin do
          %{"member" => member, "confirmation" => confirmation, "reason" => _reason} = args
        )
        when member == confirmation do
-    with {:ok, account} <- fetch_account(args),
+    with {:ok, account_id} <- erasure_account_id(args),
          {:ok, %{membership: membership, account: erased_account}} <-
-           Accounts.erase_member(account.id, member) do
-      # A sole owner's workspace goes with it; say so rather than leave the
+           Accounts.erase_member(account_id, member) do
+      # A sole Member's workspace goes with it; say so rather than leave the
       # operator to discover the workspace is gone.
-      {:ok, %{erased_member_id: membership.id, erased_account_id: erased_account && account.id}}
+      {:ok, %{erased_member_id: membership.id, erased_account_id: erased_account && account_id}}
     end
   end
 
@@ -955,6 +955,20 @@ defmodule Emisar.Admin do
     do: Accounts.fetch_account_by_id_or_slug_including_disabled(String.trim(ref))
 
   defp fetch_account(_), do: {:error, :account_required}
+
+  # A closed workspace (tombstoned, not yet purged) still holds its Members, so
+  # its exact UUID reaches it; a slug resolves only a live workspace.
+  defp erasure_account_id(%{"account" => ref} = args) when is_binary(ref) do
+    ref = String.trim(ref)
+
+    if Repo.valid_uuid?(ref) do
+      {:ok, ref}
+    else
+      with {:ok, account} <- fetch_account(args), do: {:ok, account.id}
+    end
+  end
+
+  defp erasure_account_id(_args), do: {:error, :account_required}
 
   defp fetch_membership(account_id, ref) when is_binary(ref) do
     queryable =

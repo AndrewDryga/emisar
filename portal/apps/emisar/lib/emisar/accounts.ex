@@ -403,8 +403,9 @@ defmodule Emisar.Accounts do
   end
 
   @doc """
-  Internal — irreversible admin erasure, invoked from a console session.
-  Hard-deletes an account row and relies on the account foreign-key cascades
+  Internal — irreversible admin erasure, invoked from the private admin pack
+  (`emisar.admin.account.erase`). Hard-deletes an account row and relies on the
+  account foreign-key cascades
   to remove the account's owned records. Tombstoned accounts are included so
   a prior soft delete cannot leave data behind.
   """
@@ -425,15 +426,26 @@ defmodule Emisar.Accounts do
   @doc """
   Internal — irreversible staff erasure of one Member, invoked from the private
   admin pack with the workspace and the Member's id; a removed Member counts.
-  A sole owner's workspace is erased with it, through the account cascade.
-  Any other Member row is hard-deleted on its own: its sessions end and their
-  sockets disconnect after commit, and the surviving workspace's trail records
-  `membership.erased`. The Member's address leaves the deliverability
-  suppression list and the marketing capture list only when no other live
-  Member anywhere still uses it.
+  Erasing one person never erases anyone else's work:
 
-  Returns `{:ok, %{membership: erased, account: erased_workspace | nil}}` or
-  `{:error, :not_found}`.
+    * A removed seat, a non-owner, or an owner beside another owner (live,
+      suspended or pending) is hard-deleted on its own: its API keys and device
+      grants are revoked, its sessions end and their sockets disconnect after
+      commit, and the surviving workspace's trail records `membership.erased`.
+    * An owner whose workspace has other Members but no other owner is refused
+      with `{:error, :sole_owner}`: staff move ownership first, or erase the
+      workspace on purpose with its own action.
+    * An owner who is the workspace's only Member takes the workspace along,
+      through the account cascade — once its billing is closed
+      (`Billing.ensure_ready_to_close/2`), so no subscription keeps charging for
+      a workspace that is gone.
+
+  The Member's address leaves the deliverability suppression list and the
+  marketing capture list only when no other live Member anywhere still uses it.
+
+  Returns `{:ok, %{membership: erased, account: erased_workspace | nil}}`, or
+  `{:error, :not_found | :sole_owner | :cancellation_not_confirmed |
+  :checkout_pending | :subscription_retirement_pending}`.
   """
   def erase_member(account_id, membership_id) do
     if Repo.valid_uuid?(account_id) and Repo.valid_uuid?(membership_id) do
@@ -1315,20 +1327,47 @@ defmodule Emisar.Accounts do
     end)
   end
 
-  # A sole owner's workspace goes whole: the account cascade takes every row it
-  # owns, its Members, sessions and trail included. Any other seat goes on its
-  # own; its sessions are deleted first so their sockets can be disconnected
-  # once the erasure commits.
+  # Judged under the account lock every Member write takes, so the scope cannot
+  # change before the erasure commits.
   defp erase_seat_or_workspace(repo, %Account{} = account, %Membership{} = membership) do
-    if sole_owner?(repo, membership) do
-      with {:ok, account} <- repo.delete(account) do
-        {:ok, %{account: account, socket_topics: []}}
-      end
-    else
-      with {:ok, %{socket_topics: topics}} <- Auth.delete_membership_sessions(membership, repo),
-           {:ok, _membership} <- repo.delete(membership) do
-        {:ok, %{account: nil, socket_topics: topics}}
-      end
+    case erasure_scope(repo, membership) do
+      :seat -> erase_seat(repo, membership)
+      :workspace -> erase_workspace(repo, account)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp erasure_scope(repo, %Membership{deleted_at: nil, role: :owner} = membership) do
+    others =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_account_id(membership.account_id)
+      |> Membership.Query.not_id(membership.id)
+
+    cond do
+      others |> Membership.Query.by_role(:owner) |> repo.exists?() -> :seat
+      repo.exists?(others) -> {:error, :sole_owner}
+      true -> :workspace
+    end
+  end
+
+  defp erasure_scope(_repo, %Membership{}), do: :seat
+
+  # The seat's keys are revoked rather than left behind with no creator, and its
+  # sessions are deleted first so their sockets disconnect once it commits.
+  defp erase_seat(repo, %Membership{} = membership) do
+    with {:ok, _revoked} <- ApiKeys.revoke_credentials_for_membership(repo, membership.id),
+         {:ok, %{socket_topics: topics}} <- Auth.delete_membership_sessions(membership, repo),
+         {:ok, _membership} <- repo.delete(membership) do
+      {:ok, %{account: nil, socket_topics: topics}}
+    end
+  end
+
+  # The account cascade takes every row the workspace owns, its Members,
+  # sessions and trail included, so its billing must already be closed.
+  defp erase_workspace(repo, %Account{} = account) do
+    with :ok <- Billing.ensure_ready_to_close(account, repo: repo),
+         {:ok, account} <- repo.delete(account) do
+      {:ok, %{account: account, socket_topics: []}}
     end
   end
 
@@ -1376,21 +1415,6 @@ defmodule Emisar.Accounts do
       {:error, reason} -> {:error, reason}
     end
   end
-
-  defp sole_owner?(repo, %Membership{account_id: account_id, role: :owner} = membership) do
-    if Membership.authorizable?(membership) do
-      owner_memberships =
-        Membership.Query.authorized()
-        |> Membership.Query.by_account_id(account_id)
-        |> Membership.Query.by_role(:owner)
-
-      repo.aggregate(owner_memberships, :count, :id) == 1
-    else
-      false
-    end
-  end
-
-  defp sole_owner?(_repo, %Membership{}), do: false
 
   @doc """
   The account's security posture for the team rail, read from CURRENT state: MFA

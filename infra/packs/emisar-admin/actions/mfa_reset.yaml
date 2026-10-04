@@ -6,7 +6,7 @@ risk: high
 description: Clear one member's TOTP factor and recovery codes so they can re-enroll.
 side_effects:
   - Removes the current second factor and records an MFA-bypass audit event.
-  - Ends every browser session for the linked personal user.
+  - Ends the member's sessions in this workspace.
 args:
   - name: account
     type: string

@@ -3,10 +3,10 @@ id: emisar.admin.account.create
 title: Create account with owner
 kind: script
 risk: high
-description: Create an account and owner identity, then send confirmation when needed.
+description: Create an account whose owner is an invitation to the given address.
 side_effects:
-  - Creates an account, owner membership, default policy, and audit rows.
-  - May send an email confirmation to the owner.
+  - Creates an account, a pending owner invitation, default policy, and audit rows.
+  - Emails the owner the invitation; nobody holds the account until it is accepted.
 args:
   - name: email
     type: string

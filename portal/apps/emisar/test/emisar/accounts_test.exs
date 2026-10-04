@@ -137,10 +137,9 @@ defmodule Emisar.AccountsTest do
   end
 
   describe "erase_member/2" do
-    test "erases the workspace with its sole live owner" do
+    test "erases the workspace with its owner when the owner is its only Member" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
-      member = Fixtures.Memberships.create_membership(account_id: account.id)
       account_id = account.id
       owner_id = owner.id
 
@@ -149,15 +148,58 @@ defmodule Emisar.AccountsTest do
 
       refute Repo.reload(account)
       refute Repo.reload(owner)
-      refute Repo.reload(member)
     end
 
-    test "erases only the seat when another live owner stays, ending its sessions" do
+    test "refuses an owner whose workspace has other Members and no other owner" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      operator = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert Accounts.erase_member(account.id, owner.id) == {:error, :sole_owner}
+
+      assert Repo.reload(account)
+      assert Repo.reload(owner)
+      assert Repo.reload(operator)
+    end
+
+    test "a suspended or pending co-owner keeps the workspace; only the seat goes" do
+      for second_owner <- [:suspended, :pending] do
+        account = Fixtures.Accounts.create_account()
+        owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+        co_owner = co_owner(account, second_owner)
+
+        assert {:ok, %{account: nil}} = Accounts.erase_member(account.id, owner.id)
+
+        assert Repo.reload(account)
+        refute Repo.reload(owner)
+        assert Repo.reload(co_owner)
+      end
+    end
+
+    test "refuses to erase a sole Member's workspace while its subscription is live" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      Fixtures.Accounts.create_subscription(account, "team", paddle_subscription_id: "sub_erase")
+
+      assert Accounts.erase_member(account.id, owner.id) == {:error, :cancellation_not_confirmed}
+
+      assert Repo.reload(account)
+      assert Repo.reload(owner)
+    end
+
+    test "erases only the seat when another live owner stays, ending its sessions and keys" do
       account = Fixtures.Accounts.create_account()
       owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       other_owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
       Fixtures.Auth.create_session_token!(owner)
       Fixtures.Auth.create_session_token!(other_owner)
+
+      {_raw, key} =
+        Fixtures.ApiKeys.create_api_key(
+          account_id: account.id,
+          created_by_membership_id: owner.id
+        )
+
       owner_id = owner.id
 
       assert {:ok, %{membership: %Membership{id: ^owner_id}, account: nil}} =
@@ -166,6 +208,7 @@ defmodule Emisar.AccountsTest do
       assert Repo.reload(account)
       refute Repo.reload(owner)
       assert Repo.reload(other_owner)
+      assert %ApiKey{revoked_at: %DateTime{}} = Repo.reload(key)
       assert [] = Repo.all(UserToken.Query.by_membership(account.id, owner.id))
       assert [_live] = Repo.all(UserToken.Query.by_membership(account.id, other_owner.id))
 
@@ -7201,6 +7244,19 @@ defmodule Emisar.AccountsTest do
       |> Repo.commit_multi(after_commit: &Accounts.after_membership_activation_committed/1)
 
     accepted
+  end
+
+  defp co_owner(account, :suspended) do
+    Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    |> Fixtures.Memberships.suspend_membership()
+  end
+
+  defp co_owner(account, :pending) do
+    Fixtures.Memberships.create_membership(
+      account_id: account.id,
+      role: "owner",
+      invitation_token_digest: Crypto.user_invite_token_digest(Crypto.random_secret())
+    )
   end
 
   defp member_mfa_reset_fixture(opts \\ []) do
