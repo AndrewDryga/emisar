@@ -490,11 +490,7 @@ defmodule EmisarWeb.UserSessionController do
   defp clear_magic_request(conn) do
     conn
     |> delete_resp_cookie(@magic_cookie)
-    |> delete_session(:magic_link_token_id)
-    |> delete_session(:magic_link_nonce)
-    |> delete_session(:magic_link_email)
-    |> delete_session(:magic_link_expires_at)
-    |> delete_session(:magic_link_back_to)
+    |> UserAuth.clear_email_code_request()
   end
 
   # A fresh submission must present the signed plan choice again; this keeps an

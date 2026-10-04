@@ -66,13 +66,13 @@ defmodule EmisarWeb.SSOController do
     member_mfa_reset: @member_mfa_reset_stash_key
   ]
 
-  # Every begin clears every stash, so one round trip is in flight at a time.
+  # Every begin clears every stash, so one round trip is in flight at a time,
+  # and an email code this browser asked for and left: the cookie needs room
+  # for the round trip beside six workspace sessions and a return path.
   defp clear_ceremonies(conn) do
-    Enum.reduce(
-      [@sign_in_stash_key | Keyword.values(@ceremonies)],
-      conn,
-      &delete_session(&2, &1)
-    )
+    [@sign_in_stash_key | Keyword.values(@ceremonies)]
+    |> Enum.reduce(conn, &delete_session(&2, &1))
+    |> UserAuth.clear_email_code_request()
   end
 
   # What the callback needs back: the OIDC secrets and the bindings the domain

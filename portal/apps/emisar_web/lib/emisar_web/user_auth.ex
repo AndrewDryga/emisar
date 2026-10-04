@@ -292,6 +292,16 @@ defmodule EmisarWeb.UserAuth do
   defp store_browser_id(conn, nil), do: conn
   defp store_browser_id(conn, browser_id), do: put_session(conn, :browser_id, browser_id)
 
+  @email_code_request_keys ~w(magic_link_token_id magic_link_nonce magic_link_email
+                              magic_link_expires_at magic_link_back_to)a
+
+  @doc """
+  Drop a pending email-code request's session state. A browser that starts
+  another sign-in has abandoned it, and the session cookie needs the room.
+  """
+  def clear_email_code_request(conn),
+    do: Enum.reduce(@email_code_request_keys, conn, &delete_session(&2, &1))
+
   # -- Sign-out -------------------------------------------------------
 
   @doc """

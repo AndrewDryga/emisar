@@ -1358,6 +1358,62 @@ defmodule EmisarWeb.SSOControllerTest do
       assert {:ok, _kept} = Auth.fetch_session_by_token(kept_token, signed_in_account.id)
     end
 
+    test "SSO started after an abandoned email code stays within the session cookie", %{
+      conn: conn
+    } do
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, RealLengthOIDC)
+
+      conn =
+        Enum.reduce(1..6, conn, fn _n, conn ->
+          {conn, _owner, _account} = register_and_log_in(conn)
+          conn
+        end)
+
+      other = Fixtures.Accounts.create_account()
+      prefix = "/app/#{other.slug}/runs?source="
+      conn = get(conn, prefix <> String.duplicate("x", 1024 - byte_size(prefix)))
+
+      # The whole 512-byte attribution allowance, from an ordinary browser GET.
+      conn =
+        conn
+        |> recycle()
+        |> put_req_header("user-agent", "Mozilla/5.0 (Macintosh) Chrome/126.0.0.0 Safari/537.36")
+        |> get(
+          "/pricing?" <>
+            URI.encode_query(%{
+              "utm_source" => "partner",
+              "utm_campaign" => String.duplicate("c", 255),
+              "utm_term" => String.duplicate("t", 220)
+            })
+        )
+
+      attribution = get_session(conn, :analytics_campaign_attribution)
+
+      assert Enum.sum(for {key, value} <- attribution, do: byte_size(key) + byte_size(value)) ==
+               512
+
+      # An email code asked for and left ("Start again"), then SSO instead.
+      # The longest address the form accepts (254 bytes).
+      address =
+        String.duplicate("a", 64) <>
+          "@" <> Enum.map_join([63, 63, 56], ".", &String.duplicate("b", &1)) <> ".test"
+
+      asked =
+        conn
+        |> recycle()
+        |> post(~p"/app/#{other}/sign_in/email", %{"user" => %{"email" => address}})
+
+      assert get_session(asked, :magic_link_token_id)
+
+      account = enterprise_account()
+      provider = provider_fixture(account)
+      begun = asked |> recycle() |> get(~p"/sign_in/sso/#{provider.id}")
+
+      assert redirected_to(begun) == "https://idp.test/auth"
+      assert byte_size(begun.resp_cookies["_emisar_web_key"].value) < 4096
+      refute get_session(begun, :magic_link_token_id)
+    end
+
     test "a Team choice survives the SSO sign-in it needed to resume the billing selector", %{
       conn: conn
     } do
