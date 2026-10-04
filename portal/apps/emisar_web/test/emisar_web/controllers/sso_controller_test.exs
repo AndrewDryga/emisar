@@ -1022,6 +1022,26 @@ defmodule EmisarWeb.SSOControllerTest do
       conn = get(conn, prefix <> String.duplicate("x", 1024 - byte_size(prefix)))
       assert byte_size(get_session(conn, :user_return_to)) == 1024
 
+      # A marketing link's campaign, captured by an ordinary browser GET, rides
+      # the same cookie until the invitation's SSO handoff drops it.
+      long = String.duplicate("c", 255)
+
+      conn =
+        conn
+        |> recycle()
+        |> put_req_header("user-agent", "Mozilla/5.0 (Macintosh) Chrome/126.0.0.0 Safari/537.36")
+        |> get(
+          "/pricing?" <>
+            URI.encode_query(%{
+              "utm_source" => "partner",
+              "utm_campaign" => long,
+              "utm_content" => long
+            })
+        )
+
+      assert get_session(conn, :analytics_campaign_attribution)["utm_campaign"] == long
+      assert byte_size(conn.resp_cookies["_emisar_web_key"].value) < 4096
+
       {_owner, account, subject} = Fixtures.Subjects.owner_subject(%{plan: "enterprise"})
       provider = provider_fixture(account)
 
@@ -1047,6 +1067,7 @@ defmodule EmisarWeb.SSOControllerTest do
       [_, code_id, code] = Regex.run(@code_link, sent.text_body)
       proved = requested |> recycle() |> get(~p"/sign_in/magic/#{code_id}/#{code}")
       assert redirected_to(proved) == ~p"/app/#{account}/sign_in"
+      refute get_session(proved, :analytics_campaign_attribution)
 
       begun =
         proved

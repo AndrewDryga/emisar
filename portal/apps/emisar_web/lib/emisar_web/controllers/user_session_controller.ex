@@ -23,7 +23,7 @@ defmodule EmisarWeb.UserSessionController do
   use EmisarWeb, :controller
   alias Emisar.{Accounts, Auth, Config, Throttle}
   alias EmisarWeb.{Analytics, BillingIntent, MagicLinkHandoff, MfaChallengeHandoff}
-  alias EmisarWeb.{RequestContext, UserAuth}
+  alias EmisarWeb.{MarketingAttribution, RequestContext, UserAuth}
 
   # The split code keeps its browser-side nonce in this signed, 15-minute,
   # http-only cookie (`token_id:nonce`); the email carries the 6-character code.
@@ -365,6 +365,7 @@ defmodule EmisarWeb.UserSessionController do
   # invitation, which the workspace's sign-in page offers.
   defp continue_invitation_with_sso(conn, account, invitation_proof) do
     conn
+    |> MarketingAttribution.drop()
     |> put_session(:invitation_sso_proof, invitation_proof)
     |> redirect(to: ~p"/app/#{account}/sign_in")
   end

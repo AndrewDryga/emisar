@@ -32,7 +32,7 @@ defmodule EmisarWeb.SSOController do
   """
   use EmisarWeb, :controller
   alias Emisar.{Accounts, Auth, SSO}
-  alias EmisarWeb.{OIDCIdentityHandoff, RequestContext, UserAuth}
+  alias EmisarWeb.{MarketingAttribution, OIDCIdentityHandoff, RequestContext, UserAuth}
   require Logger
 
   plug :put_layout, [html: {EmisarWeb.Layouts, :app}] when action in [:begin_identity_link]
@@ -137,6 +137,7 @@ defmodule EmisarWeb.SSOController do
            SSO.begin_invitation_sso_sign_in(proof, provider_id, redirect_uri, browser_id),
          :ok <- validate_authorize_url(begun.authorize_url) do
       conn
+      |> MarketingAttribution.drop()
       |> put_session(@invitation_stash_key, stash(begun, redirect_uri))
       |> put_resp_header("cache-control", "no-store")
       |> redirect(external: begun.authorize_url)

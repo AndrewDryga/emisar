@@ -17,12 +17,16 @@ defmodule EmisarWeb.MarketingAttribution do
   @analytics_params @campaign_params ++ @referrer_params
   @stored_params @campaign_touch_params ++ @referrer_params
   @value_max_bytes 255
+  # The session cookie also carries up to six workspace sessions, a return path
+  # and a sign-in ceremony within its 4 KB, so the whole map is bounded too:
+  # values past this budget are left out, in the order `@stored_params` lists.
+  @total_max_bytes 512
 
   @doc "Persist bounded first-touch campaign and external-referrer attribution."
   def capture(conn) do
     stored = session_params(conn)
     current = current_params(conn)
-    attribution = merge_first_touch(stored, current)
+    attribution = stored |> merge_first_touch(current) |> bound_total()
 
     if attribution != stored do
       put_session(conn, @session_key, attribution)
@@ -30,6 +34,13 @@ defmodule EmisarWeb.MarketingAttribution do
       conn
     end
   end
+
+  @doc """
+  Drop the first-touch attribution. An invitee finishing through the
+  workspace's identity provider is signing in, not signing up, and its SSO
+  step needs the session cookie's room; sign-in clears the attribution anyway.
+  """
+  def drop(conn), do: delete_session(conn, @session_key)
 
   @doc "Remove advertising attribution immediately when the browser sends GPC."
   def enforce_privacy_signal(conn) do
@@ -170,6 +181,25 @@ defmodule EmisarWeb.MarketingAttribution do
   end
 
   defp normalize(_params), do: %{}
+
+  defp bound_total(attribution) do
+    {bounded, _left} =
+      Enum.reduce(@stored_params, {%{}, @total_max_bytes}, fn key, {bounded, left} ->
+        case Map.get(attribution, key) do
+          nil ->
+            {bounded, left}
+
+          value ->
+            size = byte_size(key) + byte_size(value)
+
+            if size <= left,
+              do: {Map.put(bounded, key, value), left - size},
+              else: {bounded, left}
+        end
+      end)
+
+    bounded
+  end
 
   defp put_value(attribution, key, value) do
     value =

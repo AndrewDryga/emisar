@@ -134,8 +134,32 @@ defmodule EmisarWeb.AnalyticsTest do
 
       stored = get_session(conn, :analytics_campaign_attribution)
       assert byte_size(stored["$initial_referrer"]) == 255
-      assert byte_size(stored["$initial_referring_domain"]) == 255
+      # The whole map keeps to its 512-byte share of the session cookie, so the
+      # equally long domain is left out.
+      refute Map.has_key?(stored, "$initial_referring_domain")
       refute inspect(stored) =~ "private-path"
+    end
+
+    test "the stored attribution keeps to its share of the session cookie", %{conn: conn} do
+      long = String.duplicate("c", 255)
+
+      query =
+        URI.encode_query(%{
+          "utm_source" => "partner",
+          "utm_medium" => "email",
+          "utm_campaign" => long,
+          "utm_term" => long,
+          "utm_content" => long
+        })
+
+      conn = get(conn, "/pricing?" <> query)
+      assert_receive {:mixpanel_track, [%{"event" => "page_viewed"}]}
+
+      stored = get_session(conn, :analytics_campaign_attribution)
+      assert stored["utm_source"] == "partner"
+      assert stored["utm_campaign"] == long
+      refute Map.has_key?(stored, "utm_term")
+      assert Enum.sum(for {key, value} <- stored, do: byte_size(key) + byte_size(value)) <= 512
     end
 
     test "same-site and invalid referrers never become an acquisition source", %{conn: conn} do
