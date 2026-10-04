@@ -435,6 +435,30 @@ defmodule Emisar.AuthTest do
       assert {event.account_id, event.actor_id} == {account.id, member.id}
     end
 
+    test "returns before the code's email goes out, so the request cannot time a Member's address",
+         %{member: member, account: account} do
+      Emisar.Config.put_override(:emisar, :email_codes_async?, true)
+      parent = self()
+
+      # The send blocks until released: the request must already have returned.
+      Emisar.Config.put_override(:emisar, :mailer_deliver_error, fn _email ->
+        send(parent, {:sending, self()})
+
+        receive do
+          :release -> nil
+        end
+      end)
+
+      assert {:ok, %{delivery: {:ok, :queued}}} =
+               Auth.request_magic_link(account, member.email, %RequestContext{})
+
+      assert_receive {:sending, sender}, 2_000
+      refute_received {:email, _sent}
+      send(sender, :release)
+      assert_receive {:email, %{to: [{"", address}]}}, 2_000
+      assert address == member.email
+    end
+
     test "the address is matched case-insensitively", %{member: member, account: account} do
       {token_id, nonce, secret} = request_magic_link(account, String.upcase(member.email))
       assert Auth.verify_magic_link(token_id, secret, nonce) == {:ok, member.id}

@@ -119,6 +119,11 @@ config :emisar, postmark_webhook_secret: "pm_webhook_test"
 # `owner #PID<...> exited` warnings during teardown.
 config :emisar, notify_approvers_async?: false
 
+# Emailed sign-in codes go out after the request returns in production (so the
+# response time cannot tell a Member's address from a decoy); tests send inline
+# so a test sees the outcome and no task outlives its sandbox.
+config :emisar, email_codes_async?: false
+
 # ExUnit's 100ms `assert_receive_timeout` is a "the message is already on its way"
 # budget, but `render_async/1`, `assert_redirect/2` and friends inherit it as the
 # budget for real work: an `assign_async` task or a LiveView `handle_info` that has

@@ -643,10 +643,12 @@ defmodule Emisar.Auth do
 
   Returns `{:ok, %{token_id: id, nonce: nonce, delivery: delivery}}` — the
   caller keeps `nonce` browser-side (a short-lived cookie) — where `delivery`
-  is `{:ok, :sent}`, `{:ok, :suppressed}` (the address bounced or was marked
-  spam, so nothing was sent), or `{:error, reason}`. An unknown, unverified or
-  suspended address, one that is a Member elsewhere but not here, and a
-  workspace that does not accept email sign-in
+  is `{:ok, :queued}`: the email goes out after the request returns, so the
+  response takes the same time for an address that gets a code and one that
+  gets a decoy. (With `:email_codes_async?` off, as in tests, the send is inline
+  and `delivery` is `{:ok, :sent}`, `{:ok, :suppressed}` or `{:error, reason}`.)
+  An unknown, unverified or suspended address, one that is a Member elsewhere
+  but not here, and a workspace that does not accept email sign-in
   (`Accounts.email_sign_in_allowed?/1`) are all `{:error, :not_found}`; the
   boundary answers with `magic_link_decoy/0`, so the response is the same.
   """
@@ -751,13 +753,33 @@ defmodule Emisar.Auth do
     with {:ok, %{account: account, membership: membership, token: token}} <-
            issue_magic_link(target, digest, context) do
       delivery =
-        membership
-        |> Mailers.UserNotifier.deliver_magic_link(token.id, secret, context, account)
-        |> delivery_outcome()
+        deliver_code(fn ->
+          Mailers.UserNotifier.deliver_magic_link(membership, token.id, secret, context, account)
+        end)
 
       {:ok, %{token_id: token.id, nonce: nonce, delivery: delivery}}
     end
   end
+
+  # A refused address costs the request nothing, so a code must not hold the
+  # response for its send either: a Postmark round trip would tell a caller who
+  # times the form which addresses belong to the workspace. The mail goes out on
+  # the domain's task supervisor (drained on shutdown) and a failure is logged
+  # there. Tests send inline (`:email_codes_async?` false) to observe the outcome.
+  defp deliver_code(send) do
+    if Emisar.Config.get_env(:emisar, :email_codes_async?, true) do
+      supervisor = Application.fetch_env!(:emisar, :task_supervisor)
+      {:ok, _pid} = Task.Supervisor.start_child(supervisor, fn -> log_code_delivery(send.()) end)
+      {:ok, :queued}
+    else
+      send.() |> delivery_outcome()
+    end
+  end
+
+  defp log_code_delivery({:error, reason}),
+    do: Logger.warning("sign-in code not delivered reason=#{inspect(reason)}")
+
+  defp log_code_delivery(_sent_or_suppressed), do: :ok
 
   # Mints the split-code token: the caller keeps `nonce` browser-side, the
   # `secret` (a short alphanumeric code) is emailed alongside a link carrying
