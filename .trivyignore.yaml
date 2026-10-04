@@ -34,9 +34,6 @@ vulnerabilities:
   - id: CVE-2026-84782
     statement: only the openssl command links the affected libssl DTLS code and the portal never runs it; the BEAM loads libcrypto alone. Debian has fixed trixie and not yet bookworm.
     expired_at: 2026-11-25
-  - id: CVE-2026-103111
-    statement: it needs an attacker-supplied pattern through the PCRE2 JIT; only base utilities and PAM link the system library, the portal runs none of them, and the BEAM bundles a PCRE2 built without the JIT. Debian has fixed trixie and not yet bookworm.
-    expired_at: 2026-11-25
   - id: CVE-2026-13221
     statement: the non-root portal process does not execute Perl or process attacker-supplied regular expressions through Perl.
     expired_at: 2026-12-09
