@@ -159,12 +159,19 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A member's display name and email address belong to this workspace. They identify the
         person in the team, activity and audit views, and the address receives workspace
-        notifications and sign-in codes. The address is the one the person was invited at or
-        signed up with, or the one your identity provider supplied; Profile shows it read-only.
+        notifications and sign-in codes. The address starts as the one the person was invited
+        at or signed up with, or the one your identity provider supplied.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         Edit your display name from Profile, or a teammate's from Team if your role allows it.
         Directory-managed names are read-only here; update them in the identity provider.
+      </p>
+      <p class="mt-4 text-base leading-7 text-zinc-400">
+        A member who signs in with an emailed code can change their own email from Profile.
+        They confirm it's them with their authenticator or a code sent to the current address,
+        then enter a code sent to the new address. The old address gets a notice. An address
+        that came from your identity provider can't be changed here, and admins can't change
+        another member's email.
       </p>
 
       <.docs_h2 id="runner-scopes">Per-member scope: runners and packs</.docs_h2>
