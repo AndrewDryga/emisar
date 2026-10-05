@@ -730,7 +730,7 @@ defmodule EmisarWeb.TeamLive do
 
   defp invite_form(assigns) do
     ~H"""
-    <div class="mt-4 max-w-2xl">
+    <div class="max-w-2xl">
       <.empty_state
         :if={not @can_manage_team?}
         variant={:bare}
@@ -875,7 +875,7 @@ defmodule EmisarWeb.TeamLive do
 
   defp mfa_reset_form(assigns) do
     ~H"""
-    <div class="mt-4 max-w-xl">
+    <div class="max-w-xl">
       <.loading_state :if={@loading?} />
 
       <div :if={not @loading? and @mfa_reset_target}>
@@ -3216,7 +3216,7 @@ defmodule EmisarWeb.TeamLive do
   # member's. The receipt states that reach and how an app connects as it.
   defp service_account_form(assigns) do
     ~H"""
-    <div class="mt-4 max-w-2xl">
+    <div class="max-w-2xl">
       <.empty_state
         :if={not @can_manage_team?}
         variant={:bare}

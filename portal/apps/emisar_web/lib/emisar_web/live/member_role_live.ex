@@ -193,7 +193,7 @@ defmodule EmisarWeb.MemberRoleLive do
         Change owner role
       </:title>
       <.loading_state :if={@loading?} />
-      <div :if={not @loading? and @target} class="mt-4 max-w-xl">
+      <div :if={not @loading? and @target} class="max-w-xl">
         <.status_note tone={:amber} icon="state.warning" title={change_title(@target, @role)}>
           They will lose Owner privileges. Their agent credentials and standing approvals will be revoked.
         </.status_note>
