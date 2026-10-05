@@ -2421,6 +2421,48 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       assert render(lv) =~ "AI agents"
     end
+
+    test "a scoped admin can't rotate a key that reaches further than them", %{conn: conn} do
+      {_owner_conn, owner, account} = register_and_log_in(conn)
+      {_raw, key} = Fixtures.ApiKeys.create_api_key(created_by_membership_id: owner.id)
+
+      {:ok, scoped} = Emisar.Accounts.RunnerAccess.restricted(["web"], [])
+
+      admin =
+        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+        |> Fixtures.Memberships.force_runner_access(scoped)
+
+      {:ok, lv, _} =
+        build_conn()
+        |> log_in_member(admin)
+        |> live(~p"/app/#{account}/agents")
+
+      html = render_click(lv, "rotate", %{"id" => key.id})
+
+      assert html =~
+               "This key reaches runners or packs you can&#39;t, so you can&#39;t rotate it."
+
+      assert Repo.aggregate(ApiKey, :count) == 1
+    end
+
+    test "a custom key acts as the member who makes it, even when acts_as is posted", %{
+      conn: conn
+    } do
+      {conn, owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
+      render_click(lv, "select_client", %{"client" => "custom"})
+
+      refute render(lv) =~ "Acts as"
+
+      render_submit(lv, "create", %{
+        "api_key" => %{"name" => "Ryker", "acts_as" => service_account.id}
+      })
+
+      assert [%ApiKey{created_by_membership_id: created_by}] = Repo.all(ApiKey)
+      assert created_by == owner.id
+      flush_key_broadcast(lv)
+    end
   end
 
   test "the dead/pre-connect render shows a loading placeholder, not the onboarding pitch",
@@ -2472,151 +2514,6 @@ defmodule EmisarWeb.AgentsLiveTest do
   # reload while the test still owns the DB sandbox; without it the reload can
   # land after teardown as Postgrex disconnect noise, which fails the gate.
   defp flush_key_broadcast(lv), do: render(lv)
-
-  describe "custom keys that act as a service account" do
-    test "an owner mints a key that acts as a service account", %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn)
-      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
-
-      render_click(lv, "select_client", %{"client" => "custom"})
-
-      assert has_element?(
-               lv,
-               ~s(#api_key_acts_as option[value="#{service_account.id}"]),
-               "Ryker"
-             )
-
-      ApiKeys.subscribe_account_api_keys(account.id)
-
-      lv
-      |> form("#api_key_form", %{
-        "api_key" => %{"name" => "Ryker", "acts_as" => service_account.id}
-      })
-      |> render_submit()
-
-      assert [%ApiKey{id: key_id, created_by_membership_id: created_by}] = Repo.all(ApiKey)
-      assert created_by == service_account.id
-      assert_receive {:list_changed, :api_key, "api_key.created", ^key_id}
-      flush_key_broadcast(lv)
-    end
-
-    test "a service account removed after the form opened is never swapped for a personal key",
-         %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn)
-      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
-
-      {:ok, lv, _} =
-        live(conn, ~p"/app/#{account}/agents/connect?#{[acts_as: service_account.id]}")
-
-      Fixtures.Memberships.mark_membership_as_deleted(service_account)
-      params = %{"api_key" => %{"name" => "Ryker", "acts_as" => service_account.id}}
-
-      html = lv |> form("#api_key_form", params) |> render_submit()
-      assert html =~ "That service account is no longer available."
-
-      assert has_element?(
-               lv,
-               ~s(#api_key_acts_as option[value="#{service_account.id}"][selected])
-             )
-
-      lv |> form("#api_key_form", params) |> render_submit()
-      assert Repo.all(ApiKey) == []
-    end
-
-    test "a rejected submit keeps what was posted, including who the key acts as", %{
-      conn: conn
-    } do
-      {conn, _owner, account} = register_and_log_in(conn)
-      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect")
-      render_click(lv, "select_client", %{"client" => "custom"})
-
-      Fixtures.Memberships.mark_membership_as_deleted(service_account)
-
-      render_submit(lv, "create", %{
-        "api_key" => %{"name" => "Ryker bot", "acts_as" => service_account.id}
-      })
-
-      assert has_element?(
-               lv,
-               ~s(#api_key_acts_as option[value="#{service_account.id}"][selected])
-             )
-
-      assert has_element?(lv, ~s(#api_key_form input[value="Ryker bot"]))
-      assert Repo.all(ApiKey) == []
-    end
-
-    test "a link to a service account the admin can't use opens no key form", %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn)
-      elsewhere = Fixtures.Memberships.create_service_account()
-
-      {:ok, lv, _} = live(conn, ~p"/app/#{account}/agents/connect?#{[acts_as: elsewhere.id]}")
-
-      assert render(lv) =~ "That service account isn&#39;t available to you."
-      refute has_element?(lv, "#api_key_form")
-    end
-
-    test "the Team page's link opens the form acting as the service account", %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn)
-      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
-
-      {:ok, lv, _} =
-        live(conn, ~p"/app/#{account}/agents/connect?#{[acts_as: service_account.id]}")
-
-      assert has_element?(lv, "#api_key_form")
-
-      assert has_element?(
-               lv,
-               ~s(#api_key_acts_as option[value="#{service_account.id}"][selected])
-             )
-    end
-
-    test "a scoped admin can't rotate a key that reaches further than them", %{conn: conn} do
-      {_owner_conn, owner, account} = register_and_log_in(conn)
-      {_raw, key} = Fixtures.ApiKeys.create_api_key(created_by_membership_id: owner.id)
-
-      {:ok, scoped} = Emisar.Accounts.RunnerAccess.restricted(["web"], [])
-
-      admin =
-        Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
-        |> Fixtures.Memberships.force_runner_access(scoped)
-
-      {:ok, lv, _} =
-        build_conn()
-        |> log_in_member(admin)
-        |> live(~p"/app/#{account}/agents")
-
-      html = render_click(lv, "rotate", %{"id" => key.id})
-
-      assert html =~
-               "This key reaches runners or packs you can&#39;t, so you can&#39;t rotate it."
-
-      assert Repo.aggregate(ApiKey, :count) == 1
-    end
-
-    test "an operator gets no Acts as choice, and a crafted one mints nothing", %{conn: conn} do
-      {_owner_conn, _owner, account} = register_and_log_in(conn)
-      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
-      operator = Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-
-      {:ok, lv, _} =
-        build_conn()
-        |> log_in_member(operator)
-        |> live(~p"/app/#{account}/agents/connect")
-
-      render_click(lv, "select_client", %{"client" => "custom"})
-
-      assert has_element?(lv, "#api_key_form")
-      refute has_element?(lv, "#api_key_acts_as")
-
-      render_submit(lv, "create", %{
-        "api_key" => %{"name" => "Ryker", "acts_as" => service_account.id}
-      })
-
-      assert Repo.all(ApiKey) == []
-    end
-  end
 
   defp rendered_text(html) do
     html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")

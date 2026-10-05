@@ -2843,6 +2843,33 @@ defmodule EmisarWeb.CoreComponents do
   end
 
   @doc """
+  A numbered `<.section_header>` for a flow the operator walks in order — a quiet
+  step number beside the title — so it reads as an explicit sequence: 1 Create a
+  key, 2 Connect your app. Rich setup sections number their headers this way;
+  short instructions use numbered `<.steps>` instead.
+
+      <.step_header step={1} title="Save your key" />
+  """
+  attr :step, :integer, required: true
+  attr :title, :string, required: true
+  slot :subtitle
+  slot :actions
+
+  def step_header(assigns) do
+    ~H"""
+    <div class="mb-4 flex items-baseline gap-3 [&>header]:mb-0">
+      <span class="w-3 shrink-0 font-display text-xl font-medium leading-7 tabular-nums text-zinc-400">
+        {@step}
+      </span>
+      <.section_header title={@title} class="min-w-0 flex-1">
+        <:subtitle :if={@subtitle != []}>{render_slot(@subtitle)}</:subtitle>
+        <:actions :if={@actions != []}>{render_slot(@actions)}</:actions>
+      </.section_header>
+    </div>
+    """
+  end
+
+  @doc """
   A console section with an optional help rail. Heading and actions stay on the
   primary track; the note aligns with the content and follows it on small screens.
   """

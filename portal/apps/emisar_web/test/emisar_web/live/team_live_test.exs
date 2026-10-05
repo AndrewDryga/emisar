@@ -1202,7 +1202,7 @@ defmodule EmisarWeb.TeamLiveTest do
 
       assert has_element?(
                lv,
-               ~s(a[href="/app/#{account.slug}/agents/connect?acts_as=#{service_account.id}"]),
+               ~s(a[href="/app/#{account.slug}/settings/service-accounts/#{service_account.id}/keys/new"]),
                "Create an API key"
              )
 
@@ -1285,9 +1285,29 @@ defmodule EmisarWeb.TeamLiveTest do
                "View connections"
              )
 
+      assert has_element?(
+               lv,
+               ~s(#{row} a[href="/app/#{account.slug}/settings/service-accounts/#{service_account.id}/keys/new"]),
+               "Create API key"
+             )
+
       refute has_element?(lv, row, "View activity")
       refute has_element?(lv, row, "End sessions")
       assert has_element?(lv, row, "Remove service account")
+    end
+
+    test "a suspended one offers no new key", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      suspended =
+        [account_id: account.id]
+        |> Fixtures.Memberships.create_service_account()
+        |> Fixtures.Memberships.suspend_membership()
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts")
+
+      assert has_element?(lv, "#member-row-#{suspended.id}", "Restore access")
+      refute has_element?(lv, "#member-row-#{suspended.id}", "Create API key")
     end
 
     test "suspending one warns that its apps lose access; ending sessions is not offered", %{

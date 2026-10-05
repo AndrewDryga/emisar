@@ -93,10 +93,6 @@ defmodule EmisarWeb.AgentsLive do
      |> ConfirmDialog.init()
      |> assign(:pending_key_action, nil)
      |> assign(:rotated, nil)
-     # Who a custom key acts as: only an admin with service accounts is offered
-     # a choice, so everyone else's key acts as themselves.
-     |> assign(:acts_as_options, nil)
-     |> assign(:acts_as, "member")
      |> assign_form(ApiKeys.change_key(default_params()))}
   end
 
@@ -109,7 +105,7 @@ defmodule EmisarWeb.AgentsLive do
   # resolved: a deep-linked `?owner=…` has to name the member, not blank out.
   def handle_params(params, _uri, socket) do
     if connected?(socket) do
-      {:noreply, socket |> load(params) |> preselect_acts_as(params)}
+      {:noreply, load(socket, params)}
     else
       {:noreply, prepare_disconnected(socket, params)}
     end
@@ -162,8 +158,7 @@ defmodule EmisarWeb.AgentsLive do
          |> assign(:quick_secret, nil)
          |> assign(:quick_key_id, nil)
          |> assign(:quick_connected?, false)
-         |> clear_connection_wait()
-         |> assign_acts_as_options()}
+         |> clear_connection_wait()}
       end
     )
   end
@@ -303,10 +298,7 @@ defmodule EmisarWeb.AgentsLive do
   def handle_event("validate", %{"api_key" => params} = event, socket) do
     changeset = ApiKeys.change_key(params) |> LiveForm.on_change(event)
 
-    {:noreply,
-     socket
-     |> assign(:acts_as, Map.get(params, "acts_as", socket.assigns.acts_as))
-     |> assign_form(changeset)}
+    {:noreply, assign_form(socket, changeset)}
   end
 
   def handle_event("validate", _params, socket), do: {:noreply, socket}
@@ -483,17 +475,14 @@ defmodule EmisarWeb.AgentsLive do
 
   defp do_create(socket, params) do
     # Every refusal below re-renders what was posted, so a rejected submit never
-    # resets the form, or the member the key acts as, to the stored defaults.
-    socket =
-      socket
-      |> assign(:acts_as, Map.get(params, "acts_as", socket.assigns.acts_as))
-      |> assign_form(ApiKeys.change_key(params))
+    # resets the form to the stored defaults.
+    socket = assign_form(socket, ApiKeys.change_key(params))
 
     # A Custom key is a plain `:mcp` key — identity + expiry only. It carries no
     # per-key scope: account Policy + the runner scope of the member it acts as
     # decide what it may do, same as a quick-mint. ApiKeys owns how the posted
     # fields are read, so the form and the mint can't drift.
-    case mint_custom_key(params, socket.assigns.current_subject) do
+    case ApiKeys.create_key(params, socket.assigns.current_subject) do
       {:ok, raw, key} ->
         {:noreply,
          socket
@@ -501,7 +490,6 @@ defmodule EmisarWeb.AgentsLive do
          |> assign(:quick_key_id, key.id)
          |> assign(:quick_connected?, false)
          |> start_connection_wait()
-         |> assign(:acts_as, "member")
          |> assign_form(ApiKeys.change_key(default_params()))
          |> reload()}
 
@@ -509,24 +497,6 @@ defmodule EmisarWeb.AgentsLive do
       # on the form via <.input>/<.error> — no flash dump.
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
-
-      {:error, :runner_access_exceeds_subject} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "That service account can reach runners or packs you can't, so you can't create a key for it."
-         )}
-
-      # The form keeps the gone choice selected, so resubmitting fails the same
-      # way rather than quietly minting a key that acts as the admin.
-      {:error, :not_found} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "That service account is no longer available. Choose who the key acts as."
-         )}
 
       # The form mints `:mcp`, but `create_key/2` picks its permission from the
       # posted kind — a crafted `audit_export` post from this page is refused
@@ -911,48 +881,6 @@ defmodule EmisarWeb.AgentsLive do
     %{"name" => "", "description" => "", "expires_at" => ""}
   end
 
-  defp mint_custom_key(%{"acts_as" => id} = params, subject) when id not in [nil, "", "member"],
-    do: ApiKeys.create_service_account_key(id, params, subject)
-
-  defp mint_custom_key(params, subject), do: ApiKeys.create_key(params, subject)
-
-  defp assign_acts_as_options(socket) do
-    case Accounts.list_service_accounts(socket.assigns.current_subject) do
-      {:ok, [_ | _] = service_accounts} ->
-        options =
-          Enum.map(service_accounts, &{Accounts.member_display_name(&1), &1.id})
-
-        assign(socket, :acts_as_options, [{"You", "member"}, {"Service accounts", options}])
-
-      _none_or_unauthorized ->
-        socket |> assign(:acts_as_options, nil) |> assign(:acts_as, "member")
-    end
-  end
-
-  # Adding a service account sends an admin here to create a key for it: open
-  # the custom key form acting as it. A link naming one this admin can't use
-  # opens nothing, so it never falls back to a personal key.
-  defp preselect_acts_as(%{assigns: %{live_action: :connect}} = socket, %{"acts_as" => id})
-       when is_binary(id) do
-    socket = assign_acts_as_options(socket)
-
-    if acts_as_option?(socket.assigns.acts_as_options, id) do
-      socket
-      |> assign(:selected_client, "custom")
-      |> assign(:selected_sandbox, nil)
-      |> assign(:acts_as, id)
-    else
-      put_flash(socket, :error, "That service account isn't available to you.")
-    end
-  end
-
-  defp preselect_acts_as(socket, _params), do: socket
-
-  defp acts_as_option?([_you, {_label, service_accounts}], id),
-    do: Enum.any?(service_accounts, &match?({_name, ^id}, &1))
-
-  defp acts_as_option?(_options, _id), do: false
-
   defp assign_form(socket, %Ecto.Changeset{} = changeset),
     do: assign(socket, :form, to_form(changeset, as: "api_key"))
 
@@ -1202,8 +1130,6 @@ defmodule EmisarWeb.AgentsLive do
         snippet_open?={@snippet_open?}
         current_account={@current_account}
         form={@form}
-        acts_as={@acts_as}
-        acts_as_options={@acts_as_options}
       />
 
       <%!-- Rotation success — the SAME "here's your key" grammar as the connect
@@ -1272,8 +1198,6 @@ defmodule EmisarWeb.AgentsLive do
             snippet_open?={@snippet_open?}
             current_account={@current_account}
             form={@form}
-            acts_as={@acts_as}
-            acts_as_options={@acts_as_options}
           />
         </div>
       </section>
@@ -1803,8 +1727,6 @@ defmodule EmisarWeb.AgentsLive do
   attr :snippet_open?, :boolean, default: false
   attr :current_account, :any, required: true
   attr :form, :any, default: nil
-  attr :acts_as, :string, default: "member"
-  attr :acts_as_options, :list, default: nil
 
   defp connect_panel(assigns) do
     config =
@@ -1990,40 +1912,12 @@ defmodule EmisarWeb.AgentsLive do
               <%= if @quick_secret do %>
                 <section id="custom-key-save-step" class="space-y-4">
                   <.step_header step={1} title="Save your key" />
-                  <%!-- AMBER: a single-secret reveal wears the pending tone
-                       (design-system §8.1) — the key is in the operator's hands
-                       and unrecoverable once they leave, which is exactly the
-                       "act before you move on" state amber names. Matches the
-                       install wizard and the rotation reveal; one event, one
-                       color, everywhere. --%>
-                  <.event_block
-                    icon="identity.credential"
-                    tone={:amber}
-                    title="API key created"
-                  >
-                    <:body>
-                      Copy the API key below before you leave this page; we won't show it
-                      again.
-                      <.doc_link href={~p"/docs/agents-and-keys"}>Manage agents & keys docs</.doc_link>
-                    </:body>
-                  </.event_block>
-
-                  <.code_panel
-                    id="custom-secret"
-                    label="API key"
-                    copy
-                    copy_label="Copy key"
-                    code={@quick_secret}
-                  />
+                  <.new_api_key id="custom-secret" secret={@quick_secret} />
                 </section>
               <% else %>
                 <section id="custom-key-create-step">
                   <.step_header step={1} title="Create a key" />
-                  <.custom_key_panel
-                    form={@form}
-                    acts_as={@acts_as}
-                    acts_as_options={@acts_as_options}
-                  />
+                  <.custom_key_panel form={@form} />
                 </section>
               <% end %>
             </div>
@@ -2097,21 +1991,13 @@ defmodule EmisarWeb.AgentsLive do
                 {instruction}
               </p>
             </div>
-            <div :if={@selected_client == "custom"} class="space-y-3">
-              <.code_line
-                id="custom-rpc-url"
-                label="Server URL"
-                value={@base_url <> "/api/mcp/rpc"}
-                copy_label="Copy URL"
-              />
-              <p class="text-sm text-zinc-400">
-                Set the Authorization header to
-                <.inline_code surface={:prominent} size={:sm}>Bearer</.inline_code>
-                followed by a space and the API key above. Save the connection, then send the
-                prompt below.
-                <.doc_link href={~p"/docs/connect-cli-agent" <> "#direct-http"}>Direct HTTP setup</.doc_link>
-              </p>
-            </div>
+            <.mcp_http_setup
+              :if={@selected_client == "custom"}
+              id="custom-rpc-url"
+              base_url={@base_url}
+            >
+              Save the connection, then send the prompt below.
+            </.mcp_http_setup>
 
             <div :if={@selected_sandbox} class="space-y-3">
               <.code_line
@@ -2973,31 +2859,6 @@ defmodule EmisarWeb.AgentsLive do
     """
   end
 
-  attr :step, :integer, required: true
-  attr :title, :string, required: true
-  slot :subtitle
-  slot :actions
-
-  # A numbered section header for the local-client connect flow — a quiet step
-  # number + the `section_header` title/subtitle/actions shape — so the flow
-  # reads as an explicit sequence: 1 Install the bridge (it configures the
-  # client and asks for browser approval), 2 Connect your agent. (Cloud
-  # clients get numbered `<.steps>` in the remote panel; local clients are
-  # richer sections, so they number the headers.)
-  defp step_header(assigns) do
-    ~H"""
-    <div class="mb-4 flex items-baseline gap-3 [&>header]:mb-0">
-      <span class="w-3 shrink-0 font-display text-xl font-medium leading-7 tabular-nums text-zinc-400">
-        {@step}
-      </span>
-      <.section_header title={@title} class="min-w-0 flex-1">
-        <:subtitle :if={@subtitle != []}>{render_slot(@subtitle)}</:subtitle>
-        <:actions :if={@actions != []}>{render_slot(@actions)}</:actions>
-      </.section_header>
-    </div>
-    """
-  end
-
   # Renders only AFTER a local client is picked. The install line is the
   # same for every local client — extracting it keeps the per-client
   # snippet focused on just the config the operator needs to paste, and
@@ -3199,8 +3060,6 @@ defmodule EmisarWeb.AgentsLive do
   end
 
   attr :form, :any, required: true
-  attr :acts_as, :string, required: true
-  attr :acts_as_options, :list, default: nil
 
   defp custom_key_panel(assigns) do
     ~H"""
@@ -3216,54 +3075,7 @@ defmodule EmisarWeb.AgentsLive do
         phx-change="validate"
         phx-submit="create"
       >
-        <div :if={@acts_as_options}>
-          <.input
-            type="select"
-            id="api_key_acts_as"
-            name="api_key[acts_as]"
-            label="Acts as"
-            value={@acts_as}
-            options={@acts_as_options}
-          />
-          <p class="mt-2 text-xs text-zinc-400">
-            The key uses that member's runner and pack access, and its requests are attributed
-            to them. A service account's key keeps working when people leave.
-          </p>
-        </div>
-
-        <%!-- autocomplete="off": this names a KEY, not a person, but the field is
-             labeled "Name" — enough for a browser to offer the operator's own. --%>
-        <.input
-          field={@form[:name]}
-          type="text"
-          label="Name"
-          autocomplete="off"
-          placeholder="e.g. Claude Desktop on laptop"
-          required
-        />
-
-        <.input
-          field={@form[:description]}
-          type="textarea"
-          label="Description (optional)"
-          placeholder="Optional — what is this key for? Who uses it?"
-          rows="2"
-        />
-
-        <%!-- `datetime-local` posts as "YYYY-MM-DDTHH:MM" with no
-             timezone; ApiKeys reads it as UTC. Operators typing
-             "expires Dec 25 at 10am" get a key that expires at
-             10:00 UTC on that date, which is close enough for an
-             audit-friendly default without dragging browser-tz
-             guessing into the server. --%>
-        <.input
-          field={@form[:expires_at]}
-          type="datetime-local"
-          label="Expiration date (UTC, optional)"
-        />
-        <p class="mt-1 text-xs text-zinc-400">
-          Leave blank to expire the key in 30 days.
-        </p>
+        <.api_key_fields form={@form} />
 
         <:actions>
           <.button phx-disable-with="Creating...">Create key</.button>

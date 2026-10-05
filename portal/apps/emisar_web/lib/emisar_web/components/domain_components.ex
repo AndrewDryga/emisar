@@ -146,6 +146,106 @@ defmodule EmisarWeb.DomainComponents do
     """
   end
 
+  @doc """
+  The fields of an operator-created MCP key: its name, an optional description,
+  and an optional expiry. The AI agents custom key and a service account's key
+  both mint through these, inside the caller's own `<.simple_form>`, so each
+  form keeps its id, events, and actions.
+  """
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :name_placeholder, :string, default: "e.g. Claude Desktop on laptop"
+
+  def api_key_fields(assigns) do
+    ~H"""
+    <%!-- autocomplete="off": this names a KEY, not a person, but the field is
+         labeled "Name" — enough for a browser to offer the operator's own. --%>
+    <.input
+      field={@form[:name]}
+      type="text"
+      label="Name"
+      autocomplete="off"
+      placeholder={@name_placeholder}
+      required
+    />
+
+    <.input
+      field={@form[:description]}
+      type="textarea"
+      label="Description (optional)"
+      placeholder="Optional — what is this key for? Who uses it?"
+      rows="2"
+    />
+
+    <%!-- `datetime-local` posts as "YYYY-MM-DDTHH:MM" with no
+         timezone; ApiKeys reads it as UTC. Operators typing
+         "expires Dec 25 at 10am" get a key that expires at
+         10:00 UTC on that date, which is close enough for an
+         audit-friendly default without dragging browser-tz
+         guessing into the server. --%>
+    <.input
+      field={@form[:expires_at]}
+      type="datetime-local"
+      label="Expiration date (UTC, optional)"
+    />
+    <p class="mt-1 text-xs text-zinc-400">
+      Leave blank to expire the key in 30 days.
+    </p>
+    """
+  end
+
+  @doc """
+  A newly minted API key, shown once: the note to copy it now and the secret in a
+  copyable panel. Place it in a `space-y-*` stack.
+  """
+  attr :id, :string, required: true, doc: "the secret panel's id"
+  attr :secret, :string, required: true
+
+  def new_api_key(assigns) do
+    ~H"""
+    <%!-- AMBER: a single-secret reveal wears the pending tone
+         (design-system §8.1) — the key is in the operator's hands
+         and unrecoverable once they leave, which is exactly the
+         "act before you move on" state amber names. Matches the
+         install wizard and the rotation reveal; one event, one
+         color, everywhere. --%>
+    <.event_block icon="identity.credential" tone={:amber} title="API key created">
+      <:body>
+        Copy the API key below before you leave this page; we won't show it again.
+        <.doc_link href={~p"/docs/agents-and-keys"}>Manage agents & keys docs</.doc_link>
+      </:body>
+    </.event_block>
+
+    <.code_panel id={@id} label="API key" copy copy_label="Copy key" code={@secret} />
+    """
+  end
+
+  @doc """
+  How an app calls emisar's MCP endpoint over HTTP with an API key: the server URL
+  to copy and the Bearer header to set. The inner block adds what to do next.
+  """
+  attr :id, :string, required: true, doc: "the server URL line's id"
+  attr :base_url, :string, required: true
+  slot :inner_block
+
+  def mcp_http_setup(assigns) do
+    ~H"""
+    <div class="space-y-3">
+      <.code_line
+        id={@id}
+        label="Server URL"
+        value={@base_url <> "/api/mcp/rpc"}
+        copy_label="Copy URL"
+      />
+      <p class="text-sm text-zinc-400">
+        Set the Authorization header to
+        <.inline_code surface={:prominent} size={:sm}>Bearer</.inline_code>
+        followed by a space and the API key above. {render_slot(@inner_block)}
+        <.doc_link href={~p"/docs/connect-cli-agent" <> "#direct-http"}>Direct HTTP setup</.doc_link>
+      </p>
+    </div>
+    """
+  end
+
   @doc "Quiet connection feedback shared by runner and agent setup."
   attr :id, :string, required: true
   attr :state, :atom, default: :waiting, values: [:waiting, :delayed, :connected]

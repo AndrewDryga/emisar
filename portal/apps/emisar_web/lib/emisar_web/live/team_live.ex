@@ -3177,7 +3177,7 @@ defmodule EmisarWeb.TeamLive do
           </p>
           <p :if={@can_manage_team?}>
             To connect an app as one, choose it under Connect as when the app asks you to
-            authorize it, or under Acts as when you create a key on AI agents. <.doc_link href={
+            authorize it, or use Create API key in its row. <.doc_link href={
               ~p"/docs/agents-and-keys" <> "#minting"
             }>How to create its key</.doc_link>.
           </p>
@@ -3248,7 +3248,7 @@ defmodule EmisarWeb.TeamLive do
 
         <div class="mt-7 flex flex-wrap items-center gap-3">
           <.button
-            navigate={~p"/app/#{@current_account}/agents/connect?#{[acts_as: @added.id]}"}
+            navigate={~p"/app/#{@current_account}/settings/service-accounts/#{@added.id}/keys/new"}
             icon="action.add"
           >
             Create an API key
@@ -3529,6 +3529,14 @@ defmodule EmisarWeb.TeamLive do
             navigate={~p"/app/#{@current_account}/agents?#{[owner: [@membership.id]]}"}
           >
             View connections
+          </.menu_item>
+          <.menu_item
+            :if={@member.service_account? and not @member.disabled?}
+            navigate={
+              ~p"/app/#{@current_account}/settings/service-accounts/#{@membership.id}/keys/new"
+            }
+          >
+            Create API key
           </.menu_item>
           <.menu_item
             :if={not @member.service_account?}

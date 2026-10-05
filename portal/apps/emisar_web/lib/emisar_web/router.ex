@@ -489,6 +489,7 @@ defmodule EmisarWeb.Router do
       live "/settings/team/invite", TeamLive, :new
       live "/settings/service-accounts", TeamLive, :service_accounts
       live "/settings/service-accounts/new", TeamLive, :new_service_account
+      live "/settings/service-accounts/:membership_id/keys/new", ServiceAccountKeyLive, :new
       live "/settings/team/:membership_id/change-role/:role", MemberRoleLive, :edit
       live "/settings/team/:membership_id/reset_mfa", TeamLive, :reset_mfa
 
