@@ -11,6 +11,7 @@ defmodule Emisar.Auth.UserToken.Query do
   @magic_link_verified_validity_in_minutes 10
   @mfa_enrollment_validity_in_minutes 15
   @oidc_identity_step_up_validity_in_minutes 15
+  @email_change_validity_in_minutes 15
 
   # A browser holds at most this many workspace sessions, so a request never
   # looks up more entries than that.
@@ -20,7 +21,7 @@ defmodule Emisar.Auth.UserToken.Query do
   # this list, so a new context must be added here as well as below — a context
   # missing from it is treated as unrecognized and swept.
   @contexts ~w(session magic_link magic_link_verified sign_up mfa_enrollment_pending
-               mfa_enrollment oidc_identity_step_up)
+               mfa_enrollment oidc_identity_step_up email_change email_change_new)
 
   def all,
     do: from(t in UserToken, as: :tokens)
@@ -226,6 +227,9 @@ defmodule Emisar.Auth.UserToken.Query do
 
   defp validity_in_days("oidc_identity_step_up"),
     do: @oidc_identity_step_up_validity_in_minutes / (24 * 60)
+
+  defp validity_in_days(context) when context in ~w(email_change email_change_new),
+    do: @email_change_validity_in_minutes / (24 * 60)
 
   def lock_for_update(queryable),
     do: lock(queryable, "FOR NO KEY UPDATE")

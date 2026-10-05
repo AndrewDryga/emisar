@@ -10,7 +10,7 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
       elsewhere =
         Fixtures.Memberships.create_membership(email: person.email, display_name: "Elsewhere")
 
-      assert {:ok, %{membership: member, editable?: true}} =
+      assert {:ok, %{membership: member, editable?: true, email_changeable?: true}} =
                Accounts.fetch_own_member_profile(subject)
 
       assert member.id == subject.membership_id
@@ -25,10 +25,73 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
                Accounts.fetch_own_member_profile(%{subject | permissions: MapSet.new()})
     end
 
-    test "marks a directory-owned name read-only" do
+    test "marks a directory-owned name and email read-only" do
       {_provider, _identity, member} = provisioned()
       subject = Fixtures.Subjects.subject_for(member)
-      assert {:ok, %{editable?: false}} = Accounts.fetch_own_member_profile(subject)
+
+      assert {:ok, %{editable?: false, email_changeable?: false}} =
+               Accounts.fetch_own_member_profile(subject)
+    end
+  end
+
+  describe "member_email_changeable?/1" do
+    test "only a person whose address joining proved and no directory owns" do
+      verified = Fixtures.Memberships.create_membership()
+      unverified = Fixtures.Memberships.create_membership(email_verified?: false)
+      service_account = Fixtures.Memberships.create_service_account()
+      {_provider, _identity, provisioned} = provisioned()
+
+      assert Accounts.member_email_changeable?(verified)
+      refute Accounts.member_email_changeable?(unverified)
+      refute Accounts.member_email_changeable?(service_account)
+      refute Accounts.member_email_changeable?(provisioned)
+    end
+  end
+
+  describe "validate_member_email_change/2" do
+    test "returns the trimmed address, or why this workspace can't use it" do
+      member = Fixtures.Memberships.create_membership()
+      colleague = Fixtures.Memberships.create_membership(account_id: member.account_id)
+      elsewhere = Fixtures.Memberships.create_membership()
+
+      assert Accounts.validate_member_email_change(member, " new@example.test ") ==
+               {:ok, "new@example.test"}
+
+      assert Accounts.validate_member_email_change(member, elsewhere.email) ==
+               {:ok, elsewhere.email}
+
+      assert {:error, changeset} = Accounts.validate_member_email_change(member, member.email)
+      assert "is already your email" in errors_on(changeset).email
+
+      assert {:error, changeset} = Accounts.validate_member_email_change(member, colleague.email)
+      assert "is already used by a member of this workspace" in errors_on(changeset).email
+
+      assert {:error, changeset} = Accounts.validate_member_email_change(member, "no-at-sign")
+      assert "must have the @ sign and no spaces" in errors_on(changeset).email
+    end
+  end
+
+  describe "put_member_email_change/4" do
+    test "writes the new address as verified and audits where it moved from and to" do
+      member = Fixtures.Memberships.create_membership(email_verified?: false)
+
+      assert {:ok, %{email_change: changed, email_change_audit: event}} =
+               Ecto.Multi.new()
+               |> Accounts.put_member_email_change(
+                 member,
+                 "new@example.test",
+                 %Emisar.RequestContext{}
+               )
+               |> Repo.transaction()
+
+      assert changed.email == "new@example.test"
+      assert changed.email_verified_at
+      assert event.event_type == "user.email_changed"
+
+      assert Repo.reload!(event).payload == %{
+               "from" => member.email,
+               "to" => "new@example.test"
+             }
     end
   end
 
@@ -51,6 +114,16 @@ defmodule Emisar.WorkspaceProfileAuthorityTest do
       assert Ecto.Changeset.apply_changes(changeset) == %{member | display_name: "New"}
 
       refute Accounts.change_member_profile(member, %{display_name: String.duplicate("a", 256)}).valid?
+    end
+  end
+
+  describe "change_member_email/2" do
+    test "validates the new address without writing it" do
+      member = %Accounts.Membership{email: "work@example.test"}
+
+      assert Accounts.change_member_email(member, "new@example.test").valid?
+      refute Accounts.change_member_email(member, "no-at-sign").valid?
+      refute Accounts.change_member_email(member).valid?
     end
   end
 

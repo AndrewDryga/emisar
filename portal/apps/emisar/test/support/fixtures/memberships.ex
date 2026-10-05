@@ -180,9 +180,8 @@ defmodule Emisar.Fixtures.Memberships do
   end
 
   @doc """
-  Moves a Member to another address directly. No flow changes a Member's email
-  any more (invite the new address instead), so this only arranges the stale
-  state an in-flight code or proof must refuse.
+  Moves a Member to another address directly, skipping the email-change flow,
+  to arrange the stale state an in-flight code, proof or link request must refuse.
   """
   def change_email(%Membership{} = membership, email) when is_binary(email) do
     membership

@@ -170,6 +170,55 @@ defmodule Emisar.Auth.UserToken.Changeset do
     |> owner_constraints()
   end
 
+  @doc """
+  Current-inbox step-up code for an email change: sent to the Member's address,
+  bound to the address it asked to move to and to its row version.
+  """
+  def email_change(%Accounts.Membership{} = membership, digest, new_email, attempts)
+      when is_binary(digest) and is_binary(new_email) and is_integer(attempts) do
+    %UserToken{}
+    |> change(
+      token: digest,
+      context: "email_change",
+      sent_to: membership.email,
+      account_id: membership.account_id,
+      membership_id: membership.id,
+      remaining_attempts: attempts,
+      metadata: %{
+        "new_email" => new_email,
+        "membership_updated_at" => DateTime.to_iso8601(membership.updated_at)
+      }
+    )
+    |> owner_constraints()
+  end
+
+  @doc """
+  Split code proving the new inbox of an email change: sent to the new address,
+  bound to the Member's current address and row version.
+  """
+  def new_email(%Accounts.Membership{} = membership, digest, new_email, attempts)
+      when is_binary(digest) and is_binary(new_email) and is_integer(attempts) do
+    %UserToken{}
+    |> change(
+      token: digest,
+      context: "email_change_new",
+      sent_to: new_email,
+      account_id: membership.account_id,
+      membership_id: membership.id,
+      remaining_attempts: attempts,
+      metadata: new_email_metadata(membership)
+    )
+    |> owner_constraints()
+  end
+
+  @doc "What a new-inbox code stays bound to: the Member's address and row version."
+  def new_email_metadata(%Accounts.Membership{} = membership) do
+    %{
+      "email" => membership.email,
+      "membership_updated_at" => DateTime.to_iso8601(membership.updated_at)
+    }
+  end
+
   @doc "Pending current-inbox code, promoted only after its email is accepted for delivery."
   def pending_mfa_enrollment(%Accounts.Membership{} = membership, digest, attempts)
       when is_binary(digest) and is_integer(attempts) do

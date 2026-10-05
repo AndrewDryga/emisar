@@ -26,6 +26,9 @@ defmodule EmisarWeb.ProfileLive do
      |> assign(:profile_error?, false)
      |> assign(:profile_loaded?, false)
      |> assign_profile_form(socket.assigns.current_membership)
+     |> assign(:email_changeable?, false)
+     |> reset_email_step()
+     |> assign_email_form(socket.assigns.current_membership)
      |> assign(:mfa_facts, nil)
      |> assign(:mfa_recovery_codes, nil)
      |> assign(:codes_saved?, false)
@@ -67,11 +70,12 @@ defmodule EmisarWeb.ProfileLive do
     socket = assign(socket, :profile_loaded?, true)
 
     case Accounts.fetch_own_member_profile(socket.assigns.current_subject) do
-      {:ok, %{membership: member, editable?: editable?}} ->
+      {:ok, %{membership: member, editable?: editable?, email_changeable?: email_changeable?}} ->
         socket =
           socket
           |> assign(:current_membership, member)
           |> assign(:profile_editable?, editable?)
+          |> assign(:email_changeable?, email_changeable?)
           |> assign(:profile_error?, false)
 
         if socket.assigns.profile_editing?,
@@ -84,6 +88,152 @@ defmodule EmisarWeb.ProfileLive do
         |> assign(:profile_error?, true)
     end
   end
+
+  # Email-change state: :idle (the current address), :edit (the new one), :mfa
+  # (an authenticator code) or :email (a code sent to the current address), then
+  # :new_address (the new inbox's code). The split nonce stays in this LiveView,
+  # never in an email.
+  defp reset_email_step(socket) do
+    socket
+    |> assign(:email_step, :idle)
+    |> assign(:pending_new_email, nil)
+    |> assign(:new_email_proof, nil)
+    |> assign(:email_step_error, nil)
+    |> assign(:email_step_form, to_form(%{"code" => ""}, as: "email_step"))
+  end
+
+  defp assign_email_form(socket, member),
+    do: assign(socket, :email_form, to_form(Accounts.change_member_email(member), as: "email"))
+
+  defp start_email_step_up(socket, new_email) do
+    socket =
+      socket
+      |> assign(:new_email_proof, nil)
+      |> assign(:email_step_error, nil)
+
+    case Auth.begin_email_change(new_email, socket.assigns.current_subject) do
+      {:ok, :mfa} ->
+        socket
+        |> assign(:pending_new_email, new_email)
+        |> assign(:email_step, :mfa)
+
+      {:ok, :email} ->
+        socket
+        |> assign(:pending_new_email, new_email)
+        |> assign(:email_step, :email)
+        |> put_flash(:info, "We emailed a code to #{socket.assigns.current_membership.email}.")
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        assign(socket, :email_form, to_form(changeset, as: "email"))
+
+      {:error, :delivery_suppressed} ->
+        assign(socket, :email_step_error, current_address_suppressed(socket))
+
+      {:error, :rate_limited} ->
+        assign(socket, :email_step_error, MfaErrors.message(:email_rate_limited))
+
+      {:error, :email_change_unavailable} ->
+        socket
+        |> reset_email_step()
+        |> put_flash(:error, "You can't change this email here.")
+
+      {:error, :unauthorized} ->
+        UserAuth.reauthenticate(socket)
+
+      {:error, _reason} ->
+        assign(socket, :email_step_error, "Couldn't start the email change. Try again.")
+    end
+  end
+
+  defp confirm_email_step(socket, code) do
+    step = socket.assigns.email_step
+    socket = push_event(socket, "code:reset", %{id: email_code_input_id(step)})
+    subject = socket.assigns.current_subject
+
+    result =
+      case step do
+        :new_address ->
+          proof = socket.assigns.new_email_proof
+          Auth.complete_email_change(proof.token_id, proof.nonce, code, subject)
+
+        _factor ->
+          Auth.confirm_email_change(socket.assigns.pending_new_email, code, subject)
+      end
+
+    case result do
+      {:ok, %Accounts.Membership{} = updated} ->
+        socket
+        |> assign(:current_membership, updated)
+        |> reset_email_step()
+        |> assign_email_form(updated)
+        |> put_flash(:info, "Your email is now #{updated.email}.")
+
+      {:ok, %{token_id: _id, nonce: _nonce, email: email} = proof} ->
+        socket
+        |> assign(:email_step, :new_address)
+        |> assign(:new_email_proof, proof)
+        |> assign(:email_step_error, nil)
+        |> put_flash(:info, "We sent a code to #{email}. Your email hasn't changed yet.")
+
+      {:error, error} when error in [:invalid, :invalid_code] ->
+        assign(socket, :email_step_error, step_up_error(step))
+
+      {:error, :replay} ->
+        assign(socket, :email_step_error, "That code was just used. Wait for the next one.")
+
+      {:error, :rate_limited} ->
+        assign(socket, :email_step_error, MfaErrors.message(:rate_limited))
+
+      {:error, :unauthorized} ->
+        UserAuth.reauthenticate(socket)
+
+      {:error, :email_change_unavailable} ->
+        socket
+        |> reset_email_step()
+        |> put_flash(:error, "You can't change this email here.")
+
+      # The step-up was spent: an address another member took meanwhile, or one
+      # that can't receive mail, goes back to the start.
+      {:error, %Ecto.Changeset{} = changeset} ->
+        socket
+        |> reset_email_step()
+        |> assign(:email_step, :edit)
+        |> assign(:email_form, to_form(changeset, as: "email"))
+
+      {:error, :delivery_suppressed} ->
+        socket
+        |> reset_email_step()
+        |> assign(:email_step, :edit)
+        |> assign(
+          :email_step_error,
+          "We can't deliver to that address. Check it and try again. Your email hasn't changed."
+        )
+
+      {:error, :email_change_stale} ->
+        socket
+        |> reset_email_step()
+        |> assign(:email_step, :edit)
+        |> assign(:email_step_error, "Your account changed. Start the email change again.")
+
+      {:error, _reason} ->
+        socket
+        |> reset_email_step()
+        |> assign(:email_step, :edit)
+        |> assign(:email_step_error, "Couldn't change your email. Try again.")
+    end
+  end
+
+  defp step_up_error(:mfa), do: MfaErrors.message(:step_up_factor_invalid)
+  defp step_up_error(_step), do: MfaErrors.message(:email_code_invalid)
+
+  defp current_address_suppressed(socket) do
+    "We can't send a code to your current email (#{socket.assigns.current_membership.email}). " <>
+      "Contact support@emisar.dev."
+  end
+
+  # A code input owns an ignored DOM subtree and keeps its numeric mode from
+  # mount, so each step gets its own id: the new-address code admits letters.
+  defp email_code_input_id(step), do: "email-step-code-#{step}"
 
   defp assign_profile_form(socket, member, attrs \\ %{}) do
     assign(
@@ -171,7 +321,7 @@ defmodule EmisarWeb.ProfileLive do
         {:noreply, socket}
 
       socket.assigns.profile_editable? ->
-        {:noreply, assign(socket, :profile_editing?, true)}
+        {:noreply, socket |> reset_email_step() |> assign(:profile_editing?, true)}
 
       true ->
         {:noreply, put_flash(socket, :error, "Your name is managed by your identity provider.")}
@@ -219,6 +369,93 @@ defmodule EmisarWeb.ProfileLive do
   end
 
   # -- Active sessions -------------------------------------------------
+
+  def handle_event("edit_email", _params, socket) do
+    {:noreply,
+     socket
+     |> reset_email_step()
+     |> assign(:email_step, :edit)
+     |> assign_email_form(socket.assigns.current_membership)}
+  end
+
+  def handle_event("validate_email", %{"email" => params} = event, socket) do
+    changeset =
+      socket.assigns.current_membership
+      |> Accounts.change_member_email(String.trim(params["email"] || ""))
+      |> LiveForm.on_change(event)
+
+    {:noreply,
+     socket
+     |> assign(:email_form, to_form(changeset, as: "email"))
+     |> assign(:email_step_error, nil)}
+  end
+
+  # The email decides where every future sign-in code goes, so changing it is
+  # gated like a credential: submitting only STARTS a step-up (the Member's
+  # authenticator, or a code to its current address), and only then can this
+  # browser prove the new inbox. The domain picks the factor from the fresh row.
+  def handle_event("save_email", %{"email" => params}, socket) do
+    if socket.assigns.email_step == :edit do
+      {:noreply, start_email_step_up(socket, String.trim(params["email"] || ""))}
+    else
+      {:noreply, put_flash(socket, :error, "Start an email change first.")}
+    end
+  end
+
+  def handle_event("confirm_email_change", %{"email_step" => %{"code" => code}}, socket) do
+    if socket.assigns.email_step in [:mfa, :email, :new_address] do
+      {:noreply, confirm_email_step(socket, String.trim(code || ""))}
+    else
+      {:noreply, put_flash(socket, :error, "Start an email change first.")}
+    end
+  end
+
+  def handle_event("resend_email_code", _params, socket) do
+    if socket.assigns.email_step == :email do
+      case Auth.resend_email_change_code(
+             socket.assigns.pending_new_email,
+             socket.assigns.current_subject
+           ) do
+        {:ok, :sent} ->
+          {:noreply,
+           socket
+           |> assign(:email_step_error, nil)
+           |> push_event("code:reset", %{id: email_code_input_id(:email)})
+           |> put_flash(
+             :info,
+             "We sent a new code to #{socket.assigns.current_membership.email}."
+           )}
+
+        {:ok, :suppressed} ->
+          {:noreply, assign(socket, :email_step_error, current_address_suppressed(socket))}
+
+        {:error, :factor_changed} ->
+          {:noreply,
+           socket
+           |> assign(:email_step, :mfa)
+           |> assign(:email_step_error, nil)
+           |> put_flash(:info, "Use your authenticator app instead.")}
+
+        {:error, :rate_limited} ->
+          {:noreply, assign(socket, :email_step_error, MfaErrors.message(:email_rate_limited))}
+
+        {:error, :unauthorized} ->
+          {:noreply, UserAuth.reauthenticate(socket)}
+
+        {:error, _reason} ->
+          {:noreply, assign(socket, :email_step_error, "Couldn't send a new code. Try again.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Start an email change first.")}
+    end
+  end
+
+  def handle_event("cancel_email_change", _params, socket) do
+    {:noreply,
+     socket
+     |> reset_email_step()
+     |> assign_email_form(socket.assigns.current_membership)}
+  end
 
   def handle_event("retry_sessions", _params, socket),
     do: {:noreply, reload_sessions(socket)}
@@ -682,9 +919,12 @@ defmodule EmisarWeb.ProfileLive do
               </:subtitle>
             </.section_header>
           </:header>
-          <:note>
-            Your email is the address this workspace invited or signed you up with. To change
-            it, ask a workspace administrator to invite the new address.
+          <:note :if={@email_changeable?}>
+            Sign-in codes for this workspace go to your email. To change it, confirm with your
+            authenticator or a code sent to it, then with a code sent to the new address.
+          </:note>
+          <:note :if={@profile_loaded? and not @email_changeable? and not @profile_error?}>
+            Your identity provider manages your email in this workspace.
           </:note>
           <p :if={@profile_error?} role="alert" class="mb-4 text-sm text-rose-300">
             Couldn't load your profile. Refresh to try again.
@@ -737,15 +977,109 @@ defmodule EmisarWeb.ProfileLive do
             </div>
             <div id="email" class="pt-4">
               <dt class="mb-1 text-sm text-zinc-400">Email</dt>
-              <dd class="break-all text-base text-zinc-100">
-                {@current_membership.email || "No email address"}
-              </dd>
-              <p
-                :if={@current_membership.email && is_nil(@current_membership.email_verified_at)}
-                class="mt-2 text-xs text-zinc-400"
-              >
-                Not verified: you sign in to this workspace through single sign-on.
-              </p>
+              <%= case @email_step do %>
+                <% :idle -> %>
+                  <dd class="flex items-center justify-between gap-4">
+                    <span class="min-w-0 break-all text-base text-zinc-100">
+                      {@current_membership.email || "No email address"}
+                    </span>
+                    <.button
+                      :if={@email_changeable?}
+                      id="change-email"
+                      variant={:secondary}
+                      size={:sm}
+                      phx-click="edit_email"
+                    >
+                      Change email
+                    </.button>
+                  </dd>
+                  <p
+                    :if={@current_membership.email && is_nil(@current_membership.email_verified_at)}
+                    class="mt-2 text-xs text-zinc-400"
+                  >
+                    Not verified: you sign in to this workspace through single sign-on.
+                  </p>
+                <% :edit -> %>
+                  <dd>
+                    <.simple_form
+                      for={@email_form}
+                      id="email_form"
+                      class="max-w-2xl"
+                      phx-change="validate_email"
+                      phx-submit="save_email"
+                    >
+                      <.input
+                        field={@email_form[:email]}
+                        type="email"
+                        label="New email"
+                        autocomplete="email"
+                        required
+                      />
+                      <.error :if={@email_step_error}>{@email_step_error}</.error>
+                      <:actions>
+                        <.button type="submit" phx-disable-with="Checking…">Continue</.button>
+                        <.button type="button" variant={:secondary} phx-click="cancel_email_change">
+                          Cancel
+                        </.button>
+                      </:actions>
+                    </.simple_form>
+                  </dd>
+                <% step -> %>
+                  <dd>
+                    <.simple_form
+                      for={@email_step_form}
+                      id="email_step_form"
+                      class="max-w-2xl"
+                      phx-submit="confirm_email_change"
+                    >
+                      <p class="text-sm text-zinc-300">
+                        To change your email to <span class="break-all font-medium text-zinc-100">{@pending_new_email}</span>,
+                        <%= case step do %>
+                          <% :email -> %>
+                            enter the 6-digit code sent to <span class="break-all">{@current_membership.email}</span>.
+                          <% :mfa -> %>
+                            enter a code from your authenticator app, or a recovery code.
+                          <% :new_address -> %>
+                            enter the 6-character code sent to that address. Your email stays the same until you finish.
+                        <% end %>
+                      </p>
+                      <%= if step == :mfa do %>
+                        <.input
+                          field={@email_step_form[:code]}
+                          type="text"
+                          label="Authenticator or recovery code"
+                          autocomplete="one-time-code"
+                          required
+                        />
+                        <.error :if={@email_step_error}>{@email_step_error}</.error>
+                      <% else %>
+                        <.code_input
+                          id={email_code_input_id(step)}
+                          name="email_step[code]"
+                          numeric={step != :new_address}
+                          label="Code"
+                          error={@email_step_error}
+                        />
+                      <% end %>
+                      <:actions>
+                        <.button type="submit" phx-disable-with="Checking…">
+                          {if step == :new_address, do: "Change email", else: "Continue"}
+                        </.button>
+                        <.button
+                          :if={step == :email}
+                          type="button"
+                          variant={:secondary}
+                          phx-click="resend_email_code"
+                        >
+                          Resend code
+                        </.button>
+                        <.button type="button" variant={:secondary} phx-click="cancel_email_change">
+                          Cancel
+                        </.button>
+                      </:actions>
+                    </.simple_form>
+                  </dd>
+              <% end %>
             </div>
           </dl>
         </.section_with_note>

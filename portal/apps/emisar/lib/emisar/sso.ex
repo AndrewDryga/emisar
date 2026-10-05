@@ -4158,11 +4158,24 @@ defmodule Emisar.SSO do
          {:ok, approver_role} <- ensure_approver_still_holds_authority(provider, subject, repo),
          :ok <-
            ensure_link_target_within_authority(request, provider, approver_role, subject, repo),
-         %Accounts.Membership{} = member <- peek_matched_membership(provider, request) do
+         %Accounts.Membership{} = member <- peek_matched_membership(provider, request),
+         :ok <- ensure_match_still_current(provider, request, member) do
       {:ok, member}
     else
       {:error, reason} when is_atom(reason) -> {:error, reason}
       _ -> {:error, :matched_user_unavailable}
+    end
+  end
+
+  # The match was made on the address a Member held when the request arrived.
+  # Run it again: a Member who has since moved to another address no longer
+  # matches, and the request is stale rather than retargeted.
+  defp ensure_match_still_current(provider, %LinkRequest{} = request, member) do
+    email = link_match_email(provider, request.email, request.claims, request.source)
+
+    case member_contact_match(provider, email) do
+      {:ok, %Accounts.Membership{id: id}} when id == member.id -> :ok
+      _stale -> {:error, :matched_email_changed}
     end
   end
 

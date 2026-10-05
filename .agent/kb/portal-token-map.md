@@ -3,7 +3,7 @@ name: portal-token-map
 description: every bearer credential the portal mints, its table, prefix, owning context, and mint/verify/revoke entry points — there is deliberately no single tokens table
 subsystem: portal
 sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emisar/oauth.ex, portal/apps/emisar/lib/emisar/runners.ex, portal/apps/emisar/lib/emisar/auth.ex, portal/apps/emisar/lib/emisar/auth/user_token/query.ex, portal/apps/emisar/lib/emisar/accounts.ex, portal/apps/emisar/lib/emisar/sso.ex, portal/apps/emisar/lib/emisar/admin.ex, portal/apps/emisar/lib/emisar/crypto.ex]
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 The token map — the one place to understand every bearer credential emisar
@@ -25,7 +25,7 @@ them inline.
 | OAuth access / refresh token & auth code | `oauth_tokens`, `oauth_authorization_codes` | `emo-` / `emor-` / `emoc-` | `Emisar.OAuth` | `issue_code/4` → `exchange_code/1`, `refresh/1` | `resolve_access_token/2` | expiry sweeps (`delete_expired_authorization_codes/1`, `delete_unused_clients/1`) |
 | Runner enrollment key | `runner_enrollment_keys` | `emkey-enroll-` | `Emisar.Runners` | `create_enrollment_key/2` | `register_via_enrollment_key/3` claims a use inside its transaction (`peek_enrollment_key_by_secret/1` is a read-only inspector, not the gate) | `revoke_enrollment_key/2` |
 | Runner session token | `runner_tokens` | `rnrtok-` | `Emisar.Runners` | `mint_runner_token/3` | `verify_runner_token/1` | disable or delete the runner; a 90-day `expires_at` refused at verify, rotated by `refresh_runner_token/1` |
-| Workspace session, emailed sign-in and sign-up codes, MFA enrollment and provider-verification codes | `auth_user_tokens` (every row but `sign_up` belongs to one workspace and one Member) | binary (unprefixed); codes are split into a browser nonce and an emailed code | `Emisar.Auth` | `request_magic_link/3`, `request_invitation_code/2`, `request_sign_up_code/2`, `resend_email_code/2`; sessions from `complete_magic_link_sign_in/4`, `complete_magic_link_mfa_sign_in/4`, `complete_sign_up/3`, `complete_sso_sign_in/5`, `SSO.complete_invitation_sso_sign_in/4` | `fetch_session_by_token/2` (the token AND the workspace in the URL), `list_live_sessions/1`, `verify_magic_link/4`; every request re-applies `UserToken.Query.authorized/1` | `complete_browser_sign_out/3` (every session of the browser), `revoke_session_tokens/3` (displaced or evicted cookie entries), `revoke_session/2`, `revoke_and_disconnect_other_sessions/2`, `delete_membership_sessions/2`, `delete_identity_sessions/2`, `delete_account_email_sessions/2`; 60-day absolute expiry |
+| Workspace session, emailed sign-in and sign-up codes, MFA enrollment, provider-verification and email-change codes | `auth_user_tokens` (every row but `sign_up` belongs to one workspace and one Member) | binary (unprefixed); codes are split into a browser nonce and an emailed code | `Emisar.Auth` | `request_magic_link/3`, `request_invitation_code/2`, `request_sign_up_code/2`, `resend_email_code/2`; sessions from `complete_magic_link_sign_in/4`, `complete_magic_link_mfa_sign_in/4`, `complete_sign_up/3`, `complete_sso_sign_in/5`, `SSO.complete_invitation_sso_sign_in/4`; email change: `begin_email_change/2` and `resend_email_change_code/2` (current inbox), then `confirm_email_change/3` (new inbox) | `fetch_session_by_token/2` (the token AND the workspace in the URL), `list_live_sessions/1`, `verify_magic_link/4`, `complete_email_change/4`; every request re-applies `UserToken.Query.authorized/1` | `complete_browser_sign_out/3` (every session of the browser), `revoke_session_tokens/3` (displaced or evicted cookie entries), `revoke_session/2`, `revoke_and_disconnect_other_sessions/2`, `delete_membership_sessions/2`, `delete_identity_sessions/2`, `delete_account_email_sessions/2`; a completed email change deletes the Member's address-bound codes; 60-day absolute session expiry, 15 minutes for an email-change code |
 | Staff sign-in code and staff session | `admin_staff_tokens` | binary (unprefixed); the sign-in code is split like the workspace code | `Emisar.Admin` | `request_staff_sign_in/2`, then `complete_staff_sign_in/5` (emailed code AND authenticator code) | `fetch_staff_session/1`, `refresh_staff_session/1` | `delete_staff_session/1`, `reset_staff/1`, `remove_staff/1` (box commands); 12-hour absolute expiry |
 | Account invitation | `account_memberships.invitation_token_digest` | binary (unprefixed) | `Emisar.Accounts` | `invite_user_to_account/2`, `resend_account_invitation/2` | `fetch_invitation_by_token/2`; final acceptance rechecks the exact digest and invited address | acceptance, resend, membership removal, or seven-day expiry |
 
@@ -58,6 +58,10 @@ membership owns the acceptance, rotation, address binding, and expiry as one
 lifecycle.
 
 ## Changelog
+
+- 2026-10-05: a Member who signs in by email can change it again. Two `auth_user_tokens`
+  contexts, both bound to that Member's row version: `email_change` (current inbox, skipped
+  when the Member has an authenticator) and `email_change_new` (the new inbox).
 
 - 2026-10-04: an MCP key or OAuth grant may act as a service account (a Member an
   app connects as): `ApiKeys.create_service_account_key/3`, and `OAuth.issue_code/4`

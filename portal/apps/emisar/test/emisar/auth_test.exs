@@ -56,6 +56,39 @@ defmodule Emisar.AuthTest do
     |> Repo.all()
   end
 
+  # Fires once, inside the step-up's own transaction, right after it spends the
+  # emailed code: the member enrolls an authenticator in that window.
+  def enroll_mfa_once_code_spent(_event, _measurements, metadata, {owner, handler, member}) do
+    if self() == owner and metadata.source == "auth_user_tokens" and
+         String.starts_with?(metadata.query, "DELETE") do
+      :telemetry.detach(handler)
+
+      Fixtures.Memberships.set_mfa_state(member,
+        mfa_secret: Auth.generate_mfa_secret(),
+        mfa_enabled_at: DateTime.utc_now()
+      )
+    end
+  end
+
+  defp email_member(_context) do
+    account = Fixtures.Accounts.create_account()
+    member = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+    %{account: account, member: member, subject: Fixtures.Subjects.subject_for(member)}
+  end
+
+  defp begin_email_change_code(subject, address) do
+    assert {:ok, :email} = Auth.begin_email_change(address, subject)
+    assert_received {:email, mail}
+    Fixtures.Auth.code_from_email(mail)
+  end
+
+  defp pending_email_change(subject, address) do
+    code = begin_email_change_code(subject, address)
+    assert {:ok, proof} = Auth.confirm_email_change(address, code, subject)
+    assert_received {:email, mail}
+    {proof, Fixtures.Auth.code_from_email(mail)}
+  end
+
   defp issue_mfa_enrollment_code(subject) do
     assert Auth.issue_mfa_enrollment_code(subject) == {:ok, :sent}
     assert_received {:email, email}
@@ -1692,6 +1725,319 @@ defmodule Emisar.AuthTest do
                UserToken.Query.by_membership(account.id, fixture.invitation.id)
                |> UserToken.Query.by_context("session")
              )
+    end
+  end
+
+  describe "begin_email_change/2" do
+    setup :email_member
+
+    test "sends a code to the current address, bound to the address asked for", %{
+      member: member,
+      subject: subject
+    } do
+      assert Auth.begin_email_change(" new@example.test ", subject) == {:ok, :email}
+
+      assert_received {:email, mail}
+      assert mail.to == [{"", member.email}]
+      assert mail.text_body =~ "new@example.test"
+      assert [event] = events_of_type("user.email_change_requested")
+      assert event.payload == %{}
+      assert Repo.reload!(member).email == member.email
+    end
+
+    test "a member with an authenticator proves it there instead", %{subject: subject} do
+      Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      assert Auth.begin_email_change("new@example.test", subject) == {:ok, :mfa}
+      refute Repo.one(UserToken.Query.by_context("email_change"))
+    end
+
+    test "refuses an address that is malformed, unchanged or held in this workspace", %{
+      account: account,
+      member: member,
+      subject: subject
+    } do
+      colleague = Fixtures.Memberships.create_membership(account_id: account.id)
+
+      assert {:error, changeset} = Auth.begin_email_change("not an address", subject)
+      assert "must have the @ sign and no spaces" in errors_on(changeset).email
+
+      assert {:error, changeset} = Auth.begin_email_change(member.email, subject)
+      assert "is already your email" in errors_on(changeset).email
+
+      assert {:error, changeset} =
+               Auth.begin_email_change(String.upcase(colleague.email), subject)
+
+      assert "is already used by a member of this workspace" in errors_on(changeset).email
+
+      refute_received {:email, _mail}
+    end
+
+    test "an address another workspace uses is free here", %{subject: subject} do
+      elsewhere = Fixtures.Memberships.create_membership()
+
+      assert Auth.begin_email_change(elsewhere.email, subject) == {:ok, :email}
+    end
+
+    test "a member whose address no code proved can't change it" do
+      account = Fixtures.Accounts.create_account()
+
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, email_verified?: false)
+
+      subject = Fixtures.Subjects.subject_for(member)
+
+      assert Auth.begin_email_change("new@example.test", subject) ==
+               {:error, :email_change_unavailable}
+    end
+
+    test "a member a directory provisioned can't change it" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Accounts.create_subscription(account, "enterprise")
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      owner_subject = Fixtures.Subjects.subject_for(owner)
+      {:ok, provider, _token} = Emisar.SSO.enable_scim(provider, owner_subject)
+
+      {:ok, %{identity: identity, membership: member}} =
+        Emisar.SSO.scim_provision_user(provider, %{
+          external_id: "directory-person",
+          email: "directory@example.test",
+          full_name: "Directory Name"
+        })
+
+      subject = Fixtures.Subjects.subject_for(member, user_identity_id: identity.id)
+
+      assert Auth.begin_email_change("new@example.test", subject) ==
+               {:error, :email_change_unavailable}
+    end
+
+    test "a bounced current address stops the change before it starts", %{
+      member: member,
+      subject: subject
+    } do
+      assert {:ok, _suppression} = Mail.suppress(member.email, :hard_bounce, "bounce")
+
+      assert Auth.begin_email_change("new@example.test", subject) ==
+               {:error, :delivery_suppressed}
+    end
+
+    test "sending codes is capped per member", %{subject: subject} do
+      Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
+
+      for _attempt <- 1..5,
+          do: assert(Auth.begin_email_change("new@example.test", subject) == {:ok, :email})
+
+      assert Auth.begin_email_change("new@example.test", subject) == {:error, :rate_limited}
+      assert [event] = events_of_type("user.email_change_rate_limited")
+      assert event.payload["scope"] == "email_change_issue"
+    end
+  end
+
+  describe "resend_email_change_code/2" do
+    setup :email_member
+
+    test "replaces the code already sent", %{subject: subject} do
+      first = begin_email_change_code(subject, "new@example.test")
+
+      assert Auth.resend_email_change_code("new@example.test", subject) == {:ok, :sent}
+      assert_received {:email, mail}
+      second = Fixtures.Auth.code_from_email(mail)
+
+      assert Auth.confirm_email_change("new@example.test", first, subject) == {:error, :invalid}
+      assert {:ok, _proof} = Auth.confirm_email_change("new@example.test", second, subject)
+    end
+
+    test "a member who enrolled an authenticator must use it", %{subject: subject} do
+      begin_email_change_code(subject, "new@example.test")
+      Fixtures.Memberships.enable_mfa!(Auth.generate_mfa_secret(), subject)
+
+      assert Auth.resend_email_change_code("new@example.test", subject) ==
+               {:error, :factor_changed}
+    end
+  end
+
+  describe "confirm_email_change/3" do
+    setup :email_member
+
+    test "the current-inbox code sends a split code to the new address", %{
+      member: member,
+      subject: subject
+    } do
+      code = begin_email_change_code(subject, "new@example.test")
+
+      assert {:ok, %{token_id: _id, nonce: nonce, email: "new@example.test"}} =
+               Auth.confirm_email_change("new@example.test", code, subject)
+
+      assert_received {:email, mail}
+      assert mail.to == [{"", "new@example.test"}]
+      refute mail.text_body =~ nonce
+      refute Repo.one(UserToken.Query.by_context("email_change"))
+      assert Repo.reload!(member).email == member.email
+    end
+
+    test "an authenticator code confirms a member with MFA", %{subject: subject} do
+      secret = Auth.generate_mfa_secret()
+      Fixtures.Memberships.enable_mfa!(secret, subject)
+      assert {:ok, :mfa} = Auth.begin_email_change("new@example.test", subject)
+
+      assert {:ok, %{email: "new@example.test"}} =
+               Auth.confirm_email_change(
+                 "new@example.test",
+                 Fixtures.Auth.totp_code(secret),
+                 subject
+               )
+    end
+
+    test "a wrong code is refused, spends an attempt and is recorded", %{subject: subject} do
+      code = begin_email_change_code(subject, "new@example.test")
+      wrong = if code == "000000", do: "111111", else: "000000"
+
+      assert Auth.confirm_email_change("new@example.test", wrong, subject) == {:error, :invalid}
+      assert Repo.one(UserToken.Query.by_context("email_change")).remaining_attempts == 4
+      assert [_event] = events_of_type("user.email_change_code_failed")
+    end
+
+    test "a code only confirms the address it was sent for", %{subject: subject} do
+      code = begin_email_change_code(subject, "first@example.test")
+
+      assert Auth.confirm_email_change("second@example.test", code, subject) ==
+               {:error, :invalid}
+    end
+
+    test "a member that changes after its step-up must start again", %{
+      member: member,
+      subject: subject
+    } do
+      code = begin_email_change_code(subject, "new@example.test")
+      handler = "email-change-race-#{System.unique_integer([:positive])}"
+
+      :ok =
+        :telemetry.attach(
+          handler,
+          [:emisar, :repo, :query],
+          &__MODULE__.enroll_mfa_once_code_spent/4,
+          {self(), handler, member}
+        )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      assert Auth.confirm_email_change("new@example.test", code, subject) ==
+               {:error, :email_change_stale}
+
+      refute Repo.one(UserToken.Query.by_context("email_change_new"))
+      refute_received {:email, _mail}
+    end
+
+    test "another member's code can't confirm", %{account: account, subject: subject} do
+      colleague = Fixtures.Memberships.create_membership(account_id: account.id)
+      colleague_subject = Fixtures.Subjects.subject_for(colleague)
+      code = begin_email_change_code(subject, "new@example.test")
+
+      assert Auth.confirm_email_change("new@example.test", code, colleague_subject) ==
+               {:error, :invalid}
+    end
+  end
+
+  describe "complete_email_change/4" do
+    setup :email_member
+
+    test "proves the new inbox and changes the address once", %{
+      account: account,
+      member: member,
+      subject: subject
+    } do
+      {proof, code} = pending_email_change(subject, "new@example.test")
+      Accounts.subscribe_account_team(account.id)
+
+      assert {:ok, changed} =
+               Auth.complete_email_change(proof.token_id, proof.nonce, code, subject)
+
+      assert changed.email == "new@example.test"
+      assert changed.email_verified_at
+      assert [event] = events_of_type("user.email_changed")
+      assert event.payload == %{"from" => member.email, "to" => "new@example.test"}
+
+      assert_received {:email, notice}
+      assert notice.to == [{"", member.email}]
+      assert notice.subject == "Your sign-in email changed"
+
+      member_id = member.id
+      assert_receive {:list_changed, :team, "user.email_changed", ^member_id}
+
+      assert Auth.complete_email_change(proof.token_id, proof.nonce, code, subject) ==
+               {:error, :invalid}
+    end
+
+    test "the emailed half is useless without this browser's nonce", %{subject: subject} do
+      {proof, code} = pending_email_change(subject, "new@example.test")
+
+      assert Auth.complete_email_change(proof.token_id, "another-browser", code, subject) ==
+               {:error, :invalid}
+
+      assert Repo.get!(UserToken, proof.token_id).remaining_attempts == 4
+      assert [_event] = events_of_type("user.email_change_code_failed")
+
+      assert {:ok, _changed} =
+               Auth.complete_email_change(
+                 proof.token_id,
+                 proof.nonce,
+                 String.downcase(code),
+                 subject
+               )
+    end
+
+    test "codes sent to the old address stop working", %{
+      account: account,
+      member: member,
+      subject: subject
+    } do
+      assert {:ok, _sent} = Auth.request_magic_link(account, member.email, %RequestContext{})
+      assert_received {:email, _sign_in_mail}
+      {proof, code} = pending_email_change(subject, "new@example.test")
+
+      assert {:ok, _changed} =
+               Auth.complete_email_change(proof.token_id, proof.nonce, code, subject)
+
+      refute UserToken.Query.by_membership(account.id, member.id)
+             |> UserToken.Query.by_context("magic_link")
+             |> Repo.one()
+    end
+
+    test "another member can't finish it", %{account: account, subject: subject} do
+      colleague = Fixtures.Memberships.create_membership(account_id: account.id)
+      colleague_subject = Fixtures.Subjects.subject_for(colleague)
+      {proof, code} = pending_email_change(subject, "new@example.test")
+
+      assert Auth.complete_email_change(proof.token_id, proof.nonce, code, colleague_subject) ==
+               {:error, :invalid}
+    end
+
+    test "a change to the member since the code was sent voids it", %{
+      member: member,
+      subject: subject
+    } do
+      {proof, code} = pending_email_change(subject, "new@example.test")
+      Fixtures.Memberships.sync_display_name(member, "Renamed")
+
+      assert Auth.complete_email_change(proof.token_id, proof.nonce, code, subject) ==
+               {:error, :invalid}
+
+      assert Repo.reload!(member).email == member.email
+    end
+
+    test "an address another member took meanwhile changes nothing", %{
+      account: account,
+      member: member,
+      subject: subject
+    } do
+      {proof, code} = pending_email_change(subject, "taken@example.test")
+      Fixtures.Memberships.create_membership(account_id: account.id, email: "taken@example.test")
+
+      assert {:error, %Ecto.Changeset{}} =
+               Auth.complete_email_change(proof.token_id, proof.nonce, code, subject)
+
+      assert Repo.reload!(member).email == member.email
     end
   end
 

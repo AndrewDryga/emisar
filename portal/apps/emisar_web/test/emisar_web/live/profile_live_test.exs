@@ -15,7 +15,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       %{conn: conn, owner: owner, account: account}
     end
 
-    test "shows the name and a read-only email, with how to change an address", %{
+    test "shows the name and email, and how the email changes", %{
       conn: conn,
       owner: owner,
       account: account
@@ -24,9 +24,9 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert has_element?(lv, "#display-name", owner.display_name)
       assert has_element?(lv, "#email", owner.email)
-      assert html =~ "ask a workspace administrator to invite the new address"
+      assert has_element?(lv, "#change-email", "Change email")
+      assert html =~ "Sign-in codes for this workspace go to your email."
       refute has_element?(lv, "#email input")
-      refute has_element?(lv, "#change-email")
       refute html =~ "Not verified"
 
       for section <- ~w(profile-details multi-factor-authentication sessions) do
@@ -150,6 +150,131 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert has_element?(lv, "#email", member.email)
       assert has_element?(lv, "#email", "Not verified")
+    end
+  end
+
+  describe "changing the email" do
+    setup %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      %{conn: conn, owner: owner, account: account}
+    end
+
+    test "a member proves its current inbox, then the new one, and the email changes", %{
+      conn: conn,
+      owner: owner,
+      account: account
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      lv |> element("#change-email", "Change email") |> render_click()
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => "new@example.test"}})
+      |> render_submit()
+
+      assert_received {:email, current_inbox}
+      assert current_inbox.to == [{"", owner.email}]
+      assert has_element?(lv, "#email_step_form", "new@example.test")
+
+      lv
+      |> element("#email_step_form")
+      |> render_submit(%{
+        "email_step" => %{"code" => Fixtures.Auth.code_from_email(current_inbox)}
+      })
+
+      assert_received {:email, new_inbox}
+      assert new_inbox.to == [{"", "new@example.test"}]
+      assert Emisar.Repo.reload!(owner).email == owner.email
+
+      html =
+        lv
+        |> element("#email_step_form")
+        |> render_submit(%{
+          "email_step" => %{"code" => Fixtures.Auth.code_from_email(new_inbox)}
+        })
+
+      assert html =~ "Your email is now new@example.test."
+      assert has_element?(lv, "#email", "new@example.test")
+      assert Emisar.Repo.reload!(owner).email == "new@example.test"
+
+      assert_received {:email, notice}
+      assert notice.to == [{"", owner.email}]
+    end
+
+    test "a member with an authenticator can step up with a recovery code", %{
+      conn: conn,
+      owner: owner,
+      account: account
+    } do
+      owner_subject = Fixtures.Subjects.subject_for(owner)
+
+      {_member, [recovery_code | _]} =
+        Fixtures.Memberships.enable_mfa!(Emisar.Auth.generate_mfa_secret(), owner_subject)
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      lv |> element("#change-email", "Change email") |> render_click()
+
+      html =
+        lv
+        |> form("#email_form", %{"email" => %{"email" => "new@example.test"}})
+        |> render_submit()
+
+      assert html =~ "Authenticator or recovery code"
+      refute_received {:email, _mail}
+
+      lv
+      |> form("#email_step_form", %{"email_step" => %{"code" => recovery_code}})
+      |> render_submit()
+
+      assert_received {:email, new_inbox}
+      assert new_inbox.to == [{"", "new@example.test"}]
+    end
+
+    test "an address another member holds is refused on the form", %{
+      conn: conn,
+      account: account
+    } do
+      colleague = Fixtures.Memberships.create_membership(account_id: account.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+      lv |> element("#change-email", "Change email") |> render_click()
+
+      lv
+      |> form("#email_form", %{"email" => %{"email" => colleague.email}})
+      |> render_submit()
+
+      assert has_element?(lv, "#email_form", "is already used by a member of this workspace")
+      refute_received {:email, _mail}
+    end
+
+    test "an email the identity provider manages offers no change, even to a crafted event", %{
+      account: account
+    } do
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, email_verified?: false)
+
+      identity = Fixtures.SSO.create_user_identity(provider_id: provider.id, membership: member)
+      conn = log_in_member(build_conn(), member, auth_method: :sso, user_identity_id: identity.id)
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      refute has_element?(lv, "#change-email")
+      assert html =~ "Your identity provider manages your email in this workspace."
+
+      render_click(lv, "edit_email", %{})
+      html = render_submit(lv, "save_email", %{"email" => %{"email" => "new@example.test"}})
+
+      assert html =~ "You can&#39;t change this email here."
+      refute_received {:email, _mail}
+      assert Emisar.Repo.reload!(member).email == member.email
+    end
+
+    test "a confirmation sent out of order changes nothing", %{conn: conn, account: account} do
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      html = render_submit(lv, "confirm_email_change", %{"email_step" => %{"code" => "123456"}})
+
+      assert html =~ "Start an email change first."
+      refute_received {:email, _mail}
     end
   end
 

@@ -2571,6 +2571,14 @@ defmodule Emisar.Accounts do
     )
   end
 
+  @doc "Internal - tell open Team pages a member's sign-in email changed."
+  def broadcast_member_email_changed(%Membership{} = membership) do
+    Emisar.PubSub.broadcast(
+      account_team_topic(membership.account_id),
+      {:list_changed, :team, "user.email_changed", membership.id}
+    )
+  end
+
   @doc "Internal - tell open Team pages a service account joined the roster."
   def broadcast_service_account_created(%Membership{kind: :service_account} = service_account) do
     Emisar.PubSub.broadcast(
@@ -3901,7 +3909,11 @@ defmodule Emisar.Accounts do
   def refresh_directory_authorization_sessions(%Membership{} = membership),
     do: refresh_member_sessions(membership)
 
-  @doc "The caller's current workspace profile and whether the directory owns its name."
+  @doc """
+  The caller's current workspace profile, whether the directory owns its name
+  (`editable?`), and whether it may change its own sign-in email
+  (`email_changeable?`).
+  """
   def fetch_own_member_profile(%Subject{actor: %Membership{}} = subject) do
     with {:ok, current} <-
            Auth.fetch_current_subject(Authorizer.view_own_account_permission(), subject) do
@@ -3912,7 +3924,12 @@ defmodule Emisar.Accounts do
 
       case result do
         {:ok, member} ->
-          {:ok, %{membership: member, editable?: not member_profile_directory_managed?(member)}}
+          {:ok,
+           %{
+             membership: member,
+             editable?: not member_profile_directory_managed?(member),
+             email_changeable?: member_email_changeable?(member)
+           }}
 
         {:error, reason} ->
           {:error, reason}
@@ -3922,9 +3939,85 @@ defmodule Emisar.Accounts do
 
   def fetch_own_member_profile(%Subject{}), do: {:error, :unauthorized}
 
-  @doc "Pure form builder for the Member's display name; its email is not editable."
+  @doc """
+  Internal — whether `membership` may change its own sign-in email: a person
+  whose address joining proved, and whose profile no directory owns.
+  """
+  def member_email_changeable?(
+        %Membership{kind: :human, email: email, email_verified_at: %DateTime{}} = membership
+      )
+      when is_binary(email),
+      do: not member_profile_directory_managed?(membership)
+
+  def member_email_changeable?(%Membership{}), do: false
+
+  @doc """
+  Internal — the normalized address `membership` asks to move to, or a changeset
+  saying why it can't: not an address, its current one, or one another live
+  Member of this workspace holds. Returns `{:ok, email}` or
+  `{:error, %Ecto.Changeset{}}`.
+  """
+  def validate_member_email_change(%Membership{} = membership, email) when is_binary(email) do
+    changeset = Membership.Changeset.change_email(membership, String.trim(email))
+
+    cond do
+      not changeset.valid? ->
+        {:error, %{changeset | action: :validate}}
+
+      not Map.has_key?(changeset.changes, :email) ->
+        {:error, add_email_error(changeset, "is already your email")}
+
+      member_email_taken?(membership, changeset.changes.email) ->
+        {:error, add_email_error(changeset, "is already used by a member of this workspace")}
+
+      true ->
+        {:ok, changeset.changes.email}
+    end
+  end
+
+  defp member_email_taken?(%Membership{} = membership, email) do
+    Membership.Query.not_deleted()
+    |> Membership.Query.by_account_id(membership.account_id)
+    |> Membership.Query.by_email(email)
+    |> Repo.exists?()
+  end
+
+  defp add_email_error(changeset, message) do
+    changeset
+    |> Ecto.Changeset.add_error(:email, message)
+    |> Map.put(:action, :validate)
+  end
+
+  @doc """
+  Internal — `Auth` composes this into an email change's completion, after the
+  new inbox proved itself: the Member's verified new address and its audit row.
+  """
+  def put_member_email_change(
+        %Multi{} = multi,
+        %Membership{} = membership,
+        email,
+        %RequestContext{} = context
+      ) do
+    multi
+    |> Multi.update(:email_change, Membership.Changeset.change_email(membership, email))
+    |> Multi.insert(:email_change_audit, fn %{email_change: updated} ->
+      Audit.Events.member_security_event(updated, "user.email_changed", context, %{
+        from: membership.email,
+        to: updated.email
+      })
+    end)
+  end
+
+  @doc """
+  Pure form builder for the Member's display name. The email changes only
+  through `Auth`'s proved email change.
+  """
   def change_member_profile(%Membership{} = membership, attrs \\ %{}),
     do: Membership.Changeset.profile(membership, attrs)
+
+  @doc "Pure form builder for the address a Member asks to move its sign-in email to."
+  def change_member_email(%Membership{} = membership, email \\ nil),
+    do: Membership.Changeset.change_email(membership, email)
 
   @doc "Change only the authenticated caller's name in this workspace."
   def update_own_member_profile(attrs, %Subject{actor: %Membership{}} = subject) do

@@ -104,10 +104,14 @@ defmodule Emisar.SSO.Provisioning do
   # context until the signed token explicitly marks it verified. Keeping the
   # choice here prevents a caller from accidentally supplying raw OIDC email as
   # an account-binding hint.
-  defp link_match_email(provider, _email, claims, :oidc),
+  @doc """
+  Internal — the address a link request matches Members on: the provider's
+  verified email claim for an OIDC sign-in, the directory's address for SCIM.
+  """
+  def link_match_email(provider, _email, claims, :oidc),
     do: verified_email(provider, claims)
 
-  defp link_match_email(_provider, email, _claims, :scim), do: email
+  def link_match_email(_provider, email, _claims, :scim), do: email
 
   # Email is never identity: an inbound address is compared only with this
   # account's own Members' addresses, so a provider can never match another

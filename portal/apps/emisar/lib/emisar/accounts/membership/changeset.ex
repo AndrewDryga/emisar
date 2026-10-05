@@ -58,6 +58,19 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> validate_profile()
   end
 
+  @doc """
+  A Member's own new sign-in address. Written only after the new inbox proved
+  itself, so it lands verified.
+  """
+  def change_email(%Membership{} = membership, email) do
+    membership
+    |> cast(%{email: email}, [:email])
+    |> validate_required([:email])
+    |> Emisar.EmailAddress.validate(:email)
+    |> put_change(:email_verified_at, DateTime.utc_now())
+    |> unique_constraint(:email, name: :account_memberships_account_id_email_index)
+  end
+
   # A person falls back to their address when unnamed; a service account has
   # no address, so its name is required.
   defp validate_profile(changeset) do

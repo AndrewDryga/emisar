@@ -283,6 +283,105 @@ defmodule Emisar.Mailers.UserNotifier do
   end
 
   @doc """
+  The current-inbox code a Member types before changing its sign-in email. Goes
+  to the Member's current address and names the address it asked for.
+  """
+  def deliver_email_change_code(
+        %Accounts.Membership{} = membership,
+        code,
+        new_email,
+        %RequestContext{} = context,
+        account
+      ) do
+    deliver_transactional(
+      membership,
+      "Confirm your sign-in email change",
+      "Use this code within 15 minutes to continue changing your sign-in email.",
+      [
+        account_instruction(
+          "Use this code to continue changing your emisar sign-in email.",
+          "Use this code to change your emisar sign-in email for ",
+          account,
+          "."
+        ),
+        {:code, code},
+        {:emphasis, "New sign-in email: ", one_line(new_email), "."},
+        {:paragraph, "This code works once and expires in 15 minutes."},
+        {:paragraph,
+         "If you didn't request this change, ignore the email. Your sign-in email will stay the same."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
+      ]
+    )
+  end
+
+  @doc """
+  The code that proves the new inbox of an email change. Goes to the new
+  address; the browser that asked holds the other half.
+  """
+  def deliver_new_email_code(
+        %Accounts.Membership{} = membership,
+        new_email,
+        code,
+        %RequestContext{} = context,
+        account
+      ) do
+    deliver_transactional(
+      %{membership | email: new_email},
+      "Confirm your new sign-in email",
+      "Use this code within 15 minutes to confirm your new sign-in email.",
+      [
+        account_instruction(
+          "Finish changing your emisar sign-in email.",
+          "Finish changing your emisar sign-in email for ",
+          account,
+          "."
+        ),
+        {:emphasis, "New sign-in email: ", one_line(new_email), "."},
+        {:code, code},
+        {:paragraph,
+         "Enter this 6-character code in the browser where you requested the change. It works once and expires in 15 minutes. Your sign-in email has not changed yet."},
+        {:paragraph,
+         "If you didn't request this change, ignore this email. Do not share the code."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
+      ]
+    )
+  end
+
+  @doc """
+  Tells a Member's old address that its sign-in email changed, so a change its
+  owner didn't make gets noticed.
+  """
+  def deliver_email_changed_notice(
+        %Accounts.Membership{} = previous,
+        new_email,
+        %RequestContext{} = context,
+        account
+      ) do
+    deliver_transactional(
+      previous,
+      "Your sign-in email changed",
+      "Your emisar sign-in email changed to #{one_line(new_email)}.",
+      [
+        account_instruction(
+          "Your emisar sign-in email changed.",
+          "Your emisar sign-in email for ",
+          account,
+          " changed."
+        ),
+        {:emphasis, "New sign-in email: ", one_line(new_email), "."},
+        {:paragraph,
+         "Sign-in codes now go to the new address, and this one no longer signs you in."},
+        {:paragraph,
+         "If you didn't make this change, contact your workspace administrator right away."},
+        {:section, "Request details"},
+        {:pre, request_details(context)}
+      ]
+    )
+  end
+
+  @doc """
   Notifies an approver that a run is waiting on their decision. The
   link lands on the approval detail page; the approver must be signed
   in to act (MFA-enforced accounts: same flow as direct nav).

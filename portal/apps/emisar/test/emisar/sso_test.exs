@@ -8622,6 +8622,31 @@ defmodule Emisar.SSOTest do
       assert still_pending.id == request.id
     end
 
+    test "a request cannot bind a member who has moved to another address since", %{
+      account: account,
+      provider: provider,
+      subject: subject
+    } do
+      membership =
+        Fixtures.Memberships.create_membership(account_id: account.id, email: "moved@acme.test")
+
+      request =
+        capture_request(provider, %{
+          "sub" => "okta|moved",
+          "email" => membership.email,
+          "email_verified" => true
+        })
+
+      Fixtures.Memberships.change_email(membership, "elsewhere@acme.test")
+
+      assert SSO.approve_link_request(request, RunnerAccess.none(), subject) ==
+               {:error, :matched_email_changed}
+
+      refute Repo.one(UserIdentity)
+      assert {:ok, still_pending} = SSO.fetch_pending_link_request(request.id)
+      assert still_pending.id == request.id
+    end
+
     test "a request inserted after the sweep is still refused", %{
       account: account,
       provider: provider,

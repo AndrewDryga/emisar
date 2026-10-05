@@ -1975,6 +1975,397 @@ defmodule Emisar.Auth do
      membership.updated_at, provider_id}
   end
 
+  # -- Email change -----------------------------------------------------
+
+  @email_change_attempts 5
+  @email_change_issue_limit 5
+  @email_change_issue_window_ms 15 * 60_000
+
+  # Every code bound to the Member's address. Once the address changes, none of
+  # them may still answer for the old inbox.
+  @address_token_contexts ~w(magic_link magic_link_verified mfa_enrollment_pending
+                             mfa_enrollment oidc_identity_step_up email_change
+                             email_change_new)
+
+  @doc """
+  Begin changing the caller's own sign-in email to `new_email`. The address
+  controls every future emailed sign-in code, so the change is gated like a
+  credential: a Member with an authenticator proves it with a TOTP or recovery
+  code (`{:ok, :mfa}`); otherwise a single-use code goes to its current address,
+  bound to the requested one (`{:ok, :email}`). Self-service, gated by the
+  Member's live session, for a person whose address joining proved and whose
+  profile no directory owns. Returns `{:ok, :mfa | :email}` or `{:error,
+  %Ecto.Changeset{} | :unauthorized | :email_change_unavailable | :rate_limited |
+  :delivery_suppressed | term()}` — the changeset when the address is invalid,
+  unchanged or held by another Member of the workspace.
+  """
+  def begin_email_change(new_email, %Subject{} = subject) when is_binary(new_email) do
+    with {:ok, %UserToken{membership: membership}} <- fetch_current_session(subject),
+         :ok <- ensure_email_change_open(membership),
+         {:ok, new_email} <- Accounts.validate_member_email_change(membership, new_email) do
+      if mfa_enabled?(membership) do
+        {:ok, :mfa}
+      else
+        case issue_email_change_code(membership, new_email, subject) do
+          {:ok, :sent} -> {:ok, :email}
+          {:ok, :suppressed} -> {:error, :delivery_suppressed}
+          {:error, reason} -> {:error, reason}
+        end
+      end
+    end
+  end
+
+  @doc """
+  Send a replacement current-inbox code for an email change in progress.
+  Returns `{:ok, :sent}`, `{:ok, :suppressed}`, or the errors of
+  `begin_email_change/2` plus `:factor_changed` once the Member enrolled an
+  authenticator, which it must use instead.
+  """
+  def resend_email_change_code(new_email, %Subject{} = subject) when is_binary(new_email) do
+    with {:ok, %UserToken{membership: membership}} <- fetch_current_session(subject),
+         :ok <- ensure_email_change_open(membership),
+         {:ok, new_email} <- Accounts.validate_member_email_change(membership, new_email) do
+      if mfa_enabled?(membership),
+        do: {:error, :factor_changed},
+        else: issue_email_change_code(membership, new_email, subject)
+    end
+  end
+
+  defp issue_email_change_code(membership, new_email, subject) do
+    with :ok <-
+           throttle_security_attempt(
+             membership,
+             :email_change_issue,
+             @email_change_issue_limit,
+             @email_change_issue_window_ms,
+             subject.context
+           ) do
+      {code, digest} = Crypto.credential_step_up_code()
+
+      Multi.new()
+      |> Multi.run(:membership, fn repo, _changes ->
+        lock_email_change_inbox_member(repo, membership)
+      end)
+      |> Multi.delete_all(:prior, fn %{membership: locked} ->
+        UserToken.Query.by_membership(locked.account_id, locked.id)
+        |> UserToken.Query.by_contexts(["email_change", "email_change_new"])
+      end)
+      |> Multi.insert(:token, fn %{membership: locked} ->
+        UserToken.Changeset.email_change(locked, digest, new_email, @email_change_attempts)
+      end)
+      |> Multi.insert(:audit, fn %{membership: locked} ->
+        Audit.Events.member_security_event(
+          locked,
+          "user.email_change_requested",
+          subject.context
+        )
+      end)
+      |> Repo.commit_multi()
+      |> case do
+        {:ok, %{membership: locked}} ->
+          locked
+          |> Mailers.UserNotifier.deliver_email_change_code(
+            code,
+            new_email,
+            subject.context,
+            subject.account
+          )
+          |> code_delivery_outcome()
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Confirm the step-up for an email change, then email a split code to the new
+  address: the Member's TOTP or recovery code when it has an authenticator,
+  otherwise the code sent to its current address. The current address stays
+  until `complete_email_change/4` proves the new inbox from this browser.
+  Returns `{:ok, %{token_id: id, nonce: nonce, email: new_email}}` once the
+  code is accepted for delivery — the nonce stays with the caller and never
+  leaves in the email — or `{:error, %Ecto.Changeset{} | :unauthorized |
+  :email_change_unavailable | :invalid | :replay | :rate_limited |
+  :email_change_stale | :delivery_suppressed | term()}` — `:email_change_stale`
+  when the Member changed after its step-up, which must then run again.
+  """
+  def confirm_email_change(new_email, code, %Subject{} = subject)
+      when is_binary(new_email) and is_binary(code) do
+    code = String.trim(code)
+
+    with {:ok, %UserToken{membership: membership}} <- fetch_current_session(subject),
+         :ok <- ensure_email_change_open(membership),
+         {:ok, new_email} <- Accounts.validate_member_email_change(membership, new_email),
+         {:ok, verified} <- verify_email_change_factor(membership, new_email, code, subject) do
+      issue_new_email_proof(verified, new_email, subject)
+    end
+  end
+
+  defp verify_email_change_factor(
+         %Accounts.Membership{mfa_enabled_at: %DateTime{}} = membership,
+         _new_email,
+         code,
+         subject
+       ),
+       do: verify_current_mfa_factor(membership, code, subject.context)
+
+  defp verify_email_change_factor(membership, new_email, code, subject) do
+    with :ok <-
+           throttle_security_attempt(
+             membership,
+             :inbox_step_up,
+             @inbox_step_up_limit,
+             @inbox_step_up_window_ms,
+             subject.context
+           ) do
+      case consume_email_change_code(membership, new_email, code) do
+        {:ok, verified} ->
+          {:ok, verified}
+
+        # A wrong or expired code leaves a trail, so grinding a hijacked session
+        # toward someone's sign-in address is visible.
+        {:error, reason} ->
+          record_member_security_event(
+            membership,
+            "user.email_change_code_failed",
+            subject.context,
+            %{reason: to_string(reason)}
+          )
+
+          {:error, reason}
+      end
+    end
+  end
+
+  defp consume_email_change_code(membership, new_email, code) do
+    Multi.new()
+    |> Multi.run(:membership, fn repo, _changes ->
+      lock_email_change_member(repo, membership)
+    end)
+    |> Multi.run(:outcome, fn repo, %{membership: locked} ->
+      token =
+        UserToken.Query.by_membership(locked.account_id, locked.id)
+        |> UserToken.Query.by_context("email_change")
+        |> UserToken.Query.not_expired("email_change")
+        |> UserToken.Query.with_attempts_remaining()
+        |> UserToken.Query.lock_for_update()
+        |> repo.one()
+
+      verify_email_change_code(repo, token, locked, new_email, code)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{outcome: {:ok, verified}}} -> {:ok, verified}
+      {:ok, %{outcome: {:error, reason}}} -> {:error, reason}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp verify_email_change_code(repo, token, membership, new_email, code) do
+    expected_metadata = %{
+      "new_email" => new_email,
+      "membership_updated_at" => DateTime.to_iso8601(membership.updated_at)
+    }
+
+    cond do
+      is_nil(token) or not is_nil(membership.mfa_enabled_at) ->
+        {:ok, {:error, :invalid}}
+
+      token.sent_to != membership.email or token.metadata != expected_metadata ->
+        {:ok, {:error, :invalid}}
+
+      Crypto.secure_compare(Crypto.hash(code), token.token) ->
+        {:ok, _deleted} = repo.delete(token)
+        {:ok, {:ok, membership}}
+
+      true ->
+        {:ok, _updated} = repo.update(UserToken.Changeset.decrement_attempts(token))
+        {:ok, {:error, :invalid}}
+    end
+  end
+
+  # `verified` is the Member exactly as the step-up left it. The new-address
+  # code binds that state, never a newer one: an authenticator enrolled or an
+  # address changed between the two steps voids the step-up.
+  defp issue_new_email_proof(verified, new_email, subject) do
+    {nonce, code, digest} = Crypto.magic_link_token()
+
+    Multi.new()
+    |> Multi.run(:membership, fn repo, _changes ->
+      with {:ok, locked} <- lock_email_change_member(repo, verified) do
+        if locked.email == verified.email and
+             DateTime.compare(locked.updated_at, verified.updated_at) == :eq do
+          {:ok, locked}
+        else
+          {:error, :email_change_stale}
+        end
+      end
+    end)
+    |> Multi.delete_all(:prior, fn %{membership: locked} ->
+      UserToken.Query.by_membership(locked.account_id, locked.id)
+      |> UserToken.Query.by_contexts(["email_change", "email_change_new"])
+    end)
+    |> Multi.insert(:token, fn %{membership: locked} ->
+      UserToken.Changeset.new_email(locked, digest, new_email, @email_change_attempts)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{membership: locked, token: token}} ->
+        delivery =
+          locked
+          |> Mailers.UserNotifier.deliver_new_email_code(
+            new_email,
+            code,
+            subject.context,
+            subject.account
+          )
+          |> code_delivery_outcome()
+
+        case delivery do
+          {:ok, :sent} -> {:ok, %{token_id: token.id, nonce: nonce, email: new_email}}
+          {:ok, :suppressed} -> {:error, :delivery_suppressed}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Prove the new inbox with the code it received and this browser's `nonce`, then
+  change the Member's sign-in email. Under the Member's lock, one transaction
+  writes the verified address, deletes every code bound to the old one, and
+  audits the change; the old address is told afterwards. A wrong code spends one
+  of the code's attempts. Returns `{:ok, %Accounts.Membership{}}` or `{:error,
+  %Ecto.Changeset{} | :unauthorized | :email_change_unavailable | :invalid |
+  :rate_limited}` — the changeset when another Member took the address meanwhile.
+  """
+  def complete_email_change(token_id, nonce, code, %Subject{} = subject)
+      when is_binary(nonce) and is_binary(code) do
+    code = code |> String.trim() |> String.upcase()
+
+    with {:ok, %UserToken{membership: membership}} <- fetch_current_session(subject),
+         {:ok, token_id} <- cast_email_change_token_id(token_id),
+         :ok <-
+           throttle_security_attempt(
+             membership,
+             :inbox_step_up,
+             @inbox_step_up_limit,
+             @inbox_step_up_window_ms,
+             subject.context
+           ) do
+      finish_email_change(token_id, nonce, code, membership, subject)
+    end
+  end
+
+  defp cast_email_change_token_id(token_id) do
+    case Ecto.UUID.cast(token_id) do
+      {:ok, token_id} -> {:ok, token_id}
+      :error -> {:error, :invalid}
+    end
+  end
+
+  defp finish_email_change(token_id, nonce, code, membership, subject) do
+    Multi.new()
+    |> Multi.run(:membership, fn repo, _changes ->
+      lock_email_change_member(repo, membership)
+    end)
+    |> Multi.run(:proof, fn repo, %{membership: locked} ->
+      verify_new_email_proof(repo, token_id, nonce, code, locked)
+    end)
+    |> Multi.merge(fn
+      %{proof: {:ok, token}, membership: locked} ->
+        Multi.new()
+        |> Accounts.put_member_email_change(locked, token.sent_to, subject.context)
+        |> Multi.delete_all(:address_tokens, fn _changes ->
+          UserToken.Query.by_membership(locked.account_id, locked.id)
+          |> UserToken.Query.by_contexts(@address_token_contexts)
+        end)
+
+      %{proof: {:error, _reason}} ->
+        Multi.new()
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{email_change: updated, membership: previous}} ->
+        Mailers.UserNotifier.deliver_email_changed_notice(
+          previous,
+          updated.email,
+          subject.context,
+          subject.account
+        )
+
+        Accounts.broadcast_member_email_changed(updated)
+        {:ok, updated}
+
+      {:ok, %{proof: {:error, reason}}} ->
+        record_member_security_event(
+          membership,
+          "user.email_change_code_failed",
+          subject.context,
+          %{reason: to_string(reason)}
+        )
+
+        {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp verify_new_email_proof(repo, token_id, nonce, code, membership) do
+    token =
+      UserToken.Query.by_id(token_id)
+      |> UserToken.Query.by_membership(membership.account_id, membership.id)
+      |> UserToken.Query.by_context("email_change_new")
+      |> UserToken.Query.not_expired("email_change_new")
+      |> UserToken.Query.with_attempts_remaining()
+      |> UserToken.Query.lock_for_update()
+      |> repo.one()
+
+    cond do
+      is_nil(token) or token.metadata != UserToken.Changeset.new_email_metadata(membership) ->
+        {:ok, {:error, :invalid}}
+
+      Crypto.secure_compare(Crypto.magic_link_digest(nonce, code), token.token) ->
+        {:ok, {:ok, token}}
+
+      true ->
+        {:ok, _updated} = repo.update(UserToken.Changeset.decrement_attempts(token))
+        {:ok, {:error, :invalid}}
+    end
+  end
+
+  # Every step re-reads the Member under its lock: one that was suspended,
+  # removed, lost its verified address or came under a directory since the page
+  # loaded can't go on with the old answer.
+  defp lock_email_change_member(repo, %Accounts.Membership{} = membership) do
+    case Accounts.fetch_and_lock_active_membership(repo, membership.account_id, membership.id) do
+      {:ok, locked} ->
+        with :ok <- ensure_email_change_open(locked), do: {:ok, locked}
+
+      {:error, :not_found} ->
+        {:error, :unauthorized}
+    end
+  end
+
+  # The emailed step-up goes out only while the Member has no authenticator to
+  # answer with instead.
+  defp lock_email_change_inbox_member(repo, membership) do
+    case lock_email_change_member(repo, membership) do
+      {:ok, %Accounts.Membership{mfa_enabled_at: %DateTime{}}} -> {:error, :factor_changed}
+      other -> other
+    end
+  end
+
+  defp ensure_email_change_open(%Accounts.Membership{} = membership) do
+    if Accounts.member_email_changeable?(membership),
+      do: :ok,
+      else: {:error, :email_change_unavailable}
+  end
+
   # -- MFA scaffold -----------------------------------------------------
 
   @doc """
@@ -2791,7 +3182,8 @@ defmodule Emisar.Auth do
     mfa_challenge: "user.mfa_rate_limited",
     mfa_enrollment_issue: "user.mfa_rate_limited",
     inbox_step_up: "user.inbox_step_up_rate_limited",
-    oidc_identity_step_up_issue: "user.oidc_identity_step_up_rate_limited"
+    oidc_identity_step_up_issue: "user.oidc_identity_step_up_rate_limited",
+    email_change_issue: "user.email_change_rate_limited"
   }
 
   defp put_security_attempt_exhausted_audit(

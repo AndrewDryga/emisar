@@ -2080,6 +2080,11 @@ defmodule EmisarWeb.TeamLive do
     "That person also belongs to another workspace, so this link cannot be approved from this workspace."
   end
 
+  defp approval_error_message(:matched_email_changed) do
+    "The member this sign-in matched has changed their email since. Dismiss the request; " <>
+      "the person can sign in again."
+  end
+
   defp approval_error_message(_reason), do: "Couldn't approve that request."
 
   defp do_dismiss_request(socket, id) do

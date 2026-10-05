@@ -3907,6 +3907,18 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "broadcast_member_email_changed/1" do
+    test "tells the account's open Team pages" do
+      member = Fixtures.Memberships.create_membership()
+      Accounts.subscribe_account_team(member.account_id)
+
+      assert Accounts.broadcast_member_email_changed(member) == :ok
+
+      member_id = member.id
+      assert_receive {:list_changed, :team, "user.email_changed", ^member_id}
+    end
+  end
+
   describe "broadcast_service_account_created/1" do
     test "tells the account's open Team pages" do
       service_account = Fixtures.Memberships.create_service_account()
