@@ -28,6 +28,7 @@ var (
 	pathElement    = regexp.MustCompile(`<path\b[^>]*\bd="([^"]+)"[^>]*>`)
 	circleElement  = regexp.MustCompile(`<circle\b[^>]*>`)
 	rectElement    = regexp.MustCompile(`<rect\b[^>]*>`)
+	unstroked      = regexp.MustCompile(`stroke="none"|accent-fill|warn-fill|danger-fill|\bselection\b`)
 )
 
 // parsePath reads absolute commands into segments. Implicit linetos after a
@@ -293,4 +294,62 @@ func bounds(points []point) box {
 	b.w, b.h = b.maxX-b.minX, b.maxY-b.minY
 	b.cx, b.cy = (b.minX+b.maxX)/2, (b.minY+b.maxY)/2
 	return b
+}
+
+// axisRuns collects, from an absolute (pass-1) body, the x of every stroked
+// vertical run and the y of every stroked horizontal run: path segments
+// (H, V, Z, and axis-parallel L) and the straight sides of rects, rounded
+// corners excluded. Filled shapes have no stroke to centre.
+func axisRuns(body string) (xs, ys []float64, err error) {
+	for _, m := range element.FindAllString(body, -1) {
+		if unstroked.MatchString(m) {
+			continue
+		}
+		if d := pathElement.FindStringSubmatch(m); d != nil {
+			segments, err := parsePath(d[1])
+			if err != nil {
+				return nil, nil, err
+			}
+			for _, s := range segments {
+				if s.kind != 'L' {
+					continue
+				}
+				if s.y0 == s.y && s.x0 != s.x {
+					ys = append(ys, s.y)
+				} else if s.x0 == s.x && s.y0 != s.y {
+					xs = append(xs, s.x)
+				}
+			}
+			continue
+		}
+		if rectElement.MatchString(m) {
+			x, y, w, h := attribute(m, "x"), attribute(m, "y"), attribute(m, "width"), attribute(m, "height")
+			rx, ry := attribute(m, "rx"), attribute(m, "ry")
+			if rx == 0 {
+				rx = ry
+			}
+			if ry == 0 {
+				ry = rx
+			}
+			if w > 2*rx {
+				ys = append(ys, y, y+h)
+			}
+			if h > 2*ry {
+				xs = append(xs, x, x+w)
+			}
+		}
+	}
+	return xs, ys, nil
+}
+
+// onRun reports whether v lies on one of the runs, within the float noise the
+// 2/3 scale leaves: a vertex on a run's line (a leg ending on a box edge, an
+// arrowhead arm ending on a sheet's bottom) moves with that run.
+func onRun(runs []float64, v float64) bool {
+	for _, r := range runs {
+		if math.Abs(r-v) < 0.02 {
+			return true
+		}
+	}
+	return false
 }

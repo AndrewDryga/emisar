@@ -30,6 +30,26 @@ func jsRound(x float64) float64 {
 func halfGrid(v float64) float64    { return jsRound(v*2) / 2 }
 func quarterGrid(v float64) float64 { return jsRound(v*4) / 4 }
 
+// pixelCentre snaps the centre line of a 1px axis-aligned run to the nearest
+// n+0.5, where both stroke edges land on device-pixel boundaries at 1x, 2x and
+// 3x; an integer centre splits the run across two pixel rows at 1x. The box
+// centre 8 is the exception: a run on the drawing's mirror axis cannot move
+// without breaking the symmetry, so it stays. A value within rounding of an
+// integer is a tie, and a tie breaks away from the centre so a symmetric pair
+// of edges grows together instead of shifting.
+func pixelCentre(v float64) float64 {
+	if math.Abs(v-8) < 0.05 {
+		return 8
+	}
+	if r := jsRound(v); math.Abs(v-r) < 0.02 {
+		if v < 8 {
+			return r - 0.5
+		}
+		return r + 0.5
+	}
+	return math.Floor(v) + 0.5
+}
+
 // format is String(Math.round(v * 100) / 100): two decimals at most, printed the
 // shortest way that round-trips. The explicit float64 conversion keeps the
 // multiply from fusing into the comparison inside jsRound on arm64.

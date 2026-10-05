@@ -35,7 +35,9 @@ var (
 	// then rescales that value. The committed cuts carry that double pass.
 	sizeAttribute   = regexp.MustCompile(`\b(rx|ry|width|height)="(-?\d*\.?\d+)"`)
 	strokeAttribute = regexp.MustCompile(`\bstroke-width="(-?\d*\.?\d+)"`)
-	dotMarker       = regexp.MustCompile(`fill="currentColor"|accent-fill|warn-fill|danger-fill`)
+	// A rect's own size, never the tail of stroke-width.
+	rectSize  = regexp.MustCompile(`(\s)(width|height)="(-?\d*\.?\d+)"`)
+	dotMarker = regexp.MustCompile(`fill="currentColor"|accent-fill|warn-fill|danger-fill`)
 )
 
 // rebuildPath absolutizes d and maps every coordinate through t. A relative
@@ -188,6 +190,24 @@ func transformBody(body string, t transform) (string, error) {
 }
 
 func rewriteElement(tag string, t transform) (string, error) {
+	// A stroked rect's far edges are coordinates, not sizes. Snapping width on
+	// its own lands the right edge off the left one's grid — the 2..14.5 frames
+	// that sat a quarter unit off centre — so both edges map and the size
+	// follows. (A filled rect keeps its size snap: its crisp grid is the
+	// integer one, which the stroke snap does not serve.)
+	edges := rectElement.MatchString(tag) && !unstroked.MatchString(tag)
+	if edges {
+		x, y := attribute(tag, "x"), attribute(tag, "y")
+		right, bottom := t.x(x+attribute(tag, "width")), t.y(y+attribute(tag, "height"))
+		left, top := t.x(x), t.y(y)
+		tag = replace(rectSize, tag, func(groups []string) string {
+			size := right - left
+			if groups[2] == "height" {
+				size = bottom - top
+			}
+			return groups[1] + groups[2] + `="` + format(size) + `"`
+		})
+	}
 	dot := dotMarker.MatchString(tag)
 	// Only the d rewrite can fail, and replace's callback cannot report it — so
 	// it is caught here, before the attribute passes run on a half-rewritten tag.
@@ -217,6 +237,9 @@ func rewriteElement(tag string, t transform) (string, error) {
 		return `r="` + format(radius(number(groups[1]))) + `"`
 	})
 	tag = replace(sizeAttribute, tag, func(groups []string) string {
+		if edges && (groups[1] == "width" || groups[1] == "height") {
+			return groups[0]
+		}
 		return groups[1] + `="` + format(t.radius(number(groups[2]))) + `"`
 	})
 	if t.strokeWidth != nil {

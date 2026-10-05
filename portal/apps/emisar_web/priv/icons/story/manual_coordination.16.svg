@@ -1,3 +1,3 @@
-<svg data-hand-cut="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M5.5 5V2.5H14V8H11.5"/><path d="M2 5H11.5V10.5H6L4 12.5V10.5H2Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-hand-cut="true">
+  <path d="M5.5 5.5V2.5H14.5V8.5H11.5"/><path d="M1.5 5.5H11.5V11.5H6.5L4.5 13.5V11.5H1.5Z"/>
 </svg>

@@ -271,3 +271,59 @@ func TestSnapAndCutRegenerateAMaster(t *testing.T) {
 		t.Fatalf("audit table:\n%s", table.String())
 	}
 }
+
+// A 1px run is crisp at every integer display scale only when its centre line
+// sits on a pixel centre (n+0.5); an integer centre splits it across two pixel
+// rows at 1x and 3x.
+func TestPixelCentre(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want float64 }{
+		{1.83, 1.5}, {14.17, 14.5}, // a frame's two edges grow together
+		{2, 1.5}, {14, 14.5}, // a tie breaks away from the centre
+		{4.91, 4.5}, {11.08, 11.5}, {10.84, 10.5},
+		{7.99, 8}, {8.01, 8}, // the mirror axis stays
+	}
+	for _, c := range cases {
+		if got := pixelCentre(c.in); got != c.want {
+			t.Errorf("pixelCentre(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// The cutter lands every stroked axis-aligned run on a pixel centre: a rect is
+// mapped by its edges (no lopsided 2..14.5 frame), a vertex lying on a run's
+// line moves with it (the arrowhead arm that ends on the sheet's bottom edge),
+// the mirror axis stays, and filled shapes and diagonals keep the half grid.
+func TestCutPutsAxisRunsOnPixelCentres(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	masters := map[string]string{
+		"state/approved":  `<rect x="4" y="4" width="16" height="16" rx="3"/><path class="accent" d="M8 12L10.5 15L16.5 9"/>`,
+		"docs/deployment": `<rect x="3.5" y="5" width="11" height="14" rx="2"/><path d="M6.5 9H11.5M6.5 13H10"/><path class="accent" d="M13 16H21M21 16L18 13M21 16L18 19"/>`,
+		"action/add":      `<path d="M12 4V20M4 12H20"/>`,
+	}
+	want := map[string]string{
+		"state/approved":  `<rect x="1.5" y="1.5" width="13" height="13" rx="2.5"/><path class="accent" d="M5 8L7 10.5L11.5 5.5"/>`,
+		"docs/deployment": `<rect x="1.5" y="3.5" width="8" height="9" rx="1.5"/><path d="M4 5.5H7.5M4 8.5H6.5"/><path class="accent" d="M8.5 10.5H14M14 10.5L12 8.5M14 10.5L12 12.5"/>`,
+		"action/add":      `<path d="M8 2.5V13.5M2.5 8H13.5"/>`,
+	}
+	for key, body := range masters {
+		path := filepath.Join(root, key+".svg")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		master := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">` + "\n  " + body + "\n</svg>\n"
+		if err := os.WriteFile(path, []byte(master), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Cut(root); err != nil {
+		t.Fatal(err)
+	}
+	for key, body := range want {
+		got, _ := os.ReadFile(filepath.Join(root, key+".16.svg"))
+		if string(got) != cutHeader+"\n  "+body+"\n</svg>\n" {
+			t.Errorf("%s cut:\n%s\nwant:\n  %s", key, got, body)
+		}
+	}
+}

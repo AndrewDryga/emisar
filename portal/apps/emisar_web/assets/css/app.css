@@ -126,8 +126,8 @@
   stroke-width: 1.48;
 }
 /* A native 16-grid compact renders 1:1, so its units ARE pixels. 1px is the
-   one universally crisp stroke: centered on the half grid its edges land on
-   device-pixel boundaries at every integer display scale — and it is the
+   one universally crisp stroke: centered on a pixel centre (n+0.5) its edges
+   land on device-pixel boundaries at every integer display scale — and it is the
    weight the pre-migration set drew at, the fine, airy feel refinement comes
    from. Presence comes from contrast and coverage, never from bulk. Declared
    after the grid rules so it wins for the same element. */

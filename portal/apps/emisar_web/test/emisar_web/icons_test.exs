@@ -11,6 +11,19 @@ defmodule EmisarWeb.IconsTest do
 
   @masters Path.wildcard(Path.join([__DIR__, "..", "..", "priv", "icons", "*", "*.svg"]))
 
+  # Operands per SVG path command, for walking a cut's runs.
+  @operands %{
+    "M" => 2,
+    "L" => 2,
+    "T" => 2,
+    "H" => 1,
+    "V" => 1,
+    "C" => 6,
+    "S" => 4,
+    "Q" => 4,
+    "A" => 7
+  }
+
   describe "master/2" do
     test "a size at or below 16px takes the compact master where one exists" do
       assert Icons.master("action.retry", 16) != Icons.master("action.retry", 24)
@@ -186,7 +199,8 @@ defmodule EmisarWeb.IconsTest do
     end
 
     test "a generated 16-grid cut keeps every coordinate on the quarter grid" do
-      # The half grid carries the 1px crispness; dots and radii use quarters.
+      # Axis runs sit on pixel centres (the next test), everything else on the
+      # half grid; dots and radii use quarters.
       # A drifting coordinate means the cutter regressed or someone edited a
       # generated file by hand — hand-tuned cuts declare `data-hand-cut` and
       # are judged visually instead.
@@ -212,6 +226,26 @@ defmodule EmisarWeb.IconsTest do
       end
     end
 
+    test "a 16-grid cut keeps every 1px axis-aligned run on a pixel centre" do
+      # A 1px stroke centred on n+0.5 has both edges on device-pixel boundaries
+      # at 1x, 2x and 3x; an integer centre splits it across two pixel rows at
+      # 1x — the haze 97 of 129 cuts shipped with while the rule called .0/.5
+      # crisp. The one accepted soft run is the drawing's own mirror axis (8 in
+      # the centred box), which cannot move without breaking the symmetry.
+      # Hand cuts are held to it too: it is arithmetic, not taste.
+      soft =
+        for path <- @masters,
+            String.ends_with?(path, ".16.svg"),
+            source = File.read!(path),
+            source =~ ~s(viewBox="0 0 16 16"),
+            {axis, at} <- axis_runs(source),
+            at - Float.floor(at) != 0.5 and at != 8.0,
+            uniq: true,
+            do: "#{Path.basename(path)} #{axis}=#{at}"
+
+      assert soft == []
+    end
+
     test "sibling families share their noun's exact construction at 16px" do
       # The family contract in pixels: every badge is the same ring, every
       # document the same sheet, every shield the same shield — differing only
@@ -222,7 +256,7 @@ defmodule EmisarWeb.IconsTest do
          ~w(state.success state.error state.denied state.info state.pending
             state.disabled state.update_available
             story.eliminated docs.upgrade action.cancel)},
-        {~s(M3.5 2H9.5L12.5 5V14H3.5ZM9.5 2V5H12.5),
+        {~s(M3.5 1.5H9.5L12.5 4.5V14.5H3.5ZM9.5 1.5V4.5H12.5),
          ~w(evidence.document evidence.verified_document product.policy trust.declared)}
       ]
 
@@ -279,5 +313,93 @@ defmodule EmisarWeb.IconsTest do
 
   defp unused_in(sources, tokens) do
     Enum.reject(tokens, &String.contains?(sources, ~s("#{&1}")))
+  end
+
+  # The 1px axis-aligned runs of a 16-grid cut: {:x, at} for a vertical run,
+  # {:y, at} for a horizontal one. Filled shapes have no stroke to centre.
+  defp axis_runs(source) do
+    ~r/<(path|rect)\b([^>]*)>/
+    |> Regex.scan(source, capture: :all_but_first)
+    |> Enum.reject(fn [_tag, attrs] -> attrs =~ ~r/stroke="none"|-fill\b|\bselection\b/ end)
+    |> Enum.flat_map(fn
+      ["rect", attrs] -> rect_runs(attrs)
+      ["path", attrs] -> path_runs(attribute(attrs, "d"))
+    end)
+  end
+
+  # A rect's straight sides; a corner radius of half the side leaves none.
+  defp rect_runs(attrs) do
+    [x, y, w, h] = for name <- ~w(x y width height), do: number(attrs, name, 0.0)
+    rx = number(attrs, "rx", number(attrs, "ry", 0.0))
+    ry = number(attrs, "ry", rx)
+
+    if(w > 2 * rx, do: [{:y, y}, {:y, y + h}], else: []) ++
+      if h > 2 * ry, do: [{:x, x}, {:x, x + w}], else: []
+  end
+
+  defp path_runs(d) do
+    ~r/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/
+    |> Regex.scan(d)
+    |> List.flatten()
+    |> runs(nil, {0.0, 0.0}, {0.0, 0.0}, [])
+  end
+
+  defp runs([], _command, _point, _start, found), do: found
+
+  defp runs([close | rest], _command, point, start, found) when close in ["Z", "z"],
+    do: runs(rest, nil, start, start, run(point, start, found))
+
+  defp runs([<<letter>> = command | rest], _command, point, start, found)
+       when letter in ?A..?Z or letter in ?a..?z,
+       do: runs(rest, command, point, start, found)
+
+  defp runs(tokens, command, {x, y} = point, start, found) do
+    upper = String.upcase(command)
+    relative = command != upper
+    {operands, rest} = Enum.split(tokens, Map.fetch!(@operands, upper))
+    values = Enum.map(operands, &(&1 |> Float.parse() |> elem(0)))
+
+    next =
+      case {upper, values} do
+        {"H", [v]} ->
+          {if(relative, do: x + v, else: v), y}
+
+        {"V", [v]} ->
+          {x, if(relative, do: y + v, else: v)}
+
+        {_, values} ->
+          [ex, ey] = Enum.take(values, -2)
+          if relative, do: {x + ex, y + ey}, else: {ex, ey}
+      end
+
+    case upper do
+      # Pairs after a moveto are implicit linetos.
+      "M" ->
+        runs(rest, if(relative, do: "l", else: "L"), next, next, found)
+
+      straight when straight in ["L", "H", "V"] ->
+        runs(rest, command, next, start, run(point, next, found))
+
+      _curve ->
+        runs(rest, command, next, start, found)
+    end
+  end
+
+  # A straight segment is a run when it is axis-aligned and has length.
+  defp run(same, same, found), do: found
+  defp run({x, _}, {x, _}, found), do: [{:x, x} | found]
+  defp run({_, y}, {_, y}, found), do: [{:y, y} | found]
+  defp run(_from, _to, found), do: found
+
+  defp attribute(attrs, name) do
+    [value] = Regex.run(~r/(?:^|\s)#{name}="([^"]+)"/, attrs, capture: :all_but_first)
+    value
+  end
+
+  defp number(attrs, name, default) do
+    case Regex.run(~r/(?:^|\s)#{name}="([^"]+)"/, attrs, capture: :all_but_first) do
+      [value] -> value |> Float.parse() |> elem(0)
+      nil -> default
+    end
   end
 end

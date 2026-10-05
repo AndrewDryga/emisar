@@ -186,10 +186,24 @@ func Cut(root string) (CutReport, error) {
 		}
 
 		// Pass 3: apply about the drawing's own centre, land it on the box
-		// centre, snap to the crisp grid. Each product is rounded before the
-		// recentering add so the compiler cannot fuse the two.
-		px := func(v float64) float64 { return halfGrid(float64((v-cx)*scale) + 8) }
-		py := func(v float64) float64 { return halfGrid(float64((v-cy)*scale) + 8) }
+		// centre, snap to the crisp grid: the coordinate of a 1px axis-aligned
+		// run to a pixel centre, everything else to the half grid. Each product
+		// is rounded before the recentering add so the compiler cannot fuse the
+		// two.
+		runX, runY, err := axisRuns(raw)
+		if err != nil {
+			return fmt.Errorf("icon %s: %w", key, err)
+		}
+		snap := func(runs []float64, centre float64) func(float64) float64 {
+			return func(v float64) float64 {
+				u := float64((v-centre)*scale) + 8
+				if onRun(runs, v) {
+					return pixelCentre(u)
+				}
+				return halfGrid(u)
+			}
+		}
+		px, py := snap(runX, cx), snap(runY, cy)
 		pr := func(v float64) float64 { return halfGrid(v * scale) }
 		prDot := func(v float64) float64 { return math.Max(0.75, quarterGrid(v*scale)) }
 		out, err := transformBody(raw, transform{

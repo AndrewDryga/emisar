@@ -164,12 +164,28 @@ it is reached through its semantic token and its provenance stays recorded.
   strokes, and the spinner is hand-cut so its arc is exactly centered — an
   off-center arc visibly wobbles under `animate-spin`. Generated cuts keep
   every coordinate on the quarter grid, test-enforced; hand cuts are judged
-  visually. A
+  visually, and every cut is test-checked for pixel-centred runs. A
   16-grid file declares `viewBox="0 0 16 16"`, renders 1:1 with a true 1 px
   stroke, and never re-enters the generator as a source (scaling a 16-grid
   file again shrinks it by another 2/3 — the generator guards this). **Its
-  stroke centers sit on the HALF grid (.0/.5):** a 1 px stroke centered there
-  puts both edges on device-pixel boundaries at EVERY integer display scale.
+  axis-aligned runs sit on PIXEL CENTRES (n+0.5):** a 1 px stroke centered
+  there puts both edges on device-pixel boundaries at 1×, 2× and 3×.
+  Centered on an integer it splits across two pixel rows at 1× (and 3×) and
+  is clean only at even scales — this rule once called .0/.5 crisp everywhere,
+  and 97 of 129 cuts shipped a two-pixel haze on some edge. The cutter snaps
+  each run's coordinate to the nearest pixel centre (a tie breaks away from
+  the box centre, so a frame's two edges grow together) and maps a rect by
+  its edges, never x and width apart; diagonals, curves, and dots keep the
+  half grid. The one accepted soft run is the drawing's own mirror axis
+  (x or y = 8: the plus, arrow shafts, the ! and i stems) — moving it would
+  break the symmetry. A centred crisp frame spans an even number of pixels,
+  so the square class lands at 14 (1.5–14.5), not 13.5. Rhythm, clearance,
+  and family construction stay judgments: when the per-coordinate snap breaks
+  one (three text lines, a 1 px gap, the document fold), that cut becomes a
+  hand cut. The pixel-centre grid serves the 16 px render the cut is drawn
+  for: the same file drawn at 12 or 14 px (`h-3`, `h-3.5`) falls between
+  pixels whatever its coordinates, and came out slightly softer at 1× than
+  the old accidental fit — size a compact icon at 16 px when it must be sharp.
   (A 1.5 px stroke instead needs odd-quarter centers and is only clean at 2× —
   the bolder experiment lived there.) Deltas cannot be snapped independently
   (a lopsided hexagon), so the cutter absolutizes every path before snapping.
@@ -309,7 +325,7 @@ masters, undocumented compact variants, and color-dependent anatomy.
 
 **Enforced.** `EmisarWeb.IconsTest` checks unique ownership, namespacing,
 XML-valid masters on the shared grid, compact masters that actually differ,
-content-addressed mask ids, every mask defined exactly once for the page,
+16-grid runs on pixel centres, content-addressed mask ids, every mask defined exactly once for the page,
 emphasis that never covers a whole drawing, masters that state no color of
 their own, and the brand/vendor exclusion. `EmisarWeb.TemplateHygieneTest` reconciles every
 literal icon name in every template against the registry, so a typo fails the
