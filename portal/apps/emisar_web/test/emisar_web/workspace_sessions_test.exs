@@ -81,7 +81,7 @@ defmodule EmisarWeb.WorkspaceSessionsTest do
       # so switching is navigation, never a server-side switch.
       assert has_element?(lv, "li", "Alpha Ops")
       assert has_element?(lv, ~s(a[href="#{~p"/app/#{account_b}"}"]), "Bravo Ops")
-      assert has_element?(lv, ~s(a[href="/sign_in"]), "Sign in to another workspace")
+      assert has_element?(lv, ~s(a[href="/sign_in"]), "Sign in to a workspace")
     end
 
     test "an entry for B carrying A's token is refused and leaves the cookie", %{conn: conn} do

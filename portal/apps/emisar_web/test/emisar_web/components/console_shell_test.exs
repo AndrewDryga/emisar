@@ -76,7 +76,7 @@ defmodule EmisarWeb.Components.ConsoleShellTest do
 
       assert Enum.any?(switcher_links, &(&1 =~ "Northstar Labs"))
       refute Enum.any?(switcher_links, &(&1 =~ "Both Connected Co"))
-      assert links.("/sign_in") =~ "Sign in to another workspace"
+      assert links.("/sign_in") =~ "Sign in to a workspace"
       assert links.("/sign_up") =~ "Create new workspace"
       # No server-side switch: nothing posts to change workspaces.
       assert document |> LazyHTML.query("form[action*=switch]") |> Enum.count() == 0

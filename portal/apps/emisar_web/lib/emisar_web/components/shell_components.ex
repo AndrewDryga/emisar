@@ -324,7 +324,7 @@ defmodule EmisarWeb.ShellComponents do
           class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-zinc-300 transition hover:bg-zinc-900 hover:text-zinc-100"
         >
           <.icon name="action.next" class="h-4 w-4 shrink-0" />
-          <span>Sign in to another workspace</span>
+          <span>Sign in to a workspace</span>
         </.link>
         <.link
           href={~p"/sign_up"}
