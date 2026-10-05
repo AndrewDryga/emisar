@@ -1777,9 +1777,12 @@ defmodule EmisarWeb.CoreComponents do
   workspace rendered as the first letter of its name. `:circle` for people
   (the shell user block, the team roster), `:square` for workspaces (the
   account switcher rows). A selected workspace keeps that square identity and
-  changes to the `:brand` tone instead of changing silhouette.
+  changes to the `:brand` tone instead of changing silhouette. A member that is
+  not a person (a service account) shows its semantic icon in place of the
+  letter, inside the same disc.
 
       <.avatar name={Accounts.member_display_name(@current_membership)} size={:sm} />
+      <.avatar name="Ryker" icon="identity.service_account" />
       <.avatar name={account.name} shape={:square} size={:xs} />
       <.avatar name={account.name} shape={:square} size={:xs} tone={:brand} />
   """
@@ -1787,6 +1790,7 @@ defmodule EmisarWeb.CoreComponents do
   attr :size, :atom, default: :md, values: [:xs, :sm, :md]
   attr :shape, :atom, default: :circle, values: [:circle, :square]
   attr :tone, :atom, default: :neutral, values: [:neutral, :brand]
+  attr :icon, :string, default: nil, doc: "a semantic icon shown in place of the initial"
   attr :class, :string, default: nil
 
   def avatar(assigns) do
@@ -1798,12 +1802,17 @@ defmodule EmisarWeb.CoreComponents do
       avatar_tone(@tone, @size),
       @class
     ]}>
-      <span class="h-[1cap] translate-y-[0.05em] leading-[1cap] text-center">
+      <.icon :if={@icon} name={@icon} class={avatar_icon_size(@size)} />
+      <span :if={is_nil(@icon)} class="h-[1cap] translate-y-[0.05em] leading-[1cap] text-center">
         {String.first(@name || "?")}
       </span>
     </span>
     """
   end
+
+  # 16px uses the icon's native compact cut, which renders 1:1 and stays crisp.
+  defp avatar_icon_size(:xs), do: "h-3 w-3"
+  defp avatar_icon_size(_size), do: "h-4 w-4"
 
   defp avatar_size(:xs), do: "h-4 w-4 text-[10px]"
   defp avatar_size(:sm), do: "h-8 w-8 text-xs"

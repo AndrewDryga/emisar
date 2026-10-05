@@ -1269,11 +1269,20 @@ defmodule EmisarWeb.TeamLiveTest do
     end
 
     test "a row offers only what applies to a service account", %{conn: conn} do
-      {conn, _owner, account} = register_and_log_in(conn)
+      {conn, owner, account} = register_and_log_in(conn)
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts")
 
       row = "#member-row-#{service_account.id}"
+      assert has_element?(lv, ~s(#{row} [data-icon="identity.service_account"]))
+
+      {:ok, team, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert has_element?(team, "#member-row-#{owner.id}")
+
+      refute has_element?(
+               team,
+               ~s(#member-row-#{owner.id} [data-icon="identity.service_account"])
+             )
 
       assert has_element?(lv, "#member-added-#{service_account.id}")
       refute has_element?(lv, "#member-joined-#{service_account.id}")

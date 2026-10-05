@@ -2623,7 +2623,10 @@ defmodule EmisarWeb.TeamLive do
                     class="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4"
                   >
                     <div class="flex min-w-0 flex-1 items-start gap-4">
-                      <.avatar name={Accounts.member_display_name(membership) || "?"} />
+                      <.avatar
+                        name={Accounts.member_display_name(membership) || "?"}
+                        icon={if member.service_account?, do: "identity.service_account"}
+                      />
 
                       <div class="min-w-0 flex-1">
                         <%!-- Keep the identity line about identity. Persistent
