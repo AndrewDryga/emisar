@@ -2304,6 +2304,11 @@ defmodule EmisarWeb.TeamLive do
         </.button>
       </:actions>
 
+      <.page_intro :if={@live_action == :index}>
+        The people in this workspace: their roles, what they can reach, and how they sign in.
+        <.doc_link href={~p"/docs/teams-and-access"}>Team docs</.doc_link>
+      </.page_intro>
+
       <%!-- ========= Invite a member — its own focused page (:new) =========
            Pulled off the roster so the role choice gets room to breathe: a
            readable radio-card per role (name + what it can do), and a real
