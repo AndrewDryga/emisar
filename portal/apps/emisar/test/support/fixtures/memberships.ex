@@ -189,6 +189,13 @@ defmodule Emisar.Fixtures.Memberships do
     |> Repo.update!()
   end
 
+  @doc "Marks a Member's address proved, as joining by invitation or sign-up would."
+  def verify_email(%Membership{} = membership) do
+    membership
+    |> Ecto.Changeset.change(email_verified_at: DateTime.utc_now())
+    |> Repo.update!()
+  end
+
   @doc "Sets a membership's coarse console-activity timestamp directly."
   def set_last_active_at(%Membership{} = membership, %DateTime{} = last_active_at) do
     {:ok, updated} =

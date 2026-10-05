@@ -1827,6 +1827,28 @@ defmodule Emisar.Audit.Events do
     )
   end
 
+  @doc "A member's address replaced by an inbound SCIM update. `membership` is the pre-update row, for the from→to payload."
+  def membership_email_changed_via_scim(
+        %Accounts.Membership{} = membership,
+        %SSO.IdentityProvider{} = provider,
+        email
+      ) do
+    Audit.changeset(membership.account_id, "membership.email_changed_via_scim",
+      actor_kind: "directory_sync",
+      actor_id: provider.id,
+      actor_label: provider.name,
+      target_kind: "membership",
+      target_id: membership.id,
+      target_label: Accounts.member_display_name(%{membership | email: email}),
+      payload: %{
+        provider_id: provider.id,
+        provider_kind: to_string(provider.kind),
+        from: membership.email,
+        to: email
+      }
+    )
+  end
+
   @doc "A membership suspended by an inbound SCIM deprovision (`active:false`/DELETE)."
   def membership_deprovisioned_via_scim(
         %Accounts.Membership{} = membership,

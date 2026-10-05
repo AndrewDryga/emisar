@@ -20,13 +20,18 @@ defmodule Emisar.SSO.SCIMUserPatch do
 
   @max_operations 100
 
+  # The value paths that name the member's address: the work address Entra
+  # maps `mail` to, and the primary one. Any other filter names an address
+  # this connection does not model.
+  @address_paths [~s(emails[type eq "work"].value), ~s(emails[primary eq true].value)]
+
   @type error :: :too_many_scim_operations | :invalid_scim_active | :unsupported_scim_patch
 
   @doc """
   Internal — reduce a PATCH operation list to one desired state.
-  `{:ok, %SCIMUserUpdate{}}` when the batch asks for a rename, a lifecycle
-  change, or both; `{:error, :too_many_scim_operations | :invalid_scim_active |
-  :unsupported_scim_patch}` otherwise.
+  `{:ok, %SCIMUserUpdate{}}` when the batch asks for a rename, a new address, a
+  lifecycle change, or any of them together; `{:error, :too_many_scim_operations |
+  :invalid_scim_active | :unsupported_scim_patch}` otherwise.
   """
   @spec reduce([map()]) :: {:ok, SCIMUserUpdate.t()} | {:error, error()}
   def reduce(operations) when is_list(operations) and length(operations) > @max_operations,
@@ -34,10 +39,11 @@ defmodule Emisar.SSO.SCIMUserPatch do
 
   def reduce(operations) when is_list(operations) do
     with :ok <- validate_operations(operations) do
-      case {name_from_operations(operations), active_from_operations(operations)} do
-        {_name, :error} -> {:error, :invalid_scim_active}
-        {:keep, :keep} -> {:error, :unsupported_scim_patch}
-        {name, active} -> {:ok, %SCIMUserUpdate{name: name, active: active}}
+      case {name_from_operations(operations), email_from_operations(operations),
+            active_from_operations(operations)} do
+        {_name, _email, :error} -> {:error, :invalid_scim_active}
+        {:keep, :keep, :keep} -> {:error, :unsupported_scim_patch}
+        {name, email, active} -> {:ok, %SCIMUserUpdate{name: name, email: email, active: active}}
       end
     end
   end
@@ -59,6 +65,7 @@ defmodule Emisar.SSO.SCIMUserPatch do
     Enum.all?(value, fn
       {"active", _active} -> true
       {"displayName", name} -> is_binary(name) and name != ""
+      {"emails", emails} -> is_binary(address(emails))
       {_key, _value} -> false
     end)
   end
@@ -71,6 +78,12 @@ defmodule Emisar.SSO.SCIMUserPatch do
       name_path
       when name_path in ["displayname", "name.formatted", "name.givenname", "name.familyname"] ->
         is_binary(value) and value != ""
+
+      "emails" ->
+        is_binary(address(value))
+
+      email_path when email_path in @address_paths ->
+        is_binary(value) and String.trim(value) != ""
 
       _unsupported ->
         false
@@ -128,6 +141,61 @@ defmodule Emisar.SSO.SCIMUserPatch do
   end
 
   defp parse_active(_value), do: :error
+
+  # Find the operation that states the address — same op/path/pathless handling
+  # and last-write-wins order as `active`. Returns `:keep` or `{:replace, email}`.
+  defp email_from_operations(operations) do
+    Enum.reduce(operations, :keep, fn op, acc ->
+      case operation_email(op) do
+        :skip -> acc
+        email -> {:replace, email}
+      end
+    end)
+  end
+
+  defp operation_email(%{} = op) do
+    if replace_or_add?(Map.get(op, "op")) do
+      email_from_op(Map.get(op, "path"), Map.get(op, "value"))
+    else
+      :skip
+    end
+  end
+
+  defp operation_email(_op), do: :skip
+
+  defp email_from_op(path, value) when is_binary(path) do
+    case String.downcase(path) do
+      "emails" -> address(value) || :skip
+      email_path when email_path in @address_paths and is_binary(value) -> String.trim(value)
+      _ -> :skip
+    end
+  end
+
+  defp email_from_op(nil, %{"emails" => emails}), do: address(emails) || :skip
+  defp email_from_op(_path, _value), do: :skip
+
+  # A multi-valued `emails` list names the primary address, else the first one
+  # with a value — the same address a create reads.
+  defp address(emails) when is_list(emails) do
+    Enum.find_value(emails, &primary_value/1) || Enum.find_value(emails, &any_value/1)
+  end
+
+  defp address(_emails), do: nil
+
+  defp primary_value(%{"primary" => true, "value" => value}), do: nonblank(value)
+  defp primary_value(_email), do: nil
+
+  defp any_value(%{"value" => value}), do: nonblank(value)
+  defp any_value(_email), do: nil
+
+  defp nonblank(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp nonblank(_value), do: nil
 
   # Find the operation that replaces the name — same op/path/pathless handling as
   # `active_from_operations/1`. A non-string or empty value is not a rename (the

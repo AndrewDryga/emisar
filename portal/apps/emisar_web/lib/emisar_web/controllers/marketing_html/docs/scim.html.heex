@@ -331,12 +331,18 @@
             <code>PATCH</code>
             accepts <code>add</code>
             or <code>replace</code>
-            for <code>active</code>, <code>displayName</code>, <code>name.formatted</code>, <code>name.givenName</code>, and <code>name.familyName</code>, including the pathless attribute map Entra sends.
+            for <code>active</code>, <code>displayName</code>, <code>name.formatted</code>, <code>name.givenName</code>, <code>name.familyName</code>, <code>emails</code>, <code>emails[type eq "work"].value</code>, and <code>emails[primary eq true].value</code>, including the pathless attribute map Entra sends.
             <code>PUT</code>
             requires <code>active</code>
-            in one of those boolean forms and can update the name.
-            Email and <code>externalId</code>
-            stay fixed after provisioning. Name updates change only this workspace's member.
+            in one of those boolean forms and can update the name and the primary email.
+            <code>externalId</code>
+            stays fixed after provisioning. Name and email updates change only this workspace's
+            member. The directory changes only an email it supplied; one the member confirmed
+            by invitation or sign-up stays theirs. A new email is never a sign-in address:
+            directory members sign in through SSO. An email another member or an open invitation uses answers
+            <code>409</code>
+            (<code>uniqueness</code>) and applies nothing; an update that suspends the member
+            leaves its email as it was.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

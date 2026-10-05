@@ -221,6 +221,8 @@ defmodule Emisar.Audit.Event.Query do
        {"user.renamed_via_scim", "User renamed (SCIM)", "User renamed (SCIM)"},
        {"membership.renamed_via_scim", "Member display name changed",
         "Member display name changed (SCIM)"},
+       {"membership.email_changed_via_scim", "Member email changed",
+        "Member email changed (SCIM)"},
        {"membership.deprovisioned_via_scim", "Member suspended", "Member suspended (SCIM)"},
        {"membership.reprovisioned_via_scim", "Member reinstated", "Member reinstated (SCIM)"},
        {"membership.role_synced_via_scim", "Role synced", "Member role synced (SCIM)"},
@@ -1063,6 +1065,9 @@ defmodule Emisar.Audit.Event.Query do
     "membership.renamed_via_scim" =>
       {false, false, true,
        "The identity provider changed the name this account shows for a member."},
+    "membership.email_changed_via_scim" =>
+      {false, false, true,
+       "The identity provider changed a member's email address; the new address can't receive sign-in codes."},
     "membership.deprovisioned_via_scim" =>
       {true, false, true,
        "The identity provider suspended a member and ended their existing access to this workspace."},

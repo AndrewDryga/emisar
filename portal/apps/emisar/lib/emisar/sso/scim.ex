@@ -712,17 +712,20 @@ defmodule Emisar.SSO.SCIM do
 
   @doc """
   Internal — SCIM update (PATCH / PUT): apply one directory user's
-  desired name and lifecycle state (`%SCIMUserUpdate{}`) as ONE transaction.
-  The identity is re-read and locked under the provider's scope, a partial
-  name is merged against that locked state, and the rename, the membership
-  transition (whose guards — provider account, last active owner, break-glass
-  holds — judge the locked row), and the identity's `scim_active` flag commit
-  together or not at all: the IdP is never told its operation failed after
-  half of it landed. `{:error, :not_found}` when no identity matches (or a
-  reactivation has no membership left); `{:error, :last_owner}` when the
-  deprovision would lock out the account's last active owner. Session kill /
-  key revocation / broadcasts fire only after the commit. Returns
-  `{:ok, %{identity: identity, membership: membership | nil}}`.
+  desired name, address and lifecycle state (`%SCIMUserUpdate{}`) as ONE
+  transaction. The identity is re-read and locked under the provider's scope, a
+  partial name is merged against that locked state, and the rename, the new
+  address (only one the directory supplied, never an email sign-in address;
+  skipped when the update suspends), the membership transition (whose guards — provider account,
+  last active owner, break-glass holds — judge the locked row), and the
+  identity's `scim_active` flag commit together or not at all: the IdP is never
+  told its operation failed after half of it landed. `{:error, :not_found}` when
+  no identity matches (or a reactivation has no membership left);
+  `{:error, :last_owner}` when the deprovision would lock out the account's last
+  active owner; `{:error, :member_email_taken}` when another Member or an open
+  invitation holds the address; `{:error, %Ecto.Changeset{}}` for a malformed
+  one. Session kill / key revocation / broadcasts fire only after the commit.
+  Returns `{:ok, %{identity: identity, membership: membership | nil}}`.
   """
   def scim_update_user(%IdentityProvider{} = provider, id, %SCIMUserUpdate{} = update) do
     provider
@@ -742,6 +745,9 @@ defmodule Emisar.SSO.SCIM do
       end)
       |> Multi.run(:rename, fn _repo, %{locked_provider: locked_provider, identity: identity} ->
         apply_scim_rename(locked_provider, identity, update.name)
+      end)
+      |> Multi.run(:email, fn _repo, %{locked_provider: locked_provider, identity: identity} ->
+        apply_scim_email(locked_provider, identity, update.email, update.active)
       end)
       |> Multi.merge(fn %{locked_provider: locked_provider, identity: identity} ->
         scim_lifecycle_multi(locked_provider, identity, update.active)
@@ -904,6 +910,19 @@ defmodule Emisar.SSO.SCIM do
     sync_scim_name(provider, identity, full_name)
   end
 
+  # The directory owns the address it supplied: the one it states lands
+  # unproved, so it never becomes an email sign-in address, and an address the
+  # member proved by joining stays theirs. Offboarding never waits on a profile
+  # conflict: an update that suspends the member leaves its address alone.
+  defp apply_scim_email(_provider, _identity, :keep, _active), do: {:ok, :unchanged}
+  defp apply_scim_email(_provider, _identity, {:replace, _email}, false), do: {:ok, :unchanged}
+
+  defp apply_scim_email(%IdentityProvider{} = provider, identity, {:replace, email}, _active) do
+    Accounts.sync_member_email(provider.account_id, identity.membership_id, email,
+      audit: &Audit.Events.membership_email_changed_via_scim(&1, provider, &2)
+    )
+  end
+
   defp sync_scim_name(provider, identity, name) do
     Accounts.sync_member_display_name(provider.account_id, identity.membership_id, name,
       audit: &Audit.Events.membership_renamed_via_scim(&1, provider, &2)
@@ -985,8 +1004,8 @@ defmodule Emisar.SSO.SCIM do
     do: Accounts.membership_lifecycle_effects(changes)
 
   # The freshest membership this transition touched, for the caller's result:
-  # the lifecycle write's row wins over the rename's, and an untouched
-  # membership is nil.
+  # the lifecycle write's row wins over the address's, which wins over the
+  # rename's, and an untouched membership is nil.
   defp scim_updated_membership(%{
          membership: %Accounts.Membership{} = membership
        }),
@@ -997,6 +1016,7 @@ defmodule Emisar.SSO.SCIM do
        }),
        do: membership
 
+  defp scim_updated_membership(%{email: %Accounts.Membership{} = membership}), do: membership
   defp scim_updated_membership(%{rename: %Accounts.Membership{} = membership}), do: membership
 
   defp scim_updated_membership(_changes), do: nil

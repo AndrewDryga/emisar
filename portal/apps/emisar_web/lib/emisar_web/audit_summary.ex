@@ -139,6 +139,9 @@ defmodule EmisarWeb.AuditSummary do
   defp summarize("membership.renamed_via_scim", p),
     do: recorded_change(p, :from, :to, "Name", &display_setting/1)
 
+  defp summarize("membership.email_changed_via_scim", p),
+    do: recorded_change(p, :from, :to, "Email", &display_setting/1)
+
   # -- Sign-in / sessions / MFA -----------------------------------------
 
   defp summarize(type, p) when type in ["user.signed_in", "user.email_confirmed"],

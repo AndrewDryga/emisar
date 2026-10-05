@@ -185,6 +185,30 @@ defmodule Emisar.Accounts.Membership.Changeset do
     |> validate_length(:display_name, max: 255, count: :codepoints)
   end
 
+  @doc """
+  The address a directory pushes for its Member. The directory changes only an
+  address it supplied: one the Member proved by joining stays theirs, so a
+  directory can never take over a confirmed inbox. A pushed address is never
+  proved, so it can't receive email sign-in codes. The same address in another
+  case is no change: the column compares case-insensitively.
+  """
+  def sync_email(%Membership{email_verified_at: %DateTime{}} = membership, _email),
+    do: {:noop, membership}
+
+  def sync_email(%Membership{email: current} = membership, email) when is_binary(email) do
+    email = String.trim(email)
+
+    if is_binary(current) and String.downcase(current) == String.downcase(email) do
+      {:noop, membership}
+    else
+      membership
+      |> cast(%{email: email}, [:email])
+      |> validate_required([:email])
+      |> Emisar.EmailAddress.validate(:email)
+      |> unique_constraint(:email, name: :account_memberships_account_id_email_index)
+    end
+  end
+
   # Reinstating always clears the IdP-owned mark — a member back in is not
   # IdP-deactivated (a manual reinstate is only reachable when it's already false).
   def reinstate(%Membership{} = membership) do

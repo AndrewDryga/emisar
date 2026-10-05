@@ -2918,6 +2918,89 @@ defmodule Emisar.AccountsTest do
     end
   end
 
+  describe "sync_member_email/4" do
+    setup do
+      account = Fixtures.Accounts.create_account()
+      provider = Fixtures.SSO.create_identity_provider(account_id: account.id)
+      audit = &Emisar.Audit.Events.membership_email_changed_via_scim(&1, provider, &2)
+      %{account: account, provider: provider, audit: audit}
+    end
+
+    test "moves an address the directory supplied, audited from→to", %{
+      account: account,
+      provider: provider,
+      audit: audit
+    } do
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "old@acme.test",
+          email_verified?: false
+        )
+
+      assert {:ok, updated} =
+               Accounts.sync_member_email(account.id, member.id, "new@acme.test", audit: audit)
+
+      assert updated.email == "new@acme.test"
+      refute updated.email_verified_at
+
+      assert event = Repo.one(Emisar.Audit.Event)
+      assert event.event_type == "membership.email_changed_via_scim"
+      assert {event.actor_kind, event.actor_id} == {"directory_sync", provider.id}
+      assert event.payload["from"] == "old@acme.test"
+      assert event.payload["to"] == "new@acme.test"
+    end
+
+    test "the same address in another case writes nothing", %{account: account, audit: audit} do
+      member =
+        Fixtures.Memberships.create_membership(
+          account_id: account.id,
+          email: "same@acme.test",
+          email_verified?: false
+        )
+
+      assert {:ok, unchanged} =
+               Accounts.sync_member_email(account.id, member.id, " Same@ACME.test ", audit: audit)
+
+      assert unchanged.email == "same@acme.test"
+      refute Repo.one(Emisar.Audit.Event)
+    end
+
+    test "an address the member proved stays theirs", %{account: account, audit: audit} do
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, email: "mine@acme.test")
+
+      assert member.email_verified_at
+
+      assert {:ok, kept} =
+               Accounts.sync_member_email(account.id, member.id, "pushed@acme.test", audit: audit)
+
+      assert {kept.email, kept.email_verified_at} == {"mine@acme.test", member.email_verified_at}
+      refute Repo.one(Emisar.Audit.Event)
+    end
+
+    test "an address another member holds is refused", %{account: account, audit: audit} do
+      Fixtures.Memberships.create_membership(account_id: account.id, email: "taken@acme.test")
+
+      member =
+        Fixtures.Memberships.create_membership(account_id: account.id, email_verified?: false)
+
+      assert Accounts.sync_member_email(account.id, member.id, "taken@acme.test", audit: audit) ==
+               {:error, :member_email_taken}
+
+      assert Repo.reload!(member).email == member.email
+    end
+
+    test "only reaches a member of the named workspace", %{account: account, audit: audit} do
+      elsewhere = Fixtures.Memberships.create_membership()
+
+      assert Accounts.sync_member_email(account.id, elsewhere.id, "x@acme.test", audit: audit) ==
+               {:error, :not_found}
+
+      assert Repo.reload!(elsewhere).email == elsewhere.email
+    end
+  end
+
   describe "member_display_name/1" do
     test "uses the workspace name" do
       membership = %Membership{display_name: "Directory Name"}

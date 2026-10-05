@@ -287,6 +287,70 @@ defmodule Emisar.SSOSCIMTest do
       assert patched.disabled_at
     end
 
+    test "Entra's work-address replace moves the member's address", %{
+      provider: provider,
+      account: account
+    } do
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(provider, scim_attrs(%{email: "old@acme.test"}))
+
+      operations = [
+        %{
+          "op" => "Replace",
+          "path" => ~s(emails[type eq "work"].value),
+          "value" => "new@acme.test"
+        }
+      ]
+
+      assert {:ok, _result} = SSO.scim_patch_user(provider, identity.id, operations)
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).email == "new@acme.test"
+    end
+
+    test "an emails list, pathless or not, names its primary address", %{
+      provider: provider,
+      account: account
+    } do
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(provider, scim_attrs(%{email: "old@acme.test"}))
+
+      emails = [
+        %{"value" => "other@acme.test", "type" => "home"},
+        %{"value" => "primary@acme.test", "primary" => true}
+      ]
+
+      assert {:ok, _result} =
+               SSO.scim_patch_user(provider, identity.id, [
+                 %{"op" => "replace", "value" => %{"emails" => emails}}
+               ])
+
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).email ==
+               "primary@acme.test"
+
+      assert {:ok, _result} =
+               SSO.scim_patch_user(provider, identity.id, [
+                 %{"op" => "add", "path" => "emails", "value" => [%{"value" => "list@acme.test"}]}
+               ])
+
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).email == "list@acme.test"
+    end
+
+    test "an address filter emisar doesn't model refuses the batch", %{
+      provider: provider,
+      account: account
+    } do
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(provider, scim_attrs(%{email: "old@acme.test"}))
+
+      operations = [
+        %{"op" => "replace", "path" => ~s(emails[type eq "home"].value), "value" => "h@acme.test"}
+      ]
+
+      assert SSO.scim_patch_user(provider, identity.id, operations) ==
+               {:error, :unsupported_scim_patch}
+
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).email == "old@acme.test"
+    end
+
     test "a whole name wins over the components batched around it", %{provider: provider} do
       %{membership: member, identity: identity} =
         provisioned(provider, "okta|whole", "Old Name")
@@ -385,6 +449,138 @@ defmodule Emisar.SSOSCIMTest do
   end
 
   # -- Deprovision / reprovision ---------------------------------------
+
+  describe "scim_update_user/3 email" do
+    setup do
+      scim_provider()
+    end
+
+    test "moves the address it supplied, never as a sign-in address", %{
+      provider: provider,
+      account: account
+    } do
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(provider, scim_attrs(%{email: "old@acme.test"}))
+
+      assert {:ok, %{membership: updated}} =
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{
+                 email: {:replace, "new@acme.test"}
+               })
+
+      assert updated.email == "new@acme.test"
+      refute updated.email_verified_at
+
+      assert [event] =
+               account.id
+               |> audit_events_for()
+               |> Enum.filter(&(&1.event_type == "membership.email_changed_via_scim"))
+
+      assert {event.actor_kind, event.actor_id, event.target_id} ==
+               {"directory_sync", provider.id, member.id}
+
+      assert {event.payload["from"], event.payload["to"]} == {"old@acme.test", "new@acme.test"}
+    end
+
+    test "an address the member proved stays theirs; the rest of the update applies", %{
+      provider: provider,
+      account: account
+    } do
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(
+          provider,
+          scim_attrs(%{email: "proved@acme.test", full_name: "Old Name"})
+        )
+
+      # A member who proved this address by joining, then came under the directory.
+      Fixtures.Memberships.verify_email(member)
+
+      assert {:ok, _result} =
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{
+                 name: {:replace, "New Name"},
+                 email: {:replace, "attacker@evil.test"}
+               })
+
+      kept = Accounts.peek_sync_membership_by_id(account.id, member.id)
+      assert {kept.email, kept.display_name} == {"proved@acme.test", "New Name"}
+      assert kept.email_verified_at
+
+      refute Enum.any?(
+               audit_events_for(account.id),
+               &(&1.event_type == "membership.email_changed_via_scim")
+             )
+    end
+
+    test "an address another member holds refuses the whole update, and is recorded", %{
+      provider: provider,
+      account: account
+    } do
+      Fixtures.Memberships.create_membership(account_id: account.id, email: "taken@acme.test")
+
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(
+          provider,
+          scim_attrs(%{email: "old@acme.test", full_name: "Old Name"})
+        )
+
+      assert SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{
+               name: {:replace, "New Name"},
+               email: {:replace, "taken@acme.test"}
+             }) == {:error, :member_email_taken}
+
+      unchanged = Accounts.peek_sync_membership_by_id(account.id, member.id)
+      assert {unchanged.email, unchanged.display_name} == {"old@acme.test", "Old Name"}
+      assert [refused] = refused_changes(account.id)
+
+      assert {refused.payload["change"], refused.payload["reason"]} ==
+               {"update_user", "member_email_taken"}
+    end
+
+    test "a suspending update leaves the address alone, so a conflict never blocks offboarding",
+         %{provider: provider, account: account} do
+      Fixtures.Memberships.create_membership(account_id: account.id, email: "taken@acme.test")
+
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(provider, scim_attrs(%{email: "old@acme.test"}))
+
+      assert {:ok, _result} =
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{
+                 email: {:replace, "taken@acme.test"},
+                 active: false
+               })
+
+      suspended = Accounts.peek_sync_membership_by_id(account.id, member.id)
+      assert suspended.disabled_at
+      assert suspended.email == "old@acme.test"
+    end
+
+    test "a malformed address changes nothing", %{provider: provider, account: account} do
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(provider, scim_attrs(%{email: "old@acme.test"}))
+
+      assert {:error, %Ecto.Changeset{}} =
+               SSO.scim_update_user(provider, identity.id, %SCIMUserUpdate{
+                 email: {:replace, "not an address"}
+               })
+
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).email == "old@acme.test"
+    end
+
+    test "is provider-scoped: another connection can't move this member's address", %{
+      provider: provider,
+      account: account
+    } do
+      %{provider: other} = scim_provider()
+
+      {:ok, %{membership: member, identity: identity}} =
+        SSO.scim_provision_user(provider, scim_attrs(%{email: "old@acme.test"}))
+
+      assert SSO.scim_update_user(other, identity.id, %SCIMUserUpdate{
+               email: {:replace, "hijack@acme.test"}
+             }) == {:error, :not_found}
+
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).email == "old@acme.test"
+    end
+  end
 
   describe "scim_update_user/3 deactivate" do
     test "suspends the membership (disabled_at) + revokes its API keys + keeps the member" do

@@ -1580,18 +1580,7 @@ defmodule Emisar.Accounts do
     audit = Keyword.fetch!(opts, :audit)
 
     Multi.new()
-    |> Multi.run(:membership, fn repo, _changes ->
-      queryable =
-        Membership.Query.not_deleted()
-        |> Membership.Query.by_account_id(account_id)
-        |> Membership.Query.by_id(membership_id)
-        |> Membership.Query.lock_for_update()
-
-      case repo.peek(queryable) do
-        nil -> {:error, :not_found}
-        %Membership{} = membership -> {:ok, membership}
-      end
-    end)
+    |> Multi.run(:membership, &lock_synced_member(&1, account_id, membership_id, &2))
     |> Multi.run(:updated, fn repo, %{membership: membership} ->
       name = if is_function(display_name, 1), do: display_name.(membership), else: display_name
       write_display_name(repo, membership, name, audit)
@@ -1605,6 +1594,59 @@ defmodule Emisar.Accounts do
 
   def sync_member_display_name(_account_id, _membership_id, _display_name, _opts),
     do: {:error, :not_found}
+
+  @doc """
+  Internal — directory change of a Member's address. The Member is locked and
+  the caller's `:audit` row records from→to. Only an address the directory
+  supplied changes; one the Member proved by joining, or the same address, is no
+  change, and the pushed address is never an email sign-in address. Returns
+  `{:ok, %Membership{}}` or `{:error, :not_found | :member_email_taken |
+  %Ecto.Changeset{}}` — taken when another Member or an open invitation holds it.
+  """
+  def sync_member_email(account_id, membership_id, email, opts)
+      when is_binary(account_id) and is_binary(membership_id) and is_binary(email) do
+    audit = Keyword.fetch!(opts, :audit)
+
+    Multi.new()
+    |> Multi.run(:membership, &lock_synced_member(&1, account_id, membership_id, &2))
+    |> Multi.run(:updated, fn repo, %{membership: membership} ->
+      write_synced_email(repo, membership, email, audit)
+    end)
+    |> Repo.commit_multi()
+    |> case do
+      {:ok, %{updated: updated}} -> {:ok, updated}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def sync_member_email(_account_id, _membership_id, _email, _opts), do: {:error, :not_found}
+
+  defp lock_synced_member(repo, account_id, membership_id, _changes) do
+    queryable =
+      Membership.Query.not_deleted()
+      |> Membership.Query.by_account_id(account_id)
+      |> Membership.Query.by_id(membership_id)
+      |> Membership.Query.lock_for_update()
+
+    case repo.peek(queryable) do
+      nil -> {:error, :not_found}
+      %Membership{} = membership -> {:ok, membership}
+    end
+  end
+
+  # Like a rename, the audit row reads the pre-update row for from→to.
+  defp write_synced_email(repo, %Membership{} = membership, email, audit) do
+    case Membership.Changeset.sync_email(membership, email) do
+      {:noop, membership} ->
+        {:ok, membership}
+
+      changeset ->
+        with {:ok, updated} <- tag_member_email_taken(repo.update(changeset)),
+             {:ok, _event} <- repo.insert(audit.(membership, updated.email)) do
+          {:ok, updated}
+        end
+    end
+  end
 
   # The audit row carries the pre-update membership, so the event reads
   # from→to. An unchanged name writes nothing and is not an event.

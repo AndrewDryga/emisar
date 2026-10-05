@@ -709,6 +709,32 @@ defmodule EmisarWeb.SCIMControllerTest do
                "New Name"
     end
 
+    test "Entra's work-address PATCH moves the member's address", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
+      {:ok, %{membership: member}} =
+        SSO.scim_provision_user(provider, %{external_id: "okta|mail", email: "old@acme.test"})
+
+      patch_body = %{
+        "Operations" => [
+          %{
+            "op" => "Replace",
+            "path" => ~s(emails[type eq "work"].value),
+            "value" => "new@acme.test"
+          }
+        ]
+      }
+
+      conn
+      |> scim_patch(token, user_path(token, "okta|mail"), patch_body)
+      |> json_response(200)
+
+      assert Accounts.peek_sync_membership_by_id(account.id, member.id).email == "new@acme.test"
+    end
+
     test "a pathless Entra-style PATCH value map renames too", %{
       conn: conn,
       token: token,
@@ -1272,7 +1298,7 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert Accounts.peek_sync_membership_by_id(account.id, member.id).disabled_at
     end
 
-    test "PUT applies displayName + active — email stays immutable", %{
+    test "a suspending PUT applies displayName + active and leaves the address alone", %{
       conn: conn,
       token: token,
       provider: provider,
@@ -1286,8 +1312,7 @@ defmodule EmisarWeb.SCIMControllerTest do
         })
 
       # The PUT flips active:false and carries a displayName + emails: the
-      # IdP-owned name and lifecycle apply; the contact never changes (an
-      # address rewrite via sync would be an account-takeover surface).
+      # name and lifecycle apply; offboarding never waits on an address change.
       body =
         conn
         |> scim_put(token, user_path(token, "okta|put-ignore"), %{
@@ -1303,6 +1328,57 @@ defmodule EmisarWeb.SCIMControllerTest do
       assert reloaded.disabled_at
       assert reloaded.display_name == "Renamed By IdP"
       assert reloaded.email == "ignore@acme.test"
+    end
+
+    test "PUT with a new primary email moves the address, never as a sign-in address", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
+      {:ok, %{membership: member}} =
+        SSO.scim_provision_user(provider, %{external_id: "okta|put-move", email: "old@acme.test"})
+
+      conn
+      |> scim_put(token, user_path(token, "okta|put-move"), %{
+        "active" => true,
+        "emails" => [%{"primary" => true, "value" => "moved@acme.test"}]
+      })
+      |> json_response(200)
+
+      moved = Accounts.peek_sync_membership_by_id(account.id, member.id)
+      assert moved.email == "moved@acme.test"
+      refute moved.email_verified_at
+    end
+
+    test "PUT with an address another member holds → 409 uniqueness, nothing applied", %{
+      conn: conn,
+      token: token,
+      provider: provider,
+      account: account
+    } do
+      Fixtures.Memberships.create_membership(account_id: account.id, email: "held@acme.test")
+
+      {:ok, %{membership: member}} =
+        SSO.scim_provision_user(provider, %{
+          external_id: "okta|put-held",
+          email: "mine@acme.test",
+          full_name: "Before"
+        })
+
+      body =
+        conn
+        |> scim_put(token, user_path(token, "okta|put-held"), %{
+          "active" => true,
+          "displayName" => "After",
+          "emails" => [%{"primary" => true, "value" => "held@acme.test"}]
+        })
+        |> json_response(409)
+
+      assert body["scimType"] == "uniqueness"
+
+      unchanged = Accounts.peek_sync_membership_by_id(account.id, member.id)
+      assert {unchanged.email, unchanged.display_name} == {"mine@acme.test", "Before"}
     end
 
     test "PUT with no `active` → 400 invalidValue", %{

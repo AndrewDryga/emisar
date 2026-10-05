@@ -8,7 +8,9 @@ defmodule Emisar.SSO.SCIMUserUpdate do
   (a whole name was stated), or `{:merge, components}` where `components` is a
   map with `:given` / `:family` halves and the half the operation left alone
   keeps its current value (merged inside the transaction, against the row the
-  transition locks). `active` — `:keep` or the desired boolean lifecycle state.
+  transition locks). `email` — `:keep` or `{:replace, address}`, the address
+  the directory now states. `active` — `:keep` or the desired boolean
+  lifecycle state.
   """
 
   @type name ::
@@ -16,7 +18,11 @@ defmodule Emisar.SSO.SCIMUserUpdate do
           | {:replace, String.t()}
           | {:merge, %{optional(:given) => String.t(), optional(:family) => String.t()}}
 
-  @type t :: %__MODULE__{name: name(), active: :keep | boolean()}
+  @type t :: %__MODULE__{
+          name: name(),
+          email: :keep | {:replace, String.t()},
+          active: :keep | boolean()
+        }
 
-  defstruct name: :keep, active: :keep
+  defstruct name: :keep, email: :keep, active: :keep
 end

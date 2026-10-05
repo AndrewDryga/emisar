@@ -103,8 +103,8 @@ defmodule EmisarWeb.SCIM.UserController do
     do: bad_request(conn, "invalidSyntax", "PATCH requires a SCIM PatchOp with `Operations`.")
 
   # PUT /scim/v2/Users/:id — full replace. Acts on the IdP-owned attributes:
-  # `displayName` (the synced profile name) and the `active` lifecycle flag;
-  # everything else (email, externalId) stays immutable post-provision here.
+  # `displayName` (the synced profile name), the address a create would read,
+  # and the `active` lifecycle flag; `externalId` stays immutable post-provision.
   def replace(conn, %{"id" => id} = params) do
     attrs = Resource.parse_user(params)
 
@@ -115,6 +115,7 @@ defmodule EmisarWeb.SCIM.UserController do
       active ->
         apply_update(conn, id, %SSO.SCIMUserUpdate{
           name: put_name(attrs.full_name),
+          email: put_email(attrs.email),
           active: active
         })
     end
@@ -122,6 +123,9 @@ defmodule EmisarWeb.SCIM.UserController do
 
   defp put_name(nil), do: :keep
   defp put_name(full_name), do: {:replace, full_name}
+
+  defp put_email(nil), do: :keep
+  defp put_email(email), do: {:replace, email}
 
   # The write behind PUT: the domain commits everything the request asked for —
   # rename and lifecycle — or nothing.
