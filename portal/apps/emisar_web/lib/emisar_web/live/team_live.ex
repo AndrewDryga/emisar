@@ -2309,6 +2309,13 @@ defmodule EmisarWeb.TeamLive do
         <.doc_link href={~p"/docs/teams-and-access"}>Team docs</.doc_link>
       </.page_intro>
 
+      <.page_intro :if={@live_action == :service_accounts}>
+        The members that apps and bots connect as, and what each can reach.
+        <.doc_link href={~p"/docs/teams-and-access" <> "#service-accounts"}>
+          Service account docs
+        </.doc_link>
+      </.page_intro>
+
       <%!-- ========= Invite a member — its own focused page (:new) =========
            Pulled off the roster so the role choice gets room to breathe: a
            readable radio-card per role (name + what it can do), and a real
@@ -3067,11 +3074,10 @@ defmodule EmisarWeb.TeamLive do
                   title="No service accounts yet"
                 >
                   <%= if @can_manage_team? do %>
-                    Add one for each app that connects for the workspace rather than for a
-                    person, such as a team bot.
+                    Add one for each app that works for the team, not for one person.
                   <% else %>
-                    Owners and admins add one for each app that connects for the workspace
-                    rather than for a person.
+                    Owners and admins add one for each app that works for the team, not for one
+                    person.
                   <% end %>
                 </.empty_state>
                 <.empty_state
@@ -3161,9 +3167,14 @@ defmodule EmisarWeb.TeamLive do
           title="Service account basics"
         >
           <p>
-            A service account is a member that an app connects as, such as a team bot. Its
-            connections keep working when people leave, and the audit log attributes its
-            requests to it. <.doc_link href={~p"/docs/teams-and-access" <> "#service-accounts"}>How service accounts work</.doc_link>.
+            An app connected as a service account keeps working when people leave, and the
+            audit log attributes its requests to the service account.
+          </p>
+          <p :if={@can_manage_team?}>
+            To connect an app as one, choose it under Connect as when the app asks you to
+            authorize it, or under Acts as when you create a key on AI agents. <.doc_link href={
+              ~p"/docs/agents-and-keys" <> "#minting"
+            }>How to create its key</.doc_link>.
           </p>
           <p :if={@can_manage_team?}>
             It starts with the runner and pack access of the person who adds it. To narrow it,
