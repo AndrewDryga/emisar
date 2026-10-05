@@ -1141,17 +1141,28 @@ defmodule Emisar.Accounts do
   def team_member_filters, do: Membership.Query.filters()
 
   @doc """
-  One page of the team roster as presentation facts: each visible membership plus
-  the security state the roster renders and the member actions it may offer. Owns
-  the membership page and ONE batched runner-scope read, so the
-  web never derives a capability from an invitation, MFA, suspension, or directory
-  column itself.
+  One page of the team roster — the account's people — as presentation facts:
+  each visible membership plus the security state the roster renders and the
+  member actions it may offer. Owns the membership page and ONE batched
+  runner-scope read, so the web never derives a capability from an invitation,
+  MFA, suspension, or directory column itself.
 
   Requires `view_own_account` and that `subject` is in `account`; scoped by the
   explicit account id alongside `Authorizer.for_subject/2`. Returns
   `{:ok, [facts], %Paginator.Metadata{}}`.
   """
-  def list_team_member_facts(%Account{id: account_id}, %Subject{} = subject, opts \\ []) do
+  def list_team_member_facts(%Account{} = account, %Subject{} = subject, opts \\ []),
+    do: list_member_facts(account, :human, subject, opts)
+
+  @doc """
+  One page of the account's service accounts as presentation facts, built like
+  `list_team_member_facts/3`. Requires `view_own_account` and that `subject` is in
+  `account`. Returns `{:ok, [facts], %Paginator.Metadata{}}`.
+  """
+  def list_service_account_facts(%Account{} = account, %Subject{} = subject, opts \\ []),
+    do: list_member_facts(account, :service_account, subject, opts)
+
+  defp list_member_facts(%Account{id: account_id}, kind, %Subject{} = subject, opts) do
     # Manager-only facts follow the authority read now, not the one a held
     # socket cached: a manager demoted since keeps reading the roster as a viewer.
     with {:ok, current} <-
@@ -1160,7 +1171,7 @@ defmodule Emisar.Accounts do
              Authorizer.view_own_account_permission()
            ),
          :ok <- Subject.ensure_in_account(current, account_id, :unauthorized),
-         {:ok, memberships, metadata} <- list_team_memberships(account_id, current, opts) do
+         {:ok, memberships, metadata} <- list_team_memberships(account_id, kind, current, opts) do
       access_by_membership = runner_access_for_memberships(memberships)
       manager? = subject_can_manage_team?(current)
       suspended_by_labels = suspended_by_labels(memberships, account_id, manager?)
@@ -1175,9 +1186,10 @@ defmodule Emisar.Accounts do
     end
   end
 
-  defp list_team_memberships(account_id, %Subject{} = subject, opts) do
+  defp list_team_memberships(account_id, kind, %Subject{} = subject, opts) do
     Membership.Query.not_deleted()
     |> Membership.Query.by_account_id(account_id)
+    |> Membership.Query.by_kind(kind)
     |> Authorizer.for_subject(subject)
     |> Repo.list(Membership.Query, opts)
   end

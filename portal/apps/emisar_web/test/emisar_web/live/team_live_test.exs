@@ -1177,7 +1177,7 @@ defmodule EmisarWeb.TeamLiveTest do
   describe "service accounts" do
     test "an owner adds one and sees the reach it starts with", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
-      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/team/service-accounts/new")
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
       subscribe_team(account)
 
       assert html =~ "It starts with your runner and pack access."
@@ -1205,11 +1205,17 @@ defmodule EmisarWeb.TeamLiveTest do
                ~s(a[href="/app/#{account.slug}/agents/connect?acts_as=#{service_account.id}"]),
                "Create an API key"
              )
+
+      assert has_element?(
+               lv,
+               ~s(a[href="/app/#{account.slug}/settings/service-accounts"]),
+               "View service accounts"
+             )
     end
 
     test "a blank name stays on the form with its error", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team/service-accounts/new")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
 
       html =
         lv
@@ -1227,7 +1233,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, html} =
         build_conn()
         |> log_in_member(operator)
-        |> live(~p"/app/#{account}/settings/team/service-accounts/new")
+        |> live(~p"/app/#{account}/settings/service-accounts/new")
 
       assert html =~ "You can&#39;t add service accounts"
 
@@ -1240,16 +1246,35 @@ defmodule EmisarWeb.TeamLiveTest do
              |> Emisar.Repo.one()
     end
 
-    test "the roster marks a service account and offers only what applies to it", %{
+    test "Team lists people; service accounts have their own page under Settings", %{
       conn: conn
     } do
+      {conn, owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+
+      {:ok, team, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      assert has_element?(team, "#member-row-#{owner.id}")
+      refute has_element?(team, "#member-row-#{service_account.id}")
+      refute has_element?(team, "#add-service-account")
+
+      assert has_element?(
+               team,
+               ~s(aside a[href="/app/#{account.slug}/settings/service-accounts"]),
+               "Service accounts"
+             )
+
+      {:ok, page, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts")
+      assert has_element?(page, "#member-row-#{service_account.id}")
+      refute has_element?(page, "#member-row-#{owner.id}")
+    end
+
+    test "a row offers only what applies to a service account", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts")
 
       row = "#member-row-#{service_account.id}"
 
-      assert has_element?(lv, row, "Service account")
       assert has_element?(lv, "#member-added-#{service_account.id}")
       refute has_element?(lv, "#member-joined-#{service_account.id}")
       assert has_element?(lv, "#member-controls-#{service_account.id}", "Operator")
@@ -1270,7 +1295,7 @@ defmodule EmisarWeb.TeamLiveTest do
     } do
       {conn, _owner, account} = register_and_log_in(conn)
       service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts")
 
       render_click(lv, "open_member_action", %{
         "action" => "suspend",
@@ -1287,19 +1312,34 @@ defmodule EmisarWeb.TeamLiveTest do
       refute has_element?(lv, "#member-action", "End this member")
     end
 
-    test "only managers see the Add service account action", %{conn: conn} do
+    test "an empty page explains service accounts beside the header's add action", %{
+      conn: conn
+    } do
       {conn, _owner, account} = register_and_log_in(conn)
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/team")
-      assert has_element?(lv, "#add-service-account", "Add service account")
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts")
 
+      assert render(lv) =~ "No service accounts yet"
+
+      assert has_element?(
+               lv,
+               ~s(#add-service-account[href="/app/#{account.slug}/settings/service-accounts/new"]),
+               "Add service account"
+             )
+    end
+
+    test "a viewer reads the page but can't add one", %{conn: conn} do
+      {_owner_conn, _owner, account} = register_and_log_in(conn)
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
       viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
 
-      {:ok, viewer_lv, _html} =
+      {:ok, lv, html} =
         build_conn()
         |> log_in_member(viewer)
-        |> live(~p"/app/#{account}/settings/team")
+        |> live(~p"/app/#{account}/settings/service-accounts")
 
-      refute has_element?(viewer_lv, "#add-service-account")
+      assert has_element?(lv, "#member-row-#{service_account.id}")
+      assert html =~ "Only owners and admins add or change service accounts."
+      refute has_element?(lv, "#add-service-account")
     end
   end
 

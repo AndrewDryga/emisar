@@ -103,7 +103,7 @@ defmodule Emisar.Accounts.Account.Changeset do
     # one could never reach its own pages.
     |> validate_exclusion(
       :slug,
-      ~w[accounts agents approvals audit billing checkout packs policies runbooks runners runs sso team],
+      ~w[accounts agents approvals audit billing checkout packs policies runbooks runners runs service-accounts sso team],
       message: "is reserved"
     )
     |> unique_constraint(:slug)

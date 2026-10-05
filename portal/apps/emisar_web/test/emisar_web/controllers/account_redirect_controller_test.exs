@@ -26,6 +26,7 @@ defmodule EmisarWeb.AccountRedirectControllerTest do
     {"/app/agents/connect", "/agents/connect"},
     {"/app/team", "/settings/team"},
     {"/app/team/invite", "/settings/team/invite"},
+    {"/app/service-accounts", "/settings/service-accounts"},
     {"/app/sso", "/settings/sso"},
     {"/app/sso/new", "/settings/sso/new"},
     {"/app/billing", "/settings/billing"}

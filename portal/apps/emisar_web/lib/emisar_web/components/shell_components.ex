@@ -495,6 +495,13 @@ defmodule EmisarWeb.ShellComponents do
         Team
       </.nav_link>
       <.nav_link
+        to={~p"/app/#{@current_account}/settings/service-accounts"}
+        active={@section == :service_accounts}
+        icon="device.machine_client"
+      >
+        Service accounts
+      </.nav_link>
+      <.nav_link
         to={~p"/app/#{@current_account}/settings/billing"}
         active={@section == :billing}
         icon="product.billing"

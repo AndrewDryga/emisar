@@ -397,6 +397,7 @@ defmodule EmisarWeb.Router do
     get "/agents/connect", AccountRedirectController, :connect_agent
     get "/team", AccountRedirectController, :team
     get "/team/invite", AccountRedirectController, :invite_team_member
+    get "/service-accounts", AccountRedirectController, :service_accounts
     get "/sso", AccountRedirectController, :sso
     get "/sso/new", AccountRedirectController, :add_sso_provider
     get "/billing", AccountRedirectController, :billing
@@ -486,7 +487,8 @@ defmodule EmisarWeb.Router do
       live "/activate", ActivateLive, :show
       live "/settings/team", TeamLive, :index
       live "/settings/team/invite", TeamLive, :new
-      live "/settings/team/service-accounts/new", TeamLive, :new_service_account
+      live "/settings/service-accounts", TeamLive, :service_accounts
+      live "/settings/service-accounts/new", TeamLive, :new_service_account
       live "/settings/team/:membership_id/change-role/:role", MemberRoleLive, :edit
       live "/settings/team/:membership_id/reset_mfa", TeamLive, :reset_mfa
 

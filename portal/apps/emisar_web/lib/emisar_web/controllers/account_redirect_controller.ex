@@ -64,6 +64,9 @@ defmodule EmisarWeb.AccountRedirectController do
   def invite_team_member(conn, _params),
     do: forward(conn, &~p"/app/#{&1}/settings/team/invite")
 
+  def service_accounts(conn, _params),
+    do: forward(conn, &~p"/app/#{&1}/settings/service-accounts")
+
   def billing(conn, _params), do: forward(conn, &~p"/app/#{&1}/settings/billing")
 
   # /activate — the device-grant approval URL the MCP installer prints,

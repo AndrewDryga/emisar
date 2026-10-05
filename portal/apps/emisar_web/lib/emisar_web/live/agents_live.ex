@@ -740,7 +740,7 @@ defmodule EmisarWeb.AgentsLive do
       end
 
     # A link can select an owner with no keys yet: Profile's own agents (read as
-    # "You"), or Team's "View connections" for a new service account. Name it
+    # "You"), or "View connections" for a new service account. Name it
     # without offering every member as an empty filter option.
     owners = owners ++ selected_owner_options(owners, selected, subject)
 
@@ -929,9 +929,9 @@ defmodule EmisarWeb.AgentsLive do
     end
   end
 
-  # The Team page sends an admin here to create a key for the service account
-  # it just added: open the custom key form acting as it. A link naming one this
-  # admin can't use opens nothing, so it never falls back to a personal key.
+  # Adding a service account sends an admin here to create a key for it: open
+  # the custom key form acting as it. A link naming one this admin can't use
+  # opens nothing, so it never falls back to a personal key.
   defp preselect_acts_as(%{assigns: %{live_action: :connect}} = socket, %{"acts_as" => id})
        when is_binary(id) do
     socket = assign_acts_as_options(socket)
@@ -1735,12 +1735,17 @@ defmodule EmisarWeb.AgentsLive do
     ~H"""
     <.docs_rail title="Connections and access">
       <p>
-        Agents are grouped by the team member who connected them. Each agent uses that
-        member’s runner access. To change which runners their agents can reach, update
-        the member’s access in <.link
+        Agents are grouped by the member they act as: the person who connected them, or a
+        service account. Each agent uses that member’s runner access. To change which runners
+        it can reach, update the member’s access in
+        <.link
           navigate={~p"/app/#{@current_account}/settings/team"}
           class="font-medium text-brand-400 hover:text-brand-300"
-        >Team</.link>.
+        >Team</.link>
+        or <.link
+          navigate={~p"/app/#{@current_account}/settings/service-accounts"}
+          class="font-medium text-brand-400 hover:text-brand-300"
+        >Service accounts</.link>.
       </p>
       <p>
         Each connection has its own key. For local agents using the emisar MCP bridge,

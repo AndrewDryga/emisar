@@ -118,16 +118,31 @@ defmodule EmisarWeb.TeamLive do
         else
           {:noreply, assign(socket, :loading?, true)}
         end
+
+      # The same roster rows and actions, for the accounts apps connect as. A
+      # fixed-role account has no role to filter by, and a workspace holds few.
+      :service_accounts ->
+        socket =
+          socket
+          |> assign(:page_title, "Service accounts")
+          |> assign(:filters, [])
+
+        if connected?(socket) do
+          {:noreply, socket |> assign(:loading?, false) |> load(params)}
+        else
+          {:noreply, assign(socket, :loading?, true)}
+        end
     end
   end
 
-  # Only the roster renders the team read, so only the roster reloads it: on the
+  # Only a roster renders the team read, so only a roster reloads it: on the
   # invite or MFA-reset route the same broadcast would run ten reads nothing
   # renders and re-assign the runner + pack lists under an open picker.
   def handle_info(
         {:list_changed, :team, _event_type, _id},
-        %{assigns: %{live_action: :index}} = socket
-      ),
+        %{assigns: %{live_action: action}} = socket
+      )
+      when action in [:index, :service_accounts],
       do: {:noreply, reload(socket)}
 
   def handle_info(
@@ -147,7 +162,7 @@ defmodule EmisarWeb.TeamLive do
     {:noreply,
      LiveTable.apply_filter(
        socket,
-       ~p"/app/#{socket.assigns.current_account}/settings/team",
+       roster_path(socket.assigns.live_action, socket.assigns.current_account),
        params,
        socket.assigns.filters
      )}
@@ -1679,9 +1694,10 @@ defmodule EmisarWeb.TeamLive do
 
   defp load(socket, params) do
     socket = assign_pack_access_restricted(socket)
-    opts = LiveTable.params_to_opts(params, Accounts.team_member_filters())
+    opts = LiveTable.params_to_opts(params, socket.assigns.filters)
 
-    case Accounts.list_team_member_facts(
+    case list_roster(
+           socket.assigns.live_action,
            socket.assigns.current_account,
            socket.assigns.current_subject,
            opts
@@ -1724,7 +1740,7 @@ defmodule EmisarWeb.TeamLive do
         socket
         |> assign(:member_facts, member_facts)
         |> assign(:metadata, meta)
-        |> assign_security_facts()
+        |> assign_team_stance()
         |> assign(:filter_params, params)
         |> assign(:directory_by_membership_id, directory_by_membership_id)
         |> assign(:runners, runners)
@@ -1736,7 +1752,6 @@ defmodule EmisarWeb.TeamLive do
           :suppressed_emails,
           suppressed_emails(socket.assigns.current_account, socket.assigns.current_subject)
         )
-        |> assign_sso_state()
         |> assign(:load_error?, false)
 
       # A clean reload can fail too (e.g. a tightened list permission) — flag it
@@ -1802,6 +1817,22 @@ defmodule EmisarWeb.TeamLive do
   # page reads "all enrolled" while page 2 has gaps. Accounts owns the counts,
   # the enforcement state, and the SSO requirement, all read fresh — the page
   # never recombines them from its own assigns.
+  defp list_roster(:service_accounts, account, subject, opts),
+    do: Accounts.list_service_account_facts(account, subject, opts)
+
+  defp list_roster(_action, account, subject, opts),
+    do: Accounts.list_team_member_facts(account, subject, opts)
+
+  defp roster_path(:service_accounts, account), do: ~p"/app/#{account}/settings/service-accounts"
+  defp roster_path(_action, account), do: ~p"/app/#{account}/settings/team"
+
+  # The security rail and the access-request queue are the Team page's; the
+  # service-account roster renders neither, so it skips their reads.
+  defp assign_team_stance(%{assigns: %{live_action: :index}} = socket),
+    do: socket |> assign_security_facts() |> assign_sso_state()
+
+  defp assign_team_stance(socket), do: socket
+
   defp assign_security_facts(socket) do
     facts =
       case Accounts.fetch_team_security_facts(socket.assigns.current_subject) do
@@ -2213,7 +2244,11 @@ defmodule EmisarWeb.TeamLive do
       current_membership={@current_membership}
       current_subject={@current_subject}
       current_account={@current_account}
-      section={:team}
+      section={
+        if @live_action in [:service_accounts, :new_service_account],
+          do: :service_accounts,
+          else: :team
+      }
       width={:table}
     >
       <:title>
@@ -2222,11 +2257,15 @@ defmodule EmisarWeb.TeamLive do
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             Invite a member
           <% :new_service_account -> %>
-            <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
+            <.back_link navigate={~p"/app/#{@current_account}/settings/service-accounts"}>
+              Service accounts
+            </.back_link>
             Add a service account
           <% :reset_mfa -> %>
             <.back_link navigate={~p"/app/#{@current_account}/settings/team"}>Team</.back_link>
             Reset member MFA
+          <% :service_accounts -> %>
+            Service accounts
           <% _ -> %>
             Team
         <% end %>
@@ -2246,21 +2285,22 @@ defmodule EmisarWeb.TeamLive do
         </.button>
         <.button
           :if={@can_manage_team?}
-          id="add-service-account"
-          navigate={~p"/app/#{@current_account}/settings/team/service-accounts/new"}
-          variant={:secondary}
-          size={:md}
-        >
-          Add service account
-        </.button>
-        <.button
-          :if={@can_manage_team?}
           id="invite-member"
           navigate={~p"/app/#{@current_account}/settings/team/invite"}
           size={:md}
           icon="action.add"
         >
           Invite member
+        </.button>
+      </:actions>
+      <:actions :if={@live_action == :service_accounts and @can_manage_team?}>
+        <.button
+          id="add-service-account"
+          navigate={~p"/app/#{@current_account}/settings/service-accounts/new"}
+          size={:md}
+          icon="action.add"
+        >
+          Add service account
         </.button>
       </:actions>
 
@@ -2310,7 +2350,7 @@ defmodule EmisarWeb.TeamLive do
         mfa_reset_sso_facts={@mfa_reset_sso_facts}
         mfa_reset_target={@mfa_reset_target}
       />
-      <.loading_state :if={@live_action == :index and @loading?} />
+      <.loading_state :if={@live_action in [:index, :service_accounts] and @loading?} />
 
       <%!-- Single-column list. Each row is a member: avatar, name +
            email, role pill, joined, "..." menu. Inline edit form
@@ -2325,13 +2365,20 @@ defmodule EmisarWeb.TeamLive do
            it truncated its own provider names while the roster beside it clipped
            every member email; below the split both get the full width. --%>
       <div
-        :if={@live_action == :index and not @loading?}
-        class="grid grid-cols-1 gap-x-10 gap-y-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start"
+        :if={@live_action in [:index, :service_accounts] and not @loading?}
+        class={[
+          "grid grid-cols-1 gap-x-10 gap-y-8",
+          (@live_action == :index or @member_facts != []) &&
+            "xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start"
+        ]}
       >
         <div id="team-primary-column" class="min-w-0 space-y-8">
           <%!-- The queue belongs to the roster column: these requests become
                members, while Security keeps its stable side rail. --%>
-          <section :if={@pending_requests_error?} id="pending-access-requests">
+          <section
+            :if={@live_action == :index and @pending_requests_error?}
+            id="pending-access-requests"
+          >
             <.section_header title="Pending access requests" />
             <.empty_state
               variant={:hint}
@@ -2344,7 +2391,7 @@ defmodule EmisarWeb.TeamLive do
           </section>
 
           <section
-            :if={not @pending_requests_error? and @pending_requests != []}
+            :if={@live_action == :index and not @pending_requests_error? and @pending_requests != []}
             id="pending-access-requests"
           >
             <.section_header
@@ -2529,16 +2576,15 @@ defmodule EmisarWeb.TeamLive do
              action dropdown floats freely (nothing clips on the canvas).
              Inline edit and scope-edit forms render INSIDE the :item slot
              below the top-line content, keeping the natural flow per row. --%>
-            <.section_header title="Members">
+            <.section_header :if={@live_action == :index} title="Members">
               <:badge :if={not @can_manage_team?}>
                 <.chip id="team-read-only" icon="state.locked" baseline>Read-only</.chip>
               </:badge>
             </.section_header>
-
             <LiveTable.live_table
               layout={:cards}
-              id="members"
-              path={~p"/app/#{@current_account}/settings/team"}
+              id={if @live_action == :service_accounts, do: "service-accounts", else: "members"}
+              path={roster_path(@live_action, @current_account)}
               rows={@member_facts}
               metadata={@metadata}
               filter_params={@filter_params}
@@ -2604,9 +2650,6 @@ defmodule EmisarWeb.TeamLive do
                             directory={directory}
                             account={@current_account}
                           />
-                          <.chip :if={member.service_account?} tone={:neutral}>
-                            Service account
-                          </.chip>
                           <.chip :if={membership.id == @current_membership.id} tone={:neutral}>
                             You
                           </.chip>
@@ -3005,9 +3048,26 @@ defmodule EmisarWeb.TeamLive do
                   :if={@load_error?}
                   tone={:danger}
                   icon="state.warning"
-                  title="Couldn't load your team"
+                  title={
+                    if @live_action == :service_accounts,
+                      do: "Couldn't load service accounts",
+                      else: "Couldn't load your team"
+                  }
                 >
                   Refresh the page to try again.
+                </.empty_state>
+                <.empty_state
+                  :if={@live_action == :service_accounts and not @load_error?}
+                  icon="device.machine_client"
+                  title="No service accounts yet"
+                >
+                  <%= if @can_manage_team? do %>
+                    Add one for each app that connects for the workspace rather than for a
+                    person, such as a team bot.
+                  <% else %>
+                    Owners and admins add one for each app that connects for the workspace
+                    rather than for a person.
+                  <% end %>
                 </.empty_state>
                 <.empty_state
                   :if={
@@ -3089,7 +3149,25 @@ defmodule EmisarWeb.TeamLive do
              cards full width under the roster. SSO carries a provider list and
              two settings sections, so pairing it with a short card only left one
              of them stretched down its height. --%>
+        <%!-- A short list floats in the table width, so it teaches beside it; an
+             empty page stays full width, where its empty state teaches. --%>
+        <.docs_rail
+          :if={@live_action == :service_accounts and @member_facts != []}
+          title="Service account basics"
+        >
+          <p>
+            A service account is a member that an app connects as, such as a team bot. Its
+            connections keep working when people leave, and the audit log attributes its
+            requests to it. <.doc_link href={~p"/docs/teams-and-access" <> "#service-accounts"}>How service accounts work</.doc_link>.
+          </p>
+          <p :if={@can_manage_team?}>
+            It starts with the runner and pack access of the person who adds it. To narrow it,
+            use Edit access in its row.
+          </p>
+          <p :if={not @can_manage_team?}>Only owners and admins add or change service accounts.</p>
+        </.docs_rail>
         <.security_rail
+          :if={@live_action == :index}
           current_account={@current_account}
           current_subject={@current_subject}
           enabled_sso_provider_count={@enabled_sso_provider_count}
@@ -3157,8 +3235,11 @@ defmodule EmisarWeb.TeamLive do
           <.button phx-click="add_another_service_account" variant={:secondary}>
             Add another
           </.button>
-          <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:secondary}>
-            View members
+          <.button
+            navigate={~p"/app/#{@current_account}/settings/service-accounts"}
+            variant={:secondary}
+          >
+            View service accounts
           </.button>
         </div>
       </div>
@@ -3186,14 +3267,17 @@ defmodule EmisarWeb.TeamLive do
               required
             />
             <p class="mt-2 text-xs text-zinc-400">
-              It starts with your runner and pack access. You can narrow it from its row
-              on the Team page.
+              It starts with your runner and pack access. You can narrow it later with Edit
+              access on the Service accounts page.
             </p>
           </div>
 
           <:actions>
             <.button phx-disable-with="Adding…">Add service account</.button>
-            <.button navigate={~p"/app/#{@current_account}/settings/team"} variant={:ghost}>
+            <.button
+              navigate={~p"/app/#{@current_account}/settings/service-accounts"}
+              variant={:ghost}
+            >
               Cancel
             </.button>
           </:actions>

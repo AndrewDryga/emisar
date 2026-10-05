@@ -2365,11 +2365,28 @@ defmodule Emisar.AccountsTest do
              ) == {:error, :unauthorized}
     end
 
-    test "a service account offers no role, session or MFA actions" do
-      {owner, account, subject} = Fixtures.Subjects.owner_subject()
-      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+    test "lists people only: service accounts have their own roster", %{
+      account: account,
+      owner: owner,
+      subject: subject
+    } do
+      Fixtures.Memberships.create_service_account(account_id: account.id)
 
-      assert {:ok, facts, _metadata} = Accounts.list_team_member_facts(account, subject)
+      assert {:ok, [facts], _metadata} = Accounts.list_team_member_facts(account, subject)
+      assert %{service_account?: false, end_sessions?: true} = facts
+      assert facts.membership.id == owner.id
+    end
+  end
+
+  describe "list_service_account_facts/3" do
+    test "lists the account's service accounts, with no role, session or MFA actions" do
+      account = Fixtures.Accounts.create_account()
+      owner = Fixtures.Memberships.create_membership(account_id: account.id, role: "owner")
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      Fixtures.Memberships.create_service_account()
+      subject = Fixtures.Subjects.subject_for(owner)
+
+      assert {:ok, [facts], _metadata} = Accounts.list_service_account_facts(account, subject)
 
       assert %{
                service_account?: true,
@@ -2378,10 +2395,29 @@ defmodule Emisar.AccountsTest do
                end_sessions?: false,
                reset_mfa?: false,
                resend_invitation?: false
-             } = Enum.find(facts, &(&1.membership.id == service_account.id))
+             } = facts
 
-      assert %{service_account?: false, end_sessions?: true} =
-               Enum.find(facts, &(&1.membership.id == owner.id))
+      assert facts.membership.id == service_account.id
+    end
+
+    test "a viewer of the account can read them, without managing them" do
+      account = Fixtures.Accounts.create_account()
+      viewer = Fixtures.Memberships.create_membership(account_id: account.id, role: "viewer")
+      service_account = Fixtures.Memberships.create_service_account(account_id: account.id)
+      subject = Fixtures.Subjects.subject_for(viewer)
+
+      assert {:ok, [facts], _metadata} = Accounts.list_service_account_facts(account, subject)
+      assert facts.membership.id == service_account.id
+      refute facts.manageable?
+    end
+
+    test "a subject from another account is refused" do
+      account = Fixtures.Accounts.create_account()
+      Fixtures.Memberships.create_service_account(account_id: account.id)
+      outsider = Fixtures.Memberships.create_membership(role: "owner")
+      subject = Fixtures.Subjects.subject_for(outsider)
+
+      assert Accounts.list_service_account_facts(account, subject) == {:error, :unauthorized}
     end
   end
 
