@@ -497,7 +497,7 @@ defmodule EmisarWeb.ShellComponents do
       <.nav_link
         to={~p"/app/#{@current_account}/settings/service-accounts"}
         active={@section == :service_accounts}
-        icon="device.machine_client"
+        icon="identity.service_account"
       >
         Service accounts
       </.nav_link>

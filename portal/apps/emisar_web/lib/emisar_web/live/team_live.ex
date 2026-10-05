@@ -3075,7 +3075,7 @@ defmodule EmisarWeb.TeamLive do
                 </.empty_state>
                 <.empty_state
                   :if={@live_action == :service_accounts and not @load_error?}
-                  icon="device.machine_client"
+                  icon="identity.service_account"
                   title="No service accounts yet"
                 >
                   <%= if @can_manage_team? do %>
