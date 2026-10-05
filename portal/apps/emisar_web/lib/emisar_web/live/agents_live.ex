@@ -731,16 +731,21 @@ defmodule EmisarWeb.AgentsLive do
   # Fill the static Owner filter's options with the account's real key creators
   # (the filter's SQL still comes from the Query module's `fun`).
   defp with_owner_options(subject, params) do
+    selected = List.wrap(params["owner"])
+
     owners =
       case ApiKeys.list_key_owner_options(subject) do
         {:ok, options} -> options
         _ -> []
       end
 
-    # Profile can link to your own agents before you have any. Keep that selected
-    # owner readable without offering every member as an empty filter option.
+    # A link can select an owner with no keys yet: Profile's own agents (read as
+    # "You"), or Team's "View connections" for a new service account. Name it
+    # without offering every member as an empty filter option.
+    owners = owners ++ selected_owner_options(owners, selected, subject)
+
     owners =
-      if subject.membership_id in List.wrap(params["owner"]) do
+      if subject.membership_id in selected do
         List.keystore(owners, subject.membership_id, 0, {subject.membership_id, "You"})
       else
         owners
@@ -751,6 +756,22 @@ defmodule EmisarWeb.AgentsLive do
       filter -> filter
     end)
   end
+
+  defp selected_owner_options(owners, selected, subject) do
+    ids = Enum.filter(selected, &(canonical_id?(&1) and not List.keymember?(owners, &1, 0)))
+
+    with [_ | _] <- ids,
+         {:ok, members} <- Accounts.list_memberships_by_ids(subject.account, ids, subject) do
+      Enum.map(members, &{&1.id, Accounts.member_display_name(&1) || "Account member"})
+    else
+      _ -> []
+    end
+  end
+
+  defp canonical_id?(id) when is_binary(id) and byte_size(id) == 36,
+    do: match?({:ok, _}, Ecto.UUID.cast(id))
+
+  defp canonical_id?(_id), do: false
 
   defp load(socket, params) do
     # The status filter defaults to "live" (declared on the filter itself, so

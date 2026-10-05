@@ -99,11 +99,11 @@ defmodule EmisarWeb.AuditPerformanceLiveTest do
   } do
     id = Ecto.UUID.generate()
 
-    {:ok, lv, html} =
+    {:ok, lv, _html} =
       live(conn, ~p"/app/#{account}/audit?target_kind=user&target_id=#{id}")
 
     assert has_element?(lv, "input[type='hidden'][name='target_id'][value='#{id}']")
-    assert html =~ "#{id} (unavailable)"
+    assert has_element?(lv, "#filter-target_id-choices summary", "Unavailable")
     html = search(lv, "target_id", String.duplicate("x", 513))
     assert html =~ "Search is too long or contains unsupported characters."
     refute html =~ "No matching choices."

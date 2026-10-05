@@ -307,7 +307,7 @@ defmodule EmisarWeb.AuditLive do
             kind: kind,
             selected: selected,
             search: search,
-            options: pin_unavailable(options, selected),
+            options: options,
             empty?: Enum.all?(options, fn {id, _label} -> id == selected end),
             error: nil,
             metadata: metadata
@@ -318,7 +318,7 @@ defmodule EmisarWeb.AuditLive do
             kind: kind,
             selected: selected,
             search: bounded_search_display(search),
-            options: pin_unavailable([], selected),
+            options: [],
             empty?: false,
             error:
               if(reason == :invalid_search,
@@ -329,14 +329,6 @@ defmodule EmisarWeb.AuditLive do
           }
       end
     end
-  end
-
-  # Keep a stale/foreign URL selection visibly distinct from All without
-  # claiming a name or exposing metadata the context refused to resolve.
-  defp pin_unavailable(options, selected) do
-    if canonical_identity_id(selected) && not List.keymember?(options, selected, 0),
-      do: options ++ [{selected, "#{selected} (unavailable)"}],
-      else: options
   end
 
   defp bounded_search_display(search) when is_binary(search) and byte_size(search) <= 512 do

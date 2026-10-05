@@ -295,7 +295,11 @@ the commit button, where the operator can reach the action before reading what i
    value's bright/mono styling; adjacent no-value cells match.
 4. **Default value ≠ active filter.** A control at its default never renders as
    applied (no highlight, no clear-×). Model `default` on the `%Filter{}`; value ==
-   default is baseline.
+   default is baseline. The converse holds too: an applied value always shows. A value
+   the options don't list (a linked owner with no keys, a deleted runner) stays the
+   selected choice — named when the page can resolve it, else "Unavailable", never
+   echoed — and never reads as "All". LiveTable pins it for every select-like filter;
+   options built from rows (key owners) resolve the linked entity by a subject-scoped read.
 5. **Inline form errors.** A fixable submission error renders at the input, never
    redirect+flash (`.agent/kb/rules/elixir-inline-form-errors.md`). This includes OTP/code entry —
    a wrong code is an inline `code_input` error, not a flash.

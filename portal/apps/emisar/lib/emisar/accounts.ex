@@ -1302,10 +1302,9 @@ defmodule Emisar.Accounts do
   defp self_owner?(%Membership{}, %Subject{}), do: false
 
   @doc """
-  The live memberships among `membership_ids` in `account` — for surfacing and
-  acting on synced members from the SSO connection page. Bounded (the caller passes a known set of ids), so it returns the full
-  list, not a page. Requires `view_own_account`; scoped to the account.
-  Returns `{:ok, [%Membership{}]}`.
+  The live memberships among `membership_ids` in `account`. Bounded (the caller
+  passes a known set of ids), so it returns the full list, not a page. Requires
+  `view_own_account`; scoped to the account. Returns `{:ok, [%Membership{}]}`.
   """
   def list_memberships_by_ids(%Account{id: account_id}, membership_ids, %Subject{} = subject)
       when is_list(membership_ids) do

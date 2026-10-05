@@ -1241,6 +1241,29 @@ defmodule EmisarWeb.AgentsLiveTest do
       refute html =~ "live-bot"
     end
 
+    test "an owner a link selects is named even before they have a key", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+
+      service_account =
+        Fixtures.Memberships.create_service_account(account_id: account.id, display_name: "Ryker")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents?#{[owner: [service_account.id]]}")
+
+      assert has_element?(lv, "select[name=owner] option[selected]", "Ryker")
+      refute has_element?(lv, "select[name=owner] option[value=''][selected]")
+      assert render(lv) =~ "No agents match these filters."
+    end
+
+    test "an owner from another workspace is never named", %{conn: conn} do
+      {conn, _owner, account} = register_and_log_in(conn)
+      elsewhere = Fixtures.Memberships.create_service_account(display_name: "Elsewhere bot")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/agents?#{[owner: [elsewhere.id]]}")
+
+      assert has_element?(lv, "select[name=owner] option[selected]", "Unavailable")
+      refute render(lv) =~ "Elsewhere bot"
+    end
+
     test "agents list shows the MCP client a key reported (clientInfo)", %{conn: conn} do
       {conn, owner, account} = register_and_log_in(conn)
       subject = Fixtures.Subjects.subject_for(owner)

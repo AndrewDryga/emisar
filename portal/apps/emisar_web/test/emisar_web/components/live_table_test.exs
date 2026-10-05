@@ -149,6 +149,24 @@ defmodule EmisarWeb.LiveTableTest do
     }
   end
 
+  defp render_filter_form(filters, params) do
+    assigns = %{filters: filters, params: params}
+
+    rendered =
+      rendered_to_string(~H"""
+      <LiveTable.filter_form id="things-filter" path="/things" filters={@filters} params={@params} />
+      """)
+
+    LazyHTML.from_document(rendered)
+  end
+
+  defp selected_option_text(document, name) do
+    document
+    |> LazyHTML.query("select[name=#{name}] option[selected]")
+    |> LazyHTML.text()
+    |> String.trim()
+  end
+
   defp bool_filter(name) do
     %Filter{name: name, type: :boolean, fun: fn q -> {q, true} end}
   end
@@ -412,6 +430,35 @@ defmodule EmisarWeb.LiveTableTest do
       filters = [string_filter(:name)]
       assert LiveTable.has_active_filters?(%{"name" => "x"}, filters)
       refute LiveTable.has_active_filters?(%{}, filters)
+    end
+  end
+
+  describe "filter_form/1 — an applied value its options don't list" do
+    test "a select keeps an unlisted value selected as Unavailable, never All or the raw value" do
+      document = render_filter_form([list_filter(:owner)], %{"owner" => ["Call +1 555 0100"]})
+
+      assert selected_option_text(document, "owner") == "Unavailable"
+
+      assert document
+             |> LazyHTML.query("select[name=owner] option[value=''][selected]")
+             |> Enum.empty?()
+
+      refute LazyHTML.text(document) =~ "555"
+    end
+
+    test "a searchable select reads an accepted but undisplayed value as itself" do
+      filter = %{
+        list_filter(:event_type)
+        | search: true,
+          valid_values: [{"api_key.created", "Created"}]
+      }
+
+      document = render_filter_form([filter], %{"event_type" => "api_key.created"})
+
+      assert document
+             |> LazyHTML.query("button[data-combobox-trigger]")
+             |> LazyHTML.text()
+             |> String.trim() == "api_key.created"
     end
   end
 

@@ -454,7 +454,7 @@ defmodule EmisarWeb.LiveTable do
     assigns =
       assigns
       |> assign(:selected, List.wrap(picker.selected))
-      |> assign(:groups, normalize_groups(assigns.filter.values || []))
+      |> assign(:groups, option_groups(assigns.filter, picker.selected))
       |> assign(:active?, filter_active?(assigns.filter, picker.selected))
       |> assign(:picker, picker)
       |> assign(:stale_choices?, picker.empty? and Map.get(picker, :page, []) != [])
@@ -597,13 +597,16 @@ defmodule EmisarWeb.LiveTable do
   # untouched, while a value or available-choice change renders a
   # fresh node under a new id — server-rendered label, active tint, closed panel.
   defp filter_input(%{filter: %Filter{search: true}} = assigns) do
+    selected = assigns.value |> List.wrap() |> List.first()
+    groups = option_groups(assigns.filter, selected)
+
     assigns =
       assigns
-      |> assign(:selected, assigns.value |> List.wrap() |> List.first())
-      |> assign(:groups, normalize_groups(assigns.filter.values || []))
+      |> assign(:selected, selected)
+      |> assign(:groups, groups)
       |> assign(:active?, filter_active?(assigns.filter, assigns.value))
-      |> assign(:combobox_groups, filter_combobox_groups(assigns.filter.values || []))
-      |> assign(:choices_key, :erlang.phash2(assigns.filter.values))
+      |> assign(:combobox_groups, filter_combobox_groups(groups))
+      |> assign(:choices_key, :erlang.phash2(groups))
 
     ~H"""
     <label class={filter_label_class(@active?)}>
@@ -627,7 +630,7 @@ defmodule EmisarWeb.LiveTable do
     assigns =
       assigns
       |> assign(:selected, List.wrap(assigns.value))
-      |> assign(:groups, normalize_groups(assigns.filter.values || []))
+      |> assign(:groups, option_groups(assigns.filter, assigns.value))
       |> assign(:active?, filter_active?(assigns.filter, assigns.value))
 
     ~H"""
@@ -745,6 +748,32 @@ defmodule EmisarWeb.LiveTable do
   # can take one path.
   defp normalize_groups([{_label, list} | _] = values) when is_list(list), do: values
   defp normalize_groups(flat), do: [{nil, flat}]
+
+  # A value the URL applies that the options don't list (an owner with no keys
+  # yet, a deleted runner, a hand-edited link) still reads as the choice in
+  # force, never as "All" or a bare id.
+  defp option_groups(%Filter{} = filter, selected) do
+    groups = normalize_groups(filter.values || [])
+    listed = option_values(groups)
+
+    unlisted =
+      for value <- List.wrap(selected), value not in [nil, ""], value not in listed do
+        {value, unlisted_label(filter, value)}
+      end
+
+    if unlisted == [], do: groups, else: groups ++ [{nil, unlisted}]
+  end
+
+  defp option_values(groups),
+    do: for({_label, options} <- groups, option <- options, do: option_value(option))
+
+  # A value the filter accepts without displaying it (a specific audit event type
+  # under a collapsed group) reads as itself. Anything else is never echoed back,
+  # so a crafted link can't put its own words in the console.
+  defp unlisted_label(%Filter{valid_values: valid_values}, value) do
+    accepted = valid_values |> List.wrap() |> normalize_groups() |> option_values()
+    if value in accepted, do: value, else: "Unavailable"
+  end
 
   # Normalized groups as the shared select's option/group maps — a nil group label
   # means ungrouped options, which stay at the top level.
@@ -904,7 +933,7 @@ defmodule EmisarWeb.LiveTable do
     |> List.wrap()
     |> Enum.map_join(", ", fn v ->
       case List.keyfind(labels, v, 0) do
-        nil -> v
+        nil -> unlisted_label(filter, v)
         option -> option_label(option)
       end
     end)
