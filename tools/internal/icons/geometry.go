@@ -342,6 +342,24 @@ func axisRuns(body string) (xs, ys []float64, err error) {
 	return xs, ys, nil
 }
 
+// mirrorShift is how far a drawing moves toward the origin on one axis: half a
+// pixel when a run lies on the box centre, none otherwise. That run is the
+// drawing's own mirror axis (the plus, an arrow's shaft, the ! and i stems), and
+// a 1px stroke centred on 8 splits across two pixel rows at 1x whichever way the
+// snap rounds it. Moving the whole drawing puts the run on 7.5 and keeps
+// everything that was symmetric about 8 symmetric about the new axis; the
+// drawing then sits half a pixel off the box centre, which no one sees at 2x.
+// The test is the one the old exemption used: the run's scaled position within
+// 0.05 of the centre.
+func mirrorShift(runs []float64, centre, scale float64) float64 {
+	for _, r := range runs {
+		if math.Abs((r-centre)*scale) < 0.05 {
+			return 0.5
+		}
+	}
+	return 0
+}
+
 // onRun reports whether v lies on one of the runs, within the float noise the
 // 2/3 scale leaves: a vertex on a run's line (a leg ending on a box edge, an
 // arrowhead arm ending on a sheet's bottom) moves with that run.

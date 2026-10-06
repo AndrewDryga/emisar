@@ -230,8 +230,8 @@ defmodule EmisarWeb.IconsTest do
       # A 1px stroke centred on n+0.5 has both edges on device-pixel boundaries
       # at 1x, 2x and 3x; an integer centre splits it across two pixel rows at
       # 1x — the haze 97 of 129 cuts shipped with while the rule called .0/.5
-      # crisp. The one accepted soft run is the drawing's own mirror axis (8 in
-      # the centred box), which cannot move without breaking the symmetry.
+      # crisp. The box centre (8) is no exception: a drawing with a run on its
+      # mirror axis sits half a pixel off the centre so that run is sharp too.
       # Hand cuts are held to it too: it is arithmetic, not taste.
       soft =
         for path <- @masters,
@@ -239,7 +239,7 @@ defmodule EmisarWeb.IconsTest do
             source = File.read!(path),
             source =~ ~s(viewBox="0 0 16 16"),
             {axis, at} <- axis_runs(source),
-            at - Float.floor(at) != 0.5 and at != 8.0,
+            at - Float.floor(at) != 0.5,
             uniq: true,
             do: "#{Path.basename(path)} #{axis}=#{at}"
 

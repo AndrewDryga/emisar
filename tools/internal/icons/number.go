@@ -32,15 +32,13 @@ func quarterGrid(v float64) float64 { return jsRound(v*4) / 4 }
 
 // pixelCentre snaps the centre line of a 1px axis-aligned run to the nearest
 // n+0.5, where both stroke edges land on device-pixel boundaries at 1x, 2x and
-// 3x; an integer centre splits the run across two pixel rows at 1x. The box
-// centre 8 is the exception: a run on the drawing's mirror axis cannot move
-// without breaking the symmetry, so it stays. A value within rounding of an
-// integer is a tie, and a tie breaks away from the centre so a symmetric pair
-// of edges grows together instead of shifting.
+// 3x; an integer centre splits the run across two pixel rows at 1x. A value
+// within rounding of an integer is a tie, and a tie breaks away from the centre
+// so a symmetric pair of edges grows together instead of shifting. (The centre
+// is 8, or 7.5 once the drawing has moved; an integer lies on the same side of
+// both.) The box centre is no exception: a run on it never gets here, because
+// the cutter moves the whole drawing off it first (mirrorShift).
 func pixelCentre(v float64) float64 {
-	if math.Abs(v-8) < 0.05 {
-		return 8
-	}
 	if r := jsRound(v); math.Abs(v-r) < 0.02 {
 		if v < 8 {
 			return r - 0.5

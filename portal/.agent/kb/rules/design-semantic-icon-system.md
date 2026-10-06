@@ -176,16 +176,29 @@ it is reached through its semantic token and its provenance stays recorded.
   each run's coordinate to the nearest pixel centre (a tie breaks away from
   the box centre, so a frame's two edges grow together) and maps a rect by
   its edges, never x and width apart; diagonals, curves, and dots keep the
-  half grid. The one accepted soft run is the drawing's own mirror axis
-  (x or y = 8: the plus, arrow shafts, the ! and i stems) — moving it would
-  break the symmetry. A centred crisp frame spans an even number of pixels,
-  so the square class lands at 14 (1.5–14.5), not 13.5. Rhythm, clearance,
-  and family construction stay judgments: when the per-coordinate snap breaks
-  one (three text lines, a 1 px gap, the document fold), that cut becomes a
-  hand cut. The pixel-centre grid serves the 16 px render the cut is drawn
-  for: the same file drawn at 12 or 14 px (`h-3`, `h-3.5`) falls between
-  pixels whatever its coordinates, and came out slightly softer at 1× than
-  the old accidental fit — size a compact icon at 16 px when it must be sharp.
+  half grid. A run on the drawing's own mirror axis (x or y = 8: the plus, an
+  arrow shaft, the ! and i stems) cannot be sharp where it is, so the whole
+  drawing moves half a pixel left or up on that axis and its axis becomes
+  7.5. The glyph then sits half a pixel off the box centre, which no one sees
+  at 2×, and every run is sharp at 1×. What was symmetric about 8 is re-laid
+  in pairs about 7.5 (a frame at 1.5 to 13.5, a book's covers, a tree's bar),
+  so its gaps stay equal. A frame with a run on the axis spans an odd
+  number of pixels; a frame with none still spans an even number, so the
+  square class lands at 14 (1.5 to 14.5), not 13.5. Some containers stay
+  where they are and only the glyph inside moves, half a pixel off its
+  container's centre: an outline that is pinned or curved and already crisp
+  (the badge ring, r 6.5 on 8,8, the shield, the bulb, the rotation arcs),
+  and parts that re-laying would shrink or grow by more than about a sixth
+  (the nodes of `story.operations`, the plug and socket of
+  `docs.compatibility`, the card of `story.dispatch`). A drawing that
+  rotates keeps its true centre (the spinner, above). Rhythm, clearance,
+  and family construction stay judgments: when the per-coordinate snap
+  breaks one (three text lines, a 1 px gap, the document fold), that cut
+  becomes a hand cut. The pixel-centre grid serves the 16 px render the cut
+  is drawn for: the same file drawn at 12 or 14 px (`h-3`, `h-3.5`) falls
+  between pixels whatever its coordinates, and came out slightly softer at
+  1× than the old accidental fit. Size a compact icon at 16 px when it must
+  be sharp.
   (A 1.5 px stroke instead needs odd-quarter centers and is only clean at 2× —
   the bolder experiment lived there.) Deltas cannot be snapped independently
   (a lopsided hexagon), so the cutter absolutizes every path before snapping.

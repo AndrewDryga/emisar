@@ -281,7 +281,8 @@ func TestPixelCentre(t *testing.T) {
 		{1.83, 1.5}, {14.17, 14.5}, // a frame's two edges grow together
 		{2, 1.5}, {14, 14.5}, // a tie breaks away from the centre
 		{4.91, 4.5}, {11.08, 11.5}, {10.84, 10.5},
-		{7.99, 8}, {8.01, 8}, // the mirror axis stays
+		{7.5, 7.5}, {7.4, 7.5}, // a drawing that moved keeps its axis on a centre
+		{7.99, 7.5}, {8.01, 8.5}, // the box centre is no exception: it splits as a tie
 	}
 	for _, c := range cases {
 		if got := pixelCentre(c.in); got != c.want {
@@ -290,10 +291,35 @@ func TestPixelCentre(t *testing.T) {
 	}
 }
 
+// A run centred on the box centre splits across two pixel rows however it
+// rounds, so the cutter moves the whole drawing half a pixel off it, on that
+// axis only. The test is the old exemption's: the run's scaled position within
+// 0.05 of the centre.
+func TestMirrorShift(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name          string
+		runs          []float64
+		centre, scale float64
+		want          float64
+	}{
+		{"a run on the centre", []float64{2.5, 8, 13.5}, 8, 1, 0.5},
+		{"a run that scales onto it", []float64{5.5}, 5.4, 0.5, 0.5},
+		{"a run beside it", []float64{7.9}, 8, 1, 0},
+		{"runs only off the centre", []float64{2.5, 13.5}, 8, 1, 0},
+		{"no runs", nil, 8, 1, 0},
+	}
+	for _, c := range cases {
+		if got := mirrorShift(c.runs, c.centre, c.scale); got != c.want {
+			t.Errorf("%s: mirrorShift = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 // The cutter lands every stroked axis-aligned run on a pixel centre: a rect is
 // mapped by its edges (no lopsided 2..14.5 frame), a vertex lying on a run's
 // line moves with it (the arrowhead arm that ends on the sheet's bottom edge),
-// the mirror axis stays, and filled shapes and diagonals keep the half grid.
+// and filled shapes and diagonals keep the half grid.
 func TestCutPutsAxisRunsOnPixelCentres(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -305,7 +331,47 @@ func TestCutPutsAxisRunsOnPixelCentres(t *testing.T) {
 	want := map[string]string{
 		"state/approved":  `<rect x="1.5" y="1.5" width="13" height="13" rx="2.5"/><path class="accent" d="M5 8L7 10.5L11.5 5.5"/>`,
 		"docs/deployment": `<rect x="1.5" y="3.5" width="8" height="9" rx="1.5"/><path d="M4 5.5H7.5M4 8.5H6.5"/><path class="accent" d="M8.5 10.5H14M14 10.5L12 8.5M14 10.5L12 12.5"/>`,
-		"action/add":      `<path d="M8 2.5V13.5M2.5 8H13.5"/>`,
+		"action/add":      `<path d="M7.5 2V13M2 7.5H13"/>`,
+	}
+	for key, body := range masters {
+		path := filepath.Join(root, key+".svg")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		master := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">` + "\n  " + body + "\n</svg>\n"
+		if err := os.WriteFile(path, []byte(master), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Cut(root); err != nil {
+		t.Fatal(err)
+	}
+	for key, body := range want {
+		got, _ := os.ReadFile(filepath.Join(root, key+".16.svg"))
+		if string(got) != cutHeader+"\n  "+body+"\n</svg>\n" {
+			t.Errorf("%s cut:\n%s\nwant:\n  %s", key, got, body)
+		}
+	}
+}
+
+// A drawing with a run on the box centre moves half a pixel toward the origin on
+// that axis and snaps around the new axis (7.5), so the run is sharp and what
+// was symmetric about the box stays symmetric about it. The other axis does not
+// move: the arrow's x extent is not a mirror run.
+func TestCutMovesAMirrorAxisRunOffTheBoxCentre(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	masters := map[string]string{
+		"action/next":    `<path d="M4 12H20M20 12L15 7M20 12L15 17"/>`,
+		"action/menu":    `<path d="M4 6H20M4 12H20M4 18H20"/>`,
+		"device/desktop": `<rect x="3.5" y="4" width="17" height="12.5" rx="2"/><path d="M8.5 20H15.5M12 16.5V20"/>`,
+	}
+	want := map[string]string{
+		"action/next": `<path d="M2.5 7.5H13.5M13.5 7.5L10 4M13.5 7.5L10 11"/>`,
+		// The three bars stay evenly spaced: 3.5, 7.5, 11.5.
+		"action/menu": `<path d="M2.5 3.5H13.5M2.5 7.5H13.5M2.5 11.5H13.5"/>`,
+		// The frame's two edges re-lay as a pair about 7.5, and the stem sits in the middle.
+		"device/desktop": `<rect x="1.5" y="2.5" width="12" height="9" rx="1.5"/><path d="M5 13.5H10M7.5 11.5V13.5"/>`,
 	}
 	for key, body := range masters {
 		path := filepath.Join(root, key+".svg")
