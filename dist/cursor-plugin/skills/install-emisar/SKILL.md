@@ -46,13 +46,12 @@ Verify commands before running them:
 - When a runner installs but never appears in the fleet, read the host log
   first (`sudo journalctl -u emisar -n 200`) and take the registration status
   from it rather than guessing. A `401` means the enrollment key was spent,
-  expired, or revoked; a `409` means another runner already holds this name,
-  which a rebuilt host or a restored image produces — a runner's name defaults
+  expired, or revoked. A `409` means another runner already holds this name,
+  which a rebuilt host or a restored image produces. A runner's name defaults
   to its hostname and cannot be renamed, so the operator deletes the existing
   runner or sets `runner.id` (`EMISAR_RUNNER_ID` at install) to register under a
-  declared name; a `402` means
-  the account is at its plan's runner limit. `https://emisar.dev/docs/troubleshooting`
-  covers each symptom and its check.
+  declared name. A `402` means the account is at its plan's runner limit.
+  `https://emisar.dev/docs/troubleshooting` covers each symptom and its check.
 
 Never reconstruct a flag or config shape from memory when current help or a
 portal-generated snippet is available. If installed help differs from public
@@ -233,7 +232,7 @@ Do not install, remove, or update a pack until the operator answers the pack
 selection prompt below. Do this immediately after a fresh pack-free install or a
 pack-preserving upgrade so recommendations follow the current installed CLI.
 
-1. Resolve the configured distribution registry — the origin the runner
+1. Resolve the configured distribution registry, the origin the runner
    fetches pack bytes and recommendations from. Fetch both its full catalog and
    its recommendation index with bounded HTTPS requests and a structured JSON
    parser. For hosted Emisar these are `${EMISAR_URL%/}/packs.json` and
@@ -245,8 +244,8 @@ pack-preserving upgrade so recommendations follow the current installed CLI.
 
    Distribution is not trust, and they are two different settings. The portal
    trusts an exact `pack@version/hash` for the account the moment that tuple
-   appears in the catalog it is configured to read — `EMISAR_PACK_CATALOG_URL`,
-   which is Emisar's published catalog on the hosted control plane — and holds
+   appears in the catalog it is configured to read (`EMISAR_PACK_CATALOG_URL`,
+   which is Emisar's published catalog on the hosted control plane), and holds
    every other hash pending on first sight, with dispatch held, until an account
    admin trusts or rejects it on the portal's **Packs** page. On hosted Emisar
    both defaults resolve to the same published catalog, so an exact tuple that
@@ -255,7 +254,7 @@ pack-preserving upgrade so recommendations follow the current installed CLI.
    bytes come from: its packs arrive pending unless the deployment owner has
    separately configured the portal to read that registry's catalog. Which
    catalog carries trust is the deployment owner's decision, and a pending hash
-   is an account admin's review — never repoint `EMISAR_PACK_CATALOG_URL` and
+   is an account admin's review. Never repoint `EMISAR_PACK_CATALOG_URL`, and
    never trust a pack yourself to clear a check.
 2. Verify the installed command's current help, then collect the local pack set
    and host recommendations. When supported by that version, prefer structured

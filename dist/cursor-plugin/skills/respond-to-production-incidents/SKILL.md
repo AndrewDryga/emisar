@@ -179,8 +179,8 @@ For a new incident question that no returned continuation already answers:
    - `evidence`: the concrete observations or run IDs that motivated it.
    - `expected`: the result that would support or refute the hypothesis.
 7. Follow the returned `next` with `wait_for_run` until the response carries no
-   `next`, or you hit the stated `wait_until`. Absence of `next` — not terminal
-   status — means there is nothing further to retrieve: a finished run still
+   `next`, or you hit the stated `wait_until`. Absence of `next`, not terminal
+   status, means there is nothing further to retrieve: a finished run still
    offers one while output remains beyond its preview. Follow it verbatim rather
    than composing your own call. Waiting observes; it does not cancel, approve,
    or repeat work.
@@ -207,7 +207,7 @@ When evidence supports containment and **Contain** mode is active:
 3. Refresh with `get_action`, then call `run_action` once with exact refs and a
    specific `reason`, `evidence`, and `expected`. Use `execute_runbook` only
    after `get_runbook` confirms every step of the live release fits the response
-   mode, and name that release as `slug@N` — an older one is refused rather than
+   mode, and name that release as `slug@N`; an older one is refused rather than
    run. The execution snapshots the definition it dispatched, so what ran stays
    readable after the runbook moves on.
 4. When a response is ambiguous and supplies an operation ID, use

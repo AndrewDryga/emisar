@@ -9,8 +9,8 @@ interfaces. Installing one never requires cloning or forking this repository.
 | Skill | Purpose |
 | --- | --- |
 | [`install-emisar`](install-emisar/SKILL.md) | Install, configure, and certify the runner and packs, reusing the current authenticated Emisar MCP connection when available. |
-| [`connect-llm`](connect-llm/SKILL.md) | Connect an LLM or MCP client — the stdio bridge or a cloud connector — and certify the connection. |
-| [`author-pack`](author-pack/SKILL.md) | Author, validate, test, distribute, and certify a custom action pack — directory installs or a private registry. |
+| [`connect-llm`](connect-llm/SKILL.md) | Connect an LLM or MCP client (the stdio bridge or a cloud connector) and certify the connection. |
+| [`author-pack`](author-pack/SKILL.md) | Author, validate, test, distribute, and certify a custom action pack, using directory installs or a private registry. |
 | [`respond-to-production-incidents`](respond-to-production-incidents/SKILL.md) | Investigate production, test hypotheses, contain impact through Emisar, prepare and verify a permanent code or IaC fix, and write the incident report. |
 
 Outside a plugin that already supplies authenticated Emisar MCP, install both
@@ -31,7 +31,7 @@ the hosted Emisar MCP server. Together they cover an empty account with no
 runners, environment-specific capability gaps, and the normal incident
 workflow; `install-emisar` reuses the plugin's authenticated MCP connection for
 end-to-end proof after the runner comes online. The bundled copies are mirrors
-of the files here — `./run check agent-setup` fails when they differ.
+of the files here, and `./run check agent-setup` fails when they differ.
 
 Keep `connect-llm` available as a standalone public skill, but do not bundle it
 with a plugin. Installing the plugin already establishes that client

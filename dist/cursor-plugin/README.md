@@ -11,9 +11,9 @@ bundles three portable customer workflows: install and certify a runner, author
 a custom action pack, and respond to a production incident. Tools, runner scope,
 policy, approval, and audit remain in the operator's emisar account.
 
-**Publication status:** local installation is available now. The Cursor
-Marketplace listing is pending. The direct MCP configuration below registers
-the same endpoint without the bundled skills.
+Local installation is available now; the Cursor Marketplace listing is
+pending. The direct MCP configuration below registers the same endpoint
+without the bundled skills.
 
 ## Connect now
 

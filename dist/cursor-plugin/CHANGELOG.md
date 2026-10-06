@@ -4,6 +4,13 @@ All notable changes to the emisar Cursor plugin are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the plugin
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — 2026-10-06
+
+### Changed
+
+- The bundled skills read in plainer English. Every instruction, rule and
+  command is unchanged.
+
 ## [0.2.1] — 2026-09-22
 
 ### Fixed

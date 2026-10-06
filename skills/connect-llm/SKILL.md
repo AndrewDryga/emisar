@@ -84,7 +84,7 @@ Establish, asking only for what cannot be discovered safely:
 - Whether `emisar-mcp` is already installed (`command -v emisar-mcp`,
   `emisar-mcp --version`) and where the client keeps its config.
 - The control-plane origin (`EMISAR_URL`) and whether the operator can open a
-  browser to approve the connection — the installer's default flow mints
+  browser to approve the connection. The installer's default flow mints
   per-client keys through a browser approval, so no key is copied by hand.
 - Whether the target runner fleet requires signed dispatch (that changes the
   functional expectations below).
@@ -93,7 +93,7 @@ Establish, asking only for what cannot be discovered safely:
 
 For Claude.ai or ChatGPT, there is nothing to install. From the signed-in
 **Agents** page, take the connector name and the remote MCP server URL, add
-the connector in the client's own settings, and complete the OAuth consent —
+the connector in the client's own settings, and complete the OAuth consent,
 choosing the intended account on the consent screen. Then continue at step 4.
 
 ## 3. Local client: install the bridge and register
@@ -164,25 +164,25 @@ trap - EXIT HUP INT TERM
 
 The installer takes no client argument. It detects the clients already present
 on the machine, asks about each one, then mints that client's key through a
-browser approval and writes it into that client's own config — so run it where
+browser approval and writes it into that client's own config, so run it where
 it can prompt, and let it finish the registration.
 
 After the per-client questions it asks once whether to silence that client's own
 "allow this tool?" prompt for the emisar server. It offers this only for the
 clients whose setting can name emisar alone (Claude Code, Gemini CLI, Codex CLI,
-Grok CLI) and never touches a global approval setting. Answering no changes
-nothing, and either answer leaves Emisar policy and approvals in force. This
-edits a security setting in a file the operator owns, so answer it from their
-instruction — do not enable it on their behalf, and report which clients were
-changed.
+Grok CLI) and never touches a global approval setting. Answering no does not
+change anything, and either answer leaves Emisar policy and approvals in force.
+This edits a security setting in a file the operator owns, so answer it from
+their instruction. Do not enable it on their behalf, and report which clients
+were changed.
 
 Adapt only with flags present in the downloaded installer's help. Drop `sudo`
 and add `--install-dir "$HOME/.local/bin"` to install without root; pin a
 release with `--version mcp-vX.Y.Z`. There is no unattended path to a
 registered client: `--yes` skips every prompt, the client step included, so it
-installs the bridge binary and registers nothing. `EMISAR_URL` has to reach the
-installer's own environment either way — it is written into every client config
-it touches.
+installs the bridge binary and does not register anything. `EMISAR_URL` has to
+reach the installer's own environment either way, because it is written into
+every client config it touches.
 
 Keep the client's `emisar/credentials` directory durable and owner-only so key
 rotation survives restarts; containerized clients must persist `/config`.
@@ -255,5 +255,5 @@ Open items: <owner + exact next action, or none>
 Overall is `PASS` only when every applicable required row passes. A required
 `FAIL` makes it `FAIL`; a required `SKIPPED` or `UNSUPPORTED` makes it `NOT
 CERTIFIED`. Include exact versions, paths, endpoint origins, refs, run IDs,
-timestamps, and sanitized errors — never credential values or raw logs that
-may contain secrets.
+timestamps, and sanitized errors. Never include credential values or raw logs
+that may contain secrets.
