@@ -22,7 +22,7 @@
         Your agent requests. Your runner executes.
       </.marketing_heading>
       <p class="mt-6 max-w-2xl text-lg leading-relaxed text-zinc-300">
-        When your agent needs something done — say a service is failing and it wants to investigate —
+        When your agent needs something done (say a service is failing and it wants to investigate),
         it doesn't open a shell or connect directly to the host. It asks emisar for one declared
         action, on one server, for a stated reason. Depending on your rules, that request runs right
         away, gets refused, or waits for a person to approve it. A small program on your server
@@ -46,7 +46,7 @@
 
       <div class="mx-auto mt-12 grid max-w-3xl grid-cols-1 items-stretch gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr]">
         <%= for {icon, label, sub} <- [
-          {"product.runner", "Your AI agent", "Claude, Cursor, ChatGPT — anything that speaks MCP"},
+          {"product.runner", "Your AI agent", "Claude, Cursor, ChatGPT, or anything else that speaks MCP"},
           {"infrastructure.cloud", "Emisar cloud", "Your catalog, your rules, approvals, and the audit trail"},
           {"infrastructure.host", "The runner", "A small program on your server that does the work"}
         ] do %>
@@ -77,7 +77,8 @@
         <p class="mt-6 text-lg leading-relaxed text-zinc-400 text-pretty">
           A CSI driver reformatted a live LUN and wiped 33 hours of metrics. Watch the agent
           investigate through declared actions, stop the writes behind one approval, and hand
-          back the durable fix as a Terraform PR — over MCP, no SSH, every step on the record.
+          back the durable fix as a Terraform PR. Everything goes over MCP, without SSH, and every
+          step is on the record.
         </p>
       </div>
 
@@ -108,8 +109,8 @@
               The agent asks
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              The agent can't run commands — asking is all it can do. The ask is one action from
-              your catalog, the arguments to fill it in, and a reason a human can read later.
+              The agent can't run commands, so asking is all it can do. The request is one action
+              from your catalog, the arguments to fill it in, and a reason a human can read later.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
               <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
@@ -137,10 +138,10 @@
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
               Before your rules even come into it, emisar checks the basics: the action really
-              is in your catalog, it comes from a pack version your account trusts — an exact hash
-              in the published catalog auto-pins, and a pack whose content changed on the host is
-              blocked until an admin reviews it — the arguments fit the schema, and this agent is
-              allowed to touch that server.
+              is in your catalog, it comes from a pack version your account trusts, the arguments
+              fit the schema, and this agent is allowed to touch that server. A pack whose exact
+              hash is in the published catalog is pinned automatically, and a pack whose content
+              changed on the host is blocked until an admin reviews it.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
               <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
@@ -166,7 +167,7 @@
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
               This is where your policy comes in: it can let an action run freely, refuse it
               outright, or require a person to sign off. A service restart is disruptive enough
-              that it waits — Jordan gets the approval, reads the reason, and taps Approve.
+              that it waits. Jordan gets the approval, reads the reason, and taps Approve.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
               <div class="border-b border-zinc-900 bg-zinc-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
@@ -190,8 +191,8 @@
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
               The runner doesn't blindly trust the cloud. It re-checks the pack and the
-              arguments on your own server, runs that one command — there's no shell involved —
-              and scrubs anything that looks like a secret from the output before it leaves the
+              arguments on your own server and runs that one command without a shell. Then it
+              scrubs anything that looks like a secret from the output before it leaves the
               machine.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">
@@ -215,8 +216,8 @@
               Everything is on the record
             </h3>
             <p class="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-              The whole story — who asked, why, who approved, what ran, and what came back —
-              lands in the audit trail. The host keeps its own copy, each line chained to the one
+              The audit trail records the whole story: who asked, why, who approved, what ran,
+              and what came back. The host keeps its own copy, each line chained to the one
               before it, so tampering shows. Search the trail in the console, or have your SIEM
               poll it out.
             </p>

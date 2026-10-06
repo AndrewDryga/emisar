@@ -14,7 +14,7 @@
       <.docs_header current="integrations-google-workspace">
         <:dek>
           Connect Google Workspace to emisar: an Internal OAuth client and a locked, prefilled
-          issuer. Google has no outbound SCIM — the directory-sync section covers the gap.
+          issuer. Google has no outbound SCIM. The directory-sync section covers the gap.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -61,8 +61,7 @@
             <strong class="text-zinc-200">App name</strong>
             and <strong class="text-zinc-200">User support email</strong>
             appear on Google's consent screen. Use a name your members recognize. On a new
-            project, Google presents the same fields in the numbered setup shown next. The
-            fields are identical.
+            project, Google presents the same fields in the numbered setup shown next.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/google-branding.webp"
@@ -129,7 +128,7 @@
             https://emisar.dev/sign_in/sso/callback
           </.docs_value>
           <p class="mt-4">
-            Mind which list it goes in — <strong class="text-zinc-200">Authorized JavaScript
+            Mind which list it goes in. <strong class="text-zinc-200">Authorized JavaScript
             origins</strong>
             sits directly above it and is not part of this flow. Google matches the URI
             exactly, so a trailing slash or
@@ -169,9 +168,8 @@
             Pick <strong class="text-zinc-200">Google Workspace</strong>
             as the provider type and paste the client ID and secret. The
             <strong class="text-zinc-200">Issuer URL</strong>
-            is already filled in and locked —
-            <.docs_inline_code>https://accounts.google.com</.docs_inline_code>
-            for every Google customer — so it is one less thing to get wrong. Leave the identifier
+            is already filled in and locked. Every Google customer uses <.docs_inline_code>https://accounts.google.com</.docs_inline_code>, so the issuer is
+            one less thing to get wrong. Leave the identifier
             claim on <.docs_inline_code>sub</.docs_inline_code>.
             Select <strong class="text-zinc-200">Add connection</strong>, then
             <strong class="text-zinc-200">Verify sign-in</strong>
@@ -183,7 +181,7 @@
           <.docs_screenshot
             src="/images/docs/sso/google-emisar-connection.webp"
             title="emisar console · Add connection"
-            caption="Picking Google Workspace locks the issuer to https://accounts.google.com — the padlock means there is nothing for you to look up or mistype."
+            caption="Picking Google Workspace locks the issuer to https://accounts.google.com. The padlock means there is nothing for you to look up or mistype."
             alt="The Google Workspace OIDC fields: a locked Issuer URL showing https://accounts.google.com, highlighted Client ID and Client secret, and Identifier claim set to sub."
           />
         </.docs_step>
@@ -203,7 +201,7 @@
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Google Workspace cannot push users to emisar — it provisions only applications in its
+        Google Workspace cannot push users to emisar. It provisions only applications in its
         SaaS catalog, and the custom OAuth client created above has no SCIM connector, so
         emisar hides the sync panel. With
         <strong class="text-zinc-200">Add on first sign-in</strong>
@@ -224,7 +222,7 @@
       </p>
       <.docs_callout kind={:tip} title="Want automatic deprovisioning?">
         <p>
-          Route Google through an IdP that does have outbound SCIM — Okta, Entra or JumpCloud —
+          Route Google through an IdP that does have outbound SCIM (Okta, Entra or JumpCloud)
           and connect <em>that</em>
           to emisar. An offboard in Google then reaches us as the standard
           <code class="rounded-sm bg-zinc-950 px-1 py-0.5 text-xs">active: false</code>

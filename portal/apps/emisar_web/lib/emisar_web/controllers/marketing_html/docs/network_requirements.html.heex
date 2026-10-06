@@ -26,7 +26,7 @@
       <.docs_h2 id="table">What has to be reachable</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Use these rows to build outbound rules for runner hosts and workstations. "Your emisar
-        origin" is the control plane you connect to — on the hosted control plane, <.docs_inline_code>https://emisar.dev</.docs_inline_code>.
+        origin" is the control plane you connect to. On the hosted control plane, that is <.docs_inline_code>https://emisar.dev</.docs_inline_code>.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[1120px] text-left text-sm">
@@ -118,7 +118,7 @@
                "Outbound",
                "Whatever time source the host already uses, commonly UDP 123",
                "NTP",
-               "Certificate validity — and signed-dispatch freshness — is judged against this clock",
+               "Certificate validity and signed-dispatch freshness are judged against this clock",
                "Continuously"}
             ] do %>
               <tr>
@@ -149,7 +149,7 @@
             Loopback HTTP is accepted without a flag. The runner rejects cleartext HTTP and
             WebSocket connections to non-loopback hosts unless
             <.docs_inline_code>cloud.allow_insecure</.docs_inline_code>
-            is set — that sends runner credentials without TLS, so use it only on an isolated
+            is set. That setting sends runner credentials without TLS, so use it only on an isolated
             development network.
           </span>
         </li>
@@ -169,7 +169,7 @@
           <span>
             <strong class="text-zinc-200">The runner reconnects on its own.</strong>
             After a drop it retries with backoff and advertises again. A connection timeout often
-            means outbound port 443 is filtered — use
+            means outbound port 443 is filtered. Use
             <.docs_inline_code>emisar doctor</.docs_inline_code>
             to check that the control plane is reachable.
           </span>
@@ -215,7 +215,7 @@
           navigate={~p"/docs/host-install"}
           class="text-brand-400 hover:text-brand-300"
         >Linux host</.link>
-        page covers the surrounding setup, and
+        page covers the surrounding setup, and the
         <.link
           navigate={~p"/docs/runner-upgrades"}
           class="text-brand-400 hover:text-brand-300"
@@ -238,7 +238,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         These commands look packs up by name, and the public emisar origin serves those
         lookups. A static tree built with <code>packctl</code>
-        has a different layout — install from its exact immutable tarball URL instead of passing
+        has a different layout. Install from its exact immutable tarball URL instead of passing
         that host to <code>--registry</code>. Running one is covered in <.link
           navigate={~p"/docs/pack-registry"}
           class="text-brand-400 hover:text-brand-300"
@@ -248,7 +248,7 @@
       <.docs_h2 id="bridge">The MCP bridge</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The LLM client starts the bridge as a child process and talks to it over stdin and
-        stdout — no port, no socket. The bridge sends one HTTPS
+        stdout, without a port or socket. The bridge sends one HTTPS
         <.docs_inline_code>POST</.docs_inline_code>
         to
         <.docs_inline_code>/api/mcp/rpc</.docs_inline_code>
@@ -261,8 +261,8 @@
             <strong class="text-zinc-200">Requests can take a while on purpose.</strong>
             A wait can hold a request for up to a minute on the control plane, and the bridge
             allows 90 seconds before it gives up. An intermediary that cuts idle HTTP requests
-            shorter than that will break waits while ordinary calls keep working — a confusing
-            failure worth ruling out early.
+            shorter than that will break waits while ordinary calls keep working. That failure is
+            confusing and worth ruling out early.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -271,8 +271,8 @@
             <strong class="text-zinc-200">It refuses to put your key on the wire in the clear.</strong>
             Loopback HTTP is accepted without an override; a cleartext
             <.docs_inline_code>http://</.docs_inline_code>
-            URL to any other host is rejected unless insecure transport is explicitly enabled —
-            that sends the key without TLS and is only for an isolated development network.
+            URL to any other host is rejected unless insecure transport is explicitly enabled.
+            That setting sends the key without TLS and is only for an isolated development network.
             Redirects are refused for the same reason.
           </span>
         </li>
@@ -288,9 +288,9 @@
 
       <.docs_h2 id="providers">Provider and action traffic</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A pack action runs a real command on the host, and that command talks to its own systems
-        — Nomad, a database, a cloud API — directly. The traffic never passes through emisar, so
-        build each pack's allowlist from the pack itself:
+        A pack action runs a real command on the host, and that command talks directly to its own
+        systems, such as Nomad, a database, or a cloud API. The traffic never passes through
+        emisar, so build each pack's allowlist from the pack itself:
         <.docs_inline_code>emisar pack info &lt;id&gt;</.docs_inline_code>
         lists the binaries it needs and the environment variables it authenticates with, and
         their values carry the endpoints.
@@ -319,7 +319,7 @@
             The runner uses a long-lived WebSocket. An appliance that strips the
             <.docs_inline_code>Upgrade</.docs_inline_code>
             header, buffers frames, or closes idle connections makes the runner reconnect over
-            and over — often with no clear error to find.
+            and over, often with no clear error to find.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -346,13 +346,13 @@
           navigate={~p"/docs/signed-dispatch"}
           class="text-brand-400 hover:text-brand-300"
         >signed dispatch</.link>
-        checks signature freshness against it too — so one skewed host can refuse actions while
-        the rest of the fleet works.
+        checks signature freshness against it too. One skewed host can therefore refuse actions
+        while the rest of the fleet works.
       </p>
 
       <.docs_h2 id="verify">Check your egress rules</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The product's own commands are the test — each fails in a recognizable place when a
+        The product's own commands are the test. Each fails in a recognizable place when a
         rule is missing:
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># on the runner host — config, credential, packs, action binaries, reachability</span>

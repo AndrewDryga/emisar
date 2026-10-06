@@ -9,15 +9,14 @@
         The 33-hour wipe: a CSI driver reformatted a live LUN
       </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        A routine node drain ended with 33 hours of production telemetry gone — a
+        A routine node drain ended with 33 hours of production telemetry gone. A
         <code>democratic-csi</code>
         driver ran <code>mkfs</code>
         over a live Pure LUN, triggered by a dm-multipath path-group race. Here is the incident,
-        and the exact emisar loop that contained it:
-        <strong class="font-semibold text-zinc-200">investigate through declared actions, stop the
-        bleed behind one approval, then write the durable fix to the infra repo</strong>
-        — no raw SSH, every step on the record. The twist is the fix: the one-line setting
-        you'd reach for first was a no-op, and the thing that actually stopped it was a guard that
+        and the exact emisar loop that contained it: <strong class="font-semibold text-zinc-200">investigate through declared actions, stop the
+        bleed behind one approval, then write the durable fix to the infra repo</strong>, with no raw
+        SSH and every step on the record. The one-line setting
+        you'd reach for first was a no-op. What stopped it was a guard that
         refuses to trust the driver.
       </p>
 
@@ -26,9 +25,10 @@
         Five Dell PowerEdge R640s in the VA1 colo · Pure FlashArray over iSCSI multipath · Nomad
         2.0.2 · democratic-csi <code>node-manual</code>
         v1.9.5, pinned by OCI digest. VictoriaMetrics, VictoriaLogs, and Grafana each own a
-        dedicated Pure LUN (<code>vm-data</code>, <code>vl-data</code>, <code>grafana-data</code>) —
-        all <code>single-node-writer</code>, all under Pure QoS caps, all holding 33 hours of Apex /
-        Fortnite / Tarkov / Deadlock backend telemetry. The investigation below runs entirely
+        dedicated Pure LUN (<code>vm-data</code>, <code>vl-data</code>, <code>grafana-data</code>).
+        All three are <code>single-node-writer</code>, all sit under Pure QoS caps, and all hold 33
+        hours of Apex / Fortnite / Tarkov / Deadlock backend telemetry. The investigation below runs
+        entirely
         through emisar on the stock <code>debugging</code>, <code>docker</code>, <code>nomad</code>, <code>multipath</code>, <code>iscsi</code>,
         <code>pure</code>
         and <code>victoriametrics</code>
@@ -47,35 +47,35 @@
         persistence bug, a data-plane boot race, a session watchdog timer, and
         <code>kill_timeout</code>
         raised to 60s so <code>NodeUnstageVolume</code>
-        could flush on drain. None catastrophic alone. Together: an unstable substrate where a
-        path group could come up with no active path — exactly the condition that makes a live
-        device read empty.
+        could flush on drain. None of these was catastrophic alone. Together they made an unstable
+        substrate where a path group could come up with no active path, which is exactly the
+        condition that makes a live device read empty.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">T+0 — the drain</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">T+0: the drain</h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        Drain <code>nomad-hvn01</code>, reboot, restore — routine. VictoriaMetrics and
-        VictoriaLogs rescheduled onto <code>nomad-hvn03</code>
-        and came up green in about 30 seconds. Ingest resumed. Dull and normal.
+        The maintenance was routine: drain <code>nomad-hvn01</code>, reboot, restore. VictoriaMetrics
+        and VictoriaLogs rescheduled onto <code>nomad-hvn03</code>
+        and came up green in about 30 seconds. Ingest resumed, and everything looked dull and normal.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        T+50m — 33 hours, gone
+        T+50m: 33 hours gone
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        Grafana on the last 7 days: almost everything flat, only the last
+        Grafana over the last 7 days showed almost everything flat, with only the last
         <strong class="text-zinc-200">12 minutes</strong>
-        of metrics alive. A sharp cliff where the history just ended. Same for logs. The
-        processes were healthy and ingesting — the data was missing because the data was <em>not there</em>. An agent picks up the page.
+        of metrics alive and a sharp cliff where the history just ended. Logs looked the same. The
+        processes were healthy and ingesting; the history was missing because the data itself was <em>not there</em>. An agent picks up the page.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        1 · Investigate — through emisar, not SSH
+        1 · Investigate through emisar, not SSH
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         The agent works down the layers with declared pack actions, each scoped to
         <code>nomad-hvn03</code>
-        (or the array) and logged with a reason. No shell, no standing SSH key.
+        (or the array) and logged with a reason. It has no shell and no standing SSH key.
       </p>
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># Claude, over MCP → emisar. Each call is a declared, scoped, logged action.</span>
 
@@ -118,10 +118,10 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
         Diagnosis: when the multipath device was re-probed on migration, every path came up
         <code>enabled</code>
         (queue-ready) but no group was promoted <code>active</code>. <code>blkid</code>
-        was the first I/O — it opened the device, the read sat in the queue, and it timed out
+        was the first I/O: it opened the device, the read sat in the queue, and it timed out
         empty. The driver read "empty" as "unformatted" and ran <code>mkfs.ext4 -F</code>
         over a live LUN, then mounted the fresh filesystem for VictoriaMetrics to write to.
-        It is
+        It belongs to a whole bug class, tracked in
         <a
           href="https://github.com/kubernetes/kubernetes/issues/95183"
           target="_blank"
@@ -130,15 +130,15 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
         >
           kubernetes/kubernetes#95183
         </a>
-        — a whole bug class, confirmed against NetApp Trident, Longhorn, OpenEBS, and Azure Disk.
-        Switching CSI drivers would not fix it — the same bug lives in all of them.
+        and confirmed against NetApp Trident, Longhorn, OpenEBS, and Azure Disk.
+        Switching CSI drivers would not fix it, because the same bug lives in all of them.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        2 · Stop the bleed — one approval
+        2 · Stop the bleed with one approval
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        VictoriaMetrics is already writing fresh parts to the empty filesystem — every
+        VictoriaMetrics is already writing fresh parts to the empty filesystem, and every
         group-commit overwrites blocks that still hold the old data. The move is to halt it, and
         <code>nomad.alloc_stop</code>
         is declared <code>risk: high</code>
@@ -151,20 +151,20 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
 <span class="text-zinc-500">→ alloc stopped · writes halted · LUN frozen for forensics</span></pre>
       <p class="mt-3 text-base leading-7 text-zinc-400">
         Caught in the first minute, that freeze preserves the LUN for recovery. Here a human took
-        an hour to notice, the ext4 journal had wrapped, and the old blocks were already reused —
+        an hour to notice, the ext4 journal had wrapped, and the old blocks were already reused,
         so we accepted the 33-hour gap (game-side state was untouched; only telemetry was lost).
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        3 · Codify the fix — what actually stops it
+        3 · Codify the fix that actually stops it
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        The obvious fix is one line in the driver config — and it does nothing. Source review
+        The obvious fix is one line in the driver config, and it does nothing. Source review
         during the cutover showed democratic-csi v1.9.5 never reads
         <code>node.format.disabled</code>
         on the POSIX <code>NodeStageVolume</code>
-        path; it is a documented no-op. The fix that actually holds is a guard that doesn't trust
-        the driver, landed as a reviewed pull request against the infra repo — locally, for a
+        path; it is a documented no-op. The fix that holds is a guard that doesn't trust
+        the driver. It landed in the infra repo as a reviewed pull request, written locally for a
         human to merge.
       </p>
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300"><span class="text-zinc-500"># driver-config.yaml — the obvious knob, kept only as documentation:</span>
@@ -204,45 +204,45 @@ exec "$real" "$@"   # not a Pure device: the real mkfs runs
 # empty-read window — but not the fix; the driver reformatted on NVMe too.</span></pre>
       <p class="mt-3 text-base leading-7 text-zinc-400">
         The guard shadows every <code>mkfs</code>
-        entrypoint inside the plugin and fails loud on anything it can't prove is a blank device —
-        a corrupted filesystem that looks empty to <code>blkid</code>
-        is refused, not formatted. A separate serial-resolved formatter handles genuinely new
+        entrypoint inside the plugin and fails loud on anything it can't prove is a blank device.
+        Even a corrupted filesystem that looks empty to <code>blkid</code>
+        is refused. A separate serial-resolved formatter handles genuinely new
         volumes: it resolves exactly one Pure namespace by serial, then refuses unless the start,
         middle, and end of the device all read as zero.
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">
-        What emisar actually changed
+        What emisar changed
       </h2>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-300">
         <li>
           <strong class="text-zinc-100">The forensics were legible and scoped.</strong>
           Every <code>dmesg</code>, multipath, CSI-log, and array-side read was a declared action
-          against one host, logged with a reason — not a <code>tailscale ssh root@…</code>
+          against one host, logged with a reason, instead of a <code>tailscale ssh root@…</code>
           scramble across five tools with no record of who looked at what.
         </li>
         <li>
           <strong class="text-zinc-100">The one destructive step stopped for a person.</strong>
-          Halting the alloc was gated, approved once, and recorded — the agent could contain the
+          Halting the alloc was gated, approved once, and recorded, so the agent could contain the
           damage without being trusted to run arbitrary commands.
         </li>
         <li>
           <strong class="text-zinc-100">The real fix landed as reviewable infra.</strong>
-          A guard that distrusts the driver, landed as a diff a human reviewed and merged — not a
-          command that lived for ten minutes in someone's shell history and got lost.
+          The guard that distrusts the driver landed as a diff a human reviewed and merged, instead
+          of a command that lived for ten minutes in someone's shell history and got lost.
         </li>
       </ul>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        emisar would not have stopped democratic-csi's <code>mkfs</code>
-        — that was an automated component doing its job badly, and the tidy declarative fix you'd
+        emisar would not have stopped democratic-csi's <code>mkfs</code>.
+        That was an automated component doing its job badly, and the tidy declarative fix you'd
         reach for first was a no-op the vendor shipped. What emisar changes is everything a human
         or agent does <em>around</em>
-        the failure. Investigate through tools, stop the disaster where you can, then hand back a
-        change a human reviews and merges.
+        the failure: investigating through tools, stopping the disaster where you can, and handing
+        back a change a human reviews and merges.
       </p>
 
       <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
-        <.cta_link href={~p"/sign_up"}>Start free — connect a runner</.cta_link>
+        <.cta_link href={~p"/sign_up"}>Start free and connect a runner</.cta_link>
         <.cta_link navigate={~p"/docs/security-model"}>How the trust boundary works</.cta_link>
         <.cta_link navigate={~p"/docs/action-packs"}>Author your own pack</.cta_link>
       </div>

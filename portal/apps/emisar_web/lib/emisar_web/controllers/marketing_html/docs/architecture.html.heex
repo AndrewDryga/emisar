@@ -25,7 +25,7 @@
 
       <.docs_prerequisites>
         <:item>
-          Nothing to install — read this during a security review, design discussion, or
+          Nothing to install. Read this during a security review, design discussion, or
           failure investigation.
         </:item>
         <:item>
@@ -110,7 +110,7 @@
         </li>
         <li>
           <strong class="text-zinc-200">Policy decides.</strong>
-          Allow, deny, or require a human. A denial ends the run before any host is contacted. A
+          The decision is allow, deny, or require a human. A denial ends the run before any host is contacted. A
           require-approval decision parks it until an approver acts.
         </li>
         <li>
@@ -132,7 +132,7 @@
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        These two decisions shape the whole system: the control plane decides whether a
+        The flow has two separate decisions: the control plane decides whether a
         request is allowed, the runner decides whether it will execute, and neither can make
         the other skip its own check.
       </p>
@@ -154,7 +154,7 @@
               {"Which hosts a person or key can touch", "Control plane",
                "Runner and pack access limits actions. Members with operational read access can still inspect the workspace's fleet and catalog."},
               {"Which pack version and hash is trusted", "Control plane",
-               "Trust binds one exact content hash — auto-pinned when the published catalog it reads carries that hash, decided by an admin otherwise. Installing bytes on a host does not trust them."},
+               "Trust binds one exact content hash. It is auto-pinned when the published catalog it reads carries that hash, and decided by an admin otherwise. Installing bytes on a host does not trust them."},
               {"Allow, deny, or ask a human", "Control plane",
                "The first matching action override wins. Without one, the action risk tier selects its default decision. A missing policy denies the dispatch."},
               {"What this host will advertise or run at all", "Runner",
@@ -215,7 +215,7 @@
           <span>
             <strong class="text-zinc-200">A registry</strong>
             holds immutable published pack artifacts. Distribution and trust stay separate on
-            purpose — fetching bytes from a registry is not a decision to run them.
+            purpose: fetching bytes from a registry is not a decision to run them.
           </span>
         </li>
       </ul>
@@ -239,7 +239,7 @@
           <tbody class="divide-y divide-zinc-900 text-zinc-300">
             <%= for {event, behavior, response} <- [
               {"The control plane is unreachable before a dispatch",
-               "Nothing new is authorized, created, or sent — there is no offline dispatch path. An action already executing on a runner keeps running, and its result is delivered when the connection returns.",
+               "Nothing new is authorized, created, or sent, because there is no offline dispatch path. An action already executing on a runner keeps running, and its result is delivered when the connection returns.",
                "Wait. No cleanup is needed for work that had not been dispatched."},
               {"The runner is disconnected before its dispatch",
                "Nothing executes. The run waits and is delivered as soon as that runner reconnects and re-advertises. If the host is still gone after a short grace window, the sweep ends the run as Error rather than leaving it queued.",
@@ -296,7 +296,7 @@
       <.docs_h2 id="delivery">Delivery, and what it does not promise</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Messages between a runner and the control plane are delivered at least once. A result is
-        replayed until acknowledged, so a lost acknowledgement can produce a duplicate — the
+        replayed until acknowledged, so a lost acknowledgement can produce a duplicate. The
         control plane does not apply output or terminal state again, and a retry returns
         recorded state instead of starting another execution.
       </p>
@@ -342,18 +342,17 @@
           <span>
             For a signed run, the original attestation is still inside its freshness window and its
             certificate's validity window. An approved run is re-dispatched with the signature it
-            was created with, and a slow approval can outlive it — the freshness and validity
-            windows are <.link
+            was created with, and a slow approval can outlive it. The freshness and validity
+            windows are covered in <.link
               navigate={~p"/docs/signed-dispatch"}
               class="text-brand-400 hover:text-brand-300"
-            >Signed dispatch</.link>'s subject.
+            >Signed dispatch</.link>.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        These are stop conditions, not a second policy evaluation. The decision the approver made
-        is the decision that stands, and what is rechecked is whether it can still be carried out
-        as approved. Approval rules, expiry, and standing grants are owned by <.link
+        These are stop conditions, not a second policy evaluation. The approver's decision
+        stands, and the recheck only asks whether it can still be carried out as approved. Approval rules, expiry, and standing grants are owned by <.link
           navigate={~p"/docs/policies-and-approvals"}
           class="text-brand-400 hover:text-brand-300"
         >Policies &amp; Approvals</.link>.

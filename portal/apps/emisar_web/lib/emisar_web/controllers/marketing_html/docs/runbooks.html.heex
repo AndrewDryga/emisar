@@ -34,7 +34,7 @@
             href={~p"/docs/runner-fleet"}
             class="text-brand-400 hover:text-brand-300"
           >runner</.link>
-          enrolled in the account that the runbook can target — by name, or through a group.
+          enrolled in the account that the runbook can target, either by name or through a group.
         </:item>
         <:item>
           The required
@@ -193,7 +193,7 @@
       <p class="mt-5 text-base text-zinc-400">
         The one-runner pick happens once, during preflight, after emisar checks the action,
         trusted pack, and contract on every online group member. The start page and the
-        execution both use that same runner — if it disconnects before dispatch, the
+        execution both use that same runner. If it disconnects before dispatch, the
         execution stops, and the work does not move to another member.
       </p>
       <.docs_screenshot
@@ -317,7 +317,7 @@
         src="/images/docs/runbooks/publish.webp"
         title="emisar console · Publish"
         caption="Confirming a release shows the lines it changes against what runs today."
-        alt="The publish confirmation for Edge configuration rollout showing a line diff against the live definition — the reload stage's concurrency changing from two to one — above Cancel and Publish v2 buttons."
+        alt="The publish confirmation for Edge configuration rollout showing a line diff against the live definition (the reload stage's concurrency changing from two to one) above Cancel and Publish v2 buttons."
       />
 
       <.docs_h2 id="start">4. Review and start the run</.docs_h2>
@@ -517,17 +517,17 @@
         <.docs_inline_code>update_runbook_draft</.docs_inline_code>
         replaces the one unpublished change, and it must send the
         <.docs_inline_code>definition_sha256</.docs_inline_code>
-        it read — if someone else edited the draft in the meantime, the update is refused
+        it read. If someone else edited the draft in the meantime, the update is refused
         instead of overwriting their work. Publishing stays a human step in the console.
       </p>
       <p class="mt-5 text-base text-zinc-400">
         <.docs_inline_code>execute_runbook</.docs_inline_code>
-        runs the live release. To test draft content, the agent must ask for it clearly —
+        runs the live release. To test draft content, the agent must ask for it clearly with
         <.docs_inline_code>allow_draft: true</.docs_inline_code>
-        plus the draft's hash — and the test goes through the same policy and approvals as any
-        run without publishing anything. Asking for an older release answers
+        plus the draft's hash. The test goes through the same policy and approvals as any
+        run, without publishing anything. Asking for an older release answers
         <.docs_inline_code>not_live</.docs_inline_code>
-        instead of quietly running the current one. While work or an approval remains, the
+        instead of silently running the current one. While work or an approval remains, the
         response shows what is still blocking and returns an exact
         <.docs_inline_code>wait_for_run</.docs_inline_code>
         continuation.
@@ -618,7 +618,7 @@
         These are the only limits you need to track. An agent reads a runbook through one MCP
         response. That response budget comes from the limits above. Anything you can save and
         publish is something an agent can read and run. If a runbook exceeds the budget, the
-        agent reports that it is too large and directs the user to the console — it never
+        agent reports that it is too large and directs the user to the console. It never
         reports that the runbook does not exist.
       </p>
       <p class="mt-5 text-base text-zinc-400">
@@ -632,7 +632,7 @@
 
       <.docs_callout kind={:note} title="A runbook runs a known plan.">
         Use a runbook when the steps, stopping rules, and expected result are known before you
-        start. For open-ended diagnosis, dispatch actions one at a time instead — read each
+        start. For open-ended diagnosis, dispatch actions one at a time instead. Read each
         result and choose the next action from what it shows. A runbook cannot change its plan
         mid-run.
       </.docs_callout>

@@ -15,9 +15,9 @@
       <.docs_header current="troubleshooting">
         <:dek>
           Start here when you do not know which part is at fault. Each area's fixes live at
-          the end of its own page — the table routes you there — and the one symptom that can
-          come from anywhere, a dispatch that will not go, is told apart below. The last two
-          sections show what to collect and where to send it.
+          the end of its own page, and the table routes you there. A dispatch that will not go is
+          the one symptom that can come from anywhere, and the section below separates its causes.
+          The last two sections show what to collect and where to send it.
         </:dek>
       </.docs_header>
 
@@ -69,8 +69,8 @@
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners</a>
-        first, even if the agent is what failed. The run row shows which gate stopped it —
-        faster than reading the same error secondhand through the agent.
+        first, even if the agent is what failed. The run row shows which gate stopped it,
+        which is faster than reading the same error secondhand through the agent.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[720px] text-left text-sm">
@@ -118,11 +118,11 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Over MCP, a stale or hidden target comes back as
         <.docs_inline_code>target_contract_changed</.docs_inline_code>
-        with the exact refresh call — follow that refresh once, then retry once.
+        with the exact refresh call. Follow that refresh once, then retry once.
         <.docs_inline_code>signature_required</.docs_inline_code>
         lists the runners that require client signing, and
         <.docs_inline_code>not_allowed</.docs_inline_code>
-        means the current scope does not permit the request — it is not permission to probe.
+        means the current scope does not permit the request. It is not permission to probe.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On Team or Enterprise, <strong class="text-zinc-200">contact support</strong>
@@ -139,8 +139,8 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Versions of every component involved</strong>
-            — the runner
+            <strong class="text-zinc-200">Versions of every component involved</strong>: the
+            runner
             (<.docs_inline_code>emisar --version</.docs_inline_code>), the
             bridge
             (<.docs_inline_code>emisar-mcp --version</.docs_inline_code>),
@@ -157,18 +157,15 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Safe labels, not secrets</strong>
-            — the runner name and group, and the account name. Never the enrollment key, the runner
+            <strong class="text-zinc-200">Safe labels, not secrets</strong>: the runner name and group, and the account name. Never the enrollment key, the runner
             token, an API key, or a signing key.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">The identifiers</strong>
-            — the run id, the operation id, the request id, and for a key problem the key id
-            (<strong class="text-zinc-200">Copy ID</strong>
-            on its row in AI agents). They are
+            <strong class="text-zinc-200">The identifiers</strong>: the run id, the operation id, the request id, and for a key problem the key id
+            (<strong class="text-zinc-200">Copy ID</strong> on its row in AI agents). They are
             how we find the same event you are looking at.
           </span>
         </li>
@@ -186,7 +183,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A bounded slice of the logs</strong>
-            around the window —
+            around the window:
             <.docs_inline_code>
               sudo journalctl -u emisar -n 200
             </.docs_inline_code>
@@ -199,7 +196,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The exact error text</strong>
-            and whether it reproduces — every time, sometimes, or once.
+            and whether it reproduces: every time, sometimes, or once.
           </span>
         </li>
       </ul>
@@ -207,7 +204,7 @@
         <p>
           Never paste a raw token, key, or certificate into a support request, ticket, chat message,
           or run reason. The runner redacts action output before it leaves the host, but provider
-          output you copied by hand has not passed through that redaction — read it before
+          output you copied by hand has not passed through that redaction. Read it before
           attaching it and mask anything that looks like a credential. If a secret is already
           exposed, treat it as an incident, not a support request. Go to <.link
             navigate={~p"/docs/security-incidents"}

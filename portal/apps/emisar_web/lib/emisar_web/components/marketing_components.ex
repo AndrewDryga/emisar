@@ -347,10 +347,10 @@ defmodule EmisarWeb.MarketingComponents do
           >{@prompt}</pre>
         </div>
         <p class="mt-2.5 text-xs text-zinc-400">
-          Works in Claude Code, Codex, or any agent that reads Markdown skills — <.external_link
+          Works in Claude Code, Codex, or any agent that reads Markdown skills. <.external_link
             href={"https://github.com/andrewdryga/emisar/tree/main/skills/" <> @skill}
             class="font-medium text-brand-300/90 hover:text-brand-200"
-          >read the skill first</.external_link>.
+          >Read the skill first</.external_link>.
         </p>
       </div>
     </details>
@@ -679,8 +679,8 @@ defmodule EmisarWeb.MarketingComponents do
               Product updates
             </h2>
             <p class="mt-1 max-w-md text-sm text-zinc-400">
-              The occasional note when we ship something major — new packs, features, and security
-              improvements. No noise.
+              We send an occasional email when we ship something major: new packs, features, and
+              security improvements.
             </p>
           </div>
           <.form for={%{}} action={~p"/subscribe"} class="w-full sm:w-auto" data-subscribe>

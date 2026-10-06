@@ -1,6 +1,6 @@
 <.guide_page
   title="How to give an AI agent safe access to production"
-  dek="Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox — production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up."
+  dek="Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox, but production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up."
   date="July 2026"
   read_time="7 min read"
 >
@@ -8,13 +8,13 @@
     AI agents are at their best when you stop babysitting them. Anyone who has used one for real
     work knows the shape: approve every command one at a time and you've bought a very slow
     autocomplete. Let it run and it reads the logs, chases a hypothesis, tries three things, hits a
-    dead end, tries a fourth — and comes back with an answer while you were in a meeting. The value
+    dead end, tries a fourth, and comes back with an answer while you were in a meeting. The value
     is in the letting go.
   </p>
   <p>
     Unfortunately, letting go is also where the risk is. You come back and see the agent has deleted
     a database, wiped a volume, or "cleaned up" the wrong directory. Proof of that is posted all
-    over the internet on a daily basis.
+    over the internet every day.
   </p>
   <p>
     For coding, the safe way to let go is isolation. Tools like
@@ -22,15 +22,13 @@
     <i>(our founder built it, so we're biased)</i>
     run the agent inside a disposable container with full
     permissions and nothing valuable in reach: the worst it can do is wreck one repo you restore
-    from git. The container is the boundary and git is the undo button. That's the whole trick, and
-    it works.
+    from git. The container is the boundary and git is the undo button.
   </p>
   <p>
-    Production is where the trick stops working. There is no disposable copy of production —
-    production is the thing itself — and there is no undo button for <code>DROP TABLE</code>. If
+    Isolation stops working in production. There is no disposable copy of production, and there is no
+    undo button for <code>DROP TABLE</code>. If
     you want an agent's help operating real infrastructure, you can't sandbox the infrastructure.
-    You need a different kind of boundary. Here's what teams actually do today, and where each
-    approach cracks.
+    You need a different kind of boundary.
   </p>
 
   <h2>You start by copy-pasting</h2>
@@ -44,9 +42,9 @@
     But you are the whole loop. You ferry the context one way and the commands the other, and the
     model only knows what you remembered to paste. You are also the only check, and that check
     decays: the first unfamiliar command gets read carefully, the tenth gets skimmed, and
-    eventually "review" is just paste-and-Enter on a script you didn't really read. Now generated
-    code is reaching your shell through a reflex — the worst of both worlds. And it's still the
-    babysitting mode from the top of this page: slow, manual, and capped by your patience. Here's
+    eventually "review" is just paste-and-Enter on a script you didn't really read. By then,
+    generated code reaches your shell through a reflex, and the loop is still the babysitting mode
+    from the top of this page: slow, manual, and capped by your patience. Here's
     the <.link navigate={~p"/compare/copy-paste-ai-ops"}>full side-by-side</.link> if you want it.
   </p>
 
@@ -54,8 +52,8 @@
   <p>
     The obvious upgrade is a shell. And when agents run without a sandbox, sometimes you grant it
     without knowing: the agent finds your <code>gcloud</code>
-    already authenticated — or your SSH keys — and just connects to your production. At first, it
-    feels like magic. But it comes with that adrenaline kick every time you watch it happen.
+    already authenticated, or finds your SSH keys, and just connects to your production. At first,
+    it feels like magic. But it comes with that adrenaline kick every time you watch it happen.
   </p>
   <p>
     It works because the agent already knows how to use SSH, it's one line of setup, and it works
@@ -66,7 +64,7 @@
   <p>
     A shell has no boundary in it anywhere. "Tail the logs" and "delete the data directory" travel
     down the same pipe with the same authority; the only thing separating them is the model's
-    judgment at that particular moment. And judgment can be steered — a
+    judgment at that particular moment. And judgment can be steered: a
     <.link navigate={~p"/guides/prompt-injection-for-ops-teams"}>prompt-injected</.link>
     log line the agent just read is enough. When something does go wrong, your record of what
     happened is a shell history written by the process you're now investigating. We put <.link navigate={
@@ -83,31 +81,31 @@
       rel="noopener noreferrer"
     >MCP</a>: give the agent typed
     tools instead of a text pipe into bash. There's an MCP server for Postgres, one for Kubernetes,
-    one for your cloud — install the ones you need and the agent gets structured tools with real
-    arguments and real limits. This genuinely beats SSH.
+    and one for your cloud. Install the ones you need and the agent gets structured tools with real
+    arguments and real limits. This beats SSH.
   </p>
   <p>
     Then you live with it for a month. Every server is its own install, its own credentials, its
     own upgrade cycle, and its own idea of what "safe" means. Ten tools means ten configs and ten
     permission models, and no single place to ask the two questions that matter: what exactly can
-    the agent do right now, and what did it do last Tuesday? Policy lives in ten places, the audit
-    trail in none.
+    the agent do right now, and what did it do last Tuesday? Policy lives in ten places, and the
+    audit trail lives in none of them.
   </p>
   <p>
     And there's a coverage problem nobody mentions until 2 a.m. MCP servers exist for products with
     developer-relations budgets; your infrastructure is mostly not that. Nobody has written an MCP
     server for your LACP bond, your systemd units, your RAID controller, or the vendor appliance in
-    rack 4 — and those unglamorous corners are exactly where incidents like to happen. So the agent
+    rack 4, and those unglamorous corners are exactly where incidents like to happen. So the agent
     works the shiny parts through MCP, you keep SSH around "just for the rest," and you're back
     where you started.
   </p>
 
   <h2>One MCP for all of infrastructure</h2>
   <p>
-    Follow that progression to its end and you get the idea behind emisar: not a server per
-    product, but one MCP whose vocabulary is <strong>actions</strong>
-    — commands declared ahead of
-    time, with typed arguments and validation. Read the service logs. Check replication lag.
+    Follow that progression to its end and you get the idea behind emisar: instead of a server per
+    product, one MCP whose vocabulary is <strong>actions</strong>
+    (commands declared ahead of
+    time, with typed arguments and validation). Read the service logs. Check replication lag.
     Restart this unit. An action is just a declared, validated command a host can run, so anything
     a host can do can be in the catalog: your databases, your metrics and logs, your queues,
     proxies, and containers, down to ZFS pools, WireGuard tunnels, and whether the clock is
@@ -116,50 +114,50 @@
   </p>
   <p>
     Because everything goes through one door, you get the two things the server-per-tool world
-    couldn't give you: one policy in front of every call — allowed, denied, or held for a human, by
-    rules you set once — and one record behind it, where every call lands with its inputs, its
-    decision, and who asked — including the ones that were denied — and the redacted output of the
-    calls that ran. The agent connects the way it connects to
+    couldn't give you: one policy in front of every call, and one record behind it. The policy
+    allows a call, denies it, or holds it for a human, by rules you set once. The record keeps
+    every call with its inputs, its decision, and who asked, including the calls that were denied,
+    plus the redacted output of the calls that ran. The agent connects the way it connects to
     any other MCP tool. On your side, a small runner on each host dials out, re-validates every
-    argument, and applies configured output redaction before anything leaves the machine; the
+    argument, and applies configured output redaction before anything leaves the machine. The
     <.link navigate={~p"/security"}>security model</.link>
-    goes deep on why the host, not the cloud, gets the last word.
+    explains why the host, not the cloud, gets the last word.
   </p>
 
   <h2>Read production, write code</h2>
   <p>
-    Here's where this lands day to day, at least for teams running infrastructure as code (we use Terraform a lot) — and
-    it's our favorite part of the whole design.
+    For teams running infrastructure as code (we use Terraform a lot), this is how the pattern
+    works day to day, and it's our favorite part of the whole design.
   </p>
   <p>
     Give the agent the read actions freely. Policy allows them without ceremony because a read
     can't hurt you, and reading is most of the job: tail the logs, check the failing unit, compare
     replication lag across replicas, watch the error rate move. The agent keeps its eyes on real
-    production the whole time it investigates — no stale dashboards, no "can you paste me the
-    output."
+    production the whole time it investigates, so it doesn't work from stale dashboards or ask you
+    to paste the output.
   </p>
   <p>
     Then the fix is code, not a live mutation. The agent writes the Terraform diff or the Ansible
     change back in its own sandbox, opens a pull request, and the fix ships through review and your
-    pipeline like any other change. Production stays declarative and reproducible — you don't wake
+    pipeline like any other change. Production stays declarative and reproducible, so you don't wake
     up to a prod that an agent hand-patched into a snowflake nobody can rebuild.
   </p>
   <p>
     That leaves the dangerous verbs for exactly two moments. Stopping the bleed: restart the wedged
-    service, fail over, kill the runaway query — actions policy holds for approval, so mid-incident
-    you read the exact command and its target and tap Approve, instead of being the person who has
-    to find a laptop and type it. And proving the fix: let the agent run the risky action against
-    staging to show the change works before it ships to prod.
+    service, fail over, kill the runaway query. Policy holds these actions for approval, so
+    mid-incident you read the exact command and its target and tap Approve, instead of being the
+    person who has to find a laptop and type it. And proving the fix: let the agent run the risky
+    action against staging to show the change works before it ships to prod.
   </p>
   <p>
     So the agent investigates through the catalog, fixes things in code, and touches the scary
-    verbs only with a human in the loop — which means it stays unleashed the whole time, and the
+    verbs only with a human in the loop. That means it stays unleashed the whole time, and the
     blast radius stays within the bounds you define.
   </p>
 
   <h2>Start small</h2>
   <p>
-    First, isolate your agents and run them in a sandbox — a throwaway container with nothing
+    First, isolate your agents and run them in a sandbox: a throwaway container with nothing
     valuable inside. That alone prevents most of the stories above: an agent can't delete your home
     directory or accidentally find your production credentials when neither is in reach.
   </p>
@@ -168,7 +166,7 @@
     one: give the agent the read-only actions on one non-critical service and watch how it
     investigates; add the first gated write when you trust the loop. The point of the pattern is
     that the agent's reach grows one declared action at a time, with a rule and a record at every
-    step — instead of the all-or-nothing of a shell. The
+    step, instead of the all-or-nothing access of a shell. The
     <.link navigate={~p"/docs/quickstart"}>quickstart</.link>
     takes about five minutes, which is less time than reading this week's postmortem.
   </p>

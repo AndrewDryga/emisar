@@ -39,7 +39,7 @@
       <.docs_screenshot
         src="/images/screenshots/agents.webp"
         title="emisar console · AI agents"
-        caption="Keys grouped by the member who owns them — status, last call, expiry, and per-agent rotate and revoke."
+        caption="Keys grouped by the member who owns them, with status, last call, expiry, and per-agent rotate and revoke."
         alt="The AI agents page, grouped by the member who owns each connection. Rows show the client, status, last call and expiry, with actions to view activity, rotate or revoke the key. Awaiting first use marks a replacement key that has not connected yet."
       />
 
@@ -57,7 +57,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The status is about the connection.</strong>
-            A row reads dormant, idle, or never used from its own last call — and
+            A row reads dormant, idle, or never used based on its own last call. It reads
             <.chip tone={:rose} icon="state.warning">unsupported</.chip>
             when the bridge it reported is below the version emisar supports. A rotation in flight
             shows as Rotation requested, then awaits the successor's first call to retire the old key.
@@ -66,17 +66,17 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Each row carries its own actions.</strong>
+            <strong class="text-zinc-200">Each row has its own actions.</strong>
             View activity opens Runs filtered to that agent; View audit trail opens its audit events. Rotate and Revoke act on
-            the key behind it, which is the rest of this page. Copy ID copies the key's
-            identifier — the safe handle for a support request, since the secret is never shown
-            again.
+            the key behind it and are covered below. Copy ID copies the key's identifier. The
+            secret is never shown again, so the identifier is the safe handle for a support
+            request.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Removing an agent is revoking its key.</strong>
+            <strong class="text-zinc-200">To remove an agent, revoke its key.</strong>
             There is no separate disconnect: the key is the connection, so revoking it ends the
             agent's access on its very next call.
           </span>
@@ -85,7 +85,7 @@
 
       <.docs_h2 id="what-is-a-key">What an agent key is</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An agent key is the credential an AI agent presents to reach emisar's tool API. It rides as
+        An agent key is the credential an AI agent presents to reach emisar's tool API. It is sent as
         <.docs_inline_code>Authorization: Bearer emk-…</.docs_inline_code>
         on every call to the MCP endpoint. Keys start with
         <.docs_inline_code>emk-</.docs_inline_code>
@@ -97,15 +97,15 @@
           <span>
             <strong class="text-zinc-200">Shown once.</strong>
             The full secret appears exactly once, at creation (and again at rotation). Copy it into
-            the client's config then — emisar keeps only the hash, so a lost key is replaced, never
-            recovered.
+            the client's config then. emisar keeps only the hash, so a lost key can be replaced but
+            never recovered.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Identity, not authority.</strong>
-            A key is an identity, an optional expiry, and audit attribution — nothing more.
+            A key holds only an identity, an optional expiry, and audit attribution.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -113,17 +113,16 @@
           <span>
             <strong class="text-zinc-200">One key per connection.</strong>
             Each connected client gets its own key, so you can see and revoke agents one at a time.
-            Cloud clients that connect over OAuth follow the same idea.
+            Cloud clients that connect over OAuth work the same way.
           </span>
         </li>
       </ul>
 
       <.docs_h2 id="no-scope">A key has no scope of its own</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An agent key carries no scope of its own — there is no per-key runner list or permission dial
+        An agent key carries no scope of its own. There is no per-key runner list or permission dial
         to set, and none to forget. A key acts as a member: the person it belongs to, or a service
-        account. What the connected agent can do is decided by two things that live on that member,
-        not on the key:
+        account. What the connected agent can do is decided by two things set on that member:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -139,8 +138,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">What it can run there.</strong>
-            Your account's policies and the approvals they require — the same gate a human dispatch
-            passes. A key authenticates as a fixed
+            Your account's policies decide this, along with the approvals they require. A human
+            dispatch passes the same checks. A key authenticates as a fixed
             <.docs_inline_code>api_client</.docs_inline_code>
             role. It can discover the catalog, dispatch actions, and read run state. It cannot
             approve its own requests or edit policy. The member role does not transfer. Owner and
@@ -157,7 +156,7 @@
         >Team page</.link>. Owners always have access to all runners and packs; their keys still
         use the fixed API-client permissions and pass policy, approval, and trust checks.
         Promoting a scoped member to Owner expands their connected agents' access without
-        replacing credentials or reconnecting. You do not tune keys one by one.
+        replacing credentials or reconnecting.
         Remove that member's access to stop every key that acts as them
         from resolving to a runner. An unbound key is never usable.
       </p>
@@ -169,7 +168,7 @@
           href={~p"/app/agents"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >AI agents</a>
-        in the console — the same place you
+        in the console, the same place you
         connect and revoke agents. Pick the client you are connecting to see its setup instructions.
         Open <strong>Set up [client] manually</strong>
         to create a key and see the command or configuration for that client.
@@ -190,7 +189,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Operator and above.</strong>
-            Connecting an agent — minting a key — needs an operator, admin, or owner role. A viewer
+            Connecting an agent (minting a key) needs an operator, admin, or owner role. A viewer
             can see the agents list but cannot mint. Operators can rotate or revoke their own keys.
             Admins and owners can manage any key in the account.
           </span>
@@ -214,7 +213,7 @@
       <.docs_h2 id="rotating">Rotating a key</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Choose <strong>Rotate</strong> on an agent's row to replace its key. If the agent supports
-        automatic rotation, it saves the new key on its next call — there's nothing to copy.
+        automatic rotation, it saves the new key on its next call, so there's nothing to copy.
         The row shows <strong>Rotation requested</strong> while it waits. Otherwise, emisar shows
         a new key for you to copy into the agent's settings.
       </p>
@@ -252,7 +251,7 @@
           <span>
             <strong class="text-zinc-200">You can still revoke the old key.</strong>
             Revocation also ends access for that key's replacements. Use it to stop access after
-            a leak, not to finish a normal rotation — the new key's first use does that for you.
+            a leak. A normal rotation finishes on its own when the new key is first used.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -269,8 +268,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">MCP bridge keys are short-lived and rotate themselves.</strong>
-            The bridge rotates a key during its last seven days. It prepares and proposes a
-            successor. It promotes the successor only after emisar confirms the exact new key.
+            During a key's last seven days, the bridge prepares and proposes a successor, and
+            promotes it only after emisar confirms the exact new key.
             Long-running local agents keep working through the change. This needs the bridge's
             credential directory to be writable and persistent. OAuth tokens, arbitrary Bearer
             tokens, and audit-export tokens bypass local rotation state. By default, automatic renewal is
@@ -282,31 +281,31 @@
 
       <.docs_h2 id="revoking">Revoking a key</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        <strong>Revoke</strong> is the kill switch. The moment you confirm, the
-        key is dead and the connected client is refused on its very next call. Reach for it when a key leaks, an agent misbehaves, or a connection
+        <strong>Revoke</strong> takes effect as soon as you confirm: the
+        key stops working and the connected client is refused on its very next call. Use it when a key leaks, an agent misbehaves, or a connection
         is finished. For an active key, confirmation asks you to type the agent's name.
         An expired key needs a simple confirmation instead.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Revoking cascades: every downstream key in that key's rotation chain dies with it, and any
-        OAuth access or refresh token backed by it stops exchanging and refreshing. That reach is
-        what makes revoke, not rotate, the containment lever for a leak.
+        Revoking cascades: every downstream key in that key's rotation chain is revoked with it, and
+        any OAuth access or refresh token backed by it stops exchanging and refreshing. Because of
+        this cascade, use revoke, not rotate, to contain a leak.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         For a lost or stolen device, revoke everything at once: <strong>Revoke all</strong>
-        on the member's group revokes every usable key that member owns — each connected client
+        on the member's group revokes every usable key that member owns. Each connected client
         is refused on its next call, with the same cascade per key. It asks you to type the
         member's name. A member can do this for their own keys; anyone else's need an admin.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A key that suddenly returns
         <.docs_inline_code>401</.docs_inline_code>
-        has expired, been revoked, or been retired by a successor —
+        has expired, been revoked, or been retired by a successor.
         <.link
           navigate={~p"/docs/connect-cli-agent" <> "#troubleshooting"}
           class="text-brand-400 hover:text-brand-300"
         >Troubleshooting</.link>
-        walks the check.
+        shows how to tell which.
       </p>
     </.docs_layout>
   </section>

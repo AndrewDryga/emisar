@@ -480,8 +480,8 @@
         <p class="mt-4 text-base leading-7 text-zinc-400">
           I compared the result with GCP's busiest production hour. VA1 was faster at this test
           shape, but it held only one fifth of the final data and had far fewer client connections.
-          That kept the result useful and honest: the new cluster was ready to join production, but
-          it was not yet proven as production's only home.
+          So the result showed that the new cluster was ready to join production, but it did not yet
+          prove that VA1 could be production's only home.
         </p>
         <h3 class="mt-14 text-2xl font-semibold text-zinc-100">
           The gate to join production
@@ -795,7 +795,7 @@ cassandra.nodetool_repair &#123;"keyspace": "game_ks", "mode": "full"&#125;
         </p>
 
         <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
-          <.cta_link href={~p"/sign_up"}>Start free — connect a runner</.cta_link>
+          <.cta_link href={~p"/sign_up"}>Start free and connect a runner</.cta_link>
           <.cta_link navigate={~p"/packs/cassandra"}>See the Cassandra pack</.cta_link>
           <.cta_link navigate={~p"/docs/security-model"}>Read the security model</.cta_link>
         </div>

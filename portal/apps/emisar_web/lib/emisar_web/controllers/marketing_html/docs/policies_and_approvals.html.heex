@@ -19,13 +19,13 @@
         <:dek>
           Every run dispatch passes through your account's policy before it's sent to a
           runner. The policy makes one of three decisions: run it, pause it for approval, or
-          deny the execution.
+          deny it.
         </:dek>
       </.docs_header>
 
       <.docs_h2 id="how-decisions">How a decision is made</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each pack action declares its risk tier — neither the caller nor the control plane can
+        Each pack action declares its risk tier. Neither the caller nor the control plane can
         change it. A policy then decides whether the run is dispatched, paused for approval,
         or denied.
       </p>
@@ -35,24 +35,23 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A policy can define per-action overrides. It walks the ordered list of action ID
-        patterns — for example,
+        patterns. For example,
         <.docs_inline_code>nomad.job_*</.docs_inline_code>
-        requires approval,
+        requires approval and
         <.docs_inline_code>*.delete_*</.docs_inline_code>
         denies. The first match wins, so put the most specific patterns first.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         If no override matches, the action's risk tier defaults
         (<.docs_risk tier="low" /> / <.docs_risk tier="medium" /> / <.docs_risk tier="high" /> /
-        <.docs_risk tier="critical" />) make the decision. In the policy these decisions are
-        ><code class="text-brand-300">allow</code>, <code class="text-amber-300">require_approval</code>,
-        and <code class="text-red-400">deny</code>. When the policy cannot answer — a missing
-        policy, an unknown tier — it denies.
+        <.docs_risk tier="critical" />) make the decision. In the policy, these decisions are <code class="text-brand-300">allow</code>, <code class="text-amber-300">require_approval</code>,
+        and <code class="text-red-400">deny</code>. When the policy cannot answer (a missing
+        policy, an unknown tier), it denies.
       </p>
 
       <.docs_callout kind={:note} title="The shipped default.">
-        New accounts allow low and medium risk, require approval for high, and deny critical
-        — no overrides.
+        New accounts allow low and medium risk, require approval for high, and deny critical.
+        They start with no overrides.
       </.docs_callout>
 
       <.docs_h2 id="first-policy">A sensible first policy</.docs_h2>
@@ -66,26 +65,26 @@
             href={~p"/app/approvals"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
           >Approvals</a>
-          queue — the requests
+          queue. The requests
           that keep showing up are your override candidates.
         </li>
         <li>
           Deny anything you never want an agent to touch
           (<.docs_inline_code>*.purge_*</.docs_inline_code>
-          → <code class="text-red-400">deny</code>) — a written rule beats everyone
+          → <code class="text-red-400">deny</code>). A written rule beats everyone
           remembering.
         </li>
         <li>
           Turn repeated approvals into expiring standing grants instead of
           <code class="text-brand-300">allow</code>
-          overrides — a grant stays tied to one key and expires on its own.
+          overrides. A grant stays tied to one key and expires on its own.
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        An override can also remove waiting. Some reads are high risk because their output can
-        leak secrets — a full config dump may contain a credential — so the shipped policy
-        holds them for a person. If your configs hold no secrets, or the exposure is
-        acceptable, allow the action:
+        An override can also remove a wait for approval. Some reads are high risk because their
+        output can leak secrets. A full config dump, for example, may contain a credential, so
+        the shipped policy holds these reads for a person. If your configs hold no secrets, or
+        the exposure is acceptable, allow the action:
       </p>
       <.docs_code phx-no-format label="Policy → overrides">overrides:
   - name: <span class="text-brand-300">allow-journal-reads</span>
@@ -95,7 +94,7 @@
     action: <span class="text-brand-300">nginx.config_dump</span>
     decision: <span class="text-brand-300">allow</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Redaction still masks credential patterns it recognizes, but it can miss — treat the
+        Redaction still masks credential patterns it recognizes, but it can miss some. Treat the
         output as sensitive when you allow a full dump.
       </p>
 
@@ -108,7 +107,8 @@
         >Policies</a>
         in the console sidebar. Owners and admins can edit; operators and viewers can read.
         The editor shows the four tier menus above the ordered override list. A higher tier can
-        never be more permissive than a lower one — the editor and the API both refuse it.
+        never be more permissive than a lower one. The editor and the API both refuse such a
+        setting.
       </p>
       <.docs_screenshot
         src="/images/screenshots/policy-editor.webp"
@@ -122,22 +122,22 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Saving a change bumps the policy version and applies from the next dispatch. Every
-        save writes an audit event, and every run records the policy version that gated it —
+        save writes an audit event, and every run records the policy version that gated it,
         so you can always see which rules were in force.
       </p>
 
       <.docs_h2 id="scoping">Scope it to a runner or group</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The default policy governs the fleet. When one runner or group needs different rules —
-        a locked-down database host, a permissive staging group — add a targeted ruleset for it
-        in <a
+        The default policy governs the fleet. When one runner or group needs different rules,
+        such as a locked-down database host or a permissive staging group, add a targeted
+        ruleset for it in <a
           href={~p"/app/policies"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Policies</a>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A ruleset <strong class="text-zinc-200">replaces</strong>
-        the default policy for its runner or group — what you see for a scope is exactly what
+        the default policy for its runner or group, so what you see for a scope is exactly what
         runs there. Remove it and the scope falls back to the next-broader policy.
       </p>
       <.docs_callout kind={:tip} title="Pattern: let an agent iterate on staging, hands-off">
@@ -146,8 +146,8 @@
           group a ruleset that sets every tier to
           <.docs_inline_code class="text-brand-300">allow</.docs_inline_code>
           with no approvals. An agent can reproduce a bug, test a fix, and verify the result
-          without waiting — and the production change it hands you is still held for approval
-          by your stricter default.
+          without waiting. The production change it hands you is still held for approval by
+          your stricter default.
         </p>
       </.docs_callout>
 
@@ -183,7 +183,7 @@
           <span>
             One approval releases a run by default. For destructive work, require
             <strong class="text-zinc-200">two approvers</strong>
-            with self-approval off — the requester cannot approve their own request.
+            with self-approval off, so the requester cannot approve their own request.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -260,11 +260,10 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Capped and revocable.</strong>
-            A grant can carry a use limit, always expires, and is listed under
-            <a
+            A grant can carry a use limit, always expires, and is listed under <a
               href={~p"/app/approvals"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-            >Approvals</a>
+            >Approvals</a>,
             where you can choose Revoke and confirm to end it early. Every use is still a fully audited run.
           </span>
         </li>
@@ -272,7 +271,7 @@
 
       <.docs_h2 id="reason">The reason requirement</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every dispatch — console or MCP — must include a <.docs_inline_code>reason</.docs_inline_code>.
+        Every dispatch, from the console or MCP, must include a <.docs_inline_code>reason</.docs_inline_code>.
         Approvers see it, and the run and audit event keep it. For an agent, the reason says
         why it ran <.docs_inline_code>nomad job revert</.docs_inline_code>;
         the action name only says what.
@@ -280,9 +279,9 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An MCP caller can also send
         <.docs_inline_code>evidence</.docs_inline_code>
-        — prior findings or run IDs that informed the call — and
+        (prior findings or run IDs that informed the call) and
         <.docs_inline_code>expected</.docs_inline_code>
-        — the outcome that confirms success. Together with the reason, they preserve what the
+        (the outcome that confirms success). Together with the reason, they preserve what the
         agent saw, why it acted, and what it expected. Operator and runbook dispatches leave
         both empty.
       </p>

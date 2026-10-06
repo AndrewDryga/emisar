@@ -29,7 +29,7 @@
       <.docs_screenshot
         src="/images/screenshots/audit-view.webp"
         title="emisar console · Audit log"
-        caption="Run outcomes and gates with the actor, target runner, source IP, and time — filterable and exportable to your SIEM."
+        caption="Run outcomes and gates with the actor, target runner, source IP, and time, filterable and exportable to your SIEM."
         alt="The Audit log in the console showing run outcomes and gates with the actor, target runner, source IP, and timestamp."
       />
 
@@ -37,18 +37,17 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Every event has a
         <.docs_inline_code>domain.action</.docs_inline_code>
-        name — <.docs_inline_code>action_run.denied</.docs_inline_code>, <.docs_inline_code>approval.approved</.docs_inline_code>, <.docs_inline_code>policy.updated</.docs_inline_code>, <.docs_inline_code>membership.role_changed</.docs_inline_code>,
-        <.docs_inline_code>user.sessions_revoked</.docs_inline_code>
-        — and more than sixty types cover runs, approvals, policies, packs, runners,
+        name, such as <.docs_inline_code>action_run.denied</.docs_inline_code>, <.docs_inline_code>approval.approved</.docs_inline_code>, <.docs_inline_code>policy.updated</.docs_inline_code>, <.docs_inline_code>membership.role_changed</.docs_inline_code>, or <.docs_inline_code>user.sessions_revoked</.docs_inline_code>.
+        More than sixty types cover runs, approvals, policies, packs, runners,
         credentials, team changes, and account changes. An event records who acted, what was
-        affected, when, and a structured payload with the details — a policy edit, for example,
+        affected, when, and a structured payload with the details. A policy edit, for example,
         carries its exact diff. The event is written together with the change it records.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         For a run, audit records the decisions and the outcome: the denial, the approval gate,
         the terminal result. Each event links to the run; action arguments stay in run history,
         which retains the exact values and masks declared sensitive fields only in console and API
-        views. The in-between states — pending, sent, running — are on the run's own page, not in
+        views. The in-between states (pending, sent, running) are on the run's own page, not in
         the audit trail.
       </p>
 
@@ -66,8 +65,8 @@
         so one filter answers what the agent did last night and why.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A download covers at most <span class="whitespace-nowrap">100,000 events</span>
-        — past that, narrow the filters.
+        A download covers at most <span class="whitespace-nowrap">100,000 events</span>.
+        Past that, narrow the filters.
         For a complete prepared export, email <a
           href={EmisarWeb.MailTo.support()}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -117,7 +116,7 @@
             Those are stable. The keys inside
             <.docs_inline_code>payload</.docs_inline_code>
             depend on the event type and can change with the feature that writes them, and an
-            empty value is omitted rather than sent as null — so treat the sample above as the
+            empty value is omitted rather than sent as null. Treat the sample above as the
             envelope, not a schema. Anything worth correlating on, such as <.docs_inline_code>mcp_client_metadata</.docs_inline_code>, is promoted to the top
             level for exactly that reason.
           </span>
@@ -127,8 +126,8 @@
           <span>
             Send
             <.docs_inline_code>since</.docs_inline_code>
-            <strong class="text-zinc-200">on the first call only</strong>
-            — you get events at or after that time, and leaving it out reads from the start of
+            <strong class="text-zinc-200">on the first call only</strong>.
+            You get events at or after that time, and leaving it out reads from the start of
             your retained history. After that,
             <strong class="text-zinc-200">always send the newest</strong>
             <.docs_inline_code>cursor</.docs_inline_code>: it wins over
@@ -139,9 +138,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Every page with events includes
-            <.docs_inline_code>X-Next-Cursor</.docs_inline_code>
-            — <strong class="text-zinc-200">save it; that is your resume point</strong>. A
+            Every page with events includes <.docs_inline_code>X-Next-Cursor</.docs_inline_code>. <strong class="text-zinc-200">Save it; that is your resume point</strong>. A
             <.docs_inline_code>Link</.docs_inline_code>
             header with
             <.docs_inline_code>rel="next"</.docs_inline_code>
@@ -152,16 +149,16 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            If the response is empty,
-            <strong class="text-zinc-200">continue with the cursor you already had</strong>
-            and poll again later — there is nothing new to stream.
+            If the response is empty, there is nothing new to stream.
+            <strong class="text-zinc-200">Continue with the cursor you already had</strong>
+            and poll again later.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">Keep the filters identical for the life of a cursor</strong>
-            — it is only a position in the ordering, and the filters come from the query you
+            <strong class="text-zinc-200">Keep the filters identical for the life of a cursor</strong>.
+            A cursor is only a position in the ordering, and the filters come from the query you
             send with each call. It never expires. Change
             <.docs_inline_code>event_type</.docs_inline_code>
             mid-chain and the same cursor returns different events; run a second chain with
@@ -176,7 +173,7 @@
             <strong class="whitespace-nowrap text-zinc-200">60 requests a minute per token</strong>
             and answers
             <.docs_inline_code>429</.docs_inline_code>
-            past that — <strong class="text-zinc-200">poll on an interval</strong>, not in a
+            past that, so <strong class="text-zinc-200">poll on an interval</strong>, not in a
             tight loop.
           </span>
         </li>
@@ -245,8 +242,8 @@ done</.docs_code>
       <.docs_h2 id="health">4. Watch the poller itself</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A stopped ingest pipeline and an idle account look the same from your SIEM: no new
-        events. So alert on the poller itself, not only on what it delivers — the age of the
-        newest
+        events. So alert on the poller itself as well as on what it delivers. Watch the age of
+        the newest
         <.docs_inline_code>occurred_at</.docs_inline_code>
         event, the time since the cursor moved, and consecutive failed polls. The console
         reads the same events without a cursor, so rows you can see there that never reached
@@ -299,9 +296,9 @@ done</.docs_code>
           <span>
             <strong class="text-zinc-200">Authority moved.</strong>
             Credentials minted or revoked, role changes, runner enrollment and deletion, and
-            identity events — an unexpected
+            identity events. An unexpected
             <.docs_inline_code>user.mfa_reset_by_admin</.docs_inline_code>
-            is the classic one.
+            is the classic example.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -321,7 +318,7 @@ done</.docs_code>
           <span>
             <strong class="text-zinc-200">A decision waited too long.</strong>
             Approval requests that sit unanswered are an operational signal rather than a
-            security one — they are why a run looks like it did nothing. Approval expiry is in <.link
+            security one. They are why a run looks like it did nothing. Approval expiry is in <.link
               navigate={~p"/docs/policies-and-approvals"}
               class="text-brand-400 hover:text-brand-300"
             >policies &amp; approvals</.link>.
@@ -331,7 +328,7 @@ done</.docs_code>
 
       <.docs_h2 id="retention">Retention</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Retention follows your plan — 7 days on <.plan_link name="Free" />, 90 on
+        Retention follows your plan: 7 days on <.plan_link name="Free" />, 90 on
         <.plan_link name="Team" />, 365 on <.plan_link name="Enterprise" />.
         Each event keeps the window it was written with, so a downgrade affects only new
         events and does not delete history you already have. The plan change and every
@@ -341,8 +338,8 @@ done</.docs_code>
 
       <.docs_h2 id="journal">The runner-side journal</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each runner normally keeps its own journal: two JSONL lines per action attempt —
-        start and result — in <.docs_inline_code>/var/log/emisar/events.jsonl</.docs_inline_code>,
+        Each runner normally keeps its own journal: two JSONL lines per action attempt
+        (start and result) in <.docs_inline_code>/var/log/emisar/events.jsonl</.docs_inline_code>,
         each line chained to the previous one by SHA-256.
         <.docs_inline_code>emisar audit verify --all</.docs_inline_code>
         walks the chain, rotated files included, and flags a break.
@@ -365,7 +362,7 @@ done</.docs_code>
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">It stopped advancing.</strong>
-            An empty page means caught up, not stuck — the collector keeps its last cursor and
+            An empty page means caught up, not stuck. The collector keeps its last cursor and
             polls again later.
           </span>
         </li>
@@ -374,7 +371,7 @@ done</.docs_code>
           <span>
             <strong class="text-zinc-200">Events repeat, or look missing.</strong>
             A collector that restarts from a timestamp rereads events, and a crash between
-            handing off a page and saving its cursor repeats the page — it cannot skip
+            handing off a page and saving its cursor repeats the page. It cannot skip
             unprocessed events. Process pages idempotently and expect duplicates instead of
             assuming exactly-once delivery.
           </span>
@@ -385,14 +382,14 @@ done</.docs_code>
             <strong class="text-zinc-200">It gets 429, 401, or 403.</strong>
             A
             <.docs_inline_code>429</.docs_inline_code>
-            means the poller is over the rate limit — poll on an interval, not in a loop. A
+            means the poller is over the rate limit. Poll on an interval, not in a loop. A
             <.docs_inline_code>401</.docs_inline_code>
             means the bearer is unknown or revoked. A
             <.docs_inline_code>403</.docs_inline_code>
-            means authentication succeeded, but this token lacks access — usually an agent key
-            used where an audit-export token belongs (the two never substitute), a plan without
-            export, or a role without audit access. The poller must keep its cursor and retry —
-            a failed request is not an empty page.
+            means authentication succeeded, but this token lacks access. The usual causes are an
+            agent key used where an audit-export token belongs (the two never substitute), a plan
+            without export, or a role without audit access. The poller must keep its cursor and
+            retry, because a failed request is not an empty page.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

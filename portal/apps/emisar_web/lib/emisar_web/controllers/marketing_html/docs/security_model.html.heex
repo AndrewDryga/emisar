@@ -13,13 +13,13 @@
     >
       <.docs_header current="security-model">
         <:dek>
-          The precise mechanics behind every control — what each layer checks, and what it
+          The precise mechanics behind every control: what each layer checks, and what it
           deliberately does not. Start with the
           <.link
             navigate={~p"/security"}
             class="text-brand-400 hover:text-brand-300"
           >security overview</.link>
-          for the picture; this is the reference your security team reads next.
+          for the big picture. This page is the reference your security team reads next.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -45,7 +45,7 @@
           A valid catalog can authorize a matching pack already installed on a runner. The
           publisher also chooses the risk, kind, and retirement floor that the control plane reads.
           The catalog cannot install bytes or bypass descriptor checks, argument validation, or
-          local admission. The catalog file itself is not signed — HTTPS and control of
+          local admission. The catalog file itself is not signed. HTTPS and control of
           publication access are its protection today.
         </li>
         <li>
@@ -67,22 +67,21 @@
         </li>
         <li>
           <strong>Argument validation on the runner.</strong> The runner is the authority on
-          arguments: it validates each one against the action schema — rejecting undeclared
-          arguments, coercing types, and enforcing every minimum and maximum — before
-          execution. The
+          arguments: it validates each one against the action schema before execution,
+          rejecting undeclared arguments, coercing types, and enforcing every minimum and
+          maximum. The
           control plane gates the dispatch through policy, scope, and pack trust. A
           misbehaving cloud cannot smuggle an undeclared argument past the runner.
         </li>
         <li>
           <strong>Policy.</strong>
-          Every dispatch gets one decision — <code>allow</code>
+          Every dispatch gets one decision (<code>allow</code>
           / <code>require_approval</code>
-          / <code>deny</code>
-          — evaluated in the control plane from per-action overrides and
+          / <code>deny</code>), evaluated in the control plane from per-action overrides and
           risk-tier defaults (<.docs_risk tier="low" /> / <.docs_risk tier="medium" /> /
           <.docs_risk tier="high" /> / <.docs_risk tier="critical" />). A dispatch the policy
           cannot answer is denied, and a higher tier can never be more permissive than a lower
-          one. The runner sees only the decision — it does not reason about policy. Evaluation
+          one. The runner sees only the decision and does not reason about policy. Evaluation
           order, the shipped defaults, and overrides are in <.link
             navigate={~p"/docs/policies-and-approvals"}
             class="text-brand-400 hover:text-brand-300"
@@ -106,7 +105,7 @@
           / <code>token=</code>
           assignments. AWS access-key IDs remain usable in follow-up actions; secret access-key
           fields are masked. Per-action rules layer on top,
-          but an unknown shape can pass through — treat redaction as a backstop, not a
+          but an unknown shape can pass through. Treat redaction as a backstop, not a
           guarantee.
         </li>
         <li>
@@ -167,7 +166,7 @@
           The leaf private key stays in the customer-authorized MCP bridge, and the CA private
           key stays offline. The control plane can relay a signed action, but it cannot create
           or change one, since it does not hold a private key. It can still withhold a signed
-          action — signed dispatch protects integrity, not availability.
+          action: signed dispatch protects integrity, not availability.
         </li>
         <li>
           <strong>The runner rejects stale or replayed work.</strong>
@@ -222,7 +221,7 @@
         </li>
         <li>
           <strong>Audit is evidence, not prevention.</strong>
-          The trail proves what happened. Policy, scope, and trust are what stop it. The export is a
+          The trail proves what happened. Policy, scope, and trust stop it. The export is a
           pull API. A stalled collector leaves your SIEM blind while the control plane keeps
           recording.
         </li>
@@ -282,7 +281,7 @@
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Retention is a ceiling, not a promise to keep evidence for you. If you need it longer,
-        ingest it before the window closes —
+        ingest it before the window closes.
         <.link
           navigate={~p"/docs/audit-and-siem" <> "#retention"}
           class="text-brand-400 hover:text-brand-300"

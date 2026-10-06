@@ -488,7 +488,7 @@ defmodule EmisarWeb.DocsComponents do
               <code class="font-mono">emisar.service</code>
               unit (<code class="font-mono">Restart=on-failure</code>). Without systemd it stops
               and points you at <code class="font-mono">--no-service</code>. On macOS it installs
-              a LaunchDaemon instead — fine for a laptop; production runs on Linux;
+              a LaunchDaemon instead, which is fine for a laptop; production runs on Linux;
             </span>
           </li>
           <li class="flex items-start gap-2.5">

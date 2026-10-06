@@ -36,8 +36,8 @@
                 >Action output</.link>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Set per action in the pack, separately for stdout and stderr — 64 bytes to 16 MiB
-                across the shipped catalog
+                Set per action in the pack, separately for stdout and stderr (64 bytes to 16 MiB
+                across the shipped catalog)
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Bytes past a stream's cap are dropped from the delivered output but counted, and
@@ -51,8 +51,8 @@
               <td class="px-4 py-3 align-top leading-6">The most recent 500 progress lines</td>
               <td class="px-4 py-3 align-top leading-6">
                 Older lines are trimmed from the browser view with a note. Run history keeps
-                accepted chunks within a durable budget — up to 50,000 chunks and 64 MiB per
-                run, one chunk capped at 256 KiB. The host journal keeps bounded previews,
+                accepted chunks within a durable budget: up to 50,000 chunks and 64 MiB per
+                run, with one chunk capped at 256 KiB. The host journal keeps bounded previews,
                 byte counts, and hashes of the complete redacted streams.
               </td>
             </tr>
@@ -116,8 +116,8 @@
               </td>
               <td class="px-4 py-3 align-top leading-6">512 KiB per tool result</td>
               <td class="px-4 py-3 align-top leading-6">
-                Tools shrink themselves first — fewer rows, shorter output tails. A result that
-                still does not fit returns a transport error carrying a
+                Tools shrink themselves first by returning fewer rows and shorter output tails. A
+                result that still does not fit returns a transport error carrying a
                 <.docs_inline_code>get_operation</.docs_inline_code>
                 continuation.
               </td>
@@ -180,7 +180,7 @@
               <td class="px-4 py-3 align-top leading-6">
                 A full page carries
                 <.docs_inline_code>Link: rel="next"</.docs_inline_code>
-                and means more may be waiting — keep paging from
+                and means more may be waiting. Keep paging from
                 <.docs_inline_code>X-Next-Cursor</.docs_inline_code>
                 until it disappears.
               </td>
@@ -204,11 +204,13 @@
         </table>
       </div>
       <.docs_callout kind={:tip} title="Scripting against the API?">
-        The fixed tools, identifiers, and recovery semantics of the emisar MCP server — including
-        how a retried dispatch resolves to its original operation — are in the <.link
+        The
+        <.link
           navigate={~p"/docs/mcp-reference"}
           class="text-brand-400 hover:text-brand-300"
-        >MCP CLI &amp; reference</.link>.
+        >MCP CLI &amp; reference</.link>
+        covers the fixed tools, identifiers, and recovery semantics of the emisar MCP server,
+        including how a retried dispatch resolves to its original operation.
       </.docs_callout>
     </.docs_layout>
   </section>

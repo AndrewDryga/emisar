@@ -57,7 +57,7 @@
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Free does not require a credit card and has no time limit. Team is billed per enabled runner, monthly
-        or annually — annual costs about two months less, and checkout uses your current
+        or annually. Annual costs about two months less, and checkout uses your current
         enabled-runner count (minimum one). Enterprise is a custom, sales-led plan with
         tailored limits. For the current per-runner price, <.link
           href={~p"/pricing" <> "#compare"}
@@ -115,8 +115,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Audit export.</strong>
-            Every plan keeps the full trail in the console; taking it out — the CSV download
-            and the NDJSON API — is what the plan gates. See <.link
+            Every plan keeps the full trail in the console. The plan controls export: the CSV
+            download and the NDJSON API. See <.link
               navigate={~p"/docs/audit-and-siem"}
               class="text-brand-400 hover:text-brand-300"
             >audit &amp; SIEM</.link>.
@@ -135,7 +135,7 @@
 
       <.docs_h2 id="usage-and-limits">When you reach a limit</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Runner caps are enforced when you add the next one, not retroactively — a plan never
+        Runner caps are enforced when you add the next runner, not retroactively. A plan never
         silently disables a runner you already have. The Billing page shows live runner and
         member usage.
       </p>
@@ -144,7 +144,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Runners.</strong>
-            Enrolling a runner past the cap is refused — the registration fails with an
+            Enrolling a runner past the cap is refused: the registration fails with an
             over-limit error, and existing runners keep working.
           </span>
         </li>
@@ -152,7 +152,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Audit retention</strong>
-            is a time window, not a cap — plan changes and pruning are covered <.link
+            is a time window, not a cap. Plan changes and pruning are covered <.link
               href="#retention"
               class="text-brand-400 hover:text-brand-300"
             >below</.link>.
@@ -168,8 +168,9 @@
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Billing</a>
         and read the plan, its limits, and how much of them is in use. Changing the plan,
-        updating the card, and cancelling take an owner, admin, or billing manager — a role
-        owners and admins can grant to the person who owns invoices but not infrastructure.
+        updating the card, and cancelling take an owner, admin, or billing manager. Owners and
+        admins can grant the billing manager role to the person who owns invoices but not
+        infrastructure.
         For the list of roles and permissions, see <.link
           navigate={~p"/docs/teams-and-access"}
           class="text-brand-400 hover:text-brand-300"
@@ -220,8 +221,9 @@
 
       <.docs_h2 id="invoices">Invoices and payment method</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The Billing page shows your three most recent invoices — date, amount, number, and
-        status — each with a PDF download. Choose <strong class="text-zinc-200">Show more</strong>
+        The Billing page shows your three most recent invoices, each with its date, amount,
+        number, status, and a PDF download. Choose
+        <strong class="text-zinc-200">Show more</strong>
         to list up to two years of them.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -233,7 +235,7 @@
         and choose <strong class="text-zinc-200">Update payment method</strong>. Billing
         addresses, tax details, and the full payment history are in Paddle's customer portal,
         which the payer opens from the link in any Paddle receipt email. Paddle is
-        emisar's merchant of record and holds the complete ledger and card details — it is
+        emisar's merchant of record and holds the complete ledger and card details. It is
         PCI DSS compliant and SOC 2 Type II audited (see <a
           href="https://trust.paddle.com/"
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -257,8 +259,8 @@
           href={~p"/app/billing"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Settings → Billing</a>
-        and choose <strong class="text-zinc-200">Update payment method</strong>
-        — the new card pays the overdue renewal. To stop renewing instead, contact support:
+        and choose <strong class="text-zinc-200">Update payment method</strong>.
+        The new card pays the overdue renewal. To stop renewing instead, contact support:
         Paddle does not change a subscription while a payment is overdue. Every plan change is
         recorded in the <.link
           navigate={~p"/docs/audit-and-siem"}
@@ -272,13 +274,13 @@
         affects only later events: an upgrade keeps new history longer, and a downgrade shortens
         the window for new events without deleting older retained history. Run history and run
         output are different: they follow the plan you are on right now, so a downgrade or a
-        lapsed subscription shortens the window for existing runs too — export anything you
+        lapsed subscription shortens the window for existing runs too. Export anything you
         need to keep before changing plans. The windows are in the <a
           href="#plans"
           class="text-brand-400 hover:text-brand-300"
-        >table above</a>;
-        retention behavior — pruning, the export API, and keeping history past
-        the window in your SIEM — is in <.link
+        >table above</a>.
+        Retention behavior (pruning, the export API, and keeping history past
+        the window in your SIEM) is in <.link
           navigate={~p"/docs/audit-and-siem" <> "#retention"}
           class="text-brand-400 hover:text-brand-300"
         >Audit &amp; SIEM</.link>.

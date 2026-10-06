@@ -153,10 +153,10 @@ defmodule EmisarWeb.MarketingHTML do
     <p class="mt-6 text-base leading-7 text-zinc-400">
       Using Claude Code, Cursor, Claude Desktop, or a CLI instead? Those connect through the
       <.docs_inline_code>emisar-mcp</.docs_inline_code>
-      stdio bridge — see <.link
+      stdio bridge (see <.link
         navigate={~p"/docs/connect-cli-agent"}
         class="text-brand-400 hover:text-brand-300"
-      >Connect a CLI agent</.link>. For {@sibling_label}, see <.link
+      >Connect a CLI agent</.link>). For {@sibling_label}, see <.link
         navigate={@sibling_path}
         class="text-brand-400 hover:text-brand-300"
       >{@sibling_label}</.link>.

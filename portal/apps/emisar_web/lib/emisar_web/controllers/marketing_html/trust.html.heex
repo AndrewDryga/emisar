@@ -44,15 +44,15 @@
         <%= for {icon, title, link_label, link_path, items} <- [
           {"identity.authentication", "Identity & access", "Teams & access", ~p"/docs/teams-and-access",
            [
-             "OIDC single sign-on — Okta, Entra ID, JumpCloud, Google Workspace, Keycloak",
-             "SCIM 2.0 directory sync — offboarding in your IdP revokes emisar access",
+             "OIDC single sign-on with Okta, Entra ID, JumpCloud, Google Workspace, or Keycloak",
+             "SCIM 2.0 directory sync: offboarding in your IdP revokes emisar access",
              "Account-wide MFA enforcement (TOTP + recovery codes)",
              "Owner / admin / billing manager / operator / viewer roles, least-privilege by default",
              "Per-user runner and pack access limits where people and agents can act",
              "MCP bridge keys are short-lived and rotate themselves.",
              "Automatic rotation requires an expiring portal-issued agent key and persistent writable bridge credential storage",
              "Full session management for browser and API-key access",
-             "Agent connect by browser approval — the key is installed, never pasted or on a command line"
+             "Agent connect by browser approval: the key is installed, never pasted or put on a command line"
            ]},
           {"product.audit", "Audit & monitoring", "Audit & SIEM", ~p"/docs/audit-and-siem",
            [
@@ -66,20 +66,20 @@
            [
              "Production data in private Cloud SQL PostgreSQL, United States region",
              "TLS 1.2+ at the edge; required database TLS; provider-managed encryption at rest",
-             "Audit retention by plan — 7 / 90 / 365 days",
+             "Audit retention by plan: 7 / 90 / 365 days",
              "We never sell your data, or use it to train AI models",
              "Export your data any time (full snapshot); delete on request",
              "GDPR & CCPA honored; server-side analytics with no identifier cookie outside checkout"
            ]},
           {"trust.permission_boundary", "The trust boundary", "Security model", ~p"/security",
            [
-             "Outbound-only runners — no inbound port open on your hosts",
-             "Per-runner tokens expire in 90 days and refresh themselves — no host access to renew",
-             "Typed action contract — the agent can't request undeclared commands",
-             "Signed dispatch (Ed25519 or ECDSA P-256 leaf keys) — the cloud can relay, never forge",
-             "Local admission control — the host has the last word",
+             "Outbound-only runners, with no inbound port open on your hosts",
+             "Per-runner tokens expire in 90 days and refresh themselves, so you don't need host access to renew them",
+             "Typed action contract: the agent can't request undeclared commands",
+             "Signed dispatch (Ed25519 or ECDSA P-256 leaf keys): the cloud can relay a request but never forge one",
+             "Local admission control: the host has the last word",
              "Known secret patterns redacted before output leaves the host",
-             "Content-addressed packs — unrecognized drift blocks dispatch pending review"
+             "Content-addressed packs: unrecognized drift blocks dispatch pending review"
            ]}
         ] do %>
           <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -160,52 +160,51 @@
           <li class="flex gap-2.5">
             <.icon name="infrastructure.host" class="mt-0.5 h-4 w-4 flex-none text-zinc-500" />
             <span>
-              <strong class="text-zinc-200">Google Cloud Platform</strong>
-              — application hosting, networking, managed PostgreSQL, and backups, US region.
+              <strong class="text-zinc-200">Google Cloud Platform</strong>: application hosting,
+              networking, managed PostgreSQL, and backups, US region.
             </span>
           </li>
           <li class="flex gap-2.5">
             <.icon name="product.billing" class="mt-0.5 h-4 w-4 flex-none text-zinc-500" />
             <span>
-              <strong class="text-zinc-200">Paddle</strong>
-              — payment processing and subscription retention (Paddle Retain, loaded
-              only on the checkout page); we never see or store full card numbers.
+              <strong class="text-zinc-200">Paddle</strong>: payment processing and subscription
+              retention (Paddle Retain, loaded only on the checkout page); we never see or store
+              full card numbers.
             </span>
           </li>
           <li class="flex gap-2.5">
             <.icon name="communication.email" class="mt-0.5 h-4 w-4 flex-none text-zinc-500" />
             <span>
-              <strong class="text-zinc-200">Postmark</strong>
-              — transactional email (confirmations, approvals, magic links).
+              <strong class="text-zinc-200">Postmark</strong>: transactional email (confirmations,
+              approvals, magic links).
             </span>
           </li>
           <li class="flex gap-2.5">
             <.icon name="story.observability" class="mt-0.5 h-4 w-4 flex-none text-zinc-500" />
             <span>
-              <strong class="text-zinc-200">Mixpanel</strong>
-              — marketing & growth analytics; server-side with no analytics identifier cookie,
-              never your runners' data.
+              <strong class="text-zinc-200">Mixpanel</strong>: marketing & growth analytics;
+              server-side with no analytics identifier cookie, never your runners' data.
             </span>
           </li>
           <li class="flex gap-2.5">
             <.icon name="story.debug" class="mt-0.5 h-4 w-4 flex-none text-zinc-500" />
             <span>
-              <strong class="text-zinc-200">Sentry</strong>
-              — error monitoring, hosted in the United States; request bodies, parameters, user
-              email and IP fields are removed before transmission, and configured secret keys are redacted.
+              <strong class="text-zinc-200">Sentry</strong>: error monitoring, hosted in the United
+              States; request bodies, parameters, user email and IP fields are removed before
+              transmission, and configured secret keys are redacted.
             </span>
           </li>
           <li class="flex gap-2.5">
             <.icon name="story.debug" class="mt-0.5 h-4 w-4 flex-none text-zinc-500" />
             <span>
-              <strong class="text-zinc-200">X Corp</strong>
-              — advertising attribution for signups arriving from an X ad; server-side, and only
-              the ad's click identifier, the signup time, and an opaque deduplication hash.
+              <strong class="text-zinc-200">X Corp</strong>: advertising attribution for signups
+              arriving from an X ad; server-side, and only the ad's click identifier, the signup
+              time, and an opaque deduplication hash.
             </span>
           </li>
         </ul>
         <p class="mt-4 text-sm text-zinc-400">
-          We update this list before adding a subprocessor — see the
+          We update this list before adding a subprocessor. See the
           <.link navigate={~p"/privacy"} class="text-brand-400 hover:text-brand-300">
             privacy policy
           </.link>
@@ -244,21 +243,21 @@
       <div>
         <h2 class="text-2xl font-bold text-white">Availability & SLA</h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          The hosted control plane targets <strong class="text-zinc-200">99.95% monthly uptime on Team and 99.99% on Enterprise</strong>, backed by a written SLA in the Enterprise order form. Because runners dial out and the host has the last word, a control-plane outage pauses new dispatches — it never leaves an action half-run or bypasses a gate.
+          The hosted control plane targets <strong class="text-zinc-200">99.95% monthly uptime on Team and 99.99% on Enterprise</strong>, backed by a written SLA in the Enterprise order form. Because runners dial out and the host has the last word, a control-plane outage pauses new dispatches. It never leaves an action half-run or bypasses a gate.
         </p>
       </div>
 
       <div>
         <h2 class="text-2xl font-bold text-white">Deployment &amp; licensing</h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          emisar runs as a hosted control plane today. The code that runs on your hosts — the
-          runner, the MCP bridge, and the action packs — is <strong class="text-zinc-200">open
+          emisar runs as a hosted control plane today. The code that runs on your hosts (the
+          runner, the MCP bridge, and the action packs) is <strong class="text-zinc-200">open
             source under the Apache License 2.0</strong>, so you can inspect, build, and keep
           operating it independently of us. The control plane is source-available under the
-          Business Source License, and each release converts to Apache-2.0 on its change date —
+          Business Source License, and each release converts to Apache-2.0 on its change date, so
           the code can't end up locked behind a vendor that disappears. Supported self-hosted and
-          air-gapped deployments are not generally available; if on-prem or air-gap is a hard
-          requirement, contact us — we want to hear about it.
+          air-gapped deployments are not generally available. If on-prem or air-gap is a hard
+          requirement, contact us. We want to hear about it.
         </p>
       </div>
 
@@ -273,7 +272,7 @@
           the combined checksum and each archive, signed by Sigstore and bound to the exact tag
           and workflow that produced it. Before a binary ever
           runs as <code class="font-mono text-zinc-300">sudo</code>
-          on your host, you can prove it came from our source — not a tampered mirror — and that
+          on your host, you can prove that it came from our source, not a tampered mirror, and that
           its bytes match what we published:
         </p>
         <div class="mt-4 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">

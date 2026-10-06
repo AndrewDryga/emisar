@@ -23,8 +23,8 @@
 
       <.docs_prerequisites>
         <:item>
-          A Linux host with <strong class="text-zinc-300">systemd</strong>
-          — a VM, a cloud instance, or bare metal. The installer sets up a systemd service; for
+          A Linux host with <strong class="text-zinc-300">systemd</strong>.
+          It can be a VM, a cloud instance, or bare metal. The installer sets up a systemd service; for
           containers, see <.link
             navigate={~p"/docs/containers"}
             class="text-brand-400 hover:text-brand-300"
@@ -48,14 +48,14 @@
 
       <.docs_h2 id="install-runner">2. Install the runner</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The runner is a small service that lives on your host and executes actions there —
-        nothing touches the host except through it. In the console, click <a
+        The runner is a small service that lives on your host and executes actions there.
+        Nothing touches the host except through it. In the console, click <a
           href={~p"/app/runners/install"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners → Connect a runner</a>. You'll get a one-line install command
         with a single-use enrollment key
-        (<code class="font-mono text-brand-300">emkey-enroll-…</code>, shown <em>once</em>
-        — copy it now). Run it on the host you want to give your LLM access to:
+        (<code class="font-mono text-brand-300">emkey-enroll-…</code>, shown <em>once</em>,
+        so copy it now). Run it on the host you want to give your LLM access to:
       </p>
       <.docs_code
         phx-no-format
@@ -66,8 +66,8 @@
       <.docs_verify_download component={:runner} />
       <.docs_install_script_details />
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The installer also adds <strong class="text-zinc-300">starter packs</strong>. A pack is a set of ready-made actions for one tool
-        — Linux basics, nginx, Postgres, etc. Pack actions are the tools your agent gets, so add more later
+        The installer also adds <strong class="text-zinc-300">starter packs</strong>. A pack is a set of ready-made actions for one tool,
+        such as Linux basics, nginx, or Postgres. Pack actions are the tools your agent gets, so add more later
         for whatever else the host runs: see <.link
           navigate={~p"/docs/use-a-published-pack"}
           class="text-brand-400 hover:text-brand-300"
@@ -97,7 +97,7 @@ Runner is connected and healthy.</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The stock <code class="font-mono">linux-core</code>
         pack is trusted automatically because its hash matches the one emisar publishes. A
-        custom or edited pack waits for a trust decision instead — that flow is in <.link
+        custom or edited pack waits for a trust decision instead. That flow is in <.link
           navigate={~p"/docs/pack-updates"}
           class="text-brand-400 hover:text-brand-300"
         >Roll out and roll back packs</.link>.
@@ -121,15 +121,15 @@ Runner is connected and healthy.</.docs_code>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                <code class="font-mono">systemctl status emisar</code>
-                — check the service is running. If it is not, start it and read the error.
+                <code class="font-mono">systemctl status emisar</code>:
+                check that the service is running. If it is not, start it and read the error.
               </span>
             </li>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                <code class="font-mono">sudo journalctl -u emisar -n 200</code>
-                — the log shows what failed. A <code class="font-mono">401</code>
+                <code class="font-mono">sudo journalctl -u emisar -n 200</code>:
+                the log shows what failed. A <code class="font-mono">401</code>
                 means the enrollment key was already used, expired, or revoked. Create a new key
                 and run the installer again.
               </span>
@@ -153,7 +153,7 @@ Runner is connected and healthy.</.docs_code>
               <span class="flex-none text-zinc-500">—</span>
               <span>
                 A <code class="font-mono">402</code>
-                means the account is at its plan's runner limit — three on the free plan. Delete a
+                means the account is at its plan's runner limit (three on the free plan). Delete a
                 runner you no longer use, or move to a larger plan.
               </span>
             </li>
@@ -168,7 +168,7 @@ Runner is connected and healthy.</.docs_code>
               <span class="flex-none text-zinc-500">—</span>
               <span>
                 <code class="font-mono">sudo emisar doctor</code>
-                — checks the config, credentials, packs, and action binaries in one pass.
+                checks the config, credentials, packs, and action binaries in one pass.
               </span>
             </li>
           </ul>
@@ -205,9 +205,8 @@ Runner is connected and healthy.</.docs_code>
 
       <.docs_h2 id="connect-llm">5. Point your LLM at it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        This is the step everything above was for: connect your AI agent, and the catalog becomes
-        tools it can call — reads run at once, risky work waits for your approval. In the
-        console, open
+        Connect your AI agent, and the catalog becomes tools it can call. Reads run at once,
+        and risky work waits for your approval. In the console, open
         <a
           href={~p"/app/agents"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -274,7 +273,7 @@ Runner is connected and healthy.</.docs_code>
             ones are denied.
           </p>
           <p class="mt-3 text-base leading-7 text-zinc-400">
-            The installer offers to do this for Claude Code, Gemini CLI, Codex CLI, and Grok CLI —
+            The installer offers to do this for Claude Code, Gemini CLI, Codex CLI, and Grok CLI,
             the four clients whose setting can name the
             <code class="font-mono text-brand-300">emisar</code>
             server alone. It leaves Cursor alone, because Cursor's only control is global.
@@ -285,8 +284,8 @@ Runner is connected and healthy.</.docs_code>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                <strong class="text-zinc-300">Claude Code</strong>
-                — add <code class="font-mono text-brand-300">"mcp__emisar__*"</code>
+                <strong class="text-zinc-300">Claude Code</strong>:
+                add <code class="font-mono text-brand-300">"mcp__emisar__*"</code>
                 to <code class="font-mono">permissions.allow</code>
                 in <code class="font-mono">~/.claude/settings.json</code>.
               </span>
@@ -294,8 +293,8 @@ Runner is connected and healthy.</.docs_code>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                <strong class="text-zinc-300">Gemini CLI</strong>
-                — set <code class="font-mono text-brand-300">"trust": true</code>
+                <strong class="text-zinc-300">Gemini CLI</strong>:
+                set <code class="font-mono text-brand-300">"trust": true</code>
                 on the <code class="font-mono">emisar</code>
                 server in <code class="font-mono">~/.gemini/settings.json</code>.
               </span>
@@ -303,8 +302,8 @@ Runner is connected and healthy.</.docs_code>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                <strong class="text-zinc-300">Grok CLI</strong>
-                — add <code class="font-mono text-brand-300">"MCPTool(emisar__*)"</code>
+                <strong class="text-zinc-300">Grok CLI</strong>:
+                add <code class="font-mono text-brand-300">"MCPTool(emisar__*)"</code>
                 to <code class="font-mono">[permission].allow</code>
                 in <code class="font-mono">~/.grok/config.toml</code>.
               </span>
@@ -312,8 +311,8 @@ Runner is connected and healthy.</.docs_code>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                <strong class="text-zinc-300">Cursor, Codex CLI</strong>
-                — Cursor approves globally through agent auto-run. Codex can trust only emisar with
+                <strong class="text-zinc-300">Cursor, Codex CLI</strong>:
+                Cursor approves globally through agent auto-run. Codex can trust only emisar with
                 <code class="font-mono">default_tools_approval_mode = "approve"</code>
                 under <code class="font-mono">[mcp_servers.emisar]</code>. The
                 <.link navigate={~p"/app/agents"} class="text-brand-400 hover:text-brand-300">
@@ -329,7 +328,7 @@ Runner is connected and healthy.</.docs_code>
       <.docs_h2 id="workflow">6. The workflow we recommend</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         emisar gives an agent eyes and hands on production, restrained by the policy you set. It can make
-        changes — that is what a gated action is for — but don't use it as your configuration
+        changes, which is what a gated action is for, but don't use it as your configuration
         manager. Standing changes an agent makes on a live host are how you get drift nobody can
         reproduce.
       </p>
@@ -339,17 +338,17 @@ Runner is connected and healthy.</.docs_code>
       <ol class="mt-4 list-decimal space-y-3 pl-6 text-base leading-7 text-zinc-400">
         <li>
           The agent <strong class="text-zinc-200">investigates</strong>
-          through emisar and finds the root cause — reads run on policy, so this part is unattended
+          through emisar and finds the root cause. Reads run on policy, so this part is unattended
           and on the record.
         </li>
         <li>
           If it's on fire, it <strong class="text-zinc-200">hot-patches</strong>
-          through one gated action to contain it — a person approves, and the side effect waits
+          through one gated action to contain it. A person approves, and the side effect waits
           until they do.
         </li>
         <li>
           Then it <strong class="text-zinc-200">writes the durable fix as code</strong>
-          — Terraform, Ansible, a Kubernetes manifest, whatever your fleet runs — and hands you a
+          (Terraform, Ansible, a Kubernetes manifest, whatever your fleet runs) and hands you a
           change you <strong class="text-zinc-200">review and apply</strong>
           through your normal pipeline. The hot-patch bought time; this is the part that survives
           the next converge.

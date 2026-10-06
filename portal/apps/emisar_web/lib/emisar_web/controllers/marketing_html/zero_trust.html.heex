@@ -16,24 +16,21 @@
         Anthropic wrote the framework. emisar enforces it.
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
-        The lab behind Claude published
-        <a
+        The lab behind Claude published <a
           href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
           target="_blank"
           rel="noopener noreferrer"
           class="text-brand-300 underline decoration-zinc-700 underline-offset-4 hover:text-brand-200"
-        >
-          Zero Trust for AI Agents
-        </a>
-        — a security framework for giving autonomous agents access to real systems. Its core
+        >Zero Trust for AI Agents</a>, a security framework for giving autonomous agents access to
+        real systems. Its core
         controls are <em class="text-zinc-200">least agency</em>, deny-by-default tools, a
         human in the loop for high-risk actions, and durable audit evidence. emisar maps those
         controls to the boundary between an LLM and your infrastructure. Core action controls ship
         on Free; SIEM export is available on Team and Enterprise.
       </p>
       <p class="mt-8 max-w-2xl text-xs leading-relaxed text-zinc-400">
-        emisar is not affiliated with, endorsed by, or sponsored by Anthropic. “Zero Trust for AI
-        Agents” is Anthropic's publication; we cite it because emisar is built to the control set
+        emisar is not affiliated with, endorsed by, or sponsored by Anthropic. "Zero Trust for AI
+        Agents" is Anthropic's publication; we cite it because emisar is built to the control set
         it describes.
       </p>
     </div>
@@ -48,8 +45,8 @@
       </.marketing_heading>
       <figure class="mt-10 border-l-2 border-brand-500/50 pl-6">
         <blockquote class="text-lg italic leading-8 text-zinc-300">
-          “Does this make the attack impossible, or just tedious? … Prefer a control that removes a
-          capability over a control that throttles it.”
+          "Does this make the attack impossible, or just tedious? … Prefer a control that removes a
+          capability over a control that throttles it."
         </blockquote>
         <figcaption class="mt-3 text-sm text-zinc-400">
           — Zero Trust for AI Agents, Anthropic
@@ -57,8 +54,8 @@
       </figure>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         emisar is built to pass that test the hard way. An action that isn't declared in a trusted
-        pack doesn't exist for the agent to call — there is no rate limit to grind through, no
-        unusual port to find, no prompt to talk past. A compromised agent can't escalate to a command the
+        pack doesn't exist for the agent to call. There is no rate limit to grind through, no
+        unusual port to find, and no prompt to talk past. A compromised agent can't escalate to a command the
         runner was never taught, because the runner refuses anything outside the contract.
       </p>
     </div>
@@ -73,7 +70,7 @@
           The framework, mapped to the product.
         </.marketing_heading>
         <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-          Anthropic groups controls into three tiers — Foundation, Enterprise, Advanced. Here is
+          Anthropic groups controls into three tiers (Foundation, Enterprise, and Advanced). Here is
           where emisar lands on the ones it owns: the boundary between the agent and your hosts.
           The engineering detail behind each row is in <.link
             navigate={~p"/docs/security-model"}
@@ -95,11 +92,11 @@
             <tbody class="divide-y divide-zinc-900 align-top text-zinc-300">
               <%= for {control, tier, detail} <- [
                 {"Deny-by-default tool allow-listing", "Foundation",
-                 "The trusted pack catalog is the allowlist. The runner refuses any action it doesn't declare — the model can't even see an undeclared command, let alone run it."},
-                {"Least agency — typed, scoped capability", "Foundation",
+                 "The trusted pack catalog is the allowlist. The runner refuses any action it doesn't declare. The model can't even see an undeclared command, let alone run it."},
+                {"Least agency: typed, scoped capability", "Foundation",
                  "Every action is a typed contract with per-argument bounds. Per-user and per-group runner scopes limit which hosts an agent can reach at all."},
-                {"Short-lived, IdP-issued credentials — no static keys", "Foundation",
-                 "OAuth 2.1 for remote MCP clients; short-lived, revocable keys for everything else — each inherits the runner access of the operator who created it. No long-lived shell key sitting on the host."},
+                {"Short-lived, IdP-issued credentials instead of static keys", "Foundation",
+                 "OAuth 2.1 for remote MCP clients, and short-lived, revocable keys for everything else, each inheriting the runner access of the operator who created it. No long-lived shell key sits on the host."},
                 {"Parameter validation, tool-side", "Foundation",
                  "The runner re-validates every argument against the action schema and clamps options to their min/max before exec."},
                 {"Version-controlled, integrity-checked configuration", "Enterprise",
@@ -107,13 +104,13 @@
                 {"Tamper-evident, hash-chained host journal", "Enterprise",
                  "Every action is recorded to the searchable off-host portal audit and to a hash-chained JSONL journal retained on the runner. emisar audit verify reports breaks in that retained chain."},
                 {"Human-in-the-loop approval for high-risk actions", "Advanced",
-                 "Risk-tiered policy holds destructive actions for a person. The approver sees the actor, the args, the target host, and the rule that fired — one click to allow or deny."},
+                 "Risk-tiered policy holds destructive actions for a person. The approver sees the actor, the args, the target host, and the rule that fired, then allows or denies with one click."},
                 {"Just-in-time / just-enough access", "Advanced",
                  "One-use approvals and scoped standing grants. The agent gets the capability for the task, not standing access that outlives it."},
                 {"Continuous audit ingest by your SIEM", "Advanced",
                  "Your SIEM reads the cloud audit through a dedicated read-only credential."},
-                {"Cryptographic non-origination — the platform can't act for you", "Advanced",
-                 "A customer-authorized bridge signs each request with a key the control plane never holds. A compromised control plane can relay that signed request — it can't forge, alter, replay, or originate one. The capability to act on your behalf is removed from the platform. Opt-in per runner."}
+                {"Cryptographic non-origination: the platform can't act for you", "Advanced",
+                 "A customer-authorized bridge signs each request with a key the control plane never holds. A compromised control plane can relay that signed request, but it can't forge, alter, replay, or originate one. The capability to act on your behalf is removed from the platform. Signed dispatch is opt-in per runner."}
               ] do %>
                 <tr class="hover:bg-zinc-900/30">
                   <td class="px-6 py-4 font-medium text-zinc-100">{control}</td>
@@ -147,12 +144,12 @@
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
         The framework is broader than any one product, and we'd rather be precise than oversell.
         emisar owns the <em class="text-zinc-200">tool-access</em>
-        pillar — what an agent can do to your infrastructure, and the record of it. It does not do
+        pillar: what an agent can do to your infrastructure, and the record of it. It does not do
         these, and doesn't claim to:
       </p>
       <ul class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <%= for item <- [
-          "Model supply chain — poisoned weights, fine-tuning backdoors, AI-BOM",
+          "Model supply chain: poisoned weights, fine-tuning backdoors, AI-BOM",
           "Memory & context poisoning across an agent's sessions",
           "Prompt-injection classifiers, spotlighting, input sanitization",
           "Behavioral anomaly detection and ML baselining"
@@ -163,12 +160,10 @@
         <% end %>
       </ul>
       <p class="mt-8 text-lg leading-8 text-zinc-400 text-pretty">
-        Here's the reframe that makes the scope a feature. emisar doesn't try to keep the agent
-        pure — it assumes the agent may already be jailbroken or prompt-injected, and makes sure a
+        Instead of trying to keep the agent pure, emisar assumes the agent may already be
+        jailbroken or prompt-injected, and makes sure a
         compromised agent <em class="text-zinc-200">still</em>
-        can't exceed declared, gated, audited actions. That is the framework's first principle —
-        <em class="text-zinc-200">assume breach</em>
-        — applied to the one place an AI agent can do
+        can't exceed declared, gated, audited actions. That is the framework's first principle, <em class="text-zinc-200">assume breach</em>, applied to the one place an AI agent can do
         real damage: the keyboard in front of your servers.
       </p>
     </div>
@@ -183,18 +178,18 @@
       </.marketing_heading>
       <figure class="mt-10 border-l-2 border-brand-500/50 pl-6">
         <blockquote class="text-lg italic leading-8 text-zinc-300">
-          “Models should take notes, capture artifacts, pursue parallel investigation tracks, and
-          draft the postmortem. Humans should make the containment calls.”
+          "Models should take notes, capture artifacts, pursue parallel investigation tracks, and
+          draft the postmortem. Humans should make the containment calls."
         </blockquote>
         <figcaption class="mt-3 text-sm text-zinc-400">
           — Zero Trust for AI Agents, Anthropic
         </figcaption>
       </figure>
       <p class="mt-8 text-lg leading-8 text-zinc-400 text-pretty">
-        That is exactly the emisar loop. The agent investigates through read actions, correlates,
-        and drafts the fix; the one destructive step stops for a person and lands on the record.
-        We have a real incident written up end to end — a CSI driver that reformatted a live
-        volume and wiped 33 hours of metrics, contained on a single approval.
+        The emisar loop works the same way. The agent investigates through read actions,
+        correlates, and drafts the fix. The one destructive step stops for a person and lands on
+        the record. We have a real incident written up end to end: a CSI driver that reformatted
+        a live volume and wiped 33 hours of metrics, contained on a single approval.
       </p>
       <div class="mt-8">
         <.marketing_button
@@ -212,7 +207,7 @@
        framework PDF stays linked in the hero and the design-test figure. --%>
   <.marketing_cta
     headline="Put the framework between your agent and production."
-    subcopy="Install a runner, connect your agent, and every call crosses the boundary this page mapped — least agency, an approval where it counts, and an audit trail you can hand an auditor."
+    subcopy="Install a runner and connect your agent. Every call then crosses the boundary this page mapped: least agency, an approval where it counts, and an audit trail you can hand an auditor."
     secondary_label="Read the security model"
     secondary_path={~p"/security"}
   />

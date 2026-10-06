@@ -86,19 +86,18 @@
       </p>
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In the console, open
-        <a
+        In the console, open <a
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Runners</a>
-        — the container appears online, with the actions its packs advertise.
+        >Runners</a>.
+        The container appears online, with the actions its packs advertise.
       </p>
 
       <.docs_h2 id="what-it-sees">What a containerized runner sees</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A runner acts only on resources available in its namespace. On a VM or bare metal, that
-        namespace covers the whole machine. Most packs target hosts, and some need systemd —
-        that is why the
+        namespace covers the whole machine. Most packs target hosts, and some need systemd,
+        which is why the
         <.link navigate={~p"/docs/host-install"} class="text-brand-400 hover:text-brand-300">
           host install
         </.link>
@@ -106,8 +105,8 @@
         filesystem, and network.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The same limit is the control. A sidecar can join one app's process and network
-        namespaces and mount selected volumes — it then reaches every process, interface, and
+        You can use that limit as a control. A sidecar can join one app's process and network
+        namespaces and mount selected volumes. It then reaches every process, interface, and
         endpoint in them. You choose whether the agent operates one app, one node, or every node.
       </p>
 
@@ -116,7 +115,7 @@
         Every runner release publishes
         <code class="font-mono">ghcr.io/andrewdryga/emisar-runner</code>
         for linux/amd64 and linux/arm64. The registry has no <code class="font-mono">latest</code>
-        tag — you always deploy a version you named. What is in the image is part of what the
+        tag, so you always deploy a version you named. What is in the image is part of what the
         runner can do, so treat an image change with the same care as trusting a new pack.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -124,14 +123,14 @@
         container can see: <code class="font-mono">fs-search</code>
         for its filesystem, <code class="font-mono">debugging</code>
         for its processes, and <code class="font-mono">network-tls</code>
-        for its network — plus only the tools those packs call.
+        for its network. Beyond those, it has only the tools the packs call.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         It runs as the non-root user <code class="font-mono">65532</code>, connects to
         <code class="font-mono">emisar.dev</code>
         (set <code class="font-mono">EMISAR_URL</code>
         for a self-hosted control plane), reads <code class="font-mono">EMISAR_ENROLLMENT_KEY</code>, and keeps state under <code class="font-mono">/var/lib/emisar</code>. The baked config admits only low-risk
-        actions, so the default image can observe but not fix — mount your own config to allow
+        actions, so the default image can observe but not fix. Mount your own config to allow
         the debugging pack's fix actions.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -164,13 +163,13 @@
           class="text-brand-400 hover:text-brand-300"
         >autoscaling fleets</.link>
         treat hosts: no volume, a reusable enrollment key in the template, and a unique hostname
-        per container — Docker's default, the container ID, already is one. Each replacement then
+        per container. Docker's default hostname (the container ID) is already unique. Each replacement then
         registers as a new runner, and the old record sits offline until <.link
           navigate={~p"/docs/autoscaling-fleets" <> "#cleanup"}
           class="text-brand-400 hover:text-brand-300"
-        >retention removes it</.link>. The unique hostname is required — two containers sharing
-        one hostname register as the SAME runner and fight over its connection — and dispatch
-        state is not preserved: a replaced container abandons whatever it was running.
+        >retention removes it</.link>. The unique hostname is required: two containers sharing
+        one hostname register as the same runner and fight over its connection. Dispatch
+        state is not preserved, so a replaced container abandons whatever it was running.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Two environment variables relabel a fleet without a config file.
@@ -211,7 +210,7 @@
         only for a fleet that should run fix actions.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The key you started with is single-use — right for one container, wrong for a template
+        The key you started with is single-use. That suits one container, but not a template
         that scales. For DaemonSets and system jobs,
         mint a
         <a
@@ -228,8 +227,8 @@
 
       <.docs_h2 id="extending">Extend it for your packs</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Actions run inside the container, so a pack's client must be in the image too — the
-        <code class="font-mono">postgres</code>
+        Actions run inside the container, so a pack's client must be in the image too. For
+        example, the <code class="font-mono">postgres</code>
         pack needs <code class="font-mono">psql</code>
         there. Extend the official image with the tools your packs call, then install the packs:
       </p>
@@ -241,16 +240,17 @@ RUN apt-get update \
     && emisar pack install postgres=X.Y.Z --hash sha256:…
 USER 65532</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Pin the pack version and content hash — the pack's page in the
+        Pin the pack version and content hash so the image build is reproducible and a tampered
+        registry copy is rejected. The pack's page in the
         <.link navigate={~p"/packs"} class="text-brand-400 hover:text-brand-300">
           pack catalog
         </.link>
-        shows both, with the install command ready to copy — so the image build is reproducible
-        and a tampered registry copy is rejected. Keep the additions
+        shows both, with the install command ready to copy. Keep the additions
         as narrow as the workload allows.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Building your own image from scratch instead — a different distro, a hardened base?
+        Building your own image from scratch instead, such as on a different distro or a hardened
+        base?
         Install the release binary with <code class="font-mono text-brand-300">--no-service</code>: it skips init detection, the
         service user, and the systemd unit, and just puts the binary in place. Supervision belongs
         to whatever runs the container: <code class="font-mono">docker run --restart</code>, a
@@ -285,7 +285,7 @@ USER 65532</.docs_code>
         processes, and network state. The command above adds an operator-owned config and
         persistent token and journal volumes. Name the container, the volumes, and the config's
         <code class="font-mono">runner.id</code>
-        after the app — <code class="font-mono">runner.id</code>
+        after the app. <code class="font-mono">runner.id</code>
         is also the name the console shows, and the sidecar shares the app container's
         hostname, so a second sidecar on the same host would otherwise collide on all three. If the agent needs the app's CLI,
         <a
@@ -297,7 +297,7 @@ USER 65532</.docs_code>
 
       <.docs_h2 id="orchestrators">One per node: Kubernetes and Nomad</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To operate nodes instead of one app, run one runner per node — a Kubernetes DaemonSet
+        To operate nodes instead of one app, run one runner per node with a Kubernetes DaemonSet
         or a Nomad system job. Both need an image, a persistent state volume, and a reusable
         enrollment key. Each guide provides a complete manifest:
       </p>
@@ -308,7 +308,7 @@ USER 65532</.docs_code>
             <.link navigate={~p"/docs/kubernetes"} class="text-brand-400 hover:text-brand-300">
               <strong class="text-zinc-200">Kubernetes DaemonSet</strong>
             </.link>
-            — the pod spec decides exactly what each node's runner can see: <code class="font-mono">hostPID</code>, <code class="font-mono">hostNetwork</code>, and read-only host mounts.
+            lets the pod spec decide exactly what each node's runner can see: <code class="font-mono">hostPID</code>, <code class="font-mono">hostNetwork</code>, and read-only host mounts.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -317,8 +317,8 @@ USER 65532</.docs_code>
             <.link navigate={~p"/docs/nomad"} class="text-brand-400 hover:text-brand-300">
               <strong class="text-zinc-200">Nomad system job</strong>
             </.link>
-            — one runner on every client node; an artifact stanza fetches the release binary, and
-            the runner keeps its token and dispatch state on each client.
+            runs one runner on every client node. An artifact stanza fetches the release binary,
+            and the runner keeps its token and dispatch state on each client.
           </span>
         </li>
       </ul>
@@ -327,8 +327,8 @@ USER 65532</.docs_code>
         <.link navigate={~p"/docs/runner-fleet"} class="text-brand-400 hover:text-brand-300">
           Manage the runner fleet
         </.link>
-        covers work after the first connection — groups, labels, pack credentials, updates,
-        reconnects, and removal. To roll a container fleet out in phases, see the <.link
+        covers work after the first connection: groups, labels, pack credentials, updates,
+        reconnects, and removal. To roll a container fleet out in phases, see <.link
           navigate={~p"/docs/production"}
           class="text-brand-400 hover:text-brand-300"
         >Go to production</.link>.

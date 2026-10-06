@@ -22,7 +22,7 @@
         <:item>An emisar <strong class="text-zinc-300">owner or admin</strong>.</:item>
       </.docs_prerequisites>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The sections below build two objects in order — sign-in first, then the directory.
+        The sections below build two objects in order: sign-in first, then the directory.
       </p>
 
       <.docs_h2 id="sso">Single sign-on</.docs_h2>
@@ -66,7 +66,7 @@
           <.docs_screenshot
             src="/images/docs/sso/entra-app-registration.webp"
             title="Microsoft Entra admin center · Register an application"
-            caption="The platform must be set to Web — the URI beside it is ignored until it is, and the form refuses to register without it."
+            caption="The platform must be set to Web. Until it is, the URI beside it is ignored, and the form refuses to register without it."
             alt="Entra's Register an application form with the name emisar, Supported account types set to Single tenant only, and the Redirect URI section outlined in green: its platform dropdown reads Web and the adjacent field holds https://emisar.dev/sign_in/sso/callback."
           />
         </.docs_step>
@@ -76,8 +76,8 @@
           <p class="mt-1.5">
             Open <strong class="text-zinc-200">Certificates &amp; secrets → New client secret</strong>. Copy the
             <strong class="text-zinc-200">Value</strong>
-            column, not <strong class="text-zinc-200">Secret ID</strong>
-            — the value is shown once and is unrecoverable afterwards.
+            column, not <strong class="text-zinc-200">Secret ID</strong>. The value is shown once
+            and is unrecoverable afterwards.
           </p>
 
           <.docs_screenshot
@@ -180,13 +180,12 @@
       </.docs_callout>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         You need the connection's <strong class="text-zinc-200">SCIM base URL</strong>
-        and <strong class="text-zinc-200">bearer token</strong>
-        —
+        and <strong class="text-zinc-200">bearer token</strong>. See
         <.link
           navigate={~p"/docs/scim#enable"}
           class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
         >enabling directory sync</.link>
-        shows where both come from.
+        for where both come from.
       </p>
       <ol class="mt-8 space-y-10">
         <.docs_step n={1}>
@@ -257,7 +256,7 @@
           <.docs_screenshot
             src="/images/docs/sso/entra-externalid-objectid.webp"
             title="Microsoft Entra · Edit Attribute Mapping"
-            caption="Change the source, not the target — externalId must stay aligned with the OIDC oid claim."
+            caption="Change the source, not the target: externalId must stay aligned with the OIDC oid claim."
             alt="Entra's Edit Attribute Mapping pane with the Source attribute row outlined in green and set to objectId, alongside Mapping type Direct, Target attribute externalId, and Apply this mapping set to Always."
           />
           <p class="mt-4">
@@ -287,7 +286,7 @@
             on. Scope is separate from assignment and defaults to everyone. Change it, or Entra
             sends the entire directory regardless of assignment. Entra syncs roughly every 40
             minutes. New members appear under <strong class="text-zinc-200">Members</strong>
-            after the next cycle, not immediately. Their Entra groups then appear under <strong class="text-zinc-200">Groups &amp; access</strong>.
+            after the next cycle. Their Entra groups then appear under <strong class="text-zinc-200">Groups &amp; access</strong>.
             An offboarding also waits for the next cycle. For an urgent one, also choose
             <strong class="text-zinc-200">Suspend access</strong>
             on emisar's Team page; directory sync never lifts that hold.

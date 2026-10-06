@@ -9,7 +9,7 @@
         {"stdio-bridge", "Set up a stdio client"},
         {"connect-later", "Connect a client you install later"},
         {"manual-setup", "Set up a client by hand"},
-        {"direct-http", "Direct HTTP — no bridge"},
+        {"direct-http", "Direct HTTP without a bridge"},
         {"verify", "Verify the connection"},
         {"sign-in-grants", "What the sign-in grants"},
         {"troubleshooting", "Troubleshooting"}
@@ -25,7 +25,7 @@
 
       <p class="mt-6 text-base leading-7 text-zinc-400">
         Using Claude.ai or ChatGPT instead? Those connect over OAuth with no key or bridge to
-        manage — see <.link
+        manage. See <.link
           navigate={~p"/docs/connect-claude-ai"}
           class="text-brand-400 hover:text-brand-300"
         >Connect a cloud LLM</.link>.
@@ -73,9 +73,9 @@
         <p class="mt-4 text-base text-zinc-400">
           Most local clients speak stdio. The
           <.docs_inline_code>emisar-mcp</.docs_inline_code>
-          bridge is a small binary that sits in between the agent and emisar control plane. Your
-          client starts it, and it passes each call to your account. Install it once per machine —
-          every client uses the same one.
+          bridge is a small binary that sits between the agent and the emisar control plane. Your
+          client starts it, and it passes each call to your account. Install it once per machine.
+          Every client uses the same one.
         </p>
 
         <.docs_h3 id="install-bridge">Install</.docs_h3>
@@ -176,9 +176,8 @@ Waiting for approval (Ctrl-C to cancel)…
 Restart any client you just connected so it picks up the new server.</.docs_code>
         <p class="mt-5 text-base leading-7 text-zinc-400">
           A rerun keeps the stored credential until the control plane rejects it. The rest of
-          the command surface — <.docs_inline_code>--all</.docs_inline_code>, <.docs_inline_code>disconnect</.docs_inline_code>,
-          <.docs_inline_code>--auto-permit</.docs_inline_code>
-          — is in <.link
+          the command surface (<.docs_inline_code>--all</.docs_inline_code>, <.docs_inline_code>disconnect</.docs_inline_code>, <.docs_inline_code>--auto-permit</.docs_inline_code>)
+          is in <.link
             navigate={~p"/docs/mcp-reference#cli-clients"}
             class="text-brand-400 hover:text-brand-300"
           >MCP CLI &amp; reference</.link>.
@@ -265,7 +264,7 @@ Restart any client you just connected so it picks up the new server.</.docs_code
       </section>
 
       <section>
-        <.docs_h2 id="direct-http">Direct HTTP — no bridge</.docs_h2>
+        <.docs_h2 id="direct-http">Direct HTTP without a bridge</.docs_h2>
         <p class="mt-4 text-base text-zinc-400">
           Any MCP client that supports Streamable HTTP and a custom authorization header can
           connect straight to emisar. There is no bridge binary to install.
@@ -360,7 +359,7 @@ Restart any client you just connected so it picks up the new server.</.docs_code
             <strong class="text-zinc-200">Every call returns 401.</strong>
             The key expired, was revoked, or was retired when its rotation successor made its
             first call. A secret is shown only once and cannot be viewed again, so a failing
-            client always needs a fresh one — rotating or minting is the fix, never a lookup. A
+            client always needs a fresh one: rotate the key or mint a new one. A
             revoked key cannot be restored. If the client never worked at all, check which token was
             copied: an audit-export token starts <.docs_inline_code>emk-export-</.docs_inline_code>, and the
             MCP endpoint refuses it as the wrong kind. Mint or rotate a key in
@@ -415,8 +414,8 @@ Restart any client you just connected so it picks up the new server.</.docs_code
           <span>
             <strong class="text-zinc-200">The response was lost after a mutation.</strong>
             Recover by operation ID with <.docs_inline_code>get_operation</.docs_inline_code>,
-            using the same key that made the call — after a rotation, its successor counts. Never
-            repeat the mutation. Cancelling only stops the bridge's wait and closing the client
+            using the same key that made the call. After a rotation, its successor counts. Never
+            repeat the mutation. Cancelling only stops the bridge's wait, and closing the client
             lets requests already in flight finish, so a cancelled call, closed client, or
             dropped bridge does not undo work the control plane already admitted.
           </span>

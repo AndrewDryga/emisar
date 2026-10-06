@@ -47,12 +47,13 @@
           scripts too, without the usual limits of the MCP protocol.
         </p>
         <p>
-          Authenticate once — with <code>emisar-mcp auth</code>, or during the
+          Authenticate once, with <code>emisar-mcp auth</code>
+          or during the
           <.link navigate={~p"/docs/connect-cli-agent#install-bridge"}>
             bridge install
           </.link>
-          — and direct commands work with no environment exports. The credential is stored
-          in owner-only local state.
+          step. After that, direct commands work with no environment exports. The credential is
+          stored in owner-only local state.
         </p>
         <p>
           Run <code>emisar-mcp</code>
@@ -267,7 +268,7 @@
           <li>
             <code>--auto-permit</code>
             (connect only) also turns off the client's own "allow this tool?" prompt for the
-            emisar server alone — emisar still decides every call server-side. Claude Code,
+            emisar server alone. emisar still decides every call server-side. Claude Code,
             Gemini CLI, Codex CLI, and Grok CLI support this per-server setting.
           </li>
           <li>
@@ -288,7 +289,7 @@
 
         <h2 id="protocol-methods">Protocol methods</h2>
         <p>
-          emisar serves three protocol revisions on one stateless endpoint — it does not issue an
+          emisar serves three protocol revisions on one stateless endpoint. It does not issue an
           <code>Mcp-Session-Id</code>
           or require sticky routing.
         </p>
@@ -338,7 +339,7 @@
         </p>
         <p>
           Request IDs are strings or integers and are returned with the same JSON type. A
-          frame without an ID is a notification, and a mutation sent as one never runs — a
+          frame without an ID is a notification, and a mutation sent as one never runs. A
           mutation needs a request ID for safe recovery.
         </p>
 
@@ -394,7 +395,7 @@
           diagnosis or target selection. Pack and runner pages default to 15 items. Continue a list
           by passing the previous response's <code>next_cursor</code>
           (find_actions returns a ready-to-send <code>next</code>
-          call), and a cursor is bound to the identical query — a mismatched one is rejected.
+          call), and a cursor is bound to the identical query. A mismatched cursor is rejected.
         </p>
         <p>
           <code>include: "executable"</code>
@@ -404,7 +405,7 @@
           trusted packs and actions outside your action access or currently unavailable, with issues such as no
           connected runner, a missing executable, or a descriptor mismatch. Pending, rejected,
           revoked, and retirement-blocked pack refs are operator-only facts that discovery
-          omits — when an expected ref is absent, review it in <a
+          omits. When an expected ref is absent, review it in <a
             href={~p"/app/packs"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
           >Packs</a>.
@@ -435,7 +436,7 @@
                 {"runner_refs", "Required", "One to sixteen distinct, explicit targets."},
                 {"args", "Required", "One JSON object validated against the trusted action schema."},
                 {"reason", "Required", "Operator-facing audit reason for this execution."},
-                {"evidence", "Optional", "What you already observed that makes the action necessary — prior findings or run ids."},
+                {"evidence", "Optional", "What you already observed that makes the action necessary: prior findings or run ids."},
                 {"expected", "Optional", "The outcome you expect if it works. It is stored with the run and shown to approvers."},
                 {"wait", "Optional", "Duration string: \"0\", \"1s\"–\"60s\", or \"1ms\"–\"60000ms\". The default is 45s and the maximum 60s."}
               ] do %>
@@ -453,12 +454,12 @@
         <p>
           Dispatch preflight re-resolves the complete target set, pack trust, descriptor, schema,
           policy, certificate window, and signature requirement, and creates the complete
-          fan-out or nothing — it never silently drops a stale target. Policy can still
+          fan-out or nothing. It never silently drops a stale target. Policy can still
           produce a mix of allowed, pending-approval, and denied runs inside the accepted
           operation. A parked run is not an error: it comes back in a successful response with
           run status <code>pending_approval</code>, an approval URL, and a
           <code>wait_for_run</code>
-          continuation — wait on it rather than treating it as a failure.
+          continuation. Wait on the run.
         </p>
 
         <h2 id="operations">Operations and recovery</h2>
@@ -477,7 +478,7 @@
           correlated JSON-RPC error includes that same ID. After a mutation, pass it to
           <code>get_operation</code>
           before deciding whether to issue new work. Read calls retry normally. Run history
-          is for investigation — it is not a substitute for exact operation recovery.
+          is for investigation and does not replace exact operation recovery.
         </p>
 
         <h2 id="waits">Waits and cancellation</h2>
@@ -490,7 +491,7 @@
           credential lineage can hold eight waits per portal node; the stdio bridge keeps up
           to eight requests in flight on a 90-second HTTP deadline, and other calls stay
           responsive during a wait. Legacy clients can also use <code>ping</code>.
-          Cancellation stops observation only — it does not undo committed infrastructure
+          Cancellation stops observation only. It does not undo committed infrastructure
           work.
         </p>
         <p>
@@ -528,7 +529,7 @@
           with <code>allow_draft: true</code>
           and the exact <code>definition_sha256</code>
           you consent to run. A draft test uses the same target, trust, policy, approval,
-          scheduler, runner, and audit path as a live execution — it can cause the actions'
+          scheduler, runner, and audit path as a live execution. It can cause the actions'
           real effects, and it publishes nothing: publication remains a human action in <a
             href={~p"/app/runbooks"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -576,8 +577,8 @@
         </div>
 
         <p>
-          These codes are the contract. When you have a symptom instead of a code — a client
-          that cannot connect, an outdated bridge, a refused tool call — start from <.link navigate={
+          These codes are the contract. When you have a symptom instead of a code (a client
+          that cannot connect, an outdated bridge, a refused tool call), start from <.link navigate={
             ~p"/docs/connect-cli-agent" <> "#troubleshooting"
           }>troubleshooting</.link>, which routes back here once it identifies the problem.
         </p>

@@ -37,7 +37,7 @@
         alt="The Runs list: columns for When, Action, Runner, Dispatched by, Status, and Duration. Rows show actions like caddy.reload_config and postgres.replication_lag dispatched across runners edge-fra-01, api-iad-02, and pg-primary-iad, each attributed to a named operator or agent, with color-coded statuses including success and awaiting approval, and a per-run duration."
       />
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Four filters narrow the feed. Each one lives in the URL. The back button, a refresh,
+        Four filters narrow the feed. Each one is kept in the URL, so the back button, a refresh,
         and a shared link all land on the same view:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
@@ -53,14 +53,11 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Action.</strong>
-            A substring match on the action id. Typing
+            A case-insensitive substring match on the action id. Typing
             <.docs_inline_code>postgres</.docs_inline_code>
             finds
             <.docs_inline_code>postgres.vacuum_table</.docs_inline_code>
-            and
-            <.docs_inline_code>postgres.uptime</.docs_inline_code>
-            — and
-            it is case-insensitive.
+            and <.docs_inline_code>postgres.uptime</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -81,8 +78,8 @@
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A runner's page links straight to its own runs. An agent's page links to the runs
-        dispatched with its key. The common "what did this host, or this agent, do" question is
-        one filtered link, not a hand-built query.
+        dispatched with its key. To see what a host or an agent did, you follow one link instead
+        of building the query by hand.
       </p>
 
       <.docs_h2 id="statuses">Run statuses</.docs_h2>
@@ -130,9 +127,7 @@
           href={~p"/app/runs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runs</a>
-        to see one invocation. The fact strip starts with the outcome — <strong>Status</strong>, <strong>Runner</strong>, <strong>Dispatched by</strong>, <strong>Duration</strong>, <strong>Exit code</strong>, and
-        <strong>Created</strong>
-        — and the Runner value links to that host. Created is when the run was requested,
+        to see one invocation. The fact strip starts with the outcome. It shows <strong>Status</strong>, <strong>Runner</strong>, <strong>Dispatched by</strong>, <strong>Duration</strong>, <strong>Exit code</strong>, and <strong>Created</strong>. The Runner value links to that host. Created is when the run was requested,
         before any queue or approval wait. Use <strong>View audit trail</strong>
         for its audit records.
       </p>
@@ -145,12 +140,9 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Dispatched by</strong>
         shows the accountable person first. An operator run shows the team member who ran
-        it, an agent run shows the human who owns the agent key — with the client as
-        secondary context:
-        <.docs_inline_code>jordan@example.com via Claude Code</.docs_inline_code>
-        — and a runbook run shows the runbook. This is the same human-first
-        attribution the audit trail uses, so "who ran this, and through what" is answered on the row
-        itself.
+        it. An agent run shows the human who owns the agent key, with the client as
+        secondary context: <.docs_inline_code>jordan@example.com via Claude Code</.docs_inline_code>. A runbook run shows the runbook. The audit trail uses the same human-first
+        attribution, so the row itself shows who ran the action and through what.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Request details</strong>
@@ -174,11 +166,13 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Executed command</strong>
         shows the shell line the runner ran. The runner applies configured redaction to the
-        command and output before they leave the host — a best-effort backstop, not a
-        guarantee. How the redaction pipeline works is in the <.link
+        command and output before they leave the host. Redaction is a best-effort backstop, not a
+        guarantee. The
+        <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-400 hover:text-brand-300"
-        >security model</.link>.
+        >security model</.link>
+        explains how the redaction pipeline works.
       </p>
 
       <.docs_h2 id="output">Live output and caps</.docs_h2>
@@ -199,12 +193,12 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Truncation can also happen at the source. The runner bounds the output it captures per the
         action's output settings. When it hits that limit it clips the stream and flags the run as
-        truncated. Each run also records whether every progress chunk arrived. A gap left by a
-        mid-run disconnect is visible rather than silent.
+        truncated. Each run also records whether every progress chunk arrived, so a gap left by a
+        mid-run disconnect is visible.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Every run carries a durable output budget that holds across runner reconnects. A run
-        that reaches it stops accepting further chunks, visibly. The numbers are in <.link
+        Every run has a durable output budget that holds across runner reconnects. A run
+        that reaches it visibly stops accepting further chunks. The numbers are in <.link
           navigate={~p"/docs/limits"}
           class="text-brand-400 hover:text-brand-300"
         >Limits</.link>.
@@ -225,8 +219,7 @@
           href={~p"/app/runs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runs</a>
-        and use <strong>Cancel run</strong>
-        —
+        and use <strong>Cancel run</strong>. It is
         available to operators, admins, and owners while the run is queued, waiting for approval,
         sent, or running. What happens
         depends on where the run is:
@@ -271,8 +264,8 @@
 
       <.docs_h2 id="operations">Operations and retries</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        emisar never retries a finished run. Running the action again — from a runner page,
-        a runbook, or an agent — is a new run with its own record. If the runner disconnects
+        emisar never retries a finished run. Running the action again (from a runner page,
+        a runbook, or an agent) is a new run with its own record. If the runner disconnects
         mid-run, the action keeps running and its result arrives on the next connection. If
         it disconnects before dispatch, the run waits in the queue until the runner returns.
         The
@@ -284,8 +277,8 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         When an agent sends one action to a runner group, each host gets its own run, and
-        emisar groups them under one <strong class="text-zinc-200">operation</strong> — up
-        to 16 runners, one result per host. Replaying the operation returns the original
+        emisar groups them under one <strong class="text-zinc-200">operation</strong> of up
+        to 16 runners, with one result per host. Replaying the operation returns the original
         runs. A lost response never causes a second execution.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -302,7 +295,7 @@
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Read the status first —
+        Read the status first.
         <a href="#statuses" class="text-brand-400 hover:text-brand-300">Run statuses</a>
         above lists them all, and three are easy to confuse:
       </p>
@@ -351,7 +344,7 @@
             can have completed its work.</strong>
             The runner reports this when its process or host dies after execution starts,
             before the terminal result was durable. emisar never runs that dispatch again
-            automatically — check the target system before you retry.
+            automatically. Check the target system before you retry.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

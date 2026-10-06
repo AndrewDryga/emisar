@@ -14,7 +14,7 @@
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400">
         emisar exists because giving an LLM raw shell access is reckless. Every layer here
-        is designed so the LLM is the least-privileged participant in the system — and
+        is designed so the LLM is the least-privileged participant in the system and
         every action is auditable.
       </p>
       <%!-- Two marquee credential badges (linked, icon-chip + arrow) lead; the
@@ -90,7 +90,7 @@
             </div>
           </div>
           <p class="mt-2.5 text-sm leading-relaxed text-zinc-400">
-            Claude, Cursor, or ChatGPT asks for one catalog action over MCP — with a required
+            Claude, Cursor, or ChatGPT asks for one catalog action over MCP and has to give a
             reason. Undeclared commands don't exist to it. The one pack that runs an arbitrary
             script is staging break-glass: critical risk, denied by default until you opt in.
           </p>
@@ -127,7 +127,7 @@
             </div>
             <p class="mt-2.5 text-sm leading-relaxed text-zinc-400">
               Evaluates policy, checks scope and pack trust, routes, and writes the audit. A risky
-              action waits for a human — and it never executes a shell itself.
+              action waits for a human. The gate never executes a shell itself.
             </p>
           </div>
 
@@ -153,7 +153,7 @@
               </span>
             </div>
             <p class="mt-2.5 text-sm leading-relaxed text-zinc-400">
-              Outbound WSS only — the host dials out, nothing listens. A non-root service user
+              Outbound WSS only: the host dials out, and nothing listens. A non-root service user
               re-validates every argument against the schema, re-verifies the pack hash, drops to
               least privilege, runs argv arrays, and redacts before egress.
             </p>
@@ -185,7 +185,8 @@
             navigate={~p"/docs/signed-dispatch"}
             class="font-medium text-brand-400 hover:text-brand-300"
           >signed dispatch</.link>, the runner trusts the bridge's signature on the MCP call, not
-          the control plane above it — a compromised cloud can relay it, never forge it.
+          the control plane above it. A compromised cloud can relay the call but can never forge
+          it.
         </p>
       </div>
     </div>
@@ -219,18 +220,18 @@
           src="/images/screenshots/loop/approval-pending.webp"
           alt="A pending approval in the emisar console: Claude, for Maya Chen, asks to run caddy.reload_config on the edge-fra-01 runner. The page shows the action's high risk, the exact command, the reason, the policy that held it, and Approve / Deny controls."
           label="Held"
-          caption="Policy holds the agent's request for a human — the exact command, the reason, and the risk on one screen."
+          caption="Policy holds the agent's request for a human, with the exact command, the reason, and the risk on one screen."
           click="80.3,29.6"
           spot="14.7,9.8,3.8,3.9"
           note="Actions are governed by policy based on risk level"
           spot2="3.1,27.9,55.9,4.5"
           note2="You see the exact command that will be executed"
           spot3="3.1,45.3,55.9,13.9"
-          note3="AI agents must provide a reason — evidence and expected outcome are optional"
+          note3="AI agents must provide a reason; evidence and expected outcome are optional"
         />
         <:frame
           src="/images/screenshots/loop/approval-note.webp"
-          alt="The same approval with the note typed into Your decision: “validated config, active connections drained, deploy window open”."
+          alt="The same approval with the note typed into Your decision: 'validated config, active connections drained, deploy window open'."
           label="Decide"
           caption="Jordan reviews and writes the note the record will keep."
           click="80.3,42.1"
@@ -239,7 +240,7 @@
           src="/images/screenshots/loop/approval-approved.webp"
           alt="The request after the click: approved by Jordan Lee, with the note preserved as the decision reason."
           label="Approved"
-          caption="Approved — decider, time, and reason on the record."
+          caption="Approved, with the decider, time, and reason on the record."
           click="79.3,5.1"
           spot="3.1,60.7,87.5,10.7"
           note="Approval reason is recorded"
@@ -266,7 +267,7 @@
           src="/images/screenshots/loop/audit-event.webp"
           alt="The audit event detail for Run succeeded: when, event id, request id, actor Maya Chen, target runner edge-fra-01 with a link to the run, and the full JSON payload including the executed command and exit code 0."
           label="Evidence"
-          caption="The evidence one click deep — actor, target, request id, payload — exportable to your SIEM."
+          caption="The evidence is one click deep: actor, target, request id, and payload, all exportable to your SIEM."
           spot="3.1,16.8,93.8,9.5"
           note="Who acted, and on what"
           spot2="3.1,39.5,93.8,28.8"
@@ -293,8 +294,8 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">TLS-only transport</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            Runners connect to the control plane over WSS using TLS 1.2+. An enrollment key —
-            single-use by default — is exchanged for a per-runner token that can be revoked
+            Runners connect to the control plane over WSS using TLS 1.2+. An enrollment key,
+            single-use by default, is exchanged for a per-runner token that can be revoked
             from the console.
           </p>
         </div>
@@ -306,8 +307,8 @@
             No inbound connections to runners
           </h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            Runners are outbound-only. No ports to expose, no firewall holes, no NAT traversal.
-            Your hosts initiate every connection.
+            Runners are outbound-only, and your hosts initiate every connection. You don't expose
+            ports, open firewall holes, or set up NAT traversal.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -340,12 +341,12 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-zinc-50">Pattern redaction before egress</h3>
           <p class="mt-3 text-sm leading-6 text-zinc-400">
-            20 built-in patterns — common provider tokens (GitHub, Slack, Stripe,
-            OpenAI, …), JWTs, bearer and basic auth, private-key blocks, and secret assignments —
-            plus your own per-action rules scrub stdout and stderr on the runner before anything is
-            forwarded. The control plane receives only the redacted stream. A novel secret shape can
-            still pass a pattern-based filter, so this is defense in depth rather than a guarantee
-            that every secret is recognized.
+            20 built-in patterns plus your own per-action rules scrub stdout and stderr on the
+            runner before anything is forwarded. The built-in patterns cover common provider tokens
+            (GitHub, Slack, Stripe, OpenAI, …), JWTs, bearer and basic auth, private-key blocks,
+            and secret assignments. The control plane receives only the redacted stream. A novel
+            secret shape can still pass a pattern-based filter, so this is defense in depth rather
+            than a guarantee that every secret is recognized.
           </p>
         </div>
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -421,14 +422,14 @@
         Built for &ldquo;assume breach.&rdquo;
       </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        Anthropic — the lab behind Claude — published <a
+        Anthropic, the lab behind Claude, published <a
           href="https://cdn.prod.website-files.com/6889473510b50328dbb70ae6/6a1611a04085d7cd3dadc924_Claude-eBook-Zero-Trust-for-AI-Agents-05182026.pdf"
           target="_blank"
           rel="noopener noreferrer"
           class="text-brand-300 underline decoration-zinc-700 underline-offset-4 hover:text-brand-200"
         >Zero Trust for AI Agents</a>, a framework for giving autonomous agents access to real
         systems: least agency, deny-by-default tools, human approval for high-risk actions, and a
-        tamper-evident audit trail. emisar enforces that control set — and assumes the agent may
+        tamper-evident audit trail. emisar enforces that control set. It also assumes the agent may
         already be compromised, so a jailbroken or prompt-injected model still can't exceed the
         declared, gated, audited catalog.
       </p>
@@ -440,23 +441,23 @@
         <h3 class="text-sm font-semibold text-brand-300">Local admission control</h3>
         <p class="mt-2 text-sm leading-6 text-zinc-400">
           Beyond the cloud policy, an operator can set an allow/deny list on the runner itself.
-          Denied actions are hidden from the catalog and refused at execution — fail-closed, even
-          against a compromised control plane. The host always has the last word.
+          Denied actions are hidden from the catalog and refused at execution. The list fails
+          closed, even against a compromised control plane, so the host always has the last word.
         </p>
       </div>
       <div class="mt-4 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">
         <h3 class="text-sm font-semibold text-brand-300">
-          Signed dispatch — the cloud can't act for you
+          Signed dispatch: the cloud can't act for you
         </h3>
         <p class="mt-2 text-sm leading-6 text-zinc-400">
           A runner can be set to refuse the control plane's authority entirely. A customer-authorized
           bridge signs each request with a key the control plane never holds. A fully compromised emisar
-          control plane can relay that signed request — it can
+          control plane can relay that signed request, but it can
           never forge, alter, replay, or originate one. The signature, not the cloud, is the
-          authority. Opt-in per runner.
+          authority. Signed dispatch is opt-in per runner.
         </p>
         <p class="mt-3 text-sm">
-          <.cta_link navigate={~p"/docs/signed-dispatch"}>Set it up — generate keys, distribute, rotate, revoke</.cta_link>
+          <.cta_link navigate={~p"/docs/signed-dispatch"}>Set it up: generate, distribute, rotate, and revoke keys</.cta_link>
         </p>
       </div>
       <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm">

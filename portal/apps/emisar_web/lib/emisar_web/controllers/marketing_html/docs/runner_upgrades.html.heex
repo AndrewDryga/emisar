@@ -32,7 +32,7 @@
 
       <.docs_prerequisites>
         <:item>
-          Owner or admin in the account — you will read runner versions and run history in the
+          Owner or admin in the account. You will read runner versions and run history in the
           console.
         </:item>
         <:item>
@@ -48,7 +48,7 @@
 
       <.docs_h2 id="what-moves">Who upgrades what</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Four parts upgrade separately — upgrading one never upgrades another.
+        Four parts upgrade separately. Upgrading one never upgrades another.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[680px] text-left text-sm">
@@ -81,7 +81,7 @@
               <td class="px-4 py-3 font-semibold text-zinc-100">emisar-mcp bridge</td>
               <td class="px-4 py-3">You, per workstation</td>
               <td class="px-4 py-3">
-                Re-run the installer — <.link
+                Re-run the installer. See <.link
                   navigate={~p"/docs/bridge-upgrades"}
                   class="text-brand-400 hover:text-brand-300"
                 >Upgrade the MCP bridge</.link>. Cloud OAuth clients run no bridge.
@@ -91,7 +91,7 @@
               <td class="px-4 py-3 font-semibold text-zinc-100">Action packs</td>
               <td class="px-4 py-3">You, per runner</td>
               <td class="px-4 py-3">
-                Updated separately, with their own trust decision — <.link
+                Updated separately, with their own trust decision. See <.link
                   navigate={~p"/docs/pack-updates"}
                   class="text-brand-400 hover:text-brand-300"
                 >Roll out and roll back packs</.link>.
@@ -103,8 +103,8 @@
 
       <.docs_h2 id="versions">Find the versions you run</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The console shows the version that each runner last reported — the Runners list carries
-        it per host. On the host, run:
+        The Runners list in the console shows the version each runner last reported. On the
+        host, run:
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># one machine-readable line: "emisar version X.Y.Z"</span>
 <span class="text-zinc-500">$</span> emisar --version
@@ -155,9 +155,8 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The version is self-reported, so treat it as housekeeping, never a security control —
-        what a runner may do is decided by your policies and pack trust, not by the version it
-        claims.
+        The version is self-reported, so treat it as housekeeping and never as a security control.
+        Your policies and pack trust decide what a runner may do, whatever version it claims.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Upgrade your runners and bridges in the same pass. For which versions work together, see <.link
@@ -187,7 +186,7 @@
           running and sent, and let anything long-lived finish first.
         </li>
         <li>
-          Pick one non-critical runner as the canary. Ideally in a group whose actions you can
+          Pick one non-critical runner as the canary, ideally in a group whose actions you can
           exercise safely.
         </li>
       </ol>
@@ -201,7 +200,7 @@
 <span class="text-zinc-500">$</span> sudo emisar update --version &lt;target-version&gt;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         This command works only for a runner installed by <.docs_inline_code>install.sh</.docs_inline_code>, which records the paths it owns in a root-owned receipt. A copied
-        binary, container image, or infrastructure-managed runner is refused — update that
+        binary, container image, or infrastructure-managed runner is refused. Update that
         deployment at its source instead of letting the host drift from it.
       </p>
       <.docs_verify_download component={:runner} />
@@ -209,15 +208,15 @@
         The update touches only the binary: <.docs_inline_code>config.yaml</.docs_inline_code>, <.docs_inline_code>runner.env</.docs_inline_code>, the cached token, installed packs, the dispatch log, and the local
         audit journal all stay as they are. Before the service stops, it authenticates the signed
         checksum metadata, verifies the archive against it, checks the staged binary's version, and
-        runs that staged binary against your existing <.docs_inline_code>config.yaml</.docs_inline_code>. A runner that refuses the config is refused here, in its
-        own words — the installer exits nonzero with nothing touched, and the service keeps serving
-        on the version it already had.
+        runs that staged binary against your existing <.docs_inline_code>config.yaml</.docs_inline_code>. If the staged binary refuses the config, the update is refused
+        here with the runner's own error. The installer exits nonzero with nothing touched, and the
+        service keeps serving on the version it already had.
       </p>
       <.docs_callout kind={:warn} title="The service does stop">
         <p>
           The installer stops the service, swaps the binary, and
           starts it again. A runner kills its children when it exits, so an action in flight on
-          that host is interrupted — let running work finish first.
+          that host is interrupted. Let running work finish first.
         </p>
       </.docs_callout>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -228,7 +227,7 @@
 
       <.docs_h2 id="verify">Verify the canary</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Six checks, in order — stop at the first one that fails.
+        Six checks, in order. Stop at the first one that fails.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># 1. the binary is the version you pinned</span>
 <span class="text-zinc-500">$</span> emisar --version
@@ -249,14 +248,14 @@
         Run one low-risk read-only action. Confirm that it succeeds and appears in <a
           href={~p"/app/audit"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Audit</a>. The audit row is what completes the check —
+        >Audit</a>. The audit row completes the check:
         <.docs_inline_code>doctor</.docs_inline_code>
         covers the host, and only a real run shows the whole path works.
       </p>
 
       <.docs_h2 id="fleet">Roll through the fleet</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Repeat the same two steps — upgrade, then the full verification — in bounded batches,
+        Repeat the same two steps (upgrade, then the full verification) in bounded batches,
         one runner group at a time. Halt when any of these happens:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
@@ -264,7 +263,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             The update exits non-zero. If the swap had started, that host is already back on its
-            previous binary — read the output before you touch the next host.
+            previous binary. Read the output before you touch the next host.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -304,10 +303,10 @@
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># runner — the release you were on before</span>
 <span class="text-zinc-500">$</span> sudo emisar update --version &lt;known-good-version&gt;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Rollback has two limits. Only a finished, published release installs — a draft or one
-        still being written is refused. And the older binary must be able to read the current
-        dispatch state; if it cannot, the installer refuses and the current installation keeps
-        running. Rollback works only within the supported release line — go back no further than
+        Rollback has two limits. Only a finished, published release installs; a draft or a release
+        still being written is refused. The older binary must also be able to read the current
+        dispatch state. If it cannot, the installer refuses and the current installation keeps
+        running. Rollback works only within the supported release line, so go back no further than
         the minimum above.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">

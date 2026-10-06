@@ -23,7 +23,7 @@
       <.docs_h2 id="choose">1. Choose a pack</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         On the host, list the published packs that match it. The command checks what the host
-        runs — programs, processes, ports — and installs nothing.
+        runs (programs, processes, ports) and installs nothing.
       </p>
       <.docs_code phx-no-format label="shell">sudo emisar pack suggest</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -37,11 +37,11 @@
 
       <.docs_h2 id="inspect">2. See what you are adding</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The pack's catalog page lists every action your agent will gain — with its arguments,
-        side effects, and risk tier — plus the host requirements. Skim the list to know what the
-        pack does; under the default policy, the risky actions wait for a person no matter what
+        The pack's catalog page lists the host requirements and every action your agent will
+        gain, with its arguments, side effects, and risk tier. Skim the list to know what the
+        pack does. Under the default policy, the risky actions wait for a person no matter what
         you install. Write down the pack ID, the version, and the full <code>sha256</code>
-        hash — the install pins all three.
+        hash. The install pins all three.
       </p>
 
       <.docs_h2 id="install">3. Install a fixed version</.docs_h2>
@@ -63,7 +63,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Installing from a private <code>packctl</code>
-        registry uses its immutable URLs — see <.link
+        registry uses its immutable URLs. See <.link
           navigate={~p"/docs/pack-registry"}
           class="text-brand-400 hover:text-brand-300"
         >Host your own registry</.link>.
@@ -73,7 +73,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each pack ships its own setup guide. When its actions need protected files, sockets, or
         service controls, the guide maps that access to exact actions. Credentials are listed
-        separately. It appears on the pack's catalog page under <strong class="text-zinc-200">Setup</strong>, and on the host:
+        separately. The guide appears on the pack's catalog page under <strong class="text-zinc-200">Setup</strong>, and on the host:
       </p>
       <.docs_code phx-no-format label="shell">sudo emisar pack info redis</.docs_code>
       <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
@@ -90,8 +90,8 @@
         </li>
         <li>Restart the service after changing its environment, user, or groups.</li>
         <li>
-          Run <code>sudo emisar pack verify redis</code> — the probe that failed before the
-          required access was in place passes now.
+          Run <code>sudo emisar pack verify redis</code>. The probe that failed before the
+          required access was in place now passes.
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -136,7 +136,7 @@
         >Roll out and roll back packs</.link>.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A pack that never appears, or an action missing from a runner that should have it —
+        If a pack never appears, or an action is missing from a runner that should have it,
         <.link
           navigate={~p"/docs/pack-updates" <> "#troubleshooting"}
           class="text-brand-400 hover:text-brand-300"

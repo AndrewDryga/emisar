@@ -17,8 +17,8 @@
     >
       <.docs_header current="autoscaling-fleets">
         <:dek>
-          An autoscaling group — a GCP managed instance group, an AWS Auto Scaling group, an
-          Azure Scale Set — creates and terminates hosts on its own. Give the launch template one
+          An autoscaling group (a GCP managed instance group, an AWS Auto Scaling group, or an
+          Azure Scale Set) creates and terminates hosts on its own. Give the launch template one
           reusable enrollment key, and each instance enrolls a runner during boot with no per-host
           key or approval.
         </:dek>
@@ -33,7 +33,7 @@
 
       <.docs_prerequisites>
         <:item>
-          An autoscaling group on GCP, AWS, or Azure — or anything else that boots instances from
+          An autoscaling group on GCP, AWS, or Azure, or anything else that boots instances from
           a launch template.
         </:item>
         <:item>A secret manager the boot script can read the enrollment key from.</:item>
@@ -57,7 +57,7 @@
           href={~p"/install.sh"}
           class="text-brand-400 hover:text-brand-300"
         >installer</.link>, which downloads the runner, exchanges the key for the runner's own token,
-        and connects. Holding a valid key is the whole enrollment check — no one approves each
+        and connects. Holding a valid key is the whole enrollment check. No one approves each
         host.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -74,14 +74,14 @@
           href={~p"/app/runners/keys/new"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners → Enrollment keys → New key</a>. Turn on <strong>Reusable</strong>
-        so every instance can enroll with the same one. Two optional limits keep a shared key honest:
+        so every instance can enroll with the same one. You can set two optional limits on a shared key:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Max uses.</strong>
-            Cap the total number of runners the key can ever enroll — a ceiling that survives a leak.
+            Cap the total number of runners the key can ever enroll. The cap still holds if the key leaks.
             Uses are never refunded when an instance terminates, so budget for every boot over the
             key's life, not the group's peak size.
           </span>
@@ -103,9 +103,9 @@
       </p>
       <.docs_callout kind={:warn} title="A reusable key is a fleet-wide credential">
         <p>
-          Anyone holding this key can enroll a runner into your account — and, because
-          re-enrollment binds by runner id or hostname, mint a fresh token for an existing
-          runner's identity (its name, group, trust, and dispatch queue) without touching that
+          Anyone holding this key can enroll a runner into your account. Because
+          re-enrollment binds by runner id or hostname, they can also mint a fresh token for an
+          existing runner's identity (its name, group, trust, and dispatch queue) without touching that
           host. The limits above and account policy still apply, but treat it like a
           fleet-root credential. Rotating and revoking it, and what each step reaches, is
           covered in <.link
@@ -172,7 +172,7 @@ curl -fsSL https://emisar.dev/install.sh \
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <.docs_inline_code>EMISAR_RUNNER_LABEL_*</.docs_inline_code>
-            variables add free-form labels — <.docs_inline_code>EMISAR_RUNNER_LABEL_ROLE=web</.docs_inline_code>.
+            variables add free-form labels, for example <.docs_inline_code>EMISAR_RUNNER_LABEL_ROLE=web</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -196,7 +196,7 @@ curl -fsSL https://emisar.dev/install.sh \
       <.docs_h2 id="clouds">GCP, AWS, and Azure</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The install line is identical on every cloud. All that changes is where the launch template
-        runs a boot script — save the command above as
+        runs a boot script. Save the command above as
         <.docs_inline_code>emisar-boot.sh</.docs_inline_code>
         and wire it in:
       </p>
@@ -205,14 +205,14 @@ curl -fsSL https://emisar.dev/install.sh \
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">GCP Managed Instance Group.</strong>
-            Add it to the instance template as startup-script metadata — <.docs_inline_code>gcloud compute instance-templates create … --metadata-from-file=startup-script=emisar-boot.sh</.docs_inline_code>.
+            Add it to the instance template as startup-script metadata: <.docs_inline_code>gcloud compute instance-templates create … --metadata-from-file=startup-script=emisar-boot.sh</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">AWS Auto Scaling group.</strong>
-            Put it in the launch template's user data (base64-encoded) — the
+            Put it in the launch template's user data (base64-encoded), which is the
             <.docs_inline_code>UserData</.docs_inline_code>
             field of <.docs_inline_code>aws ec2 create-launch-template --launch-template-data</.docs_inline_code>.
           </span>
@@ -221,7 +221,7 @@ curl -fsSL https://emisar.dev/install.sh \
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Azure Virtual Machine Scale Set.</strong>
-            Pass it as cloud-init custom data — <.docs_inline_code>az vmss create … --custom-data emisar-boot.sh</.docs_inline_code>.
+            Pass it as cloud-init custom data: <.docs_inline_code>az vmss create … --custom-data emisar-boot.sh</.docs_inline_code>.
           </span>
         </li>
       </ul>
@@ -236,8 +236,8 @@ curl -fsSL https://emisar.dev/install.sh \
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A runner uses its hostname as its identity unless you set <.docs_inline_code>runner.id</.docs_inline_code>. A new scale-out
         instance receives a generated hostname and registers as a new runner. A reboot keeps the
-        hostname and reconnects the same runner, so scaling out by ten creates ten runners — the
-        expected shape of an ephemeral fleet. Two rules follow:
+        hostname and reconnects the same runner, so scaling out by ten creates ten runners. That
+        is expected for an ephemeral fleet. Two rules follow:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -264,7 +264,7 @@ curl -fsSL https://emisar.dev/install.sh \
 
       <.docs_h2 id="cleanup">Reaping terminated instances</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A terminated instance does not remove its runner — the record just goes <em>offline</em>
+        A terminated instance does not remove its runner. The record goes <em>offline</em>
         and stays in the fleet, where each dead host counts against the plan runner limit until
         removal.
       </p>
@@ -274,14 +274,14 @@ curl -fsSL https://emisar.dev/install.sh \
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners</a>,
         an owner or admin sets <strong>Remove runners inactive for</strong>, and an hourly sweep
-        removes runners past the window — never a connected or disabled one. It is off by default.
-        Pick a window longer than an expected disconnect, a rolling deployment or a zone outage,
-        but short enough to clear dead hosts promptly. A removed host that returns enrolls as a
+        removes runners past the window. It never removes a connected or disabled runner. It is
+        off by default. Pick a window longer than an expected disconnect, such as a rolling
+        deployment or a zone outage, but short enough to clear dead hosts promptly. A removed host that returns enrolls as a
         new runner.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Between sweeps, a high-churn group can still carry dead runners against its plan limit —
-        trim them sooner with <strong>Clean up now</strong>
+        Between sweeps, a high-churn group can still carry dead runners against its plan limit.
+        To trim them sooner, use <strong>Clean up now</strong>
         on the same page. Removal, by sweep or by hand, keeps the runner's audit history.
       </p>
       <.docs_h2 id="next">After it is connected</.docs_h2>
@@ -289,8 +289,8 @@ curl -fsSL https://emisar.dev/install.sh \
         <.link navigate={~p"/docs/runner-fleet"} class="text-brand-400 hover:text-brand-300">
           Manage the runner fleet
         </.link>
-        covers work after the first connection — groups, labels, pack credentials, updates,
-        reconnects, and removal. To take a fleet to production in phases, see the <.link
+        covers work after the first connection: groups, labels, pack credentials, updates,
+        reconnects, and removal. To take a fleet to production in phases, see <.link
           navigate={~p"/docs/production"}
           class="text-brand-400 hover:text-brand-300"
         >Go to production</.link>.

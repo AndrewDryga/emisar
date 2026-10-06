@@ -226,12 +226,11 @@ nomad job run \
 
       <.docs_h2 id="credentials">Keys and pack credentials</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Use a
-        <.link
+        Use a <.link
           navigate={~p"/docs/runner-fleet" <> "#enrollment-keys"}
           class="text-brand-400 hover:text-brand-300"
-        >reusable enrollment key</.link>
-        — with a single-use key the first node spends it, and every other node fails to enroll.
+        >reusable enrollment key</.link>. With a single-use key, the first node spends it and
+        every other node fails to enroll.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Give packs their credentials through environment variables on the runner's
@@ -247,8 +246,8 @@ nomad job run \
         <.link navigate={~p"/docs/runner-fleet"} class="text-brand-400 hover:text-brand-300">
           Manage the runner fleet
         </.link>
-        covers work after the first connection — groups, labels, pack credentials, updates,
-        reconnects, and removal. To roll the system job across datacenters in phases, see the <.link
+        covers work after the first connection: groups, labels, pack credentials, updates,
+        reconnects, and removal. To roll the system job across datacenters in phases, see <.link
           navigate={~p"/docs/production"}
           class="text-brand-400 hover:text-brand-300"
         >Go to production</.link>.

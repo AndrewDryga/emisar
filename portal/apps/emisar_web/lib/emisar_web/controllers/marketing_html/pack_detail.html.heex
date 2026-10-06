@@ -76,8 +76,8 @@
         <.icon name="state.info" class="mt-0.5 h-5 w-5 flex-none text-amber-300" />
         <div class="text-sm text-amber-100/90">
           <strong class="text-amber-100">Required binaries.</strong>
-          Install these on the host before relying on the pack — an action that calls a missing
-          one fails at run time.
+          Install these on the host before relying on the pack. An action that calls a missing
+          binary fails at run time.
           <div class="mt-2.5 flex flex-wrap gap-1.5">
             <code
               :for={bin <- @pack.requires_binaries}
@@ -96,9 +96,9 @@
           <code class="rounded-sm bg-zinc-900 px-1 py-0.5">emisar pack install</code>
           fetches this pack, re-validates it, and verifies its content hash against the
           <code class="rounded-sm bg-zinc-900 px-1 py-0.5">--hash</code>
-          below — the exact bytes this page was rendered against, so a tampered copy is
-          rejected — before copying it into the runner's packs dir. The command reloads a
-          running daemon itself; no manual restart.
+          below before copying it into the runner's packs dir. That hash covers the exact bytes
+          this page was rendered against, so a tampered copy is rejected. The command reloads a
+          running daemon itself, so you don't need to restart it manually.
         </p>
         <div class="mt-4 overflow-hidden rounded-lg border border-zinc-800 bg-black/60">
           <div class="flex items-center justify-between gap-2 border-b border-zinc-800 px-4 py-2">
@@ -135,7 +135,7 @@
           }
           class="mt-2 max-w-prose text-sm leading-relaxed text-zinc-400"
         >
-          No credentials needed — this pack acts on the runner host itself.
+          This pack acts on the runner host itself, so it doesn't need credentials.
         </p>
 
         <%!-- Credentials. A required variable is an action the operator must take

@@ -13,10 +13,10 @@
         Most days it saves an hour. Some days it saves the night.
       </.marketing_heading>
       <p class="mt-8 max-w-2xl text-lg leading-8 text-zinc-400 text-pretty">
-        Give an agent eyes on production — logs, metrics, health, and config across the whole
-        fleet — and it earns its keep every day. And when something does break, the
-        same loop holds — investigate through declared actions, stop the bleed behind one approval,
-        land the durable fix.
+        Give an agent eyes on production (logs, metrics, health, and config across the whole
+        fleet) and it earns its keep every day. When something does break, the
+        same loop holds: the agent investigates through declared actions, stops the bleed behind
+        one approval, and lands the durable fix.
       </p>
     </div>
   </section>
@@ -38,17 +38,17 @@
       <div class="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <%= for {icon, tag, title, story} <- [
           {"story.dispatch", "Pre-flight", "Pre-migration go / no-go",
-           "Before you cut prod to the new cluster, you ask: is the target ready? The agent checks disk and memory headroom, confirms the replicas are caught up, validates every TLS cert, and diffs the configs against prod across every node, then hands back a go/no-go in a minute. The migration that doesn't roll back at 2 a.m. is the one nobody remembers."},
+           "Before you cut prod to the new cluster, you ask: is the target ready? The agent checks disk and memory headroom, confirms the replicas are caught up, validates every TLS cert, and diffs the configs against prod across every node, then hands back a go/no-go in a minute."},
           {"action.search", "Investigate", "\"Why is checkout slow?\"",
-           "You ask in plain English. The agent correlates nginx access logs, Prometheus p99, the database's lock and slow-query state, and the upstream's health across services, then narrows it to a wedged connection pool. Minutes, not an hour of greps and tails across six SSH sessions."},
+           "You ask in plain English. The agent correlates nginx access logs, Prometheus p99, the database's lock and slow-query state, and the upstream's health across services, then narrows it to a wedged connection pool. It takes minutes instead of an hour of greps and tails across six SSH sessions."},
           {"story.debug", "Self-debug", "It debugs what it shipped",
-           "Your coding agent deploys and error rates tick up. Instead of waiting for a human to gather context, it reads its own deploy's logs and metrics, spots the env var it got wrong, and opens the fix as a reviewed PR — no round-trip just to find out what happened."},
+           "Your coding agent deploys and error rates tick up. Instead of waiting for a human to gather context, it reads its own deploy's logs and metrics, spots the env var it got wrong, and opens the fix as a reviewed PR, without a round-trip just to find out what happened."},
           {"security.posture", "Sweep", "Cert expiry, before the pager",
            "\"Which certs expire in the next 30 days?\" The agent walks every host and ingress, checks expiry, and hands you the three about to lapse, days remaining and all, before an outage finds them for you."},
           {"story.alerting", "Triage", "First response",
-           "The page fires. The agent triages first — the failing service's logs, the last three deploys, the resource pressure, the dependency that's actually down — so you wake to a diagnosis and a remediation waiting on your approval, not a blank alert and a cold terminal."},
+           "The page fires. The agent triages first: it looks at the failing service's logs, the last three deploys, the resource pressure, and the dependency that's actually down. You wake to a diagnosis and a remediation waiting on your approval instead of a blank alert and a cold terminal."},
           {"story.optimize", "Capacity", "Ready for the launch?",
-           "Before the campaign goes live, you ask whether the fleet can take it. The agent reports current headroom, connection-pool limits, and the slowest dependency across every service — so you scale the one thing that matters instead of over-provisioning everything."}
+           "Before the campaign goes live, you ask whether the fleet can take it. The agent reports current headroom, connection-pool limits, and the slowest dependency across every service, so you scale the one thing that matters instead of over-provisioning everything."}
         ] do %>
           <div class="flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6 transition hover:border-brand-500/40">
             <div class="flex items-center gap-2">
@@ -87,11 +87,11 @@
            ["≈6.3 TiB dataset", "14 keyspaces repaired", "12 app jobs cut over"],
            "/use-cases/cassandra-migration", false},
           {"Incident response", "The 33-hour wipe: a CSI driver reformatted a live LUN",
-           "A democratic-csi driver ran mkfs over a live Pure LUN on a dm-multipath path-group race — 33 hours of VictoriaMetrics data gone. The agent investigated through declared actions, stopped the writes behind one approval, then landed the durable fix as reviewable infra: a guard that refuses to trust the driver. The twist is that the obvious one-line setting was a no-op.",
+           "A democratic-csi driver ran mkfs over a live Pure LUN on a dm-multipath path-group race and wiped 33 hours of VictoriaMetrics data. The agent investigated through declared actions, stopped the writes behind one approval, then landed the durable fix as reviewable infra: a guard that refuses to trust the driver. The obvious one-line setting turned out to be a no-op.",
            ["33h metrics lost", "6-second zero-path window", "mkfs.guard fix"],
            "/use-cases/csi-data-loss", true},
           {"Ingress", "The fleet-wide 502 that no backend was causing",
-           "Every app behind one anycast edge threw intermittent 502 Connection refused — yet every backend was green. The agent traced it across five layers (FRR, Traefik, Nomad, Consul) to a Traefik OOM loop plus a wedged node still advertising a dead ingress, replaced the OOM-looping allocs behind one approval, and named the fix that collapses the blast radius: health-gate the anycast.",
+           "Every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was green. The agent traced it across five layers (FRR, Traefik, Nomad, Consul) to a Traefik OOM loop plus a wedged node still advertising a dead ingress, replaced the OOM-looping allocs behind one approval, and named the fix that collapses the blast radius: health-gate the anycast.",
            ["~40% of connects refused", "Exit 137 OOM at 1 GiB", "one node, dead ingress"],
            "/use-cases/ingress-502", false}
         ] do %>
@@ -127,7 +127,7 @@
 
       <%!-- Honesty note --%>
       <p class="mx-auto mt-12 max-w-3xl text-center text-sm leading-6 text-zinc-400">
-        emisar doesn't claim to prevent the failure — it changes everything a human or an agent
+        emisar doesn't claim to prevent the failure. It changes everything a human or an agent
         does <em class="text-zinc-400">around</em>
         it: a finite catalog instead of a shell, one
         approval instead of standing access, and a searchable record instead of a guess.
@@ -140,8 +140,8 @@
   </section>
 
   <.marketing_cta
-    headline="Put a gated agent on your next migration — and your next incident."
-    subcopy="Install a runner, connect your LLM, and let it investigate behind policy — acting only when you approve."
+    headline="Put a gated agent on your next migration and your next incident."
+    subcopy="Install a runner, connect your LLM, and let it investigate behind policy. It acts only when you approve."
     secondary_label="Read the quickstart"
     secondary_path={~p"/docs/quickstart"}
   />

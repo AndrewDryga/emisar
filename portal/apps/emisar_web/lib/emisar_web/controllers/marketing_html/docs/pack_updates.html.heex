@@ -38,7 +38,7 @@
 
       <.docs_h2 id="record">1. See where you are</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Start on the host — that is where the packs are. List the installed packs and see
+        Start on the host, where the packs are. List the installed packs and see
         what an update would change. Save the id, version, and hash of the pack you are
         updating: that line is your way back. Note which runners or groups carry it.
       </p>
@@ -62,8 +62,8 @@
 <span class="text-zinc-500">Run without --dry-run to apply.</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.docs_inline_code>--dry-run</.docs_inline_code>
-        reports the plan and does not change anything. A pack the registry does not carry
-        — like one you authored — is reported and left as-is.
+        reports the plan and does not change anything. A pack the registry does not carry,
+        like one you authored, is reported and left as-is.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The console's
@@ -77,7 +77,7 @@
 
       <.docs_h2 id="review">2. Read what changed</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Before you update, read what changed in the action contracts — LLM clients and
+        Before you update, read what changed in the action contracts. LLM clients and
         runbooks depend on them. The runner shows the exact changes and does not touch
         anything:
       </p>
@@ -175,16 +175,16 @@
             The command fetches, validates, and hash-checks the tarball against the
             registry index, stages the new version beside the live pack, and only then
             swaps it in. If activation fails, the previous version is restored
-            immediately, and the staged swap keeps a backup —
-            after a power loss mid-swap, the next install or update recovers it.
+            immediately, and the staged swap keeps a backup.
+            After a power loss mid-swap, the next install or update recovers it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A live runner reloads itself.</strong>
-            The command signals the daemon so it re-reads the catalog and re-advertises —
-            the runner does not restart, and runs in flight are not dropped.
+            The command signals the daemon so it re-reads the catalog and re-advertises.
+            The runner does not restart, and runs in flight are not dropped.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -201,7 +201,7 @@
       <.docs_h2 id="trust">4. Trust it and test it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An installed pack still needs the account's trust before its actions can run. A
-        version from the registry is trusted automatically — skip to the check below. A pack you authored or edited, or a
+        version from the registry is trusted automatically, so skip to the check below. A pack you authored or edited, or a
         retired version, shows as
         <.status_badge status={:pending} />, and dispatch for it is refused until you
         review and trust that exact version in <a
@@ -229,19 +229,17 @@
 <span class="text-zinc-500">1 ok</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Then run one low-risk read-only action from the console, and make sure it succeeds
-        and appears in
-        <a
+        and appears in <a
           href={~p"/app/audit"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Audit</a>
-        — that checks the dispatch path end to end. If a published runbook uses
-        this pack, run its preflight before you widen the rollout — contract changes then
+        >Audit</a>. That checks the dispatch path end to end. If a published runbook uses
+        this pack, run its preflight before you widen the rollout. Contract changes then
         appear as broken steps before production work starts.
       </p>
       <.docs_callout kind={:note} title="Reject is the other answer">
         <p>
           When you reject a pending version, the trusted one stays active. emisar
-          remembers the rejected hash, so the same version never asks again — only a new
+          remembers the rejected hash, so the same version never asks again. Only a new
           one does.
         </p>
       </.docs_callout>
@@ -250,7 +248,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Repeat the update on bounded runner groups. Trust is bound to the hash: another
         runner with the trusted hash does not need a second decision, and a different
-        hash for the same version is drift — it stops and asks for review. After each
+        hash for the same version is drift that stops and asks for review. After each
         group, make sure the versions and hashes match what you trusted, and run one
         representative action.
       </p>
@@ -266,7 +264,7 @@
 
       <.docs_h2 id="rollback">6. Go back</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        There is no rollback command — install the exact earlier version again.
+        There is no rollback command. Install the exact earlier version again.
         A published version is immutable and the registry is append-only, so the earlier
         version is still there, at the same address with the same hash.
       </p>
@@ -288,9 +286,8 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Go back per runner, in the same bounded groups you rolled forward in, and repeat
-        the same checks. Remove an unwanted pack with
-        <.docs_inline_code>emisar pack uninstall</.docs_inline_code>
-        — the command reloads the runner and removes those actions from its catalog.
+        the same checks. Remove an unwanted pack with <.docs_inline_code>emisar pack uninstall</.docs_inline_code>. The command reloads the
+        runner and removes those actions from its catalog.
       </p>
 
       <.docs_h2 id="retirement">Retired versions</.docs_h2>
@@ -326,7 +323,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            Retirement blocks dispatch, not installation — a retired version stays
+            Retirement blocks dispatch, not installation. A retired version stays
             installable, and retirement does not delete a published version or erase the
             history of a run that used it. Look at the retirement floor before you roll
             back that far.
@@ -356,7 +353,7 @@
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Four different states look the same from the catalog — the action you wanted is not
+        Four different states look the same from the catalog: the action you wanted is not
         offered. They separate on the host and on the Packs page:
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
@@ -374,11 +371,11 @@
                 The pack is degraded, with a loader reason
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The pack failed to load — duplicate action IDs, a script escaping the pack root,
-                or an unexpected symlink. Every one fails closed, never silently.
+                The pack failed to load: duplicate action IDs, a script escaping the pack root,
+                or an unexpected symlink. Each one fails closed instead of failing silently.
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Validate locally (below) — the output shows the file and rule. Set
+                Validate locally (below). The output shows the file and rule. Set
                 <.docs_inline_code>allow_symlinks</.docs_inline_code>
                 when a pack really needs them.
               </td>
@@ -415,12 +412,10 @@
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Its program does not resolve on the service's <.docs_inline_code>PATH</.docs_inline_code>, or a local
-                admission rule hides it — a rule in the host's config always wins.
+                admission rule hides it. A rule in the host's config always wins.
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Install the missing binary or fix the service's
-                <.docs_inline_code>PATH</.docs_inline_code>
-                — the runner
+                Install the missing binary or fix the service's <.docs_inline_code>PATH</.docs_inline_code>. The runner
                 refreshes on its own.
               </td>
             </tr>

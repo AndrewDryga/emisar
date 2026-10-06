@@ -19,7 +19,7 @@
     experience of stepping away and coming back to a finished job without handing over a shell.
   </p>
   <p>
-    The design separates a control plane that governs policy and serves as the cloud portal, a
+    The design separates a control plane that governs policy and is also the cloud portal, a
     runner that executes with minimal trust in the portal, and an MCP interface agents can use from
     wherever they run. The control-plane and runner split was inspired by Firezone.
   </p>
@@ -176,7 +176,7 @@
   </p>
   <p>
     Exit code <code>0</code>
-    says that <code>systemctl restart</code>
+    shows that <code>systemctl restart</code>
     completed. The final call checks the service state instead of assuming the restart fixed the
     incident:
   </p>

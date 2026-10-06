@@ -40,9 +40,8 @@
           href={~p"/app/sso"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team → Single sign-on</a>
-        and enable <strong class="text-zinc-200">directory sync</strong>
-        — the panel lives on the connection's page, under its settings.
-        <.plan_note tier={:enterprise} />
+        and enable <strong class="text-zinc-200">directory sync</strong>. The panel is on the
+        connection's page, under its settings. <.plan_note tier={:enterprise} />
       </p>
 
       <.docs_screenshot
@@ -69,8 +68,7 @@
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                the <strong class="text-zinc-200">SCIM base URL</strong>
-                —
+                the <strong class="text-zinc-200">SCIM base URL</strong>:
                 <.docs_inline_code>/scim/v2</.docs_inline_code>
                 on your emisar host (copy button beside it)
               </span>
@@ -78,8 +76,8 @@
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                the <strong class="text-zinc-200">bearer token</strong>
-                — shown once when you enable or rotate, so copy it immediately; if you
+                the <strong class="text-zinc-200">bearer token</strong>, shown once when you
+                enable or rotate, so copy it immediately. If you
                 missed it, <strong class="text-zinc-200">Rotate token</strong>
                 mints a new one and the old one stops working.
               </span>
@@ -95,9 +93,9 @@
             reads it from the
             <.docs_inline_code>Authorization</.docs_inline_code>
             header), and enable Create, Update, and Deactivate. Okta and Entra need a
-            separate provisioning application — their OIDC login applications cannot
-            provision through SCIM — while JumpCloud carries sign-in and provisioning in
-            one. The <strong class="text-zinc-200">Setup instructions</strong>
+            separate provisioning application, because their OIDC login applications cannot
+            provision through SCIM. JumpCloud handles sign-in and provisioning in
+            one application. The <strong class="text-zinc-200">Setup instructions</strong>
             guide lists the provider-specific settings.
           </p>
         </.docs_step>
@@ -118,10 +116,8 @@
               <span>
                 <strong class="text-zinc-200">Okta</strong>
                 usually needs no changes: it puts the Okta user ID in <.docs_inline_code>externalId</.docs_inline_code>, and
-                its organization authorization server sends the same value as
-                <.docs_inline_code>sub</.docs_inline_code>
-                — though Okta shows that in examples rather than guaranteeing it, and a
-                custom authorization server can rewrite the subject claim.
+                its organization authorization server sends the same value as <.docs_inline_code>sub</.docs_inline_code>. Okta shows that in examples but does not
+                guarantee it, and a custom authorization server can rewrite the subject claim.
               </span>
             </li>
             <li class="flex items-start gap-2.5">
@@ -163,16 +159,14 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            When the directory deactivates or removes a user,
-            <strong class="text-zinc-200">deprovisioning suspends the member</strong>
-            — their existing browser access to this workspace ends and keys issued from that
+            When the directory deactivates or removes a user, <strong class="text-zinc-200">deprovisioning suspends the member</strong>. Their
+            existing browser access to this workspace ends and keys issued from that
             membership are revoked immediately. Their members in other workspaces are not
             affected. The person and audit history remain.
             Deactivation can be reversed with <code>active:true</code>; after DELETE, the
-            directory must POST the same <code>externalId</code>
-            to restore the resource.
+            directory must POST the same <code>externalId</code> to restore the resource.
             emisar refuses to deprovision the
-            last active owner and returns an error to the directory — promote another owner
+            last active owner and returns an error to the directory. Promote another owner
             first.
           </span>
         </li>
@@ -203,7 +197,7 @@
       <.docs_h3 id="disable-sync">Rotate or disable directory sync</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Rotate token</strong>
-        mints a new bearer and the old one stops working immediately — paste the new value
+        mints a new bearer and the old one stops working immediately. Paste the new value
         into your IdP connector. <strong class="text-zinc-200">Disable</strong>
         also stops the bearer, but members are kept: the directory just stops managing their
         role and runner access, and owners and admins control those again. If you re-enable
@@ -212,8 +206,8 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Because there is no overlap, the connector is unauthenticated between the rotate and the
-        paste — you should plan for that gap. The rotation sequence, and how a SCIM
-        bearer compares with every other credential emisar issues, is in <.link
+        paste, so plan for that gap. For the rotation sequence, and how a SCIM
+        bearer compares with every other credential emisar issues, see <.link
           navigate={~p"/docs/credentials" <> "#idp"}
           class="text-brand-400 hover:text-brand-300"
         >rotate and revoke credentials</.link>. If you believe the bearer has leaked, see <.link
@@ -419,7 +413,7 @@
               navigate={~p"/docs/integrations/okta#scim"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Okta</.link>
-            — SCIM rides its own Okta app, separate from the sign-in integration.
+            runs SCIM through its own Okta app, separate from the sign-in integration.
           </span>
         </li>
         <li id="entra" class="flex gap-3">
@@ -429,7 +423,7 @@
               navigate={~p"/docs/integrations/entra#scim"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Microsoft Entra</.link>
-            — a separate enterprise application, with
+            uses a separate enterprise application, with
             <.docs_inline_code>externalId</.docs_inline_code>
             remapped to <.docs_inline_code>objectId</.docs_inline_code>.
           </span>
@@ -441,7 +435,7 @@
               navigate={~p"/docs/integrations/jumpcloud#scim"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >JumpCloud</.link>
-            — the same custom application that signs people in.
+            uses the same custom application that signs people in.
           </span>
         </li>
         <li id="keycloak" class="flex gap-3">
@@ -469,15 +463,12 @@
 
       <.docs_h2 id="role-mapping">Role mapping</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        In <strong class="text-zinc-200">Groups &amp; access</strong>, use a group's role dropdown to assign an emisar role
-        — <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>, <strong class="text-zinc-200">billing manager</strong>,
+        In <strong class="text-zinc-200">Groups &amp; access</strong>, use a group's role dropdown to assign an emisar role: <strong class="text-zinc-200">viewer</strong>, <strong class="text-zinc-200">operator</strong>, <strong class="text-zinc-200">billing manager</strong>,
         or <strong class="text-zinc-200">admin</strong>. A member in several mapped groups gets the
         <strong class="text-zinc-200">highest</strong>
         role mapped to any of them. If none of their groups has a role mapping, the connection's
-        default role applies. That default is a fallback, not a minimum. Renaming a group does not break its mapping.
-        <strong class="text-zinc-200">Owner is never assignable through
-        sync</strong>
-        — it stays a deliberate human assignment.
+        default role applies. That default is a fallback, not a minimum. Renaming a group does not break its mapping. <strong class="text-zinc-200">Owner is never assignable through
+        sync</strong>. It stays a deliberate human assignment.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A mapping covers only the members your provider sends for that group. Entra sends the
@@ -516,7 +507,7 @@
         combines Default runner access with every mapped group the member belongs to, a
         mapping cannot remove access granted elsewhere, and any All runners grant wins. For example, a no-runners default plus
         <code>database-team → group:database-prod</code>
-        gives those members exactly the database runner group — and if another mapped group
+        gives those members exactly the database runner group. If another mapped group
         grants all runners, members in both get all runners.
       </p>
       <.docs_callout kind={:note} title="Wait for the first group push">
@@ -618,15 +609,14 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            The
-            <strong class="text-zinc-200">SCIM bearer token is an admin-grade credential</strong>
-            — it can provision and deprovision across the account, so treat it like a
+            The <strong class="text-zinc-200">SCIM bearer token is an admin-grade credential</strong>. It
+            can provision and deprovision across the account, so treat it like a
             password and rotate it from
             <a
               href={~p"/app/sso"}
               class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
             >Team → Single sign-on</a>
-            whenever it is exposed; your IdP loses access until you paste the new token.
+            whenever it is exposed. Your IdP loses access until you paste the new token.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

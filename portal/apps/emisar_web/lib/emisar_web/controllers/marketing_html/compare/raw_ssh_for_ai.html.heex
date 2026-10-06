@@ -16,7 +16,7 @@
         Both approaches run real commands
       </h2>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        emisar isn't a sandbox. When the runner executes <code>nomad job revert</code>, it really rolls back the deploy — exactly like
+        emisar isn't a sandbox. When the runner executes <code>nomad job revert</code>, it really rolls back the deploy, exactly as
         SSH would. The difference is what happens <em>before</em> exec, and what's
         left <em>after</em>.
       </p>
@@ -54,10 +54,10 @@
         </div>
       </div>
       <p class="mt-3 text-base leading-7 text-zinc-400 text-pretty">
-        Same revert.
+        Both panels run the same revert.
       </p>
 
-      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Side-by-side</h2>
+      <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">Side by side</h2>
       <%!-- One data list, two layouts: a table on md+, stacked cards on mobile, so
         the 3-way comparison reads without a horizontal scroll on phones. --%>
       <% rows = [
@@ -66,19 +66,19 @@
         {"What are the args?", "Free-text command line",
          "Typed, validated, redacted at the boundary"},
         {"What actually ran?", "Whatever was on PATH that day",
-         "Content-addressed pack — the runner recomputes the SHA-256, published hashes auto-pin, and changed contents are blocked until an admin reviews them"},
+         "Content-addressed pack: the runner recomputes the SHA-256, published hashes auto-pin, and changed contents are blocked until an admin reviews them"},
         {"Approvals?",
-         "One chat approval can trust the SSH prefix — and every production command behind it.",
+         "One chat approval can trust the SSH prefix and every production command behind it.",
          "Policy gates with approver email + audit; skipping means a policy change, itself audited"},
         {"Audit trail?", "Whatever lands in .bash_history",
          "Hash-chained JSONL on host, plus a searchable cloud audit trail"},
-        {"Output redaction?", "None — passwords leak into chat logs",
+        {"Output redaction?", "None, so passwords leak into chat logs",
          "20 patterns (bearer/JWT, GitHub/Slack/Stripe keys, secret assignments + your custom ones) masked on the host before egress"},
         {"Lateral movement?", "SSH key on the model's box ≈ key everywhere",
-         "Per-runner token + per-user runner scopes every API key inherits — revoke the user, every key they minted shrinks"},
+         "Per-runner token + per-user runner scopes every API key inherits, so revoking the user shrinks every key they minted"},
         {"Credential leaked?", "Rotate the SSH key on every host that trusts it",
          "Revoke one scoped API key; host credentials never reached the model. MCP bridge keys are short-lived and rotated automatically"},
-        {"Recovery story?", "“Read the chat scrollback and the logs and hope”",
+        {"Recovery story?", "\"Read the chat scrollback and the logs and hope\"",
          "emisar audit verify checks the retained host journal; the portal keeps inputs and output in run history, with approvals and state changes in the audit trail"}
       ] %>
 
@@ -130,18 +130,18 @@
         When raw SSH is the right answer
       </h2>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        Single-operator side projects, throwaway environments, dev clusters
-        you can wipe. The cost of declaring an action pack only pays back
+        Single-operator side projects, throwaway environments, and dev clusters
+        you can wipe. Declaring an action pack only pays off
         when there's <em>another human</em> who needs to audit, override, or
         recover from the AI's decisions.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">When it isn't</h2>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        Production. Anything regulated. Anything where post-incident your
-        VP of Engineering will ask "what did the model do, exactly, and on
-        whose authority?". That's the question raw SSH can't answer without
-        a forensic budget. emisar makes the answer a query.
+        Production, anything regulated, and anything where your VP of
+        Engineering will ask after an incident, "What did the model do, exactly,
+        and on whose authority?" Raw SSH can't answer that without a forensic
+        budget. With emisar, the answer is a query.
       </p>
 
       <div class="mt-12 rounded-xl border border-brand-900/40 bg-brand-950/20 p-5 text-sm text-zinc-300">
@@ -167,7 +167,7 @@
 
   <.marketing_cta
     headline="Stop handing AI agents raw SSH."
-    subcopy="The same real commands — declared, policy-gated, approval-checked, and journaled. Recovery you're not betting your weekend on."
+    subcopy="The same real commands, but declared, policy-gated, approval-checked, and journaled. You don't have to bet your weekend on recovery."
     secondary_label="Talk to sales"
     secondary_path={EmisarWeb.MailTo.sales()}
   />

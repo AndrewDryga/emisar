@@ -31,8 +31,8 @@
       <.docs_screenshot
         src="/images/screenshots/runner-fleet.webp"
         title="emisar console · Runners"
-        caption="The fleet by group — each runner's version, hostname, last heartbeat, and connection status."
-        alt="The Runners page: the fleet grouped by runner group — each runner's name, agent version, hostname, last heartbeat, and connection status. Three runners show a green connected badge; one shows an amber offline badge with when it was last seen."
+        caption="The fleet by group, with each runner's version, hostname, last heartbeat, and connection status."
+        alt="The Runners page: the fleet grouped by runner group, with each runner's name, agent version, hostname, last heartbeat, and connection status. Three runners show a green connected badge; one shows an amber offline badge with when it was last seen."
       />
 
       <.docs_h2 id="groups-labels">Groups and labels</.docs_h2>
@@ -45,7 +45,7 @@
         and <.docs_inline_code>region=us-east-1</.docs_inline_code>. Groups do real
         work: runbook steps target them, per-member runner scopes follow them, and an agent can
         address every runner in one group at once. Name a group after a fleet tier. The installer
-        defaults the group to the hostname, which works for one host — change it when you add a
+        defaults the group to the hostname, which works for one host. Change it when you add a
         second.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -63,11 +63,11 @@
         The runner appears under its new group when it reconnects.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Install packs generously. Give each group every pack that matches what runs there — the
+        Install packs generously. Give each group every pack that matches what runs there (the
         <.docs_inline_code>postgres</.docs_inline_code>
         pack on the database tier,
         <.docs_inline_code>nginx</.docs_inline_code>
-        on the web tier — and the observation packs everywhere. The more actions an agent can
+        on the web tier) and the observation packs everywhere. The more actions an agent can
         reach, the more it can do for you, and breadth is safe: policy decides what actually
         runs, so reads run at once while risky work waits for a person.
         <.docs_inline_code>sudo emisar pack suggest</.docs_inline_code>
@@ -83,11 +83,11 @@
             An
             <.docs_inline_code>emkey-enroll-…</.docs_inline_code>
             key is <strong class="text-zinc-200">single-use</strong>
-            by default: its first registration spends it, and concurrent attempts with the same
-            key cannot both succeed — right for connecting one host. Mark it
+            by default, which suits connecting one host: its first registration spends it, and
+            concurrent attempts with the same key cannot both succeed. Mark it
             <strong class="text-zinc-200">reusable</strong>
-            to keep enrolling hosts until it expires or reaches its maximum use count (blank for
-            unlimited) — right for launch templates and fleet provisioning.
+            for launch templates and fleet provisioning. A reusable key keeps enrolling hosts until
+            it expires or reaches its maximum use count (blank for unlimited).
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -128,8 +128,8 @@
           <span>
             <strong class="text-zinc-200">Revoke from the console.</strong>
             Revoking a key blocks new registrations; hosts already enrolled keep running on their
-            own tokens. To take a runner itself offline — disable (reversible) or delete
-            (terminal) — see <.link
+            own tokens. To take a runner itself offline, either by disabling it (reversible) or
+            deleting it (terminal), see <.link
               navigate={~p"/docs/runner-credentials"}
               class="text-brand-400 hover:text-brand-300"
             >Runner credentials</.link>.
@@ -145,9 +145,8 @@
         shows only keys that can register another runner.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To change the key a host carries, reinstall with the new
-        <.docs_inline_code>EMISAR_ENROLLMENT_KEY</.docs_inline_code>
-        — the runner re-registers under its
+        To change the key a host carries, reinstall with the new <.docs_inline_code>EMISAR_ENROLLMENT_KEY</.docs_inline_code>.
+        The runner re-registers under its
         <.docs_inline_code>runner.id</.docs_inline_code>
         or current hostname;
         <.link
@@ -160,7 +159,7 @@
 
       <.docs_h2 id="pack-credentials">Giving packs their credentials</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Packs that talk to a service — Nomad, Consul, Postgres — read credentials from the
+        Packs that talk to a service (Nomad, Consul, Postgres) read credentials from the
         runner's <em>environment</em>, never from call arguments, and the control plane does not
         distribute or store them. An action can still print a value, and if redaction misses it,
         it can appear in run output. Two steps on the host:
@@ -182,7 +181,7 @@ execution:
         <.docs_inline_code>emisar pack info &lt;id&gt;</.docs_inline_code>
         to see what each pack needs, and
         <.docs_inline_code>sudo emisar pack verify</.docs_inline_code>
-        to make sure the wiring works — it probes every installed pack's verify action and prints ok,
+        to make sure the wiring works. It probes every installed pack's verify action and prints ok,
         failed, or skipped per pack.
       </p>
 
@@ -193,7 +192,7 @@ execution:
         badge reflects it. Either side closes a connection that goes quiet; the runner reconnects on its own
         with backoff and advertises its catalog again. In-flight actions keep running through
         the gap, and their results arrive on the new connection. If a runner stays offline past
-        a two-minute grace period, its in-flight runs become errored with an explanation —
+        a two-minute grace period, its in-flight runs become errored with an explanation, so
         nothing stays "running" forever.
       </p>
 
@@ -204,9 +203,9 @@ execution:
 <span class="text-zinc-500"># packs — update from the registry; the update reloads the runner (no restart, no dropped runs)</span>
 <span class="text-zinc-500">$</span> sudo emisar pack update linux-core</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Reload (SIGHUP) re-reads packs and re-advertises the catalog on the live connection. An
-        unrecognized hash — your own pack, or an edited one — waits for trust on the Packs
-        page.
+        Reload (SIGHUP) re-reads packs and re-advertises the catalog on the live connection. A
+        pack with an unrecognized hash (your own pack, or an edited one) waits for trust on the
+        Packs page.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         To roll the binary across a fleet with canaries, batches, and rollback, see <.link
@@ -229,7 +228,7 @@ execution:
         The CLI defaults to <.docs_inline_code>--config /etc/emisar/config.yaml</.docs_inline_code>,
         so these commands work on an installed host. The runner runs as its own unprivileged
         <.docs_inline_code>emisar</.docs_inline_code>
-        user; granting an action root — a scoped polkit rule, or running the service as root —
+        user; granting an action root (a scoped polkit rule, or running the service as root)
         is covered on the <.link
           navigate={~p"/docs/host-install" <> "#user"}
           class="text-brand-400 hover:text-brand-300"
@@ -262,7 +261,7 @@ execution:
           navigate={~p"/docs/security-incidents" <> "#runner-host"}
           class="text-brand-400 hover:text-brand-300"
         >security incidents</.link>
-        instead — evidence first, then containment.
+        instead: evidence first, then containment.
       </p>
 
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
@@ -271,7 +270,7 @@ execution:
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The installer finished, but the runner is not in the Runners list at all. It never
         completed its first registration, so there is no identity to show. Read the host log
-        first — the register line carries the status that stopped it:
+        first. The register line carries the status that stopped it:
       </p>
       <.docs_code phx-no-format label="shell">sudo journalctl -u emisar -n 200</.docs_code>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
@@ -300,13 +299,13 @@ execution:
                 <.docs_inline_code>400 invalid_external_id</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The host offered no usable identity — the runner uses its configured <.docs_inline_code>runner.id</.docs_inline_code>, or its
+                The host offered no usable identity. The runner uses its configured <.docs_inline_code>runner.id</.docs_inline_code>, or its
                 hostname when none is set.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Set a valid
                 <.docs_inline_code>runner.id</.docs_inline_code>
-                — at least one nonblank character, at most 255 — and restart the service.
+                (at least one nonblank character, at most 255) and restart the service.
               </td>
             </tr>
             <tr>
@@ -314,8 +313,8 @@ execution:
                 <.docs_inline_code>409 runner_name_taken</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Another runner in this account already holds this name, online or not — a rebuilt
-                host, a restored image, or two hosts sharing one hostname.
+                Another runner in this account already holds this name, online or not. A rebuilt
+                host, a restored image, or two hosts sharing one hostname can cause this.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Delete the existing runner in
@@ -333,11 +332,11 @@ execution:
                 <.docs_inline_code>402 runner_limit_exceeded</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The account is at its plan's runner cap — the response shows the plan and the
+                The account is at its plan's runner cap. The response shows the plan and the
                 limit.
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Delete a runner the account no longer uses, or move to a plan with more —
+                Delete a runner the account no longer uses, or move to a plan with more.
                 <.link
                   navigate={~p"/docs/billing"}
                   class="text-brand-400 hover:text-brand-300"
@@ -349,14 +348,14 @@ execution:
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        On the name conflict: a runner's name is unique in the account — by default it is the
+        On the name conflict: a runner's name is unique in the account. By default it is the
         hostname of the host it runs on, and it cannot be renamed after the runner is created.
         Set
         <.docs_inline_code>runner.id</.docs_inline_code>
         in the config (or
         <.docs_inline_code>EMISAR_RUNNER_ID</.docs_inline_code>
         at install) to register under a declared name and identity instead of the hostname.
-        A deleted runner cannot be restored — the host enrolls again as a new one, and
+        A deleted runner cannot be restored; the host enrolls again as a new one.
         <a href="#removing" class="text-brand-400 hover:text-brand-300">Removing a runner</a>
         covers the difference from disabling.
       </p>
@@ -364,9 +363,9 @@ execution:
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <strong class="text-zinc-200">The log shows no failure — the connect hangs.</strong>
+            <strong class="text-zinc-200">The log shows no failure, and the connect hangs.</strong>
             A hang is a blocked path, not a bad credential. The runner needs outbound TLS to
-            your emisar origin and nothing inbound — the exact hosts and ports are in <.link
+            your emisar origin and nothing inbound. The exact hosts and ports are in <.link
               navigate={~p"/docs/network-requirements"}
               class="text-brand-400 hover:text-brand-300"
             >Network requirements</.link>.
@@ -409,7 +408,7 @@ execution:
             A disabled runner gets a
             <.docs_inline_code>403</.docs_inline_code>
             and retries with its existing token, so enabling it brings the host back without
-            shell access — a disabled account behaves the same way for every runner in it. A
+            shell access. A disabled account behaves the same way for every runner in it. A
             deleted runner cannot be restored: it gets a <.docs_inline_code>401</.docs_inline_code>, discards its cached
             token, stops retrying, and that host must enroll again.
           </span>
@@ -430,7 +429,7 @@ execution:
       <p class="mt-5 text-base leading-7 text-zinc-400">
         systemd reports <.docs_inline_code>failed</.docs_inline_code>. After five starts in
         five minutes the service stops retrying on purpose, so a revoked credential cannot hammer
-        the control plane. Fix what the log shows, then re-arm the service — starting without
+        the control plane. Fix what the log shows, then re-arm the service. Starting it without
         resetting the failure counter does nothing:
       </p>
       <.docs_code phx-no-format label="shell">sudo systemctl reset-failed emisar &amp;&amp; sudo systemctl start emisar</.docs_code>
@@ -439,7 +438,7 @@ execution:
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Then check for a second process.</strong>
-            A runner locks its data directory at boot — only one process can own the dispatch
+            A runner locks its data directory at boot: only one process can own the dispatch
             and replay state. A stray manual
             <.docs_inline_code>emisar connect</.docs_inline_code>
             beside the service is the usual cause.

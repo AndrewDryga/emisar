@@ -78,12 +78,10 @@
 
       <.docs_h2 id="confirm">Confirm it connected</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The runner connects out as soon as its service starts. In the console, open
-        <a
+        The runner connects out as soon as its service starts. In the console, open <a
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Runners</a>
-        — the host appears online, with the actions it advertises. On the host, run:
+        >Runners</a>. The host appears online, with the actions it advertises. On the host, run:
       </p>
       <.docs_screenshot
         src="/images/screenshots/runner-fleet.webp"
@@ -94,8 +92,8 @@
       />
       <.docs_code phx-no-format label="shell" copy_text="sudo emisar doctor"><span class="text-zinc-500">$</span> sudo emisar doctor</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        It checks the config, credential, packs, binaries, and service in one pass. The install
-        finished but the host never appears —
+        It checks the config, credential, packs, binaries, and service in one pass. If the
+        install finished but the host never appears,
         <.link
           navigate={~p"/docs/runner-fleet" <> "#troubleshooting"}
           class="text-brand-400 hover:text-brand-300"
@@ -106,7 +104,7 @@
       <.docs_h2 id="config">The config file</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.docs_inline_code>/etc/emisar/config.yaml</.docs_inline_code>
-        is the configuration file, and you can edit it. It does not contain secrets — they live
+        is the configuration file, and you can edit it. It does not contain secrets. Those live
         in <.docs_inline_code>runner.env</.docs_inline_code>. The fields
         you will set:
       </p>
@@ -130,13 +128,13 @@
         Restart the service after editing (<.docs_inline_code>sudo systemctl restart emisar</.docs_inline_code>,
         or SIGHUP to reload packs without dropping runs).
         <.docs_inline_code>admission</.docs_inline_code>
-        sets a local allowlist, denylist, and risk ceiling that the control plane cannot override
-        — see the <.link
+        sets a local allowlist, denylist, and risk ceiling that the control plane cannot override.
+        See the <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-400 hover:text-brand-300"
         >security model</.link>.
         <.docs_inline_code>signing</.docs_inline_code>
-        makes the runner refuse any dispatch not signed with your key — see <.link
+        makes the runner refuse any dispatch not signed with your key. See <.link
           navigate={~p"/docs/signed-dispatch"}
           class="text-brand-400 hover:text-brand-300"
         >signed dispatch</.link>.
@@ -164,13 +162,13 @@
               {"EMISAR_URL", "The control plane to enroll against, baked into config.yaml. Defaults to https://emisar.dev; set it only for a test or evaluation portal."},
               {"EMISAR_ENROLLMENT_KEY", "The emkey-enroll-… key the runner exchanges for its own token on first connect."},
               {"EMISAR_GROUP", "How the console groups runners, written to runner.group. Defaults to the host's short hostname."},
-              {"EMISAR_RUNNER_ID", "Registers the runner under a declared name and identity, written to runner.id. Defaults to the hostname — declare one for containers and hosts with colliding hostnames."},
+              {"EMISAR_RUNNER_ID", "Registers the runner under a declared name and identity, written to runner.id. Defaults to the hostname. Declare one for containers and hosts with colliding hostnames."},
               {"EMISAR_RUNNER_LABEL_<KEY>", "Bake a free-form runner label into config.yaml. For example, use EMISAR_RUNNER_LABEL_ROLE=web or EMISAR_RUNNER_LABEL_ENVIRONMENT=prod. The console filters and searches these labels."},
               {"--packs LIST", "Install named packs during setup. For example, use --packs linux-core,docker."},
               {"-y / --yes", "Skip the confirmation prompts for unattended installs. Requires an explicit --packs LIST or EMISAR_PACKS (an empty value installs none)."},
               {"--version TAG", "Pin a specific release instead of latest."},
-              {"--no-start", "Install everything but do not start the service yet — for image bakes."},
-              {"--no-service", "Binary only: skip the service user, unit, and activation. For containers and CI — see Containers."}
+              {"--no-start", "Install everything but do not start the service yet. Use it for image bakes."},
+              {"--no-service", "Binary only: skip the service user, unit, and activation. Use it for containers and CI (see Containers)."}
             ] do %>
               <tr>
                 <td class="px-4 py-3 align-top font-mono text-xs text-brand-300">{name}</td>
@@ -196,12 +194,12 @@
         user on the host can: read logs, list processes, check service status. The runner also
         blocks every action from gaining privileges through
         <.docs_inline_code>sudo</.docs_inline_code>
-        or any other setuid program — a sudoers grant for the
+        or any other setuid program, so a sudoers grant for the
         <.docs_inline_code>emisar</.docs_inline_code>
         user does nothing. When a pack action needs root, there are two ways in.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        For systemd operations, grant exactly the operation with a polkit rule — systemd asks
+        For systemd operations, grant exactly the operation with a polkit rule. systemd asks
         polkit who may manage its units, and no privilege changes hands in the action:
       </p>
       <.docs_code phx-no-format label="/etc/polkit-1/rules.d/50-emisar.rules"><span class="text-zinc-500">// let the emisar user restart exactly nginx, nothing else</span>
@@ -220,12 +218,13 @@ polkit.addRule(function(action, subject) &#123;
         service as root instead and let policy, approvals, and the local admission list bound what
         runs. An action that declares a
         <.docs_inline_code>user:</.docs_inline_code>
-        drops to that user before it runs, even when the runner account is broader. The rest of
-        the host protections — the setuid block, the user drop, local admission, systemd hardening
-        — are in the <.link
+        drops to that user before it runs, even when the runner account is broader. The
+        <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-400 hover:text-brand-300"
-        >security model</.link>.
+        >security model</.link>
+        covers the rest of the host protections: the setuid block, the user drop, local
+        admission, and systemd hardening.
       </p>
 
       <.docs_h2 id="next">After it is connected</.docs_h2>
@@ -238,7 +237,7 @@ polkit.addRule(function(action, subject) &#123;
         group with one reusable key, see <.link
           navigate={~p"/docs/autoscaling-fleets"}
           class="text-brand-400 hover:text-brand-300"
-        >autoscaling fleets</.link>. To roll out across a fleet in phases, see the <.link
+        >autoscaling fleets</.link>. To roll out across a fleet in phases, see <.link
           navigate={~p"/docs/production"}
           class="text-brand-400 hover:text-brand-300"
         >Go to production</.link>.

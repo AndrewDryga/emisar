@@ -32,9 +32,9 @@ defmodule EmisarWeb.MarketingController do
     {"/privacy", :privacy, :privacy, "Privacy Policy",
      "How emisar handles your data: what the control plane stores, how configured patterns redact runner output, what it never sees (full card numbers), where data lives, retention windows, and your export/delete rights."},
     {"/terms", :terms, :terms, "Terms of Service",
-     "The terms for using emisar — the control plane that gives AI agents and humans approved infrastructure actions instead of SSH. Plans and billing, acceptable use, confidentiality, disclaimers, and account terms."},
+     "The terms for using emisar, the control plane that gives AI agents and humans approved infrastructure actions instead of SSH. Plans and billing, acceptable use, confidentiality, disclaimers, and account terms."},
     {"/dpa", :dpa, :dpa, "Data Processing Addendum",
-     "emisar's standard Data Processing Addendum (DPA): the Article 28 terms we sign as your processor — roles, processing scope, our named subprocessors, security measures, US data residency with SCCs for EU/UK transfers, breach notification, and deletion on termination."},
+     "emisar's standard Data Processing Addendum (DPA): the Article 28 terms we sign as your processor. Roles, processing scope, our named subprocessors, security measures, US data residency with SCCs for EU/UK transfers, breach notification, and deletion on termination."},
     {"/refund-policy", :refund_policy, :refund_policy, "Refund Policy",
      "emisar's refund policy: Free is free; Team is billed monthly or annually via Paddle and cancellable any time; duplicate charges and billing errors are refunded in full."},
     {"/docs/mcp-reference", :mcp_reference, :mcp_reference,
@@ -67,10 +67,10 @@ defmodule EmisarWeb.MarketingController do
      "Require customer-signed action dispatches, then issue, rotate, and revoke the keys and certificates."},
     {"/use-cases/csi-data-loss", :csi_data_loss, :csi_data_loss,
      "Case study: a CSI driver wiped 33h of metrics — contained via emisar",
-     "A real incident: democratic-csi ran mkfs over a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. An agent on emisar investigated through declared actions, stopped the bleed behind one approval, and landed the durable fix as reviewable infra — a guard that refuses to trust the driver, after the obvious one-line setting turned out to be a no-op."},
+     "A real incident: democratic-csi ran mkfs over a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. An agent on emisar investigated through declared actions, stopped the bleed behind one approval, and landed the durable fix as reviewable infra: a guard that refuses to trust the driver, after the obvious one-line setting turned out to be a no-op."},
     {"/use-cases/ingress-502", :ingress_502, :ingress_502,
      "Case study: a fleet-wide 502 traced through five layers — via emisar",
-     "A real incident: every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was healthy. An agent on emisar traced it across five layers — FRR, Traefik, Nomad, Consul — to a Traefik OOM loop and a wedged node still advertising a dead ingress, stopped the bleed behind gated approvals, and named the durable fix: health-gate the anycast so a node withdraws itself instead of black-holing traffic."},
+     "A real incident: every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was healthy. An agent on emisar traced it across five layers (FRR, Traefik, Nomad, Consul) to a Traefik OOM loop and a wedged node still advertising a dead ingress, stopped the bleed behind gated approvals, and named the durable fix: health-gate the anycast so a node withdraws itself instead of black-holing traffic."},
     {"/use-cases/cassandra-migration", :cassandra_migration, :cassandra_migration,
      "Moving Cassandra from GCP to bare metal: an AI operator's field report",
      "An AI operator explains how it authored and stress-tested a bare-metal Cassandra platform, then used emisar's bounded actions to help move 12 application jobs across 14 live keyspaces, with human decisions and corrections clearly separated."},
@@ -79,12 +79,12 @@ defmodule EmisarWeb.MarketingController do
      "Comparison: raw SSH-for-AI agents vs an emisar action pack. Both run real commands; the difference is whose recovery you're betting on."},
     {"/compare/custom-mcp-server", :custom_mcp_server, :custom_mcp_server,
      "Custom MCP server vs emisar",
-     "Custom MCP server vs emisar: the arg validation, pack integrity, policy, approvals, per-user scopes, redaction, audit, and reconnect handling you'd build and own for production agent access — and emisar's real tradeoffs in return."},
+     "Custom MCP server vs emisar: the arg validation, pack integrity, policy, approvals, per-user scopes, redaction, audit, and reconnect handling you'd build and own for production agent access, and the tradeoffs that come with emisar."},
     {"/compare/copy-paste-ai-ops", :copy_paste_ai_ops, :copy_paste_ai_ops,
      "Copy-pasting between an LLM and your terminal",
      "See what changes when an LLM can use a small set of approved actions instead of waiting for you to paste logs, commands, and results back and forth."},
     {"/how-it-works", :how_it_works, :how_it_works, "How emisar works",
-     "How emisar works: an agent calls one declared action; the control plane checks the pack hash and policy; a human approves anything risky; the outbound-only runner re-validates and executes on your host; and every step lands in a searchable audit, mirrored to a tamper-evident hash-chained journal on your host. The five-gate path from intent to receipt."},
+     "How emisar works: an agent calls one declared action, and the control plane checks the pack hash and policy. A human approves anything risky. The outbound-only runner re-validates and executes on your host, and every step lands in a searchable audit, mirrored to a tamper-evident hash-chained journal on your host."},
     {"/trust", :trust, :trust, "Trust Center — security, infrastructure & assurance",
      "Review the controls protecting emisar: outbound-only runners, signed dispatch, private Google Cloud infrastructure, DNSSEC, hardened delivery, independent monitoring, audit evidence, DPA, subprocessors, and insurance."},
     {"/zero-trust", :zero_trust, :zero_trust, "Zero Trust for AI Agents",
@@ -261,7 +261,7 @@ defmodule EmisarWeb.MarketingController do
     {"How does billing work?",
      "Paid plans are billed per runner through Paddle, our Merchant of Record. You get an invoice for each billing period, and Paddle handles sales tax and VAT. We never see or store full card numbers."},
     {"Can I self-host?",
-     "The current product uses the hosted emisar control plane. The runner, MCP bridge, and packs are Apache-2.0 open source, and the repository includes deployable control-plane code (Business Source License) for evaluation — but supported self-hosted and air-gapped deployments are not generally available today. Tell us if that boundary is a requirement."},
+     "The current product uses the hosted emisar control plane. The runner, MCP bridge, and packs are Apache-2.0 open source, and the repository includes deployable control-plane code (Business Source License) for evaluation. Supported self-hosted and air-gapped deployments are not generally available today. Tell us if that boundary is a requirement."},
     {"Can I cancel any time?",
      "Yes. Cancel from billing settings to stop renewal in Paddle. Paid features and limits remain available until the scheduled end of the billing period, then the account moves to Free limits."},
     {"Do you offer startup discounts?",
@@ -323,7 +323,7 @@ defmodule EmisarWeb.MarketingController do
             "@type" => "Product",
             "name" => "emisar",
             "description" =>
-              "Approved infrastructure actions for AI agents — policy, approvals, searchable audit, and a hash-chained runner journal instead of SSH.",
+              "Approved infrastructure actions for AI agents, with policy, approvals, searchable audit, and a hash-chained runner journal instead of SSH.",
             "brand" => %{"@type" => "Brand", "name" => "emisar"},
             "offers" => [
               %{
@@ -382,7 +382,7 @@ defmodule EmisarWeb.MarketingController do
 
     [
       {"What counts as a \"runner\"?",
-       "One installation of the emisar binary on one host — VM, container, or bare metal. " <>
+       "One installation of the emisar binary on one host (VM, container, or bare metal). " <>
          "Run as many runners as your plan allows. #{member_copy}"},
       output,
       billing,
@@ -391,7 +391,7 @@ defmodule EmisarWeb.MarketingController do
       {"Do you support SSO and SCIM?",
        "Yes. OIDC single sign-on (Okta, Entra ID, JumpCloud, Google Workspace, Keycloak, " <>
          "or any compliant provider) is on #{sso_plans}. Automatic offboarding needs SCIM " <>
-         "2.0 directory sync, which is #{scim_plans}: deactivate someone in your IdP and " <>
+         "2.0 directory sync, which is on #{scim_plans}: deactivate someone in your IdP and " <>
          "emisar ends their browser access to that workspace and revokes keys issued from " <>
          "that membership without anyone touching the " <>
          "console. With OIDC alone they can't sign in again, but a live session or an " <>
@@ -486,7 +486,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :changelog,
       page_title: "Changelog",
       meta_description:
-        "emisar changelog: signed dispatch, SSO and SCIM, approvals, audit, and the action-pack catalog — approved infrastructure actions for AI agents.",
+        "emisar changelog: signed dispatch, SSO and SCIM, approvals, audit, and the action-pack catalog. emisar gives AI agents approved infrastructure actions.",
       canonical_url: @base <> "/changelog",
       entries: EmisarWeb.Changelog.entries(),
       json_ld: json_ld
@@ -577,7 +577,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :use_cases,
       page_title: "Use cases — real incidents emisar contained",
       meta_description:
-        "Real production work through emisar: a live Cassandra migration, a 33-hour CSI data wipe, and a fleet-wide 502 — gated, declared, and audited.",
+        "Real production work through emisar's declared, gated, and audited actions: a live Cassandra migration, a 33-hour CSI data wipe, and a fleet-wide 502.",
       canonical_url: @base <> "/use-cases",
       json_ld: json_ld
     )
@@ -593,7 +593,7 @@ defmodule EmisarWeb.MarketingController do
      "See what an AI agent can actually do through emisar and what stops it doing something else, following one service restart from MCP request to runner execution and audit."},
     {"give-ai-agents-safe-production-access", :give_ai_agents_safe_production_access,
      "How to give an AI agent safe access to production",
-     "Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox — production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up.",
+     "Agents do their best work when nobody is watching over their shoulder. Coding agents get that freedom from a sandbox, but production has no sandbox. What teams try instead, where each one cracks, and the division of labor that holds up.",
      "July 2026", "7 min read",
      "How to give an AI agent safe access to production: why SSH keeps ending in deleted-database postmortems, why an MCP server per tool becomes a maintenance and policy burden, and how one MCP with a declared action catalog lets an agent investigate production freely, ship fixes as code, and touch dangerous actions only behind human approval."},
     {"prompt-injection-for-ops-teams", :prompt_injection_for_ops_teams,
@@ -646,7 +646,7 @@ defmodule EmisarWeb.MarketingController do
     render(conn, :guides,
       page_title: "Guides — AI agents and production infrastructure",
       meta_description:
-        "Practical guides on giving AI agents safe, audited access to production infrastructure — the patterns that hold, the risks of the shortcuts, and the trade-offs.",
+        "Practical guides on giving AI agents safe, audited access to production infrastructure: the patterns that hold, the risks of the shortcuts, and the trade-offs.",
       canonical_url: @base <> "/guides",
       og_image: @base <> "/images/og/og-guides.png",
       json_ld: list_ld,
@@ -887,7 +887,7 @@ defmodule EmisarWeb.MarketingController do
       action_count: delimit_int(Catalog.published_action_count()),
       page_title: "Action packs registry",
       meta_description:
-        "Browse the registry of action packs for your emisar runner — Postgres, Cassandra, Linux, Docker, AWS, and more, each a typed catalog an AI agent can call.",
+        "Browse the registry of action packs for your emisar runner: Postgres, Cassandra, Linux, Docker, AWS, and more. Each pack is a typed catalog an AI agent can call.",
       canonical_url: @base <> "/packs",
       json_ld: json_ld
     )
@@ -981,7 +981,7 @@ defmodule EmisarWeb.MarketingController do
 
       {:error, _changeset} ->
         conn
-        |> put_flash(:error, "That doesn't look like a valid email — mind trying again?")
+        |> put_flash(:error, "That doesn't look like a valid email. Please try again.")
         |> redirect(to: return_path(conn))
     end
   end
@@ -990,7 +990,7 @@ defmodule EmisarWeb.MarketingController do
     conn
     |> put_flash(
       :info,
-      "You're subscribed — we'll email you when we ship something major."
+      "You're subscribed. We'll email you when we ship something major."
     )
     |> redirect(to: return_path(conn))
   end

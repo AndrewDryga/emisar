@@ -21,7 +21,7 @@
     >
       <.docs_header current="publishing-packs">
         <:dek>
-          A pack is a directory of YAML you write and maintain yourself — there is nothing
+          A pack is a directory of YAML you write and maintain yourself. There is nothing
           to compile or upload. Put it on the runners you control, trust it once, and your
           model can call it. Most packs stay private to your fleet; the public
           <.link navigate={~p"/packs"} class="text-brand-400 hover:text-brand-300">
@@ -117,7 +117,7 @@ actions:
         The <code>setup</code>
         block is what <code>emisar pack info</code>
         prints and what <code>pack verify</code>
-        and the install probe run. Declare the env your tool reads, map each protected host
+        and the install probe run. Declare the env your tool reads, and map each protected host
         resource to the exact actions that need it. If the pack has a low-risk read with
         usable defaults, you can name it as <code>verify</code>. This journal reader is
         medium risk, so the example leaves that optional probe unset.
@@ -179,8 +179,8 @@ examples:
 
       <.docs_h2 id="install">4. Validate, install, and trust it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Validate the pack locally — it runs the same checks as the runner — then install
-        it. The install writes to the configured pack directory and signals a running
+        Validate the pack locally with the same checks the runner uses, then install it.
+        The install writes to the configured pack directory and signals a running
         daemon to reload without restarting or dropping runs. If you declared a
         <code>setup.verify</code>
         action, it probes that action; otherwise it reports
@@ -192,7 +192,7 @@ sudo emisar pack install ./my-pack</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         You can validate anywhere: <code>pack validate</code>
         reads only the directory you point it at, and it does not need a config, a service,
-        or an account. On a laptop — Linux or macOS — or in CI, install just the binary:
+        or an account. On a Linux or macOS laptop, or in CI, install just the binary:
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500"># binary-only install — skips the service, needs no enrollment key</span>
 <span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --no-service
@@ -209,9 +209,9 @@ sudo emisar pack install ./my-pack</.docs_code>
         >Packs</a>
         page, and dispatch for it is refused until you review the content hash there and
         click <strong class="text-zinc-200">Trust</strong>. Its actions are then callable, gated by
-        your policy, and that exact version is the only one authorized. Edit the pack and its
-        hash changes, re-marking it pending until you re-trust — so what runs is always the
-        files you reviewed.
+        your policy, and that exact version is the only one authorized. Editing the pack
+        changes its hash and marks it pending again until you re-trust it, so what runs is
+        always the files you reviewed.
       </p>
       <p class="mt-4 text-base text-zinc-400">
         Then test it end to end: open the runner from <a
@@ -224,10 +224,10 @@ sudo emisar pack install ./my-pack</.docs_code>
 
       <.docs_h2 id="rollout">5. Roll it out and maintain it</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To put the pack on another runner, install it pinned to the hash you trusted — every
-        host then runs the exact same files, and the install signals a running daemon to reload. Config
-        management — Ansible, Chef, a base image — can drop the directory itself instead,
-        then reload the runner.
+        To put the pack on another runner, install it pinned to the hash you trusted. Every
+        host then runs the exact same files, and the install signals a running daemon to reload.
+        Config management, such as Ansible, Chef, or a base image, can drop the directory itself
+        instead and then reload the runner.
       </p>
       <.docs_code phx-no-format label="shell">sudo emisar pack install ./my-pack --hash sha256:&lt;the hash you trusted&gt;</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -239,7 +239,7 @@ sudo emisar pack install ./my-pack</.docs_code>
         >Packs</a>. Give it the same review as any production change.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Distributing many packs to a large fleet? Skip the copying — <.link
+        To distribute many packs to a large fleet without copying them, <.link
           navigate={~p"/docs/pack-registry"}
           class="text-brand-400 hover:text-brand-300"
         >host your own registry</.link>.
@@ -263,7 +263,7 @@ sudo emisar pack install ./my-pack</.docs_code>
         useful as a private pack. You also keep control of its lifecycle. Self-maintained is the default.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A private pack can still serve a whole fleet —
+        A private pack can still serve a whole fleet:
         <code class="rounded-sm bg-zinc-900 px-1 py-0.5">packctl</code>
         builds a registry you host yourself, and your packs never enter ours.
         <.link navigate={~p"/docs/pack-registry"} class="text-brand-400 hover:text-brand-300">

@@ -76,14 +76,14 @@
           <p class="mt-1.5">
             Tick <strong class="text-zinc-200">Manage Single Sign-On (SSO)</strong>. That reveals a
             <strong class="text-zinc-200">Select One</strong>
-            pair beneath it — choose <strong class="text-zinc-200">Configure SSO with OIDC</strong>.
-            The form defaults to SAML, but emisar uses OIDC. Select Configure SSO with OIDC now
-            because changing this choice later is difficult.
+            pair beneath it. The form defaults to SAML, but emisar uses OIDC, so choose
+            <strong class="text-zinc-200">Configure SSO with OIDC</strong>
+            now. Changing this choice later is difficult.
           </p>
           <p class="mt-4">
             If you also want directory sync, tick
             <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>
-            on this same step — JumpCloud carries both on one application. Leave
+            on this same step. JumpCloud carries both on one application. Leave
             <strong class="text-zinc-200">Import users from this app</strong>
             off. That direction
             pulls users into JumpCloud.
@@ -92,7 +92,7 @@
           <.docs_screenshot
             src="/images/docs/sso/jumpcloud-sso-options.webp"
             title="JumpCloud · Select Options"
-            caption="SSO with OIDC and Export users, together on one application. Import users stays off — it points the wrong way."
+            caption="SSO with OIDC and Export users, together on one application. Import users stays off because it points the wrong way."
             alt="JumpCloud's Select Options step with Manage Single Sign-On (SSO) checked and outlined in green, its Select One radio pair showing Configure SSO with OIDC selected rather than the default SAML; Export users to this app (Provisioning) is also checked, Import users from this app and Add a bookmark are unchecked, and the Next button is enabled."
           />
         </.docs_step>
@@ -101,7 +101,7 @@
           <p class="font-semibold text-zinc-100">Name it.</p>
           <p class="mt-1.5">
             <strong class="text-zinc-200">Display Label</strong>
-            is what your people see in the JumpCloud User Portal —
+            is what your people see in the JumpCloud User Portal, so
             <.docs_inline_code>emisar</.docs_inline_code>
             is the obvious choice. Everything else on this step is cosmetic.
           </p>
@@ -145,9 +145,10 @@
           </.docs_value>
           <p class="mt-4">
             Leave <strong class="text-zinc-200">Authorization Code</strong>
-            as the grant type. Either <strong class="text-zinc-200">Client Secret POST</strong>
-            or <strong class="text-zinc-200">Client Secret Basic</strong>
-            works — emisar accepts both. Set <strong class="text-zinc-200">Login URL</strong>
+            as the grant type. emisar accepts either
+            <strong class="text-zinc-200">Client Secret POST</strong>
+            or <strong class="text-zinc-200">Client Secret Basic</strong>. Set
+            <strong class="text-zinc-200">Login URL</strong>
             to <.docs_inline_code>https://emisar.dev</.docs_inline_code>.
           </p>
           <.docs_screenshot
@@ -226,18 +227,17 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         If you ticked
         <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>
-        on step 3, this same application pushes your directory — there is no second connector to
+        on step 3, this same application pushes your directory. There is no second connector to
         create.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         You need the connection's <strong class="text-zinc-200">SCIM base URL</strong>
-        and <strong class="text-zinc-200">bearer token</strong>
-        —
+        and <strong class="text-zinc-200">bearer token</strong>. See
         <.link
           navigate={~p"/docs/scim#enable"}
           class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
         >enabling directory sync</.link>
-        shows where both come from. <.plan_note tier={:enterprise} />
+        for where both come from. <.plan_note tier={:enterprise} />
       </p>
       <ol class="mt-8 space-y-10">
         <.docs_step n={1}>

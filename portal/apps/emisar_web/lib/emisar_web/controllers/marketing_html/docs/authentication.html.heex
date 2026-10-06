@@ -66,8 +66,8 @@
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Sign-in codes are stored hashed, and an intercepted email is not enough to sign in —
-        the browser that asked for it must finish the sign-in. Each code allows five tries.
+        Sign-in codes are stored hashed, and an intercepted email is not enough to sign in,
+        because the browser that asked for it must finish the sign-in. Each code allows five tries.
         Sign-in is rate-limited by IP and email address, and failed attempts appear in the
         audit log. A browser stays signed in to at most six workspaces at once; signing out
         ends every workspace session in that browser. To connect an identity provider,
@@ -108,10 +108,10 @@
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Require SSO governs browser sign-in — the console, the audit CSV download, and the
-        OAuth consent screen — for every member, owners included, with no bypass. It does not
+        Require SSO governs browser sign-in (the console, the audit CSV download, and the
+        OAuth consent screen) for every member, owners included, with no bypass. It does not
         authenticate MCP bearer tokens, SCIM, or the audit export API.
-        Turning it on does not revoke existing API keys or OAuth grants — revoke those
+        Turning it on does not revoke existing API keys or OAuth grants. Revoke those
         through <.link
           navigate={~p"/docs/credentials"}
           class="text-brand-400 hover:text-brand-300"
@@ -156,7 +156,7 @@
           <span>
             <strong class="text-zinc-200">SCIM directory sync</strong>
             provisions the membership before first login, applies group mappings, and suspends it
-            when the directory marks the user inactive. SCIM is the path when offboarding in your
+            when the directory marks the user inactive. Use SCIM when offboarding in your
             IdP must revoke emisar access automatically.
           </span>
         </li>
@@ -281,8 +281,8 @@
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Offboarding ends the member's sessions in this workspace and revokes every API key
-        issued from it — audit-export tokens included. Enrollment keys, SCIM bearers, signing
-        keys, and keys held by other members keep working — rotate or revoke those through <.link
+        issued from it, including audit-export tokens. Enrollment keys, SCIM bearers, signing
+        keys, and keys held by other members keep working. Rotate or revoke those through <.link
           navigate={~p"/docs/credentials"}
           class="text-brand-400 hover:text-brand-300"
         >Rotate and revoke credentials</.link>. During an incident, follow

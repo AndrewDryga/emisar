@@ -58,7 +58,7 @@ defmodule EmisarWeb.DocsNav do
               icon: "infrastructure.container",
               keywords: "docker podman image sidecar",
               desc:
-                "Run the runner in a container — what it can see, the two shared mechanics, and a sidecar."
+                "Run the runner in a container: what it can see, the two shared mechanics, and a sidecar."
             },
             %{
               slug: "kubernetes",
@@ -85,7 +85,7 @@ defmodule EmisarWeb.DocsNav do
               icon: "product.runner_fleet",
               keywords: "ephemeral reusable enrollment key mig asg vmss",
               desc:
-                "Enroll ephemeral runners from one reusable key as autoscaling groups — GCP MIG, AWS ASG, Azure VMSS — boot and terminate hosts."
+                "Enroll ephemeral runners from one reusable key as autoscaling groups (GCP MIG, AWS ASG, Azure VMSS) boot and terminate hosts."
             }
           ]
         },
@@ -99,7 +99,7 @@ defmodule EmisarWeb.DocsNav do
               icon: "infrastructure.network",
               keywords: "firewall egress ports proxy dns tls websocket allowlist",
               desc:
-                "What a runner host must reach on the way out — and why nothing has to reach in."
+                "What a runner host must reach on the way out, and why nothing has to reach in."
             },
             %{
               slug: "runner-fleet",
@@ -161,7 +161,7 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/connect-claude-ai",
               icon: "agent.claude",
               keywords: "claude anthropic connector custom oauth remote mcp",
-              desc: "Add emisar to Claude.ai as a custom connector — no key to manage."
+              desc: "Add emisar to Claude.ai as a custom connector. There is no key to manage."
             },
             %{
               slug: "connect-chatgpt",
@@ -169,7 +169,7 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/connect-chatgpt",
               icon: "agent.chatgpt",
               keywords: "chatgpt openai developer mode connector oauth remote mcp",
-              desc: "Add emisar to ChatGPT through Developer mode — no key to manage."
+              desc: "Add emisar to ChatGPT through Developer mode. There is no key to manage."
             },
             %{
               slug: "connect-agent-sandboxes",
@@ -508,7 +508,7 @@ defmodule EmisarWeb.DocsNav do
               icon: "interface.cli",
               keywords: "emisar doctor flags journal commands",
               desc:
-                "The on-host emisar binary's operator verbs — connect, packs, events, audit, and signing — with their key flags."
+                "The on-host emisar binary's operator verbs (connect, packs, events, audit, and signing) and their main flags."
             },
             %{
               slug: "architecture",
@@ -543,7 +543,7 @@ defmodule EmisarWeb.DocsNav do
               icon: "docs.limits",
               keywords: "caps quotas timeouts size retention",
               desc:
-                "The output, MCP, audit-export, and retention caps emisar enforces — and what happens at each."
+                "The output, MCP, audit-export, and retention caps emisar enforces, and what happens at each."
             }
           ]
         }

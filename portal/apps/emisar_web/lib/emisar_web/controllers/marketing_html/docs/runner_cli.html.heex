@@ -21,7 +21,7 @@
           <.docs_inline_code>emisar</.docs_inline_code>
           binary runs the daemon that executes gated actions. It is also the local toolbox for
           packs, journals, audit verification, and signed dispatch. This page lists each operator
-          command, its key flags, and whether it changes the host.
+          command, its main flags, and whether it changes the host.
         </:dek>
       </.docs_header>
 
@@ -45,7 +45,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 
       <.docs_h2 id="running">Running the CLI</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        On an installed host the binary lives at
+        On an installed host, the binary lives at
         <.docs_inline_code>/usr/local/bin/emisar</.docs_inline_code>
         and every subcommand auto-discovers its configuration, so you rarely pass <.docs_inline_code>--config</.docs_inline_code>. The config, cached
         token, and packs directory are root-owned, so run commands with <.docs_inline_code>sudo</.docs_inline_code>. Running
@@ -57,8 +57,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--config &lt;path&gt;</.docs_inline_code>
-            — the config.yaml to load. Defaults to <.docs_inline_code>$EMISAR_CONFIG</.docs_inline_code>, then the
+            <.docs_inline_code>--config &lt;path&gt;</.docs_inline_code>:
+            the config.yaml to load. Defaults to <.docs_inline_code>$EMISAR_CONFIG</.docs_inline_code>, then the
             <.docs_inline_code>/etc/emisar/config.yaml</.docs_inline_code>
             install location, then a per-user <.docs_inline_code>~/.config/emisar/config.yaml</.docs_inline_code>.
           </span>
@@ -66,8 +66,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--packs-dir &lt;dir&gt;</.docs_inline_code>
-            — extra pack search directories, overriding the config's
+            <.docs_inline_code>--packs-dir &lt;dir&gt;</.docs_inline_code>:
+            extra pack search directories, overriding the config's
             <.docs_inline_code>paths.packs</.docs_inline_code>
             (repeatable). Lets a read command work without a full config.
           </span>
@@ -75,8 +75,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--json</.docs_inline_code>
-            — machine-readable JSON, on <.docs_inline_code>action list</.docs_inline_code>, every
+            <.docs_inline_code>--json</.docs_inline_code>:
+            machine-readable JSON, on <.docs_inline_code>action list</.docs_inline_code>, every
             <.docs_inline_code>pack</.docs_inline_code>
             verb except
             <.docs_inline_code>install</.docs_inline_code>
@@ -85,8 +85,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         </li>
       </ul>
       <p class="mt-6 text-base leading-7 text-zinc-400">
-        The following table shows the installer's default paths. Configuration keys and the install
-        flags below can change them:
+        The installer uses these default paths. Configuration keys and the install flags below
+        can change them:
       </p>
       <div class="mt-4 overflow-x-auto rounded-xl border border-zinc-900">
         <table class="w-full min-w-[520px] text-left text-sm">
@@ -133,7 +133,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         user. Manage it through the init system;
         <.docs_inline_code>reload</.docs_inline_code>
         sends SIGHUP, which re-reads packs, rebuilds the signing verifier, and re-advertises
-        the catalog on the live connection — in-flight runs keep executing across it.
+        the catalog on the live connection. In-flight runs keep executing through the reload.
       </p>
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo emisar status               <span class="text-zinc-500"># daemon, connection, catalog, and in-flight runs</span>
 <span class="text-zinc-500">$</span> sudo systemctl status emisar     <span class="text-zinc-500"># is the service process up?</span>
@@ -197,29 +197,29 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--arg key=value</.docs_inline_code>
-            — one argument, repeatable. Numbers, <.docs_inline_code>true</.docs_inline_code>/<.docs_inline_code>false</.docs_inline_code>, and JSON arrays/objects are decoded. Everything else stays a string.
+            <.docs_inline_code>--arg key=value</.docs_inline_code>:
+            one argument, repeatable. Numbers, <.docs_inline_code>true</.docs_inline_code>/<.docs_inline_code>false</.docs_inline_code>, and JSON arrays/objects are decoded. Everything else stays a string.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--reason "…"</.docs_inline_code>
-            — free-text reason recorded on the local event.
+            <.docs_inline_code>--reason "…"</.docs_inline_code>:
+            free-text reason recorded on the local event.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--timeout 30s</.docs_inline_code>
-            — override the action's timeout, clamped to its own min/max.
+            <.docs_inline_code>--timeout 30s</.docs_inline_code>:
+            override the action's timeout, clamped to its own min/max.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--stream</.docs_inline_code>
-            — stream stdout/stderr live instead of returning buffered JSON.
+            <.docs_inline_code>--stream</.docs_inline_code>:
+            stream stdout/stderr live instead of returning buffered JSON.
           </span>
         </li>
       </ul>
@@ -267,29 +267,29 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--hash sha256:…</.docs_inline_code>
-            — pin the exact content hash the portal advertises. The install aborts on any mismatch. A tampered or mismatched copy never reaches the runner.
+            <.docs_inline_code>--hash sha256:…</.docs_inline_code>:
+            pin the exact content hash the portal advertises. The install aborts on any mismatch. A tampered or mismatched copy never reaches the runner.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--force</.docs_inline_code>
-            — overwrite a pack already installed under the same id.
+            <.docs_inline_code>--force</.docs_inline_code>:
+            overwrite a pack already installed under the same id.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--registry &lt;url&gt;</.docs_inline_code>
-            — install from your own registry (or set <.docs_inline_code>EMISAR_PACKS_REGISTRY</.docs_inline_code>). Defaults to the public registry at <.docs_inline_code>emisar.dev</.docs_inline_code>.
+            <.docs_inline_code>--registry &lt;url&gt;</.docs_inline_code>:
+            install from your own registry (or set <.docs_inline_code>EMISAR_PACKS_REGISTRY</.docs_inline_code>). Defaults to the public registry at <.docs_inline_code>emisar.dev</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--dest &lt;dir&gt;</.docs_inline_code>
-            — the packs directory to install into. Defaults to the config's first
+            <.docs_inline_code>--dest &lt;dir&gt;</.docs_inline_code>:
+            the packs directory to install into. Defaults to the config's first
             <.docs_inline_code>paths.packs</.docs_inline_code>
             entry.
           </span>
@@ -304,15 +304,15 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--to &lt;version&gt;</.docs_inline_code>
-            — compare against a specific published version instead of the registry's current one. That URL carries no index entry, so the computed hash is printed for you to pin the install with.
+            <.docs_inline_code>--to &lt;version&gt;</.docs_inline_code>:
+            compare against a specific published version instead of the registry's current one. That URL carries no index entry, so the computed hash is printed for you to pin the install with.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--stat</.docs_inline_code>
-            — the summary and the callouts without the changed lines.
+            <.docs_inline_code>--stat</.docs_inline_code>:
+            the summary and the callouts without the changed lines.
           </span>
         </li>
       </ul>
@@ -328,10 +328,9 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.docs_inline_code>install</.docs_inline_code>, <.docs_inline_code>update</.docs_inline_code>, and
         <.docs_inline_code>uninstall</.docs_inline_code>
-        signal a running daemon to reload — the same SIGHUP as
-        <.docs_inline_code>systemctl reload emisar</.docs_inline_code>
-        — so the runner advertises changed actions without restarting or dropping a run;
-        when no live daemon is reachable, the CLI prints the manual reload command instead.
+        signal a running daemon to reload (the same SIGHUP as <.docs_inline_code>systemctl reload emisar</.docs_inline_code>),
+        so the runner advertises changed actions without restarting or dropping a run.
+        When no live daemon is reachable, the CLI prints the manual reload command instead.
         Installing a pack does not trust it: a changed hash lands as
         <.status_badge status={:pending} /> in
         <a
@@ -369,9 +368,9 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 <span class="text-zinc-500"># supply what the host cannot infer</span>
 <span class="text-zinc-500">$</span> sudo emisar pack verify gcp-dns --arg project=acme-prod</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A skip is not a failure. A pack whose verify action needs a value this host cannot infer — a
-        project id, a hostname, a pid — is skipped with the command that completes it, as is a pack
-        your
+        A skip is not a failure. If a pack's verify action needs a value this host cannot infer
+        (a project id, a hostname, a pid), the pack is skipped with the command that completes
+        it. So is a pack your
         <.docs_inline_code>admission</.docs_inline_code>
         config refuses. Only a real failure exits non-zero. Read the detail before concluding the
         pack is misconfigured: a target that is simply down fails the same way a bad credential
@@ -489,8 +488,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span>
             <.docs_inline_code>--ca-name</.docs_inline_code>
             (<.docs_inline_code>init</.docs_inline_code>
-            and <.docs_inline_code>new-ca</.docs_inline_code>)
-            — the CA's common name, defaulting to <.docs_inline_code>emisar-dispatch-ca</.docs_inline_code>.
+            and <.docs_inline_code>new-ca</.docs_inline_code>):
+            the CA's common name, defaulting to <.docs_inline_code>emisar-dispatch-ca</.docs_inline_code>.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -500,11 +499,11 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             and
             <.docs_inline_code>--scope group=prod,env=edge</.docs_inline_code>
             (<.docs_inline_code>init</.docs_inline_code>
-            and <.docs_inline_code>new-cert</.docs_inline_code>)
-            — the cert's validity window, which accepts Go durations plus long-form <.docs_inline_code>30d</.docs_inline_code>/<.docs_inline_code>
+            and <.docs_inline_code>new-cert</.docs_inline_code>):
+            the cert's validity window, which accepts Go durations plus long-form <.docs_inline_code>30d</.docs_inline_code>/<.docs_inline_code>
               1y
             </.docs_inline_code>
-            and defaults to 24h, and the runners it binds to. Short is better — the only revocation is expiry, so a long TTL keeps a leaked cert usable longer. An empty scope means any runner that trusts the CA.
+            and defaults to 24h, and the runners it binds to. Keep the TTL short. The only revocation is expiry, so a long TTL keeps a leaked cert usable longer. An empty scope means any runner that trusts the CA.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -513,8 +512,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             <.docs_inline_code>--ca-key</.docs_inline_code>
             and
             <.docs_inline_code>--ca-cert</.docs_inline_code>
-            (both required on <.docs_inline_code>new-cert</.docs_inline_code>)
-            — the offline CA private key and certificate from <.docs_inline_code>new-ca</.docs_inline_code>. Both are read
+            (both required on <.docs_inline_code>new-cert</.docs_inline_code>):
+            the offline CA private key and certificate from <.docs_inline_code>new-ca</.docs_inline_code>. Both are read
             locally and never transmitted; the certificate is required because an X.509 leaf
             names its issuer exactly.
           </span>
@@ -526,7 +525,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             (<.docs_inline_code>new-cert</.docs_inline_code>)
             and
             <.docs_inline_code>--key ed25519|p256</.docs_inline_code>
-            (all three) — the leaf's common name, and the key algorithm. Choose
+            (all three): the leaf's common name, and the key algorithm. Choose
             <.docs_inline_code>p256</.docs_inline_code>
             when a KMS or HSM in your chain cannot do Ed25519.
           </span>
@@ -583,24 +582,24 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>emisar update --version X.Y.Z</.docs_inline_code>
-            — install an exact stable immutable runner release for a canary or rollback. Without
+            <.docs_inline_code>emisar update --version X.Y.Z</.docs_inline_code>:
+            install an exact stable immutable runner release for a canary or rollback. Without
             the flag, the command selects the newest stable immutable release.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--version TAG</.docs_inline_code>
-            — install a specific runner release
+            <.docs_inline_code>--version TAG</.docs_inline_code>:
+            install a specific runner release
             (<.docs_inline_code>runner-vX.Y.Z</.docs_inline_code>, <.docs_inline_code>vX.Y.Z</.docs_inline_code>, or bare <.docs_inline_code>X.Y.Z</.docs_inline_code>). Default is the latest.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--yes</.docs_inline_code>
-            — skip prompts. Requires an explicit
+            <.docs_inline_code>--yes</.docs_inline_code>:
+            skip prompts. Requires an explicit
             <.docs_inline_code>--packs</.docs_inline_code>
             (or <.docs_inline_code>EMISAR_PACKS</.docs_inline_code>) so an
             unattended run never guesses.
@@ -609,18 +608,17 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--packs LIST</.docs_inline_code>
-            — install exactly these packs, comma- or space-separated, with no host detection (for
+            <.docs_inline_code>--packs LIST</.docs_inline_code>:
+            install exactly these packs, comma- or space-separated, with no host detection (for
             cloud-init, Packer, Ansible).
           </span>
         </li>
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            <.docs_inline_code>--no-start</.docs_inline_code>
-            — install and enable the service but leave it stopped.
-            <.docs_inline_code>--no-service</.docs_inline_code>
-            — binary only, with no service user, unit, or activation.
+            <.docs_inline_code>--no-start</.docs_inline_code>:
+            install and enable the service but leave it stopped. <.docs_inline_code>--no-service</.docs_inline_code>:
+            binary only, with no service user, unit, or activation.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -643,9 +641,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             <.docs_inline_code>--data-dir</.docs_inline_code>
             ·
             <.docs_inline_code>--log-dir</.docs_inline_code>
-            ·
-            <.docs_inline_code>--user</.docs_inline_code>
-            — override the install locations and the service account.
+            · <.docs_inline_code>--user</.docs_inline_code>:
+            override the install locations and the service account.
           </span>
         </li>
       </ul>
@@ -654,12 +651,11 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 <span class="text-zinc-500"># …or delete everything, including config, data, and logs</span>
 <span class="text-zinc-500">$</span> curl -fsSL https://emisar.dev/install.sh | sudo bash -s -- --uninstall --purge</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        After uninstalling, delete the runner from
-        <a
+        After uninstalling, delete the runner from <a
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
-        >Runners</a>
-        — its run history and audit events
+        >Runners</a>.
+        Its run history and audit events
         survive the host. Removing a runner cleanly, and what changing its enrollment key does, is
         covered in <.link
           navigate={~p"/docs/runner-fleet"}

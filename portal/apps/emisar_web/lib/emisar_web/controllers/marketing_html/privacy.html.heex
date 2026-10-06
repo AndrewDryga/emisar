@@ -33,13 +33,13 @@
     arguments, approvals, policy decisions, and the resulting audit events. Fields an action marks
     as sensitive are masked in console and API views, not removed from storage. These records are
     <em>your</em>
-    data — we treat them as confidential.
+    data; we treat them as confidential.
   </p>
   <p>
     <strong>Billing information.</strong>
     Our payment processor is Paddle. When a workspace first starts a checkout we
-    register a customer record with Paddle — an owner's email address and the
-    workspace name — so the subscription can be billed. Older workspaces may
+    register a customer record with Paddle (an owner's email address and the
+    workspace name) so the subscription can be billed. Older workspaces may
     already have one from when we registered every workspace, including ones that
     never paid. Payments for paid plans run through Paddle. We
     never see or store your full card number; Paddle gives us back a customer
@@ -49,7 +49,7 @@
   <p>
     <strong>Marketing list.</strong>
     If you sign up for product updates from a form on our marketing site, we store
-    the email address you enter and which page you submitted it from — nothing more.
+    the email address you enter and which page you submitted it from, nothing more.
     We use it only to email you about emisar product news; we do not sell it, share
     it, or use it to train AI models, and you can ask us to remove you any time at <a href={
       EmisarWeb.MailTo.support()
@@ -92,33 +92,33 @@
   </p>
   <ul>
     <li>
-      <strong>Paddle</strong>
-      — payment processing, and a billing customer record (an owner's email and the workspace
+      <strong>Paddle</strong>:
+      payment processing, and a billing customer record (an owner's email and the workspace
       name) for each workspace that starts a checkout; its subscription-retention scripts (Paddle Retain) load on the
       checkout page only.
     </li>
     <li>
-      <strong>Postmark</strong>
-      — transactional email (sign-up confirmation, magic links, approval notifications).
+      <strong>Postmark</strong>:
+      transactional email (sign-up confirmation, magic links, approval notifications).
     </li>
     <li>
-      <strong>Google Cloud Platform</strong>
-      — application hosting, networking, managed PostgreSQL, and backups in the United States.
+      <strong>Google Cloud Platform</strong>:
+      application hosting, networking, managed PostgreSQL, and backups in the United States.
     </li>
     <li>
-      <strong>Mixpanel</strong>
-      — product & usage analytics (which features are used, and how people reach us).
+      <strong>Mixpanel</strong>:
+      product & usage analytics (which features are used, and how people reach us).
       Server-side; we send product-interaction events, never your runners' data or the
       contents of actions.
     </li>
     <li>
-      <strong>Sentry</strong>
-      — error monitoring, hosted in the United States. Before transmission, we remove request
+      <strong>Sentry</strong>:
+      error monitoring, hosted in the United States. Before transmission, we remove request
       bodies, parameters, user email and IP fields, and redact values under our secret-key list.
     </li>
     <li>
-      <strong>X Corp</strong>
-      — advertising attribution for signups that arrive from an X ad. Server-side; we send
+      <strong>X Corp</strong>:
+      advertising attribution for signups that arrive from an X ad. Server-side; we send
       only the ad's own click identifier, the signup time, and an opaque one-way hash that
       lets X discard duplicates. No name, email, account, or product activity.
     </li>
@@ -150,7 +150,7 @@
   </p>
   <p>
     Deleting a user removes their profile and any account they solely owned. If
-    they shared an account with another owner, that account stays — and their
+    they shared an account with another owner, that account stays, and their
     name and email remain in the security audit records and run history they
     generated there, which we keep as the durable security record of who did what
     (a permitted exception to erasure under GDPR Article 17(3)). Those
@@ -158,16 +158,16 @@
   </p>
   <p>
     If you are in the EU, UK, or California you have additional rights under GDPR
-    and CCPA respectively — access, rectification, portability, restriction. Email
+    and CCPA respectively: access, rectification, portability, restriction. Email
     us and we will honor them.
   </p>
 
   <h2 id="retention">6. Retention</h2>
   <p>Audit events and run history are retained according to your plan:</p>
   <ul>
-    <li><strong>Free</strong> — 7 days of audit history.</li>
-    <li><strong>Team</strong> — 90 days of audit history.</li>
-    <li><strong>Enterprise</strong> — 365 days of audit history.</li>
+    <li><strong>Free</strong>: 7 days of audit history.</li>
+    <li><strong>Team</strong>: 90 days of audit history.</li>
+    <li><strong>Enterprise</strong>: 365 days of audit history.</li>
   </ul>
   <p>
     Account metadata (your email, your organization name, your billing record)
@@ -182,7 +182,7 @@
 
   <h2 id="cookies">7. Cookies & analytics</h2>
   <p>
-    We use a small set of first-party cookies — and nothing else. A
+    We use a small set of first-party cookies and nothing else. A
     signed, HTTP-only <strong>session cookie</strong>
     keeps you signed in and carries the CSRF
     token protecting your forms. Until sign-in or the browser session ends, that encrypted
@@ -193,13 +193,13 @@
     so the sign-on page can offer them as one-click buttons. And while you complete a passwordless
     sign-in, a short-lived signed cookie ties the emailed code to this browser. No advertising
     cookies or <strong>analytics identifier cookies</strong>. And aside from the Paddle checkout
-    page — which loads Paddle's own payment and retention scripts (Paddle.js and Paddle Retain)
-    that may set their own cookies — no third-party tracker or analytics script runs in your browser.
+    page, which loads Paddle's own payment and retention scripts (Paddle.js and Paddle Retain)
+    that may set their own cookies, no third-party tracker or analytics script runs in your browser.
   </p>
   <p>
     To understand which features get used and how people find us, we record a small
-    set of marketing and account events — pageviews, sign-ups, sign-ins, sign-outs,
-    and plan changes — in <strong>Mixpanel</strong>, a product-analytics
+    set of marketing and account events (pageviews, sign-ups, sign-ins, sign-outs,
+    and plan changes) in <strong>Mixpanel</strong>, a product-analytics
     service, <em>server-side</em>. When you are signed in, Mixpanel receives your email address,
     name, and IP address with this product-analytics data so we can associate it with your account.
     We never send the contents of your runs, action arguments, or audit records. Logged-out visitors

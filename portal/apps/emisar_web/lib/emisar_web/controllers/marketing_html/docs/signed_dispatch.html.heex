@@ -23,12 +23,12 @@
           removes that trust.
           A customer-authorized bridge signs each request with a key the control plane never holds.
           The runner checks that signature before it runs anything, so the control plane can only
-          relay — it cannot forge a signed action, alter one, or widen its targets.
+          relay. It cannot forge a signed action, alter one, or widen its targets.
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Signed dispatch is opt-in per runner, and it is a trade: while it is on, only a signed
-        MCP call can dispatch to that host — the portal Run button, runbooks, and API keys are
+        MCP call can dispatch to that host. The portal Run button, runbooks, and API keys are
         refused. Turn it on for hosts where you need proof that a dispatch came from an
         authorized bridge.
       </p>
@@ -42,13 +42,13 @@
           <strong>The MCP bridge signs.</strong>
           For <.docs_inline_code>run_action</.docs_inline_code>,
           the bridge signs the origin, action, exact pack, exact arguments, exact runner set,
-          reason, operation, nonce, and time — plus digests of the evidence and expected result
+          reason, operation, nonce, and time, plus digests of the evidence and expected result
           an approver sees. After the bridge signs, nothing can be added to the claim.
         </li>
         <li>
           <strong>The signing key stays on your machine.</strong>
           The bridge signs with your private key and attaches its CA-signed certificate. It signs
-          the argument bytes exactly as sent — it does not decode and rebuild them, so large
+          the argument bytes exactly as sent. It does not decode and rebuild them, so large
           integers, object order, and escapes stay exact.
         </li>
         <li>
@@ -65,8 +65,8 @@
       </ol>
       <.docs_callout kind={:note} title="The trust anchor is an offline certificate authority.">
         A runner trusts one CA public key, not every operator key. Your offline CA signs
-        short-lived certificates that vouch for an operator's key and, optionally, a scope — a
-        group or labels the runner checks against its own config. Every signature also names
+        short-lived certificates that vouch for an operator's key and, optionally, a scope (a
+        group or labels the runner checks against its own config). Every signature also names
         its exact targets as
         <.docs_inline_code>name~sha256-prefix</.docs_inline_code>
         refs derived from each runner's identity (its hostname, or the
@@ -116,7 +116,7 @@
         <strong class="text-zinc-200">3. Install the CA certificate</strong>
         in
         <.docs_inline_code>/etc/emisar/config.yaml</.docs_inline_code>
-        on every runner. It is safe to commit — ship it the way you ship the rest of your
+        on every runner. It is safe to commit, so ship it the way you ship the rest of your
         config.
       </p>
       <.docs_code phx-no-format label="config"><span class="text-zinc-500"># /etc/emisar/config.yaml</span>
@@ -132,7 +132,7 @@ signing:
 
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">4. Give the leaf key + cert to your MCP bridge</strong>
-        as environment variables. Never on the portal, never in version control
+        as environment variables. Never put them on the portal or in version control
         (see <.link
           navigate={~p"/docs/connect-cli-agent"}
           class="text-brand-400 hover:text-brand-300"
@@ -151,7 +151,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
         <.docs_inline_code>reload</.docs_inline_code>
         leaves enforcement off and unsigned calls keep flowing. (Later CA rotations and trusted-key
         swaps on an <em>already-enforcing</em>
-        runner do apply live with a reload, no dropped runs.)
+        runner do apply live with a reload, with no dropped runs.)
       </p>
       <.docs_code phx-no-format label="shell" copy_text="sudo systemctl restart emisar"><span class="text-zinc-500">$</span> sudo systemctl restart emisar</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -164,7 +164,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
         badge and the <strong class="text-zinc-200">signed-only</strong>
         chip on the row, the Run button is disabled, a signed MCP call succeeds, and operator
         and runbook dispatches are refused. If there is no badge, the runner still accepts
-        unsigned calls — recheck the config and the restart.
+        unsigned calls. Recheck the config and the restart.
       </p>
 
       <.docs_h2 id="distributing-ca">Distributing the CA across a fleet</.docs_h2>
@@ -177,9 +177,8 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The CA public key is config, not a secret.</strong>
-            Ship it the way you already ship
-            <.docs_inline_code>config.yaml</.docs_inline_code>
-            — cloud-init, Packer, Ansible, a golden image, or your infrastructure repository.
+            Ship it the way you already ship <.docs_inline_code>config.yaml</.docs_inline_code>: cloud-init, Packer, Ansible, a
+            golden image, or your infrastructure repository.
             Operator certificates then change without editing a runner.
           </span>
         </li>
@@ -189,7 +188,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
             <strong class="text-zinc-200">
               The control plane is deliberately not the distributor.
             </strong>
-            emisar never holds or hands out your CA or signing keys — route the CA public key
+            emisar never holds or hands out your CA or signing keys. Route the CA public key
             through whatever already provisions the host, never through the portal.
           </span>
         </li>
@@ -255,7 +254,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
               <td class="px-4 py-3 align-top leading-6">
                 P-256 is there because several KMS and HSM products still do not offer Ed25519.
                 RSA is not accepted. A Windows CA issues RSA unless you tell it otherwise, so
-                this certificate needs a template set to ECDSA P-256 — the CA above it can stay
+                this certificate needs a template set to ECDSA P-256. The CA above it can stay
                 on RSA.
               </td>
             </tr>
@@ -291,7 +290,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
         would accept the TLS certificates the scope URI exists to keep out. If you want a
         second belt, name-constrain the issuing CA to
         <.docs_inline_code>emisar://</.docs_inline_code>
-        URIs — then even a shared root cannot issue anything else that a runner would accept.
+        URIs. Then even a shared root cannot issue anything else that a runner would accept.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The scope rides in that URI's query, and there is one spelling per scope: parameters
@@ -317,7 +316,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
         <.docs_inline_code>EMISAR_SIGNING_KEY</.docs_inline_code>
         and
         <.docs_inline_code>EMISAR_SIGNING_CERT</.docs_inline_code>
-        — a base64 PKCS#8 private key and a base64 PEM chain, each on one line.
+        as a base64 PKCS#8 private key and a base64 PEM chain, each on one line.
       </p>
 
       <.docs_h2 id="rotating">Rotating operators</.docs_h2>
@@ -362,7 +361,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span>
             <strong class="text-zinc-200">Short TTLs are the everyday revocation.</strong>
             There is no certificate revocation list. A leaked signing key keeps working until
-            its cert expires — keep TTLs short (24h is a good default) so a leak expires on its
+            its cert expires. Keep TTLs short (24h is a good default) so a leak expires on its
             own within hours.
           </span>
         </li>
@@ -374,7 +373,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             <.docs_inline_code>trusted_cas</.docs_inline_code>
             is a list, so add the new CA beside the old, re-issue operator certs under it, then
             remove the old CA and reload every runner. Each reload applies live without
-            dropping a run. Done means every runner reloaded — the control plane cannot do the
+            dropping a run. You are done when every runner has reloaded. The control plane cannot do the
             reload for you.
           </span>
         </li>
@@ -410,7 +409,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             above your approval turnaround.</strong>
             A run that waited on approval dispatches with its <em>original</em>
             signature, so a window shorter than your approvals refuses slow ones as stale. A
-            wider window also means a longer replay exposure — choose deliberately. See <.link
+            wider window also means a longer replay exposure, so choose deliberately. See <.link
               navigate={~p"/docs/policies-and-approvals"}
               class="text-brand-400 hover:text-brand-300"
             >policies and approvals</.link>.
@@ -433,7 +432,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Integrity, not availability.</strong>
-            A compromised control plane can still refuse to relay your dispatch — signing
+            A compromised control plane can still refuse to relay your dispatch. Signing
             prevents forgery, not withholding.
           </span>
         </li>
@@ -441,7 +440,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Names are discovery metadata.</strong>
-            The signature binds suffixes derived from durable runner identities — it does not
+            The signature binds suffixes derived from durable runner identities. It does not
             make the display name truthful, and a compromised portal can lie about that mapping
             before signing. Narrow cert scopes limit what the lie can reach; verifying suffixes
             out of band removes it.
@@ -452,10 +451,10 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span>
             <strong class="text-zinc-200">Replay protection survives a restart.</strong>
             Every accepted nonce is written and synced before dispatch, in a journal that
-            outlives the process. When the journal is full — 100,000 entries or 16 MiB — it
-            refuses new work rather than dropping a fresh nonce, and raising
+            outlives the process. When the journal is full (100,000 entries or 16 MiB), it
+            refuses new work rather than dropping a fresh nonce. Raising
             <.docs_inline_code>max_attestation_age</.docs_inline_code>
-            above what the journal was opened with is refused.
+            above what the journal was opened with is also refused.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -488,7 +487,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
                 <.docs_inline_code>signature_required</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The dispatch carried no signed certificate — it came from the portal, a runbook, an API key, or a bridge that does not sign.
+                The dispatch carried no signed certificate. It came from the portal, a runbook, an API key, or a bridge that does not sign.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Use a bridge with
@@ -514,12 +513,12 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
                 <.docs_inline_code>cert_profile</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The certificate does not match the profile below — most often it carries no
+                The certificate does not match the profile above. Most often it carries no
                 <.docs_inline_code>emisar://</.docs_inline_code>
                 scope, so it was not issued for signing dispatches.
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Re-issue it against the profile below.
+                Re-issue it against the profile above.
               </td>
             </tr>
             <tr>
@@ -538,7 +537,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
                 <.docs_inline_code>cert_expired</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The certificate is outside its validity window — there is no skew tolerance.
+                The certificate is outside its validity window. There is no skew tolerance.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Mint a fresh certificate with
@@ -562,7 +561,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
                 <.docs_inline_code>stale</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The timestamp is outside the freshness window — clock skew, a long queue, or a slow approval.
+                The timestamp is outside the freshness window (clock skew, a long queue, or a slow approval).
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Re-issue the run and check host clocks. Raising
@@ -575,7 +574,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
                 <.docs_inline_code>bad_signature</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The signature does not verify — the key is wrong, or the client and runner disagree about the signed value.
+                The signature does not verify: the key is wrong, or the client and runner disagree about the signed value.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Re-mint and re-distribute the key and cert.
@@ -586,7 +585,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
                 <.docs_inline_code>replayed</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                This nonce was already used — the client double-sent.
+                This nonce was already used: the client double-sent.
               </td>
               <td class="px-4 py-3 align-top leading-6">Send a fresh dispatch.</td>
             </tr>

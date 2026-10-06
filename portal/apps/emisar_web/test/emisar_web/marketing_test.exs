@@ -782,7 +782,7 @@ defmodule EmisarWeb.MarketingTest do
         |> squish()
 
       assert faq_text =~ "is on #{plans["team"].name} and #{plans["enterprise"].name}"
-      assert faq_text =~ "which is #{plans["enterprise"].name}"
+      assert faq_text =~ "which is on #{plans["enterprise"].name}"
 
       assert faq_text =~
                "Human users are unlimited on #{plans["team"].name} and #{plans["enterprise"].name}."
@@ -1559,7 +1559,7 @@ defmodule EmisarWeb.MarketingTest do
     } do
       html = conn |> get(~p"/docs/connect-cli-agent") |> html_response(200) |> squish()
 
-      assert html =~ "Direct HTTP — no bridge"
+      assert html =~ "Direct HTTP without a bridge"
       assert html =~ "Any MCP client that supports Streamable HTTP"
       assert html =~ ~s(href="/app/agents/connect")
       assert html =~ "select <strong class=\"font-medium text-zinc-200\">Custom</strong>"
@@ -2410,7 +2410,7 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/compare/copy-paste-ai-ops") |> html_response(200)
 
       assert html =~ "The copy-paste loop"
-      assert html =~ "Nothing runs unless you run it. That matters."
+      assert html =~ "Nothing runs unless you run it"
       assert html =~ "Review can turn into a reflex"
       assert html =~ "That is the worst of both worlds"
       assert html =~ "Nothing on its own. You run every command."
@@ -2875,7 +2875,7 @@ defmodule EmisarWeb.MarketingTest do
 
       # An agent key is revoked, not rotated — and revocation takes the chain and
       # the OAuth credentials backed by it.
-      assert html =~ "Revoke it — do not rotate it"
+      assert html =~ "Revoke it. Do not rotate it"
       assert html =~ "every successor in the key rotation chain"
       assert html =~ "OAuth access or refresh token backed by the key"
 

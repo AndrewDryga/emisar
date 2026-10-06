@@ -17,7 +17,7 @@
     >
       <.docs_header current="sso">
         <:dek>
-          SSO allows you to sign in to emisar through your own identity provider — Google
+          SSO lets you sign in to emisar through your own identity provider: Google
           Workspace, Okta, Microsoft Entra, JumpCloud, Keycloak, or any compliant OIDC
           provider.
         </:dek>
@@ -45,13 +45,13 @@
             href={~p"/app/sso/new"}
             class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
           >Team → Single sign-on → Add connection</a>
-          and choose your provider type. Leave the page open — it shows the redirect URI your
+          and choose your provider type. Leave the page open. It shows the redirect URI your
           provider asks for next.
         </li>
         <li>
           At the provider, create a
           <strong class="text-zinc-200">confidential web application</strong>
-          — one with a client secret. Paste emisar's redirect URI into it unchanged; it ends in <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>.
+          with a client secret. Paste emisar's redirect URI into it unchanged; it ends in <.docs_inline_code>/sign_in/sso/callback</.docs_inline_code>.
         </li>
         <li>
           Back in emisar, enter the issuer URL, client ID, and client secret. For JumpCloud,
@@ -80,21 +80,21 @@
       <.docs_h3 id="connection-fields">Connection settings</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <strong class="text-zinc-200">provider type</strong>
-        selects a preset that chooses the identity claim and provider-specific behavior —
-        pick your actual provider rather than Generic OIDC. The
+        selects a preset that chooses the identity claim and provider-specific behavior.
+        Pick your actual provider rather than Generic OIDC. The
         <strong class="text-zinc-200">display name</strong>
         is shown on the sign-in page.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         emisar fetches the <strong class="text-zinc-200">issuer URL</strong>'s OIDC discovery
         document and derives every other endpoint from it. Only enter the issuer. Do not enter
-        authorization, token, or JWKS URLs. It must use HTTPS and be reachable from emisar.
+        authorization, token, or JWKS URLs. The issuer must use HTTPS and be reachable from emisar.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <strong class="text-zinc-200">client ID</strong>
         and <strong class="text-zinc-200">client secret</strong>
         come from the application. The secret is write-only: emisar stores it server-side and
-        never shows it again — it must replay the secret on every sign-in, so it cannot store
+        never shows it again. Because emisar must replay the secret on every sign-in, it cannot store
         only a hash. Leave the field blank when editing later to keep the current secret.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -103,7 +103,7 @@
         <.docs_inline_code>sub</.docs_inline_code>
         for most providers,
         <.docs_inline_code>oid</.docs_inline_code>
-        for Microsoft Entra. Leave it unchanged — <a
+        for Microsoft Entra. Leave it unchanged, because <a
           href="#subject-not-email"
           class="text-brand-400 hover:text-brand-300"
         >emisar
@@ -150,8 +150,8 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Default role</strong>
-        is configurable. Provisioning never grants <span class="text-zinc-300">owner</span>
-        — that stays a deliberate human grant, so no provider misconfiguration can grant this
+        is configurable. Provisioning never grants <span class="text-zinc-300">owner</span>.
+        That stays a deliberate human grant, so no provider misconfiguration can grant this
         role. In Groups &amp; access, the highest mapped role wins and the default is only the fallback
         for someone in no mapped group, not a minimum role. With directory sync enabled, changes
         also apply to existing directory-managed members. See
@@ -162,7 +162,7 @@
         <strong class="text-zinc-200">Default access</strong>
         controls which hosts a new member can act on.
         <span class="text-zinc-300">No runners</span>
-        is the safe default — the member reads the console and reaches nothing until you
+        is the safe default: the member reads the console and reaches nothing until you
         grant access. <span class="text-zinc-300">All runners</span>
         covers current and future runners, and <span class="text-zinc-300">Selected runners</span>
         limits access to named groups or hosts. Roles and runner access are independent: an
@@ -193,7 +193,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Enable this setting if your provider satisfies the account's MFA requirement. It saves
         members from setting up a second MFA token for emisar. Only turn it on if the provider
-        really enforces MFA — otherwise it becomes a way around the account's requirement,
+        really enforces MFA. Otherwise it becomes a way around the account's requirement,
         which is described in <.link
           navigate={~p"/docs/authentication" <> "#enforcement"}
           class="text-brand-400 hover:text-brand-300"
@@ -236,7 +236,7 @@
               href={~p"/app/team"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
             >Team → Pending access requests</a>. Approving binds
-            that existing member to the SSO identity — it does not create a second person, and
+            that existing member to the SSO identity. It does not create a second person, and
             their role and runner access are left as they are. If their team invitation is still
             pending, they accept the invitation first; only then can an administrator approve the
             SSO identity.
@@ -258,8 +258,8 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         First complete a real sign-in through the connection in another browser.
         <strong class="text-zinc-200">Check issuer</strong>
-        checks discovery and reachability only — not user assignment, callback acceptance, or
-        claims — so it can pass on a connection nobody can actually sign in through. Keep an
+        checks discovery and reachability only. It does not check user assignment, callback
+        acceptance, or claims, so it can pass on a connection nobody can actually sign in through. Keep an
         owner signed in to this workspace through SSO while you test: turning the requirement on
         signs out every email sign-in session, including your own. Then open
         <a
@@ -286,7 +286,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Require SSO gates browser access and new OAuth consent for every member, including
-        owners. What it covers — and the bearer credentials it leaves untouched — is in <.link
+        owners. For what it covers, and the bearer credentials it leaves untouched, see <.link
           navigate={~p"/docs/authentication" <> "#enforcement"}
           class="text-brand-400 hover:text-brand-300"
         >what Require SSO covers</.link>.
@@ -294,7 +294,7 @@
 
       <.docs_h3 id="rotate-secret">Rotate a client secret</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The client secret is a credential like any other — the rotation steps, including the
+        The client secret is a credential like any other. The rotation steps, including the
         write-only field and the sign-in check before you delete the old secret, are in <.link
           navigate={~p"/docs/credentials" <> "#idp"}
           class="text-brand-400 hover:text-brand-300"
@@ -321,9 +321,9 @@
         still waiting on it. Either way, the sessions that signed in through it end; members and
         audit history are kept, and email sign-in sessions remain. Re-enabling the connection
         does not restore those sessions; members sign in again. A member left with no other way
-        to sign in — no verified email address and no other enabled connection — also loses its
-        API keys, the agent connections built on them, and its approved device access;
-        re-enabling does not bring them back.
+        to sign in (no verified email address and no other enabled connection) also loses its
+        API keys, the agent connections built on them, and its approved device access.
+        Re-enabling does not bring them back.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An account can have several provider types, but only one enabled connection of each type.
@@ -333,7 +333,7 @@
 
       <.docs_h2 id="providers">Provider guides</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each guide walks one provider end to end — sign-in first, then directory sync — with
+        Each guide covers one provider end to end: sign-in first, then directory sync, with
         screenshots of the console screens along the way.
       </p>
 
@@ -345,7 +345,7 @@
               navigate={~p"/docs/integrations/okta"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Okta</.link>
-            — an OIDC web app for sign-in and a separate SCIM app for the directory.
+            uses an OIDC web app for sign-in and a separate SCIM app for the directory.
             Live-tested against an Okta Integrator org on August 25, 2026.
           </span>
         </li>
@@ -356,7 +356,7 @@
               navigate={~p"/docs/integrations/entra"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >Microsoft Entra</.link>
-            — an app registration with the
+            uses an app registration with the
             <.docs_inline_code>oid</.docs_inline_code>
             claim, and an enterprise application for provisioning.
           </span>
@@ -368,7 +368,7 @@
               navigate={~p"/docs/integrations/jumpcloud"}
               class="text-brand-300 underline decoration-brand-500/40 underline-offset-4 hover:text-brand-200"
             >JumpCloud</.link>
-            — one custom application carries sign-in and provisioning together.
+            handles sign-in and provisioning together in one custom application.
             Live-tested against a JumpCloud tenant on August 25, 2026.
           </span>
         </li>
@@ -397,11 +397,9 @@
 
       <.docs_h2 id="generic-oidc">Any other OIDC provider</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The preset providers are built on top of one standard flow — they are not separate
-        integrations.
-        A provider that meets the contract below works through
-        <strong class="text-zinc-200">Generic OpenID Connect</strong>
-        — including Auth0, Ping, OneLogin, Authentik, or an in-house IdP. This connection uses only
+        The preset providers are all built on one standard flow.
+        A provider that meets the contract below works through <strong class="text-zinc-200">Generic OpenID Connect</strong>, including Auth0, Ping,
+        OneLogin, Authentik, or an in-house IdP. This connection uses only
         the OIDC authorization code flow. SAML is not supported.
       </p>
 
@@ -523,7 +521,7 @@
               <td class="px-4 py-3">
                 Compare the redirect URI byte for byte, confirm the app is a confidential web
                 client, and replace an expired client secret. Turn off DPoP if the provider
-                offers it — a sender-constrained token breaks the token request. For a generic
+                offers it, because a sender-constrained token breaks the token request. For a generic
                 provider, confirm a PKCE method and one of the two supported secret-auth
                 methods are advertised.
               </td>
@@ -561,7 +559,7 @@
               </td>
               <td class="px-4 py-3">
                 Make SCIM <code>externalId</code>
-                equal the OIDC identifier claim — the convergence contract and per-provider
+                equal the OIDC identifier claim. The convergence contract and per-provider
                 claims are in <.link
                   navigate={~p"/docs/scim" <> "#troubleshooting"}
                   class="text-brand-400 hover:text-brand-300"

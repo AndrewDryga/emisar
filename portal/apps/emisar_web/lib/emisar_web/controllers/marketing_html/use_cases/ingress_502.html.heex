@@ -9,23 +9,23 @@
         The fleet-wide 502 that no backend was causing
       </.marketing_heading>
       <p class="mt-6 text-lg leading-8 text-zinc-400 text-pretty">
-        At peak, every app behind one edge started returning <code>502 Connection refused</code>. Not constantly — just often enough to be maddening.
-        Auth, checkout, the API tier, all at once, and yet every backend was healthy and every health
-        check was green. The cause was five layers down: a proxy stuck in an OOM loop, a node that had
-        quietly stopped serving, and a load balancer that never noticed either. Here is how an agent
-        ran it down on emisar — reading freely, and changing nothing in production without an approval.
+        At peak, every app behind one edge started returning <code>502 Connection refused</code>. It didn't happen constantly, just often enough to be maddening.
+        Auth, checkout, and the API tier were all affected at once, and yet every backend was healthy
+        and every health check was green. The cause was five layers down: a proxy stuck in an OOM
+        loop, a node that had silently stopped serving, and a load balancer that never noticed either.
+        An agent ran it down on emisar, reading freely and making no change to production without an
+        approval.
       </p>
 
       <h2 class="mt-12 text-2xl font-semibold text-zinc-50 text-balance">The stack</h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         Five bare-metal Debian nodes in one colo, each running Traefik as a Nomad
         <code>system</code>
-        job bound to <code>:443</code>. Every node also raises the same anycast VIP —
-        <code>10.x.x.250/32</code>
-        on a dummy interface — and advertises it to the edge firewall over BGP. The firewall
-        ECMP-hashes each incoming connection across whoever is advertising. Five nodes, five proxies,
-        five advertisers: that is the design, and it works right up until a node keeps advertising
-        after it stops serving.
+        job bound to <code>:443</code>. Every node also raises the same anycast VIP
+        (<code>10.x.x.250/32</code>
+        on a dummy interface) and advertises it to the edge firewall over BGP. The firewall
+        ECMP-hashes each incoming connection across whoever is advertising. That design works right
+        up until a node keeps advertising after it stops serving.
       </p>
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">client → CDN (per-app pull zone)
        → edge firewall WAN VIP (DNAT)
@@ -41,12 +41,12 @@
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">It wasn't the app</h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        The page blamed one service — a health check 404-ing on a URL with a doubled slash. Two
-        problems with that. The doubled-slash path matches no Traefik route, so the edge returns its
+        The page blamed one service: a health check 404-ing on a URL with a doubled slash. That
+        diagnosis had two problems. The doubled-slash path matches no Traefik route, so the edge returns its
         default <code>404 page not found</code>; the same backend answers 200 on its real path, and
         Consul had it registered and passing the whole time. The dashboards weren't much help either: 47 targets up, a 5xx
         ratio rounding to zero, and a p99 of 9.8&nbsp;seconds that no single service accounted for.
-        The one thing every symptom shared was the edge they all sat behind. So that is where the
+        Every symptom shared the edge they all sat behind, so that is where the
         agent started.
       </p>
 
@@ -119,18 +119,18 @@ vm.query_instant &#123;"query":
         Three faults, stacked
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        On its own, none of these takes down a fleet. Stacked, they did.
+        None of these takes down a fleet on its own, but stacked together they did.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         Traefik was capped at 1&nbsp;GiB, and under real traffic it didn't fit. The cgroup killed it
-        — <code>Exit 137</code>
-        — and Nomad restarted it, twenty-plus times a node. What pushed it over was one single-replica
+        (<code>Exit 137</code>)
+        and Nomad restarted it, twenty-plus times a node. What pushed it over was one single-replica
         backend (<code>match-api</code>) pulling ~1.75k&nbsp;req/s; with a node already gone, four
         proxies were carrying five nodes' worth of load.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         The missing node was <code>hvn05</code>. An overnight reboot had dropped it to the initramfs
-        on an LVM race. It came back — but a later test reboot left its Consul agent
+        on an LVM race. It came back, but a later test reboot left its Consul agent
         <code>left</code>
         from the gossip, and Traefik needs a Consul token to start. A wedged Consul never issues one,
         so <code>hvn05</code>
@@ -138,25 +138,25 @@ vm.query_instant &#123;"query":
         Nomad's server quorum.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        The amplifier is the part worth remembering. Every node advertises the VIP whether or not its
-        Traefik is up, so the firewall kept hashing connections onto nodes with nothing listening —
-        <code>hvn05</code>
-        constantly, plus whichever proxies were mid-restart — and each of those connections got a
-        reset. That is the whole shape of it: intermittent because ECMP picks per connection,
-        fleet-wide because every app shares the edge, and self-healing because a recovered proxy
-        rejoined on its own. A probe at the VIP settled it — about 40% of connections refused, while
-        the very next one went through.
+        The anycast VIP was the amplifier. Every node advertises the VIP whether or not its
+        Traefik is up, so the firewall kept hashing connections onto nodes with nothing listening
+        (<code>hvn05</code>
+        constantly, plus whichever proxies were mid-restart), and each of those connections got a
+        reset. That explains the pattern: the errors were intermittent because ECMP picks per
+        connection, fleet-wide because every app shares the edge, and self-healing because a
+        recovered proxy rejoined on its own. A probe at the VIP settled it: about 40% of connections
+        were refused, while the very next one went through.
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        Stopping the bleed — two approvals
+        Stopping the bleed with two approvals
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         Two changes would stop it, and both touch production, so both waited for a human. The agent's
         job was to line them up and say why; the yes belonged to someone else. Start with the weird
         node: <code>hvn05</code>
-        isn't serving because its Consul is wedged, so restart Consul — not pull the node from the
-        anycast. A node you're about to heal isn't one you drain.
+        isn't serving because its Consul is wedged, so restart Consul instead of pulling the node
+        from the anycast. There is no point draining a node you're about to heal.
       </p>
       <pre class="mt-3 overflow-x-auto rounded-lg border border-zinc-900 bg-black/60 p-4 font-mono text-xs leading-6 text-zinc-300">linux.systemctl_restart &#123;"unit": "consul", "runners": ["nomad-hvn05"], "reason":
   "hvn05 Consul wedged (left the gossip) after a reboot — restart so it rejoins and Traefik's token derivation succeeds"&#125;
@@ -170,7 +170,7 @@ nomad.task_resources_set &#123;"job": "traefik", "group": "traefik", "task": "tr
 <span class="text-brand-300">✓ approved · audit event recorded</span>
 <span class="text-zinc-500">→ jobspec patched at JobModifyIndex (MemoryMB 1024 → 4096) · rolling update places 4 GiB on all five</span></pre>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        Neither is a shell. The Consul restart isn't a special case —
+        Neither change ran through a shell. The Consul restart isn't a special case:
         <code>linux.systemctl_restart</code>
         takes the unit by a name that can't carry shell metacharacters, and which units a runner may
         touch is a policy decision, high-risk and approval-gated by default. The memory change refuses
@@ -178,7 +178,7 @@ nomad.task_resources_set &#123;"job": "traefik", "group": "traefik", "task": "tr
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
-        The fix that actually holds
+        The fix that holds
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         Restarting Consul and raising the cap stopped the pain, but neither is the fix. A node can
@@ -206,19 +206,19 @@ done
       <p class="mt-3 text-base leading-7 text-zinc-400">
         And the wedge itself has a one-line cure. A Consul <em>server</em>
         should never <code>leave</code>
-        on a planned reboot — leaving is what dropped <code>hvn05</code>
+        on a planned reboot, because leaving is what dropped <code>hvn05</code>
         out of raft to begin with. Tell it to stop, not leave (<code>leave_on_terminate = false</code>, <code>skip_leave_on_interrupt = true</code>),
         and a rebooted server rejoins on its own.
       </p>
       <p class="mt-3 text-base leading-7 text-zinc-400">
-        And about that anycast: pulling a node out of it by hand is now a single gated action.
+        Pulling a node out of the anycast by hand is now a single gated action.
         <code>frr.bgp_neighbor_shutdown</code>
-        drops a node's BGP advertisement so ECMP routes around it — the break-glass for a node that
-        can't come back fast. It didn't come to that here; restarting Consul brought
+        drops a node's BGP advertisement so ECMP routes around it. It is the break-glass for a node
+        that can't come back fast. It didn't come to that here; restarting Consul brought
         <code>hvn05</code>
         back outright. But when the
-        fix isn't a thirty-second restart, the lever is on the governed path now — not an SSH session
-        and a <code>vtysh</code>
+        fix isn't a thirty-second restart, the lever is now on the governed path instead of in an
+        SSH session and a <code>vtysh</code>
         prompt.
       </p>
       <p class="mt-3 text-base leading-7 text-zinc-400">
@@ -230,25 +230,23 @@ done
         What emisar didn't do
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        Worth being plain about the limits. emisar didn't prevent this outage, and the page shouldn't
-        pretend otherwise. The three things that caused it — a boot that lost a race with udev, a
-        Consul server that left when it should have stopped, a VIP that advertises without checking —
-        are design flaws, and you fix design flaws in the repo, not with a tool call.
+        emisar didn't prevent this outage. Three design flaws caused it: a boot that lost a race with
+        udev, a Consul server that left when it should have stopped, and a VIP that advertises
+        without checking. You fix design flaws in the repo, not with a tool call.
       </p>
       <p class="mt-4 text-base leading-7 text-zinc-400">
         What it changed is the hour in the middle: the part where someone is staring at a fleet-wide
         502 with no failing service, hunting for the thread. Every read was one call away and on the
         record. Every change that touched production waited for a yes. Nobody held a shell on the
-        edge, and nothing happened that you can't go read back later. Different failure, same fleet,
-        same loop — the night a storage driver
+        edge, and nothing happened that you can't go read back later. The night a storage driver
         <.link navigate={~p"/use-cases/csi-data-loss"} class="text-brand-400 hover:text-brand-300">
           reformatted a live LUN and erased 33 hours of metrics
         </.link>
-        ran exactly this way.
+        was a different failure on the same fleet, and it ran through the same loop.
       </p>
 
       <div class="mt-12 flex flex-wrap gap-x-6 gap-y-3 border-t border-zinc-900 pt-8 text-sm">
-        <.cta_link href={~p"/sign_up"}>Start free — connect a runner</.cta_link>
+        <.cta_link href={~p"/sign_up"}>Start free and connect a runner</.cta_link>
         <.cta_link navigate={~p"/docs/security-model"}>How the trust boundary works</.cta_link>
         <.cta_link navigate={~p"/docs/action-packs"}>Author your own pack</.cta_link>
       </div>
