@@ -11,7 +11,7 @@ allowed-tools: Read, Grep, Glob, Bash
 Review the rendered marketing page like a strict design director and conversion
 reviewer. Lead with concrete issues that make the page generic, unclear,
 untrustworthy, inaccessible, slow, or hard to act on. Do not rewrite the whole
-page unless the concept is fundamentally wrong.
+page unless the concept itself is wrong.
 
 ## Inputs
 
@@ -25,7 +25,7 @@ Prefer all of these:
 
 If screenshots are missing and the site can run locally, ensure the review has
 a claimed task (create a basic one when needed), then render it and capture into
-that task's `screenshots/` directory before judging — the viewports and sections
+that task's `screenshots/` directory before judging. The viewports and sections
 to capture are in `references/screenshot-checklist.md`. If rendering is blocked,
 say so and review the code with lower confidence.
 

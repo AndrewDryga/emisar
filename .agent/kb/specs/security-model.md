@@ -50,27 +50,27 @@ updated: 2026-10-05
    Cloud opts can lower these but not raise them above the action's max.
    When an action declares `user:`, the runner resolves that local
    user/group and drops to its uid/gid via `SysProcAttr.Credential` on
-   Linux before exec — so an action targeting Cassandra can run as the
+   Linux before exec, so an action targeting Cassandra can run as the
    `cassandra` user even when the runner ships under a different
    service account.
 9. **Environment hygiene.** Child processes get a minimal baseline env
    (`PATH`, `LANG`, `LC_ALL`, `TERM`) plus whatever the operator
-   explicitly lists in `execution.inherit_env` — the runner's own
+   explicitly lists in `execution.inherit_env`. The runner's own
    environment (and its auth secrets) never leaks through. Packs that
    try to set hijack-vector variables (`LD_*`, `DYLD_*`, `BASH_ENV`)
    are rejected at validation time.
 10. **Process containment on exit.** Children run in their own process
-    group (`Setpgid`), and the runner signals the whole group — SIGTERM,
-    then SIGKILL after the grace window — on cancel, on timeout, and when
+    group (`Setpgid`), and the runner signals the whole group (SIGTERM,
+    then SIGKILL after the grace window) on cancel, on timeout, and when
     the runner itself exits. On Linux `Pdeathsig: SIGKILL` is the kernel
     backstop for a runner that cannot run that shutdown path at all (OOM
     kill, SIGKILL, panic). It reaches the direct child only, so a wrapper
     script that forks a worker and exits still orphans that worker to
     init: pack authors `exec` the target binary, or `trap` and forward
-    signals. Losing the websocket is deliberately not an exit — in-flight
+    signals. Losing the websocket is deliberately not an exit: in-flight
     actions keep running and replay their result on the next connection.
 11. **Local admission control.** An optional `admission:` block in
-    `config.yaml` filters what this host will even advertise — by action
+    `config.yaml` filters what this host will even advertise, by action
     id (allow/deny globs) and by a `max_risk` ceiling (one flag turns a
     fleet read-only for a demo, dropping high/critical actions). A rule
     baked into the image overrides anything the cloud asks for: a
@@ -100,7 +100,7 @@ updated: 2026-10-05
     identity suffix in the signed target set; the certificate's CA-asserted
     scope is a second group/label ceiling. The leaf private key lives only in the
     customer-authorized MCP bridge and the CA private key stays offline; the
-    control plane holds neither, so it can relay a bridge-signed action but never
+    control plane does not hold either key, so it can relay a bridge-signed action but never
     forge, alter, widen its signed targets, or originate one. Preserved replay
     state prevents nonce reuse on that runner identity. Replay state is
     process-owned and durable: every hot-reloaded verifier
@@ -142,7 +142,7 @@ its actions from itself:
   operator: an action that needs to read `/home/<user>/foo` or write
   to `/tmp/myapp-cache/` should be able to.
 - The default shipped systemd unit runs the runner as a dedicated
-  unprivileged user (`emisar`). That is the security boundary —
+  unprivileged user (`emisar`). That is the security boundary:
   actions can do whatever the OS lets that user do.
 - Linux action children always enter `no_new_privs`, so sudo and other
   setuid/setgid helpers cannot elevate them, and file capabilities on action
@@ -153,8 +153,8 @@ its actions from itself:
   an opt-in systemd hardening override. See
   [`runner/README.md`](../../../runner/README.md#hardening-optional).
 - The runner's **host is the trust anchor**, cloud-side too. Attributes a
-  runner declares about itself on connect — notably its `group`, which
-  selects the policy override governing dispatches *to that runner* — are
+  runner declares about itself on connect (notably its `group`, which
+  selects the policy override governing dispatches *to that runner*) are
   trusted as given. A compromised host could declare a looser `group` to
   widen its own policy, but it already has code execution on the very box
   the runner executes on, so it gains nothing it couldn't already do
@@ -187,10 +187,10 @@ its actions from itself:
 | Pack sets `LD_PRELOAD`/`BASH_ENV`        | Hijack-vector env vars rejected at pack validation.           |
 | Action outlives a dying runner           | Process-group SIGTERM/SIGKILL on cancel, timeout, and runner exit, with `Pdeathsig` (Linux) as the backstop for a hard kill. `Pdeathsig` reaches the direct child only, so a wrapper script that forks and exits orphans its worker unless it `exec`s or forwards signals. |
 | Inbound surface attacked                 | There is none.                                                |
-| Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor — a host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Pin `group` to the auth key for operator-authoritative scoping. |
+| Compromised runner declares a looser policy `group` | Accepted: `group` is runner-declared and the host is the trust anchor. A host that can forge it already owns the box the runner executes on, so widening its own policy buys nothing. Pin `group` to the auth key for operator-authoritative scoping. |
 | TOFU pack understates an action's `risk`/`kind`     | Accepted: those are runner-declared, so trusting a pack's *hash* = trusting its declared risk. A pack whose hash matches the configured published catalog carries its risk inside the hash that catalog authorized; a TOFU pack (no catalog entry) has no such anchor. Pin risk at trust-time if you need it author-independent. |
 | Compromised publisher of the configured catalog     | Accepted, bounded: whoever can write the catalog a portal fetches can authorize matching bytes already installed on a host, choose the trusted risk and kind that policy evaluates for those bytes, and set, lower, drop, or raise retirement floors. They cannot install bytes, bypass the runner's descriptor equality, argument validation, or local admission checks, or erase audit. The catalog is fetched over HTTPS, validated as a complete document, and its tarball URLs are pinned under the configured registry base, so an off-base or malformed document is refused and the last accepted snapshot is kept. |
-| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v5 signature from an Ed25519 or ECDSA P-256 leaf key. The claim binds the canonical origin, action, immutable pack, exact arguments, complete identity-bound runner references, reason, evidence and expected-result digests, operation, nonce, and time. A trusted offline CA vouches for the leaf key. The cloud holds neither private key, so it cannot forge or widen the claim. The freshness window and fsynced replay journal prevent nonce reuse while durable replay state is preserved. A replacement that reuses an external ID must preserve that state or rotate its identity and trust material. CA scope adds a group or label ceiling. The cloud can still withhold a call, lie about display names during discovery, or render narrative text that does not match the signed digests. A queued call can also become stale. Verify runner suffixes and bridge-supplied approval narratives out of band, and use narrow certificate scopes for the highest-trust workflows. See [`signed-dispatch.md`](signed-dispatch.md). |
+| Compromised control plane forges or replays a dispatch | With `signing.enforce_signatures` on, the runner requires a valid v5 signature from an Ed25519 or ECDSA P-256 leaf key. The claim binds the canonical origin, action, immutable pack, exact arguments, complete identity-bound runner references, reason, evidence and expected-result digests, operation, nonce, and time. A trusted offline CA vouches for the leaf key. The cloud does not hold either private key, so it cannot forge or widen the claim. The freshness window and fsynced replay journal prevent nonce reuse while durable replay state is preserved. A replacement that reuses an external ID must preserve that state or rotate its identity and trust material. CA scope adds a group or label ceiling. The cloud can still withhold a call, lie about display names during discovery, or render narrative text that does not match the signed digests. A queued call can also become stale. Verify runner suffixes and bridge-supplied approval narratives out of band, and use narrow certificate scopes for the highest-trust workflows. See [`signed-dispatch.md`](signed-dispatch.md). |
 
 ## Threats *not* considered (yet)
 
@@ -201,8 +201,8 @@ its actions from itself:
   storage write controls and the publication workflow authenticate that
   publisher operationally, not cryptographically. Catalog signing would add an
   independent publisher-identity check for first- or third-party catalogs.
-  (Distinct from *dispatch* signing — bridge-attested dispatch above, which is
-  shipped.)
+  (Distinct from *dispatch* signing, which is bridge-attested dispatch above and
+  is shipped.)
 - Cryptographic signing or external anchoring of the local JSONL chain.
   Verification covers the retained journal or retained suffix; it cannot prove
   that a privileged host operator did not replace or truncate the entire local
@@ -222,12 +222,12 @@ The runner-side guarantees above pair with the control plane's own model:
   inventory, trusted model catalogs, history, approvals, definitions and stored
   output. Runner and pack scope limits actions, not confidentiality within an
   account. Fresh diagnostic commands are actions and require current target access.
-- Every bearer credential is hashed at rest — sessions, email tokens,
+- Every bearer credential is hashed at rest: sessions, email tokens,
   invitations, API keys, runner auth keys, per-runner tokens, OAuth
   access/refresh tokens, MFA recovery codes. A database leak yields no
   replayable secrets.
-- Policy is default-deny: no policy row, no matching tier default, no
-  override → the dispatch is refused.
+- Policy is default-deny: with no policy row, no matching tier default, and no
+  override, the dispatch is refused.
 - An MCP credential is an `:mcp`-kind API key or an OAuth token (PKCE
   S256 only). It carries no per-key authorization scope of its own: what
   it may do is decided by the account's policy, the approval gate, and
@@ -238,7 +238,7 @@ The runner-side guarantees above pair with the control plane's own model:
 - Operator sign-in supports TOTP MFA with one-shot hashed recovery
   codes; approvals and credential lifecycles are all audited.
 - Emisar staff reach a customer workspace through a read-only console at
-  `/admin` — account search and an account detail view. Staff sign in with a
+  `/admin`: account search and an account detail view. Staff sign in with a
   staff login, never a workspace one: a row that only a release command run
   on a production node creates, an emailed code bound to the requesting
   browser plus the current authenticator code on every sign-in, and a 12-hour
@@ -249,7 +249,7 @@ The runner-side guarantees above pair with the control plane's own model:
   boundary. Every account detail view writes a `staff.account_viewed` event
   into that account's own audit trail, which the customer reads: access
   transparency, not an internal-only log. Support mutations are not on that
-  console at all — they run through a private, colocated action pack over
+  console at all. They run through a private, colocated action pack over
   release RPC, so each one is an ordinary audited run.
 - The BEAM operational dashboard at `/ops/live` is a separate surface
   behind the same staff login, and it is not account-attributed: it reads
@@ -300,7 +300,7 @@ available.
   pipeline; reviewing them is reviewing what the LLM can do on that host.
 - Audit the JSONL log for `dispatch_refused`, `validation_failed`,
   `execution_failed`, and `execution_started` events without a later terminal
-  event for the same request — they're often the most interesting signal.
+  event for the same request. They're often the most interesting signal.
 
 ## Changelog
 

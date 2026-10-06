@@ -238,7 +238,7 @@ across several surfaces.
 
 ✅ Good
 
-- Run detail wraps the status badge in `<.tooltip text={EmisarWeb.RunStatuses.meaning(@run.status)}>` — one sentence, the same string the `/docs/runs` status table renders.
+- Run detail wraps the status badge in `<.tooltip text={EmisarWeb.RunStatuses.meaning(@run.status)}>`: one sentence, the same string the `/docs/runs` status table renders.
 - A page intro ends with its own page's doc: the Runs page links `/docs/runs`, Billing links `/docs/billing` without a redundant plan-comparison link.
 - A Runners introduction explains what runners do and what the page manages;
   its side panel explains packs, grouping, or connection behavior.
@@ -248,7 +248,7 @@ across several surfaces.
   confirmation states the affected scope and what history is retained.
 - The install wizard's Resources rail links each install shape's own docs page (host install, containers, Kubernetes, Nomad, autoscaling) instead of one generic guide.
 - A callout that teaches a state's consequence ends with the doc link that owns the mechanism (the signed-only callouts link `/docs/signed-dispatch`).
-- `Identifier claim` reads "How emisar recognises a returning member. Never their email — people change those." — what it does plus the one consequence, no threat model.
+- `Identifier claim` reads "How emisar recognises a returning member. It never uses their email, because people change it.": what it does plus the one consequence, no threat model.
 - Entra's hint is "Entra gives every app a different `sub`, so pick `oid` — the same id directory sync uses.": the instruction and why it matters to them; the full identity-convergence argument lives in the Entra guide.
 
 ❌ Bad
@@ -264,10 +264,10 @@ across several surfaces.
 - A page intro linking a generically-related page (Runs → quickstart) instead of the page's own doc.
 - A status meaning typed inline in a LiveView, drifting from the docs table's wording.
 - A "learn more" that opens an in-app manual, modal tour, or second help center instead of the public docs page.
-- "The stable, provider-issued claim that identifies a user — restricted to immutable subject identifiers (a mutable claim like email would allow account takeover)." — defines the label, justifies the restriction, names the attack.
-- "`sub` is the OIDC standard and the only claim these providers issue for this." — explaining why a one-option list is short is our bookkeeping, not their decision.
+- "The stable, provider-issued claim that identifies a user — restricted to immutable subject identifiers (a mutable claim like email would allow account takeover).": defines the label, justifies the restriction, names the attack.
+- "`sub` is the OIDC standard and the only claim these providers issue for this.": explaining why a one-option list is short is our bookkeeping, not their decision.
 - A subtitle describing our implementation ("the issuer we fetch discovery from, and the OAuth client we authenticate as") rather than their inputs.
-- A hint that ends in a reasoning chain — "...which is exactly what SCIM provisions on, so sign-in and directory sync converge on one identity".
+- A hint that ends in a reasoning chain: "...which is exactly what SCIM provisions on, so sign-in and directory sync converge on one identity".
 
 **Enforced.** Content and UX review on new or changed console help. Check that the
 introduction stands alone, the side panel adds useful information, consequences

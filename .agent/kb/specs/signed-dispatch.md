@@ -8,8 +8,8 @@ updated: 2026-09-03
 
 A runner can be told to **refuse the control plane's authority**: with signing
 enforced, it executes an action only if the dispatch carries a valid signature
-from an Ed25519 or ECDSA P-256 leaf key held by a customer-authorized MCP bridge
-— and that signature is vouched for by a **certificate** issued by a trusted,
+from an Ed25519 or ECDSA P-256 leaf key held by a customer-authorized MCP bridge,
+and that signature is vouched for by a **certificate** issued by a trusted,
 offline certificate authority. The control plane **relays** the signature and
 the certificate; it holds no private key, so it cannot forge or alter one, widen
 its signed runner set, or originate a valid signed run. A preserved replay
@@ -19,22 +19,21 @@ material.
 
 This is the strongest defense emisar offers against a compromised control plane.
 It is **opt-in per runner** and a deliberate trade: while it's on, the portal,
-runbooks, scheduled runs, and API keys **cannot dispatch to that runner** — only
+runbooks, scheduled runs, and API keys **cannot dispatch to that runner**; only
 a signed MCP call runs.
 
 ## Why a certificate authority
 
 A runner trusts **one certificate authority**, not a list of individual operator
-keys. The CA — a keypair you generate and keep **offline**, or one your own PKI
-already holds — issues short-lived X.509 certificates that vouch for each
+keys. The CA (a keypair you generate and keep **offline**, or one your own PKI
+already holds) issues short-lived X.509 certificates that vouch for each
 operator's signing key. So:
 
 - **Onboarding an operator is one signature, zero runner edits.** You mint them a
   certificate with the CA; every runner that already trusts the CA accepts it.
   You never touch a runner's config to add a person.
 - **The CA private key never touches a runner or the control plane.** A
-  compromised portal can relay a certified dispatch but can never mint one —
-  that's the whole point.
+  compromised portal can relay a certified dispatch but can never mint one.
 - **Revocation is the certificate's lifetime.** There is no CRL and no OCSP:
   certificates are short-lived (24h by default), and a leaked key is useless
   once its certificate expires. You
@@ -58,7 +57,7 @@ operator's signing key. So:
    The narrative is bound by DIGEST rather than carried: together those two
    fields run to 6,000 characters against a 16 KiB envelope, and the argument
    bytes already establish that a large field is signed as a hash. Both are
-   optional and both are always hashed — an absent one signs as the digest of
+   optional and both are always hashed: an absent one signs as the digest of
    the empty string. This binds the narrative the bridge supplied. The portal
    compares the text it accepts with those signed digests. The runner receives
    only the digests, not the narrative text, so signing does not independently
@@ -74,15 +73,15 @@ operator's signing key. So:
    change the action, pack, args, reason, operation, origin, or target set without
    invalidating the signature, cannot alter the CA-signed certificate, and has
    no key to mint either.
-3. The runner verifies, in order: the certificate is signed by a CA it trusts →
-   the certificate is inside its validity window → this runner's identity suffix,
+3. The runner verifies, in order: the certificate is signed by a CA it trusts;
+   the certificate is inside its validity window; this runner's identity suffix,
    derived from its local external ID, occurs exactly once in the signed target
-   set → the signed
+   set; the signed
    portal origin, action, immutable pack bytes, exact arguments, reason, and
-   operation match the delivered dispatch → the certificate's **scope** matches
-   this runner's own group/labels → the attestation is inside the freshness
-   window → the attestation signature verifies under the **leaf key the
-   certificate vouches for** → the nonce has not been seen. Only then does it run.
+   operation match the delivered dispatch; the certificate's **scope** matches
+   this runner's own group/labels; the attestation is inside the freshness
+   window; the attestation signature verifies under the **leaf key the
+   certificate vouches for**; the nonce has not been seen. Only then does it run.
    Anything else is refused.
 
 The v5 signature binds the **exact runner set** with refs shaped as
@@ -96,7 +95,7 @@ asserted by the offline CA and matched against each runner's local
 means the signed target set may contain any runner that trusts the CA.
 
 The certificate's validity window and the attestation's freshness window are
-**independent gates** — a long-lived certificate never widens the replay window.
+**independent gates**: a long-lived certificate never widens the replay window.
 
 ## The certificate profile
 
@@ -123,7 +122,7 @@ URIs, which makes even a shared corporate root safe by construction.
 
 ### Scope, as a URI SAN
 
-Scope rides in the SAN's query, in ONE canonical spelling — a URI that parses
+Scope rides in the SAN's query, in ONE canonical spelling. A URI that parses
 but is spelled differently is refused rather than normalized, so an issuer and a
 verifier can never disagree about what was authorized.
 
@@ -136,7 +135,7 @@ param  = "group=" value / "label." key "=" value
 
 Keys and values are percent-encoded on the same terms: anything outside RFC 3986
 `unreserved` is encoded, with uppercase hex and minimal encoding. Keys are
-encoded too because a runner label key is free-form operator input —
+encoded too because a runner label key is free-form operator input:
 `runner.labels` is a bare YAML map plus `EMISAR_RUNNER_LABEL_<KEY>` env, with no
 charset the config layer enforces. No query at all means the empty scope: valid
 on any runner that trusts the anchor.
@@ -144,7 +143,7 @@ on any runner that trusts the anchor.
 The whole URI is bounded at 512 bytes.
 
 Matching happens ONLY against the runner's local `runner.group` /
-`runner.labels`, never a value the control plane supplies — that is the
+`runner.labels`, never a value the control plane supplies. That is the
 redirect guard. A label pinned to the empty string still requires the runner to
 CARRY that label; it does not match a runner that lacks it.
 
@@ -178,11 +177,11 @@ the CA **private** key to store offline, and the two MCP env vars.
    `name` is a display label the runner advertises so an operator can confirm
    which anchors a host accepts; trust comes from the certificate alone.
 
-2. **Store the CA private key offline** — a vault or an operator's machine, never
+2. **Store the CA private key offline**: a vault or an operator's machine, never
    a runner and never the control plane. You re-sign certificates with it as they
    expire.
 
-3. **Give the MCP bridge the two env vars** (see [`mcp/README.md`](../../../mcp/README.md)) — never
+3. **Give the MCP bridge the two env vars** (see [`mcp/README.md`](../../../mcp/README.md)), never
    on the portal, never in version control:
 
    ```sh
@@ -200,7 +199,7 @@ the CA **private** key to store offline, and the two MCP env vars.
 
 ## Onboarding more operators and runners
 
-- **A new operator** (the CA already exists): mint them a certificate — no runner
+- **A new operator** (the CA already exists): mint them a certificate, with no runner
   change at all.
 
   ```sh
@@ -229,10 +228,10 @@ the CA **private** key to store offline, and the two MCP env vars.
 
 `--scope` binds a certificate to runners by their **local** identity:
 
-- `--scope group=prod` — valid only on runners whose `runner.group` is `prod`.
-- `--scope group=prod,region=us` — also requires the runner to carry label
+- `--scope group=prod`: valid only on runners whose `runner.group` is `prod`.
+- `--scope group=prod,region=us`: also requires the runner to carry label
   `region=us`.
-- empty (the default if `--scope` is omitted) — valid on any runner that trusts
+- empty (the default if `--scope` is omitted): valid on any runner that trusts
   the CA.
 
 The runner first requires exactly one ref with its identity suffix in the
@@ -250,21 +249,19 @@ Certificates are short-lived, so the normal path is **re-issue, not reconfigure*
    shorter than `--ttl`.
 2. **Revoke an operator.** Stop re-issuing their certificate; once the current
    one expires (≤ `--ttl`) they can no longer dispatch. For an immediate cutover,
-   rotate the CA (below). There is no CRL yet — short TTLs *are* the revocation
+   rotate the CA (below). There is no CRL yet; short TTLs *are* the revocation
    mechanism.
-3. **Rotate the CA** with no downtime — `trusted_cas` is a list, so it's
+3. **Rotate the CA** with no downtime. `trusted_cas` is a list, so it's
    add-then-remove and `SIGHUP` applies each step live:
    - Add the new CA alongside the old, `SIGHUP` (both are now trusted).
    - Re-issue operator certificates under the new CA.
    - Remove the old CA from the runner config, `SIGHUP` again.
 
 A **long `--ttl`** (e.g. `1y`, for a solo or break-glass setup) trades away that
-revocation granularity — there's no way to retract a long-lived certificate short
+revocation granularity: there's no way to retract a long-lived certificate short
 of rotating the CA. Prefer short TTLs with automated renewal.
 
 ## Accepted limitations
-
-Be clear-eyed about what this does and doesn't guarantee:
 
 - **Integrity, not availability.** A compromised control plane can still
   *withhold* or refuse to relay a signed dispatch. Signing stops it from
@@ -297,14 +294,14 @@ Be clear-eyed about what this does and doesn't guarantee:
   value, and restart. Rotating trust makes every attestation from the discarded
   replay history unverifiable.
 - **Queued-while-offline.** A dispatch that sits queued (runner offline) longer
-  than `max_attestation_age` — or past the certificate's `valid_until` — is
+  than `max_attestation_age`, or past the certificate's `valid_until`, is
   refused and must be re-issued.
 - **Approvals + signing.** A signed run that hits a `require_approval` policy is
   parked; on approval it is re-dispatched with its **original** signature and
   certificate. At that point it must still be inside **both** the
   `max_attestation_age` freshness window **and** the certificate's validity
   window, or the runner refuses it. If you combine signing with approvals, set
-  both comfortably above your approval SLA — at the cost of a longer replay
+  both comfortably above your approval SLA, at the cost of a longer replay
   window.
 
 See [`security-model.md`](security-model.md) for how this sits in the

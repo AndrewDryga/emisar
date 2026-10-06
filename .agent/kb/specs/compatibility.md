@@ -66,7 +66,7 @@ envelope before closing the session. A missing or unparseable reported version
 classifies as `:unknown` and is never rejected, even with enforcement on;
 enforcement acts only on a parseable version below the minimum. That is
 deliberate: the version is self-reported, so it is an operational hygiene
-signal, not a security control — an authenticated peer gains no capability by
+signal, not a security control; an authenticated peer gains no capability by
 lying about it, and a `dev` build must not be locked out. Both behaviors are
 pinned by `Emisar.CompatTest` and the enforcement call sites act on
 `:unsupported` alone.
@@ -77,7 +77,7 @@ components are expected to move together (the greenfield assumption). The v1
 support window is deliberately narrow and coordinated: when `v1.0.0` is cut,
 `runner_minimum` and `mcp_minimum` are raised to the coordinated v1 component
 releases shipped with it, so the certified pair is exactly the v1 portal with
-the v1 runner and bridge — proven by the same-repo gates and the wire golden at
+the v1 runner and bridge, proven by the same-repo gates and the wire golden at
 the release tag, not by a cross-version binary matrix against 0.x artifacts.
 Raising the minimums does not by itself disconnect deployed 0.x components:
 enforcement is a separate, deliberate flip taken only after operators have had
@@ -163,8 +163,8 @@ persistence layer, compiler, and MCP tools consume and return this same object;
 there is no alternate YAML or legacy flat-step contract.
 
 **How a runbook is referenced.** `runbook_ref` is `slug@release`. The slug is
-the runbook's stable public identity — editable only until the first release,
-frozen afterwards because refs depend on it — and the number is a release
+the runbook's stable public identity (editable only until the first release,
+frozen afterwards because refs depend on it), and the number is a release
 number counting publishes of that runbook, 1..N. It is not a save counter and
 not a definition schema version. Execution accepts only the LIVE release; an
 older number answers `not_live` rather than silently running current content.
@@ -265,14 +265,14 @@ advertises `response_types_supported: ["code"]`, grants `authorization_code`
 and `refresh_token`, PKCE `S256` only (`plain` is rejected and the challenge
 is mandatory), `token_endpoint_auth_methods_supported: ["none"]`, scopes
 `mcp` and `offline_access`, `authorization_response_iss_parameter_supported`
-(RFC 9207 — every authorization redirect, success or error, carries `iss`
+(RFC 9207: every authorization redirect, success or error, carries `iss`
 equal to the metadata `issuer`), and `client_id_metadata_document_supported`.
 Client registration accepts both mechanisms: a Client ID Metadata Document
 client presents an HTTPS document URL as its `client_id`, which the server
 fetches and validates on every authorization and addresses the client by
 thereafter; a deprecated DCR client is addressed only by its issued id. The
 `resource` parameter must exactly equal the advertised MCP resource URI.
-Issued credentials are recognizable prefixed formats — authorization codes
+Issued credentials are recognizable prefixed formats: authorization codes
 `emoc-`, access tokens `emo-`, refresh tokens `emor-` (rotated on use, issued
 only with `offline_access`), device codes `emdg-`, and the per-client `emk-`
 API keys the device flow mints. Lifetimes (60 s codes, 1 h access tokens,
@@ -280,27 +280,27 @@ API keys the device flow mints. Lifetimes (60 s codes, 1 h access tokens,
 response via `expires_in`, not frozen contract. The device-authorization
 response fields (`device_code`, `user_code`, `verification_uri`,
 `verification_uri_complete`, `expires_in`, `interval`) and the token poll's
-emisar-specific success payload — a `client_keys` map of per-client API keys,
+emisar-specific success payload (a `client_keys` map of per-client API keys,
 plus `account_id`, `account_slug`, and `account_name` for the approved account,
-not an OAuth token response — are frozen; today's poll errors are
+not an OAuth token response) are frozen; today's poll errors are
 `authorization_pending`, `access_denied`, `expired_token`, `invalid_grant`, and
 `invalid_request` for a missing `device_code`, and `slow_down` is never emitted.
 
 **What happens on skew.** An unknown grant type fails with
 `unsupported_grant_type`, a wrong `resource` with `invalid_target`, and an
-unregistered `redirect_uri` with a non-redirecting error page — explicit
-failures, never silent downgrades. The frozen part of the metadata is the
+unregistered `redirect_uri` with a non-redirecting error page. These are
+explicit failures, never silent downgrades. The frozen part of the metadata is the
 issuer, the endpoint paths, and the meaning of every advertised member;
 capability sets and error vocabularies may still grow additively, since
-RFC 8414 clients ignore unknown members — adding a scope or grant type is not
+RFC 8414 clients ignore unknown members. Adding a scope or grant type is not
 a breaking change. The device poll follows the same rule for terminal outcomes: the deployed
 installer reads a poll verdict only from an HTTP 400 body (rate limits,
 proxy responses, and blips on any other status keep polling), retries only
 `authorization_pending`, and fails cleanly on every other or unknown 400
-code — so a new terminal poll error is an additive change. The breaking
+code, so a new terminal poll error is an additive change. The breaking
 direction is a new retryable code: a deployed installer would abort on it,
 so `slow_down` or any other retry signal needs a new poll contract. Because
-that door is shut, the poll's throttle is shaped to keep the condition
+the current contract cannot carry one, the poll's throttle is shaped to keep the condition
 UNREACHABLE for legitimate use rather than reportable: it buckets per
 `device_code`, so each pending authorization has its own allowance and
 concurrent installs behind one NAT, VPN or CI egress cannot exhaust each
@@ -333,9 +333,9 @@ honor RFC 7644's one-based `startIndex` and `count`, return at most 100 resource
 per page, and report the filtered collection's full count in `totalResults`;
 malformed pagination values fail with 400 `invalidValue`. Users support idempotent
 create/reconcile and `userName eq`/`externalId eq` filters only. PATCH accepts
-`replace` and `add` on exactly five paths, matched case-insensitively — `active`,
-`displayName`, `name.formatted`, `name.givenName`, `name.familyName` — plus
-Entra's pathless form, whose value object may carry `active` and `displayName`
+`replace` and `add` on exactly five paths (`active`, `displayName`,
+`name.formatted`, `name.givenName`, `name.familyName`), matched case-insensitively,
+plus Entra's pathless form, whose value object may carry `active` and `displayName`
 and nothing else. PUT requires a boolean `active` and takes the name from
 `displayName`, else `name.givenName` and `name.familyName` joined, else
 `name.formatted`.
@@ -348,7 +348,7 @@ creates a fresh resource with a new server `id`; the display name is never
 identity. Groups support membership `add`/`remove`/`replace` including Okta's filtered removal form,
 `displayName eq` and `externalId eq` filters, and DELETE removes the Group resource, clears its
 members, and revokes authorization derived from its mappings. Several tolerant
-parses are load-bearing for specific IdPs and are part of the contract: the
+parses are needed by specific IdPs and are part of the contract: the
 case-insensitive and schemeless `Authorization` header (Okta header-auth
 apps), unquoted `eq` filter values, the externalId-less Group create used by
 JumpCloud's activation probe, and the Users name precedence above, which puts
@@ -359,9 +359,9 @@ unsupported or unparseable Group filters fail with the same 400 `invalidFilter` 
 **What happens on skew.** An IdP sending an unsupported operation gets an
 explicit SCIM error (`invalidPath`, `invalidFilter`, `tooMany`, 409
 `uniqueness`/`mutability`), never silent acceptance, and a rejected request
-changes nothing. Renaming either registered value, narrowing a tolerant parse,
+does not change anything. Renaming either registered value, narrowing a tolerant parse,
 or reinterpreting `id`, `externalId`, or Group member references breaks deployed
-IdP configurations that only the customer can update — after 1.0 all of it moves only through the
+IdP configurations that only the customer can update. After 1.0 all of it moves only through the
 deprecation path, and already-issued `ems-` tokens must keep authenticating.
 
 ### Audit export for SIEM
@@ -388,7 +388,7 @@ event today carries the 15 top-level fields `id`, `occurred_at`,
 row, column order, CRLF line endings, always-quoted fields, and
 formula-injection guard are likewise fixed, since operators parse the saved
 artifact. Its first column is `id`, the same identifier the NDJSON export
-carries — the only value the two share, and therefore what makes an auditor's
+carries. It is the only value the two share, and therefore what makes an auditor's
 downloaded file reconcilable with the same window pulled from a SIEM. The two
 agree on nothing else: the CSV carries `severity` and `auth_method` that the
 feed does not, omits `account_id`, `user_agent` and `mcp_client_metadata`, and
@@ -398,7 +398,7 @@ added later without breaking positional parsers.
 
 **`payload` is the one frozen field whose INTERIOR is not frozen.** It is an
 event-type-specific object with no schema and no version of its own, written
-with nil keys dropped — so a key is not guaranteed to appear even across two
+with nil keys dropped, so a key is not guaranteed to appear even across two
 events of the same type, and its shape may change with the feature that emits
 it. Only the field's presence and its JSON-object type are contract. Anything a
 correlation rule must depend on belongs at the top level instead, which is why
@@ -438,8 +438,8 @@ help
 ```
 
 `completion` and `help` are cobra's, not ours: their subcommands, flags and
-output text come from the CLI library. The verb NAMES are frozen — an operator's
-shell profile calls `emisar completion zsh` — but their internals are explicitly
+output text come from the CLI library. The verb NAMES are frozen (an operator's
+shell profile calls `emisar completion zsh`), but their internals are explicitly
 OUTSIDE this freeze, because a cobra upgrade would otherwise turn a dependency
 bump into a compatibility event for a promise nobody made. `completion
 --no-descriptions` is cobra's flag and is recorded in the surface golden as a
@@ -460,7 +460,7 @@ say "run connect" without naming the binary.**
 and they freeze that way.** `install.sh --bin-dir/BIN_DIR` installs a system
 binary into a system path; `install-mcp.sh --install-dir/INSTALL_DIR` and
 `install-mcp.ps1 -InstallDir` install a per-user bridge. They are three
-different products' conventions — POSIX long flags and a PowerShell parameter —
+different products' conventions (POSIX long flags and a PowerShell parameter),
 and unifying them would rename a flag every existing bootstrap line passes.
 `-ConnectAll` exists only on the PowerShell installer because only it can
 enumerate Windows clients at install time; the Unix path connects afterwards
@@ -470,9 +470,9 @@ with `emisar-mcp connect --all`.
 `cloud.url` in config, `EMISAR_URL` in the environment, `--url` on
 `emisar-mcp connect`, `-PortalOrigin` in PowerShell, and a bare positional URL
 on `auth login`/`auth status`. Each is that surface's own convention and each
-freezes. The one behaviour worth stating: `EMISAR_URL` silently overrides the
+freezes. `EMISAR_URL` silently overrides the
 runner's configured `cloud.url` with no provenance in the output, and the bridge
-REQUIRES it in stdio mode — so an `EnvironmentFile` carrying it for the bridge
+REQUIRES it in stdio mode, so an `EnvironmentFile` carrying it for the bridge
 also retargets `doctor`, `pack install`, and the daemon on that host.
 
 **Packs live at `/etc/emisar/packs` on a host install and `/opt/emisar/packs` in
@@ -480,7 +480,7 @@ the container image, and both freeze.** The host path is what `install.sh` has
 always written and what every deployed runner's `paths.packs` names; the
 container path is the image's own layout, where `/etc` is a config mount rather
 than a place for shipped content. A pack tree holds shell programs, so `/etc` is
-the arguable one — but moving it would break every installed host for a tidiness
+the arguable one, but moving it would break every installed host for a tidiness
 that no operator asked for. `emisar pack list` prints the resolved directory, so
 the answer to "where do packs live" is a command rather than a memorized path.
 
@@ -488,10 +488,10 @@ the answer to "where do packs live" is a command rather than a memorized path.
 they freeze that way.** `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
 `SERVICE_USER`, `SERVICE_GROUP`, `ASSUME_YES`, `NO_START`, `NO_SERVICE`, and
 `QUARANTINE_DISPATCH_LOG` (set to the literal `1`, it moves the durable dispatch
-log aside so the runner boots on a clean one — the destructive knob of the set)
+log aside so the runner boots on a clean one, and is the destructive knob of the set)
 are the conventional spellings for a shell installer, and `VERSION` in particular is
-set by GitLab CI and most Makefiles — which is exactly why `emisar update`
-maintains a denylist that strips all of them before re-running the installer
+set by GitLab CI and most Makefiles, which is exactly why `emisar update`
+has a denylist that strips all of them before re-running the installer
 under sudo (see `selfupdate.go`, and the test that pins the runner-identity half
 of it). The prefix would have been better from the start; renaming them now
 breaks every bootstrap line and every automation that sets one, for no
@@ -509,7 +509,7 @@ script in the runner and installer test suites.
 **`paths.work_dir` in the runner config is accepted and ignored.** `install.sh`
 wrote it into every host's config until 2026-08-06 and nothing has ever read
 it. The loader rejects unknown keys, so the field stays until this document's
-deprecation path retires it — runner 0.24.0 removed it and refused to start on
+deprecation path retires it: runner 0.24.0 removed it and refused to start on
 every host installed before that date. `connect` warns about the line at boot
 and `doctor` reports it.
 
@@ -529,7 +529,7 @@ the way out and there was none. Passing both is refused rather than resolved,
 since silently preferring one is how an operator signs with a key they did not
 think they passed.
 
-Note also that three flags in this group contain "key" and mean three different
+Three flags in this group contain "key" and mean three different
 things: `--key` is an ALGORITHM, `--ca-key`/`--ca-key-file` are key MATERIAL,
 and `--key-name` is a certificate common name. They freeze as they are.
 
@@ -541,8 +541,8 @@ install-mcp.sh though the runner reads it directly, and is what `emisar update`
 sends with its release lookups. `GH_TOKEN` and `GITHUB_TOKEN` are the GitHub
 CLI's own spellings, which `emisar update` honours when it shells out to verify
 the release attestation: an exported `GH_TOKEN` or `GITHUB_TOKEN` wins, and
-`EMISAR_GITHUB_TOKEN` only fills the gap when neither is set — so a CI host that
-already exports one gets that token used, and setting ours changes nothing.
+`EMISAR_GITHUB_TOKEN` only fills the gap when neither is set, so a CI host that
+already exports one gets that token used, and setting ours does not change anything.
 `NO_COLOR` set to any value, and `TERM=dumb`, turn ANSI color off in every
 command's output; that is the pair a log pipeline or CI job configures, and
 `NO_COLOR` is a published cross-vendor convention we honour rather than own.
@@ -554,27 +554,27 @@ than the binary's. `PATH` (host action discovery) and the publisher-only
 surface golden covers flags, not environment, so this list is the only review
 any of them get.
 
-The runner reads per-user config from the platform's own config directory —
-`os.UserConfigDir()`, which honours `$XDG_CONFIG_HOME` on Unix and is
-`~/Library/Application Support` on macOS, the same function `emisar-mcp` uses —
+The runner reads per-user config from the platform's own config directory
+(`os.UserConfigDir()`, which honours `$XDG_CONFIG_HOME` on Unix and is
+`~/Library/Application Support` on macOS, the same function `emisar-mcp` uses)
 and still from the literal `~/.config/emisar` where an existing config sits.
 `/etc/emisar/config.yaml` wins over both. It previously hardcoded `~/.config`
 while calling that XDG, so on a Mac the two binaries disagreed about where
 per-user config lives.
 
 The runner's exit codes match the bridge's: **0 success, 2 for a usage
-failure — an unknown command, an unknown flag, a missing or extra argument —
+failure (an unknown command, an unknown flag, a missing or extra argument),
 130 for an interrupt, and 1 for everything else**, which is a failure of the
 work rather than of the invocation. It previously answered 1 for all of them,
 so a script could not tell a mistyped flag from a misconfigured host from an
 action that ran and failed. That matters because `action run` is the documented
 post-install verification step, and this section froze the bridge's codes
-explicitly while saying nothing about the runner's — so the flat 1 would have
+explicitly while saying nothing about the runner's, so the flat 1 would have
 frozen by default.
 
 The runner's global flags are `--config`, `--json`, `--packs-dir`, and
 `-v/--version`. **Every flag `emisar <verb> --help` documents on the commands
-above is frozen with its command** — the list is deliberately not enumerated
+above is frozen with its command**. The list is deliberately not enumerated
 here, because an enumeration drifts silently as verbs gain flags and then reads
 as permission to rename the ones it forgot. `action run --arg/--reason/
 --timeout/--stream`, `pack install --hash/--dest/--force`, `pack uninstall --dest/--yes`, `pack suggest
@@ -595,8 +595,8 @@ It records each flag's SHORTHAND and TYPE, whether the command honours
 execute time. It previously recorded only long flag names, which left holes
 exactly where this section makes promises: `events tail -f` and `-v/--version`
 are frozen by name and were unrecorded, a string flag becoming a boolean was
-invisible, and dropping a command's `--json` annotation — which turns a frozen
-`status --json` into "does not emit JSON" — left the golden green. The structured output
+invisible, and dropping a command's `--json` annotation (which turns a frozen
+`status --json` into "does not emit JSON") left the golden green. The structured output
 `--json` emits exists to be parsed by scripts, so those shapes freeze with the
 flags: after 1.0 they change only additively. That includes the complete
 `status --json` report and its embedded `runtime` object.
@@ -610,19 +610,19 @@ The golden records commands and flags, not payload shape, so the emitted keys
 are pinned separately by `TestJSONPayloadKeysAreFrozen`, which asserts the exact
 top-level key set of each payload from a fully-populated value:
 
-- `version` — `version`, `go`, `os`, `arch`, and the VCS fields `commit`,
+- `version`: `version`, `go`, `os`, `arch`, and the VCS fields `commit`,
   `built_at`, `dirty`. The VCS fields appear only when the toolchain stamped
   them. `dirty` is deliberately tri-state: present `false` means the build was
   clean, and an absent key means the build carried no VCS stamp at all, so a
   fleet asking whether any host runs a modified binary can tell "no" from
   "cannot say".
-- `doctor` and `status` — `status`, `passed`, `warned`, `failed`, `checks`, plus
+- `doctor` and `status`: `status`, `passed`, `warned`, `failed`, `checks`, plus
   `status`'s optional embedded `runtime`. The counts are named for the outcomes
   they count and share one grammar; each entry of `checks` is `name`, `status`,
   `detail`.
-- `audit verify` — `path`, `intact`, and `error`, which is present only when a
+- `audit verify`: `path`, `intact`, and `error`, which is present only when a
   file's chain is broken.
-- `runtime` (also the on-disk `runtime-status.json`) — `schema_version`, `pid`,
+- `runtime` (also the on-disk `runtime-status.json`): `schema_version`, `pid`,
   `state`, `started_at`, `updated_at`, `heartbeat_every_seconds`, `packs`,
   `actions`, `unavailable_actions`, `degraded_packs`, `advertisement_pending`,
   `inflight_runs`, `connection_attempts`, and the optional `connected_at` and
@@ -690,10 +690,10 @@ LOCALAPPDATA            Windows root for the Hermes/Goose config files
 ```
 
 The last eight are conventions the bridge honours rather than names it owns, and
-they freeze as honoured. The config-root group is the load-bearing one:
+they freeze as honoured. The config-root group is the one that matters most:
 `XDG_CONFIG_HOME`, `APPDATA`, and the three client-specific roots above decide
 which files `connect` and `disconnect` edit in the operator's home directory,
-and which directory holds the bridge's own stored credentials — so a change to
+and which directory holds the bridge's own stored credentials, so a change to
 how they are resolved changes where an already-connected operator's
 configuration lives. On Linux the Goose, OpenCode, and Zed adapters read a
 literal `~/.config` rather than `XDG_CONFIG_HOME`, so a custom
@@ -712,8 +712,8 @@ private-registry feature requires and 1.0 therefore freezes: `packctl catalog
 build` (`--packs`, `--out`, `--base-url`, `--previous`), `packctl catalog
 publish` (`--dir`, `--bucket`, `--dry-run`), the global `--json`, and the
 static `v1/` artifact tree `build` emits (the registry layout below).
-Customers run these in their own CI to host private registries — the
-private-registry guide documents exactly this flow — so this subset follows
+Customers run these in their own CI to host private registries (the
+private-registry guide documents exactly this flow), so this subset follows
 the same deprecation path as the runner CLI. Every other `packctl` verb and
 flag stays maintainer-internal and free to change.
 
@@ -733,14 +733,14 @@ the append-only events journal, signing/nonce state, and the installed pack
 trees under the configured pack directories.
 
 **Why it is a surface.** A new binary always boots against files an older
-binary wrote — this state is "deployed" the way a production-applied DB migration is,
+binary wrote: this state is "deployed" the way a production-applied DB migration is,
 regardless of product version. Both halves were broken in one day pre-0.12:
 deleting the dispatch-log format migration made every host carrying v0.9
 history silently refuse all dispatches, and a stricter pack YAML parser made
 one already-installed pack file boot-fatal, crash-looping a production runner
 1,164 times. The rule since: a change to how this state is read either keeps
 reading the old form or migrates it forward on boot (the dispatch log now does
-both — legacy entries and the legacy path migrate with an audit-visible log
+both: legacy entries and the legacy path migrate with an audit-visible log
 line); a per-item fault (one pack, one file) degrades that item loudly and
 never the whole runner.
 
@@ -796,8 +796,8 @@ environment is `VERSION`, `BIN_DIR`, `ETC_DIR`, `DATA_DIR`, `LOG_DIR`,
 named rather than summarized, because a variable this inventory does not name
 is a variable nobody reviews before it freezes.
 
-A yes/no variable here — `ASSUME_YES`, `NO_START`, `NO_SERVICE`, and
-`EMISAR_ALLOW_INSECURE` in the bridge and PowerShell installer — accepts `1`,
+A yes/no variable here (`ASSUME_YES`, `NO_START`, `NO_SERVICE`, and
+`EMISAR_ALLOW_INSECURE` in the bridge and PowerShell installer) accepts `1`,
 `true`, `yes`, `y` or `on`, in any case. They previously required the literal
 `1`, so `ASSUME_YES=true` left
 the installer interactive, hit a prompt with no terminal and died, and
@@ -860,7 +860,7 @@ delete every stored direct-CLI account and the bridge's rotation state). Both
 ignore `EMISAR_URL` and `EMISAR_API_KEY` for credential decisions, because they
 operate on per-account stored state rather than an ambient key. `connect`
 requests a dedicated `emisar-mcp-cli` key plus one key per selected client from
-a single device-authorization grant, and writes nothing until every requested
+a single device-authorization grant, and does not write anything until every requested
 key validates. A stored CLI credential that still authenticates against the
 same endpoint makes a rerun hands-off; a credential the control plane rejects
 starts a fresh approval, while a transport failure does not. This drives the
@@ -876,7 +876,7 @@ key order, and every unrelated setting survive byte for byte. VS Code means the
 stable default user profile: its user-level `mcp.json` references an owner-only
 `vscode.env` beside the bridge's credential state instead of carrying the API
 key in a file the editor may synchronize. Other profiles and VS Code Insiders
-use the console's manual snippet. `--auto-permit` additionally silences a
+use the console's manual snippet. `--auto-permit` also silences a
 client's own per-tool prompt for the emisar server alone, and only for the four
 clients that scope that setting to one server: Claude Code, Gemini CLI, Codex
 CLI, and Grok CLI. Every adapter's install, unrelated-setting preservation,
@@ -903,14 +903,14 @@ tag is published), the `EMISAR_ENROLLMENT_KEY` / `EMISAR_URL` /
 `EMISAR_GROUP` / `EMISAR_RUNNER_ID` environment
 variables, the default config at `/etc/emisar/config.yaml`, state under
 `/var/lib/emisar`, packs under `/opt/emisar/packs`, the observation-only
-default (baked admission caps at `low` risk), and the non-root uid 65532 —
-the container and Kubernetes docs and operators' extension Dockerfiles
+default (baked admission caps at `low` risk), and the non-root uid 65532.
+The container and Kubernetes docs and operators' extension Dockerfiles
 (`FROM` + tools + `emisar pack install`) all depend on these.
 
 **How it is versioned today.** Tags follow the runner release version, and a
 published version tag is never moved to a different digest (the release
 workflow refuses); each release's notes carry the digest reference. A given
-digest is immutable — same runner, packs, and OS packages forever. The baked
+digest is immutable: same runner, packs, and OS packages forever. The baked
 pack set (`runner/release/container-packs.txt`) is deliberately small and may
 change between releases; it is not itself a frozen contract.
 
@@ -926,7 +926,7 @@ name or a major release, following the deprecation path.
 metadata and binaries from: `https://emisar.dev/releases/runner` and
 `https://emisar.dev/releases/mcp`. Each component serves `/latest.json`, a
 per-release `/<tag>/manifest.json`, and that release's artifacts beside its
-manifest at `/<tag>/<artifact>` — the platform archives, a `.sha256` sidecar for
+manifest at `/<tag>/<artifact>`: the platform archives, a `.sha256` sidecar for
 each, `SHA256SUMS` (`SHA256SUMS-MCP` for the bridge), and the checksum file's
 `.sigstore.jsonl` attestation bundle. `install.sh`, `install-mcp.sh`,
 `install-mcp.ps1`, and the runner's `emisar update` each hard-code the origin and
@@ -947,7 +947,7 @@ Every `/<tag>/` object is published once and never rewritten, so a release
 address is immutable.
 
 **What happens on skew.** There is no negotiation layer and no fallback for the
-layout itself — the GitHub Releases fallback covers the mirror being DOWN, not
+layout itself; the GitHub Releases fallback covers the mirror being DOWN, not
 the mirror having MOVED. Moving a path, renaming a manifest key, or serving
 `schema_version: 2` breaks `emisar update` on every deployed runner at once, and
 breaks every bootstrap line an operator saved, since a deployed consumer rejects
@@ -966,10 +966,10 @@ still serving version 1 through the deprecation window.
 
   A content hash is written `sha256:<64 hex>` wherever it appears in a
   document, and that prefix is a FIXED LITERAL, not an algorithm selector.
-  Every consumer hard-codes it — the tarball path builder trims exactly that
+  Every consumer hard-codes it: the tarball path builder trims exactly that
   string, the runner's normalizer trims exactly that string, and every
-  validating regex spells it out — so a hash announced under a different
-  algorithm would not be read as a different algorithm, it would simply fail to
+  validating regex spells it out. So a hash announced under a different
+  algorithm would not be read as a different algorithm; it would simply fail to
   parse. Changing the digest is a new `v2/` layout, not a new prefix value,
   because the path segment is the bare hex with the prefix stripped and every
   published object is immutable at its current address.
@@ -987,9 +987,9 @@ still serving version 1 through the deprecation window.
   On emisar.dev those are portal ROUTES, and the two tarball paths redirect to
   the content-addressed CDN object. A private registry is a bucket with no
   portal in front of it, so `packctl catalog build` also writes `packs.json`
-  and `packs/suggest.json` as byte-identical aliases of their `v1/` originals —
-  so `pack suggest`, `pack update` and current-version `pack diff` work against
-  static storage. Update and diff accept the catalog's `content_hash` and
+  and `packs/suggest.json` as byte-identical aliases of their `v1/` originals,
+  so that `pack suggest`, `pack update` and current-version `pack diff` work
+  against static storage. Update and diff accept the catalog's `content_hash` and
   `tarball_url` as well as the hosted index's `hash` and tarball facade. The tarball facade is NOT
   aliased: a bucket cannot express a redirect without duplicating every
   archive, so `pack install <url> --hash` is the supported shape for a private

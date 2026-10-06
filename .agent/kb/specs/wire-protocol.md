@@ -10,7 +10,7 @@ The runner and portal communicate over one TLS websocket initiated by the
 runner. The portal never opens a connection to a runner. Every message is a JSON
 object with `type` and `protocol_version`; action-correlated messages also carry
 `request_id`. The portal generates each ID and the runner treats it as an opaque
-correlation value: 1–64 ASCII base64url characters (`[A-Za-z0-9_-]`). The
+correlation value: 1 to 64 ASCII base64url characters (`[A-Za-z0-9_-]`). The
 runner rejects values outside that stable safety boundary before lookup,
 logging, acknowledgement, or in-memory retention.
 
@@ -53,15 +53,15 @@ upgrade fail.
 
 Both HTTP bodies obey the same additive rule as the websocket frames: the runner
 ignores fields it does not know, so the portal may grow either response without
-coordinating a runner release. That is load-bearing for `register` in particular
-— a host reaching it has no cached token to fall back on, so a rejected response
+coordinating a runner release. That matters especially for `register`: a host
+reaching it has no cached token to fall back on, so a rejected response
 is an enrollment that cannot complete at all. A bounded body and exactly one
 JSON document are still required.
 
 **Token rotation.** A token carries a 90-day life and a `refresh_after` the
 runner persists beside it. Once that passes, the runner exchanges the token for
 a successor over `POST /runner/token/refresh`, authenticated by the token
-itself — no enrollment key, no host access, which is the point: a leaked token
+itself, with no enrollment key and no host access, so a leaked token
 stops working without anyone touching the machine. The portal answers `409
 not_due` before then, and the outgoing token stays valid for a grace window
 after its successor is minted, so a runner that receives one and fails to
@@ -95,9 +95,9 @@ process restart. Rotation is complete only when the successor is used, not
 when the request is queued or a successor is minted.
 
 **Token expiry.** A token past its `expires_at` is refused wherever it is
-presented — the websocket upgrade and `POST /runner/token/refresh` both answer
-`401 {"error":"token_expired"}` — so a leaked credential cannot renew itself and
-a retired one really does stop working when its grace window closes. `401` is
+presented: the websocket upgrade and `POST /runner/token/refresh` both answer
+`401 {"error":"token_expired"}`, so a leaked credential cannot renew itself and
+a retired one stops working when its grace window closes. `401` is
 the recoverable shape on purpose: the runner discards its cached token and exits.
 When its supervisor starts it again, it attempts registration if an enrollment
 key remains configured. A spent single-use key recovers only the original
@@ -109,7 +109,7 @@ before rotation existed. Those runners run a build with no refresh path, so
 enforcement deliberately leaves them alone rather than expiring a fleet on the
 same day; they gain an expiry by rotating, once their host is on a runner that
 can ask. A runner or account disabled at the same time keeps its own
-`403` — that verdict is recoverable by re-enabling, and a `401` would wrongly
+`403`. That verdict is recoverable by re-enabling, and a `401` would wrongly
 send the runner off to re-register instead.
 
 The runner uses configured `runner.id`, or its current hostname by default, as
@@ -212,7 +212,7 @@ portal ignores the field, and an older runner never sends it.
 ```
 
 Runner advertisements prove deployment only. MCP model-facing descriptors come
-from the trusted manifest for the exact pack hash — the manifest the account
+from the trusted manifest for the exact pack hash, the manifest the account
 currently trusts, whether that trust was auto-pinned from the configured
 published catalog or decided by an operator. A mismatch excludes that
 runner/action from execution. Timeout and output-cap limits are not
@@ -256,7 +256,7 @@ Portal-originated unsigned dispatches may include an `opts` object with
 `timeout_ms`, `max_stdout_bytes`, and `max_stderr_bytes`. Values are positive
 integers, and each name carries its unit the way `duration_ms` and
 `max_attestation_age_seconds` do elsewhere in this protocol. The field was
-`timeout` in nanoseconds, matching Go's `time.Duration` JSON encoding — an
+`timeout` in nanoseconds, matching Go's `time.Duration` JSON encoding, an
 internal representation leaking onto a wire contract, where a caller sending
 `30` meaning seconds got 30 nanoseconds and was clamped with no error anywhere,
 because the portal validates this envelope as positive integers and knows
@@ -293,8 +293,8 @@ The Ed25519 or ECDSA P-256 leaf-key signature covers fixed JSON binding:
 
 The narrative is bound by digest and never relayed: the two fields together run
 to 6,000 characters against the 16 KiB envelope budget. Both are optional and both
-are always hashed, so an absent one signs as the digest of the empty string —
-that is what binds "the bridge sent no justification", denying a control plane
+are always hashed, so an absent one signs as the digest of the empty string.
+That is what binds "the bridge sent no justification", denying a control plane
 the chance to invent one. A verifier therefore takes `evidence_sha256` and
 `expected_sha256` from the envelope rather than recomputing them from text it
 does not have.
@@ -331,7 +331,7 @@ from a result's `event_id`, and refuses structured output that carries one
 
 **`seq` counts messages, not output lines.** A chunk holds as many consecutive
 same-stream lines as accumulated while an earlier message was still waiting to
-go out, bounded at 32 KiB — so a runner whose socket keeps up still sends each
+go out, bounded at 32 KiB. So a runner whose socket keeps up still sends each
 line on its own, and one that falls behind ships the backlog together instead
 of making the portal write a row per line. The portal stores one event per
 message and compares its count against the result's `progress_chunks`, which
@@ -345,25 +345,25 @@ escaping within the portal's 256 KiB encoded event-payload limit.
 `action_result` is emitted after the process exits or the runner refuses the
 call, and is replayed across reconnects until the portal returns `ack_result`.
 If the portal's own persistence fails after it received the result, it sends a
-`finalize_failed` error frame (portal→runner) naming the `request_id`; the
+`finalize_failed` error frame (portal to runner) naming the `request_id`; the
 runner replays that one durable terminal result once on the same socket, so a
 transient persistence fault recovers without waiting for a reconnect. The
 reconnect replay remains the backstop. A portal-originated error frame carries
 one fixed, bounded, operator-safe message per `code`, safe to write to a runner
 log. It never echoes the internal failure reason, changeset, arguments,
-attestation, output, or credentials — the `code` and `request_id` are the whole
+attestation, output, or credentials. The `code` and `request_id` are the whole
 correlation contract, and every rejection sharing a code is indistinguishable on
 the wire.
 
-The runner→portal direction has its own vocabulary, and one code is
-load-bearing: `concurrency_cap_reached` means the runner is already at
+The runner-to-portal direction has its own vocabulary, and the portal relies on
+one code: `concurrency_cap_reached` means the runner is already at
 `MaxConcurrentRuns` and did not start the dispatch, so the portal REQUEUES that
-run rather than failing it. Treat it as a contract, not a diagnostic — the wire
+run rather than failing it. Treat it as a contract, not a diagnostic; the wire
 golden pins it. The portal finalizes it idempotently. It carries terminal status, exit code,
 duration, emitted stream byte counts, total and dropped progress-chunk counts,
 truncation flags, masked executed command, reason, and the
 local audit event ID. Per-rule redaction hit counts exist in the runner's
-local journal only — they are not on the wire — so "was anything masked in
+local journal only. They are not on the wire, so "was anything masked in
 this run, and by which rule" is an on-host question. A successful action with an opted-in `output.schema` also
 carries `structured_output`: one JSON object, validated after runner-side
 redaction and bounded to 8 KiB, 16 nesting levels, and 1,024 values. It is
@@ -377,7 +377,7 @@ Raw output bytes are not repeated in the terminal message, and neither are
 digests of them: the wire carries counts only. The emitted byte counts cover
 every normalized, redacted byte admitted by the action's output caps, and
 truncation flags disclose bytes omitted at those caps. Neither says that every
-emitted chunk reached the portal — that is the `output_complete` question below.
+emitted chunk reached the portal. That is the `output_complete` question below.
 Output digests live in the runner's local journal, which is the only place a
 byte-level integrity question can be answered. The portal accepts unique chunks idempotently,
 keeps later chunks even when an earlier one was lost, and persists
@@ -418,14 +418,14 @@ store at a time.
 
 If a host crashes after process start but before a terminal result is durable,
 the runner reports status `failed` with reason `execution_outcome_unknown` after
-restart and never executes that tuple again automatically. This is the honest
+restart and never executes that tuple again automatically. This is the
 boundary for external side effects.
 
 Malformed or oversized messages, invalid signatures, pack mismatches, replay
 conflicts, and admission failures execute nothing and produce bounded errors
 without echoing arguments, output, credentials, certificates, or signatures to
 logs. A message rejected at the decode layer that still carries a usable
-`request_id` is additionally journaled as a refusal and answered with a terminal
+`request_id` is also journaled as a refusal and answered with a terminal
 `failed` result (reason `dispatch_undecodable`), so the portal attributes the
 run instead of waiting for its dispatch timeout; only a message too corrupt to
 yield a `request_id` is dropped silently.
@@ -437,7 +437,7 @@ The runner enforces these:
 | Item | Limit |
 | --- | ---: |
 | Complete `run_action` message | 128 KiB |
-| Correlation `request_id` | 1–64 ASCII bytes |
+| Correlation `request_id` | 1 to 64 ASCII bytes |
 | Exact `args` object | 32 KiB |
 | JSON nesting | 64 levels |
 | Runner refs in one signed action | 16 |
@@ -462,12 +462,12 @@ what a runner's peer really accepts:
 | `degraded_packs` entries per `runner_state` | 32, `pack` cut to 80 characters, `reason` to 500 | extra entries dropped |
 | Acknowledgement dedup window per socket | 5,000 request IDs | oldest IDs evicted |
 
-The `request_id` shape is the sharp one: the documented boundary above is what
+The `request_id` shape needs the most care: the documented boundary above is what
 the runner will accept from any portal, but the portal only ever mints `req_`
 plus 22 base64url characters and closes the socket on anything else, so an
 independent implementation must echo the ID it was given rather than normalize
 it. `concurrency_cap_reached` is exempt from the error-frame budget only when
-it names a dispatch the portal sent to that runner — a saturated runner
+it names a dispatch the portal sent to that runner. A saturated runner
 reporting honest back-pressure is following the contract, and its rate is
 bounded by the portal's own dispatch rate. A cap frame the portal cannot
 correlate (no request ID, or one it never issued to that runner) spends the

@@ -3,8 +3,8 @@
 **Rule.** A setup guide for a third-party console is a *walkthrough*: one numbered step per
 screen the operator actually encounters, one screenshot per step, each captured **after** the
 step's input is entered or its option selected, with the exact control outlined. A guide that
-shows one screenshot of a multi-screen flow, or shows a form before it is filled, is not a
-walkthrough — it is a screenshot with prose around it.
+shows one screenshot of a multi-screen flow, or shows a form before it is filled, is a
+screenshot with prose around it, not a walkthrough.
 
 When one screen contains several independent controls, introduce the screen in one sentence and
 list the controls in their visual order as label/value rows. Use the provider's exact field label,
@@ -20,8 +20,8 @@ a flow missing its middle screens strands them exactly where they cannot ask us 
 of these shipped at least once and each was caught by the founder, not by a test.
 
 Marking the target is also the only defence against a **default you did not choose**. A wizard
-that pre-selects an option will produce a working-looking result that is silently wrong — and
-because you never clicked it, you have no memory of a decision to re-examine. Outlining the
+that pre-selects an option will produce a working-looking result that is silently wrong. Because
+you never clicked it, you have no memory of a decision to re-examine. Outlining the
 control forces you to look at what is actually selected before the shot goes in the docs.
 
 The field/value checklist does the same job in prose. Provider forms are scanned label by label;
@@ -31,7 +31,7 @@ once, and it keeps a security caveat beside the control that creates the risk.
 The crop and marker are part of the instruction, not decoration. Keep the complete right edge
 of every relevant field, button, and table column. Paint the outline above the vendor controls
 so an input cannot cover one of its edges. When the instruction names a labelled unit, outline
-the whole unit — heading, input, and action — rather than the heading alone. When every element
+the whole unit (heading, input, and action) rather than the heading alone. When every element
 in the shown card is relevant, omit the outline instead of turning the card into a nest of green
 boxes.
 
@@ -39,7 +39,7 @@ boxes.
 
 | Symptom | What the reader concludes | Actual defect |
 |---|---|---|
-| One screenshot for a four-screen wizard | "That's the whole setup" | Screens 2–4 never captured |
+| One screenshot for a four-screen wizard | "That's the whole setup" | Screens 2 to 4 never captured |
 | A required field shown empty | "I can skip this" | Shot fired before the driver typed |
 | A full console screen, nothing marked | *hunts* | No `highlight()` call before the shot |
 
@@ -103,11 +103,11 @@ Review, plus two mechanical habits in the capture drivers
   appropriate helper immediately before every `screenshot`, except when the whole shown card is
   the instruction.
 - **Look at every final published image at the width the docs render it before wiring it in.**
-  Not the filename, not the driver's log line, and not only the uncropped capture — the final
-  pixels. Check all four edges, marker continuity, selected state, secrets and account chrome,
+  Do not stop at the filename, the driver's log line, or the uncropped capture; look at the
+  final pixels. Check all four edges, marker continuity, selected state, secrets and account chrome,
   and that the caption describes what is visible. An MFA prompt captioned "Client Credentials"
   and a frame scrolled past the field its caption described both passed a green run and shipped.
 
 Related: [`shared-docker-inputs-enter-at-narrowest-layer.md`](shared-docker-inputs-enter-at-narrowest-layer.md)
-is the same shape one layer down — put the thing where its consumer is, not where it was
+is the same shape one layer down: put the thing where its consumer is, not where it was
 convenient to write.

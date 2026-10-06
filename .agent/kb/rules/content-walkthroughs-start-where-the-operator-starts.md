@@ -8,14 +8,14 @@ linking it.
 ## Why
 
 A prerequisite paragraph reads as background. "Have X open in another tab" is an
-*instruction* wearing the clothes of a *precondition*, so it gets skimmed — and
+*instruction* wearing the clothes of a *precondition*, so it gets skimmed, and
 then step 1 asks for a value that only exists on the page the reader never
-opened. Numbering it makes it the thing it is.
+opened. Numbering it makes it a real step.
 
 Naming a path without linking it is the same failure one level down: if we know
 where the page is, the reader should not have to go find it. A docs page cannot
 know the reader's account slug, which is why the slugless deep links under
-`/app/*` exist (`AccountRedirectController` — `/app/agents`, `/app/sso/new`).
+`/app/*` exist (`AccountRedirectController`: `/app/agents`, `/app/sso/new`).
 Add one rather than describe a path.
 
 ## ✅ Good
@@ -35,7 +35,7 @@ Add one rather than describe a path.
 </li>
 ```
 
-The step title does not repeat the venue — `<.docs_step_venue>` already said it.
+The step title does not repeat the venue: `<.docs_step_venue>` already said it.
 
 ## ❌ Bad
 
@@ -54,7 +54,7 @@ An action, unnumbered, unlinked, and filed under prerequisites.
 Any `/docs` walkthrough whose opening paragraph contains an imperative ("open",
 "keep … open", "have … ready") that names a console path, and any IMPERATIVE
 `X → Y → Z` console path in docs prose with no link on it. A descriptive mention
-("both are managed from Team → Single sign-on") is prose and stays prose — the
+("both are managed from Team → Single sign-on") is prose and stays prose; the
 rule is about paths the reader is being told to go to.
 
 ## How it's enforced

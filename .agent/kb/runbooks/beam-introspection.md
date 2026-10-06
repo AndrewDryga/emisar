@@ -11,8 +11,6 @@ the metrics say *something* is wrong without saying what. Everything here is
 read-only and safe on a live node; none of it stops traffic.
 
 The release ships two libraries for exactly this: `recon` and `observer_cli`.
-A tool nobody has recorded is a tool nobody reaches for at 3am, which is the
-only time it matters.
 
 ## Getting a shell on the node
 
@@ -25,7 +23,7 @@ instance first through IAP (`./run ops portal ...`); the release is at `/app`.
 
 This is a real shell on a serving node. Prefer the counting and sampling calls
 below over anything that walks every process, and never leave `:observer_cli`
-running unattended — it polls.
+running unattended, because it polls.
 
 ## What to run
 
@@ -43,7 +41,7 @@ reports what it recovered:
 :recon.bin_leak(10)
 ```
 
-**A queue backing up.** The processes with the longest mailboxes — usually the
+**A queue backing up.** The processes with the longest mailboxes, usually the
 fastest way to find the one consumer that has fallen behind:
 
 ```elixir
@@ -60,8 +58,8 @@ Quit it with `q`. It samples continuously, so do not leave it attached.
 
 ## What this does not cover
 
-Fleet-wide questions — how many runners are connected, which accounts are
-affected — belong in the console and in the `emisar.*` metrics, not here. This
+Fleet-wide questions (how many runners are connected, which accounts are
+affected) belong in the console and in the `emisar.*` metrics, not here. This
 runbook is for the single node in front of you.
 
 For clustering failures specifically (`cluster discovery failed`, nodes not

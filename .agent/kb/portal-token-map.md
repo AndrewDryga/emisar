@@ -6,16 +6,15 @@ sources: [portal/apps/emisar/lib/emisar/api_keys.ex, portal/apps/emisar/lib/emis
 updated: 2026-10-05
 ---
 
-The token map — the one place to understand every bearer credential emisar
+The token map is the one place to understand every bearer credential emisar
 mints, and which context owns it.
 
 There is deliberately **no** single tokens table: each credential has its own
-table and a single owning context that mints / verifies / revokes it. A SIEM
-log-shipping token is not an LLM-bridge key is not a runner session — keeping
-them apart keeps each lifecycle (and its abuse surface) reviewable in
-isolation. All secret generation, hashing, and constant-time comparison live
-in `Emisar.Crypto` — the single crypto-review surface; no context implements
-them inline.
+table and a single owning context that mints / verifies / revokes it. Keeping a SIEM
+log-shipping token, an LLM-bridge key, and a runner session apart keeps each
+lifecycle (and its abuse surface) reviewable in isolation. All secret
+generation, hashing, and constant-time comparison live in `Emisar.Crypto`, the
+single crypto-review surface; no context implements them inline.
 
 ## The credentials
 
@@ -49,7 +48,7 @@ session's absolute expiry.
 ## Credentials that are NOT token tables
 
 The inbound **SCIM bearer** (`ems-`) lives as a hashed column on
-`Emisar.SSO.IdentityProvider`, not its own table — it's one secret per
+`Emisar.SSO.IdentityProvider`, not its own table. It's one secret per
 configured IdP, rotated as part of that provider's config, and verified at the
 SCIM boundary by `Emisar.SSO.authenticate_scim_token/1`.
 
@@ -82,5 +81,5 @@ lifecycle.
   token table name against its current schema.
 
 - 2026-08-26: moved verbatim from the compiled documentation-only module
-  `Emisar.Tokens` (deleted — a zero-behavior BEAM module is not the home for
+  `Emisar.Tokens` (deleted: a zero-behavior BEAM module is not the home for
   repository knowledge).

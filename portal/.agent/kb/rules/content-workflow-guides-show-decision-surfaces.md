@@ -33,7 +33,7 @@ fields readable.
 
 ## How it is enforced
 
-Review the rendered desktop and mobile guide, not only its template. The marketing test pins each
+Review the template and the rendered desktop and mobile guide. The marketing test pins each
 decision-bearing heading and image path. Capture drivers use stable section IDs so screenshots fail
 when the authoring surface moves or disappears.
 

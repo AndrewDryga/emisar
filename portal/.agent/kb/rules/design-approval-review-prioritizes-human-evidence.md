@@ -37,8 +37,8 @@ the first step in a sequence of prompts.
 
 - `caddy.reload_config · high`, `on edge-fra-01`, followed by
   `file /etc/caddy/Caddyfile`.
-- “Approve once to release every action shown here. This execution will not ask
-  for another approval.”
+- "Approve once to release every action shown here. This execution will not ask
+  for another approval."
 - A later dispatch-time policy denial is described as stopping the execution.
 
 ## Bad
@@ -46,7 +46,7 @@ the first step in a sequence of prompts.
 - A runner name followed by `~<digest>` and an exact pack hash while arguments
   are collapsed.
 - UUID-only execution history.
-- “Each action still passes approval checks,” which implies more prompts.
+- "Each action still passes approval checks," which implies more prompts.
 
 ## Enforced
 

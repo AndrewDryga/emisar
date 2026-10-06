@@ -23,7 +23,7 @@ certificates: Erlang keeps system roots and Chromium starts without a TLS except
 
 Coop boxes receive decoys at private-key paths. `./run doctor` therefore checks
 the public CA, hostname, validity window, and leaf signature inside a box, while
-the host additionally proves that both stored private keys match their public
+the host also proves that both stored private keys match their public
 certificates. Box diagnostics operate without access to signing material.
 
 Keycloak reads its certificate at process start. The Go tooling fingerprints the

@@ -12,8 +12,8 @@ emisar's security model exists to make **bounded agent autonomy** credible: an
 MCP-capable agent can keep doing infrastructure work without receiving raw
 shell/SSH authority or requiring a human to shadow every step. Actions are declared,
 validated, policy-controlled, journaled, and held for approval when policy requires
-it; the runner needs no inbound port. A security regression here isn't a bug — it's
-the product failing. Lead with the abuse case.
+it; the runner needs no inbound port. A security regression here is the product
+failing. Lead with the abuse case.
 
 ## The trust model (don't weaken it)
 
@@ -42,7 +42,7 @@ None are trusted. Validate, scope, and escape at the boundary.
   scopes rows with `Authorizer.for_subject` (IL-4). No internal no-Subject helper
   (§1.4) is reachable from a web/MCP path.
 - **Every** LiveView `handle_event`, MCP action, and controller action that reads or
-  mutates passes the real subject into a context call — mount/connect auth is not
+  mutates passes the real subject into a context call; mount/connect auth is not
   enough (IL-15). Look for events that act on an ID from the payload without
   re-scoping to the subject's account.
 - Cross-account isolation has a test (account A subject → `{:error, :not_found}` on
@@ -50,7 +50,7 @@ None are trusted. Validate, scope, and escape at the boundary.
 
 **Input handling:**
 - No `String.to_atom/1` on any external input (IL-14). No `raw/1` on runner output,
-  runbook, or pack text (IL-16 — stored XSS). No `Code.eval`, no `:erlang.binary_to_term`
+  runbook, or pack text (IL-16, stored XSS). No `Code.eval`, no `:erlang.binary_to_term`
   on external bytes.
 - IDs from requests are validated (`Repo.valid_uuid?`) and re-scoped, never trusted
   as "the user owns this".
@@ -74,4 +74,4 @@ None are trusted. Validate, scope, and escape at the boundary.
 
 Findings as `severity · file:line · abuse case → fix`, BLOCKERs first. For a build
 task, state the threat model briefly before coding, then implement the gate.
-Don't hand-wave "should be safe" — show the check.
+Don't hand-wave "should be safe"; show the check.

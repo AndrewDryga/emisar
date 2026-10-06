@@ -13,8 +13,8 @@ not for a market segment in a slide deck.
 
 Aim for writing a strong human editor would publish: informed, specific,
 opinionated when the evidence supports it, and easy to read. Do not optimize for
-an AI-detector score or claim that authorship is undetectable. Detector results
-are not a quality test. Substance, judgment, voice, and editing are.
+an AI-detector score or claim that authorship is undetectable. Substance,
+judgment, voice, and editing decide quality; a detector result does not.
 
 ## Read First
 
@@ -105,7 +105,7 @@ are not a quality test. Substance, judgment, voice, and editing are.
 - **Proof test:** Mark every decision-changing claim. Each needs nearby evidence,
   mechanism, example, or an honest limit.
 - **Spoken test:** Read it aloud at normal speed. Rewrite every place that sounds
-  like a brochure, a strategy deck, or a sentence nobody would actually say.
+  like a brochure, a strategy deck, or a sentence nobody would say.
 - **Competitor-swap test:** Replace `emisar` with a competitor's name. Rewrite
   any claim or benefit that still works unchanged. Exempt structural copy.
 - **Hierarchy test:** Does the piece lead with bounded agent autonomy, then earn

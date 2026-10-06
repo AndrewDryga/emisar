@@ -115,8 +115,8 @@ what follows. It changes pace with the idea instead of filling a template.
 - Use transitions that express logic: `but`, `because`, `so`, `instead`.
 - Include the telling detail. One real command, failure mode, limit, or example
   does more than a paragraph of praise.
-- Give the reader enough first-principles explanation to judge the conclusion,
-  not merely receive it.
+- Give the reader enough first-principles explanation to judge the conclusion
+  for themselves.
 
 Do not manufacture voice with typos, slang, invented stories, or arbitrary
 sentence variation.

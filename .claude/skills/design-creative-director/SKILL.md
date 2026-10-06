@@ -22,7 +22,7 @@ system, implement in small rendered passes, and review with `design-review`.
   MCP, SSH, and infrastructure access.
 - Use `design-frontend` for HEEx/Tailwind execution in the portal marketing codebase.
 - Use `design-interface-polish` for the micro-detail polish pass once a page is
-  rendered — the small craft (radius, alignment, motion, numerals) under the art direction.
+  rendered: the small craft (radius, alignment, motion, numerals) under the art direction.
 - Use `design-review` after the first rendered version and again before finishing.
 - Use `review-board` before merge when the diff is material.
 
@@ -76,8 +76,8 @@ system, implement in small rendered passes, and review with `design-review`.
 - No generic SaaS hero, centered three-card feature grid, gradient blob backdrop,
   fake dashboard, vague trust claim, stocky metaphor, or icon farm unless the
   chosen creative direction makes it specific and defensible.
-- Distinctive does not mean confusing. A security buyer must understand the value
-  and trust model quickly.
+- A distinctive page must still be clear. A security buyer must understand the
+  value and trust model quickly.
 - Visual drama must earn its cost. Motion, WebGL, canvas, video, and heavy images
   need a product reason, a reduced-motion path, and a performance check.
 - Copy must be concrete. Prefer proof, mechanism, examples, and sharp comparison

@@ -31,7 +31,7 @@ grammars.
 ## Bad
 
 - `Add input` in the section header while input cards render below.
-- `Add value` floated beside “Allowed values.”
+- `Add value` floated beside "Allowed values."
 - Both a header Add button and an end Add row for the same collection.
 - A tiny icon-only plus whose target collection is not obvious.
 

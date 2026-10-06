@@ -36,7 +36,7 @@ negotiated through the `extensions` map in capabilities. The portal advertises
 none of them today. Each decision below is deliberate, with the condition that
 would reverse it.
 
-**`io.modelcontextprotocol/tasks` — not adopted yet.** The extension returns a
+**`io.modelcontextprotocol/tasks`: not adopted yet.** The extension returns a
 durable task handle instead of a result and has the client poll `tasks/get`.
 emisar already solves that shape with a durable, recoverable surface:
 `run_action` returns an operation ID and run ID immediately, `wait_for_run`
@@ -46,19 +46,19 @@ tools against a specification that still lives in an experimental repository,
 and it would have to be maintained beside them, because a client that does not
 declare the extension must keep receiving today's results.
 
-Its headline feature does not fit either. A task moves to `input_required`
+Its main feature does not fit either. A task moves to `input_required`
 when the *client* must supply something, which is the wrong actor for an
 emisar approval: approvals are decided by an operator in the console, never by
 the model's session. Routing an approval through the client would move a
 security decision to the least trusted participant.
 
 Adopt it when a real client declares `io.modelcontextprotocol/tasks` in a
-request's `_meta` client capabilities — that is observable in the request logs.
+request's `_meta` client capabilities. That is observable in the request logs.
 The adapter is then thin: return `resultType: "task"` with the existing
 operation ID as `taskId`, map run status onto the task lifecycle, and answer
 `tasks/get` with what `wait_for_run` already computes.
 
-**`io.modelcontextprotocol/ui` (MCP Apps) — a product decision, not a protocol
+**`io.modelcontextprotocol/ui` (MCP Apps): a product decision, not a protocol
 one.** Rendering emisar UI inside a host client is a new customer-facing
 surface: it needs the `resources` capability the portal deliberately does not
 implement, HTML templates shipped to a third-party renderer, and a security
@@ -97,7 +97,7 @@ structured results. Each fixed wire descriptor publishes its complete
 The wire descriptors intentionally omit the optional MCP `outputSchema`:
 resolving the full response schemas into all fourteen descriptors grows
 `tools/list` from roughly 17 KiB to roughly 140 KiB, and a client that relays
-descriptors into model context would pay that on every session — recreating the
+descriptors into model context would pay that on every session. That recreates the
 large-catalog problem this API exists to avoid. The complete response schemas remain normative
 contracts in the published registry and every portal integration test validates
 live results against them, so omission cannot become drift.
@@ -245,8 +245,8 @@ every action descriptor and schema. The runner already computes this identity
 from local bytes. Reusing a human version with different bytes produces a
 different ref and fails closed. Versions are dot-numeric with SemVer's optional
 prerelease and build suffixes (`1.4.0`, `1.4.0-rc1`, `2.0.0+build`). The
-published registry is stricter — it validates with SemVer, so a partial `1.4`
-fails publication — but a runner may advertise any dot-numeric version for a
+published registry is stricter (it validates with SemVer, so a partial `1.4`
+fails publication), but a runner may advertise any dot-numeric version for a
 TOFU pack, and a ref must be able to name it.
 The canonical ref grammar is
 `^[a-z][a-z0-9_-]*@[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/sha256:[0-9a-f]{64}$`,
@@ -323,8 +323,8 @@ capabilities.
 - A changed scope, expired cursor, or cursor/filter mismatch returns
   `invalid_cursor`; the caller restarts the same read.
 - A response stops before the next complete item would exceed that tool's
-  semantic budget and returns `next_cursor` — 64 KiB for a model-facing
-  continuation page, 512 KiB for a final framed result. It never truncates an
+  semantic budget (64 KiB for a model-facing continuation page, 512 KiB for a
+  final framed result) and returns `next_cursor`. It never truncates an
   item or string silently.
 - Ingestion bounds guarantee one encoded compact pack object is at most 56 KiB,
   one full action object is at most 32 KiB, and one compatible-runner brief is at
@@ -567,8 +567,8 @@ operational readers. Compatibility remains specific to the caller's action acces
 `summary` counts the filtered account set before pagination. One runner object is
 at most 56 KiB encoded, with at most 32 bounded labels and eight issues; runner
 registration/advertisement rejects values that cannot satisfy that projection.
-`packs` inlines the bare pack ids this runner can dispatch right now — its
-trusted, descriptor-matched deployments, deduplicated and sorted — but does not
+`packs` inlines the bare pack ids this runner can dispatch right now (its
+trusted, descriptor-matched deployments, deduplicated and sorted) but does not
 promise every action in a listed pack is executable; per-action availability
 stays in `find_actions`, `get_action`, and `list_packs`.
 Pack deployments do not nest inside the runner item: `packs_next` uses the
@@ -779,7 +779,7 @@ never relies on pagination or truncation.
 | `runner_refs` | Required exact refs, 1 through 16, distinct. |
 | `args` | Required object validated against this action in this pack; `{}` for none. |
 | `reason` | Required nonblank UTF-8 justification, at least 12 and at most 2000 characters. |
-| `evidence` | Optional nonblank justification, at most 4000 characters: what was already observed — prior findings or the run ids inspected — that motivates this action. |
+| `evidence` | Optional nonblank justification, at most 4000 characters: what was already observed (prior findings or the run ids inspected) that motivates this action. |
 | `expected` | Optional nonblank justification, at most 2000 characters: the outcome that would confirm the action worked. |
 | `wait` | `0`, or an integer duration in `ms`/`s`; default 45 seconds, maximum 60 seconds. |
 
@@ -790,8 +790,8 @@ supply `attestation`, `operation_id`, or exact argument bytes. The transport
 owns them.
 
 `reason`, `evidence`, and `expected` form an optional justification chain. Only
-`reason` is required; `evidence` and `expected` are unenforced — nothing
-validates the cited run ids and no policy requires them — but Emisar persists
+`reason` is required; `evidence` and `expected` are unenforced (nothing
+validates the cited run ids and no policy requires them), but Emisar persists
 all three with the run and renders the chain to approvers and in run history.
 The terminal audit event carries the dispatch `reason` as `dispatch_reason`
 (beside `policy_reason` and the `reason` cancellation explanation); it does not
@@ -814,7 +814,7 @@ the message boundary. The private `Emisar-Operation-Id` header carries the
 bridge-generated retry identity for mutations. When a native HTTP client omits
 that private header, the portal deterministically derives the identity from the
 exact request body and authenticated credential lineage. For `run_action`, the private
-`Emisar-Attestation` header additionally carries the bounded bridge-signed
+`Emisar-Attestation` header also carries the bounded bridge-signed
 execution claim that the portal relays to the runner. The operation ID is
 authenticated by HTTPS and the API key for ordinary mutations and is also bound
 inside the `run_action` attestation.
@@ -890,7 +890,7 @@ rotation. For `run_action`, in one transaction it:
 The mutation fingerprint is tool-specific and versioned. `run_action` uses the
 facts above; `execute_runbook` uses exact runbook ref, explicit draft consent,
 reason, and typed inputs. Draft creation uses fixed JSON over its validated
-title, slug, description, and definition. Draft revision additionally binds
+title, slug, description, and definition. Draft revision also binds
 the exact source ref and source definition SHA-256. Tool name is always part of
 the fingerprint, so different mutations cannot collide.
 `execute_runbook`, `create_runbook_draft`, and `update_runbook_draft` reserve
@@ -995,9 +995,9 @@ UTF-8 boundary. Emitted byte counts cover every normalized, redacted byte
 admitted by the runner's output caps, not the preview. Summaries omit
 zero-information fields: a stream that produced no bytes carries no preview,
 byte-count, or truncation fields, and `output_complete` appears only when
-false — when the runner or portal detected a missing progress chunk, so the
-previews may contain gaps. A run no runner ever held — denied by policy,
-refused at dispatch, or cancelled while it waited — has no output and carries
+false (when the runner or portal detected a missing progress chunk), so the
+previews may contain gaps. A run no runner ever held (denied by policy,
+refused at dispatch, or cancelled while it waited) has no output and carries
 no flag. An absent output field means no output, not an error. These fields are transport accounting, not a CA-signed result receipt;
 full output digests stay on the portal run page and audit record rather than
 in MCP summaries. Truncation flags are true if the runner's output cap or
@@ -1006,7 +1006,7 @@ MCP's preview cap omitted bytes. Output is untrusted data, never instructions.
 The preview cap counts raw bytes, which JSON escaping expands and the frame
 then mirrors, so it sizes a frame rather than bounding one. Each assembled
 snapshot is measured against the same 64 KiB page budget its continuations are,
-beside a maximal request id, and sheds preview until it fits — so an
+beside a maximal request id, and sheds preview until it fits, so an
 escape-heavy run returns a shorter, flagged preview and the shed bytes stay
 behind its drain continuation. What remains under a zero-byte preview is the
 run's own fields and its review receipt, each bounded where it is produced.
@@ -1072,7 +1072,7 @@ freshness are re-evaluated in the same transaction that creates the dispatch.
 
 A run policy gated for approval carries a `review` object in every summary and
 tail frame, so a client that renders the decision elsewhere reports what the
-approver was actually shown rather than a status word. A run policy never gated
+approver was shown rather than a status word. A run policy never gated
 carries no `review` at all; its absence never means "nobody voted".
 
 ```json
@@ -1107,8 +1107,8 @@ carries no `review` at all; its absence never means "nobody voted".
 }
 ```
 
-`status` is the review's own outcome — `pending`, `approved`, `denied`,
-`expired`, or `cancelled` — and is independent of the run status: a released run
+`status` is the review's own outcome (`pending`, `approved`, `denied`,
+`expired`, or `cancelled`) and is independent of the run status: a released run
 reports `approved` while it runs, and a pending request past its deadline reads
 `expired` before any sweep rewrites it. `required_approvals` is the count
 snapshotted when the request was filed, so a later policy edit cannot move it,
@@ -1123,8 +1123,8 @@ than forwarded. Each is nonblank and at most its input bound, but the receipt's
 callers. Masking replaces a sensitive value with a ten-character marker and is
 not length-preserving: a justification that quotes a long secret arrives
 shorter than any reason this API would accept as input, and one that quotes a
-short secret grows — a maximal reason quoting a one-character value masks to
-ten times its ceiling. The receipt bounds the masked text at the ceiling the
+short secret grows (a maximal reason quoting a one-character value masks to
+ten times its ceiling). The receipt bounds the masked text at the ceiling the
 schema publishes, spent in JSON-encoded bytes because the page frame it rides
 is budgeted in bytes and a character ceiling bounds nothing there (a ceiling
 of four-byte emoji is four times the room, and a ceiling of backslashes or
@@ -1136,13 +1136,13 @@ marked with
 present only when true, so a clipped snapshot is never presented as the whole
 one the approver read; the stored snapshot itself is never shortened. A client that re-validates a receipt
 against the input contract rejects its own history. `argument_count` is how
-many top-level arguments the run carries — the values themselves stay in
+many top-level arguments the run carries; the values themselves stay in
 Emisar.
 
 `command` is the line the review decided against: `executed` is the runner's own
 recorded receipt, and `preview` is rendered from the hash-proven published pack
 while the review is still `pending`, never from a runner's mutable
-advertisement. A decided review reports only what actually ran, because a
+advertisement. A decided review reports only what ran, because a
 preview re-rendered afterwards would describe the catalog as it stands now
 rather than the dispatch those reviewers judged. Both forms are secret-masked
 and bounded, and `truncated` covers the runner's own cap as well as that bound.
@@ -1160,8 +1160,8 @@ note when they left one. Retained historical Members keep their local labels;
 the name is absent when no exact Member or local label is available. Removing
 approval authority retires that Member's pending votes, while completed decisions
 remain historical records. A request with more votes than the page holds returns its most
-recent ones — a deny finalizes on the spot and the approve that meets quorum is
-the last vote, so the decision itself is always present — and counts the older
+recent ones (a deny finalizes on the spot and the approve that meets quorum is
+the last vote, so the decision itself is always present) and counts the older
 ones in `decisions_omitted`.
 
 Two ceilings decide how many that is, both keeping the newest votes and both
@@ -1170,19 +1170,19 @@ the votes spend in JSON-encoded bytes. The second exists because the first
 bounds a count, not a size. A note's input contract caps it at 2,000
 **graphemes**, and a grapheme is as many bytes as its writer appends, so twenty
 maximal notes in a non-Latin script encoded to 290,934 bytes against a 65,536-byte
-page budget — and a run summary can shed only its output preview, so the receipt
-did not shrink, it became unreadable. Each note is now bounded at 1,000 encoded
+page budget. A run summary can shed only its output preview, so the receipt
+did not shrink and became unreadable. Each note is now bounded at 1,000 encoded
 bytes with a `reason_truncated` flag present only when true, and the shared
 allowance shortens the list when even that cannot fit. A reviewer's name is not
-cut — its own column already bounds it in bytes — but it spends the allowance
+cut (its own column already bounds it in bytes) but it spends the allowance
 beside its note. An ordinary vote costs about 175 of those bytes, so all 20
 still appear; the complete trail, uncut, stays on the approval page. The
 `override` object's reason spends the same 1,000-byte bound and the same flag,
-and an override is never dropped for room — a released run must account for what
+and an override is never dropped for room: a released run must account for what
 released it.
 
 A proven ordinary single-approver decision without
-per-vote rows lists the decision its own record holds — the decider, time,
+per-vote rows lists the decision its own record holds: the decider, time,
 and note. The request's durable override marker prevents an override from
 becoming a vote after audit retention removes its receipt. Historical requests
 with unknown finalization provenance keep their status, but their final columns
@@ -1196,22 +1196,22 @@ be recorded without, the real tally it released, the requirement it waived, and
 how many reviews that waived. An override is not a vote and never appears in
 `decisions`.
 
-The three committed examples — the pending and denied receipts among the test
-fixtures, and the overridden one at the top of this section — are the shapes a
+The three committed examples (the pending and denied receipts among the test
+fixtures, and the overridden one at the top of this section) are the shapes a
 client meets most often, not the whole receipt. `status` takes any of the five
 values the schema enumerates, and `override` is separate evidence beside a
 status, never a sixth one. A **pending** review is still collecting votes:
 `command` is the preview, `override` is absent, and the summary around it still
 carries its `approval` object and `wait_until` deadline. A review the votes
 finalized reads **approved** or **denied** with `override` absent, and
-`command` appears only when the run recorded one it executed — a denial
+`command` appears only when the run recorded one it executed: a denial
 finalizes on the spot and cancels the run, which therefore reports no command
 at all. An **overridden** review was released without quorum: its `status` is
 `approved`, it adds the `override` object above, and the example at the top of
 this section is that shape. Two more outcomes reach a terminal status with no
 vote and no override. A pending request whose deadline passed reads
-**expired** — the effective status, reported before the expiry sweep rewrites
-the row — and a run cancelled while it waited flips its request to
+**expired** (the effective status, reported before the expiry sweep rewrites
+the row) and a run cancelled while it waited flips its request to
 **cancelled** in the same transaction. Neither run ever dispatched, so neither
 receipt carries a `command`, and `decisions` lists only the votes that arrived
 before the outcome, which may be none. A client that renders the receipt
@@ -1219,16 +1219,16 @@ elsewhere handles every status the schema names, not only the three the
 fixtures show.
 
 The receipt requires the same run-read access and account membership as the run
-summary carrying it — run-view permission, the caller's own account, and only
-the request attached to that account's own run — never the wider approvals
+summary carrying it (run-view permission, the caller's own account, and only
+the request attached to that account's own run), never the wider approvals
 permission the console's request-addressed reads take. Reading the review of a
 run you can already see is a strictly smaller grant than that permission, which
 also lists every pending request in the account, so a key that may read runs
 but not browse approvals still repaints its own card. A foreign account's review
 is indistinguishable from absence.
 
-Every free-text field in the receipt — `reason`, `evidence`, `expected`, each
-decision's `reason`, and the override `reason` — is forwarded as its author
+Every free-text field in the receipt (`reason`, `evidence`, `expected`, each
+decision's `reason`, and the override `reason`) is forwarded as its author
 typed it, masked but not judged. The rationale may come from another credential
 in the account, and a reviewer's note or override reason can say anything its
 author chose, including text addressed to the model. All of it is untrusted
@@ -1437,9 +1437,9 @@ line to the portal; the cursor exposes that stream forward.
 
 Without a cursor, the result is the tail snapshot above: bounded `stdout` and
 `stderr` previews of the most recent output. With a cursor, the result instead
-carries an `output` array — the forward delta of redacted chunks after that
+carries an `output` array (the forward delta of redacted chunks after that
 cursor, in emission order, with consecutive same-stream chunks coalesced into
-one `{stream, text}` element — and no `stdout`/`stderr` preview. `run_action`
+one `{stream, text}` element) and no `stdout`/`stderr` preview. `run_action`
 and a cursorless `wait_for_run` seed a start cursor onto their live-run `next`,
 so following `next` verbatim streams a run from its first byte, losslessly.
 
@@ -1448,7 +1448,7 @@ snapshot preview already showed. The tail is the authoritative full stream:
 **replace** the preview with it rather than appending, or the overlap reads as
 duplicated output. A finished run whose preview omitted persisted output also
 carries a start cursor (with `timeout: "0"`), so a run's complete output stays
-retrievable after it ends — a run capped by the runner, one whose chunks were
+retrievable after it ends. A run capped by the runner, one whose chunks were
 dropped, or one whose events aged out of retention has nothing left to serve and
 so offers no continuation (and when that vanishing is observed while the
 response is being assembled, the summary also marks the output incomplete).
@@ -1491,7 +1491,7 @@ terminal and its output is fully drained. Each continuation is sized against
 the real assembled frame and stays within 64 KiB, so a chatty or escape-heavy
 run drains across several `next` hops with nothing repeated. A dropped progress
 chunk surfaces as
-`output_complete: false`, never a silent gap — as does a drain that retention
+`output_complete: false`, never a silent gap. So does a drain that retention
 pruned mid-flight: a cursor resuming inside a pruned event flags immediately,
 and a terminal drain that ends still owing whole events (the seed captured the
 exact persisted count, which a finished run cannot change) ends flagged rather
@@ -1536,7 +1536,7 @@ budget; a result that does not fit its deterministic share instead carries
 `structured_output_omitted: true` plus the exact immediate
 `wait_for_run({run_id, timeout: "0"})` continuation that returns the narrower
 single-run summary.
-Runbook-created rows additionally carry both `runbook_execution_id` and
+Runbook-created rows also carry both `runbook_execution_id` and
 `step_id`, or neither field appears. History therefore remains attributable
 after the original mutation response leaves model context without embedding the
 runbook plan or relying on a separate lookup per row.
@@ -1578,8 +1578,8 @@ error when the operation ID was returned or recorded before a process loss.
 
 ### `cancel_run`
 
-`cancel_run` withdraws one run the calling credential lineage created — the
-same `own` scope `recent_runs` uses, rotated successors included — while it is
+`cancel_run` withdraws one run the calling credential lineage created (the
+same `own` scope `recent_runs` uses, rotated successors included) while it is
 still `pending` or `pending_approval`. It takes the exact `run_id` and an
 optional one-sentence `reason` of at most 255 characters that is recorded as
 the run's cancellation reason. The run never reaches a runner: after re-reading
@@ -1594,7 +1594,7 @@ The result is the same snapshot summary `wait_for_run` returns for that run,
 now terminal. The call is naturally idempotent and reserves no operation: a
 repeated call, or one that arrives after an approver already decided, returns
 the run's current terminal summary without a second audit row. A run already
-delivered to a runner — `sent`, `running`, or `cancelling` — is refused with
+delivered to a runner (`sent`, `running`, or `cancelling`) is refused with
 `run_not_cancellable` and stays the console operator's to stop; the API never
 sends a cancel to a runner on a model's behalf. A run another lineage or
 account created is `run_not_found`, indistinguishable from absence. A revoked
@@ -1671,7 +1671,7 @@ change into a release.
 A release number counts publications and nothing else: the first publish mints
 release 1 and each later publish increments it, so an unpublished change never
 has one. Releases are immutable append-only records. Only the newest release is
-live, and **only the live release executes** — naming an older number is refused
+live, and **only the live release executes**: naming an older number is refused
 by name, never redirected to current content.
 
 The unpublished change is a single mutable document. Editing it rewrites it in
@@ -1687,7 +1687,7 @@ that definition; they still constrain execution. An unresolved or untrusted live
 release is absent from model discovery and exact reads. The unpublished change is deliberately exempt,
 because a change whose targets no longer resolve must stay readable and editable
 so its author can repair it; a runbook carrying one therefore stays listed even
-while its live release does not resolve, with both sides stated honestly.
+while its live release does not resolve, with both sides stated accurately.
 Definitions are never redacted because that would no longer be the object named
 by the ref. Group target strings are account-authored runbook data, not runner
 advertisements, and are returned verbatim once the runbook is visible.
@@ -1696,10 +1696,10 @@ advertisements, and are returned verbatim once the runbook is visible.
 
 Input accepts `query` (case-insensitive words matched against slug, title, and
 summary), `limit` (1 through 50, default 15), and cursor. The cursor is bound to
-`query`, the account, and the rotation-stable credential lineage — not `limit`,
+`query`, the account, and the rotation-stable credential lineage, not `limit`,
 which is a per-call page ceiling a caller may change while paging. A
 legitimate successor key can resume the page; an unrelated key cannot. Results
-order by slug, one entry per runbook — there is no status filter, because one
+order by slug, one entry per runbook; there is no status filter, because one
 entry states both sides.
 
 ```json
@@ -1744,7 +1744,7 @@ entry states both sides.
 `live` is `{runbook_ref, definition_sha256}`, or `null` when nothing has been
 published yet. `draft` is `{definition_sha256}`, or `null` when there is no
 unpublished change. Both keys are always present. The counts and `available`
-describe the live release, or the unpublished change while nothing is live —
+describe the live release, or the unpublished change while nothing is live,
 never a mixture.
 
 Every entry carries `available`. It is false only when the runbook cannot be
@@ -1759,8 +1759,8 @@ resolution failures above, which must stay indistinguishable from absence.
 Input requires `slug` and accepts explicit `status`, which defaults to
 `published`. `published` reads the live release; `draft` reads the unpublished
 change. The bounded result returns that definition or a status-specific
-not-found error — `runbook_not_found` when no live release answers the slug,
-`draft_not_found` when the runbook carries no unpublished change:
+not-found error (`runbook_not_found` when no live release answers the slug,
+`draft_not_found` when the runbook carries no unpublished change):
 
 ```json
 {
@@ -1829,14 +1829,14 @@ that field. `structured_output` is schema-validated stdout, not a third stream;
 see [Runbook output sources](#runbook-output-sources) for the authoring contract.
 
 A published read names the live release in `runbook_ref` and always carries
-`draft_definition_sha256` — the digest of the unpublished change waiting behind
-it, or `null` when there is none. Reading it here saves a second call before
+`draft_definition_sha256` (the digest of the unpublished change waiting behind
+it, or `null` when there is none). Reading it here saves a second call before
 `update_runbook_draft`.
 
 A draft read keeps `title`, `description`, `definition`, and `summary` unchanged
-and swaps the two identity keys for `slug`, `draft_id`, and `live_ref` — the
+and swaps the two identity keys for `slug`, `draft_id`, and `live_ref` (the
 release still executing while the change waits, or `null` when the runbook has
-never been published:
+never been published):
 
 ```json
 {
@@ -1877,7 +1877,7 @@ at most 80 characters and 320 bytes; a description at most 4,096 characters and
 and the console use these same canonical limits.
 
 The complete `get_runbook` object is bounded by a budget DERIVED from those
-limits — definition, title, description, and a fixed envelope — so a runbook the
+limits (definition, title, description, and a fixed envelope), so a runbook the
 authoring path accepts always fits one response. The budget is not a second
 limit an operator has to track. It is still measured rather than assumed,
 because JSON escaping can expand a value past its stored bytes; an object that
@@ -1896,14 +1896,14 @@ shapes the input schema enforces:
 
 `allow_draft` defaults to false and may be stated as false alongside
 `runbook_ref`; setting it true is explicit consent to run one exact unpublished
-document and additionally requires draft-authoring permission. Optional
+document and also requires draft-authoring permission. Optional
 `input_values` is accepted by both shapes; its values must satisfy the
 definition's typed input declarations. The bridge injects an operation ID using
 the common mutation-idempotency contract; the authenticated request does not
 carry a generic signature.
 
 `runbook_ref` must name the live release. An older release number returns
-`not_live` before any operation or execution is committed — the caller asked for
+`not_live` before any operation or execution is committed: the caller asked for
 `slug@2` and is told which release is live rather than silently handed release
 3's content. A ref whose runbook is absent, out of scope, or no longer resolvable
 returns `runbook_not_found`, the same closed answer every resource-resolution
@@ -1923,8 +1923,8 @@ scope; resolves the current trusted pack behind each declared action; requires a
 common action contract across the runners that hold a trusted candidate; checks
 every binding against that contract; evaluates current account policy for every
 item; and enforces the signature restriction for the complete plan. A covered
-runner that does not advertise a step's pack fails the step — declared coverage
-never silently shrinks — while one whose advertised deployment holds no trusted
+runner that does not advertise a step's pack fails the step (declared coverage
+never silently shrinks), while one whose advertised deployment holds no trusted
 version right now (retired, pending, rejected, or drifted) narrows the
 executable set to the runners that do; zero capable runners fails the step. For
 `random_one`, the portal samples one runner from the capable set and freezes it.
@@ -1932,7 +1932,7 @@ Any failure creates no execution.
 
 The operation, immutable expanded plan, execution, stages, and logical
 step/runner items commit atomically. The execution also snapshots the exact
-definition it dispatched and, for a live run, the release number it ran — the
+definition it dispatched and, for a live run, the release number it ran: the
 runbook row itself mutates on publish, so the snapshot is what makes an old
 execution still describable. If any frozen item requires approval, the
 same transaction creates one request for the entire execution and no action-run
@@ -2096,7 +2096,7 @@ stable code and message plus the applicable stage, step, and runner identity.
 It describes whole-execution approval, a scheduled wait, or the terminal cause.
 Both `pending_approval` and `active` executions include `next`.
 
-`execution.runbook_ref` names what actually ran: `slug@release` for a live run,
+`execution.runbook_ref` names what ran: `slug@release` for a live run,
 and the bare slug for a draft test, because the content it ran never became a
 release. A live execution keeps naming the release it ran even after a later
 publish makes a higher number live.
@@ -2109,8 +2109,8 @@ nor alters it. `get_operation` recovers the same execution as
 `kind: "runbook_draft_test"` with that bare slug and definition hash.
 
 A `pending_approval` execution also carries the same bounded `approval` object
-a pending action run gets — the request ID, the console approval URL the model
-relays to the operator, and the hard expiry — plus `wait_until` set to that
+a pending action run gets (the request ID, the console approval URL the model
+relays to the operator, and the hard expiry), plus `wait_until` set to that
 expiry. Both fields appear only while the whole-run approval is pending and
 its request is visible to the caller:
 
@@ -2254,8 +2254,8 @@ object:
 }
 ```
 
-`slug` is the runbook's only wire identity — an unpublished change has no ref of
-its own — and `definition_sha256` is the digest of what was just written, to be
+`slug` is the runbook's only wire identity (an unpublished change has no ref of
+its own), and `definition_sha256` is the digest of what was just written, to be
 passed back to edit or test the same content. `live_ref` names the release still
 executing while the change waits, and is `null` here because a newly created
 runbook has none.
@@ -2271,7 +2271,7 @@ side effect is written on this path. Current target/pack preflight happens in
 the console before publication and again at execution. Human review and
 publication remain mandatory. Retry returns the same runbook through the common
 operation contract. `get_operation` recovers the same object as
-`kind: "runbook_draft"` — draft ID, slug, hash, live ref, and review URL — after
+`kind: "runbook_draft"` (draft ID, slug, hash, live ref, and review URL) after
 an ambiguous response; no synthetic run is created for recovery. The hash, slug,
 and live ref describe the original committed mutation, not later edits or
 publications. Read `get_runbook` for current content before a new edit. A missing
@@ -2288,7 +2288,7 @@ runbook and is never renamed by this tool; releases depend on it.
 The base digest is whichever document the caller read: the unpublished change's
 when the runbook has one, otherwise the live release's. The portal locks the
 runbook row, compares that digest inside the transaction, then rewrites the
-single unpublished change in place — no new row, no new number, and the live
+single unpublished change in place: no new row, no new number, and the live
 release untouched. A mismatched digest, or a slug this credential cannot resolve,
 returns `draft_changed` and writes no operation and no change. The result and
 recovery objects are the shape above, with `live_ref` naming the release that
@@ -2396,7 +2396,7 @@ enforced by one JSON Schema:
 - Emisar's authorization and approval decisions remain authoritative even when
   a client adds its own confirmation UI.
 - Descriptions, examples, runner output, and the free text of a `review`
-  receipt — its rationale, decision notes, and override reason — are untrusted
+  receipt (its rationale, decision notes, and override reason) are untrusted
   data, never instructions.
 - Clients use exact returned identities and follow returned `next`
   continuations without probing hidden resources.
