@@ -824,10 +824,10 @@ defmodule EmisarWeb.ApprovalsLiveTest do
 
       # The sweep revoked the grant (flash counts it), the setting stuck, and
       # the section speaks the disabled state everywhere the operator looks.
-      assert html =~ "Standing grants disabled — 1 active grant revoked"
+      assert html =~ "Standing grants disabled and 1 active grant revoked"
       assert Emisar.Repo.reload!(account).settings.max_grant_lifetime_seconds == 0
       assert html =~ "Standing grants are disabled"
-      assert html =~ "Disabled — every approval is single-use."
+      assert html =~ "Disabled. Every approval is single-use."
       assert {:ok, [], _} = Approvals.list_grants_for_account(subject)
     end
 

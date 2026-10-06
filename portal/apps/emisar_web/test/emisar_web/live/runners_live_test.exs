@@ -527,7 +527,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> render_change(%{"hours" => "720"})
 
       assert html =~
-               "Automatic cleanup on — runners offline for 30 days are removed by the hourly sweep."
+               "Automatic cleanup is on. Runners offline for 30 days are removed by the hourly sweep."
 
       assert has_element?(lv, ~s(#runners-cleanup option[value="720"][selected]))
     end
@@ -547,7 +547,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> render_change(%{"hours" => "1"})
 
       assert html =~
-               "Automatic cleanup on — runners offline for 1 hour are removed by the hourly sweep."
+               "Automatic cleanup is on. Runners offline for 1 hour are removed by the hourly sweep."
 
       assert has_element?(lv, ~s(#runners-cleanup option[value="1"][selected]))
 
@@ -557,7 +557,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> render_change(%{"hours" => "6"})
 
       assert html =~
-               "Automatic cleanup on — runners offline for 6 hours are removed by the hourly sweep."
+               "Automatic cleanup is on. Runners offline for 6 hours are removed by the hourly sweep."
 
       assert has_element?(lv, ~s(#runners-cleanup option[value="6"][selected]))
     end
@@ -574,7 +574,7 @@ defmodule EmisarWeb.RunnersLiveTest do
         |> render_change(%{"hours" => "24"})
 
       assert html =~
-               "Automatic cleanup on — runners offline for 1 day are removed by the hourly sweep."
+               "Automatic cleanup is on. Runners offline for 1 day are removed by the hourly sweep."
 
       assert has_element?(lv, ~s(#runners-cleanup option[value="24"][selected]))
     end

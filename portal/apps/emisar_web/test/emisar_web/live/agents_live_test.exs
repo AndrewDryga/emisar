@@ -1670,7 +1670,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       html = render_click(lv, "rotate", %{"id" => key.id})
 
-      assert html =~ "New key ready—update your agent"
+      assert html =~ "New key ready: update your agent"
       assert html =~ ~r/emk-[A-Za-z0-9_-]{10,}/
 
       # Successor minted alongside the original — both visible, neither revoked.
@@ -1699,7 +1699,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert_receive {:list_changed, :api_key, "api_key.rotation_requested", _}
       assert html =~ "Rotation requested"
       assert html =~ "Rotate manually"
-      refute html =~ "New key ready—update your agent"
+      refute html =~ "New key ready: update your agent"
       refute has_element?(lv, "#rotated-key")
       assert Repo.aggregate(ApiKey, :count) == 1
       render(lv)
@@ -1708,7 +1708,7 @@ defmodule EmisarWeb.AgentsLiveTest do
       assert has_element?(lv, "#agent-key-action", "Cancels the pending automatic rotation")
       html = render_click(lv, "rotate_manual", %{"id" => key.id})
       assert_receive {:list_changed, :api_key, "api_key.created", _}
-      assert html =~ "New key ready—update your agent"
+      assert html =~ "New key ready: update your agent"
       assert Repo.reload!(key).rotation_requested_at == nil
       assert Repo.aggregate(ApiKey, :count) == 2
       render(lv)
@@ -2240,7 +2240,7 @@ defmodule EmisarWeb.AgentsLiveTest do
 
       html = render_click(lv, "rotate", %{"id" => key.id})
 
-      assert html =~ "New key ready—update your agent"
+      assert html =~ "New key ready: update your agent"
       assert [successor] = Enum.reject(Repo.all(ApiKey), &(&1.id == key.id))
       assert successor.replaces_id == key.id
       flush_key_broadcast(lv)

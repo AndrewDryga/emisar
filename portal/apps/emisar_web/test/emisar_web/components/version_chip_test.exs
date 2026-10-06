@@ -40,7 +40,7 @@ defmodule EmisarWeb.Components.VersionChipTest do
         """)
 
       assert html =~ "Below the minimum runner version"
-      assert html =~ "run the command on this host"
+      assert html =~ "Run the command on this host"
       assert html =~ ~s(id="runner-version-9-command")
       assert html =~ ~s(data-copy-text="sudo emisar update")
       assert html =~ ~s(aria-label="Update required")

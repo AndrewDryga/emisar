@@ -428,7 +428,7 @@ defmodule EmisarWeb.RunnerScope do
   # is empty for a reason the operator can fix upstream, not because the account
   # has no packs.
   defp pack_empty_message(mode, []) when mode != "all",
-    do: "Choose runners first — the packs they carry appear here."
+    do: "Choose runners first. The packs they carry appear here."
 
   defp pack_empty_message(_mode, _runner_ids),
     do: "No packs available to grant on the selected runners."

@@ -790,7 +790,7 @@ defmodule Emisar.Audit.Event.Query do
        "The maximum standing-grant lifetime changed, or standing grants were disabled."},
     "account.disabled" =>
       {false, false, true,
-       "Emisar staff suspended this workspace — browser access to it is blocked."},
+       "Emisar staff suspended this workspace. Browser access to it is blocked."},
     "account.enabled" => {false, false, true, "Emisar staff lifted a workspace suspension."},
     "account.closed" =>
       {true, true, true, "The account was closed after subscription cleanup completed."},
@@ -798,7 +798,7 @@ defmodule Emisar.Audit.Event.Query do
     "runner.connected" => {false, false, false, "A runner connected to emisar."},
     "runner.disconnected" => {false, false, false, "A runner disconnected from emisar."},
     "runner.disabled" =>
-      {true, true, true, "An operator disabled a runner — dispatches to it are refused."},
+      {true, true, true, "An operator disabled a runner. Dispatches to it are refused."},
     "runner.credential_rotation_requested" =>
       {true, true, true, "An operator requested an early runner connection-key rotation."},
     "runner.credential_rotated" =>
@@ -819,7 +819,7 @@ defmodule Emisar.Audit.Event.Query do
     "enrollment_key.created" => {true, true, true, "A runner enrollment key was created."},
     "enrollment_key.revoked" =>
       {true, true, true,
-       "An operator revoked a runner enrollment key — future registrations with it fail."},
+       "An operator revoked a runner enrollment key. Future registrations with it fail."},
     "enrollment_key.bound" =>
       {true, false, true, "A runner setup key was used for registration for the first time."},
     "api_key.created" =>
@@ -827,7 +827,7 @@ defmodule Emisar.Audit.Event.Query do
     "api_key.rotation_requested" =>
       {true, true, true, "An operator requested automatic rotation on the agent's next call."},
     "api_key.revoked" =>
-      {true, true, true, "An operator revoked an API key — its next call gets a 401."},
+      {true, true, true, "An operator revoked an API key. Its next call gets a 401."},
     "api_key.bound" =>
       {true, false, true, "An automatically generated API key was used for the first time."},
     "api_key.auto_rotated" =>
@@ -835,12 +835,12 @@ defmodule Emisar.Audit.Event.Query do
        "A replacement key was created through automatic rotation. The previous key is revoked when its replacement is first used."},
     "api_key.retired_by_rotation" =>
       {true, false, true,
-       "A rotated key's successor was used for the first time — the key it replaces was revoked automatically."},
+       "A rotated key's successor was used for the first time, so the key it replaces was revoked automatically."},
     "api_key.device_grant_approved" =>
       {true, true, true,
        "A user approved an agent’s connection request. The installer can now collect its key."},
     "api_key.device_grant_denied" =>
-      {true, true, true, "An operator denied an agent's connect request — no key was issued."},
+      {true, true, true, "An operator denied an agent's connect request, so no key was issued."},
     "oauth.consent_granted" =>
       {true, true, true, "A user authorized an OAuth client to act on their behalf."},
     "oauth.refresh_token_reused" =>
@@ -868,7 +868,7 @@ defmodule Emisar.Audit.Event.Query do
        "A user rejected the reported hash. Any previously trusted hash was kept."},
     "pack_trust_revoked" =>
       {true, true, true,
-       "An operator revoked trust in a pack version — dispatches with it are refused."},
+       "An operator revoked trust in a pack version. Dispatches with it are refused."},
     "pack_version_deleted" =>
       {true, true, true,
        "A pack version’s catalog records were removed. Pack files on runners were not removed."},
@@ -969,7 +969,7 @@ defmodule Emisar.Audit.Event.Query do
       {false, false, true,
        "Emisar staff erased this member's seat in the workspace, on a verified erasure request."},
     "membership.suspended" =>
-      {true, true, true, "An admin suspended a member — they can't sign into this workspace."},
+      {true, true, true, "An admin suspended a member. They can't sign in to this workspace."},
     "membership.reinstated" => {true, true, true, "An admin reinstated a suspended member."},
     "membership.invitation_accepted" =>
       {true, false, false, "An existing user accepted an invitation into this workspace."},

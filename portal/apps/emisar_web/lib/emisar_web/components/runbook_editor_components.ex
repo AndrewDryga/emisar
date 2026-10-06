@@ -620,9 +620,8 @@ defmodule EmisarWeb.RunbookEditorComponents do
               }
             >
               <:body>
-                Removes
-                <span class="font-medium text-zinc-200">{input_card_title(input, index)}</span>
-                — everything entered on it is discarded.
+                Removes <span class="font-medium text-zinc-200">{input_card_title(input, index)}</span>.
+                Everything entered on it is discarded.
               </:body>
             </.confirm_dialog>
           </div>
@@ -659,11 +658,11 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 label_variant={:eyebrow}
                 disabled={@read_only?}
                 options={[
-                  {"String — text", "string"},
-                  {"Integer — whole numbers", "integer"},
-                  {"Number — decimals allowed", "number"},
-                  {"Boolean — true or false", "boolean"},
-                  {"Enum — allowed values", "enum"}
+                  {"String (text)", "string"},
+                  {"Integer (whole numbers)", "integer"},
+                  {"Number (decimals allowed)", "number"},
+                  {"Boolean (true or false)", "boolean"},
+                  {"Enum (allowed values)", "enum"}
                 ]}
               />
               <RunbookWorkflowComponents.qualifier_checkbox
@@ -962,9 +961,9 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 href={"##{issue_target(issue.path)}"}
                 class="text-xs font-medium text-brand-300 hover:text-brand-200"
               >
-                {issue_label(issue.path)}
+                {issue_label(issue.path)}:
               </a>
-              — {issue.message}
+              {issue.message}
             </li>
           </ul>
         </:body>
@@ -991,9 +990,9 @@ defmodule EmisarWeb.RunbookEditorComponents do
                 href={"##{issue_target(issue.path)}"}
                 class="text-xs font-medium text-brand-300 hover:text-brand-200"
               >
-                {issue_label(issue.path)}
+                {issue_label(issue.path)}:
               </a>
-              — {issue.message}
+              {issue.message}
             </li>
           </ul>
         </:body>

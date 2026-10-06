@@ -880,7 +880,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         # next steps live (test a sign-in, enable directory sync, map groups).
         {:noreply,
          socket
-         |> put_flash(:info, "Connection \"#{provider.name}\" added — finish setup below.")
+         |> put_flash(:info, "Connection \"#{provider.name}\" added. Finish setup below.")
          |> push_navigate(
            to: ~p"/app/#{socket.assigns.current_account}/settings/sso/#{provider.id}"
          )}
@@ -1525,18 +1525,18 @@ defmodule EmisarWeb.SSOSettingsLive do
 
   defp error_message(:sso_not_available), do: "Single sign-on requires a Team or Enterprise plan."
   defp error_message(:unauthorized), do: "You don't have permission to configure single sign-on."
-  defp error_message(:not_found), do: "That no longer exists — it may have just been removed."
+  defp error_message(:not_found), do: "That no longer exists. It may have just been removed."
 
   defp error_message(:require_sso_last_provider) do
     "This is the only active SSO connection and the account requires single sign-on. Turn off the SSO requirement (Team → Single sign-on) before disabling or deleting it."
   end
 
   defp error_message(:client_secret_required) do
-    "Changing the issuer or client ID needs the client secret again — emisar sends it to the endpoints that issuer publishes, so it can't carry the old one over to a new provider."
+    "Changing the issuer or client ID needs the client secret again. emisar sends it to the endpoints that issuer publishes, so it can't carry the old one over to a new provider."
   end
 
   defp error_message(:identity_namespace_locked) do
-    "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed — changing them would repoint existing members' identities at whoever the new provider asserts. Rotate the client secret here; to move to a different provider, add a new connection."
+    "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed. Changing them would repoint existing members' identities at whoever the new provider asserts. Rotate the client secret here; to move to a different provider, add a new connection."
   end
 
   defp error_message(:sign_in_verification_required) do
@@ -2185,7 +2185,7 @@ defmodule EmisarWeb.SSOSettingsLive do
       <.section_header title={@provider.name} />
       <p class="mt-2 text-sm leading-relaxed text-zinc-400">
         This connection is dormant. Sign-ins and its directory token are refused until paid access
-        returns. You can disable directory sync or remove the connection now — neither cleanup
+        returns. You can disable directory sync or remove the connection now. Neither cleanup
         action needs a plan.
       </p>
       <div class="mt-4 divide-y divide-zinc-800/70">
@@ -2265,7 +2265,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     ~H"""
     <.empty_state icon="state.locked" title="Single sign-on is a paid feature">
       Connect Okta, Google Workspace, Keycloak, or any OIDC provider so your team signs in
-      through it — with just-in-time provisioning and per-provider MFA. Available on the
+      through it, with just-in-time provisioning and per-provider MFA. Available on the
       Team and Enterprise plans (SCIM directory sync is Enterprise).
       <:cta navigate={~p"/app/#{@current_account}/settings/billing"}>See plans</:cta>
     </.empty_state>
@@ -2446,7 +2446,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   {fixed}
                 </div>
                 <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-                  Fixed for {SSOProviderKind.get(@kind, :label)} — the same for every org, so there's nothing to set.
+                  Fixed for {SSOProviderKind.get(@kind, :label)}. It's the same for every org, so there's nothing to set.
                 </p>
               <% true -> %>
                 <.input
@@ -2458,7 +2458,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                   disabled={@namespace_locked?}
                 />
                 <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-                  The OIDC issuer — its discovery document is fetched from here. Must be HTTPS.
+                  The OIDC issuer, where emisar fetches its discovery document. Must be HTTPS.
                 </p>
             <% end %>
           </div>
@@ -2490,7 +2490,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               disabled={@namespace_locked?}
             />
             <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-              How emisar recognises a returning member. Never their email — people change those. {SSOProviderKind.identifier_claim_hint(
+              How emisar recognises a returning member. It never uses their email, because people change it. {SSOProviderKind.identifier_claim_hint(
                 @kind
               )}
             </p>
@@ -2598,14 +2598,14 @@ defmodule EmisarWeb.SSOSettingsLive do
               :if={not checkbox_on?(@form[:satisfies_mfa])}
               class="mt-1 text-[11px] leading-relaxed text-zinc-400"
             >
-              Turn on only if this provider enforces MFA itself — then a sign-in here counts as
-              the account's second factor.
+              Turn on only if this provider enforces MFA itself. When this is on, a sign-in here
+              counts as the account's second factor.
             </p>
             <p
               :if={checkbox_on?(@form[:satisfies_mfa])}
               class="mt-1 text-[11px] leading-relaxed text-amber-300/80"
             >
-              This provider must enforce MFA itself — otherwise members who sign in through it
+              This provider must enforce MFA itself. Otherwise, members who sign in through it
               bypass your MFA requirement.
             </p>
           </div>
@@ -2738,9 +2738,8 @@ defmodule EmisarWeb.SSOSettingsLive do
     <%= if @hint do %>
       {@hint}
     <% else %>
-      Whatever URL serves its OIDC discovery document at
-      <code>/.well-known/openid-configuration</code>
-      — emisar fetches it from there.
+      Whatever URL serves its OIDC discovery document at <code>/.well-known/openid-configuration</code>.
+      emisar fetches it from there.
     <% end %>
     """
   end
@@ -2983,12 +2982,12 @@ defmodule EmisarWeb.SSOSettingsLive do
               Map the SCIM <span class="text-zinc-300">externalId</span>
               to the same value your OIDC
               <.inline_code>{@provider.identifier_claim}</.inline_code>
-              claim carries — so a member's SSO login and their synced record are one identity.
+              claim carries, so a member's SSO login and their synced record are one identity.
             </:step>
           </.steps>
           <p :if={@provider.kind == :okta} class="mt-3 pl-5 text-[11px] leading-relaxed text-zinc-400">
-            The SCIM app is a second Okta integration, separate from your sign-in app — its own
-            SSO doesn't need to be functional. Okta defaults both the OIDC
+            The SCIM app is a second Okta integration, separate from your sign-in app, and its
+            own SSO doesn't need to be functional. Okta defaults both the OIDC
             <.inline_code>sub</.inline_code>
             and the SCIM
             <.inline_code>externalId</.inline_code>

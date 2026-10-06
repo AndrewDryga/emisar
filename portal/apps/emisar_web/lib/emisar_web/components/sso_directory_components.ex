@@ -1135,10 +1135,10 @@ defmodule EmisarWeb.SSODirectoryComponents do
 
   # Group role mappings are editable only while directory-sync config is available.
 
-  defp role_lock_tip(true), do: "Role is managed by directory sync — set it in Groups & access"
+  defp role_lock_tip(true), do: "Role is managed by directory sync. Set it in Groups & access."
 
   defp role_lock_tip(false),
-    do: "Role is managed by directory sync — change this member's groups in your IdP"
+    do: "Role is managed by directory sync. Change this member's groups in your IdP."
 
   defp role_label(role), do: Emisar.Auth.role_label(role)
 

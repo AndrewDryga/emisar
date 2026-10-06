@@ -1032,7 +1032,7 @@ defmodule EmisarWeb.LiveTable do
                 :if={@metadata.count_kind == :estimated}
                 id={"#{@id}-count-estimate"}
                 align={:left}
-                text="Approximate — counting every event on each load gets slower as the trail grows. Filter the list for an exact total."
+                text="Approximate, because counting every event on each load gets slower as the trail grows. Filter the list for an exact total."
               >~</CoreComponents.tooltip>{@metadata.count}
             </span>
             total

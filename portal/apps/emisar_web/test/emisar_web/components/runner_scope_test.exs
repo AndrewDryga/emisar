@@ -150,7 +150,7 @@ defmodule EmisarWeb.RunnerScopeTest do
           name: "pack_scope[]",
           packs: [],
           selected: [],
-          empty_message: "Choose runners first — the packs they carry appear here."
+          empty_message: "Choose runners first. The packs they carry appear here."
         )
 
       assert html =~ "Choose runners first"

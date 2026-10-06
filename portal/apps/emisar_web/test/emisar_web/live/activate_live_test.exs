@@ -94,7 +94,7 @@ defmodule EmisarWeb.ActivateLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/activate?code=#{user_code}")
 
       approved = render_click(lv, "approve", %{})
-      assert approved =~ "Approved — return to your terminal"
+      assert approved =~ "Approved: return to your terminal"
       assert approved =~ "Return to your terminal to finish setup."
       assert approved =~ "Agents appear in Agents after their first call"
       assert approved =~ "Close this tab"

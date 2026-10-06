@@ -1210,9 +1210,9 @@ defmodule EmisarWeb.RunbookRunLive do
           <ul class="space-y-2">
             <li :for={issue <- @preflight.issues}>
               <span class="text-xs font-medium text-zinc-200">
-                {preflight_issue_label(issue.path)}
+                {preflight_issue_label(issue.path)}:
               </span>
-              — {issue.message}
+              {issue.message}
             </li>
           </ul>
         </:body>

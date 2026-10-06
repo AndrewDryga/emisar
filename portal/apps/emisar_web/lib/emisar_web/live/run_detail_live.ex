@@ -618,7 +618,7 @@ defmodule EmisarWeb.RunDetailLive do
             <.event_block
               :if={@run.status == :pending and @runner_connection == :offline}
               icon="state.not_dispatched"
-              title="Queued — runner offline"
+              title="Queued: runner offline"
             >
               <:body>
                 This run is waiting for {runner_label(@run.runner)} to reconnect.

@@ -19,7 +19,7 @@ defmodule EmisarWeb.SSOProviderKind do
     docs_link_label: "Single sign-on docs",
     issuer: "your provider's OIDC issuer URL (the discovery base)",
     issuer_where: nil,
-    oidc_app: "with your provider — a confidential web client with a client secret",
+    oidc_app: "with your provider: a confidential web client with a client secret",
     directory_note: "Directory sync requires a provider that can send SCIM updates.",
     scim_location: "in your provider's SCIM / user-provisioning settings",
     name_placeholder: "Company SSO",
@@ -32,7 +32,7 @@ defmodule EmisarWeb.SSOProviderKind do
       label: "Google Workspace",
       docs_path: "/docs/integrations/google-workspace",
       issuer: "https://accounts.google.com",
-      issuer_where: "Always this exact value for Google — nothing to look up.",
+      issuer_where: "Always this exact value for Google, so there's nothing to look up.",
       oidc_app:
         "in Google Cloud Console → Google Auth Platform → Clients → Create client (Web application)",
       directory_note: "Google Workspace doesn't support directory sync with emisar.",
@@ -46,9 +46,9 @@ defmodule EmisarWeb.SSOProviderKind do
         "Copy your org URL from the account menu in the Okta admin console. Use the org URL without -admin or an /oauth2/… path.",
       oidc_app:
         "in the Okta admin console → Applications → Create App Integration → OIDC, Web Application",
-      directory_note: "Directory sync is a second Okta app — this one only signs people in.",
+      directory_note: "Directory sync is a second Okta app. This one only signs people in.",
       scim_location:
-        "in a SEPARATE Okta app — Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog (its Sign-On tab is unused — SCIM lives entirely on the Provisioning tab): Configure API Integration → Enable, configure the Base URL and API token as described in step 2, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts",
+        "in a separate Okta app, because Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog (its Sign-On tab is unused, since SCIM lives entirely on the Provisioning tab): Configure API Integration → Enable, configure the Base URL and API token as described in step 2, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts",
       name_placeholder: "Acme Okta",
       dpop_relevant?: true
     },
@@ -57,20 +57,20 @@ defmodule EmisarWeb.SSOProviderKind do
       docs_path: "/docs/integrations/entra",
       issuer: "https://login.microsoftonline.com/YOUR-TENANT-ID/v2.0",
       issuer_where:
-        "Build it from your Directory (tenant) ID, on the app registration's Overview. The trailing `/v2.0` selects Entra's v2.0 endpoint — without it you get v1.0 tokens.",
+        "Build it from your Directory (tenant) ID, on the app registration's Overview. The trailing `/v2.0` selects Entra's v2.0 endpoint. Without it, you get v1.0 tokens.",
       oidc_app:
         "in the Microsoft Entra admin center → App registrations → New registration, with a Web redirect URI",
       directory_note:
         "This is the app registration; directory sync is a separate enterprise application.",
       scim_location:
-        "on a separate ENTERPRISE APPLICATION, not this app registration — Entra splits sign-in and provisioning across two objects. Create a non-gallery app, then Provisioning → Automatic, with the URL in step 2 as Tenant URL and the `ems-` token as Secret Token. Remap externalId to objectId, or the directory and this connection will disagree about who someone is",
+        "on a separate enterprise application, not this app registration. Entra splits sign-in and provisioning across two objects. Create a non-gallery app, then Provisioning → Automatic, with the URL in step 2 as Tenant URL and the `ems-` token as Secret Token. Remap externalId to objectId, or the directory and this connection will disagree about who someone is",
       name_placeholder: "Acme Entra",
       # Entra's `sub` differs per application, so `oid` is the only claim that
       # joins sign-in to the directory — which is why it is the only one
       # offered. The reasoning belongs in the Entra guide; here the operator
       # needs the fact.
       identifier_claim_hint:
-        "Entra gives every app a different `sub`, so emisar uses `oid` — the id directory sync sends."
+        "Entra gives every app a different `sub`, so emisar uses `oid`, the ID that directory sync sends."
     },
     "jumpcloud" => %{
       label: "JumpCloud",
@@ -79,7 +79,7 @@ defmodule EmisarWeb.SSOProviderKind do
         "in the JumpCloud admin console → SSO Applications → Add New Application → Custom Application, with the OIDC connector enabled",
       directory_note: "One JumpCloud application covers both this and directory sync.",
       scim_location:
-        "on a JumpCloud application's Provisioning tab — one custom app can carry both sign-in and provisioning, so tick \"Export users to this app\" alongside SSO (its SAML/OIDC sub-choice defaults to SAML). Configure the Base URL and Token as described in step 2, then Test Connection → Activate (their form discards the config if you press Save instead)",
+        "on a JumpCloud application's Provisioning tab. One custom app can carry both sign-in and provisioning, so tick \"Export users to this app\" alongside SSO (its SAML/OIDC sub-choice defaults to SAML). Configure the Base URL and Token as described in step 2, then Test Connection → Activate (their form discards the config if you press Save instead)",
       name_placeholder: "Acme JumpCloud"
     },
     "keycloak" => %{
@@ -95,7 +95,7 @@ defmodule EmisarWeb.SSOProviderKind do
       # SCIM *server* others provision INTO, the opposite direction. Naming the
       # gap beats sending an admin hunting for a screen that doesn't exist.
       scim_location:
-        "from a SCIM plugin on your Keycloak — Keycloak ships no outbound provisioning of its own, so this needs a third-party extension, which you configure and support",
+        "from a SCIM plugin on your Keycloak. Keycloak ships no outbound provisioning of its own, so this needs a third-party extension, which you configure and support",
       name_placeholder: "Acme Keycloak",
       dpop_relevant?: true
     }

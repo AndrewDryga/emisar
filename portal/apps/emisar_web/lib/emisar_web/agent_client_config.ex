@@ -491,7 +491,7 @@ defmodule EmisarWeb.AgentClientConfig do
   defp auto_permit("gemini", os) do
     %{
       installer: true,
-      location: location("gemini", os) <> " — add to the \"emisar\" server block",
+      location: location("gemini", os) <> " (add to the \"emisar\" server block)",
       body: ~s("emisar": {\n  "trust": true\n})
     }
   end
@@ -509,7 +509,7 @@ defmodule EmisarWeb.AgentClientConfig do
     %{
       installer: true,
       location:
-        home_path(os, ".grok/config.toml") <> " — add to the existing [permission] section",
+        home_path(os, ".grok/config.toml") <> " (add to the existing [permission] section)",
       body: ~s|allow = ["MCPTool(emisar__*)"]|
     }
   end

@@ -2350,9 +2350,9 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{provider.id}")
 
       assert html =~
-               "Role is managed by directory sync — change this member&#39;s groups in your IdP"
+               "Role is managed by directory sync. Change this member&#39;s groups in your IdP."
 
-      refute html =~ "set it in Groups & access"
+      refute html =~ "Set it in Groups &amp; access"
       assert has_element?(lv, "#connection-provisioning", "Enterprise plan")
 
       assert has_element?(

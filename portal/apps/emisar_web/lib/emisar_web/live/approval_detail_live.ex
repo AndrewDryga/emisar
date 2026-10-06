@@ -1689,7 +1689,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
             maxlength={Approvals.max_decision_reason_length()}
             label="Reason"
             label_variant={:eyebrow}
-            placeholder="Why can’t the required reviews be completed?"
+            placeholder="Why can't the required reviews be completed?"
             required
             aria-invalid={@reason_error && "true"}
             aria-describedby={@reason_error && "override-reason-error"}

@@ -13,11 +13,11 @@ defmodule EmisarWeb.MemberErrors do
     insufficient_privileges:
       "You can only assign or change roles whose permissions you already hold.",
     last_owner: "Can't remove or demote the last owner. Promote someone else first.",
-    cannot_self_promote: "Promote someone else first — you can't promote yourself.",
+    cannot_self_promote: "Promote someone else first. You can't promote yourself.",
     cannot_modify_self: "You can't change your own membership from here. Use Profile.",
     not_found: "That member no longer exists.",
     directory_managed_profile:
-      "This member's name is managed by your identity provider — change it there.",
+      "This member's name is managed by your identity provider. Change it there.",
     role_managed_by_directory: "That member's role is set by their identity provider.",
     runner_access_managed_by_directory:
       "That member's runner access is set by their identity provider.",
@@ -32,9 +32,9 @@ defmodule EmisarWeb.MemberErrors do
     member_runner_access_exceeds_subject:
       "That member's runner access is wider than yours. Narrow their access first, then change their role.",
     mfa_enrollment_required:
-      "Enable MFA on your own profile first — otherwise you'd lock yourself out.",
+      "Enable MFA on your own profile first. Otherwise you'd lock yourself out.",
     deactivated_in_idp:
-      "That member is deactivated in your identity provider — reactivate them there first.",
+      "That member is deactivated in your identity provider. Reactivate them there first.",
     service_account_role_fixed:
       "A service account always has the Operator role. Change its runner and pack access instead.",
     rate_limited: "This workspace has sent its hourly invitation budget. Try again in an hour."

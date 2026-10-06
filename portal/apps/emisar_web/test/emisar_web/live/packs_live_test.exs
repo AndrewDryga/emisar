@@ -732,7 +732,7 @@ defmodule EmisarWeb.PacksLiveTest do
       # The rejected row stays visible — quietly, with the fix-admin-mistake
       # Trust affordance — instead of vanishing from the list.
       assert has_element?(lv, "#packs li", "acme-tools")
-      assert has_element?(lv, "#packs li", "Rejected — actions from this version are blocked")
+      assert has_element?(lv, "#packs li", "Rejected. Actions from this version are blocked")
 
       assert has_element?(
                lv,
@@ -758,7 +758,7 @@ defmodule EmisarWeb.PacksLiveTest do
       html = confirm_dialog(lv, "pack-action", "Trust version")
 
       assert html =~ "Trusted acme-tools v9.9."
-      refute has_element?(lv, "#packs li", "Rejected — actions from this version are blocked")
+      refute has_element?(lv, "#packs li", "Rejected. Actions from this version are blocked")
     end
 
     test "reject's typed-confirm: Confirm won't fire until the pack token matches", %{
@@ -1253,7 +1253,7 @@ defmodule EmisarWeb.PacksLiveTest do
       refute html =~ "RETIRED"
       refute html =~ "Retired version"
       refute has_element?(lv, "#override-#{pack_version.id}")
-      assert has_element?(lv, "#packs li", "Rejected — actions from this version are blocked")
+      assert has_element?(lv, "#packs li", "Rejected. Actions from this version are blocked")
     end
 
     test "the override-retirement handler re-trusts and stays gated when dispatched directly",
@@ -1305,7 +1305,7 @@ defmodule EmisarWeb.PacksLiveTest do
       html = confirm_dialog(lv, "pack-action", "Revoke trust")
 
       assert html =~ "Trust revoked for acme-tools v9.9."
-      assert has_element?(lv, "#packs li", "Rejected — actions from this version are blocked")
+      assert has_element?(lv, "#packs li", "Rejected. Actions from this version are blocked")
       refute has_element?(lv, selector)
 
       render_click(lv, "open_pack_action", %{"action" => "trust", "id" => trusted.id})

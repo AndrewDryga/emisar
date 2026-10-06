@@ -151,7 +151,7 @@ defmodule EmisarWeb.ActivateLive do
     # Both installers and `emisar-mcp connect` land here, so name the step
     # rather than the installer: a bridge already on the host reconnects
     # without one.
-    "No pending request matches this code — it may have expired (codes last " <>
+    "No pending request matches this code. It may have expired (codes last " <>
       "15 minutes) or already been decided. Start the connection again for a fresh code."
   end
 
@@ -164,7 +164,7 @@ defmodule EmisarWeb.ActivateLive do
             <h1 class="text-lg font-semibold text-zinc-50">Operator access needed</h1>
             <p class="mt-3 text-sm leading-relaxed text-zinc-400">
               Approving an agent connection needs an operator role or above. Ask an
-              operator, admin, or owner to approve it — the code from the terminal is
+              operator, admin, or owner to approve it. The code from the terminal is
               all they need.
             </p>
             <.button
@@ -180,7 +180,7 @@ defmodule EmisarWeb.ActivateLive do
             <div class="flex items-center gap-2.5">
               <.icon name="state.success" class="h-6 w-6 flex-none text-brand-400" />
               <h1 class="text-lg font-semibold text-zinc-50">
-                Approved — return to your terminal
+                Approved: return to your terminal
               </h1>
             </div>
             <p class="mt-3 text-sm leading-relaxed text-zinc-400">
@@ -211,7 +211,7 @@ defmodule EmisarWeb.ActivateLive do
             <%!-- Revealed by the CloseTab hook when the browser refuses the
                  close: it is the operator's next step, so it wears the callout. --%>
             <.callout id="activate-close-note" tone={:amber} class="mt-5 hidden">
-              Your browser blocked that — close the tab yourself.
+              Your browser blocked that, so close the tab yourself.
             </.callout>
           </div>
         <% @decision == :denied -> %>

@@ -27,7 +27,7 @@ defmodule EmisarWeb.Components.RiskPillTest do
       assert html =~ "group-focus-within/tooltip:opacity-100"
       assert html =~ ~s(aria-describedby="approval-42-risk")
       assert html =~ ~s(id="approval-42-risk")
-      assert html =~ "High — service-affecting"
+      assert html =~ "High: service-affecting"
       refute html =~ "title="
     end
 
@@ -40,7 +40,7 @@ defmodule EmisarWeb.Components.RiskPillTest do
         """)
 
       assert html =~ "critical"
-      assert html =~ "Critical — data loss or irreversible"
+      assert html =~ "Critical: data loss or irreversible"
     end
 
     test "two same-risk pills keep distinct bubble ids" do

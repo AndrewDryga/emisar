@@ -1660,7 +1660,7 @@ defmodule EmisarWeb.PacksLive do
                     :if={@version_facts[v.id].trust_state == :rejected}
                     class="mt-1.5 pl-8 text-xs text-zinc-400"
                   >
-                    Rejected — actions from this version are blocked until an owner or admin trusts it again.
+                    Rejected. Actions from this version are blocked until an owner or admin trusts it again.
                   </p>
 
                   <.pending_notice

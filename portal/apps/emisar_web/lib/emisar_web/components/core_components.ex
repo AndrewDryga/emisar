@@ -3332,7 +3332,7 @@ defmodule EmisarWeb.CoreComponents do
   flattened sentence. It keeps the same accessible trigger and overlay behavior,
   with a compact padded surface. `text` remains the plain-text fallback.
 
-      <.tooltip text="Role is managed by directory sync — change it in your IdP">
+      <.tooltip text="Role is managed by directory sync. Change it in your identity provider.">
         <.chip icon="role.restricted">Operator</.chip>
       </.tooltip>
       <.tooltip text="Audit export is on the Team plan" placement={:bottom}>…</.tooltip>

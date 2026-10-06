@@ -278,7 +278,7 @@ defmodule EmisarWeb.RunnerDetailLive do
              put_flash(
                socket,
                :error,
-               "Can't enable — you're at your runner limit (#{limit}). Upgrade your plan or remove another runner first."
+               "Can't enable this runner: you're at your runner limit (#{limit}). Upgrade your plan or remove another runner first."
              )}
 
           {:error, _} ->
@@ -641,7 +641,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                            WHY on hover, keyboard focus, and touch alike. --%>
                         <.tooltip
                           id={"action-signed-only-#{action.id}"}
-                          text="Signed dispatch only — use an MCP client with a signing key and certificate"
+                          text="Signed dispatch only. Use an MCP client with a signing key and certificate."
                           class="shrink-0"
                         >
                           <.button
@@ -695,7 +695,7 @@ defmodule EmisarWeb.RunnerDetailLive do
                            one an operator fixes right here on this page. --%>
                         <.tooltip
                           id={"action-disabled-#{action.id}"}
-                          text="Runner is disabled — enable it to run actions"
+                          text="Runner is disabled. Enable it to run actions."
                           class="shrink-0"
                         >
                           <.button

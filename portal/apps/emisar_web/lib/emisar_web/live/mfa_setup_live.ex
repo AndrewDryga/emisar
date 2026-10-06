@@ -161,7 +161,7 @@ defmodule EmisarWeb.MfaSetupLive do
               download_name="emisar-recovery-codes.txt"
             >
               Use a recovery code if you can't access your authenticator. Each code works once.
-              Save these somewhere safe—you won't be able to view them again.
+              Save these somewhere safe. You won't be able to view them again.
               <:actions>
                 <.recovery_code_acknowledgement
                   saved={@codes_saved?}
@@ -374,7 +374,7 @@ defmodule EmisarWeb.MfaSetupLive do
     secret = socket.assigns.mfa_secret
 
     if is_nil(secret) do
-      {:noreply, put_flash(socket, :error, "Still preparing — try again in a second.")}
+      {:noreply, put_flash(socket, :error, "Still preparing. Try again in a second.")}
     else
       case Auth.enable_mfa(
              secret,

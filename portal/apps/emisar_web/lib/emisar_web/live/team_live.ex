@@ -374,7 +374,7 @@ defmodule EmisarWeb.TeamLive do
            put_flash(
              socket,
              :error,
-             "Add an enabled SSO connection before requiring single sign-on — otherwise nobody, owners included, could sign in."
+             "Add an enabled SSO connection before requiring single sign-on. Otherwise nobody, owners included, could sign in."
            )}
 
         {:error, _} ->
@@ -1078,7 +1078,7 @@ defmodule EmisarWeb.TeamLive do
         >
           <%= if @security_facts.mfa_enforcement == :actor_not_enrolled do %>
             <.tooltip
-              text="Enable MFA on your own profile first — otherwise you'd lock yourself out."
+              text="Enable MFA on your own profile first. Otherwise you'd lock yourself out."
               placement={:bottom}
               class="shrink-0"
             >
@@ -1260,7 +1260,7 @@ defmodule EmisarWeb.TeamLive do
                 >
                   <:body>
                     Members who signed in another way are stopped the next time they navigate and
-                    have to sign in again through your provider — if it's misconfigured, they're
+                    have to sign in again through your provider. If it's misconfigured, they're
                     locked out. Confirm SSO works first.
                   </:body>
                   Require SSO
@@ -2153,10 +2153,10 @@ defmodule EmisarWeb.TeamLive do
 
   defp approval_success_message(%{matched_membership_id: matched_membership_id} = request)
        when not is_nil(matched_membership_id),
-       do: "#{request_label(request)} linked — they can sign in now."
+       do: "#{request_label(request)} is linked and can sign in now."
 
   defp approval_success_message(request),
-    do: "#{request_label(request)} approved — they can sign in now."
+    do: "#{request_label(request)} is approved and can sign in now."
 
   defp approval_confirm_label(%{request: %{matched_membership_id: matched_membership_id}})
        when not is_nil(matched_membership_id),
@@ -2857,7 +2857,7 @@ defmodule EmisarWeb.TeamLive do
                          change actually sticks — the identity provider. --%>
                           <.tooltip
                             id={"role-lock-#{membership.id}"}
-                            text={"Role is managed by #{directory_label(directory)} — change it in your identity provider"}
+                            text={"Role is managed by #{directory_label(directory)}. Change it in your identity provider."}
                           >
                             <.chip icon="role.restricted">
                               {Emisar.Auth.role_label(membership.role)}
@@ -3359,7 +3359,7 @@ defmodule EmisarWeb.TeamLive do
     >
       <:body>
         <span class="font-medium text-zinc-200">{@email}</span>
-        bounced or was marked spam, so no join link was sent. The invitation stays pending — contact
+        bounced or was marked spam, so no join link was sent. The invitation stays pending. Contact
         support to clear that address, or invite a different one.
       </:body>
       {render_slot(@inner_block)}

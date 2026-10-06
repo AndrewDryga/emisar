@@ -421,18 +421,19 @@ defmodule EmisarWeb.ApprovalsLive do
   defp grants_disabled?(account), do: account.settings.max_grant_lifetime_seconds == 0
 
   defp grants_disabled_flash(0),
-    do: "Standing grants disabled — every approval is now single-use."
+    do: "Standing grants disabled. Every approval is now single-use."
 
   defp grants_disabled_flash(1),
-    do: "Standing grants disabled — 1 active grant revoked; every approval is now single-use."
+    do: "Standing grants disabled and 1 active grant revoked. Every approval is now single-use."
 
-  defp grants_disabled_flash(n),
-    do: "Standing grants disabled — #{n} active grants revoked; every approval is now single-use."
+  defp grants_disabled_flash(n) do
+    "Standing grants disabled and #{n} active grants revoked. Every approval is now single-use."
+  end
 
   defp grant_cap_partially_revoked_flash(revoked_count) do
-    "Standing grants are disabled — every approval is now single-use — but only " <>
+    "Standing grants are disabled and every approval is now single-use, but only " <>
       "#{revoked_count} #{plural(revoked_count, "grant")} could be revoked. The rest can no " <>
-      "longer authorize anything; try again to clear them from the list."
+      "longer authorize anything. Try again to clear them from the list."
   end
 
   defp grants_revoked_flash(0), do: "No active grants to revoke."
@@ -472,7 +473,7 @@ defmodule EmisarWeb.ApprovalsLive do
     [
       %{
         value: "0",
-        label: "Disabled — approvals are always single-use",
+        label: "Disabled (approvals are always single-use)",
         selected: current == 0,
         disabled: false
       },
@@ -637,7 +638,7 @@ defmodule EmisarWeb.ApprovalsLive do
                 until they expire or reach a use limit.
               </:subtitle>
               <:subtitle :if={grants_disabled?(@current_account)}>
-                Disabled — every approval is single-use.
+                Disabled. Every approval is single-use.
               </:subtitle>
               <:actions :if={Approvals.subject_can_manage_grants?(@current_subject)}>
                 <.button

@@ -172,7 +172,7 @@ defmodule EmisarWeb.DomainComponents do
       field={@form[:description]}
       type="textarea"
       label="Description (optional)"
-      placeholder="Optional — what is this key for? Who uses it?"
+      placeholder="What is this key for? Who uses it?"
       rows="2"
     />
 
@@ -651,9 +651,9 @@ defmodule EmisarWeb.DomainComponents do
 
   defp plan_note_label(:enterprise), do: "Enterprise"
 
-  defp plan_note_title(:team), do: "Available on the Team and Enterprise plans — see pricing"
+  defp plan_note_title(:team), do: "Available on the Team and Enterprise plans. See pricing."
 
-  defp plan_note_title(:enterprise), do: "Available on the Enterprise plan — see pricing"
+  defp plan_note_title(:enterprise), do: "Available on the Enterprise plan. See pricing."
 
   @doc """
   Self-reported MCP client metadata — the operator-configured key/value map an
@@ -840,7 +840,7 @@ defmodule EmisarWeb.DomainComponents do
   # instead of spelling it into the sentence — the bubble carries it as the
   # copyable row the page notice uses, and the prose just says to run it.
   defp version_chip_title(:runner, :unsupported, _version) do
-    "Below the minimum runner version #{Emisar.Compat.runner_minimum()} — run the command " <>
+    "Below the minimum runner version #{Emisar.Compat.runner_minimum()}. Run the command " <>
       "on this host; it keeps the configuration and restarts the service."
   end
 
@@ -1311,7 +1311,7 @@ defmodule EmisarWeb.DomainComponents do
         <aside class="mt-10 space-y-8 xl:mt-0">
           <.docs_rail title="Adding actions">
             <p>
-              A runner advertises and executes actions on your host. Actions come in packs—collections
+              A runner advertises and executes actions on your host. Actions come in packs: collections
               of related tasks. Once your runner is connected, install the packs you need.
               <.doc_link href={~p"/packs"}>Pack catalog</.doc_link>
             </p>
@@ -1516,13 +1516,13 @@ defmodule EmisarWeb.DomainComponents do
 
   # The severity scale spelled out, so a non-expert approver knows what
   # "HIGH" means and that CRITICAL is above it (the lexicon a single word can't carry).
-  defp risk_meaning("low"), do: "Low — read-only or trivially reversible"
+  defp risk_meaning("low"), do: "Low: read-only or trivially reversible"
 
-  defp risk_meaning("medium"), do: "Medium — changes state, easily reversible"
+  defp risk_meaning("medium"), do: "Medium: changes state, easily reversible"
 
-  defp risk_meaning("high"), do: "High — service-affecting"
+  defp risk_meaning("high"), do: "High: service-affecting"
 
-  defp risk_meaning("critical"), do: "Critical — data loss or irreversible"
+  defp risk_meaning("critical"), do: "Critical: data loss or irreversible"
 
   defp risk_meaning(_), do: nil
 
@@ -1602,10 +1602,10 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp expiry_meaning(true),
-    do: "Expired without a decision — it was auto-denied; the action won't run."
+    do: "Expired without a decision and was auto-denied. The action won't run."
 
   defp expiry_meaning(false),
-    do: "If no one decides by then, it's auto-denied — the action won't run."
+    do: "If no one decides by then, it's auto-denied and the action won't run."
 
   # Under two hours left → amber: an approval lapsing soon needs to stand out
   # in the queue. At or past the deadline (the sweeper hasn't cancelled it yet)

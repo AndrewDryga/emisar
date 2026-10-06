@@ -1440,7 +1440,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     {:ok, _lv, html} = live(conn, ~p"/app/#{account}/runs/#{run.id}")
 
-    assert html =~ "Queued — runner offline"
+    assert html =~ "Queued: runner offline"
     # The in-flight banner's copy would be wrong for a run that hasn't dispatched.
     refute html =~ "output may be incomplete"
   end

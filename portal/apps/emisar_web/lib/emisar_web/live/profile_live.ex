@@ -633,7 +633,7 @@ defmodule EmisarWeb.ProfileLive do
            socket
            |> put_flash(
              :info,
-             "MFA enabled. Copy your recovery codes below — they'll only be shown once."
+             "MFA enabled. Copy your recovery codes below. They'll only be shown once."
            )
            |> MfaEnrollment.assign_current_proof(updated)
            |> assign_mfa_facts()
@@ -1108,7 +1108,7 @@ defmodule EmisarWeb.ProfileLive do
                 download_name="emisar-recovery-codes.txt"
               >
                 Use a recovery code if you can't access your authenticator. Each code works once.
-                Save these somewhere safe—you won't be able to view them again.
+                Save these somewhere safe. You won't be able to view them again.
                 <:actions>
                   <.recovery_code_acknowledgement
                     saved={@codes_saved?}

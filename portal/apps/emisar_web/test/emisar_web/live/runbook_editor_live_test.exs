@@ -495,8 +495,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
 
       string_html = change(lv, valid_draft(inputs: [RunbookDraft.input()]))
 
-      assert string_html =~ "Integer — whole numbers"
-      assert string_html =~ "Number — decimals allowed"
+      assert string_html =~ "Integer (whole numbers)"
+      assert string_html =~ "Number (decimals allowed)"
 
       assert string_html =~
                ~s|id="runbook-input-0-default-bounds" class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"|
@@ -1254,7 +1254,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       html = change(lv, draft)
 
       assert html =~ "Unavailable · linux.retired"
-      refute html =~ "Low — read-only or trivially reversible"
+      refute html =~ "Low: read-only or trivially reversible"
 
       refute has_element?(
                lv,
@@ -1274,8 +1274,8 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       html = change(lv, valid_draft())
 
       assert html =~ "Unavailable · linux.uptime"
-      refute html =~ "Low — read-only or trivially reversible"
-      refute html =~ "Critical — data loss or irreversible"
+      refute html =~ "Low: read-only or trivially reversible"
+      refute html =~ "Critical: data loss or irreversible"
 
       assert has_element?(
                lv,

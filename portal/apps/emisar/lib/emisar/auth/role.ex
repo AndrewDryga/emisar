@@ -55,7 +55,7 @@ defmodule Emisar.Auth.Role do
   end
 
   def description("viewer") do
-    "Viewers have read-only access across runs, runners, approvals, and audit — can't dispatch or change anything."
+    "Viewers have read-only access across runs, runners, approvals, and audit. They can't dispatch or change anything."
   end
 
   def description(_), do: nil

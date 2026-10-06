@@ -483,8 +483,7 @@ defmodule EmisarWeb.DashboardLive do
         icon="state.warning"
         title="Couldn't load pending approvals"
       >
-        This is a load error, not an empty queue — a held action may be waiting. Refresh the page,
-        or open Approvals to check.
+        A held action may still be waiting. Refresh the page, or open Approvals to check.
       </.empty_state>
     </section>
 
@@ -588,8 +587,7 @@ defmodule EmisarWeb.DashboardLive do
         icon="state.warning"
         title="Couldn't load recent runs"
       >
-        This is a load error, not an empty feed — runs may well exist. Refresh the page, or open
-        Runs to check.
+        Runs may exist even though none are shown. Refresh the page, or open Runs to check.
       </.empty_state>
 
       <ul
@@ -693,8 +691,8 @@ defmodule EmisarWeb.DashboardLive do
         <:subtitle>
           <%= if @runner_done? and not @actions_advertised? do %>
             Your runner needs at least one action pack before it can do work. Install a pack from the
-            catalog, then ask any MCP client — Claude, Cursor, Codex — to run it. Every call is checked
-            against policy first.
+            catalog, then ask any MCP client, such as Claude, Cursor, or Codex, to run it. Every call
+            is checked against policy first.
           <% else %>
             Connect a runner on your host and an AI agent such as Claude, Cursor, or Codex.
             Then ask the agent to run an action. Your policy applies to every request.
@@ -739,8 +737,8 @@ defmodule EmisarWeb.DashboardLive do
         >
           <%= if @agent_unused? do %>
             {@agents_total} {if @agents_total == 1, do: "key is", else: "keys are"} issued, but no
-            agent has made an authenticated call yet. Finish the setup in your MCP client — this
-            step completes on its first call.
+            agent has made an authenticated call yet. Finish the setup in your MCP client. This
+            step completes when the client makes its first call.
           <% else %>
             Connect the app you use to ask for infrastructure work. Its access is limited to
             your runners and packs, and you can revoke the connection.
@@ -820,7 +818,7 @@ defmodule EmisarWeb.DashboardLive do
         :if={not (@can_install_runners? or @can_issue_agent_key? or @can_invite_members?)}
         class="mt-4 text-xs text-zinc-400"
       >
-        Setup needs an operator role or above — ask an owner or admin to connect the
+        Setup needs an operator role or above. Ask an owner or admin to connect the
         first runner and agent.
       </p>
     </section>
@@ -1337,7 +1335,7 @@ defmodule EmisarWeb.DashboardLive do
         title={"One runner slot left on the #{String.capitalize(@billing.plan)} plan (#{@billing.runner_count} of #{@billing.runner_limit})."}
         class="mt-10"
       >
-        Heads up — your next install will use the last slot. Upgrade now if you expect to
+        Your next install will use the last slot. Upgrade now if you expect to
         add more. <.doc_link href={~p"/docs/limits"}>Plan limits docs</.doc_link>
         <:action>
           <.button

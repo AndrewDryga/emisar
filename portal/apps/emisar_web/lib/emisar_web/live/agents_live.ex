@@ -1093,7 +1093,7 @@ defmodule EmisarWeb.AgentsLive do
 
       <.page_intro :if={@live_action == :index}>
         Connect Claude, ChatGPT, Cursor, or another AI agent to run actions through emisar.
-        Review each agent’s activity and manage its access here.
+        Review each agent's activity and manage its access here.
         <.doc_link href={~p"/docs/agents-and-keys"}>Agent docs</.doc_link>
       </.page_intro>
 
@@ -1145,7 +1145,7 @@ defmodule EmisarWeb.AgentsLive do
         :if={@live_action == :index and @rotated}
         icon="identity.credential"
         tone={:amber}
-        title="New key ready—update your agent"
+        title="New key ready: update your agent"
       >
         <:body>
           Copy this key into <span class="font-medium text-zinc-200">{@rotated.name}</span>'s
@@ -1403,7 +1403,7 @@ defmodule EmisarWeb.AgentsLive do
                       <.tooltip
                         id={"swap-pending-#{key.id}"}
                         align={:left}
-                        text="Replaces a rotated key — the old key is revoked automatically the first time this key is used"
+                        text="Replaces a rotated key. The old key is revoked automatically the first time this key is used."
                       >
                         <span class="text-amber-300/90">
                           replaces <span class="font-mono">{facts.replaced_key_prefix}…</span>
@@ -1420,7 +1420,7 @@ defmodule EmisarWeb.AgentsLive do
                       />
                     </:seg>
                     <:seg :if={facts.rotation_requested?}>
-                      <span class="text-amber-300">Rotation requested — waiting for the agent</span>
+                      <span class="text-amber-300">Rotation requested, waiting for the agent</span>
                     </:seg>
                     <:seg :if={facts.successor_pending?}>
                       <span class="text-amber-300">Waiting for the new key's first use</span>
@@ -1660,8 +1660,8 @@ defmodule EmisarWeb.AgentsLive do
     <.docs_rail title="Connections and access">
       <p>
         Agents are grouped by the member they act as: the person who connected them, or a
-        service account. Each agent uses that member’s runner access. To change which runners
-        it can reach, update the member’s access in
+        service account. Each agent uses that member's runner access. To change which runners
+        it can reach, update the member's access in
         <.link
           navigate={~p"/app/#{@current_account}/settings/team"}
           class="font-medium text-brand-400 hover:text-brand-300"
@@ -1811,7 +1811,7 @@ defmodule EmisarWeb.AgentsLive do
            intro / section header above, so the picker carries no header. --%>
         <div>
           <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-            Web apps<span class="normal-case tracking-normal text-zinc-400"> — connect by signing in</span>
+            Web apps<span class="normal-case tracking-normal text-zinc-400">: connect by signing in</span>
           </p>
           <div class="mt-2.5 flex flex-wrap gap-1.5">
             <.client_tab
@@ -1823,7 +1823,7 @@ defmodule EmisarWeb.AgentsLive do
           </div>
 
           <p class="mt-6 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-            On your computer<span class="normal-case tracking-normal text-zinc-400"> — use the emisar installer</span>
+            On your computer<span class="normal-case tracking-normal text-zinc-400">: use the emisar installer</span>
           </p>
           <%!-- Kind sub-labels are the smaller member of the group-label
              family (the docs rail's subgroup grammar): the transport fact

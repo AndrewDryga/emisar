@@ -346,7 +346,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
               title="Enrollment key created"
             >
               <:body>
-                Copy the key now — it won't be shown again. Keep it private;
+                Copy the key now. It won't be shown again. Keep it private;
                 anyone with it can register runners.
               </:body>
 
@@ -711,7 +711,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
       title={runner_cap_title(@billing)}
     >
       {@billing.runner_count} of {@billing.runner_limit} runners in use.
-      Creating a key doesn't reserve a slot — the runner only counts after it registers.
+      Creating a key doesn't reserve a slot. The runner only counts after it registers.
       <.doc_link href={~p"/docs/limits"}>Plan limits docs</.doc_link>
       <:action>
         <.button
@@ -733,7 +733,7 @@ defmodule EmisarWeb.EnrollmentKeysLive do
 
   defp runner_cap_title(billing) do
     if Emisar.Billing.headroom(billing, :runners) == :at_limit do
-      "At runner limit — new installs will fail."
+      "At runner limit: new installs will fail."
     else
       "One runner slot left on the #{String.capitalize(billing.plan)} plan."
     end

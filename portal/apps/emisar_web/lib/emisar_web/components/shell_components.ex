@@ -396,7 +396,7 @@ defmodule EmisarWeb.ShellComponents do
         active={@section == :dashboard}
         icon="product.dashboard"
         alert={@onboarding_incomplete?}
-        alert_label="Finish setup — add a runner or an agent"
+        alert_label="Finish setup: add a runner or an agent"
       >
         Dashboard
       </.nav_link>

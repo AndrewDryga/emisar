@@ -114,7 +114,7 @@ defmodule EmisarWeb.RunnersLive do
     case Runners.sweep_inactive_runners(socket.assigns.current_subject) do
       {:ok, 0} ->
         {:noreply,
-         put_flash(socket, :info, "Nothing to remove — no runner has been offline that long.")}
+         put_flash(socket, :info, "Nothing to remove. No runner has been offline that long.")}
 
       {:ok, count} ->
         {:noreply,
@@ -129,7 +129,7 @@ defmodule EmisarWeb.RunnersLive do
         {:noreply, put_flash(socket, :error, "Admin required to clean up runners.")}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not clean up — try again.")}
+        {:noreply, put_flash(socket, :error, "Could not clean up. Try again.")}
     end
   end
 
@@ -145,11 +145,11 @@ defmodule EmisarWeb.RunnersLive do
     end
   end
 
-  defp retention_set_flash(nil), do: "Automatic cleanup turned off — offline runners are kept."
+  defp retention_set_flash(nil), do: "Automatic cleanup turned off. Offline runners are kept."
 
   defp retention_set_flash(hours) do
     period = retention_period_phrase(hours)
-    "Automatic cleanup on — runners offline for #{period} are removed by the hourly sweep."
+    "Automatic cleanup is on. Runners offline for #{period} are removed by the hourly sweep."
   end
 
   defp cleanup_flash(1), do: "Removed 1 offline runner."
@@ -172,7 +172,7 @@ defmodule EmisarWeb.RunnersLive do
     [
       %{
         value: "",
-        label: "Off — keep offline runners",
+        label: "Off (keep offline runners)",
         selected: is_nil(current_hours),
         disabled: false
       },
@@ -606,7 +606,7 @@ defmodule EmisarWeb.RunnersLive do
           }>How to install a pack</.doc_link>.
         </p>
         <p>
-          Group related runners, such as “web” or “production,” to apply shared policies
+          Group related runners, such as "web" or "production", to apply shared policies
           or run actions across the group. <.doc_link href={~p"/docs/runner-fleet" <> "#groups-labels"}>How to group runners</.doc_link>.
         </p>
       </.docs_rail>
@@ -667,7 +667,7 @@ defmodule EmisarWeb.RunnersLive do
   end
 
   defp heartbeat_status(%{readiness: %{heartbeat: %{state: :awaiting_first}}} = assigns) do
-    ~H"just connected — waiting for first heartbeat"
+    ~H"just connected, waiting for first heartbeat"
   end
 
   defp heartbeat_status(%{readiness: %{heartbeat: %{connected_at: %DateTime{} = ts}}} = assigns) do

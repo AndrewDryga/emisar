@@ -373,7 +373,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             }
           >
             <:body>
-              Removes stage {@stage_index + 1} with every step in it — everything
+              Removes stage {@stage_index + 1} with every step in it. Everything
               entered on them is discarded.
             </:body>
           </.confirm_dialog>
@@ -580,8 +580,8 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             }
           >
             <:body>
-              Removes step {@step_index + 1} of stage {@stage_index + 1} —
-              everything entered on it is discarded.
+              Removes step {@step_index + 1} of stage {@stage_index + 1}.
+              Everything entered on it is discarded.
             </:body>
           </.confirm_dialog>
         </div>
