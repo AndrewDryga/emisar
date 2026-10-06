@@ -239,13 +239,13 @@ volumes:
   - ./dev/runners/edge-fra-01.yaml:/etc/emisar/config.yaml:ro
 ```
 
-Each pins a fixed `runner.id` (the durable `external_id`) that **matches the
-`external_id` the seed writes on that runner's row** (`apps/emisar/priv/repo/seeds/fleet.exs`).
+Each pins a fixed `runner.id` (the durable `external_id`) that matches the
+`external_id` the seed writes on that runner's row (`apps/emisar/priv/repo/seeds/fleet.exs`).
 Because runner identity is `(account, external_id)`, the live container
-*adopts* its pre-seeded row on register — coming up **online** while keeping
-the seeded run history, approvals, grants, and trusted pack catalog — instead
-of registering a second, empty runner. The config also sets each runner's
-`group`, `labels`, and which role packs it loads + advertises (edge → caddy,
+adopts its pre-seeded row on register instead of registering a second, empty
+runner. It comes up online and keeps the seeded run history, approvals,
+grants, and trusted pack catalog. The config also sets each runner's
+`group`, `labels`, and which role packs it loads and advertises (edge → caddy,
 api → systemd-deep, pg → postgres; all three also load linux-core, which runs
 for real off the container via the fixtures below).
 
@@ -265,12 +265,12 @@ volumes:
   - ./dev/runner-fixtures/var-log/nginx:/var/log/nginx:ro
 ```
 
-* `bin/systemctl`, `bin/journalctl` — bash stubs that print
+* `bin/systemctl` and `bin/journalctl` are bash stubs that print
   realistic-looking output for the units the `linux-core` actions can
   target (cassandra, nginx, postgresql, docker). The container has no
   systemd; without these the actions error with "no such file or
   directory" and the demo looks broken.
-* `var-log/*` — sample `syslog`, `auth.log`, and `nginx/access.log`
+* `var-log/*` holds sample `syslog`, `auth.log`, and `nginx/access.log`
   files so `linux.tail_log` and `linux.grep_log` have content to read.
 
 Real Linux hosts (where production runners install via `install.sh`)
@@ -280,7 +280,7 @@ runner image.
 
 ## `test-packs/`
 
-A standalone Compose **behavior harness** for action packs, separate from the
+A standalone Compose behavior harness for action packs, separate from the
 root demo stack. `./run` cross-builds the runner and Go harness, boots only the
 disposable services declared by the selected packs, runs their semantic
 behavior cases, writes per-pack logs, and tears the topology down:
@@ -306,20 +306,20 @@ containers, network, volumes, and temporary realm.
 
 ## Signing and runbooks end to end
 
-End-to-end coverage for **signed dispatch** and **staged runbooks** against the
-root demo stack. Profile-gated `test` services in `docker-compose.yml` and the
-`./run e2e signing` driver:
+End-to-end coverage for signed dispatch and staged runbooks runs against the
+root demo stack. It uses profile-gated `test` services in `docker-compose.yml`
+and the `./run e2e signing` driver:
 
-- **`signing-init`** mints a CA + leaf key + certificate at stack-up via
+- `signing-init` mints a CA, a leaf key, and a certificate at stack-up via
   `emisar signing init` (run `init.sh`), into the shared `signing_material`
-  volume. **Generate-at-startup** — no CA or leaf private key is committed;
-  `docker compose down -v` rotates them.
-- **`runner-signed`** is a 4th runner that **enforces** signing: it points
-  `--config` at the config `signing-init` wrote (with the freshly-minted CA's
+  volume. The material is generated at startup: no CA or leaf private key is
+  committed, and `docker compose down -v` rotates them.
+- `runner-signed` is a 4th runner that enforces signing: it points
+  `--config` at the config `signing-init` wrote (with the freshly minted CA's
   public key) and runs a dispatch only if it carries a valid, in-scope,
-  CA-vouched attestation. Group `signed-iad`, matching the cert's scope.
-- **`tools/cmd/signing-e2e`** drives the real MCP bridge to prove both paths end
-  to end. A **signed** dispatch runs, the **same** dispatch **unsigned** is
+  CA-vouched attestation. Its group is `signed-iad`, matching the cert's scope.
+- `tools/cmd/signing-e2e` drives the real MCP bridge to prove both paths end
+  to end. A signed dispatch runs, the same dispatch unsigned is
   refused with `signature_required`, and the published three-step
   `morning-edge-readiness@1` runbook reaches durable success through the
   scheduler and normal runner:

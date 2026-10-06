@@ -33,15 +33,16 @@ and the upgrade path from older versions is non-trivial.
 ## Threat model
 
 See [the security model](../.agent/kb/specs/security-model.md) for the
-deliberate scope: what emisar protects against, what it does NOT
+deliberate scope: what emisar protects against, what it does not
 protect against, and what operators are expected to provide.
 
-The short version: emisar is a **policy and audit envelope** around a
-curated allowlist of declared actions. It is not a sandbox, container
-runtime, or kernel isolation layer. Reports that boil down to
-"`linux.systemctl_restart` actually restarts the service" are working
-as intended; we won't accept those as vulnerabilities. Reports that
-the runner executed something it should have refused are.
+In short, emisar puts policy and audit around a curated allowlist of
+declared actions. It is not a sandbox, container runtime, or kernel
+isolation layer. Reports that boil down to
+"`linux.systemctl_restart` actually restarts the service" describe
+intended behavior; we won't accept those as vulnerabilities. Reports
+that the runner executed something it should have refused are
+vulnerabilities.
 
 ## Credential incidents
 
@@ -61,34 +62,33 @@ The following are intentionally not vulnerabilities:
 - Operator misconfiguration (e.g., wide `allowed_prefixes` exposing
   `/etc/shadow`) that the runner honours.
 - Denial-of-service via the cloud control plane sending the runner too
-  many actions — that's a cloud-side rate-limit concern, not a runner
+  many actions. That is a cloud-side rate-limit concern, not a runner
   bug.
 
 ## In scope
 
 The following are real vulnerabilities:
 
-- The runner executing an action whose **declared args don't pass
-  validation** (schema bypass).
-- The runner **executing an unknown action ID** or one without a valid
+- The runner executing an action whose declared args don't pass
+  validation (schema bypass).
+- The runner executing an unknown action ID or one without a valid
   pack.yaml reference.
 - A cloud-supplied argument escaping its declared schema and becoming shell
   syntax in a pack-authored `/bin/sh -c` program, or otherwise changing the
   command beyond the reviewed pack definition. Fixed pack-authored shell
   programs are supported; arbitrary shell exists only in the explicit,
   staging-only, critical-risk `shell` pack.
-- A **path traversal** escape of the runner's declared allow/deny
-  rules — including symlink-based redirects (since we now resolve
-  symlinks during validation).
-- **Output leaking secrets** that the redactor was supposed to catch
+- A path traversal escape of the runner's declared allow/deny rules,
+  including symlink-based redirects (validation resolves symlinks).
+- Output leaking secrets that the redactor was supposed to catch
   (where "supposed to" means the redactor has a rule for that
   pattern).
-- The runner **executing a script** whose on-disk SHA-256 does not match the
+- The runner executing a script whose on-disk SHA-256 does not match the
   value recorded at pack load. The runner rechecks immediately before exec;
   bypassing that refusal is in scope.
-- **Privilege escalation** through the runner's process attributes
+- Privilege escalation through the runner's process attributes
   (failure of Pdeathsig + Setpgid hardening, leaking caps to children).
-- **Durable dispatch log / dedup journal** corruption that causes a result
+- Durable dispatch log / dedup journal corruption that causes a result
   to be sent for a request the runner never received.
 
 ## Safe harbor

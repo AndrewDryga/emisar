@@ -2,7 +2,7 @@
 
 `mcpeval` proves that a real headless client can use the candidate
 `emisar-mcp` bridge correctly against an Emisar fixture stack. It supports
-Claude Code and Codex CLI — the two clients a release is certified against.
+Claude Code and Codex CLI, the two clients a release is certified against.
 The scorer reads recorded tool behavior, not the model's final prose.
 
 The candidate bridge connects only to a loopback relay. That relay alone holds

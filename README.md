@@ -15,11 +15,11 @@ client.
 
 You need an [emisar account](https://emisar.dev/sign_up), a Linux host with
 systemd, and `sudo`. GitHub CLI with `gh attestation verify --bundle` checks the
-release signature; without it the installer asks, or warns and continues when
-run with `--yes`, on the checksum alone. Allow
-outbound HTTPS to `emisar.dev:443`, `registry.emisar.dev:443`,
+release signature. Without it, the installer asks before continuing on the
+checksum alone, or warns and continues when run with `--yes`. Allow outbound
+HTTPS to `emisar.dev:443`, `registry.emisar.dev:443`,
 `tuf-repo-cdn.sigstore.dev:443`, and `tuf-repo.github.com:443`. The last two
-serve the public trust roots used to authenticate release checksums; no GitHub
+serve the public trust roots used to authenticate release checksums. No GitHub
 login is required.
 
 GitHub is the optional release fallback. To permit that fallback, also allow
@@ -66,7 +66,7 @@ declared host command
        stream redacted output, journal the attempt, update fleet audit
 ```
 
-The action pack is the contract. It fixes the executable, argv shape, argument
+The action pack defines the contract: the executable, argv shape, argument
 schema, risk, timeout, output limits, redaction, and side-effect description.
 The model selects from that contract; it does not invent a command line for the
 runner to execute.
@@ -77,24 +77,24 @@ changes.
 
 ## What holds the boundary
 
-- **No inbound runner listener.** The runner opens an outbound TLS WebSocket and
-  exposes no inbound listener; commands return through that established connection.
-- **Declared actions only.** Cloud input is limited to typed, schema-bounded
+- The runner opens an outbound TLS WebSocket and exposes no inbound listener.
+  Commands return through that established connection.
+- Cloud input is limited to declared actions and typed, schema-bounded
   arguments. The runner rejects unknown actions and arguments.
-- **Content-addressed packs.** The control plane pins the trusted pack hash; the
-  runner recomputes it from disk before execution. New or changed custom packs
-  wait for trust.
-- **Policy before side effects.** Runner scope, risk policy, action overrides,
-  standing grants, and conditional approval are evaluated before dispatch.
-- **Host-side enforcement.** The runner clamps execution options to the pack's
-  limits and runs the declared binary and argv. Runner output is redacted before
-  leaving the host; Emisar retains the resulting redacted output in run history.
-- **Two records.** The control-plane audit includes denied and pending requests;
-  every runner also writes its execution attempts and local refusals to a
-  hash-chained JSONL journal.
-- **Optional bridge-attested dispatch.** A runner can require intent signed by
-  the customer-authorized MCP bridge with an Ed25519 or ECDSA P-256 leaf key,
-  so the control plane cannot originate or widen a permitted call.
+- Packs are content-addressed. The control plane pins the trusted pack hash, and
+  the runner recomputes it from disk before execution. New or changed custom
+  packs wait for trust.
+- Runner scope, risk policy, action overrides, standing grants, and conditional
+  approval are evaluated before dispatch.
+- On the host, the runner clamps execution options to the pack's limits and
+  runs the declared binary and argv. Runner output is redacted before it leaves
+  the host, and Emisar keeps the redacted output in run history.
+- The control-plane audit includes denied and pending requests. Every runner
+  also writes its execution attempts and local refusals to a hash-chained JSONL
+  journal.
+- A runner can optionally require bridge-attested dispatch: intent signed by the
+  customer-authorized MCP bridge with an Ed25519 or ECDSA P-256 leaf key. The
+  control plane then cannot originate or widen a permitted call.
 
 Read the exact guarantees, limitations, and threat model in
 [`.agent/kb/specs/security-model.md`](.agent/kb/specs/security-model.md).

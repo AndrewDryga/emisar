@@ -2,7 +2,7 @@
 
 Describe the change and why it is needed.
 
-## Type of Change
+## Type of change
 
 - [ ] Bug fix
 - [ ] Feature
@@ -23,12 +23,12 @@ Describe the change and why it is needed.
 - [ ] I have disclosed material AI assistance if applicable.
 - [ ] Tests and documentation are updated where appropriate.
 
-## AI Assistance Disclosure
+## AI assistance disclosure
 
 Did you use AI assistance materially in this contribution?
 
 - [ ] No
-- [ ] Yes — details below
+- [ ] Yes (details below)
 
 If yes, describe the tool and how it was used:
 
@@ -36,6 +36,6 @@ If yes, describe the tool and how it was used:
 [Describe here]
 ```
 
-## Additional Notes
+## Additional notes
 
 Anything maintainers should know?

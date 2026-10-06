@@ -2,9 +2,9 @@
 
 Thank you for your interest in contributing.
 
-This repository is dual-licensed — `runner/`, `mcp/`, and `packs/` under the Apache License 2.0, everything else under the Business Source License 1.1 (see `NOTICE.md`). Contributions are welcome, but contributions must follow the applicable license, this guide, and any Contributor License Agreement required by the maintainers.
+This repository is dual-licensed: `runner/`, `mcp/`, and `packs/` under the Apache License 2.0, everything else under the Business Source License 1.1 (see `NOTICE.md`). Contributions are welcome, but they must follow the applicable license, this guide, and any Contributor License Agreement required by the maintainers.
 
-## Ground Rules
+## Ground rules
 
 By contributing, you agree that:
 
@@ -26,7 +26,7 @@ A CLA helps confirm that:
 - the project can relicense or commercialize the contribution if needed;
 - contribution ownership is clear.
 
-## AI-Assisted Contributions
+## AI-assisted contributions
 
 You may use AI-assisted developer tools only if all of the following are true:
 
@@ -40,7 +40,7 @@ Do not submit AI-generated code that you do not understand.
 
 Do not submit code generated from another project's proprietary, source-available, or incompatible licensed code.
 
-## Development Process
+## Development process
 
 1. Open an issue for significant changes before starting work.
 2. Keep pull requests focused and small.
@@ -50,7 +50,7 @@ Do not submit code generated from another project's proprietary, source-availabl
 6. Avoid introducing new dependencies unless necessary.
 7. Explain the motivation and tradeoffs in the pull request description.
 
-## Pull Request Checklist
+## Pull request checklist
 
 Before opening a pull request, confirm:
 
@@ -63,13 +63,13 @@ Before opening a pull request, confirm:
 - [ ] Tests and documentation are updated where appropriate.
 - [ ] I have disclosed material AI assistance if applicable.
 
-## Security Issues
+## Security issues
 
 Do not report security vulnerabilities in public issues.
 
 Follow `SECURITY.md`.
 
-## Code of Conduct
+## Code of conduct
 
 Be respectful, direct, and constructive.
 

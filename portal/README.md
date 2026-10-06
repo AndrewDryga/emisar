@@ -41,7 +41,7 @@ or `./run reset --seed` when the fixtures need to be refreshed.
 
 For the shortest feedback loop, use `./run check changed` and
 `./run test portal --stale`; `./run test portal --failed` re-runs only the
-previous failures. The full pre-commit surface remains `./run gate portal`.
+previous failures. The full pre-commit check is `./run gate portal`.
 
 The repository-root `docker-compose.yml` starts the complete local stack,
 including sample runners. Production delivery is documented in
@@ -53,5 +53,6 @@ including sample runners. Production delivery is documented in
 ../run gate portal
 ```
 
-The gate compiles, checks formatting and Credo, runs both test suites, and rejects warning/error log
-pollution. Project architecture and security rules are in [`AGENTS.md`](AGENTS.md).
+The gate compiles, checks formatting and Credo, runs both test suites, and fails
+if the test output contains warning or error logs. Project architecture and
+security rules are in [`AGENTS.md`](AGENTS.md).

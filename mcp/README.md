@@ -45,26 +45,25 @@ irm https://emisar.dev/install-mcp.ps1 | iex
 Both installers resolve the latest tagged release. With GitHub CLI installed,
 they verify the release's downloaded `SHA256SUMS-MCP.sigstore.jsonl` bundle
 against the exact tag, trusted workflow, and GitHub-hosted runner before
-trusting the checksum used for the archive. It needs no GitHub login, but a
-fresh cache must reach `tuf-repo-cdn.sigstore.dev:443` and
-`tuf-repo.github.com:443` for the public trust roots. A missing bundle or a
-signature that does not verify refuses the install. Without GitHub CLI, the
-installers ask at a terminal, or warn and continue with `--yes`/`-Yes`, on the
-checksum alone. The
-Unix installer puts `emisar-mcp` in `/usr/local/bin`; set
-`INSTALL_DIR="$HOME/.local/bin"` for a no-sudo installation. The Windows
-installer puts `emisar-mcp.exe` in the current user's Programs directory and
-adds that directory to the user's `PATH`.
+trusting the checksum used for the archive. Verification needs no GitHub login,
+but a fresh cache must reach `tuf-repo-cdn.sigstore.dev:443` and
+`tuf-repo.github.com:443` for the public trust roots. The installers refuse to
+install when the bundle is missing or its signature does not verify. Without
+GitHub CLI, they ask at a terminal before continuing on the checksum alone, or
+warn and continue with `--yes`/`-Yes`. The Unix installer puts `emisar-mcp` in
+`/usr/local/bin`; set `INSTALL_DIR="$HOME/.local/bin"` for a no-sudo
+installation. The Windows installer puts `emisar-mcp.exe` in the current user's
+Programs directory and adds that directory to the user's `PATH`.
 
-In an interactive terminal it hands over to `emisar-mcp connect`, which opens
-one browser approval. That approval gives the direct CLI its own key and, when
-supported MCP clients are present, offers to configure each one with a separate
-key. The CLI key goes into owner-only bridge state; client keys go into their
-client configs. No key passes through the clipboard, and existing client
-settings and other MCP servers are preserved — each config is edited in place,
-so comments and key order survive too. VS Code is the exception: its key goes
-into an owner-only environment file referenced by the user-level `mcp.json`,
-because editor settings may sync.
+In an interactive terminal, the installer hands over to `emisar-mcp connect`,
+which opens one browser approval. That approval gives the direct CLI its own key
+and, when supported MCP clients are present, offers to configure each one with a
+separate key. The CLI key goes into owner-only bridge state. Client keys go into
+their client configs, except for VS Code: its key goes into an owner-only
+environment file referenced by the user-level `mcp.json`, because editor
+settings may sync. No key passes through the clipboard. Each config is edited in
+place, so existing client settings, other MCP servers, comments, and key order
+all survive.
 
 ## Connect a client
 
@@ -112,20 +111,21 @@ emisar-mcp --account blitz list_runners
 
 `accounts list` shows a star beside the current account. Add `--json` for a
 script-friendly list. Account names and slugs come from the account you approved
-in the browser; they are not local aliases. The credential remains tied to the
-account's immutable ID if its name or slug changes.
+in the browser; they are not local aliases. The credential stays tied to the
+account's immutable ID even if its name or slug changes.
 
-Credentials follow the operating system's user config directory:
+Credentials follow the operating system's user config directory, which is why
+macOS does not put them under `~/.config`:
 `~/Library/Application Support/emisar/credentials/` on macOS,
 `$XDG_CONFIG_HOME/emisar/credentials/` on Linux when that variable is set
 (otherwise `~/.config/emisar/credentials/`), and the user's AppData config
-directory on Windows. The directory and files are owner-only. This is why macOS
-does not put them under `~/.config`.
+directory on Windows. The directory and files are owner-only.
 
 A later `connect` run verifies the stored CLI credential against the same
-endpoint and keeps it instead of minting another one; a credential the control
-plane rejects starts a fresh approval. Run `emisar-mcp auth` to replace a
-revoked or expired direct-CLI credential without touching client configs.
+endpoint and keeps it instead of minting another one. If the control plane
+rejects that credential, `connect` starts a fresh approval. Run `emisar-mcp auth`
+to replace a revoked or expired direct-CLI credential without touching client
+configs.
 
 After installation, restart the client and confirm that the `emisar` server is
 connected. Ask the agent to list available infrastructure or inspect a known
@@ -211,8 +211,9 @@ for one command without changing the current account. Use
 `accounts list --json` when you need an immutable account ID.
 
 For a one-off endpoint, set `EMISAR_URL` and `EMISAR_API_KEY` together. That
-explicit pair overrides stored credentials. Setting only one is an error—the
-bridge never combines an environment value with half of a stored credential.
+explicit pair overrides stored credentials. Setting only one is an error,
+because the bridge never combines an environment value with half of a stored
+credential.
 Do not combine the explicit pair with `--account`.
 Stdio mode ignores direct-CLI account storage and still requires both variables
 in its MCP-client configuration.
@@ -281,9 +282,9 @@ continuation for the same run. It can wait on several runners concurrently and
 returns after every run is terminal and available output is drained. The
 operation ID is printed before waiting. Ctrl-C stops waiting, exits 130, and
 prints a `get_operation` command; it does not cancel the action. Any terminal
-status except `success`—`failed`, `error`, `validation_failed`,
-`unknown_action`, `denied`, `cancelled`, `timed_out`, or `refused`—makes the
-human command exit 1. Pass `get_action` the immutable `pack_ref` returned by
+status other than `success` makes the human command exit 1: `failed`, `error`,
+`validation_failed`, `unknown_action`, `denied`, `cancelled`, `timed_out`, or
+`refused`. Pass `get_action` the immutable `pack_ref` returned by
 `find_actions`.
 
 ```sh
@@ -305,11 +306,12 @@ emisar-mcp recent_runs '{"scope":"own","limit":10}'
 | `create_runbook_draft` | Draft identity, content digest, operation inspection command, review link, and current live release. |
 | `update_runbook_draft` | The same draft result after an optimistic, digest-bound update. |
 
-Human copy-paste labels have one meaning: **Inspect** and **Actions** issue safe
-reads, **Run** is an editable mutation template with visible placeholders,
-**Next** is an exact server-owned continuation, and **Review** opens the operator
-workflow. Commands preserve an explicit `--account`; `--json` remains the exact
-MCP `structuredContent` object without these presentation helpers.
+Each copy-paste label in human output has one meaning: **Inspect** and
+**Actions** issue safe reads, **Run** is an editable mutation template with
+visible placeholders, **Next** is an exact server-owned continuation, and
+**Review** opens the operator workflow. Commands preserve an explicit
+`--account`; `--json` remains the exact MCP `structuredContent` object without
+these presentation helpers.
 
 Human `execute_runbook` follows only read continuations tied to the returned
 execution. On macOS and Linux, compatible interactive terminals redraw the
@@ -324,8 +326,8 @@ public runbook outputs are shown separately when the execution returns
 `outputs_next`.
 
 Ctrl-C stops observation without cancelling the runbook. The command exits 1
-when the execution is `halted` or `cancelled`. `--json` does none of this
-following: it returns the original call's exact `structuredContent`.
+when the execution is `halted` or `cancelled`. With `--json`, the command
+follows nothing and returns the original call's exact `structuredContent`.
 
 The local `auth`, `accounts`, `help`, and `list_tools` names are conveniences,
 not reserved MCP tool names. Use `--` before an exact tool name when it conflicts
@@ -463,8 +465,8 @@ rotation state is namespaced by canonical endpoint and bootstrap prefix; direct
 CLI state is namespaced by canonical endpoint and immutable account ID. The
 directory is mode 0700; files are mode 0600 and updated through a cross-process
 lock, temporary write, filesystem sync, and atomic rename. Corrupt, unsafe, or
-endpoint-mismatched state is a startup error, not a reason to send a secret to
-another origin.
+endpoint-mismatched state stops the bridge at startup, so a stored secret is
+never sent to another origin.
 
 If a direct command stops authenticating, run `emisar-mcp auth` again and choose
 that account. If an MCP client stops authenticating,

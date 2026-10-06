@@ -7,8 +7,8 @@ runner opens an outbound TLS WebSocket and exposes no inbound listener; commands
 return through that established connection.
 
 Run one runner on every host that an agent should be able to inspect or change.
-The runner uses the permissions of its service user; emisar does not turn a
-permitted command into a sandbox.
+The runner uses the permissions of its service user, and emisar does not
+sandbox the commands it permits.
 
 ## Install and prove it works
 
@@ -16,9 +16,9 @@ The supported production target is Linux with systemd. macOS with launchd is
 available for development and evaluation. Install GitHub CLI with
 `gh attestation verify --bundle` to check release signatures, and allow HTTPS to
 `tuf-repo-cdn.sigstore.dev:443` and `tuf-repo.github.com:443` so it can load the
-public trust roots; without GitHub CLI the installer and `emisar update` ask at a
-terminal, or warn and continue unattended, on the checksum alone. Release
-verification does not require a GitHub login.
+public trust roots. Without GitHub CLI, the installer and `emisar update` ask at
+a terminal before continuing on the checksum alone, or warn and continue when
+unattended. Release verification does not require a GitHub login.
 
 1. In the emisar console, choose **Connect a runner**. The generated command
    contains the control-plane URL and a fresh, single-use enrollment key.
@@ -120,7 +120,7 @@ events:
   jsonl_path: /var/log/emisar/events.jsonl
 ```
 
-Groups and labels organize the fleet and participate in scoping. Treat their
+Groups and labels organize the fleet and are used in scoping. Treat their
 names as durable operational identifiers. The full annotated configuration is
 [`examples/config.yaml`](examples/config.yaml).
 
@@ -178,9 +178,9 @@ hosts.
 
 ## Local admission
 
-Admission is the host's defense-in-depth gate. It hides and refuses actions
-that should never be available on that runner, even if the control plane asks
-for one.
+Admission is a host-side check that adds defense in depth. It hides and refuses
+actions that should never be available on that runner, even if the control plane
+asks for one.
 
 ```yaml
 admission:
@@ -218,11 +218,11 @@ covers the longest bundled cancellation grace.
 
 The default 30-second heartbeat pairs with the portal's stale-socket watchdog
 and connection lease. The portal closes a connection 90 seconds after the last
-heartbeat, so `cloud.heartbeat_every` is capped at 45 seconds and a wider value
-is refused at load rather than becoming a silent reconnect loop. A half-open
-network path can take roughly 90-120 seconds to release ownership before a
-replacement connection is accepted. Reducing the runner's reconnect backoff
-does not bypass that safety window.
+heartbeat, so `cloud.heartbeat_every` is capped at 45 seconds. A wider value
+would cause a silent reconnect loop, so the runner refuses it at load. A
+half-open network path can take roughly 90-120 seconds to release ownership
+before a replacement connection is accepted. Reducing the runner's reconnect
+backoff does not bypass that safety window.
 
 ## Upgrade and remove
 
@@ -283,15 +283,15 @@ process tree.
 The daemon also marks itself non-dumpable at start. The kernel keeps a copy of
 the environment `runner.env` loaded (the enrollment key and every pack
 credential) under `/proc/<pid>/environ`, and the bearer token lives in the
-process memory behind `/proc/<pid>/mem`; non-dumpable, those entries are
-root-owned and no same-user action child can read or attach to them, whatever
-the host's `ptrace_scope`. The runner's own `/proc/<pid>` tree is also a
-protected root for every path argument, so `/proc/self/environ` is refused
-before an action runs. `/proc/net` and `/proc/mounts` are links into the calling
-process's own entry, so a path argument naming them is refused too;
+process memory behind `/proc/<pid>/mem`. Because the daemon is non-dumpable,
+those entries are root-owned, and no same-user action child can read or attach
+to them, whatever the host's `ptrace_scope`. The runner's own `/proc/<pid>` tree
+is also a protected root for every path argument, so `/proc/self/environ` is
+refused before an action runs. `/proc/net` and `/proc/mounts` are links into the
+calling process's own entry, so a path argument naming them is refused too;
 `linux.network_interfaces` and `linux.mount_status` read that state instead.
-Every other process stays as inspectable as before, so
-`ProtectProc=` is still the directive that breaks `/proc` diagnostics, not this.
+Every other process stays as inspectable as before, so this setting does not
+break `/proc` diagnostics; `ProtectProc=` is the directive that does.
 
 The installed systemd unit is deliberately modest because every service
 sandbox directive also constrains the actions it launches. For example:

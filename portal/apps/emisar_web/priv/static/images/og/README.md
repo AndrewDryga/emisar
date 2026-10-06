@@ -1,17 +1,17 @@
 OG cards (1200×630), referenced as `og:image` / `twitter:image`.
 
-- `emisar-og.webp` — the default card (horizontal logo lockup + "Secure
-  production access for your AI agents." on the brand glow/grid). Used by
-  every page that doesn't set its own. Regenerate from a 1200×630 HTML card
-  (real Inter via the self-hosted woff2) screenshotted with headless Chrome
-  at 2× and encoded to webp. Brand source: ../brand/ (emisar-logo.svg).
+- `emisar-og.webp` is the default card (horizontal logo lockup and "Secure
+  production access for your AI agents." on the brand glow/grid). Every page
+  that doesn't set its own card uses it. Regenerate it from a 1200×630 HTML
+  card (real Inter via the self-hosted woff2) screenshotted with headless
+  Chrome at 2× and encoded to webp. Brand source: ../brand/ (emisar-logo.svg).
 
-- `og-security.png`, `og-guides.png`, `og-pricing.png` —
-  per-section cards with a tailored headline. Wired via the controller:
+- `og-security.png`, `og-guides.png`, and `og-pricing.png` are per-section
+  cards with a tailored headline. They are wired through the controller:
   bespoke actions set `og_image` inline; generated pages map through
-  `@og_images` (security/trust/zero-trust share og-security). Generated with
-  ImageMagick (native text + the system Helvetica face — magick's SVG
-  renderer can't resolve fonts), e.g.:
+  `@og_images` (security/trust/zero-trust share og-security). They are
+  generated with ImageMagick using native text and the system Helvetica face,
+  because magick's SVG renderer can't resolve fonts. For example:
 
       magick -size 1200x630 xc:'#07080a' \
         -fill '#36E6A5' -draw 'rectangle 0,0 1200,6' \
