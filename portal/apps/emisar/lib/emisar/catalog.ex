@@ -155,6 +155,8 @@ defmodule Emisar.Catalog do
             # only after the commit.
             if pending_changed?, do: broadcast_pack_trust(updated_runner.account_id)
 
+            broadcast_catalog_changed(updated_runner.account_id)
+
             {:ok, updated_runner}
 
           {:error, :connection_superseded} ->
@@ -2931,24 +2933,23 @@ defmodule Emisar.Catalog do
   The console Packs page's whole projection in one bounded read.
 
   Requires `view_catalog`. `filters` narrows only what the page RENDERS —
-  `:name` is a case-insensitive substring over the pack id OR an advertised
-  action id, `:risk` keeps versions advertising an action at that tier, and an
+  `:name` is a case-insensitive substring over the pack id OR an action id,
+  `:risk` keeps versions containing an action at that tier, and an
   empty (or missing) value turns the axis off. A version survives when every
   active axis matches, even when two different actions satisfy them;
   `matched_action_ids` is stricter — an action id appears only when that single
   action satisfies every active action-level axis, so a version matched by its
   pack id alone contributes none and the page leaves it collapsed.
 
-  Advertised actions are read only when a filter is active or a pending version
-  needs its contents, so an unfiltered, nothing-pending page reads no action
-  descriptors and keeps its per-disclosure lazy loading (`list_pack_actions/3`). The
-  fleet's advertisement facts are read once, and only when some row's lifecycle
-  actually depends on who is running it.
+  Trusted filters use immutable manifest contents, including actions absent
+  from older advertisements. Unfiltered trusted contents stay lazy through
+  `list_console_pack_actions/2`; pending decisions still read full advertised
+  descriptors for their exact-hash diff. Reporter metadata uses one bounded
+  fleet read, independently of execution scope.
 
   Returns `{:ok, projection}` — `pack_versions` (account-wide, bounded,
   ordered by pack id then version; browse rows
-  omit `trusted_manifest`, and only rows carrying a decision — pending trust,
-  or an overridden retirement — come back whole with the overrider preloaded),
+  omit `trusted_manifest` unless a decision or active filter needs it),
   `groups` (`%{id: pack_id,
   versions: [...], can_delete?: boolean, update: nil | %{version, hash}}` over the visible rows,
   packs ascending and versions newest-seen first), `actions_by_pack_ref`,
@@ -2962,7 +2963,9 @@ defmodule Emisar.Catalog do
   the `display_state` a retirement block replaces it with, `trust_review?` /
   `needs_decision?`, the pending decision's `actions` + `action_changes`
   (selected on the row's exact `pending_hash`), `advertising`
-  (`%{coverage: :not_needed | :complete | :partial, runners: [...]}`),
+  (`%{coverage: :not_needed | :complete | :partial | :unavailable, runners: [...]}`),
+  exact displayed-hash `reporting` (coverage, deduplicated runners, and separate
+  other-hash reporters),
   `current_version`, `retired?` / `retirement_blocked?` /
   `retirement_successor` (+ `_hash`) / `retirement_remedy`, `update_successor`
   (+ `_hash`), and the `override` attribution. Each fact also carries `can_manage?`,
@@ -2984,7 +2987,7 @@ defmodule Emisar.Catalog do
         |> PackVersion.Query.limit_to(@console_pack_version_limit)
         |> Authorizer.for_subject(subject)
         |> Repo.all()
-        |> hydrate_decision_rows(subject)
+        |> hydrate_decision_rows(subject, name != "" or risk != "")
 
       action_rows = console_action_rows(pack_versions, name, risk, subject)
 
@@ -3080,10 +3083,11 @@ defmodule Emisar.Catalog do
   # retirement names its overrider. A row that vanishes between the two reads
   # keeps its slim struct — a nil manifest already means "nothing to diff", and
   # the override note words an absent overrider.
-  defp hydrate_decision_rows(pack_versions, %Subject{} = subject) do
+  defp hydrate_decision_rows(pack_versions, %Subject{} = subject, filtered?) do
     decision_ids =
       for %PackVersion{} = version <- pack_versions,
-          version.trust_state == :pending or not is_nil(version.retirement_overridden_at),
+          version.trust_state == :pending or not is_nil(version.retirement_overridden_at) or
+            (filtered? and version.trust_state == :trusted),
           do: version.id
 
     if decision_ids == [] do
@@ -3132,13 +3136,30 @@ defmodule Emisar.Catalog do
          _risk,
          %Subject{} = subject
        ) do
-    RunnerAction.Query.all()
-    |> RunnerAction.Query.by_pack_refs(Enum.map(versions, &{&1.pack_id, &1.version}))
-    |> RunnerAction.Query.ordered_by_action()
-    |> RunnerAction.Query.select_console_columns()
-    |> Authorizer.for_subject(subject)
-    |> Repo.all()
-    |> Enum.group_by(&{&1.pack_id, &1.pack_version})
+    observed =
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.by_pack_refs(
+        for version <- versions,
+            version.trust_state != :trusted,
+            do: {version.pack_id, version.version}
+      )
+      |> RunnerAction.Query.ordered_by_action()
+      |> RunnerAction.Query.select_console_columns()
+      |> Authorizer.for_subject(subject)
+      |> Repo.all()
+      |> Enum.group_by(&{&1.pack_id, &1.pack_version})
+
+    Enum.reduce(versions, observed, fn
+      %PackVersion{trust_state: :trusted} = version, acc ->
+        Map.put(
+          acc,
+          {version.pack_id, version.version},
+          ConsoleProjection.trusted_action_summaries(version)
+        )
+
+      _version, acc ->
+        acc
+    end)
   end
 
   defp pending_decision_action_rows([], %Subject{}), do: %{}
@@ -3155,25 +3176,126 @@ defmodule Emisar.Catalog do
     |> Enum.group_by(&{&1.pack_id, &1.pack_version})
   end
 
-  # Which runners advertise each `(pack_id, version)`, from ONE bounded fleet
-  # read — and only when some row's lifecycle actually turns on it (a trust
-  # decision's blast radius, or a retired row whose remedy depends on whether
-  # any host is still running it). A plain trusted row pays for nothing.
+  # One bounded inventory read serves exact-ref metadata and the separate
+  # whole-version lifecycle blast radius. Missing fleet permission keeps the
+  # catalog readable, without inventing an empty fleet.
   defp console_advertising(pack_versions, %Subject{} = subject) do
-    if Enum.any?(pack_versions, &ConsoleProjection.advertiser_facts_needed?/1) do
-      # The fleet read carries its own permission gate, so a role that may read
-      # the catalog but not the fleet refuses here rather than raising a
-      # MatchError on the page.
-      with {:ok, facts, %{coverage: coverage}} <-
-             Runners.list_pack_advertisement_facts(@console_advertising_runner_limit, subject) do
-        {index, malformed?} = ConsoleProjection.advertising_index(facts)
-        # A fact we couldn't read is a runner we can't rule out, so it degrades
-        # coverage rather than vanishing from the answer.
-        {:ok, {index, (malformed? && :partial) || coverage}}
+    if pack_versions != [] do
+      case Runners.list_pack_advertisement_facts(@console_advertising_runner_limit, subject) do
+        {:ok, facts, %{coverage: coverage}} ->
+          {index, malformed?} = ConsoleProjection.advertising_index(facts)
+          {reporters, malformed_ref?} = ConsoleProjection.reporting_index(facts)
+
+          {:ok,
+           %{
+             lifecycle: {index, (malformed? && :partial) || coverage},
+             reporting: {reporters, ((malformed? or malformed_ref?) && :partial) || coverage}
+           }}
+
+        {:error, :unauthorized} ->
+          {:ok, %{lifecycle: {%{}, :unavailable}, reporting: {%{}, :unavailable}}}
       end
     else
       {:ok, :not_needed}
     end
+  end
+
+  @doc """
+  Lazy, batched trusted contents and browse readiness for at most 500 version
+  ids. Complete immutable descriptors come from the manifest; executable
+  targets reuse MCP's complete deployment match and current action scope.
+  Fleet evidence is a 100-runner preview, never dispatch authorization.
+  """
+  def list_console_pack_actions(version_ids, %Subject{} = subject) when is_list(version_ids) do
+    with {:ok, subject} <-
+           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
+      ids =
+        version_ids
+        |> Enum.filter(&match?({:ok, _}, Ecto.UUID.cast(&1)))
+        |> Enum.uniq()
+        |> Enum.take(@console_pack_version_limit)
+
+      versions =
+        PackVersion.Query.all()
+        |> PackVersion.Query.by_ids(ids)
+        |> Authorizer.for_subject(subject)
+        |> Repo.all()
+
+      console_pack_actions(versions, subject)
+    end
+  end
+
+  defp console_pack_actions([], _subject), do: {:ok, %{}}
+
+  defp console_pack_actions(versions, subject) do
+    {runners, coverage} =
+      case Runners.list_pack_advertisement_facts(@console_advertising_runner_limit, subject,
+             readiness: true
+           ) do
+        {:ok, runners, %{coverage: coverage}} ->
+          {_index, malformed?} = ConsoleProjection.advertising_index(runners)
+          {runners, (malformed? && :partial) || coverage}
+
+        {:error, :unauthorized} ->
+          {[], :unavailable}
+      end
+
+    refs = MapSet.new(versions, &{&1.pack_id, &1.version})
+    runners = Enum.filter(runners, &is_map(&1.packs))
+
+    deployments =
+      runners
+      |> model_deployments(nil)
+      |> Enum.filter(fn {_id, pack, version, _hash} -> MapSet.member?(refs, {pack, version}) end)
+
+    rows =
+      RunnerAction.Query.all()
+      |> RunnerAction.Query.by_deployments(deployments)
+      |> RunnerAction.Query.select_manifest_match_columns()
+      |> Authorizer.for_subject(subject)
+      |> Repo.all()
+
+    access = Accounts.runner_access_for_subject(subject)
+
+    snapshot =
+      MCPProjection.build(versions, rows, runners)
+      |> scope_model_action_eligibility(runners, access, subject)
+
+    pending_pairs =
+      for version <- versions,
+          version.trust_state != :trusted,
+          do: {version.pack_id, version.version}
+
+    observed = pending_decision_action_rows(pending_pairs, subject)
+    rows_by_version = Enum.group_by(rows, &{&1.pack_id, &1.pack_version})
+
+    {:ok,
+     Map.new(versions, fn version ->
+       actions = ConsoleProjection.console_contents(version, observed)
+
+       execution_allowed? =
+         Auth.Authorizer.has_permission?(
+           subject,
+           Emisar.Runs.Authorizer.dispatch_run_permission()
+         ) and
+           Accounts.RunnerAccess.pack_in_scope?(version.pack_id, access)
+
+       result =
+         if actions == :incomplete_manifest,
+           do: actions,
+           else:
+             ConsoleProjection.action_availability(
+               version,
+               actions,
+               snapshot,
+               runners,
+               Map.get(rows_by_version, {version.pack_id, version.version}, []),
+               coverage,
+               execution_allowed?
+             )
+
+       {version.id, result}
+     end)}
   end
 
   # Rendering concern: the Packs page passes `preload:
@@ -3184,28 +3306,6 @@ defmodule Emisar.Catalog do
       :retirement_override_label, queryable ->
         PackVersion.Query.with_retirement_override_label(queryable)
     end)
-  end
-
-  @doc """
-  The distinct actions a pack version advertises — the catalog rows deduped to
-  one per `action_id`, sorted, so a trust decision shows WHAT the version can do
-  (action + risk), not just its hash. Account-scoped via the subject. Returns
-  `{:ok, [%RunnerAction{}]}`.
-  """
-  def list_pack_actions(pack_id, pack_version, %Subject{} = subject) do
-    with {:ok, subject} <-
-           Auth.fetch_current_subject(Authorizer.view_catalog_permission(), subject) do
-      actions =
-        RunnerAction.Query.all()
-        |> RunnerAction.Query.by_pack(pack_id, pack_version)
-        |> RunnerAction.Query.ordered_by_action()
-        |> RunnerAction.Query.select_console_columns()
-        |> Authorizer.for_subject(subject)
-        |> Repo.all()
-        |> ConsoleProjection.most_severe_actions_by_id()
-
-      {:ok, actions}
-    end
   end
 
   @doc """
@@ -3303,6 +3403,10 @@ defmodule Emisar.Catalog do
   # commits, so a rolled-back observe can't light up the badge.
   defp broadcast_pack_trust(account_id) when is_binary(account_id) do
     Emisar.PubSub.broadcast(account_packs_topic(account_id), {:pack_trust_changed, account_id})
+  end
+
+  defp broadcast_catalog_changed(account_id) do
+    Emisar.PubSub.broadcast(account_packs_topic(account_id), {:catalog_changed, account_id})
   end
 
   # -- Authorization ---------------------------------------------------

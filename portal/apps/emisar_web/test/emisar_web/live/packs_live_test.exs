@@ -1,6 +1,147 @@
 defmodule EmisarWeb.PacksLiveTest do
   use EmisarWeb.ConnCase, async: true
 
+  @hcp_hash "sha256:7d808108fe995fbb94f0c44396a2df00f6bae257b1cccef204193063660d59c6"
+  @hcp_denied ~w(tfc.apply_run tfc.discard_run tfc.cancel_run tfc.retry_run tfc.force_unlock_workspace)
+
+  defp advertise_hcp(runner, denied \\ @hcp_denied) do
+    manifest = Emisar.Catalog.PackBaseline.manifest("hcp-terraform", "0.8.9", @hcp_hash)
+
+    actions =
+      Enum.map(manifest["actions"], fn {id, descriptor} ->
+        descriptor
+        |> Map.put("id", id)
+        |> Map.put("pack_id", "hcp-terraform")
+        |> Map.put("args", descriptor["args_schema"]["args"])
+        |> Map.put("admission_allowed", id not in denied)
+        |> Map.put("primary_executable_available", true)
+      end)
+
+    {:ok, _} =
+      Emisar.Catalog.observe_state(runner, %{
+        "hostname" => runner.hostname,
+        "group" => runner.group,
+        "version" => "0.9.0",
+        "labels" => %{},
+        "packs" => %{"hcp-terraform" => %{"version" => "0.8.9", "hash" => @hcp_hash}},
+        "actions" => actions
+      })
+  end
+
+  describe "pack availability and reporter metadata" do
+    test "shows complete denied contents, compact names and an accessible overflow tooltip", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "admin-a")
+      advertise_hcp(runner)
+
+      for name <- ["admin-b", "admin-c", "admin-d"] do
+        reporter =
+          Fixtures.Runners.create_runner(account_id: account.id, name: name, connected?: false)
+
+        Fixtures.Runners.advertise_packs(reporter, %{
+          "hcp-terraform" => %{"version" => "0.8.9", "hash" => @hcp_hash}
+        })
+      end
+
+      foreign = Fixtures.Runners.create_runner(name: "foreign-secret")
+
+      Fixtures.Runners.advertise_packs(foreign, %{
+        "hcp-terraform" => %{"version" => "0.8.9", "hash" => @hcp_hash}
+      })
+
+      subject = Fixtures.Subjects.subject_for(user)
+      {:ok, [version], _} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+
+      assert has_element?(
+               lv,
+               "##{version_reporters_id(version)}-tt[tabindex='0'][phx-hook='Tooltip']",
+               "from admin-a, admin-b and 2 others"
+             )
+
+      assert has_element?(lv, "##{version_reporters_id(version)}[role='tooltip']", "admin-d")
+      refute render(lv) =~ "foreign-secret"
+
+      render_click(lv, "inspect_pack", %{
+        "id" => version.id,
+        "pack-id" => version.pack_id,
+        "version" => version.version
+      })
+
+      assert Enum.count(
+               lv
+               |> render()
+               |> LazyHTML.from_fragment()
+               |> LazyHTML.query("li[data-action-id]")
+             ) == 15
+
+      for id <- @hcp_denied do
+        assert has_element?(lv, ~s(li[data-action-id="#{id}"]), "unavailable")
+
+        assert has_element?(
+                 lv,
+                 ~s(li[data-action-id="#{id}"]),
+                 "Local admission denies this action."
+               )
+      end
+
+      assert has_element?(lv, ~s(li[data-action-id="tfc.plan_summary"]), "available")
+      html = render_click(lv, "filter", %{"name" => "tfc.apply_run", "risk" => ""})
+      assert html =~ "1 matching action"
+      assert has_element?(lv, ~s(li[data-action-id="tfc.apply_run"]), "unavailable")
+    end
+
+    test "catalog and fleet refresh update open contents without losing filter state", %{
+      conn: conn
+    } do
+      {conn, user, account} = register_and_log_in(conn)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "admin-a")
+      advertise_hcp(runner)
+      subject = Fixtures.Subjects.subject_for(user)
+      {:ok, [version], _} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+      render_click(lv, "filter", %{"name" => "tfc.apply_run"})
+      assert has_element?(lv, ~s(li[data-action-id="tfc.apply_run"]), "unavailable")
+      advertise_hcp(runner, [])
+      assert :sys.get_state(lv.pid).socket.assigns.refresh_queued?
+      send(lv.pid, :refresh_packs)
+      assert has_element?(lv, ~s(li[data-action-id="tfc.apply_run"]), "available")
+      assert has_element?(lv, ~s(button[aria-expanded="true"]))
+      assert :sys.get_state(lv.pid).socket.assigns.name_filter == "tfc.apply_run"
+      {:ok, _} = Emisar.Runners.disable_runner(runner, subject)
+      send(lv.pid, :refresh_packs)
+      assert has_element?(lv, ~s(li[data-action-id="tfc.apply_run"]), "Runner is disabled.")
+      assert has_element?(lv, "##{version_reporters_id(version)}", "admin-a")
+    end
+
+    test "scope refresh clears a closed cache before reopening", %{conn: conn} do
+      {conn, user, account} = register_and_log_in(conn)
+      user = Fixtures.Memberships.force_role(user, "admin")
+      subject = Fixtures.Subjects.subject_for(user)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "admin-a")
+      advertise_hcp(runner, [])
+      {:ok, [version], _} = Emisar.Catalog.list_pack_versions(subject)
+      {:ok, lv, _} = live(conn, ~p"/app/#{account}/packs")
+      toggle = %{"id" => version.id, "pack-id" => version.pack_id, "version" => version.version}
+      render_click(lv, "inspect_pack", toggle)
+      assert has_element?(lv, ~s(li[data-action-id="tfc.plan_summary"]), "available")
+      render_click(lv, "inspect_pack", toggle)
+      {:ok, access} = Emisar.Accounts.RunnerAccess.new(:restricted, ["elsewhere"], [], :all, [])
+      Fixtures.Memberships.force_runner_access(user, access)
+      send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", user.id})
+      send(lv.pid, :refresh_packs)
+      render(lv)
+      assert :sys.get_state(lv.pid).socket.assigns.inspected_actions == %{}
+      render_click(lv, "inspect_pack", toggle)
+      assert has_element?(lv, ~s(li[data-action-id="tfc.plan_summary"]), "execution access")
+      assert has_element?(lv, "##{version_reporters_id(version)}", "admin-a")
+    end
+  end
+
+  defp version_reporters_id(version), do: "pack-version-#{version.id}-reporters"
+
   describe "GET /app/packs" do
     test "redirects anonymous users to the workspace sign-in", %{conn: conn} do
       account = Fixtures.Accounts.create_account()
@@ -545,9 +686,10 @@ defmodule EmisarWeb.PacksLiveTest do
         drain_repo_query_count()
       end
 
-      # First open reads current identity, then exactly that action
-      # list. It still does not rebuild the account projection.
-      assert toggle.() == 2
+      # First open reads current identity, this exact trusted manifest, a
+      # bounded fleet preview and complete sibling digest evidence. It does
+      # not rebuild the account's pack projection or query per action.
+      assert toggle.() == 7
 
       # Closing, and re-opening the already-cached list, read nothing.
       assert toggle.() == 0
@@ -641,7 +783,7 @@ defmodule EmisarWeb.PacksLiveTest do
           "version" => pack_version.version
         })
 
-      assert html =~ "No runner currently reports actions for this version."
+      assert html =~ "No actions in this version&#39;s trusted manifest."
     end
 
     test "Trust adopts the pending hash and clears the pending badge", %{

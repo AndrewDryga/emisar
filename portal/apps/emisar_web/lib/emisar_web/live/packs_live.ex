@@ -22,12 +22,16 @@ defmodule EmisarWeb.PacksLive do
   """
   use EmisarWeb, :live_view
   alias Emisar.Catalog
+  alias Emisar.Runners
   alias EmisarWeb.ConfirmDialog
 
   def mount(_params, _session, socket) do
+    if connected?(socket),
+      do: Runners.subscribe_account_inventory(socket.assigns.current_account.id)
+
     socket = assign(socket, :page_title, "Packs")
 
-    # Trusted versions' actions are loaded lazily, one query per opened
+    # Trusted versions' actions are loaded lazily, one bounded read per opened
     # contents expansion (see `inspect_pack`), keyed by version id — trusted
     # versions can be many, so we never eagerly look them all up.
     socket = assign(socket, :inspected_actions, %{})
@@ -129,7 +133,7 @@ defmodule EmisarWeb.PacksLive do
         # version still renders — a live catalog change or a cleanup must not
         # collapse the contents an admin opened to review.
         |> update(:open_versions, &still_open_versions(&1, auto_opened, projection))
-        |> update(:inspected_actions, &seed_action_lists(&1, projection))
+        |> refresh_action_lists()
         |> assign(:group_cache, group_cache(projection.groups))
         |> stream(:packs, projection.groups, reset: true)
 
@@ -191,22 +195,25 @@ defmodule EmisarWeb.PacksLive do
 
   defp find_group(projection, pack_id), do: Enum.find(projection.groups, &(&1.id == pack_id))
 
-  # Pre-load the action list for each matched version so its auto-opened
-  # disclosure renders immediately (the projection already holds them) — merged
-  # over whatever `inspect_pack` lazily cached.
-  defp seed_action_lists(inspected, projection) do
-    versions = Enum.flat_map(projection.groups, & &1.versions)
-    inspected = Map.take(inspected, Enum.map(versions, & &1.id))
+  # Refresh all open/filter-matched disclosures in one batch. Cached closed
+  # lists cannot outlive fleet or current scope changes.
+  defp refresh_action_lists(socket) do
+    ids =
+      Enum.filter(
+        socket.assigns.open_versions,
+        &(socket.assigns.version_facts[&1].trust_state == :trusted)
+      )
 
-    versions
-    |> Enum.filter(&Map.has_key?(projection.matched_action_ids, &1.id))
-    |> Enum.reduce(inspected, fn version, acc ->
-      Map.put(acc, version.id, version_actions(projection, version))
-    end)
+    actions =
+      case Catalog.list_console_pack_actions(ids, socket.assigns.current_subject) do
+        {:ok, actions} -> actions
+        _ -> Map.new(ids, &{&1, :error})
+      end
+
+    # Closed caches are dropped too: reopening must not replay old scope or
+    # runner names after a permission/fleet change.
+    assign(socket, :inspected_actions, actions)
   end
-
-  defp version_actions(projection, version),
-    do: Map.get(projection.actions_by_pack_ref, {version.pack_id, version.version}, [])
 
   # The versions this load matches, plus the ones a person opened that it still
   # renders. A version the filter dropped or the catalog no longer holds has no
@@ -524,7 +531,7 @@ defmodule EmisarWeb.PacksLive do
             update(socket, :open_versions, &MapSet.delete(&1, cached.id))
           else
             socket
-            |> maybe_load_actions(cached.id, cached.pack_id, cached.version)
+            |> maybe_load_actions(cached.id)
             |> update(:open_versions, &MapSet.put(&1, cached.id))
           end
 
@@ -537,7 +544,7 @@ defmodule EmisarWeb.PacksLive do
 
   def handle_event("inspect_pack", _params, socket), do: {:noreply, socket}
 
-  defp maybe_load_actions(socket, id, pack_id, version) do
+  defp maybe_load_actions(socket, id) do
     if Map.has_key?(socket.assigns.inspected_actions, id) do
       socket
     else
@@ -546,8 +553,8 @@ defmodule EmisarWeb.PacksLive do
       # actions. Collapsing the failure to [] said "advertises nothing" about a
       # version whose contents we never saw.
       actions =
-        case Catalog.list_pack_actions(pack_id, version, socket.assigns.current_subject) do
-          {:ok, actions} -> actions
+        case Catalog.list_console_pack_actions([id], socket.assigns.current_subject) do
+          {:ok, actions} -> Map.get(actions, id, [])
           _ -> :error
         end
 
@@ -706,7 +713,7 @@ defmodule EmisarWeb.PacksLive do
           |> assign(:matched_actions, projection.matched_action_ids)
           |> assign(:group_cache, group_cache(projection.groups))
           |> update(:open_versions, &still_open_versions(&1, auto_opened, projection))
-          |> update(:inspected_actions, &seed_action_lists(&1, projection))
+          |> refresh_action_lists()
 
         case find_group(projection, pack_id) do
           nil -> stream_delete(socket, :packs, %{id: pack_id})
@@ -722,10 +729,24 @@ defmodule EmisarWeb.PacksLive do
 
   # The durable catalog changed under us — a runner advertised something new, a
   # peer trusted/rejected/deleted a version, or the retention sweep ran. The
-  # pack-trust broadcast is the source of truth; connection Presence does not
-  # change which durable runner advertisements the page renders.
+  # Catalog and lifecycle signals refresh durable reporters; Presence topology
+  # changes refresh current execution eligibility, not reporter membership.
   def handle_info({:pack_trust_changed, _account_id}, socket),
     do: {:noreply, queue_refresh(socket)}
+
+  def handle_info({:catalog_changed, _account_id}, socket),
+    do: {:noreply, queue_refresh(socket)}
+
+  def handle_info({:runner_inventory_changed, _account_id}, socket),
+    do: {:noreply, queue_refresh(socket)}
+
+  def handle_info(%{event: "presence_diff"} = event, socket) do
+    change = Runners.normalize_connection_change(event)
+
+    if Runners.connection_topology_changed?(change),
+      do: {:noreply, queue_refresh(socket)},
+      else: {:noreply, socket}
+  end
 
   def handle_info(
         {:list_changed, :team, "membership.runner_access_changed", membership_id},
@@ -761,25 +782,145 @@ defmodule EmisarWeb.PacksLive do
     <ul class={["space-y-1", @class]}>
       <li
         :for={action <- @actions}
+        data-action-id={action.action_id}
         class={[
-          "flex items-center gap-2 border-l-2 pl-2 text-[11px]",
+          "grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 gap-y-0.5 border-l-2 pl-2 text-[11px] sm:flex",
           (matched?(@matched, action.action_id) && "border-brand-500") || "border-transparent"
         ]}
       >
         <%!-- One pill per row, all in the leading column — a fixed track keeps
              the action ids beside them on one left edge. --%>
         <.risk_pill id={"#{@id}-#{action.action_id}-risk"} risk={action.risk} variant={:track} />
-        <span class={[
-          "font-mono",
-          (matched?(@matched, action.action_id) && "text-brand-200") || "text-zinc-300"
-        ]}>
-          {action.action_id}
-        </span>
-        <span :if={action.title} class="truncate text-zinc-400">{action.title}</span>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-baseline gap-x-2">
+            <span class={[
+              "max-w-full break-all font-mono",
+              (matched?(@matched, action.action_id) && "text-brand-200") || "text-zinc-300"
+            ]}>{action.action_id}</span>
+            <span
+              :if={action.title}
+              class="min-w-0 break-words [overflow-wrap:anywhere] text-zinc-400"
+            >
+              {action.title}
+            </span>
+          </div>
+          <p :if={action.availability && action.availability.reason != ""} class="text-zinc-500">
+            {action.availability.reason}
+          </p>
+        </div>
+        <.tooltip
+          :if={action.availability}
+          id={"#{@id}-#{action.action_id}-availability"}
+          text={availability_tip(action.availability)}
+          align={:right}
+          class="col-start-2 justify-self-start sm:shrink-0"
+        >
+          <:content>
+            <div class="max-h-64 overflow-y-auto text-[11px]">
+              <p>Current host eligibility; policy and approval are checked when starting a run.</p>
+              <p :if={action.availability.coverage == :partial} class="mt-1 text-zinc-400">
+                Partial fleet preview; other targets may exist.
+              </p>
+              <ul class="mt-2 space-y-1">
+                <li :for={runner <- action.availability.runners}>
+                  <span class="font-medium text-zinc-200">{runner.name}</span>
+                  <span class="text-zinc-400"> — {runner.reason}</span>
+                  <span
+                    :if={runner.status == :available && !runner.admission_reported?}
+                    class="text-zinc-400"
+                  >
+                    Admission not reported.
+                  </span>
+                </li>
+              </ul>
+              <p :if={action.availability.runners == []} class="mt-1 text-zinc-400">
+                {action.availability.reason}
+              </p>
+            </div>
+          </:content>
+          <.status_badge
+            status={action.availability.status}
+            tone={availability_tone(action.availability.status)}
+            class="text-[11px]"
+          />
+        </.tooltip>
       </li>
     </ul>
     """
   end
+
+  defp availability_tone(:available), do: :brand
+  defp availability_tone(:unavailable), do: :neutral
+  defp availability_tone(:unknown), do: :amber
+
+  defp availability_tip(availability) do
+    Enum.map_join(availability.runners, "; ", &"#{&1.name}: #{&1.reason}") <>
+      " Policy and approval are checked when starting a run."
+  end
+
+  attr :id, :string, required: true
+  attr :reporting, :map, required: true
+
+  defp reporting_runners(assigns) do
+    assigns = assigns |> assign(:names, Enum.map(assigns.reporting.runners, & &1.name))
+
+    ~H"""
+    <.tooltip
+      id={"#{@id}-reporters"}
+      text={reporter_tip(@reporting)}
+      align={:left}
+      class="min-w-0 max-w-full text-[11px] text-zinc-400"
+    >
+      <:content>
+        <div class="max-h-64 overflow-y-auto text-[11px]">
+          <p>{reporter_count(@reporting)}</p>
+          <ul :if={@names != []} class="mt-1 space-y-1">
+            <li :for={name <- @names} class="text-zinc-200">{name}</li>
+          </ul>
+          <p :if={@reporting.coverage == :partial} class="mt-2 text-zinc-400">
+            Partial fleet preview; the count is a lower bound.
+          </p>
+          <p :if={@reporting.other_hash_runners != []} class="mt-2 text-zinc-400">
+            Different hash: {Enum.map_join(@reporting.other_hash_runners, ", ", & &1.name)}.
+            These runners do not report the displayed contents.
+          </p>
+          <p class="mt-2 text-zinc-400">
+            Last reported is this version's latest observation, not a simultaneous report from every runner.
+          </p>
+        </div>
+      </:content>
+      <span class="hidden break-words sm:inline">{reporter_summary(@reporting)}</span>
+      <span class="sm:hidden">{reporter_count(@reporting)}</span>
+    </.tooltip>
+    """
+  end
+
+  defp reporter_count(%{coverage: :unavailable}), do: "reporters unavailable"
+  defp reporter_count(%{coverage: :partial, runners: []}), do: "reporters unknown"
+
+  defp reporter_count(%{coverage: :partial, runners: runners}),
+    do: "at least #{length(runners)} #{runner_noun(length(runners))}"
+
+  defp reporter_count(%{runners: []}), do: "no reporters"
+
+  defp reporter_count(%{runners: runners}),
+    do: "#{length(runners)} #{runner_noun(length(runners))}"
+
+  defp runner_noun(1), do: "runner"
+  defp runner_noun(_), do: "runners"
+
+  defp reporter_summary(%{runners: []} = reporting), do: reporter_count(reporting)
+
+  defp reporter_summary(reporting) do
+    names = Enum.map(reporting.runners, & &1.name)
+    first = names |> Enum.take(2) |> Enum.join(", ")
+    overflow = if length(names) > 2, do: " and #{length(names) - 2} others", else: ""
+    preview = if reporting.coverage == :partial, do: " (partial preview)", else: ""
+    "from #{first}#{overflow}#{preview}"
+  end
+
+  defp reporter_tip(reporting),
+    do: reporter_count(reporting) <> ": " <> Enum.map_join(reporting.runners, ", ", & &1.name)
 
   defp matched?(nil, _action_id), do: false
   defp matched?(matched, action_id), do: MapSet.member?(matched, action_id)
@@ -818,17 +959,20 @@ defmodule EmisarWeb.PacksLive do
         Couldn't load this version's actions. Refresh the page to try again.
       </p>
       <p :if={@inspected == []} class="mt-2 text-[11px] text-zinc-400">
-        No runner currently reports actions for this version.
+        No actions in this version's trusted manifest.
+      </p>
+      <p :if={@inspected == :incomplete_manifest} class="mt-2 text-[11px] text-zinc-400">
+        Trusted contents are incomplete. Review a fresh runner advertisement before trusting this version again.
       </p>
       <p
-        :if={not is_nil(@matched) and @shown not in [nil, :error, []]}
+        :if={not is_nil(@matched) and @shown not in [nil, :error, :incomplete_manifest, []]}
         data-role="pack-action-match-summary"
         class="mt-2 text-[11px] font-medium text-brand-300"
       >
         {match_count_label(@shown)}
       </p>
       <.pack_action_list
-        :if={@shown not in [nil, :error, []]}
+        :if={@shown not in [nil, :error, :incomplete_manifest, []]}
         id={"pack-version-#{@version.id}-contents"}
         actions={@shown}
         class={if @matched, do: "mt-1.5", else: "mt-2"}
@@ -842,6 +986,7 @@ defmodule EmisarWeb.PacksLive do
   # read failed) pass through — neither is a list to filter.
   defp filtered_contents(nil, _matched), do: nil
   defp filtered_contents(:error, _matched), do: :error
+  defp filtered_contents(:incomplete_manifest, _matched), do: :incomplete_manifest
   defp filtered_contents(actions, nil), do: actions
 
   defp filtered_contents(actions, matched),
@@ -1421,6 +1566,7 @@ defmodule EmisarWeb.PacksLive do
             ]}>
               <span class="mb-1">Pack or action</span>
               <input
+                id="pack-name-filter"
                 type="text"
                 name="name"
                 value={@name_filter}
@@ -1554,6 +1700,10 @@ defmodule EmisarWeb.PacksLive do
                         class="text-zinc-400"
                       />
                     </span>
+                    <.reporting_runners
+                      id={"pack-version-#{v.id}"}
+                      reporting={@version_facts[v.id].reporting}
+                    />
                     <%!-- A manager's row carries three verbs (read + one trust verb +
                          Remove) — the labeled-menu threshold (§7.47), same grammar as
                          the LLM-agents rows. Everyone else has only the read path, and

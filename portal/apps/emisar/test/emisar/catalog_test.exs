@@ -5511,11 +5511,7 @@ defmodule Emisar.CatalogTest do
       assert projection.decision_count == 0
     end
 
-    # A pending row's blast radius is a fleet read, and that read carries its own
-    # permission. Today every role holding view_catalog also holds view_runners,
-    # so this only fires if those grants are ever split — and then the page must
-    # refuse, not raise.
-    test "refuses when the caller may read the catalog but not the fleet", %{
+    test "keeps catalog inventory when fleet details cannot be read", %{
       subject: subject,
       runner: runner
     } do
@@ -5527,7 +5523,13 @@ defmodule Emisar.CatalogTest do
             MapSet.delete(subject.permissions, Runners.Authorizer.view_runners_permission())
       }
 
-      assert Catalog.list_console_packs(%{}, no_fleet) == {:error, :unauthorized}
+      assert {:ok, projection} = Catalog.list_console_packs(%{}, no_fleet)
+      assert projection.pack_count == 2
+
+      for fact <- Map.values(projection.version_facts) do
+        assert fact.reporting.coverage == :unavailable
+        assert fact.reporting.runners == []
+      end
     end
 
     test "with no filters every version is kept and nothing is matched", %{
@@ -6014,9 +6016,9 @@ defmodule Emisar.CatalogTest do
       _ = drain_repo_query_count()
       assert {:ok, lazy} = Catalog.list_console_packs(%{}, small_subject)
 
-      # Current identity/access, slim versions, and the residual-owner authority
-      # query remain. Action contents stay lazy until a disclosure is opened.
-      assert drain_repo_query_count() == 5
+      # Reporter metadata adds one current-identity check and one bounded fleet
+      # read; action descriptors still stay lazy until a disclosure is opened.
+      assert drain_repo_query_count() == 7
       assert lazy.actions_by_pack_ref == %{}
     end
 
@@ -6643,18 +6645,22 @@ defmodule Emisar.CatalogTest do
         version: current
       )
 
+      action =
+        Fixtures.Catalog.create_action(
+          runner: runner,
+          action_id: "#{pack_id}.old",
+          pack_id: pack_id,
+          pack_version: "0.0.0",
+          risk: "high"
+        )
+
+      {:ok, manifest} = TrustedManifest.from_runner_actions([action])
+
       Fixtures.Catalog.create_trusted_pack_version(
         account_id: account.id,
         pack_id: pack_id,
-        version: "0.0.0"
-      )
-
-      Fixtures.Catalog.create_action(
-        runner: runner,
-        action_id: "#{pack_id}.old",
-        pack_id: pack_id,
-        pack_version: "0.0.0",
-        risk: "high"
+        version: "0.0.0",
+        trusted_manifest: manifest
       )
 
       assert {:ok, projection} = Catalog.list_console_packs(%{risk: "high"}, subject)
@@ -6665,7 +6671,7 @@ defmodule Emisar.CatalogTest do
     end
   end
 
-  describe "list_pack_actions/3" do
+  describe "list_console_pack_actions/2 pending contents" do
     test "returns the distinct actions a pack version advertises, scoped to the account" do
       {account, subject} = account_with_owner()
 
@@ -6699,7 +6705,9 @@ defmodule Emisar.CatalogTest do
           )
         )
 
-      assert {:ok, actions} = Catalog.list_pack_actions("acme", "2.0", subject)
+      assert {:ok, [version], _} = Catalog.list_pack_versions(subject)
+      assert {:ok, contents} = Catalog.list_console_pack_actions([version.id], subject)
+      actions = contents[version.id]
       # Ordered by action_id, one row per action (deduped across runners).
       assert Enum.map(actions, & &1.action_id) == ["acme.reload", "acme.status"]
       assert Enum.map(actions, & &1.risk) == [:critical, :low]
@@ -6709,7 +6717,8 @@ defmodule Emisar.CatalogTest do
 
       force_runner_access(subject, database_acme)
 
-      assert {:ok, database_actions} = Catalog.list_pack_actions("acme", "2.0", subject)
+      assert {:ok, contents} = Catalog.list_console_pack_actions([version.id], subject)
+      database_actions = contents[version.id]
 
       assert Enum.map(database_actions, &{&1.action_id, &1.risk}) == [
                {"acme.reload", :critical},
@@ -6720,12 +6729,13 @@ defmodule Emisar.CatalogTest do
         Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
 
       force_runner_access(subject, other_pack_only)
-      assert {:ok, still_readable} = Catalog.list_pack_actions("acme", "2.0", subject)
+      assert {:ok, contents} = Catalog.list_console_pack_actions([version.id], subject)
+      still_readable = contents[version.id]
       assert Enum.map(still_readable, & &1.action_id) == ["acme.reload", "acme.status"]
 
       # Another account sees none of this account's pack actions.
       {_account, other_subject} = account_with_owner()
-      assert Catalog.list_pack_actions("acme", "2.0", other_subject) == {:ok, []}
+      assert Catalog.list_console_pack_actions([version.id], other_subject) == {:ok, %{}}
     end
   end
 

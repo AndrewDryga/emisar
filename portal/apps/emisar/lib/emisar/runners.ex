@@ -472,8 +472,10 @@ defmodule Emisar.Runners do
   `{:ok, facts, %{coverage: :complete | :partial}}` — `:partial` when the
   account fleet has more runners than `limit`. Action scope never changes
   coverage, and this bounded preview is not an action-authorization check.
+  `readiness: true` returns slim runner structs with current Presence and host
+  state for Catalog's existing compatibility projection; no credentials.
   """
-  def list_pack_advertisement_facts(limit, %Subject{} = subject)
+  def list_pack_advertisement_facts(limit, %Subject{} = subject, opts \\ [])
       when is_integer(limit) and limit > 0 do
     with {:ok, subject} <-
            Auth.fetch_current_subject(Authorizer.view_runners_permission(), subject) do
@@ -481,7 +483,7 @@ defmodule Emisar.Runners do
       facts =
         Runner.Query.not_deleted()
         |> Runner.Query.ordered_by_group_name()
-        |> Runner.Query.select_pack_advertisement_facts()
+        |> select_advertisement_facts(Keyword.get(opts, :readiness, false))
         |> Authorizer.for_subject(subject)
         |> Runner.Query.limit_to(limit + 1)
         |> Repo.all()
@@ -489,9 +491,22 @@ defmodule Emisar.Runners do
       partial? = length(facts) > limit
       coverage = if partial?, do: :partial, else: :complete
 
-      {:ok, Enum.take(facts, limit), %{coverage: coverage}}
+      facts = Enum.take(facts, limit)
+
+      facts =
+        if Keyword.get(opts, :readiness, false),
+          do: apply_runner_preloads(facts, [:online?]),
+          else: facts
+
+      {:ok, facts, %{coverage: coverage}}
     end
   end
+
+  defp select_advertisement_facts(queryable, true),
+    do: Runner.Query.select_model_fields(queryable)
+
+  defp select_advertisement_facts(queryable, false),
+    do: Runner.Query.select_pack_advertisement_facts(queryable)
 
   @doc """
   Current runbook action targets and completely authorized group names.
@@ -1172,7 +1187,9 @@ defmodule Emisar.Runners do
         Audit.Events.runner_enabled(manager.subject, enabled)
       end)
       |> request_runner_quantity_sync()
-      |> Repo.commit_multi()
+      |> Repo.commit_multi(
+        after_commit: fn %{runner: runner} -> broadcast_inventory_changed(runner.account_id) end
+      )
       |> case do
         {:ok, %{runner: enabled}} -> {:ok, enabled}
         {:error, {:over_limit, plan, limit}} -> {:error, :over_limit, plan, limit}
@@ -1379,7 +1396,11 @@ defmodule Emisar.Runners do
         do: Billing.request_runner_quantity_sync(account_id, repo: repo),
         else: {:ok, :not_requested}
     end)
-    |> Repo.commit_multi()
+    |> Repo.commit_multi(
+      after_commit: fn %{deleted: deleted} ->
+        if deleted != [], do: broadcast_inventory_changed(account_id), else: :ok
+      end
+    )
   end
 
   defp runner_sweep_multi(_account_id, nil), do: Multi.new()
@@ -2340,6 +2361,17 @@ defmodule Emisar.Runners do
   def subscribe_account_credentials(account_id),
     do: Emisar.PubSub.subscribe("account:#{account_id}:runner_credentials")
 
+  @doc "Subscribe to runner lifecycle inventory changes, without audit payloads."
+  def subscribe_account_inventory(account_id),
+    do: Emisar.PubSub.subscribe("account:#{account_id}:runner_inventory")
+
+  defp broadcast_inventory_changed(account_id) do
+    Emisar.PubSub.broadcast(
+      "account:#{account_id}:runner_inventory",
+      {:runner_inventory_changed, account_id}
+    )
+  end
+
   defp broadcast_runner_credentials_changed(%Runner{} = runner) do
     Emisar.PubSub.broadcast(
       "account:#{runner.account_id}:runner_credentials",
@@ -2469,6 +2501,8 @@ defmodule Emisar.Runners do
   # live socket before it can finalize more runs or mutate catalog state. Disabled
   # retries its valid token; deleted revokes the identity and stops permanently.
   defp broadcast_runner_disabled(%Runner{} = runner) do
+    broadcast_inventory_changed(runner.account_id)
+
     Emisar.PubSub.broadcast(
       runner_control_topic(runner.account_id, runner.id),
       :runner_socket_disabled
@@ -2476,6 +2510,8 @@ defmodule Emisar.Runners do
   end
 
   defp broadcast_runner_revoked(%Runner{} = runner) do
+    broadcast_inventory_changed(runner.account_id)
+
     Emisar.PubSub.broadcast(
       runner_control_topic(runner.account_id, runner.id),
       :runner_socket_revoked

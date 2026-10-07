@@ -99,4 +99,42 @@ defmodule Emisar.Catalog.ConsoleProjectionTest do
       assert rank.high < rank.critical
     end
   end
+
+  describe "exact-ref reporters" do
+    test "deduplicates durable identities, orders names and separates conflicting hashes" do
+      a = runner("a", %{"nginx" => %{"version" => "1.2.0", "hash" => "first"}})
+      b = runner("b", %{"nginx" => %{"version" => "1.2.0", "hash" => "other"}})
+      c = runner("c", %{"nginx" => %{"version" => "1.3.0", "hash" => "first"}})
+      assert {index, false} = ConsoleProjection.reporting_index([b, c, a, a])
+
+      version = %Emisar.Catalog.PackVersion{
+        pack_id: "nginx",
+        version: "1.2.0",
+        hash: "first",
+        trust_state: :trusted
+      }
+
+      assert %{coverage: :partial, runners: [%{id: "a"}], other_hash_runners: [%{id: "b"}]} =
+               ConsoleProjection.reporting_fact(version, %{reporting: {index, :partial}})
+
+      pending = %{version | trust_state: :pending, pending_hash: "other"}
+
+      assert %{runners: [%{id: "b"}], other_hash_runners: [%{id: "a"}]} =
+               ConsoleProjection.reporting_fact(pending, %{reporting: {index, :complete}})
+    end
+
+    test "malformed or missing hash evidence is not an exact-ref reporter" do
+      assert {%{}, true} = ConsoleProjection.reporting_index([runner("a", "bad")])
+
+      assert {%{}, true} =
+               ConsoleProjection.reporting_index([
+                 runner("a", %{"nginx" => %{"version" => "1.0"}})
+               ])
+
+      version = %Emisar.Catalog.PackVersion{pack_id: "nginx", version: "1.0"}
+
+      assert %{coverage: :partial, runners: []} =
+               ConsoleProjection.reporting_fact(version, %{reporting: {%{}, :partial}})
+    end
+  end
 end

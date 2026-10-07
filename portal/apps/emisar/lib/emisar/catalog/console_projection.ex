@@ -13,7 +13,7 @@ defmodule Emisar.Catalog.ConsoleProjection do
   them, so the dependency runs one way.
   """
 
-  alias Emisar.Catalog.{ActionSetDiff, PackBaseline, PackVersion, RunnerAction}
+  alias Emisar.Catalog.{ActionSetDiff, PackBaseline, PackVersion, RunnerAction, TrustedManifest}
 
   # Severity order. Catalog's own risk folding reads it back through
   # risk_rank/0 rather than keeping a second copy, so one table ranks risk for
@@ -164,9 +164,22 @@ defmodule Emisar.Catalog.ConsoleProjection do
       display_state: (blocked? && "retired") || to_string(pack_version.trust_state),
       trust_review?: pack_version.trust_state == :pending,
       needs_decision?: pack_version_needs_decision?(pack_version),
-      actions: action_summaries(actions),
+      actions:
+        Enum.map(
+          action_summaries(actions),
+          &%{
+            &1
+            | availability: %{
+                status: :unavailable,
+                reason: availability_reason(:untrusted),
+                coverage: :not_needed,
+                runners: []
+              }
+          }
+        ),
       action_changes: action_set_changes(pack_version, actions),
       advertising: advertising_fact,
+      reporting: reporting_fact(pack_version, advertising),
       current_version: PackBaseline.current_version(pack_version.pack_id),
       retired?: retired?,
       retirement_blocked?: blocked?,
@@ -208,8 +221,249 @@ defmodule Emisar.Catalog.ConsoleProjection do
     end
   end
 
+  def advertising_fact(version, %{lifecycle: advertising}),
+    do: advertising_fact(version, advertising)
+
   def advertising_fact(%PackVersion{}, :not_needed),
     do: %{coverage: :not_needed, runners: []}
+
+  @doc "Exact-hash reporter index, separate from whole-version lifecycle blast radius."
+  def reporting_index(facts) do
+    Enum.reduce(facts, {%{}, false}, fn runner, {index, malformed?} ->
+      packs = if is_map(runner.packs), do: runner.packs, else: %{}
+      malformed? = malformed? or not is_map(runner.packs)
+
+      Enum.reduce(packs, {index, malformed?}, fn entry, {index, malformed?} ->
+        with {:ok, {pack_id, version}} <- advertised_pack_ref(entry),
+             {_id, %{"hash" => hash}} when is_binary(hash) <- entry do
+          identity = Map.take(runner, [:id, :name, :group])
+          {Map.update(index, {pack_id, version, hash}, [identity], &[identity | &1]), malformed?}
+        else
+          _ -> {index, true}
+        end
+      end)
+    end)
+  end
+
+  def reporting_fact(version, %{reporting: {index, coverage}}) do
+    hash =
+      if version.trust_state == :pending,
+        do: version.pending_hash,
+        else: version.hash || version.pending_hash
+
+    runners =
+      index |> Map.get({version.pack_id, version.version, hash}, []) |> ordered_reporters()
+
+    others =
+      index
+      |> Enum.flat_map(fn
+        {{pack_id, pack_version, other_hash}, reporters}
+        when pack_id == version.pack_id and pack_version == version.version and other_hash != hash ->
+          reporters
+
+        _ ->
+          []
+      end)
+      |> ordered_reporters()
+
+    %{coverage: coverage, runners: runners, other_hash_runners: others}
+  end
+
+  def reporting_fact(_version, _advertising),
+    do: %{coverage: :unavailable, runners: [], other_hash_runners: []}
+
+  defp ordered_reporters(reporters),
+    do: reporters |> Enum.uniq_by(& &1.id) |> Enum.sort_by(&{&1.group || "", &1.name, &1.id})
+
+  @doc "Compact immutable manifest contents, independent of current advertisements."
+  def trusted_action_summaries(%PackVersion{} = version) do
+    case TrustedManifest.actions(version.trusted_manifest) do
+      {:ok, actions} ->
+        actions
+        |> Enum.sort_by(&elem(&1, 0))
+        |> Enum.map(fn {id, descriptor} ->
+          %RunnerAction{
+            action_id: id,
+            pack_id: version.pack_id,
+            pack_version: version.version,
+            pack_hash: version.hash,
+            title: descriptor["title"],
+            kind: enum_value(descriptor["kind"], [:exec, :script]),
+            risk: enum_value(descriptor["risk"], [:low, :medium, :high, :critical])
+          }
+        end)
+
+      {:error, :incomplete_manifest} ->
+        []
+    end
+  end
+
+  defp enum_value(value, values), do: Enum.find(values, &(to_string(&1) == value))
+
+  def console_contents(%PackVersion{trust_state: :trusted} = version, _observed) do
+    case TrustedManifest.actions(version.trusted_manifest) do
+      {:ok, _} -> trusted_action_summaries(version)
+      {:error, :incomplete_manifest} -> :incomplete_manifest
+    end
+  end
+
+  def console_contents(version, observed) do
+    observed
+    |> Map.get({version.pack_id, version.version}, [])
+    |> most_severe_actions_by_id()
+    |> action_summaries()
+  end
+
+  @doc "Browse facts over the existing scoped MCP compatibility verdict, not a second dispatch gate."
+  def action_availability(version, actions, snapshot, runners, rows, coverage, execution_allowed?) do
+    pack =
+      Enum.find(
+        snapshot.packs,
+        &(&1.pack_id == version.pack_id and &1.version == version.version and
+            &1.hash == version.hash)
+      )
+
+    projected_runners = Map.new(snapshot.runners, &{&1.id, &1})
+    evidence = Map.new(rows, &{{&1.runner_id, &1.action_id}, &1})
+    block = lifecycle_block(version)
+
+    reporters =
+      Enum.filter(runners, &reports_version?(&1, version))
+      |> Enum.sort_by(&{&1.group || "", &1.name, &1.id})
+
+    Enum.map(actions, fn action ->
+      projected_action = pack && Enum.find(pack.actions, &(&1["action_id"] == action.action_id))
+      eligible = (projected_action && projected_action.compatible_runner_ids) || []
+
+      details =
+        Enum.map(reporters, fn runner ->
+          deployment = pack && pack.compatibility[runner.id]
+          row = evidence[{runner.id, action.action_id}]
+
+          status =
+            block ||
+              reporter_action_status(deployment, projected_runners[runner.id], action.action_id)
+
+          Map.merge(Map.take(runner, [:id, :name, :group]), %{
+            status: status,
+            reason: availability_reason(status),
+            admission_reported?: not is_nil(row) and not is_nil(row.admission_allowed),
+            prerequisite_reported?:
+              not is_nil(row) and not is_nil(row.primary_executable_available)
+          })
+        end)
+
+      {status, reason} =
+        availability_verdict(block, pack, eligible, details, coverage, execution_allowed?)
+
+      %{
+        action
+        | availability: %{status: status, reason: reason, coverage: coverage, runners: details}
+      }
+    end)
+  end
+
+  defp reports_version?(runner, version) do
+    match?(
+      %{"version" => v} when v == version.version,
+      Map.get(runner.packs || %{}, version.pack_id)
+    )
+  end
+
+  defp reporter_action_status(_deployment, %{status: status}, _action_id)
+       when status != "connected",
+       do: if(status == "disabled", do: :disabled, else: :disconnected)
+
+  defp reporter_action_status(nil, _runner, _action_id), do: :integrity_mismatch
+
+  defp reporter_action_status(%{descriptor_match?: false}, _runner, _action_id),
+    do: :integrity_mismatch
+
+  defp reporter_action_status(deployment, _runner, action_id) do
+    cond do
+      action_id in deployment.admission_denied_action_ids -> :admission_denied
+      action_id in deployment.unavailable_action_ids -> :executable_missing
+      action_id in deployment.compatible_action_ids -> :available
+      true -> :outside_scope
+    end
+  end
+
+  defp lifecycle_block(%{trust_state: state}) when state != :trusted, do: :untrusted
+
+  defp lifecycle_block(version) do
+    cond do
+      retired?(version) and is_nil(version.retirement_overridden_at) ->
+        :retired
+
+      TrustedManifest.actions(version.trusted_manifest) == {:error, :incomplete_manifest} ->
+        :manifest_incomplete
+
+      true ->
+        nil
+    end
+  end
+
+  defp availability_verdict(block, pack, eligible, details, coverage, execution_allowed?) do
+    cond do
+      block ->
+        {:unavailable, availability_reason(block)}
+
+      not execution_allowed? ->
+        {:unavailable, availability_reason(:outside_scope)}
+
+      eligible != [] ->
+        ready = Enum.filter(details, &(&1.status == :available))
+        qualifiers = if coverage == :partial, do: ["Partial fleet preview"], else: []
+
+        qualifiers =
+          if Enum.any?(ready, &(not &1.admission_reported?)),
+            do: ["Admission not reported" | qualifiers],
+            else: qualifiers
+
+        qualifiers =
+          if Enum.any?(ready, &(not &1.prerequisite_reported?)),
+            do: ["Executable availability not reported" | qualifiers],
+            else: qualifiers
+
+        {:available, Enum.join(Enum.reverse(qualifiers), "; ")}
+
+      coverage == :unavailable ->
+        {:unknown, "Runner details require fleet access."}
+
+      coverage == :partial ->
+        {:unknown, "No eligible runner in this partial fleet preview."}
+
+      details == [] ->
+        {:unavailable, "No runner reports this exact pack version."}
+
+      is_nil(pack) ->
+        {:unavailable, "Runner reports a different hash or an unverifiable pack reference."}
+
+      true ->
+        connected = Enum.reject(details, &(&1.status in [:disconnected, :disabled]))
+        relevant = if connected == [], do: details, else: connected
+        reasons = relevant |> Enum.map(&availability_reason(&1.status)) |> Enum.uniq()
+        {:unavailable, Enum.join(reasons, " ")}
+    end
+  end
+
+  def availability_reason(:available),
+    do: "Available; policy and approval are checked when starting a run."
+
+  def availability_reason(:admission_denied), do: "Local admission denies this action."
+  def availability_reason(:executable_missing), do: "Primary executable is missing."
+  def availability_reason(:disabled), do: "Runner is disabled."
+  def availability_reason(:disconnected), do: "Runner is not connected."
+
+  def availability_reason(:integrity_mismatch),
+    do: "Advertisement does not match the complete trusted manifest."
+
+  def availability_reason(:outside_scope),
+    do: "Your current execution access excludes this target."
+
+  def availability_reason(:untrusted), do: "Pack contents are not trusted."
+  def availability_reason(:retired), do: "This pack version is retired."
+  def availability_reason(:manifest_incomplete), do: "The trusted manifest is incomplete."
 
   # The ONE fix a retired version's notice offers. Hosts we know are still on it
   # → update them (override only if you genuinely can't yet). None, from a
@@ -223,6 +477,9 @@ defmodule Emisar.Catalog.ConsoleProjection do
     do: :remove
 
   def retirement_remedy(%PackVersion{trust_state: :trusted}, true, %{coverage: :partial}),
+    do: :resolve_advertisers
+
+  def retirement_remedy(%PackVersion{trust_state: :trusted}, true, %{coverage: :unavailable}),
     do: :resolve_advertisers
 
   def retirement_remedy(%PackVersion{}, _blocked?, _advertising), do: :none

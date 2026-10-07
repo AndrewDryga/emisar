@@ -37,6 +37,9 @@ defmodule Emisar.Catalog.RunnerAction do
       values: [:pack_untrusted, :pack_retired],
       virtual: true
 
+    # Browse-only readiness; never part of the trusted descriptor or authority.
+    field :availability, :map, virtual: true
+
     belongs_to :account, Emisar.Accounts.Account, where: [deleted_at: nil]
     belongs_to :runner, Emisar.Runners.Runner, where: [deleted_at: nil]
 

@@ -37,6 +37,45 @@ defmodule Emisar.RunnersTest do
     on_exit(fn -> send(pid, :stop) end)
   end
 
+  describe "subscribe_account_inventory/1" do
+    test "inventory signal contains no audit payload and follows committed lifecycle changes" do
+      {account, _member, subject} = account_with_owner_subject()
+      Runners.subscribe_account_inventory(account.id)
+      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      assert {:ok, disabled} = Runners.disable_runner(runner, subject)
+      account_id = account.id
+      assert_receive {:runner_inventory_changed, ^account_id}
+      assert {:ok, enabled} = Runners.enable_runner(disabled, subject)
+      assert_receive {:runner_inventory_changed, ^account_id}
+      assert {:ok, _} = Runners.delete_runner(enabled, subject)
+      assert_receive {:runner_inventory_changed, ^account_id}
+      other = Fixtures.Accounts.create_account()
+      foreign = Fixtures.Runners.create_runner(account_id: other.id, connected?: false)
+      assert Runners.disable_runner(foreign, subject) == {:error, :not_found}
+      refute_receive {:runner_inventory_changed, _}
+    end
+  end
+
+  describe "list_pack_advertisement_facts/3" do
+    test "readiness uses slim authorized account facts and live Presence" do
+      {account, _member, subject} = account_with_owner_subject()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Runners.create_runner()
+
+      assert {:ok, [fact], %{coverage: :complete}} =
+               Runners.list_pack_advertisement_facts(1, subject, readiness: true)
+
+      assert fact.id == runner.id
+      assert fact.online?
+      assert is_nil(fact.connection_token_id)
+      refute Map.has_key?(Map.from_struct(fact), :token_hash)
+      no_fleet = %{subject | permissions: MapSet.new()}
+
+      assert Runners.list_pack_advertisement_facts(1, no_fleet, readiness: true) ==
+               {:error, :unauthorized}
+    end
+  end
+
   describe "runner_labels_for_ids/2" do
     test "returns a %{id => name} map for the supplied ids" do
       account = Fixtures.Accounts.create_account()
@@ -1713,8 +1752,11 @@ defmodule Emisar.RunnersTest do
     } do
       Fixtures.Accounts.set_runner_inactive_retention_hours(account, 1)
       runner = offline_runner(account, 2)
+      Runners.subscribe_account_inventory(account.id)
 
       assert Runners.sweep_inactive_runners(subject) === {:ok, 1}
+      account_id = account.id
+      assert_receive {:runner_inventory_changed, ^account_id}
       assert is_nil(Runners.peek_runner_by_id(runner.id))
 
       assert [marker] = retention_markers(account.id)

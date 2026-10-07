@@ -243,9 +243,9 @@ defmodule Emisar.CatalogManagementAuthorityTest do
                  String.contains?(query, "LEFT OUTER JOIN")
              end) == 1
 
-      assert Enum.count(queries, &String.contains?(&1, "auth_user_tokens")) == 1
+      assert Enum.count(queries, &String.contains?(&1, "auth_user_tokens")) == 2
       assert Enum.count(queries, &String.contains?(&1, "catalog_runner_actions")) == 1
-      assert length(queries) == 6
+      assert length(queries) == 8
     end
 
     test "an ungranted advertiser beyond the 100-runner preview still disables management",

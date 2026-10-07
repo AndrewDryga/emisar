@@ -15,11 +15,14 @@ defmodule Emisar.CatalogVisibilityTest do
         risk: "high"
       )
 
+    {:ok, manifest} = Catalog.TrustedManifest.from_runner_actions([action])
+
     version =
       Fixtures.Catalog.create_trusted_pack_version(
         account_id: account.id,
         pack_id: "production",
-        version: "1.0"
+        version: "1.0",
+        trusted_manifest: manifest
       )
 
     foreign = Fixtures.Runners.create_runner()
@@ -65,7 +68,8 @@ defmodule Emisar.CatalogVisibilityTest do
         assert action.id == context.action.id
         assert {:ok, [version], _} = Catalog.list_pack_versions(subject)
         assert version.id == context.version.id
-        assert {:ok, [action]} = Catalog.list_pack_actions("production", "1.0", subject)
+        assert {:ok, contents} = Catalog.list_console_pack_actions([context.version.id], subject)
+        assert [action] = contents[context.version.id]
         assert action.action_id == "production.inspect"
 
         assert {:ok, [option]} =
@@ -90,7 +94,7 @@ defmodule Emisar.CatalogVisibilityTest do
   end
 
   test "held subjects lose catalog reads when the current identity or read role is lost",
-       %{account: _, runner: _} = context do
+       %{account: _, runner: _, version: _} = context do
     for change <- [:suspended, :deleted, :billing, :revoked_session] do
       membership =
         Fixtures.Memberships.create_membership(account_id: context.account.id, role: "admin")
@@ -108,7 +112,7 @@ defmodule Emisar.CatalogVisibilityTest do
       for result <- [
             Catalog.list_actions_for_runner(context.runner.id, subject),
             Catalog.list_pack_versions(subject),
-            Catalog.list_pack_actions("production", "1.0", subject),
+            Catalog.list_console_pack_actions([context.version.id], subject),
             Catalog.list_action_pack_options_for_runner(context.runner.id, subject),
             Catalog.list_account_pack_ids(subject),
             Catalog.list_action_scope_pack_advertisements(subject),
