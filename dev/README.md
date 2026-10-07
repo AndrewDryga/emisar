@@ -16,7 +16,7 @@ The repository has three intentionally separate Compose environments:
   each `packs/<name>/test/compose.yaml` owns its disposable system under test.
 
 The application server stays out of the fast dependency stack, while the
-packaged stack verifies the release image and every pack behavior project stays
+packaged stack verifies the release image. Every pack behavior project stays
 isolated from both application environments and other packs.
 
 ## Fast development loop
@@ -34,11 +34,11 @@ coop run -- ./run setup
 coop shell
 ```
 
-`./run bootstrap` and `./run help` stay shell-only when Go is absent. Inside the
-box, `.agent/Dockerfile` installs the exact `.tool-versions` pins plus the
-database client, browser, image, and shell tools. Run `./run seed` and `./run
-serve` from the interactive shell; use `./run serve --iex` when the loop needs
-an attached IEx session.
+`./run bootstrap` and `./run help` stay shell-only when Go is not installed.
+Inside the box, `.agent/Dockerfile` installs the exact `.tool-versions` pins
+plus the database client, browser, image, and shell tools. Run `./run seed` and
+`./run serve` from the interactive shell; use `./run serve --iex` when the loop
+needs an attached IEx session.
 
 Loop boxes need no host-published ports for previews: `./run serve --detach`
 starts the local Portal at `http://localhost:4000` (metrics at `:9091`) when
@@ -81,14 +81,15 @@ The repository keeps tooling in three ownership buckets:
 ```
 
 `serve` takes an advisory lock per workspace and exits before running Mix when
-another launcher owns it. An untracked listener on either Phoenix port fails
-immediately instead of leaving later Mix commands waiting on a build lock.
-`status` only reads Coop/Docker and probes the four workspace listeners; it does
-not start services. `logs` resolves the Compose project from this workspace's
-exact `dev/compose.yml`, so a fork cannot leak another workspace's output.
-`psql` uses the active workspace's Postgres host and port and never guesses a
-global container name. Canonical gates stream phase starts, completions, and
-durations, and their errors name the phase that failed.
+another launcher owns it. An untracked listener on either Phoenix port makes
+`serve` fail immediately instead of leaving later Mix commands waiting on a
+build lock. `status` only reads Coop/Docker and probes the four workspace
+listeners; it does not start services. `logs` resolves the Compose project from
+this workspace's exact `dev/compose.yml`, so a fork cannot leak another
+workspace's output. `psql` uses the active workspace's Postgres host and port
+and never guesses a global container name. Canonical gates
+(`./run gate <target>`) stream phase starts, completions, and durations, and
+their errors name the phase that failed.
 
 Common feedback commands:
 
@@ -126,17 +127,17 @@ Common feedback commands:
 `check changed` incrementally compiles the umbrella, then format-checks and runs
 Credo only on staged, unstaged, and untracked Portal source files. It does not
 start the dependency stack. `mix test --stale` uses Mix's module dependency
-graph rather than guessing test paths from filenames; add `--listen-on-stdin`
+graph rather than guessing test paths from filenames. Add `--listen-on-stdin`
 and press Enter after a save to repeat that set in the same shell. `--failed`
-re-runs only the previous failures. `check portal` and `gate portal` remain the
-quick static and complete pre-commit surfaces, respectively. `test` is focused
+re-runs only the previous failures. `check portal` remains the quick static
+pre-commit check, and `gate portal` the complete one. `test` is focused
 feedback, `check` is quick or specialized validation, and `gate` is the complete
 Definition of Done for its target.
 
 Commits run `./run check staged` through the tracked pre-commit hook. The check
 reads the Git index rather than the working tree, so an unstaged formatter fix
 cannot hide an unformatted staged blob. Landing still uses the stronger
-candidate boundary: Coop rebases the fork, starts `dev/review-compose.yml`, and
+candidate boundary. Coop rebases the fork, starts `dev/review-compose.yml`, and
 runs the repository-configured `./run gate review` against those exact bytes
 before Responder opens or updates the draft pull request.
 
@@ -165,7 +166,7 @@ On macOS, opt into browser trust once per workspace and remove it explicitly:
 ./run certs untrust
 ```
 
-Trust is limited to SSL for `localhost` in the user keychain and removal targets
+Trust is limited to SSL for `localhost` in the user keychain. Removal targets
 the exact CA fingerprint, so parallel workspaces do not remove each other's
 certificates. `./run certs rotate` removes the old fingerprint and restores
 trust only when it was already enabled. The automated browser uses an exception
@@ -173,8 +174,8 @@ for the exact leaf certificate SPKI, never a blanket TLS bypass. `./run doctor`
 verifies services, browser trust on macOS, the exact OIDC issuer, and that
 generated private keys remain ignored.
 
-Setup, serve, and reset never seed implicitly. `./run seed` is idempotent;
-`./run reset --seed` is the explicit destructive shortcut.
+Setup, serve, and reset never seed on their own. `./run seed` is idempotent
+(safe to run again); `./run reset --seed` is the explicit destructive shortcut.
 
 ## Browser and screenshot tooling
 
@@ -182,7 +183,7 @@ Setup, serve, and reset never seed implicitly. `./run seed` is idempotent;
 shared `tools` Go module. On a workstation the browser daemon outlives the
 command that started it, so captures for the active workspace share one warm
 browser and its signed-in session. Inside a Coop box the daemon is tied to the
-command that started it and exits with it, so every invocation there starts its
+command that started it and exits with it, so every run there starts its
 own browser, signed out:
 
 ```sh
@@ -195,7 +196,7 @@ own browser, signed out:
 
 `shot` accepts a stable `data-shot` name, a CSS selector, an exact heading, or a
 class fragment as its crop anchor. Use `--width 390` for a mobile capture and
-`--group <name>` for a task-local capture set. It writes into the sole
+`--group <name>` for a task-local capture set. It writes into the only
 in-progress task's `screenshots/` directory; use `--task <id>` when several
 tasks are active. With no active task, create and claim even a basic one before
 capturing.
@@ -204,8 +205,8 @@ A capture signs in only when its page redirects to `/sign_in`; a public page or
 a browser that is already signed in sends no email. Each sign-in costs one
 magic-link email, and the Portal allows five per address per 15 minutes. Inside
 Coop every invocation starts signed out, so a related set belongs in one
-invocation, where every bare path starts another capture in the same signed-in
-session and `--task` and `--group` apply to all of them:
+invocation. There, every bare path starts another capture in the same signed-in
+session, and `--task` and `--group` apply to all of them:
 
 ```sh
 ./run shot /app/demo/runs --label runs \
@@ -246,8 +247,8 @@ adopts its pre-seeded row on register instead of registering a second, empty
 runner. It comes up online and keeps the seeded run history, approvals,
 grants, and trusted pack catalog. The config also sets each runner's
 `group`, `labels`, and which role packs it loads and advertises (edge → caddy,
-api → systemd-deep, pg → postgres; all three also load linux-core, which runs
-for real off the container via the fixtures below).
+api → systemd-deep, pg → postgres). All three also load linux-core, which runs
+for real off the container via the fixtures below.
 
 To add a runner: add a `dev/runners/<name>.yaml`, a matching `runner_specs`
 entry in the seed (same `external_id`), and a service in `docker-compose.yml`.
@@ -290,10 +291,10 @@ behavior cases, writes per-pack logs, and tears the topology down:
 ./run test packs
 ```
 
-The pack catalog (`packs/`) is mounted read-only at `/packs`; handwritten
-plans live at `packs/<pack>/test/cases.yaml`. Exit-only cases and permanent
-skips are rejected: omitted actions remain contract-tested and are reported
-as contract-only. See `test-packs/README.md` for the schema.
+The pack catalog (`packs/`) is mounted read-only at `/packs`; handwritten plans
+live at `packs/<pack>/test/cases.yaml`. The harness rejects exit-only cases and
+permanent skips: omitted actions remain contract-tested and are reported as
+contract-only. See `test-packs/README.md` for the schema.
 
 ## SSO end to end
 
@@ -310,12 +311,12 @@ End-to-end coverage for signed dispatch and staged runbooks runs against the
 root demo stack. It uses profile-gated `test` services in `docker-compose.yml`
 and the `./run e2e signing` driver:
 
-- `signing-init` mints a CA, a leaf key, and a certificate at stack-up via
-  `emisar signing init` (run `init.sh`), into the shared `signing_material`
-  volume. The material is generated at startup: no CA or leaf private key is
-  committed, and `docker compose down -v` rotates them.
-- `runner-signed` is a 4th runner that enforces signing: it points
-  `--config` at the config `signing-init` wrote (with the freshly minted CA's
+- `signing-init` creates a CA, a leaf key, and a certificate when the stack
+  starts, via `emisar signing init` (run `init.sh`), into the shared
+  `signing_material` volume. The material is generated at startup: no CA or leaf
+  private key is committed, and `docker compose down -v` rotates them.
+- `runner-signed` is a 4th runner that enforces signing. It points
+  `--config` at the config `signing-init` wrote (with the freshly created CA's
   public key) and runs a dispatch only if it carries a valid, in-scope,
   CA-vouched attestation. Its group is `signed-iad`, matching the cert's scope.
 - `tools/cmd/signing-e2e` drives the real MCP bridge to prove both paths end

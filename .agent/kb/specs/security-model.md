@@ -85,8 +85,8 @@ updated: 2026-10-05
    without persisting untrusted arguments. Each entry carries
    `prev_hash = sha256(previous_line)`, so reordering, mutation, or interior
    deletion within the retained journal is detected by `emisar audit verify`.
-   The runner only appends to the file. Verification cannot prove that a
-   privileged host operator did not replace or truncate the entire local
+   The runner only appends to the file. Verification cannot rule out that a
+   privileged host operator replaced or truncated the entire local
    journal; that requires an external anchor such as the off-host cloud audit.
 13. **Bridge-attested dispatch (optional).** With `signing.enforce_signatures`
     on, the runner runs a dispatch only if it carries a valid signature from an
@@ -204,8 +204,8 @@ its actions from itself:
   (Distinct from *dispatch* signing, which is bridge-attested dispatch above and
   is shipped.)
 - Cryptographic signing or external anchoring of the local JSONL chain.
-  Verification covers the retained journal or retained suffix; it cannot prove
-  that a privileged host operator did not replace or truncate the entire local
+  Verification covers only the journal lines still on disk; it cannot rule out
+  that a privileged host operator replaced or truncated the entire local
   journal. Cloud audit is the durable fleet record; use WORM-capable storage
   when stronger on-host guarantees matter.
 

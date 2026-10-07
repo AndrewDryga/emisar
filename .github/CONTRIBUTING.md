@@ -17,7 +17,7 @@ By contributing, you agree that:
 
 ## Contributor License Agreement
 
-Before a contribution can be merged, you may be required to sign `CLA.md` or another CLA approved by the project owner.
+Before we merge a contribution, we may require you to sign `CLA.md` or another CLA approved by the project owner.
 
 A CLA helps confirm that:
 

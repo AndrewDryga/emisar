@@ -44,26 +44,27 @@ irm https://emisar.dev/install-mcp.ps1 | iex
 
 Both installers resolve the latest tagged release. With GitHub CLI installed,
 they verify the release's downloaded `SHA256SUMS-MCP.sigstore.jsonl` bundle
-against the exact tag, trusted workflow, and GitHub-hosted runner before
-trusting the checksum used for the archive. Verification needs no GitHub login,
-but a fresh cache must reach `tuf-repo-cdn.sigstore.dev:443` and
-`tuf-repo.github.com:443` for the public trust roots. The installers refuse to
-install when the bundle is missing or its signature does not verify. Without
-GitHub CLI, they ask at a terminal before continuing on the checksum alone, or
-warn and continue with `--yes`/`-Yes`. The Unix installer puts `emisar-mcp` in
-`/usr/local/bin`; set `INSTALL_DIR="$HOME/.local/bin"` for a no-sudo
-installation. The Windows installer puts `emisar-mcp.exe` in the current user's
-Programs directory and adds that directory to the user's `PATH`.
+against the exact tag, trusted workflow, and GitHub-hosted runner. Only then do
+they trust the checksum used for the archive. Verification needs no GitHub
+login, but a machine without cached trust roots must reach
+`tuf-repo-cdn.sigstore.dev:443` and `tuf-repo.github.com:443` for the public
+trust roots. The installers refuse to install when the bundle is missing or its
+signature does not verify. Without GitHub CLI, they ask at a terminal before
+they continue with only the checksum. With `--yes`/`-Yes`, they warn and
+continue. The Unix installer puts `emisar-mcp` in `/usr/local/bin`; set
+`INSTALL_DIR="$HOME/.local/bin"` for a no-sudo installation. The Windows
+installer puts `emisar-mcp.exe` in the current user's Programs directory and
+adds that directory to the user's `PATH`.
 
 In an interactive terminal, the installer hands over to `emisar-mcp connect`,
 which opens one browser approval. That approval gives the direct CLI its own key
 and, when supported MCP clients are present, offers to configure each one with a
 separate key. The CLI key goes into owner-only bridge state. Client keys go into
-their client configs, except for VS Code: its key goes into an owner-only
-environment file referenced by the user-level `mcp.json`, because editor
-settings may sync. No key passes through the clipboard. Each config is edited in
-place, so existing client settings, other MCP servers, comments, and key order
-all survive.
+their client configs, except for VS Code. Its key goes into an owner-only
+environment file that the user-level `mcp.json` references, because editor
+settings may sync. No key passes through the clipboard. `connect` edits each
+config in place, so existing client settings, other MCP servers, comments, and
+key order all survive.
 
 ## Connect a client
 
@@ -86,7 +87,7 @@ emisar-mcp disconnect --all
 
 Add `--auto-permit` to `connect` to also silence a client's own "allow this
 tool?" prompt for the emisar server alone. It is opt-in and never implied by
-`--all`: Emisar decides every action server-side, so the client's
+`--all`. Emisar decides every action server-side, so the client's
 prompt adds nothing for Emisar's tools, but it is your setting in your file.
 Only Claude Code, Gemini CLI, Codex CLI, and Grok CLI scope that setting to one
 server; the rest are left alone.
@@ -99,8 +100,8 @@ emisar-mcp list_tools
 ```
 
 Authenticate each account once. The last account you authenticate becomes the
-current account for bare commands. List your stored accounts, change the
-current one, or choose one for a single command:
+current account for commands without `--account`. List your stored accounts,
+change the current one, or choose one for a single command:
 
 ```sh
 emisar-mcp auth
@@ -115,14 +116,14 @@ in the browser; they are not local aliases. The credential stays tied to the
 account's immutable ID even if its name or slug changes.
 
 Credentials follow the operating system's user config directory, which is why
-macOS does not put them under `~/.config`:
+macOS does not put them under `~/.config`. The paths are
 `~/Library/Application Support/emisar/credentials/` on macOS,
 `$XDG_CONFIG_HOME/emisar/credentials/` on Linux when that variable is set
 (otherwise `~/.config/emisar/credentials/`), and the user's AppData config
 directory on Windows. The directory and files are owner-only.
 
 A later `connect` run verifies the stored CLI credential against the same
-endpoint and keeps it instead of minting another one. If the control plane
+endpoint and keeps it instead of creating another one. If the control plane
 rejects that credential, `connect` starts a fresh approval. Run `emisar-mcp auth`
 to replace a revoked or expired direct-CLI credential without touching client
 configs.
@@ -130,7 +131,8 @@ configs.
 After installation, restart the client and confirm that the `emisar` server is
 connected. Ask the agent to list available infrastructure or inspect a known
 runner. You are done when the client can discover the in-scope action catalog;
-run a low-risk action such as `linux.uptime` to certify execution and audit.
+run a low-risk action such as `linux.uptime` to confirm that execution and audit
+work.
 
 Run `emisar-mcp` in a terminal to see its command help. You can run any name
 shown by `list_tools`, including `list_runners`. MCP clients start the same
@@ -145,7 +147,7 @@ curl -fsSL https://emisar.dev/install-mcp.sh \
 
 ## Manual MCP-client configuration
 
-Stdio MCP clients are configured through the environment in their server
+You configure stdio MCP clients through the environment in their server
 entry, directly or through a referenced environment file. They never inherit
 the direct CLI's stored credential:
 
@@ -158,7 +160,7 @@ the direct CLI's stored credential:
 | `EMISAR_ALLOW_INSECURE` | no | Set to `1`, `true`, `yes`, `y`, or `on` (in any case) for an intentional non-loopback HTTP development endpoint; loopback HTTP already works |
 | `EMISAR_SIGNING_KEY` | no | Ed25519 or ECDSA P-256 leaf private key (base64 PKCS#8) for bridge-attested dispatch |
 | `EMISAR_SIGNING_CERT` | no | X.509 certificate chain for `EMISAR_SIGNING_KEY` (base64 PEM); required with it |
-| `NO_COLOR`, `CLICOLOR`, `TERM` | no | Output conventions the direct CLI honours: `NO_COLOR` set or `TERM=dumb` disables colour, and `CLICOLOR=0` does too |
+| `NO_COLOR`, `CLICOLOR`, `TERM` | no | Output conventions the direct CLI follows: `NO_COLOR` set or `TERM=dumb` disables color, and `CLICOLOR=0` does too |
 | `XDG_CONFIG_HOME` (Unix), `APPDATA` (Windows) | no | Where `connect`/`disconnect` look for and rewrite client configuration, and where the bridge keeps its own credential store |
 
 Client metadata is untrusted enrichment. It is never used for authorization,
@@ -228,11 +230,11 @@ remains authoritative.
 ### Scripts and LLMs
 
 Use `--json` for automation. It makes one logical tool invocation, follows no
-continuations, and prints the exact `structuredContent` object with pretty
-whitespace only. The transport may resend that identical request once, under
-the same operation ID, after a network failure. Put `--json` last, pass `-` to
-read one JSON object from stdin, and parse stdout as JSON. Diagnostics stay on
-stderr and pipes never contain color.
+continuations, and prints the exact `structuredContent` object, adding only
+pretty-print whitespace. The transport may resend that identical request once,
+under the same operation ID, after a network failure. Put `--json` last, pass
+`-` to read one JSON object from stdin, and parse stdout as JSON. Diagnostics
+stay on stderr and pipes never contain color.
 
 ```sh
 emisar-mcp find_actions "diagnose postgres replication" --json |
@@ -278,9 +280,9 @@ use `--json` to copy the returned cursor or continuation exactly.
 | `recent_runs` | Recent run status, errors, output, and exact run IDs. |
 
 Human `run_action` waits when the response contains an exact `wait_for_run`
-continuation for the same run. It can wait on several runners concurrently and
-returns after every run is terminal and available output is drained. The
-operation ID is printed before waiting. Ctrl-C stops waiting, exits 130, and
+continuation for the same run. It can wait on several runners at the same time,
+and returns after every run is terminal and available output is drained. It
+prints the operation ID before waiting. Ctrl-C stops waiting, exits 130, and
 prints a `get_operation` command; it does not cancel the action. Any terminal
 status other than `success` makes the human command exit 1: `failed`, `error`,
 `validation_failed`, `unknown_action`, `denied`, `cancelled`, `timed_out`, or
@@ -306,9 +308,9 @@ emisar-mcp recent_runs '{"scope":"own","limit":10}'
 | `create_runbook_draft` | Draft identity, content digest, operation inspection command, review link, and current live release. |
 | `update_runbook_draft` | The same draft result after an optimistic, digest-bound update. |
 
-Each copy-paste label in human output has one meaning: **Inspect** and
-**Actions** issue safe reads, **Run** is an editable mutation template with
-visible placeholders, **Next** is an exact server-owned continuation, and
+Each copy-paste label in human output has one meaning. **Inspect** and
+**Actions** issue safe reads. **Run** is an editable mutation template with
+visible placeholders. **Next** is an exact server-owned continuation.
 **Review** opens the operator workflow. Commands preserve an explicit
 `--account`; `--json` remains the exact MCP `structuredContent` object without
 these presentation helpers.
@@ -388,8 +390,9 @@ jq -ce 'select(.data.operation_id != null) |
 ```
 
 Use this only when `data.operation_id` exists. Reads can be repeated normally.
-When piping commands directly, enable your shell's pipeline-failure handling so
-a downstream formatter does not hide a nonzero `emisar-mcp` exit.
+When piping commands directly, enable your shell's pipeline-failure handling
+(for example `set -o pipefail`) so a downstream formatter does not hide a
+nonzero `emisar-mcp` exit.
 
 Use stdin when an argument contains operational details you do not want in the
 process list. Credentials are configuration, not tool arguments: the installer
@@ -407,16 +410,17 @@ client and the control plane:
 - line-delimited JSON-RPC on stdin and stdout;
 - bounded request and response frames;
 - request-ID correlation and concurrent-duplicate rejection;
-- MCP protocol and Streamable HTTP headers, including the `MCP-Protocol-Version`,
-  `Mcp-Method`, and `Mcp-Name` routing headers a client declaring protocol
-  revision `2026-07-28` or later mirrors from its own frame;
+- MCP protocol and Streamable HTTP headers, including the
+  `MCP-Protocol-Version`, `Mcp-Method`, and `Mcp-Name` routing headers, which
+  the bridge mirrors from the frame of a client that declares protocol revision
+  `2026-07-28` or later;
 - response status, media type, UTF-8, envelope, and ID validation;
 - cancellation of observation without claiming to undo committed work;
 - endpoint-bound API-key rotation state;
 - optional client-side signing for `run_action`.
 
-The direct CLI fetches live descriptors for discovery and help, accepts one
-strict JSON argument object, and renders exact JSON or a bounded semantic view
+The direct CLI fetches live descriptors for discovery and help and accepts one
+strict JSON argument object. It prints exact JSON or a bounded semantic view
 for each fixed tool. Unknown future tools use the generic renderer. Human
 `run_action` and `execute_runbook` follow only correlated server-issued
 observation continuations. For runbook result pagination, the CLI preserves the
@@ -436,13 +440,13 @@ Server-side tool changes do not require a bridge release.
 
 ## Transport identity and recovery
 
-The bridge admits at most eight concurrent requests within a 1 MiB aggregate
+The bridge accepts at most eight requests at once, within a 1 MiB total
 request budget. Each request is capped at 128 KiB, each response at 512 KiB,
 and decoded string IDs and integer decimal forms at 4,096 bytes. Its 90-second
 HTTP deadline stays above the control plane's 60-second wait cap, so pings and
 unrelated calls remain responsive during a wait.
 
-Every admitted `tools/call` receives a private, bounded operation identity
+Every accepted `tools/call` receives a private, bounded operation identity
 derived from the bridge process and request sequence. The control plane
 reserves that identity with mutations under the API-key rotation lineage. An
 identical retry returns the original resource; changed facts or a different

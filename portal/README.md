@@ -37,7 +37,7 @@ seeded owner is `demo@emisar.dev`; request a magic sign-in link and read it at
 `<portal-url>/dev/mailbox`. Seeds also print a reusable runner enrollment key.
 
 `./run setup`, `serve`, and `reset` migrate but do not seed. Use `./run seed`
-or `./run reset --seed` when the fixtures need to be refreshed.
+or `./run reset --seed` when you need fresh fixtures.
 
 For the shortest feedback loop, use `./run check changed` and
 `./run test portal --stale`; `./run test portal --failed` re-runs only the

@@ -1,7 +1,7 @@
 # emisar runner
 
-The runner is the local enforcement and execution layer for emisar. It loads
-the action packs installed on a host, dials out to the control plane, and checks
+The runner is the local enforcement and execution layer for emisar. It loads the
+action packs installed on a host and dials out to the control plane. It checks
 every dispatched action against the local pack before it starts a process. The
 runner opens an outbound TLS WebSocket and exposes no inbound listener; commands
 return through that established connection.
@@ -15,10 +15,11 @@ sandbox the commands it permits.
 The supported production target is Linux with systemd. macOS with launchd is
 available for development and evaluation. Install GitHub CLI with
 `gh attestation verify --bundle` to check release signatures, and allow HTTPS to
-`tuf-repo-cdn.sigstore.dev:443` and `tuf-repo.github.com:443` so it can load the
-public trust roots. Without GitHub CLI, the installer and `emisar update` ask at
-a terminal before continuing on the checksum alone, or warn and continue when
-unattended. Release verification does not require a GitHub login.
+`tuf-repo-cdn.sigstore.dev:443` and `tuf-repo.github.com:443` so GitHub CLI can
+load the public trust roots. Without GitHub CLI, the installer and
+`emisar update` ask at a terminal before they continue with only the checksum.
+When unattended, they warn and continue. Release verification does not require a
+GitHub login.
 
 1. In the emisar console, choose **Connect a runner**. The generated command
    contains the control-plane URL and a fresh, single-use enrollment key.
@@ -29,9 +30,9 @@ unattended. Release verification does not require a GitHub login.
      | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... EMISAR_URL=https://emisar.dev bash
    ```
 
-   The installer authenticates the signed release checksum, verifies the
-   archive against it, creates a dedicated `emisar` user on Linux, installs the
-   service, adds host-matched starter packs, and starts the runner.
+   The installer authenticates the signed release checksum and verifies the
+   archive against it. It then creates a dedicated `emisar` user on Linux,
+   installs the service, adds host-matched starter packs, and starts the runner.
 3. Verify the host and the control-plane connection:
 
    ```sh
@@ -46,7 +47,7 @@ its last successful heartbeat send, advertised catalog, process uptime, and
 in-flight run count. The console remains authoritative for whether the control
 plane currently sees the runner. If status reports a problem, `emisar doctor`
 checks configuration, credentials, pack contents, required host binaries, and
-control-plane reachability without opening a cloud session.
+whether it can reach the control plane, without opening a cloud session.
 
 The complete operator walkthrough is at
 [emisar.dev/docs/quickstart](https://emisar.dev/docs/quickstart). Container and
@@ -69,7 +70,7 @@ For every action, the runner:
    redacted output in run history and records terminal metadata in the audit.
 8. Appends the attempt to a hash-chained local JSONL journal.
 
-Fixed shell programs may be authored inside a pack when pipes or shell features
+A pack author may write fixed shell programs when pipes or shell features
 are needed, but cloud input is still limited to validated substitutions. The
 staging-only `shell` pack is the explicit arbitrary-command exception and must
 not be installed on production runners.
@@ -144,22 +145,22 @@ Pack credentials stay on the host. They are never passed as action arguments.
        - NOMAD_TOKEN
    ```
 
-3. Restart the service so both files are re-read:
+3. Restart the service so the runner re-reads both files:
 
    ```sh
    sudo systemctl restart emisar
    ```
 
-The runner always provides `PATH`, `LANG`, `LC_ALL`, and `TERM`; everything
-else is dropped unless it is allowlisted. Run `emisar pack info <id>` to see a
+The runner always provides `PATH`, `LANG`, `LC_ALL`, and `TERM`; it drops
+everything else unless you allowlist it. Run `emisar pack info <id>` to see a
 pack's binaries, environment variables, privilege needs, and verification
 action. The installer preserves both configuration files during upgrades.
 
 ## Install and manage packs
 
-The installer adds a small host-matched starter set. Add capabilities by name
-from the public registry, by pinned version, from a local directory, or from an
-HTTPS tarball:
+The installer adds a small starter set of packs that match the host. Add
+capabilities by name from the public registry, by pinned version, from a local
+directory, or from an HTTPS tarball:
 
 ```sh
 sudo emisar pack install redis
@@ -218,11 +219,11 @@ covers the longest bundled cancellation grace.
 
 The default 30-second heartbeat pairs with the portal's stale-socket watchdog
 and connection lease. The portal closes a connection 90 seconds after the last
-heartbeat, so `cloud.heartbeat_every` is capped at 45 seconds. A wider value
+heartbeat, so `cloud.heartbeat_every` is capped at 45 seconds. A larger value
 would cause a silent reconnect loop, so the runner refuses it at load. A
 half-open network path can take roughly 90-120 seconds to release ownership
-before a replacement connection is accepted. Reducing the runner's reconnect
-backoff does not bypass that safety window.
+before the portal accepts a replacement connection. Reducing the runner's
+reconnect backoff does not bypass that safety window.
 
 ## Upgrade and remove
 
@@ -252,7 +253,7 @@ or set an empty value to add none:
 curl -fsSL https://emisar.dev/install.sh | sudo EMISAR_PACKS="" bash -s -- --yes
 ```
 
-To remove the service while retaining configuration and local evidence:
+To remove the service while keeping configuration and local evidence:
 
 ```sh
 sudo bash install.sh --uninstall
@@ -265,7 +266,7 @@ The default uninstall deletes the cached runner token but keeps `/etc/emisar`,
 
 A runner can require every action to carry intent signed by the MCP bridge with
 an Ed25519 or ECDSA P-256 leaf key. The control plane can relay that action but
-cannot originate it, change its exact arguments, or widen its runner set.
+cannot invent it, change its exact arguments, or widen its runner set.
 
 Run `emisar signing init`, add the generated CA public key under
 `signing.trusted_cas`, and configure the MCP bridge with the leaf key and
@@ -281,17 +282,18 @@ capabilities on action binaries from adding privileges anywhere in the action's
 process tree.
 
 The daemon also marks itself non-dumpable at start. The kernel keeps a copy of
-the environment `runner.env` loaded (the enrollment key and every pack
-credential) under `/proc/<pid>/environ`, and the bearer token lives in the
-process memory behind `/proc/<pid>/mem`. Because the daemon is non-dumpable,
-those entries are root-owned, and no same-user action child can read or attach
-to them, whatever the host's `ptrace_scope`. The runner's own `/proc/<pid>` tree
-is also a protected root for every path argument, so `/proc/self/environ` is
-refused before an action runs. `/proc/net` and `/proc/mounts` are links into the
-calling process's own entry, so a path argument naming them is refused too;
-`linux.network_interfaces` and `linux.mount_status` read that state instead.
-Every other process stays as inspectable as before, so this setting does not
-break `/proc` diagnostics; `ProtectProc=` is the directive that does.
+the environment loaded from `runner.env` (the enrollment key and every pack
+credential) under `/proc/<pid>/environ`. The bearer token lives in the process
+memory behind `/proc/<pid>/mem`. Because the daemon is non-dumpable, those
+entries are root-owned, and no same-user action child can read or attach to
+them, whatever the host's `ptrace_scope`. The runner's own `/proc/<pid>` tree is
+also a protected root for every path argument, so the runner refuses
+`/proc/self/environ` before an action runs. `/proc/net` and `/proc/mounts` are
+links into the calling process's own entry, so the runner refuses a path
+argument naming them too. `linux.network_interfaces` and `linux.mount_status`
+read that state instead. Every other process stays as inspectable as before, so
+this setting does not break `/proc` diagnostics; `ProtectProc=` is the directive
+that does.
 
 The installed systemd unit is deliberately modest because every service
 sandbox directive also constrains the actions it launches. For example:
@@ -327,7 +329,7 @@ SystemCallArchitectures=native
 
 Install it under `/etc/systemd/system/emisar.service.d/harden.conf`, run
 `sudo systemctl daemon-reload`, restart the service, and use `emisar doctor`
-plus representative local action runs to prove the profile fits the host.
+plus a few typical local action runs to prove the profile fits the host.
 
 ## Giving actions the OS access they need
 
@@ -339,8 +341,8 @@ never elevate an action.
 
 Prefer direct, narrow access. Add the `emisar` user to a group that already owns
 the resource, or grant an ACL on the exact socket, file, or directory the pack
-needs. For a privileged operation exposed by a local service, use that service's
-authorization boundary instead of changing the action process's identity.
+needs. If a local service exposes a privileged operation, let that service
+authorize it instead of changing the action process's identity.
 
 For systemd actions, prefer a narrow polkit rule:
 

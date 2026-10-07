@@ -7,22 +7,22 @@ instead of a shell. Policy decides what runs, what waits for a person, and what
 is denied. A small outbound-only runner checks the action again on the host
 before it executes anything.
 
-Start with the public pack catalog, let emisar suggest the packs that match a
-host, and add your own actions without adding another MCP server to every
+Start with the public pack catalog and let emisar suggest the packs that match a
+host. Add your own actions without adding another MCP server to every
 client.
 
 ## Start with one host
 
 You need an [emisar account](https://emisar.dev/sign_up), a Linux host with
 systemd, and `sudo`. GitHub CLI with `gh attestation verify --bundle` checks the
-release signature. Without it, the installer asks before continuing on the
-checksum alone, or warns and continues when run with `--yes`. Allow outbound
+release signature. Without GitHub CLI, the installer asks before it continues
+with only the checksum. With `--yes`, it warns and continues. Allow outbound
 HTTPS to `emisar.dev:443`, `registry.emisar.dev:443`,
 `tuf-repo-cdn.sigstore.dev:443`, and `tuf-repo.github.com:443`. The last two
 serve the public trust roots used to authenticate release checksums. No GitHub
 login is required.
 
-GitHub is the optional release fallback. To permit that fallback, also allow
+GitHub is the optional release fallback. If you want that fallback, also allow
 `api.github.com:443`, `github.com:443`, and
 `release-assets.githubusercontent.com:443`.
 
@@ -35,9 +35,9 @@ GitHub is the optional release fallback. To permit that fallback, also allow
      | sudo EMISAR_ENROLLMENT_KEY=emkey-enroll-... bash
    ```
 
-   The installer authenticates the signed release checksum, verifies the
-   archive against it, creates the service, installs host-matched starter
-   packs, and starts the runner.
+   The installer authenticates the signed release checksum and verifies the
+   archive against it. It then creates the service, installs host-matched
+   starter packs, and starts the runner.
 3. Confirm the runner is online in the console, then dispatch
    `linux.uptime` with a reason. You are done when the output appears and the
    run is present in the audit trail.
@@ -81,20 +81,20 @@ changes.
   Commands return through that established connection.
 - Cloud input is limited to declared actions and typed, schema-bounded
   arguments. The runner rejects unknown actions and arguments.
-- Packs are content-addressed. The control plane pins the trusted pack hash, and
-  the runner recomputes it from disk before execution. New or changed custom
-  packs wait for trust.
-- Runner scope, risk policy, action overrides, standing grants, and conditional
-  approval are evaluated before dispatch.
+- Packs are content-addressed: a hash of their contents identifies them. The
+  control plane pins the trusted pack hash, and the runner recomputes it from
+  disk before execution. New or changed custom packs wait for trust.
+- The control plane evaluates runner scope, risk policy, action overrides,
+  standing grants, and conditional approval before dispatch.
 - On the host, the runner clamps execution options to the pack's limits and
-  runs the declared binary and argv. Runner output is redacted before it leaves
+  runs the declared binary and argv. The runner redacts output before it leaves
   the host, and Emisar keeps the redacted output in run history.
 - The control-plane audit includes denied and pending requests. Every runner
   also writes its execution attempts and local refusals to a hash-chained JSONL
   journal.
 - A runner can optionally require bridge-attested dispatch: intent signed by the
   customer-authorized MCP bridge with an Ed25519 or ECDSA P-256 leaf key. The
-  control plane then cannot originate or widen a permitted call.
+  control plane then cannot invent or widen a permitted call.
 
 Read the exact guarantees, limitations, and threat model in
 [`.agent/kb/specs/security-model.md`](.agent/kb/specs/security-model.md).
@@ -110,9 +110,9 @@ Read the exact guarantees, limitations, and threat model in
   is only as strong as the actions, pack trust, policy, runner configuration,
   and host permissions in use.
 
-The staging-only `shell` pack is the explicit break-glass exception to the
-declared-action model. It is critical-risk, default-denied, never suggested,
-and should not be installed on production runners.
+The staging-only `shell` pack is the explicit break-glass (emergency-only)
+exception to the declared-action model. It is critical-risk, default-denied,
+never suggested, and should not be installed on production runners.
 
 ## Find the right surface
 
@@ -145,13 +145,14 @@ dist/     Tracked distribution packages plus ignored generated build output
 ```
 
 Each top-level project has its own `AGENTS.md` with its architecture, security
-rules, and verification gate. Run `./run help` for the complete contributor
-command surface.
+rules, and verification gate. Run `./run help` for the complete list of
+contributor commands.
 
 ## Develop locally
 
-The recommended path needs only [Coop](https://coop.dryga.com) and Docker on
-the host. It installs every repository pin in the isolated project image:
+The recommended path needs only [Coop](https://coop.dryga.com) and Docker on the
+host. It installs every tool version the repository pins in the isolated project
+image:
 
 ```sh
 ./run bootstrap             # works before Go is installed
@@ -169,17 +170,18 @@ Then, inside the shell:
 ```
 
 For native development, install the exact versions in `.tool-versions` with
-asdf, plus Git, Coop, Docker, the PostgreSQL client, ShellCheck, jq, GNU Bash
-(with `read -N`), GNU coreutils, Chrome/Chromium, and ImageMagick. On macOS,
-Apple's bundled Bash and BSD utilities cannot run all pack regression checks:
+asdf. You also need Git, Coop, Docker, the PostgreSQL client, ShellCheck, jq,
+GNU Bash (with `read -N`), GNU coreutils, Chrome/Chromium, and ImageMagick. On
+macOS, Apple's bundled Bash and BSD utilities cannot run all pack regression
+checks:
 
 ```sh
 brew install bash coreutils jq
 export PATH="$(brew --prefix coreutils)/libexec/gnubin:$(brew --prefix bash)/bin:$PATH"
 ```
 
-`./run setup` validates all prerequisites before starting services; `./run
-doctor` reports every detected version and an actionable mismatch. On macOS,
+`./run setup` checks all prerequisites before starting services; `./run
+doctor` reports every detected version and any mismatch to fix. On macOS,
 run `./run certs trust` once for this workspace after setup.
 
 The fast loop runs Phoenix in the current environment and keeps only PostgreSQL
@@ -187,13 +189,12 @@ and Keycloak in the workspace-isolated Coop dependency stack.
 
 `./run urls` prints this workspace's distinct Portal, metrics, Postgres, and
 Keycloak URLs. Coop forks inherit the same setup but receive different ports and
-volumes. Seeds are never applied by setup, serve, or reset unless explicitly
-requested.
+volumes. Setup, serve, and reset never apply seeds unless you ask for them.
 
-Use `./run status` for a read-only view of the current workspace, `./run logs
-[db|keycloak]` for its exact sidecar logs, and `./run psql` for its development
-database. Every canonical gate prints its current phase and elapsed time; a
-failure names the phase that stopped it.
+Use `./run status` for a read-only view of the current workspace,
+`./run logs [db|keycloak]` for its exact sidecar logs, and `./run psql` for its
+development database. Every canonical gate (`./run gate <project>`) prints its
+current phase and elapsed time; a failure names the phase that stopped it.
 
 The root `docker-compose.yml` remains the slower packaged topology with the
 release Portal image, seeded demo data, three runners, MCP, and signing. Start it
@@ -210,7 +211,7 @@ This repository is dual-licensed:
 - Everything else, including `portal/`, is source-available under the
   [Business Source License 1.1](LICENSE.md). Non-production use is free.
   Production use is permitted only as needed to operate the Apache-licensed
-  components or the hosted service under the Additional Use Grant; other
+  components or the hosted service under the Additional Use Grant. Other
   production use requires a commercial license. Each version converts to
   Apache 2.0 on its Change Date.
 

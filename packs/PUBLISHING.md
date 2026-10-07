@@ -3,16 +3,17 @@
 The pack catalog is published as immutable, versioned artifacts to the
 public-read GCS bucket `emisar-pack-registry` (provisioned in
 `infra/pack_registry.tf`; see `infra/README.md`). `emisar pack install` and
-`emisar pack suggest` resolve against it unauthenticated, so every pack
+`emisar pack suggest` read it without authentication, so every pack
 version/hash ever published must stay installable. Publishing appends and
 never overwrites history. Public access is GET-only for exact object paths; the
 bucket root is not a supported listing or discovery endpoint.
 
-Both steps run through `packctl`, the maintainer CLI built from `runner/cmd/packctl`
-(`go build -o ../bin/packctl ./cmd/packctl` from `runner/`). It shares the runner's
-module, so local verification and CI publishing use the same loader and the same
-content hash the runner enforces at load time. `packctl` is a maintainer tool, not
-the host `emisar` binary, which ships operator verbs only.
+Both steps (build and publish) run through `packctl`, the maintainer CLI built
+from `runner/cmd/packctl` (`go build -o ../bin/packctl ./cmd/packctl` from
+`runner/`). It shares the runner's module, so local verification and CI
+publishing use the same loader and the same content hash the runner enforces at
+load time. `packctl` is a maintainer tool, not the host `emisar` binary, which
+ships operator verbs only.
 
 ## Object layout
 
@@ -26,8 +27,8 @@ v1/schemas/{catalog,pack,action}.vN.schema.json  immutable versioned JSON schema
 v1/packs/<id>/<version>/<sha256>/pack.tar.gz     immutable pack tarball (content-addressed)
 ```
 
-Immutability falls out of content-addressing: a tarball lives under its
-`content_hash`, so identical bytes always resolve to the same object and a byte
+Immutability follows from content-addressing: a tarball lives under its
+`content_hash`. Identical bytes always resolve to the same object, and a byte
 change without a version bump lands at a different path. JSON schemas use an
 explicit suite version in both their filename and `$id`; changing any schema
 requires bumping `SchemaArtifactVersion`, so published schema bytes are never
@@ -60,18 +61,18 @@ The build is deterministic: identical packs produce an identical catalog hash
 and byte-identical tarballs, so re-running it is safe.
 
 The downloaded live catalog is the only valid history source once the registry
-exists. Do not substitute the repository's bundled catalog: a canceled release
+exists. Do not use the repository's bundled catalog instead: a canceled release
 can leave that file containing a pack version that was never published. The one
 exception is pointer repair. When the live `v1/catalog.json` is missing or
 unparseable, there is no live history to download, so CD's `packs-publish` falls
-back to the committed catalog, the only record still readable without listing
-access. Its verify step HEAD-checks every tarball URL, history included, so a
-carried-forward version whose tarball never published fails the run loudly.
-To restore the exact prior history instead, recover the pointer from a
-bucket generation first (see Rollback). After the build, copy
-`dist/packs/v1/catalog.json` to `portal/apps/emisar/priv/packs/catalog.json`
-so the portal's bundled boot catalog and the next CD publication use the
-same bytes.
+back to the committed catalog. That is the only record still readable without
+listing access. Its verify step HEAD-checks every tarball URL, history included,
+so a carried-forward version whose tarball never published fails the run loudly.
+To restore the exact prior history instead, recover the pointer from a bucket
+generation first (see Rollback). After the build, copy
+`dist/packs/v1/catalog.json` to `portal/apps/emisar/priv/packs/catalog.json` so
+the portal's bundled boot catalog and the next CD publication use the same
+bytes.
 
 ## Publish
 
@@ -98,15 +99,16 @@ packctl catalog publish --dir ./dist/packs --bucket emisar-pack-registry
 
 The publisher service account (`emisar-pack-publisher`) holds `objectCreator`
 only on the immutable prefixes, plus create/delete on the four exact mutable
-pointer names above. It can append new artifacts and cut new pointer generations
-but cannot delete or mutate history. IAM enforces the append-only guarantee.
+pointer names above. It can append new artifacts and create new pointer
+generations but cannot delete or change history. IAM enforces the append-only
+guarantee.
 
 ## When CD publishes
 
 In normal operation, CD publishes. A main push sets `packs_release`
 (`tools/internal/ci/select.go`) when its diff changes pack sources or the pack
-toolchain. Failing that fast path, it sets `packs_release` when the live
-`v1/catalog.json` no longer byte-matches the committed
+toolchain. If that fast path does not trigger, it sets `packs_release` when the
+live `v1/catalog.json` no longer byte-matches the committed
 `portal/apps/emisar/priv/packs/catalog.json` or cannot be read at all. After
 exact-head CI passes, `packs-publish` in `.github/workflows/cd.yml` builds
 against the live catalog and publishes through the protected-main
@@ -116,10 +118,10 @@ publication decision; the environment has no second reviewer.
 `./run check packs` rehearses that job before the push, and CI runs it on every
 pack or pack-toolchain change. It fetches the live catalog, builds against it,
 requires the result to be the committed catalog, and runs
-`packctl catalog publish --check` on the built tree. A missing or malformed
-live catalog is rehearsed against the committed one, as the job itself repairs
-that state; a registry that cannot be reached fails the check. Two failures it
-exists to catch before main moves:
+`packctl catalog publish --check` on the built tree. If the live catalog is
+missing or malformed, the check rehearses against the committed one, as the job
+itself repairs that state. A registry that cannot be reached fails the check.
+Two failures it exists to catch before main moves:
 
 - `immutable object … already exists with different bytes`: the tree builds an
   object the registry already serves with other content. For a schema, bump
@@ -131,10 +133,10 @@ exists to catch before main moves:
   from behind writes a catalog that moves a published pack backwards.
 
 The drift probe makes publication level-triggered on registry state rather
-than edge-triggered on one push's diff: when a pack-changing push's CD run
+than edge-triggered on one push's diff. When a pack-changing push's CD run
 fails, is cancelled, or its approval wait is superseded, the next green main
-push raises the release again with no new pack change needed (before the
-probe, exactly that stranded 12 packs between 2026-07-29 and 2026-07-31).
+push raises the release again with no new pack change needed. Before the
+probe, exactly that stranded 12 packs between 2026-07-29 and 2026-07-31.
 When the registry already serves the committed bytes, no publish is
 triggered. To inspect a suspected drift by hand:
 
@@ -173,8 +175,8 @@ reviews.
 When a shipped pack version carries a genuine security hole or critical defect,
 retire every older version so a runner still advertising an old version
 fails closed at dispatch.
-Retirement is authored in the pack itself, as a `retired_below` floor in
-`pack.yaml`, so the decision and its exact floor live in the pack's git
+You author retirement in the pack itself, as a `retired_below` floor in
+`pack.yaml`. The decision and its exact floor then live in the pack's git
 history, get reviewed in the PR, and ship through the normal publish. It needs
 no portal deploy: each portal instance refreshes on a ten-minute timer and
 starts refusing the retired version after its own next successful refresh.
@@ -221,9 +223,9 @@ The build keeps the floor monotonic relative to the catalog supplied through
 `--previous`: once `retired_below` is present there, the build refuses to lower
 or drop it. That is why the procedure above always fetches the live catalog.
 The portal does not re-enforce the floor at runtime: it logs a structurally
-valid catalog that lowers or drops a watermark as a regression and still
-serves it. Treat the publication procedure and write access to the bucket as
-what actually hold the floor.
+valid catalog that lowers or drops a floor as a regression and still
+serves it. The publication procedure and write access to the bucket are
+what hold the floor.
 
 ## Installing a specific version
 
@@ -252,18 +254,19 @@ gcloud storage cat gs://emisar-pack-registry/v1/catalog.json#<generation> \
 ## Serving domain (registry.emisar.dev)
 
 The pack registry's canonical base is `https://registry.emisar.dev`, the
-vendor-neutral serving domain. The shared HTTPS LB routes that host straight to
-the same bucket (`infra/pack_registry.tf` and the host rule in `infra/load_balancer.tf`), so
-every object path resolves identically at both bases (`…/v1/catalog.json`).
-`packctl` bakes `registry.emisar.dev` tarball URLs into the catalog it builds
-(`defaultRegistryBaseURL`), and the portal refreshes and pins against the same base
-(`EMISAR_PACK_CATALOG_URL` / the `runtime.exs` default). The direct
-`storage.googleapis.com/emisar-pack-registry` URL is an administration backing
-endpoint, not a customer-facing catalog base. `packctl catalog publish` writes
-through the authenticated GCS API endpoint (`DefaultGCSEndpoint`).
+vendor-neutral serving domain. The shared HTTPS load balancer routes that host
+straight to the same bucket (`infra/pack_registry.tf` and the host rule in
+`infra/load_balancer.tf`), so every object path resolves identically at both
+bases (`…/v1/catalog.json`). `packctl` writes `registry.emisar.dev` tarball URLs
+into the catalog it builds (`defaultRegistryBaseURL`), and the portal refreshes
+and pins against the same base (`EMISAR_PACK_CATALOG_URL` / the `runtime.exs`
+default). The direct `storage.googleapis.com/emisar-pack-registry` URL is an
+administration backing endpoint, not a customer-facing catalog base.
+`packctl catalog publish` writes through the authenticated GCS API endpoint
+(`DefaultGCSEndpoint`).
 
 Do not publish unless the authoritative DNS records, managed certificate, and
-load-balancer host rule are healthy. A publish bakes the canonical base into
+load-balancer host rule are healthy. A publish writes the canonical base into
 immutable tarball URLs, so first verify that the domain serves. The catalog
 object is not the gate: a missing or malformed pointer is exactly what a
 publish repairs, and CD's `packs-publish` preflight enforces the same split.
@@ -279,14 +282,14 @@ both prove the serving path; a transport failure or any other status means the
 domain itself needs repair before publication.
 
 The A/AAAA and Certificate Manager authorization records live in `infra/dns.tf`.
-The certificate must be ACTIVE before publication. Carried `previous_versions`
-history is rebuilt against the canonical base from content-addressed paths; do
-not hand-edit catalog URLs.
+The certificate must be ACTIVE before publication. The build rebuilds carried
+`previous_versions` history against the canonical base from content-addressed
+paths; do not hand-edit catalog URLs.
 
 ## Rollback
 
 Immutable objects are never rolled back; they are content-addressed and
-permanent. Only the mutable pointers can regress, and bucket versioning retains
+permanent. Only the mutable pointers can regress, and bucket versioning keeps
 a bounded window of recent generations. Restore each document and its facade
 alias from the same chosen generation. Restore the facade first and
 `v1/catalog.json` last so the completion marker cannot advertise a half-restored

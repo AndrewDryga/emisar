@@ -22,8 +22,8 @@ issues. Coordinated disclosure on a public advisory is the default.
 ## Supported versions
 
 Only the latest tagged release receives security fixes, in 1.x and beyond.
-Older versions may be patched at our discretion if the issue is severe
-and the upgrade path from older versions is non-trivial.
+We may patch older versions at our discretion if the issue is severe
+and the upgrade path from older versions is hard.
 
 | Version  | Supported          |
 | -------- | ------------------ |
@@ -38,7 +38,7 @@ protect against, and what operators are expected to provide.
 
 In short, emisar puts policy and audit around a curated allowlist of
 declared actions. It is not a sandbox, container runtime, or kernel
-isolation layer. Reports that boil down to
+isolation layer. Reports that only say
 "`linux.systemctl_restart` actually restarts the service" describe
 intended behavior; we won't accept those as vulnerabilities. Reports
 that the runner executed something it should have refused are
@@ -59,8 +59,8 @@ The following are intentionally not vulnerabilities:
 - Actions doing exactly what their YAML declares.
 - The runner running OS commands that require root, when the operator
   has granted it root.
-- Operator misconfiguration (e.g., wide `allowed_prefixes` exposing
-  `/etc/shadow`) that the runner honours.
+- Operator misconfiguration (for example, wide `allowed_prefixes` exposing
+  `/etc/shadow`) that the runner obeys.
 - Denial-of-service via the cloud control plane sending the runner too
   many actions. That is a cloud-side rate-limit concern, not a runner
   bug.

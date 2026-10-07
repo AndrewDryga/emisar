@@ -1,9 +1,9 @@
 # emisar action packs
 
-An action pack is a versioned, content-addressed directory of declared
-infrastructure operations. Each action fixes the binary, argv shape, typed
-arguments, risk, limits, redaction, and side-effect description that the runner
-will enforce.
+An action pack is a versioned, content-addressed (hash-identified) directory of
+declared infrastructure operations. Each action fixes the binary, argv shape,
+typed arguments, risk, limits, redaction, and side-effect description that the
+runner will enforce.
 
 Packs are how emisar adds capabilities without giving an agent a shell or
 adding another MCP server. The catalog in this repository currently contains
@@ -42,8 +42,8 @@ sudo emisar pack install ./my-pack
 sudo emisar pack install https://registry.example.com/my-pack.tar.gz --hash sha256:...
 ```
 
-Ship only the packs a host needs. A smaller local catalog reduces executable
-surface and gives the agent a shorter list to reason over.
+Ship only the packs a host needs. A smaller local catalog means fewer actions
+can run on the host and gives the agent a shorter list to reason over.
 
 ## Pack anatomy
 
@@ -97,32 +97,32 @@ output:
 ```
 
 Actions that need a machine-readable result can opt in with a complete bounded
-Draft 2020-12 object schema. This is legal only with `parser: json` and
+Draft 2020-12 object schema. This is allowed only with `parser: json` and
 `parser_required: true`. The runner redacts stdout first, strictly parses one
 JSON object, validates it against the schema, and returns it only on success.
-External references and schemas/results above the documented complexity and
-8 KiB wire limits are rejected. Schema numbers must survive a float64 round
-trip — an integer above 2^53 fails pack load and catalog build with the
-canonical form to write instead — and `multipleOf` must be a positive integer.
-See [`showcase.json_output`](showcase/actions/json_output.yaml) for the
-executable reference.
+External references and schemas/results above the documented complexity and 8
+KiB wire limits are rejected. Schema numbers must survive a float64 round trip —
+an integer above 2^53 fails pack load and catalog build, and the error names the
+canonical form to write instead. `multipleOf` must be a positive integer. See
+[`showcase.json_output`](showcase/actions/json_output.yaml) for the executable
+reference.
 
 The caller chooses `unit`; it cannot replace `systemctl`, add another flag, or
 pass a value the pattern rejects. The runner validates the same schema again on
 the host before execution. A public pack never hardcodes one fleet's service
 names into an `enum`: that list is wrong for the next fleet.
 
-Nothing below the pack filters by argument value. Account policy keys off the
-risk tier and the action id, and the runner's admission gate is action-id
-allow/deny patterns plus a risk ceiling — it hides whole actions from a host,
-not particular targets. So the tier is what stands between a caller and a
-given unit: it is what the account's resolved policy weighs, alongside the
-action id, when it decides whether the run proceeds on its own, waits for a
-human, or is refused. Under the shipped default that makes a `high` action
-wait for an approver, who sees the resolved unit in the run's arguments — and
-in the exact command, when the runner's pack is provably the published one —
-before deciding. A different policy answers differently for the same tier, so
-label the tier honestly: it is the only signal the pack gets to send.
+Nothing below the pack filters by argument value. Account policy uses the risk
+tier and the action id, and the runner's admission gate is action-id allow/deny
+patterns plus a risk ceiling. Admission hides whole actions from a host, not
+particular targets. So the tier is what stands between a caller and a given
+unit. It is what the account's resolved policy weighs, alongside the action id,
+when it decides whether the run proceeds on its own, waits for a human, or is
+refused. Under the shipped default, that makes a `high` action wait for an
+approver. The approver sees the resolved unit in the run's arguments — and in
+the exact command, when the runner's pack is provably the published one — before
+deciding. A different policy answers differently for the same tier, so label the
+tier honestly: it is the only signal the pack gets to send.
 
 The complete schema, including paths, arrays, script actions, examples, output
 parsers, execution users, and redaction, is at
@@ -135,18 +135,19 @@ The runner computes a SHA-256 content hash from the complete pack. The control
 plane pins the exact hash the account trusts, and the runner recomputes it
 before every dispatch.
 
-A version whose hash matches the published catalog the portal is configured to
-read — its current entry or one of the previous versions it retains — auto-pins
-as trusted. Everything else blocks until an admin trusts that exact version and
-hash on the Packs page: a custom pack, a pack from a registry this deployment
+A version whose hash matches the portal's configured published catalog — its
+current entry or one of the previous versions it keeps — auto-pins as trusted.
+Everything else blocks until an admin trusts that exact version and hash on the
+Packs page. That includes a custom pack, a pack from a registry this deployment
 has not configured as its catalog, and any hash the catalog does not carry.
 Hand-editing a version on one host creates a different hash; the Packs page
 reports that as drift rather than silently treating it as the published pack.
 
-This is content integrity, not publisher identity. The hash binds an expected
-value to exact bytes; the catalog or an operator supplies the decision to trust
-them. Trusting a hash means trusting the action definitions, including their
-declared risk and side effects. Review custom and third-party packs as code.
+The hash check is content integrity, not publisher identity. The hash binds an
+expected value to exact bytes; the catalog or an operator supplies the decision
+to trust them. Trusting a hash means trusting the action definitions, including
+their declared risk and side effects. Review custom and third-party packs as
+code.
 
 ## Credentials stay on the runner
 
@@ -173,8 +174,8 @@ execution:
 ```
 
 Restart the runner after changing its environment. `emisar pack info postgres`
-reports required variables and flags names missing from `inherit_env` when a
-runner config is available. File-based credentials such as a kubeconfig or
+reports required variables and points out names missing from `inherit_env` when
+a runner config is available. File-based credentials such as a kubeconfig or
 `.pgpass` still require correct filesystem ownership and service-user access.
 
 ## Risk and policy
@@ -188,22 +189,22 @@ Every action declares one risk tier. The caller cannot lower it.
 | `high` | Production-affecting or user-visible change | restart a service, scale a workload, kill a query |
 | `critical` | Broad or difficult-to-reverse change | reboot, terminate an instance, flush data, drain a node |
 
-Account policy decides whether an action runs, waits for approval, or is
-denied: the first override whose glob matches the action id, and otherwise
-that policy's default for the action's tier. The shipped default runs `low`
+Account policy decides whether an action runs, waits for approval, or is denied.
+The first override whose glob matches the action id decides; otherwise the
+policy's default for the action's tier applies. The shipped default runs `low`
 and `medium`, sends `high` to approval, and denies `critical`; an account is
-free to map the tiers differently. The runner can narrow the decision again
-with host-local admission allow/deny patterns and a risk ceiling.
+free to map the tiers differently. The runner can narrow the decision again with
+host-local admission allow/deny patterns and a risk ceiling.
 
-Risk is only useful when the action copy is honest. `side_effects` must name
+Risk is only useful when the action's text is honest. `side_effects` must name
 the actual mutation, interruption, data exposure, and blast radius; the portal
 shows that text to the agent, operator, and approver.
 
 ## The shell exception
 
-The [`shell` pack](shell/) is a staging-only break-glass tool. Its single action
-runs an arbitrary operator-supplied script, bypassing the declared-action model
-that the rest of emisar exists to provide.
+The [`shell` pack](shell/) is a staging-only break-glass (emergency-only) tool.
+Its single action runs an arbitrary operator-supplied script, bypassing the
+declared-action model that the rest of emisar exists to provide.
 
 It is critical-risk, denied by default, and has no detection rule, so it is
 never suggested automatically. Do not install or enable it on production
@@ -215,8 +216,8 @@ Start with the [`showcase` pack](showcase/) or let a coding agent use the public
 [`author-pack` skill](../skills/author-pack/SKILL.md).
 
 1. Create `pack.yaml` and one YAML file per action.
-2. Keep executable and argv structure fixed; expose only the smallest typed
-   argument surface the operation needs.
+2. Keep executable and argv structure fixed; expose only the smallest set of
+   typed arguments the operation needs.
 3. State risk and side effects conservatively.
 4. Declare setup requirements and a low-risk verification action.
 5. Validate with the same loader the runner uses:
@@ -225,7 +226,7 @@ Start with the [`showcase` pack](showcase/) or let a coding agent use the public
    emisar pack validate ./my-pack
    ```
 
-6. Test representative success, denial, invalid-argument, and missing-tool or
+6. Test typical success, denial, invalid-argument, and missing-tool or
    missing-credential paths before distribution.
 
 Private-registry and publishing workflows are documented at

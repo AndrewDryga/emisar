@@ -70,7 +70,7 @@ not fall back to the older applied image after a failed plan. Workspace
 auto-apply must remain disabled. A replaced or stale saved plan is discarded
 instead of applying against changed state.
 
-Normal image rollouts may create one replacement VM per zone while retaining
+Normal image rollouts may create one replacement VM per zone while keeping
 every old serving VM. Each replacement's `/healthz` remains false until the
 release has reached PostgreSQL once; only then can the MIG remove an old VM. The
 load balancer independently requires `/readyz` continuously. Old and new application
@@ -83,12 +83,12 @@ container. The private admin runner is independently pinned in cloud-init and
 continues to invoke the colocated portal release through its stable RPC boundary.
 
 Readiness-contract replacements build a complete successor backend, wait for
-every expected VM to pass `/readyz`, switch the URL map, and retain the previous
-backend for five minutes while that change reaches every edge proxy. `getHealth`
-alone is not sufficient: Google edge proxies can lag the control-plane URL-map
-result. The regional MIG keeps the stable name `emisar`; changing its zone set
-requires a separately reviewed staged migration, not an ordinary one-plan
-replacement.
+every expected VM to pass `/readyz`, and switch the URL map. They keep the
+previous backend for five minutes while that change reaches every edge proxy.
+`getHealth` alone is not sufficient: Google edge proxies can lag the
+control-plane URL-map result. The regional MIG keeps the stable name `emisar`;
+changing its zone set requires a separately reviewed staged migration, not an
+ordinary one-plan replacement.
 
 ## Runtime shape
 
@@ -102,7 +102,7 @@ the COS host and writes the private packs from the reviewed Terraform module;
 the portal container contains only the application release. GCP pack actions
 invoke a digest-pinned Google Cloud CLI container with no host mounts and use
 the VM identity through the metadata server. The HCP Terraform token is fetched
-from one exact Secret Manager version into the runner process and reaches pack
+from one exact Secret Manager version into the runner process. It reaches pack
 actions only through the `TFE_TOKEN` inherit allowlist; neither credential enters
 instance metadata or command arguments.
 `Emisar.Cluster.GCE` discovers running peers by
@@ -120,12 +120,12 @@ health-check source ranges. Public traffic terminates TLS at the load balancer.
 Every portal VM runs a dedicated `emisar-admin` runner directly under systemd.
 Cloud-init fetches the pinned immutable runner bundle and its published
 `SHA256SUMS` from `https://emisar.dev/releases`, verifies the selected artifact,
-and installs it under `/run/emisar-admin-runner/bin`. This avoids a boot-time
-GitHub API dependency. COS mounts writable persistent paths `noexec`, so config,
-durable dispatch state, packs, and logs remain under
-`/var/lib/emisar-admin-runner` while the boot-recreatable binary lives on
-executable tmpfs. Cloud-init also writes the unlisted `infra/packs/emisar-admin`
-pack directly from the Terraform module.
+and installs it under `/run/emisar-admin-runner/bin`. Installing from the
+release host avoids a boot-time GitHub API dependency. COS mounts writable
+persistent paths `noexec`, so config, durable dispatch state, packs, and logs
+remain under `/var/lib/emisar-admin-runner` while the boot-recreatable binary
+lives on executable tmpfs. Cloud-init also writes the unlisted
+`infra/packs/emisar-admin` pack directly from the Terraform module.
 
 The verified release bundle seeds a fixed host operations set on first boot:
 `linux-core`, `debugging`, `systemd-deep`, `cloud-init`, `docker`, `nic`,
@@ -137,7 +137,7 @@ be met. Service startup checks the remaining packs' declared host dependencies
 before the runner advertises them. Every pack in the curated host set, plus the
 public GCP, HCP Terraform, and Sentry packs used by this runner, is then
 reconciled to its exact version and content hash from the public registry on
-every service start, so pack updates do not wait for another runner release.
+every service start. So pack updates do not wait for another runner release.
 The set is curated instead of host-detected because COS includes unused clients
 and shared ports that falsely suggest Kubernetes, Prometheus, Postgres, and Git
 packs.
@@ -149,7 +149,7 @@ monitoring, networking, and storage packs at every declared risk tier. The GCP
 credentials remain read-only, so mutation actions are visible but Google refuses
 them. The HCP token is organization-owner-equivalent (Free has no RBAC), so the
 runner's admission excludes the run-mutating HCP actions (`tfc.apply_run`,
-`discard_run`, `cancel_run`, `retry_run`, `force_unlock_workspace`); reads,
+`discard_run`, `cancel_run`, `retry_run`, `force_unlock_workspace`). Reads,
 plan-only runs, and the ordinary lock/unlock stay. Confirm & Apply in HCP
 remains the only deploy gate, and no runner can reach it.
 
@@ -165,7 +165,7 @@ secret version.
 
 This is a fully trusted administration runner. It runs on the COS host and its
 fixed script uses `docker exec emisar /app/bin/emisar rpc` to call the
-colocated release, so compromising the runner is equivalent to compromising the
+colocated release, so compromising the runner is the same as compromising the
 portal VM. The fixed pack passes its already-validated action arguments to one
 private Elixir entrypoint; the normal action run remains the audit record.
 
@@ -239,19 +239,18 @@ and instance replacements therefore preserve operator edits, while Git remains
 the recovery source for the canonical dashboards. Adding a new canonical file
 seeds it on the next data-preparation run; changing an existing canonical file
 does not overwrite the saved copy. The container runs as an unprivileged user
-with a read-only root filesystem and an independently pinned image.
-Mix and Hex build artifacts live in an executable, bounded
-`/home/livebook` tmpfs because `Mix.install/1` runs downloaded build tools;
-that dependency cache is intentionally discarded on service restart. Only
-notebooks and Livebook configuration persist on `/data`.
-`/public/health` and ephemeral widget assets remain available without IAP; every
-operator route requires a valid IAP assertion.
+with a read-only root filesystem and an independently pinned image. Mix and Hex
+build artifacts live in an executable, bounded `/home/livebook` tmpfs because
+`Mix.install/1` runs downloaded build tools. A service restart intentionally
+discards that dependency cache. Only notebooks and Livebook configuration
+persist on `/data`. `/public/health` and ephemeral widget assets remain
+available without IAP; every operator route requires a valid IAP assertion.
 
 The local Cloud SQL Auth Proxy logs in as the dedicated Livebook service account
 and Cloud SQL assigns it `emisar_owner` plus read-only `pg_read_all_stats` for
 statement diagnostics. `DATABASE_URL` and standard `PG*` variables are available
 inside notebooks; there is no database password. Analysis connections must
-retain the read-only defaults exposed by the runtime:
+keep the read-only defaults exposed by the runtime:
 
 ```elixir
 Mix.install([
@@ -264,10 +263,10 @@ Code.require_file("/opt/emisar/product_analytics.exs")
 db = EmisarProductAnalytics.connect!()
 ```
 
-This is an accidental-write guard, not a privilege boundary: the shared Erlang
-cookie already makes the workbench fully trusted. Portal attachment is always
-explicit. Discover current private node names from a notebook runtime, then
-connect only to the node being debugged:
+Those read-only defaults are an accidental-write guard, not a privilege
+boundary: the shared Erlang cookie already makes the workbench fully trusted.
+Portal attachment is always explicit. Discover current private node names from a
+notebook runtime, then connect only to the node being debugged:
 
 ```elixir
 {nodes, 0} = System.cmd("/bin/bash", ["/opt/emisar/list-portal-nodes"])
@@ -278,8 +277,8 @@ Node.connect(:"emisar@10.x.x.x")
 ```
 
 The Livebook node and its standalone notebook runtimes inherit the exact release
-cookie, but no automatic cluster strategy is configured and no distribution
-port is opened toward Livebook.
+cookie, but nothing configures an automatic cluster strategy or opens a
+distribution port toward Livebook.
 
 ## Secrets
 
@@ -315,8 +314,8 @@ cloud-init, so the instance template rolls and no VM ever follows the mutable
 The first cookie cutover is special: leave `release_cookie_ready=false`. First
 prove every serving VM is healthy and uses one instance template, then read the
 numeric `emisar-secret-key-base` version embedded in that template's rendered
-startup script. Never use `latest`: an out-of-band newer version is not
-necessarily the value running VMs use. The command below intentionally fails
+startup script. Never use `latest`: a newer version created outside this flow
+may not be the value running VMs use. The command below intentionally fails
 until the new exact-version template has fully rolled out.
 
 The `gcloud secrets versions access` below reads `emisar-secret-key-base` as
@@ -359,7 +358,7 @@ Rotate signing and cookie values separately, in later maintenance windows:
 
 1. Prove no migration or long-running job is in flight.
 2. Increment only the affected generation.
-3. Retain the preceding Secret Manager version.
+3. Keep the preceding Secret Manager version.
 4. Watch ready backends and cluster-failure alerts until every VM uses the same
    template.
 5. Verify a single cluster and user/session behavior.
@@ -378,14 +377,14 @@ a reversible DDL probe.
 
 Personal operator access is optional and attributable. Set the sensitive HCP
 Terraform workspace variable `database_operator_iam_user` to one lowercase
-Google user email. Terraform provisions that identity as a Cloud SQL IAM user,
-grants connector login only on the `emisar` instance, grants the project-level
-console discovery permissions Cloud SQL Studio requires, and assigns the
-non-superuser `emisar_owner` and read-only `pg_read_all_stats` database roles.
-The Portal runtime does not receive the statistics role. The database principal
-itself exists only on `emisar`. Cloud SQL Studio is the browser-based path:
-select the `emisar` database and IAM authentication in the instance's Studio
-view; there is no database password.
+Google user email. Terraform provisions that identity as a Cloud SQL IAM user
+and grants connector login only on the `emisar` instance. It also grants the
+project-level console discovery permissions Cloud SQL Studio requires, and
+assigns the non-superuser `emisar_owner` and read-only `pg_read_all_stats`
+database roles. The Portal runtime does not receive the statistics role. The
+database principal itself exists only on `emisar`. Cloud SQL Studio is the
+browser-based path: select the `emisar` database and IAM authentication in the
+instance's Studio view; there is no database password.
 
 For a local psql session from an operator workstation, authenticate gcloud as
 that provisioned user, then run the database helper:
@@ -408,8 +407,8 @@ The helper selects a running portal VM, opens a local SOCKS5 route to it through
 IAP and OS Login, and sends the local Cloud SQL Auth Proxy's private-IP traffic
 through that route. The Auth Proxy still runs on the workstation under the
 active gcloud identity for psql or matching ADC for a long-lived client, so IAM
-database authentication and pgAudit attribution remain personal; the portal VM
-supplies network reachability only.
+database authentication and pgAudit attribution remain personal. The portal VM
+only provides the network path.
 By default the helper opens Postico 2 and keeps the tunnel alive until Ctrl-C.
 Use `--psql` for a terminal client, or `--proxy-only` to print local connection
 settings for another client and keep the tunnel open. The database remains
@@ -417,8 +416,8 @@ private-only.
 
 `pg_stat_statements` is installed in the production database for cumulative
 query-cost evidence. Query it through the attributable operator session; keep
-the reset timestamp beside every capture so old query fingerprints are not
-mistaken for current traffic:
+the reset timestamp beside every capture so you do not mistake old query
+fingerprints for current traffic:
 
 ```sql
 SELECT stats_reset FROM pg_stat_statements_info;
@@ -457,11 +456,11 @@ with authority to clone Cloud SQL instances and edit project IAM:
 
 1. Clone: `gcloud sql instances clone emisar emisar-restore-<yyyymmddhhmm>
    --point-in-time=<RFC 3339>` (the drill does exactly this at now−5 min).
-2. Verify the clone in isolation. `./run ops drill pitr` cannot do this: it
-   only exercises its own scratch clone. The operator's Cloud SQL grants cover
-   only `emisar`, so grant them on the clone for the check, run the verifier
-   and a freshness query there, and read the same values from production as
-   they stood at the restore point:
+2. Verify the clone in isolation. `./run ops drill pitr` cannot do this: it only
+   exercises its own scratch clone. The operator's Cloud SQL grants cover only
+   `emisar`, so grant them on the clone for the check. Then run the verifier and
+   a freshness query there, and read the same values from production as they
+   stood at the restore point:
 
    ```bash
    for role in roles/cloudsql.client roles/cloudsql.instanceUser; do
@@ -541,18 +540,19 @@ with authority to clone Cloud SQL instances and edit project IAM:
    every listed address; a `prevent_destroy` error means step 3 missed one.
    Expect in-place updates to `pgaudit_owner` (a fresh apply-only password) and
    to the IAM users' `database_roles` (re-asserted; the provider does not read
-   them back), replacement of the instance-scoped IAM bindings, and replacement
-   of the instance template with the clone's connection name, which rolls the
-   MIG. That roll is the application cutover, which the ≈30-minute slice of the
-   2 h RTO budget covers. Delete the `import` blocks in the next commit. When
-   Livebook runs, the plan also updates its VM metadata in place, but its
-   database proxy takes the connection name only at boot, so restart it once the
-   apply finishes: `gcloud compute instances stop emisar-livebook --zone <zone>`,
-   then `gcloud compute instances start emisar-livebook --zone <zone>`, where
+   them back). Also expect replacement of the instance-scoped IAM bindings, and
+   replacement of the instance template with the clone's connection name, which
+   rolls the MIG. That roll is the application cutover, which the ≈30-minute
+   slice of the 2 h RTO budget covers. Delete the `import` blocks in the next
+   commit. When Livebook runs, the plan also updates its VM metadata in place,
+   but its database proxy takes the connection name only at boot, so restart it
+   once the apply finishes. Run
+   `gcloud compute instances stop emisar-livebook --zone <zone>`, then
+   `gcloud compute instances start emisar-livebook --zone <zone>`, where
    `<zone>` is the first entry of `zones`.
 5. Verify from outside (sign-in, a run, the audit page) and only then stop the
    old instance with `gcloud sql instances patch emisar --activation-policy
-   NEVER`; keep it for the backup retention window before deleting it and
+   NEVER`. Keep it for the backup retention window before deleting it and
    removing it from the `emisar_database_only` condition history.
 
 The served instance keeps the clone's name. From then on, pass
@@ -566,7 +566,7 @@ evidence. Step 2 and steps 3 to 5 run only against a real retained clone.
 pgAudit records only `ROLE` and `DDL`. In Cloud Audit Logs these are Data Access
 entries with `protoPayload.methodName=cloudsql.instances.query`; parameters are
 disabled and normal `SELECT`, `INSERT`, `UPDATE`, and `DELETE` workload traffic
-is excluded. The security evidence sink retains those entries for 400 days.
+is excluded. The security evidence sink keeps those entries for 400 days.
 
 ## Backup monitoring
 
@@ -608,15 +608,15 @@ new child key is active, and remove the old DS only after resolver convergence.
 to one public-read GCS bucket. The publisher can create, but cannot replace or
 delete, objects under `v1/packs/`, `v1/catalog/`, and `v1/schemas/`. It can
 replace or delete only the four exact live pointers: `v1/catalog.json`,
-`v1/suggest.json`, `packs.json`, and `packs/suggest.json`. The latter two are
+`v1/suggest.json`, `packs.json`, and `packs/suggest.json`. The last two are
 byte-identical facade aliases for bucket-only registries; GCS requires delete
 permission to replace an object. A repeated immutable publication fetches the
 existing object and verifies its bytes before treating the collision as
-idempotent. Bucket versioning retains recent previous generations of all four
+idempotent. Bucket versioning keeps recent previous generations of all four
 pointers.
 
 The registry and MTA-STS hosts are backend buckets, so the per-IP rate limit in
-`security_policy.tf` does not reach them: a backend bucket takes only an
+`security_policy.tf` does not reach them. A backend bucket takes only an
 `edge_security_policy`, and a Cloud Armor edge policy cannot carry
 `rate_limit_options`. Their load is bounded instead by Cloud CDN and the
 `Cache-Control` the publisher stamps per object. Every immutable artifact is
@@ -633,8 +633,9 @@ gcloud storage ls -a gs://$(terraform output -raw pack_registry_bucket)/packs.js
 
 Pack publication runs after exact-head CI through the protected-main
 `pack-registry-production` environment. It has no second reviewer in the
-solo-founder release flow, is serialized, and refuses a commit superseded by
-newer `main`, so an active publication cannot be canceled halfway through.
+solo-founder release flow, runs one publication at a time, and refuses a commit
+superseded by newer `main`, so an active publication cannot be canceled halfway
+through.
 
 ## Release artifacts
 
@@ -648,7 +649,7 @@ Versioned archives, checksums, and manifests are create-only. A workflow
 verifies the public Emisar copy before publishing the identical GitHub Release
 as a secondary mirror. The `latest.json` pointer advances only after every
 referenced object exists and never moves to an older semantic version. Bucket
-versioning retains previous pointer generations.
+versioning keeps previous pointer generations.
 
 ```sh
 curl -fsS https://emisar.dev/releases/runner/latest.json | jq '.tag'
@@ -659,16 +660,16 @@ curl -fsS https://emisar.dev/releases/mcp/latest.json | jq '.tag'
 
 Run `./run ops drill cleanup --apply` before and after every exercise; after
 client loss an operator must run its 12-hour janitor mode to find abandoned
-labeled/prefixed resources. It is intentionally supervised rather than backed by
-a persistent cross-service delete identity. `./run ops drill pitr` is dry-run
-by default. With `--apply` it clones a recent PITR point into a uniquely named
-scratch instance, creates a temporary scoped IAM principal and private probe VM,
-proves restored data through `emisar_owner`, and runs the independent janitor on
-exit. The drill still fails if cleanup or final inventory verification fails,
-even when every other step succeeded. It never patches, stops, or routes traffic
-to production. Evidence
-manifests live under the git-ignored `.agent/drills/`; record actual RPO/RTO and
-retain the empty-inventory result.
+labeled/prefixed resources. It intentionally runs under a human operator rather
+than a persistent cross-service delete identity. `./run ops drill pitr` is
+dry-run by default. With `--apply` it clones a recent PITR point into a uniquely
+named scratch instance and creates a temporary scoped IAM principal and private
+probe VM. It proves restored data through `emisar_owner` and runs the
+independent janitor on exit. The drill still fails if cleanup or final inventory
+verification fails, even when every other step succeeded. It never patches,
+stops, or routes traffic to production. Evidence manifests live under the
+git-ignored `.agent/drills/`; record actual RPO/RTO and keep the empty-inventory
+result.
 
 ## Outputs
 
