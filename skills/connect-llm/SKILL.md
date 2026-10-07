@@ -12,7 +12,7 @@ the signed-in Emisar portal, the installed CLIs, and public documentation.
 
 This skill connects a client to an existing Emisar account. It assumes at
 least one runner is already connected (the `install-emisar` skill covers
-that); a connected client with zero reachable runners can still be registered,
+that). A connected client with zero reachable runners can still be registered,
 but the functional checks will be `SKIPPED` and the connection is not
 certified end to end.
 
@@ -84,7 +84,7 @@ Establish, asking only for what cannot be discovered safely:
 - Whether `emisar-mcp` is already installed (`command -v emisar-mcp`,
   `emisar-mcp --version`) and where the client keeps its config.
 - The control-plane origin (`EMISAR_URL`) and whether the operator can open a
-  browser to approve the connection. The installer's default flow mints
+  browser to approve the connection. The installer's default flow creates
   per-client keys through a browser approval, so no key is copied by hand.
 - Whether the target runner fleet requires signed dispatch (that changes the
   functional expectations below).
@@ -92,8 +92,8 @@ Establish, asking only for what cannot be discovered safely:
 ## 2. Cloud client: wire the connector
 
 For Claude.ai or ChatGPT, there is nothing to install. From the signed-in
-**Agents** page, take the connector name and the remote MCP server URL, add
-the connector in the client's own settings, and complete the OAuth consent,
+**Agents** page, take the connector name and the remote MCP server URL. Add
+the connector in the client's own settings and complete the OAuth consent,
 choosing the intended account on the consent screen. Then continue at step 4.
 
 ## 3. Local client: install the bridge and register
@@ -163,8 +163,8 @@ trap - EXIT HUP INT TERM
 ```
 
 The installer takes no client argument. It detects the clients already present
-on the machine, asks about each one, then mints that client's key through a
-browser approval and writes it into that client's own config, so run it where
+on the machine, asks about each one, then creates that client's key through a
+browser approval and writes it into that client's own config. So run it where
 it can prompt, and let it finish the registration.
 
 After the per-client questions it asks once whether to silence that client's own
@@ -172,8 +172,7 @@ After the per-client questions it asks once whether to silence that client's own
 clients whose setting can name emisar alone (Claude Code, Gemini CLI, Codex CLI,
 Grok CLI) and never touches a global approval setting. Answering no does not
 change anything, and either answer leaves Emisar policy and approvals in force.
-This edits a security setting in a file the operator owns, so answer it from
-their instruction. Do not enable it on their behalf, and report which clients
+This edits a security setting in a file the operator owns, so answer it only as the operator instructed. Do not enable it on their behalf, and report which clients
 were changed.
 
 Adapt only with flags present in the downloaded installer's help. Drop `sudo`
@@ -181,14 +180,14 @@ and add `--install-dir "$HOME/.local/bin"` to install without root; pin a
 release with `--version mcp-vX.Y.Z`. There is no unattended path to a
 registered client: `--yes` skips every prompt, the client step included, so it
 installs the bridge binary and does not register anything. `EMISAR_URL` has to
-reach the installer's own environment either way, because it is written into
+reach the installer's own environment either way, because the installer writes that value into
 every client config it touches.
 
 Keep the client's `emisar/credentials` directory durable and owner-only so key
 rotation survives restarts; containerized clients must persist `/config`.
 
 When a browser is genuinely unavailable, or the installer ran without its
-prompts, fall back to the **Agents** page's manual per-client snippet, keeping
+prompts, fall back to the **Agents** page's manual per-client snippet. Keep
 the key out of shell history and command arguments.
 
 Restart or reload the actual client afterward.

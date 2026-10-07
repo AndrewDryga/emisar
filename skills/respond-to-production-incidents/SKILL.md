@@ -38,8 +38,8 @@ read safely.
 - Preserve secrets and personal data. Never print credentials, complete
   environments, unredacted logs, private keys, cookies, or raw debug payloads.
 - If compromise is plausible, preserve forensic evidence. Avoid restarts,
-  deletion, log rotation, cleanup, or credential changes until their evidentiary
-  cost and containment value are understood.
+  deletion, log rotation, cleanup, or credential changes until you understand their evidentiary
+  cost and containment value.
 
 ## Authority modes
 
@@ -54,7 +54,7 @@ Infer only the narrowest mode the operator explicitly requested:
 
 "Investigate" means investigate only. A request to "fix," "stabilize," or
 "stop the bleed" may authorize a reversible containment action in the clearly
-named scope; it does not authorize irreversible data loss, a wider fleet, or
+named scope. It does not authorize irreversible data loss, a wider fleet, or
 break-glass access. Ask one concise question when the requested scope or mode is
 not clear enough to proceed safely.
 
@@ -207,8 +207,8 @@ When evidence supports containment and **Contain** mode is active:
 3. Refresh with `get_action`, then call `run_action` once with exact refs and a
    specific `reason`, `evidence`, and `expected`. Use `execute_runbook` only
    after `get_runbook` confirms every step of the live release fits the response
-   mode, and name that release as `slug@N`; an older one is refused rather than
-   run. The execution snapshots the definition it dispatched, so what ran stays
+   mode, and name that release as `slug@N`. Emisar refuses an older one rather than
+   running it. The execution snapshots the definition it dispatched, so what ran stays
    readable after the runbook moves on.
 4. When a response is ambiguous and supplies an operation ID, use
    `get_operation`. Never repeat the mutation with a new operation. Do not

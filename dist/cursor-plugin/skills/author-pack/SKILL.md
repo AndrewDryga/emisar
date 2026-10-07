@@ -36,7 +36,7 @@ Verify commands and schemas before using them:
   runner's **Actions** section for what the fleet actually serves.
 - Study installed packs as worked examples: `emisar pack install <name> --dest
   ./examples --no-verify` copies a public pack into `./examples/<name>` without
-  running any of its actions; pick one whose shape matches the job (exec reads,
+  running any of its actions. Pick one whose shape matches the job (exec reads,
   script actions, credentialed services).
 
 Never reconstruct a YAML field, flag, or config shape from memory when the
@@ -88,8 +88,8 @@ Settle what the pack is for before writing YAML:
 - The authoring host: a development or staging runner where local proof is
   safe. Record `emisar --version` and `emisar pack list` there.
 - The pack id: pick one that is not taken by the public catalog
-  (`curl -fsS https://emisar.dev/packs.json` lists public ids) so registry
-  installs never resolve ambiguously. Keep the directory in the customer's
+  (`curl -fsS https://emisar.dev/packs.json` lists public ids) so an install by name from a registry
+  is never ambiguous. Keep the directory in the customer's
   own git repo.
 
 Collect required credentials for the wrapped service as named variables in the
@@ -131,7 +131,7 @@ Decide these per action and write them down, since they become the YAML:
   `/var/log/myapp/../../etc/shadow`. A path the command reads or writes must
   declare a nonempty `allowed_prefixes` or `allowed_paths`; those are the
   only fields that confine it to a location. `denied_prefixes`/`denied_paths`
-  are optional extra exclusions, not containment: any of the four turns on the
+  are optional extra exclusions, not containment. Any of the four turns on the
   runner's symlink-resolving canonical pass, but a deny-only rule refuses the
   paths it names and accepts every other absolute path.
 - **A private pack may hardcode the fleet.** Unlike generic public packs,
@@ -266,7 +266,7 @@ still decides trust per account (step 6).
 1. Get `packctl` on the publishing workstation or CI job (never fleet hosts).
    Build it from the same signed release tag your runners were installed from,
    so the tool that hashes a pack is the one whose loader will enforce that
-   hash. Do not reach for `go install …@latest`: it does not pin a version and
+   hash. Do not use `go install …@latest`: it does not pin a version and
    builds whatever the default branch points at that minute.
 
    ```sh
@@ -276,7 +276,7 @@ still decides trust per account (step 6).
    ```
 
    Release tags are signed annotated tags, so `git -C emisar-src verify-tag runner-v<version>`
-   confirms the checkout before you build if you hold the signing key. Requires
+   confirms the checkout before you build if you have the maintainer's public signing key. Requires
    a Go toolchain; check `packctl --version`.
 2. From your pack repository, build the tree. `--packs` names the directory
    containing your pack directories; `--base-url` is wherever you will host it:
@@ -287,7 +287,7 @@ still decides trust per account (step 6).
    ```
 
 3. Host it. GCS is native. Immutable objects are precondition-protected and
-   the pointers flip last:
+   the pointers are written last:
 
    ```sh
    GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) \
@@ -315,12 +315,12 @@ still decides trust per account (step 6).
    ```
 
    Both commands verify the catalog's content hash and use its immutable download
-   URL. Static storage does not implement the Portal's name/version download
-   routes: initial installs by plain name, `my-pack=0.2.0`, and `pack diff --to`
-   need that facade. Use an immutable URL and hash to install a specific version.
+   URL. Static storage does not provide the Portal's name/version download
+   routes: first installs by plain name, `my-pack=0.2.0`, and `pack diff --to`
+   need those routes. Use an immutable URL and hash to install a specific version.
 
 **Every rebuild after the first publish carries history forward.** Fetch the
-currently published catalog and pass it as `--previous`, which makes a byte
+currently published catalog and pass it as `--previous`. That makes a byte
 change to an already-published `id@version` fail the build (bump the version
 instead) and keeps each pack's version history and retirement floor intact. A
 rebuild without `--previous` silently starts history from empty:
@@ -333,14 +333,13 @@ packctl catalog build --packs ./packs --out ./dist \
 
 ## 6. Trust it, then certify end to end
 
-Trust is per account, and one deployment setting decides where it comes from:
-the portal trusts an exact `pack@version/hash` on sight when that tuple appears
+Trust is per account, and one deployment setting decides where it comes from. The portal trusts an exact `pack@version/hash` on sight when that tuple appears
 in the catalog it is configured to read (`EMISAR_PACK_CATALOG_URL`), and holds
 every other hash pending with dispatch held. On hosted Emisar that catalog is
 Emisar's published one, which does not include your custom pack, so the pack
 lands on the **Packs** page as pending. An account admin opens it, compares the
 content hash against the `pack validate` output you recorded, reviews the
-actions, and clicks Trust; from then on that exact byte-for-byte version is the
+actions, and clicks Trust. From then on that exact byte-for-byte version is the
 only one authorized. Publishing to a registry does not confer trust by itself.
 On a self-hosted deployment whose owner separately configured the portal to
 read that catalog, the exact tuple may be trusted after the portal observes it.
@@ -358,7 +357,7 @@ prove the whole chain through the customer's real MCP client:
 2. Call `find_actions` for the pack's job words and confirm the descriptions
    are discoverable the way an operator would ask.
 3. Call `get_action` for one action and confirm the returned schema matches
-   the authored bounds and the intended runner is listed compatible.
+   the authored bounds and the intended runner is listed as compatible.
 4. Call `run_action` with those exact refs, schema-valid args, and a clear
    reason, for a `risk: low` read; follow `wait_for_run` to terminal success.
    For a mutating action, dispatch through the same path and let policy and
@@ -368,7 +367,7 @@ prove the whole chain through the customer's real MCP client:
    action, and runner, and appears in the account audit log.
 
 **Lifecycle.** Any pack change bumps `version`, re-validates, re-deploys, and
-earns trust again: the hash changes, so the new tuple is pending until an
+earns trust again. The hash changes, so the new tuple is pending until an
 admin reviews it, or trusted after the portal's configured catalog carries and
 the portal observes that exact tuple. That is the drift guard working, not a
 fault. On a security or critical fix (an under-bounded arg, a secret-emitting
