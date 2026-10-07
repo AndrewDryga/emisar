@@ -280,7 +280,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
             }
           >
             <:body>
-              Members get the highest role from their remaining mapped groups, or the default role if none match. The directory group is kept.
+              Members get the highest role from their remaining mapped groups, or the default role if none of their groups is mapped. The directory group is kept.
             </:body>
           </.confirm_dialog>
           <div
@@ -395,7 +395,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
           <.chip id="connection-default-role-note" class="mr-1">
             {role_label(@provider.default_role)}
           </.chip>
-          {" "}role if none match. Directory sync never grants Owner.
+          {" "}role if none of their groups is mapped. Directory sync never grants Owner.
         </p>
         <p id="connection-default-access-note" class="mt-3">
           By default, groups use this connection's runner and pack access. Edit access adds
@@ -493,7 +493,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
       }
     >
       <:body>
-        Removes this group's added runner and pack access. Connection defaults, other group
+        Removes the runner and pack access added for this group. Connection defaults, other group
         grants, and the role mapping stay unchanged.
       </:body>
       {if @group.retired?, do: "Remove access mapping", else: "Reset to defaults"}
@@ -534,7 +534,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
     ~H"""
     <div class="space-y-4">
       <p class="text-xs leading-relaxed text-zinc-400">
-        Locked selections are included by connection defaults. You can add access, but not remove those defaults.
+        Locked selections come from connection defaults. You can add access, but not remove those defaults.
       </p>
       <div class="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
         <div>
@@ -553,14 +553,14 @@ defmodule EmisarWeb.SSODirectoryComponents do
                   if @defaults.mode != :none, do: "Connection defaults already grant runner access."
                 }
               >
-                No runner action permissions through this group.
+                No actions on runners through this group.
               </:card>
               <:card
                 value="all"
                 title="All runners"
                 disabled={@defaults.mode == :all}
                 disabled_reason={
-                  if @defaults.mode == :all, do: "All runners are included by connection defaults."
+                  if @defaults.mode == :all, do: "Connection defaults already include all runners."
                 }
               >
                 Includes every current and future runner in this workspace.
@@ -586,7 +586,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
               locked={@locked_runners}
               load_error={@runner_error}
               submit_error_field={@form[:runner_access_mode]}
-              submit_error_message="Choose all runners or at least one selected runner scope."
+              submit_error_message="Choose all runners, or at least one runner group or runner."
             />
           </div>
         </div>
@@ -594,7 +594,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
         <div>
           <.label variant={:eyebrow}>Packs</.label>
           <p :if={@pack_access_restricted?} class="mt-1 text-xs text-zinc-400">
-            You can grant only packs within your own access.
+            You can only grant packs you can access yourself.
           </p>
           <p
             :if={@runner_mode == "none" and @display["pack_access_mode"] != "none"}
@@ -625,7 +625,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
                 disabled={@default_pack_mode == "all" or @runner_mode == "none"}
                 disabled_reason={
                   cond do
-                    @default_pack_mode == "all" -> "All packs are included by connection defaults."
+                    @default_pack_mode == "all" -> "Connection defaults already include all packs."
                     @runner_mode == "none" -> "Choose runners before granting pack access."
                     true -> nil
                   end
@@ -645,7 +645,7 @@ defmodule EmisarWeb.SSODirectoryComponents do
                   end
                 }
               >
-                Only actions from the packs you name.
+                Only actions from the packs you choose.
               </:card>
             </.choice_cards>
             <RunnerScope.pack_scope_select
@@ -1115,9 +1115,9 @@ defmodule EmisarWeb.SSODirectoryComponents do
           Try another name or group, or clear the filters.
         <% else %>
           <%= if @scim_enabled do %>
-            Members appear here after signing in through this connection or being added by directory sync.
+            Members appear here after they sign in through this connection or after directory sync adds them.
           <% else %>
-            Members appear here after signing in through this connection.
+            Members appear here after they sign in through this connection.
           <% end %>
         <% end %>
       </.empty_state>

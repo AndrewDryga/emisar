@@ -374,7 +374,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
           >
             <:body>
               Removes stage {@stage_index + 1} with every step in it. Everything
-              entered on them is discarded.
+              entered in those steps is discarded.
             </:body>
           </.confirm_dialog>
         </div>
@@ -914,7 +914,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
   end
 
   defp summary_argument_note([]), do: nil
-  defp summary_argument_note(_arguments), do: "none bound"
+  defp summary_argument_note(_arguments), do: "none set"
 
   # A row reads as one sentence — `file from run-time input config_path` — so a
   # value phrase continues its name in lower case. Only a proper noun keeps its
@@ -1468,7 +1468,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
               value={argument["source"]}
               label="Use"
               label_variant={:eyebrow}
-              aria-label={"#{argument["name"]} binding source"}
+              aria-label={"#{argument["name"]} value source"}
               disabled={@read_only?}
               options={argument_source_options(argument)}
             />
@@ -1524,7 +1524,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         value={@argument["value"]}
         label="Value"
         label_variant={:eyebrow}
-        aria-label={"#{@argument["name"]} literal value"}
+        aria-label={"#{@argument["name"]} fixed value"}
         disabled={@read_only?}
         prompt="Choose value"
         options={[{"False", "false"}, {"True", "true"}]}
@@ -1538,7 +1538,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         value={@argument["value"]}
         label="Value"
         label_variant={:eyebrow}
-        aria-label={"#{@argument["name"]} literal value"}
+        aria-label={"#{@argument["name"]} fixed value"}
         disabled={@read_only?}
         placeholder="Value"
       />
@@ -1552,7 +1552,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
         value={@argument["value"]}
         label="Value"
         label_variant={:eyebrow}
-        aria-label={"#{@argument["name"]} literal value"}
+        aria-label={"#{@argument["name"]} fixed value"}
         placeholder={
           if @argument["type"] in ["string_array", "integer_array"],
             do: "JSON array",
@@ -1884,7 +1884,7 @@ defmodule EmisarWeb.RunbookWorkflowComponents do
             Repeat every {@wait["interval_seconds"]} seconds until conditions pass, for up to {@wait[
               "max_attempts"
             ]} attempts or {@wait["timeout_seconds"]} seconds.
-            Action failures stop the execution.
+            If the action fails, the execution stops.
         <% end %>
       </p>
       <%!-- Hidden, not removed: a closed panel that dropped its inputs let the

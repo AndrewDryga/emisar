@@ -244,7 +244,7 @@ defmodule EmisarWeb.MemberRoleLive do
                 value="all"
                 title="All runners"
               >
-                Includes every current and future runner in this account.
+                Includes every current and future runner in this workspace.
               </:card>
               <:card
                 :if={@role not in ["billing_manager", "directory"]}

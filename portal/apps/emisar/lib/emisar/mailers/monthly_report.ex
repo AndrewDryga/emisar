@@ -329,13 +329,13 @@ defmodule Emisar.Mailers.MonthlyReport do
 
   # -- Formatting ----------------------------------------------------------
 
-  defp runs_caption(%{dispatched: 0}), do: "No work was dispatched to a runner."
+  defp runs_caption(%{dispatched: 0}), do: "No work was sent to a runner."
 
   defp runs_caption(%{dispatched: dispatched, distinct_runners: 1}),
-    do: "#{number(dispatched)} dispatched to 1 runner."
+    do: "#{number(dispatched)} sent to 1 runner."
 
   defp runs_caption(%{dispatched: dispatched, distinct_runners: runners}),
-    do: "#{number(dispatched)} dispatched across #{number(runners)} runners."
+    do: "#{number(dispatched)} sent across #{number(runners)} runners."
 
   defp run_label(1), do: "run"
   defp run_label(_count), do: "runs"

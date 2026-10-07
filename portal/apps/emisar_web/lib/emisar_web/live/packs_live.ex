@@ -399,7 +399,7 @@ defmodule EmisarWeb.PacksLive do
          )}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
+        {:noreply, put_flash(socket, :error, "Couldn't update automatic cleanup.")}
     end
   end
 
@@ -412,7 +412,7 @@ defmodule EmisarWeb.PacksLive do
          put_flash(
            socket,
            :info,
-           "No pack versions are eligible for cleanup."
+           "No pack versions can be cleaned up right now."
          )}
 
       {:ok, count} ->
@@ -1042,7 +1042,7 @@ defmodule EmisarWeb.PacksLive do
         </span>
         <span :if={not @fact.retirement_blocked? and is_nil(@version.hash)}>
           This version's contents aren't automatically trusted. An owner or admin must review
-          them before its actions can be used.
+          them before the version's actions can be used.
         </span>
         <span :if={not @fact.retirement_blocked? and not is_nil(@version.hash)}>
           A runner reported changed contents for this version. Its actions are blocked until
@@ -1357,7 +1357,7 @@ defmodule EmisarWeb.PacksLive do
       <:title>Packs</:title>
 
       <.page_intro>
-        A pack is a collection of actions your runners can execute. Explore reported versions
+        A pack is a collection of actions your runners can run. Explore reported versions
         and manage trust. <.doc_link href={~p"/docs/action-packs"}>Packs docs</.doc_link>
       </.page_intro>
 
@@ -1501,7 +1501,7 @@ defmodule EmisarWeb.PacksLive do
                   phx-value-action="delete_pack"
                   phx-value-pack-id={pack.id}
                   disabled={!pack.can_delete?}
-                  title={if !pack.can_delete?, do: "Your access does not include managing this pack."}
+                  title={if !pack.can_delete?, do: "You don't have access to manage this pack."}
                 >
                   Remove
                 </.button>
@@ -1632,7 +1632,7 @@ defmodule EmisarWeb.PacksLive do
                     :if={@can_manage_packs? and !@version_facts[v.id].can_manage?}
                     class="mt-1.5 pl-8 text-xs text-zinc-400"
                   >
-                    Managing this version requires access to the pack and every runner using it.
+                    To manage this version, you need access to the pack and every runner using it.
                   </p>
 
                   <.version_contents
@@ -1691,7 +1691,7 @@ defmodule EmisarWeb.PacksLive do
               <.doc_link href={~p"/docs/use-a-published-pack"}>Install a pack</.doc_link>
             </p>
             <p>
-              Packs matching emisar's published contents are trusted automatically. Custom or
+              Packs that match emisar's published contents are trusted automatically. Custom or
               modified packs need an owner or admin's review before use. Trust applies to the
               exact content hash.
               <.doc_link href={~p"/docs/action-packs#pack-trust"}>How pack trust works</.doc_link>

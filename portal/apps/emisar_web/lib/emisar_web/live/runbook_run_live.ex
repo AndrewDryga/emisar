@@ -512,7 +512,7 @@ defmodule EmisarWeb.RunbookRunLive do
         assign(socket, :preflight, %{
           state: :error,
           plan: nil,
-          issues: [issue("dispatch_failed", "", "Current preflight could not be completed.")]
+          issues: [issue("dispatch_failed", "", "The plan check could not be completed.")]
         })
     end
   end
@@ -916,7 +916,7 @@ defmodule EmisarWeb.RunbookRunLive do
           on_confirm={JS.push("cancel_execution")}
         >
           <:body>
-            Queued actions won't start. Running actions receive a cancellation request.
+            Queued actions won't start. Running actions are asked to stop.
           </:body>
           Cancel execution
         </.confirm_button>
@@ -925,7 +925,7 @@ defmodule EmisarWeb.RunbookRunLive do
           id="runbook-cancellation-access"
           class="max-w-xs text-xs text-zinc-400"
         >
-          Cancellation requires permission for every runner and pack in this execution.
+          To cancel, you need permission for every runner and pack in this execution.
         </p>
         <.button
           :if={
@@ -1127,9 +1127,9 @@ defmodule EmisarWeb.RunbookRunLive do
               <p class="text-xs text-zinc-400">
                 <%= cond do %>
                   <% not @can_dispatch? -> %>
-                    An operator role is required to start executions.
+                    You need an operator role to start executions.
                   <% @access_review_required? -> %>
-                    The displayed plan has not been rechecked against your current access.
+                    The plan shown was not rechecked after your access changed.
                   <% @preflight_view.state == :loading -> %>
                     Checking the current plan…
                   <% @preflight_view.state == :awaiting_input -> %>

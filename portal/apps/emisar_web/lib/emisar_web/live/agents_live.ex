@@ -605,7 +605,7 @@ defmodule EmisarWeb.AgentsLive do
      |> assign(:pending_key_action, nil)
      |> put_flash(
        :error,
-       "This key reaches runners or packs you can't, so you can't rotate it. You can still revoke it."
+       "This key reaches runners or packs you can't reach, so you can't rotate it. You can still revoke it."
      )}
   end
 
@@ -732,7 +732,7 @@ defmodule EmisarWeb.AgentsLive do
 
     with [_ | _] <- ids,
          {:ok, members} <- Accounts.list_memberships_by_ids(subject.account, ids, subject) do
-      Enum.map(members, &{&1.id, Accounts.member_display_name(&1) || "Account member"})
+      Enum.map(members, &{&1.id, Accounts.member_display_name(&1) || "Workspace member"})
     else
       _ -> []
     end
@@ -866,11 +866,11 @@ defmodule EmisarWeb.AgentsLive do
   # id so the header's bulk revoke can act on the group. Falls back to "Auto"
   # for system-minted keys with no creator.
   defp owner_group({%{created_by_membership: %Accounts.Membership{} = member} = key, _facts}) do
-    fallback = if member.deleted_at, do: "Former member", else: "Account member"
+    fallback = if member.deleted_at, do: "Former member", else: "Workspace member"
     {Accounts.member_display_name(member) || fallback, key.created_by_membership_id}
   end
 
-  defp owner_group({_key, _facts}), do: {"Auto-minted", nil}
+  defp owner_group({_key, _facts}), do: {"Created automatically", nil}
 
   # Pre-sort by owner so each `group_by={&owner_group/1}` cluster is one
   # contiguous run under a single header; within a cluster the context's
@@ -1348,7 +1348,7 @@ defmodule EmisarWeb.AgentsLive do
                     }
                   >
                     <:body>
-                      Revokes all of {owner}'s keys, including rotated replacements.
+                      Revokes all of {owner}'s keys, including keys created by rotation.
                       Their agents will lose access on their next request. This can't be undone.
                     </:body>
                   </.confirm_dialog>
@@ -1407,7 +1407,7 @@ defmodule EmisarWeb.AgentsLive do
                       >
                         <span class="text-amber-300/90">
                           replaces <span class="font-mono">{facts.replaced_key_prefix}…</span>
-                          · awaiting first use
+                          · waiting for first use
                         </span>
                       </.tooltip>
                     </:seg>
@@ -1580,7 +1580,7 @@ defmodule EmisarWeb.AgentsLive do
                   <.loading_state />
                 <% true -> %>
                   <.empty_state icon="product.agent" title="No agents connected yet.">
-                    Pick a client above. Cloud clients use OAuth; local clients get a key +
+                    Pick a client above. Cloud clients use OAuth; local clients get a key and a
                     pre-filled snippet. The agent shows up here on its first MCP call.
                   </.empty_state>
               <% end %>
@@ -1672,8 +1672,8 @@ defmodule EmisarWeb.AgentsLive do
         >Service accounts</.link>.
       </p>
       <p>
-        Each connection has its own key. For local agents using the emisar MCP bridge,
-        expiring keys rotate automatically. <.doc_link href={~p"/docs/agents-and-keys" <> "#rotating"}>How key rotation works</.doc_link>.
+        Each connection has its own key. For local agents using the emisar MCP bridge (the emisar-mcp program),
+        keys close to expiry rotate automatically. <.doc_link href={~p"/docs/agents-and-keys" <> "#rotating"}>How key rotation works</.doc_link>.
       </p>
       <p>
         Revoke a key when the connection is no longer needed or the key may have been exposed.
@@ -2027,7 +2027,7 @@ defmodule EmisarWeb.AgentsLive do
                 wrap
               />
               <p class="text-sm text-zinc-400">
-                You'll need an online runner with the linux-core pack trusted. Allow the tool call
+                You'll need an online runner with the linux-core pack installed and trusted. Allow the tool call
                 if your agent asks, and complete any approval required by your policy. Check the
                 returned uptime, then confirm the action, runner, and operator in <.link
                   navigate={~p"/app/#{@current_account}/audit"}
@@ -2078,7 +2078,7 @@ defmodule EmisarWeb.AgentsLive do
                         and check that the host launcher
                         starts without an error.
                       <% @selected_sandbox == "nono" -> %>
-                        Check the agent's MCP configuration and the emisar domain allowed by the nono command.
+                        Check the agent's MCP configuration, and check that the nono command allows the emisar domain.
                       <% @selected_sandbox == "dev_containers" -> %>
                         Check the agent's MCP configuration and run
                         <.inline_code>emisar-mcp --version</.inline_code>
@@ -2144,7 +2144,7 @@ defmodule EmisarWeb.AgentsLive do
             }>co:op</.doc_link>. The sandbox limits access to local secrets, SSH keys, and CLI tools
             such as
             <.inline_code>gcloud</.inline_code>
-            or <.inline_code>aws</.inline_code>, and to the network destinations you allow. emisar
+            or <.inline_code>aws</.inline_code>. It limits network access to the destinations you allow. emisar
             extends that control to infrastructure and third-party tools.
           </p>
         </.docs_rail>
@@ -2570,7 +2570,7 @@ defmodule EmisarWeb.AgentsLive do
                   table.
                 </p>
                 <p>
-                  To use another agent, follow its configuration in
+                  To use another agent, follow its setup steps in
                   <.doc_link href={~p"/docs/connect-cli-agent"}>Connect a CLI agent</.doc_link>
                   and run it with a matching nono profile.
                 </p>
@@ -2667,7 +2667,7 @@ defmodule EmisarWeb.AgentsLive do
                   <.inline_code>host.docker.internal</.inline_code>
                   to reach
                   emisar on your computer and enables plain HTTP only for that local address.
-                  Hosted HTTPS setups do not need the opt-in.
+                  Hosted HTTPS setups do not need the plain-HTTP setting.
                 </p>
                 <p>
                   If your runners require signed dispatch, add the signing credentials from
@@ -2677,7 +2677,7 @@ defmodule EmisarWeb.AgentsLive do
                   table.
                 </p>
                 <p>
-                  To use another agent, follow its configuration in <.doc_link href={
+                  To use another agent, follow its setup steps in <.doc_link href={
                     ~p"/docs/connect-cli-agent"
                   }>Connect a CLI agent</.doc_link>.
                 </p>
@@ -2766,7 +2766,9 @@ defmodule EmisarWeb.AgentsLive do
     <section id={@id} class="space-y-4">
       <.step_header step={2} title="Install the emisar bridge" />
       <div class="ml-6 space-y-4 text-sm text-zinc-400">
-        <p>Run the installer on your computer, then check that the bridge is available:</p>
+        <p>
+          Run the installer on your computer, then check that the bridge (the emisar-mcp program) is available:
+        </p>
         <%= case @install_command do %>
           <% {:ok, command} -> %>
             <.code_panel
@@ -2972,7 +2974,7 @@ defmodule EmisarWeb.AgentsLive do
   defp auto_permit_installer_note(assigns) do
     ~H"""
     <p class="mt-2 text-xs text-zinc-400">
-      The bridge installer offers to set this for you. Do it by hand if you declined.
+      The bridge installer offers to apply this setting for you. Do it by hand if you declined.
     </p>
     """
   end
@@ -3050,7 +3052,7 @@ defmodule EmisarWeb.AgentsLive do
       />
 
       <p class="text-xs text-zinc-400">
-        Your account and workspace settings must allow custom MCP connections.
+        Your {@client_label} account and workspace settings must allow custom MCP connections.
         <.doc_link href={
           if @client_id == "chatgpt", do: ~p"/docs/connect-chatgpt", else: ~p"/docs/connect-claude-ai"
         }>Full setup guide</.doc_link>
@@ -3066,7 +3068,7 @@ defmodule EmisarWeb.AgentsLive do
     <div class="space-y-5">
       <p class="text-sm leading-relaxed text-zinc-400">
         Use a custom key for an agent that isn't one of the presets above, or when you
-        want to set its name and expiry date.
+        want to set the key's name and expiry date.
       </p>
 
       <.simple_form

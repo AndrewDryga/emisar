@@ -47,7 +47,7 @@ defmodule Emisar.Auth.Role do
   end
 
   def description("billing_manager") do
-    "Billing managers can manage the subscription, payment method, and invoices. They can also view the member list and billing events in the audit trail, but have no access to runners, actions, or policy."
+    "Billing managers can manage the subscription, payment method, and invoices. They can also view the member list and billing events in the audit trail. They have no access to runners, actions, or policy."
   end
 
   def description("operator") do
@@ -55,7 +55,7 @@ defmodule Emisar.Auth.Role do
   end
 
   def description("viewer") do
-    "Viewers have read-only access across runs, runners, approvals, and audit. They can't dispatch or change anything."
+    "Viewers have read-only access across runs, runners, approvals, and audit. They can't run or change anything."
   end
 
   def description(_), do: nil

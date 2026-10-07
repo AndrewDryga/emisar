@@ -48,7 +48,7 @@ defmodule Emisar.Accounts.Jobs.MonthlyReportsTest do
       assert email.reply_to == {"", "support@emisar.dev"}
       assert email.text_body =~ "Hi Olivia Owner,"
       assert email.text_body =~ "3 runs recorded"
-      assert email.text_body =~ "3 dispatched"
+      assert email.text_body =~ "3 sent"
       assert email.text_body =~ ~r/Succeeded\s+3$/m
       assert email.text_body =~ "Active runners"
       assert email.text_body =~ "/app/#{account.slug}"

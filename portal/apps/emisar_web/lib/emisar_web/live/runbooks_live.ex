@@ -159,7 +159,7 @@ defmodule EmisarWeb.RunbooksLive do
                  not LiveTable.has_active_filters?(@filter_params, @filters) -> %>
               <.empty_state icon="product.runbook" title="No runbooks yet">
                 <%= if Runbooks.subject_can_author_runbooks?(@current_subject) do %>
-                  Create a runbook from your runners' actions, ask your LLM to create one, or
+                  Create a runbook from your runners' actions, ask your AI agent to create one, or
                   import a JSON definition.
                 <% else %>
                   Published runbooks will appear here when available.

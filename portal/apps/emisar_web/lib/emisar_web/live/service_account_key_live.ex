@@ -143,8 +143,8 @@ defmodule EmisarWeb.ServiceAccountKeyLive do
           <section id="service-account-key-create-step">
             <.step_header step={1} title="Create a key" />
             <p class="text-sm leading-relaxed text-zinc-400">
-              An app that uses this key acts as <span class="font-medium text-zinc-200">{@name}</span>: it gets the service
-              account's runner and pack access, and the audit log attributes its requests to
+              An app that uses this key acts as <span class="font-medium text-zinc-200">{@name}</span>. It gets the service
+              account's runner and pack access. The audit log attributes its requests to
               the service account.
             </p>
 

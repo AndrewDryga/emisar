@@ -48,7 +48,7 @@ defmodule EmisarWeb.SSOProviderKind do
         "in the Okta admin console → Applications → Create App Integration → OIDC, Web Application",
       directory_note: "Directory sync is a second Okta app. This one only signs people in.",
       scim_location:
-        "in a separate Okta app, because Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog (its Sign-On tab is unused, since SCIM lives entirely on the Provisioning tab): Configure API Integration → Enable, configure the Base URL and API token as described in step 2, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts",
+        "in a separate Okta app, because Okta's OIDC login app can't do SCIM. Add the \"SCIM 2.0 Test App (Header Auth)\" from the OIN catalog. Its Sign-On tab is unused, since SCIM lives entirely on the Provisioning tab: Configure API Integration → Enable, configure the Base URL and API token as described in step 2, then enable Create / Update / Deactivate. Okta sends the token as a raw header with no `Bearer` scheme, which emisar accepts",
       name_placeholder: "Acme Okta",
       dpop_relevant?: true
     },
@@ -77,7 +77,7 @@ defmodule EmisarWeb.SSOProviderKind do
       docs_path: "/docs/integrations/jumpcloud",
       oidc_app:
         "in the JumpCloud admin console → SSO Applications → Add New Application → Custom Application, with the OIDC connector enabled",
-      directory_note: "One JumpCloud application covers both this and directory sync.",
+      directory_note: "One JumpCloud application covers both sign-in and directory sync.",
       scim_location:
         "on a JumpCloud application's Provisioning tab. One custom app can carry both sign-in and provisioning, so tick \"Export users to this app\" alongside SSO (its SAML/OIDC sub-choice defaults to SAML). Configure the Base URL and Token as described in step 2, then Test Connection → Activate (their form discards the config if you press Save instead)",
       name_placeholder: "Acme JumpCloud"
@@ -95,7 +95,7 @@ defmodule EmisarWeb.SSOProviderKind do
       # SCIM *server* others provision INTO, the opposite direction. Naming the
       # gap beats sending an admin hunting for a screen that doesn't exist.
       scim_location:
-        "from a SCIM plugin on your Keycloak. Keycloak ships no outbound provisioning of its own, so this needs a third-party extension, which you configure and support",
+        "from a SCIM plugin on your Keycloak. Keycloak has no outbound provisioning of its own, so this needs a third-party extension, which you configure and support",
       name_placeholder: "Acme Keycloak",
       dpop_relevant?: true
     }

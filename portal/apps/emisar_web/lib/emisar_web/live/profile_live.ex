@@ -921,7 +921,7 @@ defmodule EmisarWeb.ProfileLive do
           </:header>
           <:note :if={@email_changeable?}>
             Sign-in codes for this workspace go to your email. To change it, confirm with your
-            authenticator or a code sent to it, then with a code sent to the new address.
+            authenticator or a code sent to your current address. Then confirm with a code sent to the new address.
           </:note>
           <:note :if={@profile_loaded? and not @email_changeable? and not @profile_error?}>
             Your identity provider manages your email in this workspace.
@@ -1201,7 +1201,7 @@ defmodule EmisarWeb.ProfileLive do
               >
                 <.section_header level={3} title="Disable MFA">
                   <:subtitle>
-                    You'll stop using an authenticator code to sign in to this workspace. If it
+                    You'll stop using an authenticator code to sign in to this workspace. If the workspace
                     requires MFA, you'll set one up again on your next visit.
                   </:subtitle>
                 </.section_header>
@@ -1304,7 +1304,7 @@ defmodule EmisarWeb.ProfileLive do
                 <.chip tone={:amber}>Not enabled</.chip>
               </div>
               <p class="mt-3 text-sm text-zinc-400">
-                Setting up an authenticator needs a fresh proof of your own sign-in: a code to a
+                Setting up an authenticator needs fresh proof that it's you: a code sent to a
                 verified email address, or a new sign-in through this workspace's identity provider.
                 Neither is available from this session. Ask a workspace administrator for help.
               </p>

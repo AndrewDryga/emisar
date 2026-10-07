@@ -103,7 +103,7 @@ defmodule Emisar.ApiKeysTest do
 
       subject = Fixtures.Subjects.subject_for(member)
       {:ok, _raw, _key} = ApiKeys.create_key(%{name: "agent"}, subject)
-      assert ApiKeys.list_key_owner_options(subject) == {:ok, [{member.id, "Account member"}]}
+      assert ApiKeys.list_key_owner_options(subject) == {:ok, [{member.id, "Workspace member"}]}
     end
 
     test "a rejoined member is a new owner choice; each key keeps its exact historical profile" do

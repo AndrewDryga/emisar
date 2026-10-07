@@ -1610,7 +1610,7 @@ defmodule EmisarWeb.RunbookRunLiveTest do
       assert has_element?(
                lv,
                "#cancel-runbook-execution",
-               "Queued actions won't start. Running actions receive a cancellation request."
+               "Queued actions won't start. Running actions are asked to stop."
              )
 
       assert has_element?(lv, "#cancel-runbook-execution-confirm", "Cancel execution")

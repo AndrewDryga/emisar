@@ -283,7 +283,7 @@ defmodule EmisarWeb.TeamLiveTest do
         |> log_in_member(admin)
         |> live(~p"/app/#{account}/settings/team/invite")
 
-      refute reveal_pack_grant(lv) =~ "You can grant only packs within your own access."
+      refute reveal_pack_grant(lv) =~ "You can only grant packs you can access yourself."
 
       {:ok, restricted} =
         Emisar.Accounts.RunnerAccess.new(:all, [], [], :restricted, ["postgres"])
@@ -291,7 +291,7 @@ defmodule EmisarWeb.TeamLiveTest do
       Fixtures.Memberships.force_runner_access(admin, restricted)
       render_patch(lv, ~p"/app/#{account}/settings/team/invite")
 
-      assert reveal_pack_grant(lv) =~ "You can grant only packs within your own access."
+      assert reveal_pack_grant(lv) =~ "You can only grant packs you can access yourself."
     end
 
     test "pack grant fields explain when the admin's own pack access is limited", %{conn: conn} do
@@ -309,14 +309,14 @@ defmodule EmisarWeb.TeamLiveTest do
         |> log_in_member(admin)
         |> live(~p"/app/#{account}/settings/team/invite")
 
-      refute html =~ "You can grant only packs within your own access."
+      refute html =~ "You can only grant packs you can access yourself."
 
       changed =
         lv
         |> form("#invite_form", %{"invite" => %{"runner_access_mode" => "all"}})
         |> render_change()
 
-      assert changed =~ "You can grant only packs within your own access."
+      assert changed =~ "You can only grant packs you can access yourself."
     end
 
     test "pack grant fields stay quiet for an unrestricted owner", %{conn: conn} do
@@ -328,7 +328,7 @@ defmodule EmisarWeb.TeamLiveTest do
         |> form("#invite_form", %{"invite" => %{"runner_access_mode" => "all"}})
         |> render_change()
 
-      refute changed =~ "You can grant only packs within your own access."
+      refute changed =~ "You can only grant packs you can access yourself."
     end
 
     test "the Security rail is SSO's one console door (its nav item is gone)", %{conn: conn} do
@@ -1180,7 +1180,7 @@ defmodule EmisarWeb.TeamLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")
       subscribe_team(account)
 
-      assert html =~ "It starts with your runner and pack access."
+      assert html =~ "The service account starts with your runner and pack access."
 
       html =
         lv
@@ -3299,7 +3299,7 @@ defmodule EmisarWeb.TeamLiveTest do
         live(conn, ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa")
 
       path = ~p"/app/#{account}/settings/team/#{membership.id}/reset_mfa/sso"
-      assert html =~ "Reauthenticate with your identity provider"
+      assert html =~ "Sign in again with your identity provider"
       assert html =~ "Verify with Acme SSO"
       refute has_element?(lv, "#member-mfa-reset-totp")
       refute has_element?(lv, "#member-mfa-reset-recovery")

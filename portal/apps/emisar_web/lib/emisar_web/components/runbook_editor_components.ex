@@ -102,7 +102,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
         "Fix the #{issue_count} definition #{if issue_count == 1, do: "issue", else: "issues"} before publishing."
 
       not changed_or_draft?(assigns) ->
-        "Make a change before publishing a new release."
+        "Make a change before publishing a new version."
 
       assigns.preview.state == :loading ->
         "Wait for the publish check to finish."
@@ -111,7 +111,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
         "Resolve the issues before publishing."
 
       assigns.preview.state == :unavailable ->
-        "Current runners and actions could not be checked."
+        "Couldn't check current runners and actions."
 
       true ->
         "Publishing is unavailable."
@@ -214,7 +214,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
           title="Couldn't load runners and actions"
         >
           <:body>
-            You can keep editing the draft. Publishing stays unavailable until current runners and
+            You can keep editing the draft. You can't publish until current runners and
             actions can be checked.
           </:body>
         </.event_block>
@@ -450,7 +450,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
   defp publish_diff(%{diff: %{hunks: []}} = assigns) do
     ~H"""
     <p class="text-xs text-zinc-400">
-      The definition is identical. Only the title or description changed.
+      The definition is unchanged. Only the title or description changed.
     </p>
     """
   end
@@ -468,7 +468,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
         </div>
       </div>
       <p :if={@diff.truncated?} class="mt-2 text-xs text-zinc-400">
-        Diff truncated. Open the definition to read the rest.
+        Diff truncated. Open Runbook JSON to read the rest.
       </p>
     </div>
     """
@@ -537,7 +537,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
     <section>
       <.section_header title="Instructions">
         <:subtitle>
-          Explain when to use this runbook, any prerequisites, and the expected outcome.
+          Explain when to use this runbook, what must be in place first, and the expected outcome.
           Markdown supported.
         </:subtitle>
       </.section_header>
@@ -999,7 +999,7 @@ defmodule EmisarWeb.RunbookEditorComponents do
       </.event_block>
 
       <p :if={@preview.state == :unavailable} class="text-xs leading-relaxed text-zinc-400">
-        Current runners and actions could not be checked.
+        Couldn't check current runners and actions.
       </p>
 
       <div :if={@preview.state == :ready} class="space-y-4">

@@ -167,7 +167,7 @@ defmodule EmisarWeb.AuditExportLive do
 
       <.page_intro>
         Export audit events to your SIEM for independent, long-term retention.
-        Manage the read-only tokens your collector uses to connect.
+        Manage the read-only tokens your SIEM or log collector uses to connect.
         <.doc_link href={~p"/docs/audit-and-siem#token"}>SIEM export docs</.doc_link>
       </.page_intro>
 
@@ -340,7 +340,7 @@ defmodule EmisarWeb.AuditExportLive do
             <.doc_link href={~p"/docs/audit-and-siem#polling"}>Collector setup</.doc_link>
           </p>
           <p>
-            To replace a token, create a new one, update your collector, and confirm it works
+            To replace a token, create a new one, update your collector, and confirm the new token works
             before revoking the old token.
             <.doc_link href={~p"/docs/credentials#audit-tokens"}>Token rotation</.doc_link>
           </p>

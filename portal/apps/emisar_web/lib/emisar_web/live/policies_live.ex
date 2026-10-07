@@ -989,13 +989,13 @@ defmodule EmisarWeb.PoliciesLive do
             You can view the policy, but only owners and admins can change it.
           </p>
           <p :if={@can_manage? and not @has_runner_access?} class="text-xs text-zinc-400">
-            You can view all policies. Editing requires access to the affected runners and all packs.
+            You can view all policies. To edit, you need access to the affected runners and all packs.
           </p>
           <p
             :if={@has_runner_access? and @can_manage? and not @can_manage_scoped?}
             class="text-xs text-zinc-400"
           >
-            Access to all packs is required to edit policy rules.
+            You need access to all packs to edit policy rules.
           </p>
         </div>
 
@@ -1017,7 +1017,7 @@ defmodule EmisarWeb.PoliciesLive do
               </.chip>
             </:badge>
             <:subtitle>
-              Applies when a runner has no matching runner or group ruleset.
+              Applies when no ruleset targets the runner or its group.
             </:subtitle>
             <%!-- Navigation, but the SAME verb repeats on every targeted-ruleset
                  header below, where the Remove peer forces the bordered face —
@@ -1041,7 +1041,7 @@ defmodule EmisarWeb.PoliciesLive do
             :if={@can_manage_scoped? and not @can_manage_account?}
             class="mb-4 text-xs text-zinc-400"
           >
-            Access to all runners is required to edit the default policy.
+            You need access to all runners to edit the default policy.
           </p>
 
           <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
@@ -1219,7 +1219,7 @@ defmodule EmisarWeb.PoliciesLive do
           <%= if @preview == {:error, :no_access} do %>
             No actions are available to preview with your current access.
           <% else %>
-            Couldn't update the preview. Your edits are preserved.
+            Couldn't update the preview. Your edits are kept.
             <.button
               variant={:secondary}
               size={:sm}
@@ -1491,7 +1491,7 @@ defmodule EmisarWeb.PoliciesLive do
         <% end %>
 
         <p :if={@ruleset.scope_type && not @can_manage} class="mt-4 text-xs text-zinc-400">
-          Read-only. Editing requires permission for every runner in this target and all packs.
+          Read-only. To edit, you need permission for every runner in this target and all packs.
         </p>
 
         <.policy_fields
@@ -1769,7 +1769,7 @@ defmodule EmisarWeb.PoliciesLive do
       <.tooltip
         :if={locked_tier?(@floor_rank)}
         id={"tier-lock-#{@editor_id}-#{@tier}"}
-        text="Higher-risk tiers can't be more permissive than lower ones."
+        text="Higher-risk tiers can't be less strict than lower ones."
         class="w-full flex-col"
       >
         <.tier_select tier={@tier} value={@value} floor_rank={@floor_rank} can_manage={@can_manage} />
@@ -1934,7 +1934,7 @@ defmodule EmisarWeb.PoliciesLive do
     >
       <.icon name="state.warning" class="mt-0.5 h-3.5 w-3.5 flex-none" />
       <span>
-        No actions in this preview match this pattern. It can still apply to actions reported later.
+        No actions in this preview match this pattern. The pattern can still apply to actions reported later.
       </span>
     </p>
     """

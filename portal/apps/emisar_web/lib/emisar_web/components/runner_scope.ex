@@ -197,7 +197,7 @@ defmodule EmisarWeb.RunnerScope do
             decision until they miscount the options. --%>
       <.label variant={:eyebrow}>Packs</.label>
       <p :if={@grant_limited?} class="mt-1 text-xs leading-relaxed text-zinc-400">
-        You can grant only packs within your own access.
+        You can only grant packs you can access yourself.
       </p>
       <div class="mt-2">
         <.choice_cards name={@mode_name} value={@mode_value} attached_value="restricted">
@@ -205,7 +205,7 @@ defmodule EmisarWeb.RunnerScope do
             Every pack on those runners, including ones installed later.
           </:card>
           <:card value="restricted" title="Selected packs">
-            Only actions from the packs you name.
+            Only actions from the packs you choose.
           </:card>
         </.choice_cards>
 
@@ -428,7 +428,7 @@ defmodule EmisarWeb.RunnerScope do
   # is empty for a reason the operator can fix upstream, not because the account
   # has no packs.
   defp pack_empty_message(mode, []) when mode != "all",
-    do: "Choose runners first. The packs they carry appear here."
+    do: "Choose runners first. The packs installed on them appear here."
 
   defp pack_empty_message(_mode, _runner_ids),
     do: "No packs available to grant on the selected runners."

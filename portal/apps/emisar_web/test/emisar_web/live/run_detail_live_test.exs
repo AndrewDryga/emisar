@@ -1130,7 +1130,7 @@ defmodule EmisarWeb.RunDetailLiveTest do
 
     Fixtures.Memberships.force_runner_access(owner, Emisar.Accounts.RunnerAccess.none())
     send(lv.pid, {:list_changed, :team, "membership.runner_access_changed", owner.id})
-    assert render(lv) =~ "Cancelling requires action access"
+    assert render(lv) =~ "To cancel, you need action access"
     assert render(lv) =~ "Output remains readable"
     assert has_element?(lv, "#cancel-run-confirm[disabled]")
     assert :sys.get_state(lv.pid).socket.assigns.output_state == output_state

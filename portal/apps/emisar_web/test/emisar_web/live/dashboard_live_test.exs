@@ -253,7 +253,7 @@ defmodule EmisarWeb.DashboardLiveTest do
 
       refute html =~ "Run your first action"
       refute html =~ "Put your first host online"
-      assert html =~ "No runners in your access"
+      assert html =~ "No runners you can access"
       assert html =~ "Recent runs"
     end
 

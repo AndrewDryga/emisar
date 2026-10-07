@@ -113,7 +113,7 @@ defmodule Emisar.Mailers.UserNotifier do
         {:paragraph, "Use this code to sign in to the emisar staff console."},
         {:code, code},
         {:paragraph,
-         "Enter it in the browser where you asked to sign in, together with the code from your authenticator app. It works once, only in that browser, and expires in 15 minutes."},
+         "Enter this code in the browser where you asked to sign in, together with the code from your authenticator app. It works once, only in that browser, and expires in 15 minutes."},
         {:paragraph, "If you didn't ask to sign in, ignore this email. Do not share the code."},
         {:section, "Request details"},
         {:pre, request_details(context)}
@@ -145,7 +145,7 @@ defmodule Emisar.Mailers.UserNotifier do
         ),
         {:code, code},
         {:paragraph,
-         "Give this code to that workspace only if you agree. Its invoices and receipts will then come to this address. It cannot see or change your other subscriptions."},
+         "Give this code to that workspace only if you agree. Its invoices and receipts will then come to this address. The workspace cannot see or change your other subscriptions."},
         {:paragraph,
          "This code works once and expires in 15 minutes. If you didn't expect this, ignore the email and nothing changes."},
         {:section, "Request details"},
@@ -408,10 +408,10 @@ defmodule Emisar.Mailers.UserNotifier do
 
     facts =
       [
-        {"Account", account_fact(request.account)},
+        {"Workspace", account_fact(request.account)},
         {"Action", label},
         {"Runner", runner_email_label(run)},
-        {"Requested by", one_line(requester_name || "Account member")},
+        {"Requested by", one_line(requester_name || "Workspace member")},
         {"Channel", run_source_label(run.source)},
         {"Requested", format_datetime(Map.get(request, :requested_at))},
         {"Expires", format_datetime(Map.get(request, :expires_at))},
@@ -468,9 +468,9 @@ defmodule Emisar.Mailers.UserNotifier do
         {:status, "This runbook ", "needs your approval", ".", :warning},
         {:facts,
          present_facts([
-           {"Account", account_fact(request.account)},
+           {"Workspace", account_fact(request.account)},
            {"Runbook", one_line(title)},
-           {"Requested by", one_line(requester_name || "Account member")},
+           {"Requested by", one_line(requester_name || "Workspace member")},
            {"Stages", Integer.to_string(length(stages))},
            {"Actions", Integer.to_string(total)},
            {"Requested", format_datetime(Map.get(request, :requested_at))},
@@ -504,7 +504,7 @@ defmodule Emisar.Mailers.UserNotifier do
 
     facts =
       [
-        {"Account", account_fact(request.account)},
+        {"Workspace", account_fact(request.account)},
         {"Request", one_line(approval_decision_label(request))},
         {"Approvals", "#{count} of #{quorum}"},
         {"Updated by", one_line(Map.get(event, :actor_label))},
@@ -556,7 +556,7 @@ defmodule Emisar.Mailers.UserNotifier do
         lead,
         {:facts,
          present_facts([
-           {"Account", account_fact(request.account)},
+           {"Workspace", account_fact(request.account)},
            {"Request", one_line(label)},
            {"Approvals", "#{approved_count} of #{quorum}"}
          ])}
@@ -682,14 +682,14 @@ defmodule Emisar.Mailers.UserNotifier do
         {:paragraph, "#{inviter_name} invited you to join #{account_name} on emisar."},
         {:facts,
          [
-           {"Account", account_fact(account)},
+           {"Workspace", account_fact(account)},
            {"Role", Emisar.Auth.role_label(membership.role)},
            {"Runner access", invitation_runner_access(membership)},
            {"Pack access", invitation_pack_access(membership)},
            {"Invitation expires", invitation_expiry(membership)}
          ]},
         {:paragraph,
-         "If you weren't expecting this invitation, ignore it. You will not join the account unless you accept."}
+         "If you weren't expecting this invitation, ignore it. You will not join the workspace unless you accept."}
       ],
       {"Accept invitation", url}
     )

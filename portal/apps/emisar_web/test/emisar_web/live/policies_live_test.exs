@@ -25,7 +25,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert html =~ "Default policy"
       assert html =~ "Action overrides"
       assert html =~ "Targeted rulesets"
-      assert html =~ "Applies when a runner has no matching runner or group ruleset."
+      assert html =~ "Applies when no ruleset targets the runner or its group."
       assert html =~ "No self-approval"
       assert html =~ "Allow self-approval"
       assert html =~ "if they have permission to approve."
@@ -481,7 +481,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       html = settle_previews(lv)
       assert html =~ "No actions in this preview match this pattern."
-      assert html =~ "It can still apply to actions reported later."
+      assert html =~ "The pattern can still apply to actions reported later."
     end
 
     test "no unmatched warning once the glob actually matches an action", %{conn: conn} do
@@ -1120,7 +1120,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
       html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
-      assert html =~ "Access to all runners is required to edit the default policy."
+      assert html =~ "You need access to all runners to edit the default policy."
       refute has_element?(lv, "#policy-form-account button[type=submit]")
       assert has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]", "Save ruleset")
 
@@ -1175,7 +1175,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       refute has_element?(lv, "#policy-read-only.-translate-y-px")
 
-      assert html =~ "Applies when a runner has no matching runner or group ruleset."
+      assert html =~ "Applies when no ruleset targets the runner or its group."
       assert html =~ "Targeted rulesets"
       assert render_click(lv, "open_ruleset", %{"uid" => scoped.id}) =~ "db-1"
       refute has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]")
@@ -1202,7 +1202,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
       html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
 
-      assert html =~ "Access to all packs is required to edit policy rules."
+      assert html =~ "You need access to all packs to edit policy rules."
       refute has_element?(lv, "#policy-form-account button[type=submit]")
       refute has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]")
       refute has_element?(lv, "#add-ruleset-row")

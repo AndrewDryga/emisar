@@ -204,7 +204,7 @@ defmodule EmisarWeb.RunsLive do
 
       <.page_intro>
         A run is an action dispatched to a runner. Open a row for its arguments, output,
-        and audit record. The output is redacted before leaving the host.
+        and audit record. The runner redacts the output before it leaves the host.
         <.doc_link href={~p"/docs/runs"}>Runs docs</.doc_link>
       </.page_intro>
 

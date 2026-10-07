@@ -150,7 +150,10 @@ defmodule EmisarWeb.BillingLive do
             {:noreply,
              socket
              |> assign(:link_request, nil)
-             |> put_flash(:info, "This workspace already has a billing account. Upgrade again.")}
+             |> put_flash(
+               :info,
+               "This workspace already has a billing account. Choose Upgrade again to continue."
+             )}
 
           {:error, :rate_limited} ->
             {:noreply,
@@ -611,7 +614,7 @@ defmodule EmisarWeb.BillingLive do
   end
 
   defp checkout_error(:subscription_retirement_pending) do
-    "We're confirming the cancellation of an earlier subscription. Try again shortly, or contact support if this continues."
+    "We're confirming that an earlier subscription was cancelled. Try again shortly, or contact support if this continues."
   end
 
   defp checkout_error(:legacy_checkout_pending) do
@@ -929,7 +932,7 @@ defmodule EmisarWeb.BillingLive do
                   </li>
                 </ul>
                 <p class="mt-3 text-xs text-zinc-400">
-                  Paddle's receipt emails link to the full payment history, billing address, and
+                  Receipt emails from Paddle, our payment processor, link to the full payment history, billing address, and
                   tax details.
                 </p>
               </section>
@@ -1051,7 +1054,7 @@ defmodule EmisarWeb.BillingLive do
                   </.form>
                 <% else %>
                   Paddle already has a billing account for this workspace's billing email. To bill
-                  this workspace there, email that address a code and enter it here.
+                  this workspace to that account, email a code to that address and enter it here.
                   <div class="mt-4">
                     <.button size={:sm} phx-click="send_link_code" phx-disable-with="Sending…">
                       Email a code

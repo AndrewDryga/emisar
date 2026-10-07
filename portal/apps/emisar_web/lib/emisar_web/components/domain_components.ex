@@ -357,7 +357,7 @@ defmodule EmisarWeb.DomainComponents do
       class={@class}
     >
       <%= if @alert.show_effective_at && @scheduled_effective_at do %>
-        Your paid features remain available until
+        Your paid features stay available until
         <TimeHelpers.local_time
           id="subscription-access-changes-at"
           value={@scheduled_effective_at}
@@ -376,7 +376,7 @@ defmodule EmisarWeb.DomainComponents do
       tone: :rose,
       title: "Payment overdue",
       body:
-        "Your paid features remain available while payment is retried. Update your payment details.",
+        "Your paid features stay available while Paddle retries the payment. Update your payment details.",
       show_effective_at: false
     }
 
@@ -385,7 +385,7 @@ defmodule EmisarWeb.DomainComponents do
       tone: :amber,
       title: "Subscription pausing",
       body:
-        "Your paid features remain available until the scheduled pause. Your account then switches to the Free plan.",
+        "Your paid features stay available until the scheduled pause. Your account then switches to the Free plan.",
       show_effective_at: true
     }
 
@@ -394,7 +394,7 @@ defmodule EmisarWeb.DomainComponents do
       tone: :amber,
       title: "Subscription ending",
       body:
-        "Your paid features remain available until the scheduled cancellation. Your account then switches to the Free plan.",
+        "Your paid features stay available until the scheduled cancellation. Your account then switches to the Free plan.",
       show_effective_at: true
     }
 
@@ -1023,7 +1023,7 @@ defmodule EmisarWeb.DomainComponents do
   end
 
   defp version_upgrade_fact(:mcp, unsupported_count, outdated_count) do
-    "On this page, #{version_count_label(unsupported_count, "agent")} last connected through " <>
+    "On this page, #{unsupported_count} #{agent_count_label(unsupported_count)} last connected through " <>
       "a bridge below the supported range (#{Emisar.Compat.mcp_minimum()}) and " <>
       "#{version_count_label(outdated_count, "agent")} behind #{version_label(Emisar.Compat.mcp_target())}."
   end
@@ -1311,7 +1311,7 @@ defmodule EmisarWeb.DomainComponents do
         <aside class="mt-10 space-y-8 xl:mt-0">
           <.docs_rail title="Adding actions">
             <p>
-              A runner advertises and executes actions on your host. Actions come in packs: collections
+              A runner offers and runs actions on your host. Actions come in packs: collections
               of related tasks. Once your runner is connected, install the packs you need.
               <.doc_link href={~p"/packs"}>Pack catalog</.doc_link>
             </p>
@@ -1520,7 +1520,7 @@ defmodule EmisarWeb.DomainComponents do
 
   defp risk_meaning("medium"), do: "Medium: changes state, easily reversible"
 
-  defp risk_meaning("high"), do: "High: service-affecting"
+  defp risk_meaning("high"), do: "High: can disrupt service"
 
   defp risk_meaning("critical"), do: "Critical: data loss or irreversible"
 
@@ -1605,7 +1605,7 @@ defmodule EmisarWeb.DomainComponents do
     do: "Expired without a decision and was auto-denied. The action won't run."
 
   defp expiry_meaning(false),
-    do: "If no one decides by then, it's auto-denied and the action won't run."
+    do: "If no one decides by then, the request is auto-denied and the action won't run."
 
   # Under two hours left → amber: an approval lapsing soon needs to stand out
   # in the queue. At or past the deadline (the sweeper hasn't cancelled it yet)

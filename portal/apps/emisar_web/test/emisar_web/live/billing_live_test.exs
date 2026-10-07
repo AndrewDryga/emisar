@@ -252,7 +252,7 @@ defmodule EmisarWeb.BillingLiveTest do
           creating: "We&#39;re confirming your checkout.",
           legacy: "We couldn&#39;t confirm an earlier checkout.",
           paid: "We&#39;re confirming your payment and subscription.",
-          retirement: "We&#39;re confirming the cancellation of an earlier subscription."
+          retirement: "We&#39;re confirming that an earlier subscription was cancelled."
         ] do
       test "#{state} checkout gives an actionable pending state without another POST", %{
         conn: conn,
@@ -1288,7 +1288,7 @@ defmodule EmisarWeb.BillingLiveTest do
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/billing")
 
       assert html =~ "Subscription ending"
-      assert html =~ "Your paid features remain available until"
+      assert html =~ "Your paid features stay available until"
       assert has_element?(lv, "#subscription-access-changes-at")
       refute has_element?(lv, "#billing-access-ends-on")
       refute html =~ "Next charge"
@@ -1323,7 +1323,7 @@ defmodule EmisarWeb.BillingLiveTest do
 
     test "the banner distinguishes dunning access from expired access", %{conn: _conn} do
       cases = [
-        {"past_due", "paid features remain available"},
+        {"past_due", "paid features stay available"},
         {"paused", "restore paid features"},
         {"canceled", "restore paid features"}
       ]

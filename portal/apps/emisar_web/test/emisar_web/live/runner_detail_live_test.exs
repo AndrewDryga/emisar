@@ -168,7 +168,7 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
 
     html = render(lv)
     assert html =~ "postgres.status"
-    assert html =~ "This runner is outside your management access"
+    assert html =~ "You don&#39;t have access to manage this runner"
     assert html =~ "Outside your action access"
     assert has_element?(lv, "button[disabled]", "Disable runner")
     refute html =~ "/runs/new/#{runner.id}/postgres.status"

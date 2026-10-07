@@ -27,7 +27,7 @@ defmodule EmisarWeb.Components.RiskPillTest do
       assert html =~ "group-focus-within/tooltip:opacity-100"
       assert html =~ ~s(aria-describedby="approval-42-risk")
       assert html =~ ~s(id="approval-42-risk")
-      assert html =~ "High: service-affecting"
+      assert html =~ "High: can disrupt service"
       refute html =~ "title="
     end
 

@@ -89,7 +89,7 @@ defmodule EmisarWeb.PacksLiveTest do
       text = html |> LazyHTML.from_fragment() |> LazyHTML.text()
       assert text =~ "7.7"
       assert text =~ "hidden.wipe"
-      assert text =~ "Managing this version requires access"
+      assert text =~ "To manage this version, you need access"
 
       assert has_element?(
                lv,
@@ -613,7 +613,7 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render(lv)
 
       assert html =~ "This version&#39;s contents aren&#39;t automatically trusted"
-      assert html =~ "before its actions can be used"
+      assert html =~ "before the version&#39;s actions can be used"
       # The hash-drift copy must NOT show — there's no prior trusted hash to drift from.
       refute html =~ "reported changed contents"
     end

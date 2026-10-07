@@ -860,7 +860,7 @@ defmodule EmisarWeb.RunbookEditorLiveTest do
       change(lv, draft)
       assert has_element?(lv, help, "Repeat every 10 seconds until conditions pass")
       assert has_element?(lv, help, "12 attempts or 120 seconds")
-      assert has_element?(lv, help, "Action failures stop the execution.")
+      assert has_element?(lv, help, "If the action fails, the execution stops.")
 
       draft =
         draft

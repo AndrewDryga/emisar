@@ -26,7 +26,7 @@ defmodule EmisarWeb.MemberErrorsTest do
   # rank that does not exist.
   test "insufficient_privileges names the permission rule, not a rank" do
     message = MemberErrors.message(:insufficient_privileges)
-    assert message =~ "permissions you already hold"
+    assert message =~ "you already hold all of its permissions"
     refute message =~ "above yours"
   end
 

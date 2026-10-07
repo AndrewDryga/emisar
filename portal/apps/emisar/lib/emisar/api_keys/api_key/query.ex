@@ -276,7 +276,7 @@ defmodule Emisar.ApiKeys.ApiKey.Query do
          coalesce(
            m.email,
            fragment(
-             "CASE WHEN ? IS NULL THEN 'Account member' ELSE 'Former member' END",
+             "CASE WHEN ? IS NULL THEN 'Workspace member' ELSE 'Former member' END",
              m.deleted_at
            )
          )

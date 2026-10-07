@@ -800,7 +800,7 @@ defmodule Emisar.Audit.Event.Query do
     "runner.disabled" =>
       {true, true, true, "An operator disabled a runner. Dispatches to it are refused."},
     "runner.credential_rotation_requested" =>
-      {true, true, true, "An operator requested an early runner connection-key rotation."},
+      {true, true, true, "An operator asked to rotate a runner's connection key early."},
     "runner.credential_rotated" =>
       {true, false, false,
        "The runner authenticated with a replacement connection key for the first time. The previous key keeps its remaining grace period."},
@@ -821,7 +821,8 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true,
        "An operator revoked a runner enrollment key. Future registrations with it fail."},
     "enrollment_key.bound" =>
-      {true, false, true, "A runner setup key was used for registration for the first time."},
+      {true, false, true,
+       "A runner setup key (a short-lived enrollment key the console creates) was used for registration for the first time."},
     "api_key.created" =>
       {true, true, true, "An API key was created for an AI agent or audit export."},
     "api_key.rotation_requested" =>
@@ -835,7 +836,7 @@ defmodule Emisar.Audit.Event.Query do
        "A replacement key was created through automatic rotation. The previous key is revoked when its replacement is first used."},
     "api_key.retired_by_rotation" =>
       {true, false, true,
-       "A rotated key's successor was used for the first time, so the key it replaces was revoked automatically."},
+       "The replacement key was used for the first time, so the old key was revoked automatically."},
     "api_key.device_grant_approved" =>
       {true, true, true,
        "A user approved an agent’s connection request. The installer can now collect its key."},
@@ -845,10 +846,10 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true, "A user authorized an OAuth client to act on their behalf."},
     "oauth.refresh_token_reused" =>
       {false, false, true,
-       "A spent OAuth refresh token was presented again, so the connection was revoked."},
+       "An already-used OAuth refresh token was sent again, so the connection was revoked."},
     "pack_trust_baseline_match" =>
       {false, false, true,
-       "A runner reported a pack whose content hash matches the published catalog, so it was trusted automatically."},
+       "A runner reported a pack whose content hash matches the published catalog, so the pack was trusted automatically."},
     "pack_trust_baseline_mismatch" =>
       {false, false, true,
        "A runner reported different contents for a published pack version. The published hash was kept while the reported hash awaits review."},
@@ -903,45 +904,47 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, false, "A sign-in attempt failed (wrong or expired code, bad link)."},
     "user.invited" => {true, true, true, "An admin invited a teammate into the workspace."},
     "user.invitation_accepted" =>
-      {true, false, false, "An invitee accepted and registered a new user account."},
+      {true, false, false, "An invited person accepted and registered a new user account."},
     "user.email_confirmed" =>
       {true, false, false, "A user proved ownership of their email address."},
     "user.email_change_requested" =>
       {true, true, false, "A user asked to change their sign-in email (confirmation pending)."},
     "user.email_change_code_failed" =>
-      {true, false, false, "An emailed email-change confirmation code was wrong or expired."},
+      {true, false, false,
+       "The confirmation code emailed for an email change was wrong or expired."},
     "user.oidc_identity_step_up_requested" =>
       {true, true, false,
        "A user requested confirmation before linking, removing, or testing an SSO sign-in method."},
     "user.oidc_identity_step_up_failed" =>
       {true, false, false,
-       "An emailed SSO sign-in method confirmation code was wrong or expired."},
+       "The confirmation code emailed for an SSO sign-in method was wrong or expired."},
     "user.oidc_identity_step_up_rate_limited" =>
       {true, false, false,
        "An SSO sign-in method confirmation was refused after the user reached its limit."},
     "user.email_change_rate_limited" =>
       {true, false, false,
-       "An email-change code delivery was refused after the user reached its limit."},
+       "emisar refused to send another email-change code after the user reached the limit."},
     "user.email_changed" => {true, false, false, "A user's sign-in email change completed."},
     "user.inbox_step_up_rate_limited" =>
       {true, false, false,
-       "A current-inbox credential proof was refused after the user reached its attempt limit."},
+       "An email verification through the user's current inbox was refused after the user reached its attempt limit."},
     "user.profile_updated" => {true, true, false, "A user edited their own profile."},
     "membership.profile_updated" =>
       {true, true, true, "A member's workspace display name changed."},
     "membership.personal_login_linked" =>
       {true, true, false,
-       "A member without a personal login linked one by proving its email address and any second factor it already had."},
+       "A member without a personal login linked one by proving the login's email address and any second factor the login already had."},
     "membership.personal_login_detached" =>
       {true, true, false,
-       "A person detached their personal login from this member, which now signs in only through the workspace's single sign-on."},
+       "A person detached their personal login from this member. The member now signs in only through the workspace's single sign-on."},
     "user.updated_by_admin" => {true, true, true, "An admin edited a teammate's profile."},
     "user.magic_link_issued" => {true, false, false, "A sign-in link and code were created."},
     "user.mfa_enrollment_requested" =>
       {true, false, false,
-       "A user requested a current-inbox challenge before enrolling an authenticator."},
+       "A user requested a verification code sent to their current inbox before enrolling an authenticator."},
     "user.mfa_enrollment_failed" =>
-      {true, false, false, "An emailed MFA-enrollment confirmation code was wrong or expired."},
+      {true, false, false,
+       "The confirmation code emailed for MFA enrollment was wrong or expired."},
     "user.mfa_enabled" => {true, true, false, "A user enrolled a second factor."},
     "user.mfa_disabled" => {true, true, false, "A user disabled their MFA."},
     "user.mfa_verified" =>
@@ -952,15 +955,15 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, false,
        "A user reached an MFA credential limit and another attempt was refused."},
     "user.mfa_recovery_code_used" =>
-      {true, false, false, "A one-time recovery code was spent to pass the second factor."},
+      {true, false, false, "A one-time recovery code was used to pass the second factor."},
     "user.mfa_recovery_codes_regenerated" =>
-      {true, true, false, "A user regenerated their recovery codes (old ones invalidated)."},
+      {true, true, false,
+       "A user regenerated their recovery codes (the old ones no longer work)."},
     "user.session_revoked" => {true, true, false, "A user revoked one of their own sessions."},
     "user.other_sessions_revoked" =>
       {true, true, false, "A user revoked every session except the current one."},
     "user.sessions_revoked" =>
-      {true, true, true,
-       "An admin ended a teammate's existing access to this workspace across their browser sessions."},
+      {true, true, true, "An admin ended all of a teammate's browser sessions in this workspace."},
     "user.mfa_reset_by_admin" =>
       {true, true, true, "An admin cleared a teammate's second factor so they can re-enroll."},
     "membership.role_changed" => {true, true, true, "An admin changed a member's role."},
@@ -995,14 +998,14 @@ defmodule Emisar.Audit.Event.Query do
       {true, true, true,
        "A runbook execution was requested. It may need approval before its actions can start."},
     "runbook.execution_succeeded" =>
-      {false, false, true, "Every logical item succeeded and the runbook execution completed."},
+      {false, false, true, "Every item succeeded and the runbook execution completed."},
     "runbook.execution_halted" =>
       {false, false, true, "A blocking outcome halted the runbook before later work could start."},
     "runbook.execution_cancelled" =>
       {true, true, true, "An operator cancelled the runbook execution."},
     "runbook.stage_started" =>
-      {false, false, true, "The scheduler made a stage eligible and began dispatching its items."},
-    "runbook.stage_succeeded" => {false, false, true, "Every logical item in a stage succeeded."},
+      {false, false, true, "The scheduler started a stage and began dispatching its items."},
+    "runbook.stage_succeeded" => {false, false, true, "Every item in a stage succeeded."},
     "runbook.stage_halted" =>
       {false, false, true, "A blocking outcome halted the current stage."},
     "runbook.stage_cancelled" =>
@@ -1010,17 +1013,17 @@ defmodule Emisar.Audit.Event.Query do
     "runbook.item_waiting" =>
       {false, false, true, "A successful observation did not yet meet its declared conditions."},
     "runbook.item_succeeded" =>
-      {false, false, true, "A logical step and runner item met every success condition."},
+      {false, false, true, "A step met every success condition on its runner."},
     "runbook.item_failed" =>
-      {false, false, true, "A logical step and runner item reached a terminal failure."},
+      {false, false, true, "A step reached a terminal failure on its runner."},
     "runbook.item_cancelled" =>
-      {true, true, true, "An operator cancellation closed a logical runbook item."},
+      {true, true, true, "An operator cancellation closed a runbook item."},
     "approval.approved" =>
       {true, true, true,
        "An approval request was granted, optionally with a standing grant for an action."},
     "approval.overridden" =>
       {true, true, true,
-       "An owner or admin released held work without the remaining required reviews."},
+       "An owner or admin let held work run without the remaining required reviews."},
     "approval.denied" => {true, true, true, "An approval request was denied."},
     "approval.expired" =>
       {false, false, true, "An approval request expired before receiving all required approvals."},
@@ -1042,14 +1045,14 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, true,
        "An action failed, or the runner returned an unrecognized result status."},
     "action_run.error" =>
-      {true, false, true, "A dispatched action errored before/while executing."},
+      {true, false, true, "A dispatched action hit an error before or while running."},
     "action_run.validation_failed" =>
       {true, false, true, "The action’s input or output did not pass validation."},
     "action_run.unknown_action" =>
       {true, false, true, "A runner reported it does not have the dispatched action."},
     "action_run.refused" =>
       {true, false, true,
-       "An action was refused by emisar or the runner because an execution requirement was not met."},
+       "emisar or the runner refused an action because an execution requirement was not met."},
     "action_run.cancelled" =>
       {true, false, true, "A run was cancelled before or during execution."},
     "action_run.timed_out" => {true, false, true, "A dispatched action exceeded its time limit."},
@@ -1057,9 +1060,9 @@ defmodule Emisar.Audit.Event.Query do
     "action_run.pending_approval" =>
       {true, false, true, "Policy held an action for human approval."},
     "user.provisioned_via_sso" =>
-      {true, false, false, "A user was created just-in-time on their first SSO sign-in."},
+      {true, false, false, "A user was created automatically on their first SSO sign-in."},
     "user.provisioned_via_scim" =>
-      {true, false, true, "The identity provider provisioned a user over SCIM."},
+      {true, false, true, "The identity provider created a user over SCIM."},
     "user.renamed_via_scim" =>
       {false, false, true, "The identity provider renamed a user over SCIM."},
     "membership.renamed_via_scim" =>
@@ -1072,7 +1075,7 @@ defmodule Emisar.Audit.Event.Query do
       {true, false, true,
        "The identity provider suspended a member and ended their existing access to this workspace."},
     "membership.reprovisioned_via_scim" =>
-      {true, false, true, "The identity provider re-activated a previously deprovisioned member."},
+      {true, false, true, "The identity provider re-activated a previously suspended member."},
     "membership.role_synced_via_scim" =>
       {true, false, true, "A member's role was recomputed from directory group mappings."},
     "membership.runner_access_synced_via_scim" =>
@@ -1101,13 +1104,13 @@ defmodule Emisar.Audit.Event.Query do
     "sso.identity_unlinked" =>
       {true, true, true, "A user removed a verified SSO identity from their profile."},
     "sso.existing_user_linked" =>
-      {true, true, true, "An admin linked an IdP identity to an existing emisar user."},
+      {true, true, true, "An admin linked an SSO identity to an existing emisar user."},
     "sso.provider_updated" =>
       {true, true, true, "An admin changed an identity provider's configuration."},
     "sso.provider_deleted" => {true, true, true, "An admin removed an identity provider."},
     "membership.credentials_revoked" =>
       {true, true, true,
-       "An admin disabled or removed the only SSO connection a member without a verified email signs in through, so its API keys ended."},
+       "An admin disabled or removed the only SSO connection a member without a verified email could sign in through. That member's API keys were revoked."},
     "sso.link_request_approved" =>
       {true, true, true, "An admin approved an SSO request and created a user."},
     "sso.link_request_dismissed" =>
@@ -1122,7 +1125,7 @@ defmodule Emisar.Audit.Event.Query do
        "The subscription’s plan, status, paid access, or scheduled changes were updated."},
     "subscription.cancel_requested" =>
       {true, true, true,
-       "A billing manager asked Paddle to end the subscription with its paid period. Subscription updated shows when it took effect."},
+       "A billing manager asked Paddle to end the subscription when its paid period ends. Subscription updated shows when it took effect."},
     "subscription.keep_requested" =>
       {true, true, true,
        "A billing manager asked Paddle to withdraw the scheduled cancellation. Subscription updated shows when it took effect."},

@@ -422,7 +422,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
                "input[name='provider[default_runner_access_mode]'][value='none']:checked"
              )
 
-      refute html =~ "You can grant only packs within your own access."
+      refute html =~ "You can only grant packs you can access yourself."
     end
 
     test "pack grant fields explain when the admin's own pack access is limited", %{
@@ -446,7 +446,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         })
         |> render_change()
 
-      assert changed =~ "You can grant only packs within your own access."
+      assert changed =~ "You can only grant packs you can access yourself."
     end
 
     test "selected provider access reveals quietly and validates on submit", %{
@@ -2093,7 +2093,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       refute html =~ "isn&#39;t available for Keycloak"
 
       shown = render_click(lv, "enable_scim", %{"id" => keycloak.id})
-      assert shown =~ "ships no outbound provisioning of its own"
+      assert shown =~ "has no outbound provisioning of its own"
     end
   end
 
@@ -2303,7 +2303,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/app/#{account}/settings/sso/#{unsynced.id}")
 
       assert html =~ "No members yet"
-      assert html =~ "Members appear here after signing in through this connection."
+      assert html =~ "Members appear here after they sign in through this connection."
       refute html =~ "or being added by directory sync"
       refute html =~ "Couldn&#39;t load members"
     end
@@ -2410,7 +2410,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
       assert has_element?(
                lv,
                "#synced-members-#{provider.id}",
-               "or being added by directory sync"
+               "or after directory sync"
              )
     end
 
@@ -3323,7 +3323,7 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         })
         |> render_submit()
 
-      assert invalid =~ "Choose all runners or at least one selected runner scope."
+      assert invalid =~ "Choose all runners, or at least one runner group or runner."
       assert has_element?(lv, "#group-access-error-#{group.id}")
 
       lv

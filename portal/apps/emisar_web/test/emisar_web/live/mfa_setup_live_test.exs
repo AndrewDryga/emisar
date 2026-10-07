@@ -206,7 +206,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
 
     html = lv |> element("button", "Resend code") |> render_click()
 
-    assert html =~ "A new verification code was sent to #{member.email}."
+    assert html =~ "We sent a new verification code to #{member.email}."
     assert has_element?(lv, "#mfa_enrollment_email_form")
     refute has_element?(lv, "#mfa_form")
     assert_received {:email, email}

@@ -183,7 +183,7 @@ defmodule EmisarWeb.RunbookImportLive do
          put_flash(
            socket,
            :error,
-           "This runbook names runners outside your action access. Choose different targets before importing."
+           "This runbook uses runners outside your action access. Choose different targets before importing."
          )}
 
       {:error, :pack_out_of_scope} ->
@@ -304,7 +304,7 @@ defmodule EmisarWeb.RunbookImportLive do
           <div>
             <.section_header title="Import from JSON">
               <:subtitle>
-                Upload a JSON file or paste a runbook definition. It will open as a draft that
+                Upload a JSON file or paste a runbook definition. The runbook will open as a draft that
                 you can edit before publishing.
               </:subtitle>
             </.section_header>

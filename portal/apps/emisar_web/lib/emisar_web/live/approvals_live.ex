@@ -431,7 +431,7 @@ defmodule EmisarWeb.ApprovalsLive do
   end
 
   defp grant_cap_partially_revoked_flash(revoked_count) do
-    "Standing grants are disabled and every approval is now single-use, but only " <>
+    "Standing grants are disabled and every approval is now single-use. Only " <>
       "#{revoked_count} #{plural(revoked_count, "grant")} could be revoked. The rest can no " <>
       "longer authorize anything. Try again to clear them from the list."
   end
@@ -686,7 +686,7 @@ defmodule EmisarWeb.ApprovalsLive do
               }
               class="mb-4 text-xs text-zinc-400"
             >
-              Revoke all requires action access to every active grant's runner and pack.
+              Revoke all requires action access to the runner and pack of every active grant.
             </p>
 
             <LiveTable.live_table
@@ -836,7 +836,7 @@ defmodule EmisarWeb.ApprovalsLive do
                   title="No active grants"
                 >
                   To let an agent repeat an action, choose how long it can reuse the approval
-                  when reviewing its request.
+                  when you review its request.
                 </.empty_state>
               </:empty>
             </LiveTable.live_table>

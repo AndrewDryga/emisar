@@ -1528,15 +1528,15 @@ defmodule EmisarWeb.SSOSettingsLive do
   defp error_message(:not_found), do: "That no longer exists. It may have just been removed."
 
   defp error_message(:require_sso_last_provider) do
-    "This is the only active SSO connection and the account requires single sign-on. Turn off the SSO requirement (Team → Single sign-on) before disabling or deleting it."
+    "This is the only active SSO connection and the account requires single sign-on. Turn off the SSO requirement (Team → Single sign-on) before disabling or deleting this connection."
   end
 
   defp error_message(:client_secret_required) do
-    "Changing the issuer or client ID needs the client secret again. emisar sends it to the endpoints that issuer publishes, so it can't carry the old one over to a new provider."
+    "Changing the issuer or client ID needs the client secret again. emisar sends the secret to the endpoints that issuer publishes, so it can't reuse the old secret with a new provider."
   end
 
   defp error_message(:identity_namespace_locked) do
-    "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed. Changing them would repoint existing members' identities at whoever the new provider asserts. Rotate the client secret here; to move to a different provider, add a new connection."
+    "This connection has already signed people in, so its issuer, client ID and identifier claim are fixed. Changing them would let the new provider decide who existing members are. Rotate the client secret here. To move to a different provider, add a new connection."
   end
 
   defp error_message(:sign_in_verification_required) do
@@ -1544,7 +1544,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp error_message(:scim_not_supported) do
-    "This provider can't push a directory to emisar, so there's no SCIM token to issue. Members provision on their first sign-in instead."
+    "This provider can't push a directory to emisar, so there's no SCIM token to issue. Members are added on their first sign-in instead."
   end
 
   defp error_message(:blocked_discovery_endpoint) do
@@ -1552,7 +1552,7 @@ defmodule EmisarWeb.SSOSettingsLive do
   end
 
   defp error_message(:role_exceeds_your_permissions) do
-    "You can only hand out a role you hold yourself. Ask an owner to set this one."
+    "You can only give a role you hold yourself. Ask an owner to set this one."
   end
 
   defp error_message(_) do
@@ -2136,7 +2136,7 @@ defmodule EmisarWeb.SSOSettingsLive do
                 >
                   <:body>
                     Stops new sign-ins through this connection and ends the sessions that signed
-                    in through it; email sign-in sessions stay. Members with no verified email
+                    in through it. Email sign-in sessions stay. Members with no verified email
                     and no other enabled connection also lose their API keys and agent
                     connections.
                   </:body>
@@ -2160,7 +2160,7 @@ defmodule EmisarWeb.SSOSettingsLive do
               <:body>
                 Permanently removes the
                 <span class="font-medium text-rose-100">{@provider.name}</span>
-                connection and ends the sessions that signed in through it; email sign-in
+                connection and ends the sessions that signed in through it. Email sign-in
                 sessions stay. Members with no verified email and no other enabled connection
                 also lose their API keys and agent connections.
               </:body>
@@ -2198,7 +2198,7 @@ defmodule EmisarWeb.SSOSettingsLive do
         >
           <:body>
             Clears this connection's directory token, so your identity provider stops pushing
-            members and the token stops authenticating. Sign-in through this connection is
+            members and the token stops working. Sign-in through this connection is
             unaffected. Members keep the roles the directory last gave them.
           </:body>
           Disable directory sync
@@ -2216,8 +2216,8 @@ defmodule EmisarWeb.SSOSettingsLive do
           }
         >
           <:body>
-            The directory token stops working immediately. Members keep their current roles, and
-            you take over managing them here.
+            The directory token stops working immediately. Members keep their current roles. From
+            now on, you manage members here.
           </:body>
         </.confirm_dialog>
 
@@ -2616,8 +2616,8 @@ defmodule EmisarWeb.SSOSettingsLive do
             label="Allow members to sign in"
           />
           <p :if={@editing?} class="mt-1 text-[11px] leading-relaxed text-zinc-500">
-            Turning this off also ends the sessions that signed in through this connection and
-            revokes the API keys and agent connections of members with no verified email and no
+            Turning this off also ends the sessions that signed in through this connection.
+            It also revokes the API keys and agent connections of members with no verified email and no
             other enabled connection. Turning it back on does not restore them.
           </p>
         </div>
@@ -2738,7 +2738,7 @@ defmodule EmisarWeb.SSOSettingsLive do
     <%= if @hint do %>
       {@hint}
     <% else %>
-      Whatever URL serves its OIDC discovery document at <code>/.well-known/openid-configuration</code>.
+      The URL that serves your provider's OIDC discovery document at <code>/.well-known/openid-configuration</code>.
       emisar fetches it from there.
     <% end %>
     """
@@ -2874,7 +2874,9 @@ defmodule EmisarWeb.SSOSettingsLive do
               size={:md}
               on_confirm={JS.push("disable_scim", value: %{id: @provider.id})}
             >
-              <:body>Your IdP can no longer provision or deprovision members through it.</:body>
+              <:body>
+                Your identity provider can no longer add or remove members through this connection.
+              </:body>
               Disable
             </.confirm_button>
           </div>
@@ -2987,7 +2989,7 @@ defmodule EmisarWeb.SSOSettingsLive do
           </.steps>
           <p :if={@provider.kind == :okta} class="mt-3 pl-5 text-[11px] leading-relaxed text-zinc-400">
             The SCIM app is a second Okta integration, separate from your sign-in app, and its
-            own SSO doesn't need to be functional. Okta defaults both the OIDC
+            own SSO doesn't need to work. Okta defaults both the OIDC
             <.inline_code>sub</.inline_code>
             and the SCIM
             <.inline_code>externalId</.inline_code>

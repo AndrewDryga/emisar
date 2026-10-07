@@ -1128,7 +1128,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
 
     assert html =~ "Action unavailable"
     assert html =~ "linux.uptime"
-    assert html =~ "Restore it, then recheck."
+    assert html =~ "Restore the action, then recheck."
     refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")
     refute html =~ "Allow the agent to reuse this approval"
     assert has_element?(lv, "button", "Deny")
@@ -1386,7 +1386,7 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
       |> form("form[phx-submit='decide']", %{})
       |> render_submit(%{"decision" => "approve", "reason" => note})
 
-    assert html =~ "Restore it, then recheck."
+    assert html =~ "Restore the action, then recheck."
     assert html =~ "Action unavailable"
     assert html =~ note
     refute has_element?(lv, "#approval-decision-form button[name=decision][value=approve]")

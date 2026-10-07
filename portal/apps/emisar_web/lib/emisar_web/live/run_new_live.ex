@@ -291,7 +291,7 @@ defmodule EmisarWeb.RunNewLive do
   end
 
   defp missing_tool_message(_action) do
-    "The tool required by this action isn't installed on the runner. Install it and reload the runner."
+    "The tool this action needs isn't installed on the runner. Install it and reload the runner."
   end
 
   defp unexpected_dispatch_failure(socket, reason) do

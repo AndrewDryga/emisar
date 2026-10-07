@@ -325,7 +325,7 @@ defmodule EmisarWeb.RunnerDetailLive do
     do: "Update this runner to rotate its key from here."
 
   defp rotation_error_message(:token_unavailable),
-    do: "Ensure the runner is connected before rotating its key."
+    do: "Make sure the runner is connected before rotating its key."
 
   defp rotation_error_message(:token_expired) do
     "The key this runner used has expired. Reconnect the runner; if registration fails, use a new enrollment key."
@@ -807,16 +807,16 @@ defmodule EmisarWeb.RunnerDetailLive do
             <:body>
               <%= cond do %>
                 <% Runners.subject_can_manage_runners?(@current_subject) and not @can_manage_runner? -> %>
-                  This runner is outside your management access.
+                  You don't have access to manage this runner.
                 <% @credential.expired? -> %>
                   The key this runner used has expired. Reconnect the runner; if registration fails,
                   use a new enrollment key.
                 <% @runner.disabled_at -> %>
                   Enable the runner before rotating its key.
                 <% not @credential.known? -> %>
-                  Reconnect the runner to see its current key's expiry.
+                  Reconnect the runner to see when its current key expires.
                 <% @credential.pending? -> %>
-                  Waiting for the runner to connect with its new key. If it stays pending,
+                  Waiting for the runner to connect with its new key. If the rotation stays pending,
                   check the runner's logs.
                 <% not @runner.credential_rotation_supported -> %>
                   Update this runner to rotate its key from here.
@@ -855,7 +855,7 @@ defmodule EmisarWeb.RunnerDetailLive do
         <section :if={not @loading? and Runners.subject_can_manage_runners?(@current_subject)}>
           <.section_header title="Danger zone" />
           <p :if={not @can_manage_runner?} class="mb-4 text-sm text-zinc-400">
-            This runner is outside your management access.
+            You don't have access to manage this runner.
           </p>
           <div class="divide-y divide-zinc-800/70">
             <.confirm_zone

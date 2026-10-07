@@ -101,7 +101,7 @@ defmodule EmisarWeb.RunnersLive do
          )}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not update automatic cleanup.")}
+        {:noreply, put_flash(socket, :error, "Couldn't update automatic cleanup.")}
     end
   end
 

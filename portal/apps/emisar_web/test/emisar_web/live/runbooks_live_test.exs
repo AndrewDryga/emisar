@@ -38,7 +38,7 @@ defmodule EmisarWeb.RunbooksLiveTest do
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/runbooks")
 
     assert html =~ "Runbooks"
-    assert has_element?(lv, "#runbooks-primary", "ask your LLM to create one")
+    assert has_element?(lv, "#runbooks-primary", "ask your AI agent to create one")
     assert has_element?(lv, "a[href='#{~p"/app/#{account}/runbooks/new"}']", "New runbook")
 
     assert has_element?(

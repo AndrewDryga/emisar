@@ -215,7 +215,7 @@ defmodule EmisarWeb.AdminAccountLive do
             variant={:bare}
             title="No runners enrolled."
           >
-            No runners are registered in this workspace.
+            No runners are enrolled in this workspace.
           </.empty_state>
           <ul
             :if={@overview.fleet.runners != []}

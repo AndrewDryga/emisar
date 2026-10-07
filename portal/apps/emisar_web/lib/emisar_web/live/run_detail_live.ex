@@ -427,7 +427,7 @@ defmodule EmisarWeb.RunDetailLive do
           }
           class="text-sm text-zinc-400"
         >
-          Cancelling requires action access to this run's runner and pack.
+          To cancel, you need action access to this run's runner and pack.
         </p>
       </:actions>
 
@@ -622,7 +622,7 @@ defmodule EmisarWeb.RunDetailLive do
             >
               <:body>
                 This run is waiting for {runner_label(@run.runner)} to reconnect.
-                If the wait exceeds the dispatch timeout, the run ends with an error.
+                If the wait is longer than the dispatch timeout, the run ends with an error.
                 <.doc_link href={~p"/docs/runner-fleet#offline"}>Troubleshoot the connection</.doc_link>
               </:body>
             </.event_block>

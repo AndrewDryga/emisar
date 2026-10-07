@@ -59,7 +59,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       rendered = render()
 
       assert rendered.text =~ "18 runs recorded"
-      assert rendered.text =~ "18 dispatched to 1 runner"
+      assert rendered.text =~ "18 sent to 1 runner"
       assert rendered.text =~ ~r/Succeeded\s+17$/m
       assert rendered.text =~ ~r/Denied\s+0$/m
       assert rendered.text =~ "/app/fleet-ops"
@@ -147,7 +147,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       rendered = render(%{runs: runs})
 
       assert rendered.text =~ "4 runs recorded"
-      assert rendered.text =~ "No work was dispatched"
+      assert rendered.text =~ "No work was sent"
     end
 
     test "groups thousands so a busy fleet stays readable" do
@@ -164,7 +164,7 @@ defmodule Emisar.Mailers.MonthlyReportTest do
       rendered = render(%{runs: runs})
 
       assert rendered.text =~ "12,018 runs recorded"
-      assert rendered.text =~ "11,976 dispatched across 9 runners"
+      assert rendered.text =~ "11,976 sent across 9 runners"
       assert rendered.html =~ Style.blend("12,018") <> "</td>"
       assert rendered.html =~ ">11,902</td>"
     end

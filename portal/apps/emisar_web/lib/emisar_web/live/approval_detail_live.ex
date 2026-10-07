@@ -608,7 +608,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
 
       {:error, _} ->
         socket
-        |> put_flash(:error, "Approval is no longer available under your current access.")
+        |> put_flash(:error, "This approval is no longer available to you.")
         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/approvals")
     end
   end
@@ -640,10 +640,11 @@ defmodule EmisarWeb.ApprovalDetailLive do
   # :pending_approval — the loser lands here having approved a now-running
   # action, so "cancelled" would be a false statement. Stay neutral.
   defp decision_error_message(:run_not_pending_approval),
-    do: "The run is no longer awaiting approval. Refresh to see its current state."
+    do: "The run is no longer waiting for approval. Refresh to see its current state."
 
-  defp decision_error_message(:runbook_execution_not_approvable),
-    do: "The runbook execution is no longer awaiting approval. Refresh to see its current state."
+  defp decision_error_message(:runbook_execution_not_approvable) do
+    "The runbook execution is no longer waiting for approval. Refresh to see its current state."
+  end
 
   defp decision_error_message(:attestation_stale) do
     "This signed request expired. Send a new request from your AI app."
@@ -653,27 +654,29 @@ defmodule EmisarWeb.ApprovalDetailLive do
     "Choose a duration within the maximum grant lifetime."
   end
 
-  defp decision_error_message(_),
-    do: "Couldn't save your decision. Refresh the page to check its status before trying again."
+  defp decision_error_message(_) do
+    "Couldn't save your decision. Refresh the page to check the request's status before trying again."
+  end
 
   defp approval_block_copy(:catalog_read_failed) do
     %{
       title: "Couldn't check availability",
-      body: "The action catalog could not be read. Recheck before approving this request."
+      body: "Couldn't read the action catalog. Recheck before approving this request."
     }
   end
 
   defp approval_block_copy(:action_not_found) do
     %{
       title: "Action unavailable",
-      body: "A runner no longer reports a required action. Restore it, then recheck."
+      body: "A runner no longer reports a required action. Restore the action, then recheck."
     }
   end
 
   defp approval_block_copy(:action_unavailable) do
     %{
       title: "Required executable missing",
-      body: "A runner is missing an executable this request needs. Restore it, then recheck."
+      body:
+        "A runner is missing an executable this request needs. Restore the executable, then recheck."
     }
   end
 
@@ -969,7 +972,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
               wrap={overridden?(@approval_event_refs)}
             >
               <span :if={@decisions_error?} class="text-zinc-200">
-                {@request.min_approvals} required · tally unavailable
+                {@request.min_approvals} required · count unavailable
               </span>
               <span :if={not @decisions_error?} class="text-zinc-200">
                 {@approved_count} of {@request.min_approvals}
@@ -1405,7 +1408,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
         id="approval-access-required"
         class="mt-4 text-xs leading-relaxed text-zinc-400"
       >
-        You can review this request, but deciding it requires action access to every runner and pack it uses.
+        You can review this request. To decide it, you need action access to every runner and pack it uses.
       </p>
 
       <%= cond do %>
@@ -1542,7 +1545,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
                     placeholder="No use limit"
                   />
                   <p class="mt-1 text-[11px] leading-relaxed text-zinc-400">
-                    Includes this run. Leave blank for no use limit. Manage grants in <.link
+                    The use limit includes this run. Leave blank for no use limit. Manage grants in <.link
                       navigate={~p"/app/#{@current_account}/approvals"}
                       class="text-brand-400 hover:text-brand-300"
                     >Approvals</.link>.

@@ -92,7 +92,7 @@ defmodule EmisarWeb.SSOPendingLive do
 
         <p class="text-sm leading-relaxed text-zinc-400">
           An administrator at <span class="font-medium text-zinc-200">{@request.account.name}</span>
-          dismissed your request. If you think that's a mistake, reach out to them directly.
+          dismissed your request. If you think that's a mistake, contact them directly.
         </p>
 
         <.button variant={:secondary} href={~p"/sign_in"} class="w-full">

@@ -691,7 +691,7 @@ defmodule EmisarWeb.DashboardLive do
         <:subtitle>
           <%= if @runner_done? and not @actions_advertised? do %>
             Your runner needs at least one action pack before it can do work. Install a pack from the
-            catalog, then ask any MCP client, such as Claude, Cursor, or Codex, to run it. Every call
+            catalog, then ask any MCP client, such as Claude, Cursor, or Codex, to run an action from it. Every call
             is checked against policy first.
           <% else %>
             Connect a runner on your host and an AI agent such as Claude, Cursor, or Codex.
@@ -789,8 +789,8 @@ defmodule EmisarWeb.DashboardLive do
                 Ask your agent to run an action
               </span>
               <p class="mt-0.5 max-w-prose text-sm leading-relaxed text-zinc-400">
-                Ask in plain English. Your agent selects actions from the catalog;
-                any that need approval wait for a decision. Start with a read-only health check:
+                Ask in plain English. Your agent selects actions from the catalog.
+                Any that need approval wait for a decision. Start with a read-only health check:
               </p>
               <.agent_example_prompt
                 id="onboarding-example-prompt"
@@ -954,7 +954,7 @@ defmodule EmisarWeb.DashboardLive do
       navigate={~p"/app/#{@current_account}/runners"}
     >
       <:value>0</:value>
-      <:status>No runners in your access</:status>
+      <:status>No runners you can access</:status>
     </.pillar>
     """
   end
@@ -1063,7 +1063,7 @@ defmodule EmisarWeb.DashboardLive do
       title={"#{@count} pack version#{if @count == 1, do: "", else: "s"} need#{if @count == 1, do: "s", else: ""} a decision"}
       navigate={~p"/app/#{@current_account}/packs"}
     >
-      Dispatch is blocked against these until an admin reviews the advertised hash or
+      Dispatch is blocked for these pack versions until an admin reviews the advertised hash or
       resolves the retired version.
       <%!-- The whole callout is the link — this line is its affordance, in the
            pillar CTA grammar (quiet brand + the house arrow), never a bare

@@ -237,7 +237,7 @@ defmodule EmisarWeb.MfaSetupLive do
             icon="state.locked"
             title="We can't confirm it's you from this session"
           >
-            Setting up an authenticator needs a fresh proof of your own sign-in: a code to a
+            Setting up an authenticator needs fresh proof that it's you: a code sent to a
             verified email address, or a new sign-in through this workspace's identity provider.
             Neither is available here. Ask a workspace administrator to invite you again, or
             contact support@emisar.dev.
@@ -345,7 +345,7 @@ defmodule EmisarWeb.MfaSetupLive do
            |> assign(:mfa_enrollment_email_error, nil)
            |> put_flash(
              :info,
-             "A new verification code was sent to #{socket.assigns.current_membership.email}."
+             "We sent a new verification code to #{socket.assigns.current_membership.email}."
            )
            |> push_event("code:reset", %{id: "mfa-enrollment-email-code"})}
 
@@ -456,7 +456,10 @@ defmodule EmisarWeb.MfaSetupLive do
       {:error, :mfa_proof_stale} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Your MFA settings changed. Verify the current factor again.")
+         |> put_flash(
+           :error,
+           "Your MFA settings changed. Verify your current authenticator again."
+         )
          |> remount()}
 
       {:error, _reason} ->

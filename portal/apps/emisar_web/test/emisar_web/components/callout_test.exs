@@ -200,7 +200,7 @@ defmodule EmisarWeb.Components.CalloutTest do
         )
 
       assert dunning =~ "Payment overdue"
-      assert dunning =~ "paid features remain available"
+      assert dunning =~ "paid features stay available"
       assert dunning =~ "bg-rose-400/40"
 
       healthy =

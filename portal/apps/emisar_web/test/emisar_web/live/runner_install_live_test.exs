@@ -88,7 +88,7 @@ defmodule EmisarWeb.RunnerInstallLiveTest do
       assert has_element?(
                lv,
                "#runner-install-wizard aside",
-               "A runner advertises and executes actions on your host"
+               "A runner offers and runs actions on your host"
              )
 
       refute has_element?(lv, "#runner-install-wizard aside details")

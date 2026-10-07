@@ -362,7 +362,7 @@ defmodule EmisarWeb.TeamLive do
              if value do
                "Single sign-on now required. Members sign in through your identity provider."
              else
-               "Single sign-on requirement turned off."
+               "Single sign-on is no longer required."
              end
            )}
 
@@ -887,7 +887,7 @@ defmodule EmisarWeb.TeamLive do
         >
           <span class="font-medium text-zinc-200">
             {Accounts.member_display_name(@mfa_reset_target) || "this member"}
-          </span>'s authenticator and recovery codes will be removed, and all their sessions ended.
+          </span>'s authenticator and recovery codes will be removed, and all their sessions will end.
           Confirm they requested this reset before continuing.
         </.status_note>
 
@@ -971,7 +971,7 @@ defmodule EmisarWeb.TeamLive do
           <% else %>
             <%= if @mfa_reset_sso_facts do %>
               <p class="text-sm leading-relaxed text-zinc-400">
-                Reauthenticate with your identity provider before this reset can continue.
+                Sign in again with your identity provider before this reset can continue.
               </p>
               <div class="mt-5 flex flex-wrap gap-3">
                 <.button
@@ -998,7 +998,7 @@ defmodule EmisarWeb.TeamLive do
                 icon="state.locked"
                 title="A second factor is required"
               >
-                Set up MFA in your profile, then return here to reset this member's factor.
+                Set up MFA in your profile, then return here to reset this member's MFA.
                 <div class="mt-4">
                   <.button
                     navigate={~p"/app/#{@current_account}/settings/profile"}
@@ -1259,7 +1259,7 @@ defmodule EmisarWeb.TeamLive do
                   on_confirm={JS.push("toggle_require_sso")}
                 >
                   <:body>
-                    Members who signed in another way are stopped the next time they navigate and
+                    Members who signed in another way are stopped the next time they open a page and
                     have to sign in again through your provider. If it's misconfigured, they're
                     locked out. Confirm SSO works first.
                   </:body>
@@ -2025,7 +2025,7 @@ defmodule EmisarWeb.TeamLive do
 
           {:error, :invalid_pack_access} ->
             {:noreply,
-             put_flash(socket, :error, "Choose which packs before approving this request.")}
+             put_flash(socket, :error, "Choose at least one pack before approving this request.")}
 
           {:error, :invalid_runner_access} ->
             {:noreply,
@@ -2065,11 +2065,11 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp approval_error_message(:link_target_outranks_approver) do
-    "That email belongs to a member whose role you can't manage, so linking an identity to them isn't something this role can approve. An owner can approve it."
+    "That email belongs to a member whose role you can't manage, so you can't approve linking an identity to them. An owner can approve it."
   end
 
   defp approval_error_message(:link_target_reach_exceeds_approver) do
-    "That email belongs to a member who can reach runners or packs you can't, so linking an identity to them isn't something you can approve. An owner can approve it."
+    "That email belongs to a member who can reach runners or packs you can't, so you can't approve linking an identity to them. An owner can approve it."
   end
 
   defp approval_error_message(:link_target_authorization_pending) do
@@ -2081,7 +2081,7 @@ defmodule EmisarWeb.TeamLive do
   end
 
   defp approval_error_message(:matched_email_changed) do
-    "The member this sign-in matched has changed their email since. Dismiss the request; " <>
+    "The member this sign-in matched has changed their email since then. Dismiss the request; " <>
       "the person can sign in again."
   end
 
@@ -2176,7 +2176,7 @@ defmodule EmisarWeb.TeamLive do
   # that one instead of hedging "sub or oid" and leaving the operator to work
   # out which applies to their provider.
   defp unmatched_directory_request_help(request_facts) do
-    "No directory member matches this sign-in. Fix the externalId mapping in #{request_facts.provider.name} so it sends the same value as the #{request_facts.provider.identifier_claim} claim, then have the user sign in again."
+    "No directory member matches this sign-in. Fix the externalId mapping in #{request_facts.provider.name} so it sends the same value as the #{request_facts.provider.identifier_claim} claim. Then have the user sign in again."
   end
 
   defp approval_disabled?(%{request: %{matched_membership_id: matched_membership_id}}, _assigns)
@@ -2482,7 +2482,7 @@ defmodule EmisarWeb.TeamLive do
                     size={:sm}
                     on_confirm={JS.push("dismiss_request", value: %{id: request_facts.request.id})}
                   >
-                    <:body>They'll need to sign in again to re-request.</:body>
+                    <:body>They'll need to sign in again to make a new request.</:body>
                     Dismiss
                   </.confirm_button>
                 </:actions>
@@ -2574,7 +2574,7 @@ defmodule EmisarWeb.TeamLive do
                 <:body>
                   <p class="text-sm leading-relaxed text-zinc-300">
                     <%= if request.matched_membership_id do %>
-                      This replaces the member's sign-in identifier while keeping their directory
+                      This replaces the member's sign-in identifier. It keeps their directory
                       lifecycle linked through the provider external ID. Their current role, runner
                       access, and pack access stay unchanged.
                     <% else %>
@@ -2649,7 +2649,7 @@ defmodule EmisarWeb.TeamLive do
                           <.chip
                             :if={MapSet.member?(@suppressed_emails, membership.email)}
                             tone={:rose}
-                            title="This address bounced or filed a spam complaint, so emails to it are blocked. Contact support to clear it."
+                            title="This address bounced or marked our email as spam, so emails to it are blocked. Contact support to clear it."
                           >
                             Email blocked
                           </.chip>
@@ -3179,13 +3179,13 @@ defmodule EmisarWeb.TeamLive do
             audit log attributes its requests to the service account.
           </p>
           <p :if={@can_manage_team?}>
-            To connect an app as one, choose it under Connect as when the app asks you to
-            authorize it, or use Create API key in its row. <.doc_link href={
+            To connect an app as a service account, choose the service account under Connect as when the app asks you to
+            authorize it. Or use Create API key in the service account's row. <.doc_link href={
               ~p"/docs/agents-and-keys" <> "#minting"
             }>How to create its key</.doc_link>.
           </p>
           <p :if={@can_manage_team?}>
-            It starts with the runner and pack access of the person who adds it. To narrow it,
+            A service account starts with the runner and pack access of the person who adds it. To narrow that access,
             use Edit access in its row.
           </p>
           <p :if={not @can_manage_team?}>Only owners and admins add or change service accounts.</p>
@@ -3237,8 +3237,8 @@ defmodule EmisarWeb.TeamLive do
           title={"#{Accounts.member_display_name(@added)} is ready"}
           primary
         >
-          Connect an app as it: choose it when the app asks you to authorize it, or create
-          an API key that acts as it.
+          Connect an app as this service account: choose it when the app asks you to authorize it, or create
+          an API key that acts as the service account.
         </.status_note>
 
         <.meta_strip class="mt-6">
@@ -3291,7 +3291,7 @@ defmodule EmisarWeb.TeamLive do
               required
             />
             <p class="mt-2 text-xs text-zinc-400">
-              It starts with your runner and pack access. You can narrow it later with Edit
+              The service account starts with your runner and pack access. You can narrow it later with Edit
               access on the Service accounts page.
             </p>
           </div>

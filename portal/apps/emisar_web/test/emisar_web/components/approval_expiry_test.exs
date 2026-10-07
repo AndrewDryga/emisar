@@ -59,7 +59,7 @@ defmodule EmisarWeb.Components.ApprovalExpiryTest do
     assert html =~ "group-focus-within/tooltip:opacity-100"
     assert html =~ ~s(aria-describedby="expiry-req-7-consequence")
     assert html =~ ~s(id="expiry-req-7-consequence")
-    assert html =~ "If no one decides by then, it&#39;s auto-denied"
+    assert html =~ "If no one decides by then, the request is auto-denied"
     assert html =~ ~r/<time[^>]*id="expiry-req-7"/
     refute html =~ "title="
   end

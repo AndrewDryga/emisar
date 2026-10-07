@@ -310,7 +310,7 @@ defmodule EmisarWeb.RunNewLiveTest do
              live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
 
     assert flash["error"] ==
-             "The tool required by this action isn't installed on the runner. Install it and reload the runner."
+             "The tool this action needs isn't installed on the runner. Install it and reload the runner."
   end
 
   test "a tool removed while the form is open is named from current runner evidence", %{

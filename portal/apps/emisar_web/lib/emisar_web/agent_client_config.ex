@@ -245,9 +245,9 @@ defmodule EmisarWeb.AgentClientConfig do
             else: ""
 
         [
-          "In the Command Palette, run MCP: List Servers, select emisar, then Start. Confirm server trust when prompted." <>
+          "In the Command Palette, run MCP: List Servers, select emisar, then Start. Confirm you trust the server when prompted." <>
             key_step,
-          "Open Chat, choose the Local target and Agent role, and enable the emisar tools. For the Copilot session target instead, use the Copilot CLI setup on this page."
+          "Open Chat, choose the Local target and Agent role, and enable the emisar tools. If you want the Copilot session target instead, use the Copilot CLI setup on this page."
         ]
 
       "gemini" ->
