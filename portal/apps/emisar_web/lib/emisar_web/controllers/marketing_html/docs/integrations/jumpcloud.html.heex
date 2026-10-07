@@ -103,7 +103,7 @@
             <strong class="text-zinc-200">Display Label</strong>
             is what your people see in the JumpCloud User Portal, so
             <.docs_inline_code>emisar</.docs_inline_code>
-            is the obvious choice. Everything else on this step is cosmetic.
+            is the obvious choice. Everything else on this step only affects how it looks.
           </p>
 
           <.docs_screenshot
@@ -129,7 +129,7 @@
           <.docs_screenshot
             src="/images/docs/sso/jumpcloud-sso-review.webp"
             title="JumpCloud · Review"
-            caption="Enabled Features is the check that the OIDC radio actually took."
+            caption="Enabled Features is the check that the OIDC choice was actually applied."
             alt="JumpCloud's Review step for an application about to be added, whose Application Summary panel shows Display Label emisar and Enabled Features listing both SSO with OIDC and User Export - Provisioning, outlined in green, beside a Configure Application button."
           />
         </.docs_step>
@@ -164,7 +164,7 @@
             <.docs_inline_code>email</.docs_inline_code>
             and
             <.docs_inline_code>email_verified</.docs_inline_code>
-            claims emisar checks before joining sign-in to a synced user. Profile supplies the
+            claims emisar checks before linking sign-in to a synced user. Profile supplies the
             display-name claims. Then press <strong class="text-zinc-200">Activate</strong>.
           </p>
           <.docs_screenshot
@@ -227,7 +227,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         If you ticked
         <strong class="text-zinc-200">Export users to this app (Provisioning)</strong>
-        on step 3, this same application pushes your directory. There is no second connector to
+        on step 4, this same application pushes your directory. There is no second connector to
         create.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -261,7 +261,7 @@
           <p class="mt-1.5">
             Press <strong class="text-zinc-200">Test Connection</strong>, then <strong class="text-zinc-200">Activate</strong>. Activation creates, renames, and
             deletes a probe group. It also provisions and removes the test user from your live
-            emisar account. Do not press Save. JumpCloud discards the configuration and makes you
+            emisar account. Do not press Save: JumpCloud then discards the configuration and makes you
             start over. The probe group can omit <.docs_inline_code>externalId</.docs_inline_code>. emisar returns
             the id used for the rename and delete.
           </p>
@@ -276,7 +276,7 @@
             <strong class="text-zinc-200">User Groups</strong>
             tab decides who is in scope. Members appear under
             <strong class="text-zinc-200">Members</strong>
-            on the emisar connection, and their JumpCloud groups become mappable to roles below.
+            on the emisar connection, and their JumpCloud groups can then be mapped to roles below.
           </p>
         </.docs_step>
       </ol>
@@ -303,7 +303,7 @@
         sign-in.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Check the first request carefully. It shows the email JumpCloud asserted.
+        Check the first request carefully. It shows the email JumpCloud sent.
         <strong class="text-zinc-200">Members</strong>
         under
         <a
@@ -311,7 +311,7 @@
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team → Single sign-on</a>
         shows the directory record. Confirm both show the same person. If they differ, do not
-        approve the request. The connector is misconfigured.
+        approve the request. The connector is set up wrong.
       </p>
 
       <p class="mt-8 text-base leading-7 text-zinc-400">

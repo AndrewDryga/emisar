@@ -22,7 +22,7 @@
 
       <.docs_h2 id="choose">1. Choose a pack</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        On the host, list the published packs that match it. The command checks what the host
+        On the host, list the published packs that match that host. The command checks what the host
         runs (programs, processes, ports) and installs nothing.
       </p>
       <.docs_code phx-no-format label="shell">sudo emisar pack suggest</.docs_code>
@@ -80,7 +80,7 @@
         <li>Install every missing program named by the pack.</li>
         <li>
           If <strong class="text-zinc-200">Host access</strong>
-          is shown, run only the recipe for actions you intend to enable. Emisar displays these
+          is shown, run only the recipe for actions you plan to enable. Emisar displays these
           commands; it never runs them.
         </li>
         <li>Put each required credential value in <code>/etc/emisar/runner.env</code>.</li>
@@ -90,8 +90,8 @@
         </li>
         <li>Restart the service after changing its environment, user, or groups.</li>
         <li>
-          Run <code>sudo emisar pack verify redis</code>. The probe that failed before the
-          required access was in place now passes.
+          Run <code>sudo emisar pack verify redis</code>. The probe that failed earlier, before the
+          required access was in place, now passes.
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -130,7 +130,7 @@
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        For a fleet change, use a canary and bounded batches. See <.link
+        For a fleet change, use a canary (one runner first) and bounded batches. See <.link
           navigate={~p"/docs/pack-updates"}
           class="text-brand-400 hover:text-brand-300"
         >Roll out and roll back packs</.link>.

@@ -59,8 +59,8 @@
             <strong class="text-zinc-200">The status is about the connection.</strong>
             A row reads dormant, idle, or never used based on its own last call. It reads
             <.chip tone={:rose} icon="state.warning">unsupported</.chip>
-            when the bridge it reported is below the version emisar supports. A rotation in flight
-            shows as Rotation requested, then awaits the successor's first call to retire the old key.
+            when the bridge it reported is below the version emisar supports. A rotation in progress
+            shows as Rotation requested, then waits for the successor's first call to retire the old key.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -69,7 +69,7 @@
             <strong class="text-zinc-200">Each row has its own actions.</strong>
             View activity opens Runs filtered to that agent; View audit trail opens its audit events. Rotate and Revoke act on
             the key behind it and are covered below. Copy ID copies the key's identifier. The
-            secret is never shown again, so the identifier is the safe handle for a support
+            secret is never shown again, so the identifier is the safe value to quote in a support
             request.
           </span>
         </li>
@@ -122,7 +122,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An agent key carries no scope of its own. There is no per-key runner list or permission dial
         to set, and none to forget. A key acts as a member: the person it belongs to, or a service
-        account. What the connected agent can do is decided by two things set on that member:
+        account. Two things set on that member decide what the connected agent can do:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -130,7 +130,7 @@
           <span>
             <strong class="text-zinc-200">Runner access.</strong>
             The key can reach exactly the runners available to the member it acts as. A member is scoped to runner
-            groups on the Team page. The key inherits that scope, and emisar resolves it from that
+            groups on the Team page. The key inherits that scope, and emisar looks it up from that
             member on <em>every call</em>, not once at mint time.
           </span>
         </li>
@@ -142,7 +142,7 @@
             dispatch passes the same checks. A key authenticates as a fixed
             <.docs_inline_code>api_client</.docs_inline_code>
             role. It can discover the catalog, dispatch actions, and read run state. It cannot
-            approve its own requests or edit policy. The member role does not transfer. Owner and
+            approve its own requests or edit policy. The member's role does not carry over to the key. Owner and
             operator keys have the same capability.
           </span>
         </li>
@@ -158,7 +158,7 @@
         Promoting a scoped member to Owner expands their connected agents' access without
         replacing credentials or reconnecting.
         Remove that member's access to stop every key that acts as them
-        from resolving to a runner. An unbound key is never usable.
+        from reaching any runner. A key with no member behind it is never usable.
       </p>
 
       <.docs_h2 id="minting">Minting a key</.docs_h2>
@@ -204,7 +204,7 @@
               class="text-brand-400 hover:text-brand-300"
             >service account</.link>
             from Settings → Service accounts: choose Actions → Create API key in its row. The key
-            uses the service account's access, its calls are attributed to it, and it keeps working
+            uses the service account's access, its calls are attributed to the service account, and it keeps working
             when the person who made it leaves.
           </span>
         </li>
@@ -240,8 +240,7 @@
           <span>
             <strong class="text-zinc-200">Manually rotating someone else's key.</strong>
             Manual rotation shows the replacement key to you, so you can do it for a teammate's
-            or a service account's key only when your own runner and pack access covers theirs,
-            and emisar records you as the person the replacement was issued to. Automatic
+            or a service account's key only when your own runner and pack access covers theirs. emisar records you as the person the replacement was issued to. Automatic
             rotation hands the new key to the agent instead. Anyone who can manage the key can
             still revoke it.
           </span>
@@ -272,7 +271,7 @@
             promotes it only after emisar confirms the exact new key.
             Long-running local agents keep working through the change. This needs the bridge's
             credential directory to be writable and persistent. OAuth tokens, arbitrary Bearer
-            tokens, and audit-export tokens bypass local rotation state. By default, automatic renewal is
+            tokens, and audit-export tokens do not take part in local rotation. By default, automatic renewal is
             limited to 90 days from the connection's original key; after that, Rotate uses manual
             setup. A pending request does not extend the current key's expiry.
           </span>
@@ -287,14 +286,13 @@
         An expired key needs a simple confirmation instead.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Revoking cascades: every downstream key in that key's rotation chain is revoked with it, and
-        any OAuth access or refresh token backed by it stops exchanging and refreshing. Because of
+        Revoking cascades: every later key in that key's rotation chain is revoked with it. Any OAuth access or refresh token backed by it stops exchanging and refreshing. Because of
         this cascade, use revoke, not rotate, to contain a leak.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         For a lost or stolen device, revoke everything at once: <strong>Revoke all</strong>
         on the member's group revokes every usable key that member owns. Each connected client
-        is refused on its next call, with the same cascade per key. It asks you to type the
+        is refused on its next call, with the same cascade per key. Revoke all asks you to type the
         member's name. A member can do this for their own keys; anyone else's need an admin.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">

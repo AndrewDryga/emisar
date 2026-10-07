@@ -34,7 +34,7 @@
         its group's, then the account default.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A policy can define per-action overrides. It walks the ordered list of action ID
+        A policy can define per-action overrides. It goes through the ordered list of action ID
         patterns. For example,
         <.docs_inline_code>nomad.job_*</.docs_inline_code>
         requires approval and
@@ -107,7 +107,7 @@
         >Policies</a>
         in the console sidebar. Owners and admins can edit; operators and viewers can read.
         The editor shows the four tier menus above the ordered override list. A higher tier can
-        never be more permissive than a lower one. The editor and the API both refuse such a
+        never be looser than a lower one. The editor and the API both refuse such a
         setting.
       </p>
       <.docs_screenshot
@@ -121,7 +121,7 @@
         action's decision before saving.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Saving a change bumps the policy version and applies from the next dispatch. Every
+        Saving a change raises the policy version and applies from the next dispatch. Every
         save writes an audit event, and every run records the policy version that gated it,
         so you can always see which rules were in force.
       </p>
@@ -153,8 +153,7 @@
 
       <.docs_h2 id="approvals">Approvals</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        When the decision is <code class="text-amber-300">require_approval</code>, the run is
-        held and an approval request is created. Owners, admins, and operators get an email
+        When the decision is <code class="text-amber-300">require_approval</code>, emisar holds the run and creates an approval request. Owners, admins, and operators get an email
         with a direct link, and the request appears under <strong>Approvals</strong>
         in the console with a live badge.
       </p>
@@ -167,8 +166,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Requests, votes, and grants belong to a person's exact membership in this account.
         Removing and re-inviting someone does not transfer their earlier approvals to the
-        new membership. Losing approval authority retires pending votes and standing grants;
-        completed decisions keep their recorded member's local name when available.
+        new membership. Losing approval authority retires pending votes and standing grants. Completed decisions keep their recorded member's local name when available.
       </p>
       <.docs_screenshot
         src="/images/screenshots/loop/approval-pending.webp"
@@ -199,7 +197,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             If the required reviewers are unavailable, an owner or admin can use <strong class="text-zinc-200">Approve with override</strong>. They must give a
-            reason; it is recorded with the decision. The exception waives the missing reviews and,
+            reason; it is recorded with the decision. The exception skips the missing reviews and,
             when necessary, the self-approval rule; it creates no standing grant and
             gets its own audit record. Scope, expiry, cancellation, pack trust, dispatch
             signatures, initiator access, and runner admission still apply.
@@ -279,7 +277,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An MCP caller can also send
         <.docs_inline_code>evidence</.docs_inline_code>
-        (prior findings or run IDs that informed the call) and
+        (earlier findings or run IDs that led to the call) and
         <.docs_inline_code>expected</.docs_inline_code>
         (the outcome that confirms success). Together with the reason, they preserve what the
         agent saw, why it acted, and what it expected. Operator and runbook dispatches leave

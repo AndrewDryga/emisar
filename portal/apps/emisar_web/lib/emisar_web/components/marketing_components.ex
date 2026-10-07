@@ -727,7 +727,7 @@ defmodule EmisarWeb.MarketingComponents do
               The best way to give your AI agents access to production.
             </p>
             <p class="mt-3 max-w-xs text-xs leading-relaxed text-zinc-400">
-              The runner, MCP bridge, and packs are Apache-2.0 open source; the control-plane
+              The runner, MCP bridge, and packs are Apache-2.0 open source. The control-plane
               source is available under the <a
                 href="https://github.com/andrewdryga/emisar/blob/main/LICENSE.md"
                 target="_blank"

@@ -72,7 +72,7 @@ actions:
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code>requires</code>
-        lists the OS and binaries the pack's host needs. They are advertised as host
+        lists the OS and binaries the pack's host needs. The runner advertises them as host
         readiness, and a missing binary fails at run time, not at load. The <code>setup</code>
         block powers <code>emisar pack info</code>, <code>pack verify</code>, and the
         install probe. It holds a summary, the env names the tool reads, and an optional low-risk
@@ -154,10 +154,10 @@ examples:
           (run a binary with an explicit argv) or <code>script</code>
           (run a script packaged in the pack, its contents SHA-256-verified at
           load). There is no shell kind. Both run as argv arrays through <code>execve</code>.
-          An exec action can invoke <code>/bin/sh -c</code>
+          An exec action can call <code>/bin/sh -c</code>
           for a fixed,
           pack-authored program. Open-ended strings and paths must reach that
-          program through environment variables or whole positional arguments. Only finite choices and two-sided bounded numbers can be substituted
+          program through environment variables or whole positional arguments. Only finite choices and numbers with both a minimum and a maximum can be substituted
           into its text. The <.docs_risk tier="critical" />, default-denied <code>shell</code>
           pack is the break-glass exception where the operator supplies the
           program itself.
@@ -175,7 +175,7 @@ examples:
         </li>
         <li>
           <code>side_effects</code>: the plain-language list of what the action touches. The LLM
-          reads it verbatim when it decides what to call, so an honest list is a safety
+          reads it word for word when it decides what to call, so an honest list is a safety
           control.
         </li>
         <li>
@@ -202,8 +202,8 @@ examples:
         </li>
         <li>
           <code>examples</code>: optional list of <code>&#123;title, args&#125;</code>
-          entries. Each one renders as a clickable hint on the dispatch form, so operators
-          and LLMs see a realistic invocation before they type. Examples are documentation
+          entries. Each one appears as a clickable hint on the dispatch form, so operators
+          and LLMs see a realistic call before they type. Examples are documentation
           only and do not validate anything.
         </li>
       </ul>
@@ -228,7 +228,7 @@ examples:
         page groups every observed <code>(pack_id, version, hash)</code>
         in your account.
         Two runners on the same pack version with different hashes mean somebody hand-edited
-        a pack on a host. The page flags it as drift, and re-deploying from the canonical
+        a pack on a host. The page flags it as drift, and re-deploying from the original
         source clears it.
       </p>
 

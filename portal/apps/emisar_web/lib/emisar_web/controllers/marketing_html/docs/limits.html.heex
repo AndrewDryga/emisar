@@ -87,8 +87,8 @@
                 <.docs_inline_code>run_action</.docs_inline_code>
                 and
                 <.docs_inline_code>wait_for_run</.docs_inline_code>
-                return the current state at the deadline. One credential can hold 8 concurrent waits
-                per node. Every other tool answers immediately.
+                return the current state at the deadline. One credential can hold 8 waits
+                at once per node. Every other tool answers immediately.
               </td>
             </tr>
             <tr>
@@ -209,7 +209,7 @@
           navigate={~p"/docs/mcp-reference"}
           class="text-brand-400 hover:text-brand-300"
         >MCP CLI &amp; reference</.link>
-        covers the fixed tools, identifiers, and recovery semantics of the emisar MCP server,
+        covers the fixed tools, identifiers, and recovery rules of the emisar MCP server,
         including how a retried dispatch resolves to its original operation.
       </.docs_callout>
     </.docs_layout>

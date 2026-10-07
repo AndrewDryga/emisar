@@ -31,7 +31,7 @@
           The work that never makes a post-mortem.
         </.marketing_heading>
         <p class="mt-4 text-base leading-relaxed text-zinc-400 text-pretty">
-          The boring wins compound. These are representative of an ordinary Tuesday.
+          The boring wins compound. These are what an ordinary Tuesday looks like.
         </p>
       </div>
 
@@ -40,7 +40,7 @@
           {"story.dispatch", "Pre-flight", "Pre-migration go / no-go",
            "Before you cut prod to the new cluster, you ask: is the target ready? The agent checks disk and memory headroom, confirms the replicas are caught up, validates every TLS cert, and diffs the configs against prod across every node, then hands back a go/no-go in a minute."},
           {"action.search", "Investigate", "\"Why is checkout slow?\"",
-           "You ask in plain English. The agent correlates nginx access logs, Prometheus p99, the database's lock and slow-query state, and the upstream's health across services, then narrows it to a wedged connection pool. It takes minutes instead of an hour of greps and tails across six SSH sessions."},
+           "You ask in plain English. The agent correlates nginx access logs, Prometheus p99, the database's lock and slow-query state, and the upstream's health across services, then narrows it to a stuck connection pool. It takes minutes instead of an hour of greps and tails across six SSH sessions."},
           {"story.debug", "Self-debug", "It debugs what it shipped",
            "Your coding agent deploys and error rates tick up. Instead of waiting for a human to gather context, it reads its own deploy's logs and metrics, spots the env var it got wrong, and opens the fix as a reviewed PR, without a round-trip just to find out what happened."},
           {"security.posture", "Sweep", "Cert expiry, before the pager",
@@ -91,7 +91,7 @@
            ["33h metrics lost", "6-second zero-path window", "mkfs.guard fix"],
            "/use-cases/csi-data-loss", true},
           {"Ingress", "The fleet-wide 502 that no backend was causing",
-           "Every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was green. The agent traced it across five layers (FRR, Traefik, Nomad, Consul) to a Traefik OOM loop plus a wedged node still advertising a dead ingress, replaced the OOM-looping allocs behind one approval, and named the fix that collapses the blast radius: health-gate the anycast.",
+           "Every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was green. The agent traced it across five layers (FRR, Traefik, Nomad, Consul) to a Traefik OOM loop plus a stuck node still advertising a dead ingress. The agent replaced the OOM-looping allocs behind one approval and named the fix that collapses the blast radius: health-gate the anycast.",
            ["~40% of connects refused", "Exit 137 OOM at 1 GiB", "one node, dead ingress"],
            "/use-cases/ingress-502", false}
         ] do %>

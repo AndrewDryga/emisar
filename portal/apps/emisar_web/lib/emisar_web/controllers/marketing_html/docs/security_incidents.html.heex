@@ -59,7 +59,7 @@
         </li>
         <li>
           <strong class="text-zinc-200">Rotate or revoke the rest.</strong>
-          Rotate or revoke any credential that the exposed credential reached or sat beside.
+          Rotate or revoke any credential that the exposed credential reached or was stored beside.
         </li>
         <li>
           <strong class="text-zinc-200">Restore a known-good path.</strong>
@@ -120,9 +120,9 @@
             <.docs_inline_code>/var/log/emisar/events.jsonl</.docs_inline_code>
             and its rotated siblings off the host. Before any other change, run
             <.docs_inline_code>sudo emisar audit verify --all</.docs_inline_code>
-            to re-derive the hash chain and print the first break. Verification covers only the
-            retained journal or retained suffix. It cannot prove that a privileged host operator
-            did not replace or truncate the entire local journal. That limit makes the cloud
+            to recompute the hash chain and print the first break. Verification covers only the
+            journal lines still on disk. It cannot rule out that a privileged host operator
+            replaced or truncated the entire local journal. That limit makes the cloud
             record important.
           </span>
         </li>
@@ -166,10 +166,10 @@
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
           >AI agents</a>.
           Revocation also removes every successor in the key rotation chain. Any OAuth access or
-          refresh token backed by the key also stops working. Rotation leaves the leaked predecessor
-          usable until its successor's first call. For a lost or stolen device, use
+          refresh token backed by the key also stops working. Rotation leaves the leaked key
+          usable until its replacement's first call. For a lost or stolen device, use
           <strong class="text-zinc-200">Revoke all</strong>
-          on the member's group instead. It revokes every key that member owns in one act.
+          on the member's group instead. It revokes every key that member owns at once.
         </li>
         <li>
           Read
@@ -214,7 +214,7 @@
         </li>
         <li>
           Read the export events for the window. A poll that returns events is recorded (a
-          caught-up empty poll is not), so an unfamiliar pattern of pulls shows in the same
+          caught-up empty poll is not), so an unusual pattern of polls shows in the same
           trail.
         </li>
         <li>
@@ -244,7 +244,7 @@
             href={~p"/app/runners/keys"}
             class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
           >Runners → Enrollment keys</a>. If one reusable key was installed on several hosts, treat
-          every host that used it as affected rather than waiting for per-host attribution.
+          every host that used it as affected rather than waiting for proof per host.
         </li>
         <li>
           <strong class="text-zinc-200">Know what revocation does and does not reach.</strong>
@@ -356,7 +356,7 @@
           >Roll out and roll back packs</.link>.
         </li>
         <li>
-          If the registry is implicated, rotate its publishing credentials at their issuer. Verify
+          If the registry is involved, rotate its publishing credentials at their issuer. Verify
           its contents before another install. See
           <.link
             navigate={~p"/docs/pack-registry"}
@@ -384,7 +384,7 @@
       <ol class="mt-5 space-y-3 text-base leading-7 text-zinc-300 list-decimal pl-6">
         <li>
           Decide on the exposure window. If the certificate expires in hours and the risk is
-          tolerable, stop re-issuing to that operator and let it lapse. That is the designed path.
+          tolerable, stop re-issuing to that operator and let it expire. That is the designed path.
         </li>
         <li>
           If it is not tolerable, run the CA rotation below. There is no smaller operation that

@@ -113,7 +113,7 @@
 <span class="text-zinc-500">$</span> emisar version</.docs_code>
       <.docs_h2 id="compatibility">Compatibility status</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each version a runner reports is compared against two published numbers: the oldest
+        emisar compares each version a runner reports against two published numbers: the oldest
         release we still support, and the one we recommend you run.
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
@@ -187,7 +187,7 @@
         </li>
         <li>
           Pick one non-critical runner as the canary, ideally in a group whose actions you can
-          exercise safely.
+          run safely.
         </li>
       </ol>
 
@@ -206,7 +206,7 @@
       <.docs_verify_download component={:runner} />
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The update touches only the binary: <.docs_inline_code>config.yaml</.docs_inline_code>, <.docs_inline_code>runner.env</.docs_inline_code>, the cached token, installed packs, the dispatch log, and the local
-        audit journal all stay as they are. Before the service stops, it authenticates the signed
+        audit journal all stay as they are. Before the service stops, the installer authenticates the signed
         checksum metadata, verifies the archive against it, checks the staged binary's version, and
         runs that staged binary against your existing <.docs_inline_code>config.yaml</.docs_inline_code>. If the staged binary refuses the config, the update is refused
         here with the runner's own error. The installer exits nonzero with nothing touched, and the
@@ -256,7 +256,7 @@
       <.docs_h2 id="fleet">Roll through the fleet</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Repeat the same two steps (upgrade, then the full verification) in bounded batches,
-        one runner group at a time. Halt when any of these happens:
+        one runner group at a time. Stop when any of these happens:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -287,12 +287,12 @@
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.link navigate={~p"/docs/production"} class="text-brand-400 hover:text-brand-300">Go to production</.link>
-        owns fleet shape and batch sizing.
+        covers fleet shape and batch sizing.
         <.link
           navigate={~p"/docs/runner-fleet"}
           class="text-brand-400 hover:text-brand-300"
         >Manage the runner fleet</.link>
-        owns groups, labels, and host-side removal.
+        covers groups, labels, and host-side removal.
       </p>
 
       <.docs_h2 id="rollback">Return to a known-good release</.docs_h2>

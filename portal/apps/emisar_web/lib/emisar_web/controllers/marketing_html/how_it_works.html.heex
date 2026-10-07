@@ -39,8 +39,7 @@
           The three pieces.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands
-          return through that established connection.
+          The runner opens an outbound TLS WebSocket and exposes no inbound listener. Commands come back through that same connection.
         </p>
       </div>
 
@@ -140,7 +139,7 @@
               Before your rules even come into it, emisar checks the basics: the action really
               is in your catalog, it comes from a pack version your account trusts, the arguments
               fit the schema, and this agent is allowed to touch that server. A pack whose exact
-              hash is in the published catalog is pinned automatically, and a pack whose content
+              hash is in the published catalog is pinned automatically. A pack whose content
               changed on the host is blocked until an admin reviews it.
             </p>
             <div class="mt-4 max-w-2xl overflow-hidden rounded-xl border border-zinc-900 bg-black/40">

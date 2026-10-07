@@ -117,7 +117,7 @@ actions:
         The <code>setup</code>
         block is what <code>emisar pack info</code>
         prints and what <code>pack verify</code>
-        and the install probe run. Declare the env your tool reads, and map each protected host
+        and the install probe run. Declare the environment variables your tool reads, and map each protected host
         resource to the exact actions that need it. If the pack has a low-risk read with
         usable defaults, you can name it as <code>verify</code>. This journal reader is
         medium risk, so the example leaves that optional probe unset.
@@ -183,7 +183,7 @@ examples:
         The install writes to the configured pack directory and signals a running
         daemon to reload without restarting or dropping runs. If you declared a
         <code>setup.verify</code>
-        action, it probes that action; otherwise it reports
+        action, the install probes that action; otherwise it reports
         the probe as skipped, as this example shows:
       </p>
       <.docs_code phx-no-format label="shell"># on the runner host
@@ -201,13 +201,13 @@ sudo emisar pack install ./my-pack</.docs_code>
 <span class="text-zinc-500"># in CI, pin the hash you will trust</span>
 <span class="text-zinc-500">$</span> emisar pack validate ./my-pack --json | jq -r .hash</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Your pack is not in the published catalog, so it is not trusted automatically: it
+        Your pack is not in the published catalog, so it is not trusted automatically. It
         shows as <.status_badge status={:pending} /> on the console's
         <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Packs</a>
-        page, and dispatch for it is refused until you review the content hash there and
+        page, and emisar refuses dispatch for it until you review the content hash there and
         click <strong class="text-zinc-200">Trust</strong>. Its actions are then callable, gated by
         your policy, and that exact version is the only one authorized. Editing the pack
         changes its hash and marks it pending again until you re-trust it, so what runs is
@@ -226,7 +226,7 @@ sudo emisar pack install ./my-pack</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         To put the pack on another runner, install it pinned to the hash you trusted. Every
         host then runs the exact same files, and the install signals a running daemon to reload.
-        Config management, such as Ansible, Chef, or a base image, can drop the directory itself
+        Config management, such as Ansible, Chef, or a base image, can place the directory itself
         instead and then reload the runner.
       </p>
       <.docs_code phx-no-format label="shell">sudo emisar pack install ./my-pack --hash sha256:&lt;the hash you trusted&gt;</.docs_code>

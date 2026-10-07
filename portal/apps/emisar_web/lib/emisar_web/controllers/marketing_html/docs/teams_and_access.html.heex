@@ -92,7 +92,7 @@
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Team → Invite</a>, enter an email, choose a role, runner access, and pack access, and
         send the invitation. The invited person opens the link, enters their name, and confirms a
-        code sent to the invited address; that accepts the invitation and signs them in to this
+        code sent to the invited address. Confirming the code accepts the invitation and signs them in to this
         workspace. When the workspace requires SSO, they then sign in at the identity provider,
         which links that identity to the new member. The workspace's MFA requirement still
         applies. Only an owner can grant the owner role
@@ -128,7 +128,7 @@
         address and cannot sign in, so it is never invited, never enrolls MFA, and never links an
         SSO identity. Only owners and admins add and manage service accounts. Giving one access,
         connecting an app as it, or creating its keys also needs runner and pack access that
-        covers the service account's.
+        covers the service account's access.
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -209,7 +209,7 @@
         on database hosts without gaining
         <.docs_inline_code>shell</.docs_inline_code>
         access. A runner group alone cannot express that, because restricted packs exist on
-        most hosts. The two dimensions combine: a member can act only on runners in their runner
+        most hosts. The two scopes combine: a member can act only on runners in their runner
         scope, using packs in their pack scope.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -231,7 +231,7 @@
         inherit the wider access without reconnecting.
         Demoting an Owner requires choosing their new access. For a directory-managed Owner,
         choose Use directory role: directory sync sets both role and access, with Viewer
-        privileges and no runner or pack access until it completes.
+        privileges and no runner or pack access until the sync completes.
       </p>
 
       <.docs_h2 id="mfa">MFA</.docs_h2>
@@ -249,8 +249,8 @@
       <p class="mt-4 text-base leading-7 text-zinc-400">
         A member's authenticator belongs to that member in this workspace; someone in two
         workspaces sets up each one separately. An owner or admin can reset a teammate's
-        authenticator from the Team page if their role allows it, after entering their own
-        authenticator or recovery code, or signing in again through an SSO connection that
+        authenticator from the Team page if their role allows it. They first enter their own
+        authenticator or recovery code, or sign in again through an SSO connection that
         satisfies MFA. Emisar support can also reset it. A reset ends every session the member
         has in this workspace.
       </p>

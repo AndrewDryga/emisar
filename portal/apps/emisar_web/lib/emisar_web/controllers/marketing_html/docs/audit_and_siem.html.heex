@@ -45,8 +45,8 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         For a run, audit records the decisions and the outcome: the denial, the approval gate,
-        the terminal result. Each event links to the run; action arguments stay in run history,
-        which retains the exact values and masks declared sensitive fields only in console and API
+        the terminal result. Each event links to the run. Action arguments stay in run history,
+        which keeps the exact values and masks declared sensitive fields only in console and API
         views. The in-between states (pending, sent, running) are on the run's own page, not in
         the audit trail.
       </p>
@@ -115,7 +115,7 @@
             <strong class="text-zinc-200">Build rules on the top-level fields.</strong>
             Those are stable. The keys inside
             <.docs_inline_code>payload</.docs_inline_code>
-            depend on the event type and can change with the feature that writes them, and an
+            depend on the event type and can change with the feature that writes them. An
             empty value is omitted rather than sent as null. Treat the sample above as the
             envelope, not a schema. Anything worth correlating on, such as <.docs_inline_code>mcp_client_metadata</.docs_inline_code>, is promoted to the top
             level for exactly that reason.
@@ -159,7 +159,7 @@
           <span>
             <strong class="text-zinc-200">Keep the filters identical for the life of a cursor</strong>.
             A cursor is only a position in the ordering, and the filters come from the query you
-            send with each call. It never expires. Change
+            send with each call. A cursor never expires. Change
             <.docs_inline_code>event_type</.docs_inline_code>
             mid-chain and the same cursor returns different events; run a second chain with
             its own cursor instead.
@@ -182,7 +182,7 @@
       <.docs_h2 id="polling">3. Run a poller that keeps its place</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The loop can run in your SIEM's HTTP input, a log agent, or the script below, which
-        shows the complete contract without vendor configuration. Its only durable state is
+        shows the complete contract without vendor configuration. Its only saved state is
         the cursor.
       </p>
       <.docs_code phx-no-format label="poll-emisar-audit.sh" copy_id="audit-poller"><span class="text-zinc-500">#!/bin/sh</span>
@@ -231,9 +231,9 @@ while :; do
 done</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The token lives in the environment and the cursor lives in <.docs_inline_code>$STATE</.docs_inline_code>,
-        so rotating the credential does not move your place in the stream: mint the
+        so rotating the credential does not move your place in the stream. Mint the
         replacement, restart the poller with the new value, watch one poll succeed, then
-        revoke the old token. Rotation mechanics are in <.link
+        revoke the old token. The rotation steps are in <.link
           navigate={~p"/docs/credentials" <> "#audit-tokens"}
           class="text-brand-400 hover:text-brand-300"
         >rotate and revoke credentials</.link>.
@@ -241,7 +241,7 @@ done</.docs_code>
 
       <.docs_h2 id="health">4. Watch the poller itself</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A stopped ingest pipeline and an idle account look the same from your SIEM: no new
+        A stopped collector and an idle account look the same from your SIEM: no new
         events. So alert on the poller itself as well as on what it delivers. Watch the age of
         the newest
         <.docs_inline_code>occurred_at</.docs_inline_code>
@@ -276,7 +276,7 @@ done</.docs_code>
 
       <.docs_h2 id="alerting">5. Alert on what matters</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Most of the trail is evidence you read after the fact. These are the classes worth
+        Most of the trail is evidence you read after the fact. These are the kinds of event worth
         waking someone for, because each one either changes what is allowed or shows that a
         control was tested:
       </p>
@@ -286,7 +286,7 @@ done</.docs_code>
           <span>
             <strong class="text-zinc-200">The rules changed.</strong>
             <.docs_inline_code>policy.updated</.docs_inline_code>
-            carries its exact diff, and pack-trust transitions mean new executable bytes were
+            carries its exact diff, and pack-trust changes mean new executable bytes were
             approved. Both widen what an agent can do, and both are rare enough to review every
             time.
           </span>
@@ -309,7 +309,7 @@ done</.docs_code>
             with its reason, and on the runner side
             <.docs_inline_code>validation_failed</.docs_inline_code>
             / <.docs_inline_code>action_blocked_by_admission</.docs_inline_code>.
-            A single denial is noise; a repeated pattern from one actor is an agent probing for
+            A single denial is noise. A repeated pattern from one actor is an agent probing for
             what it cannot have, and that is the most useful signal in the trail.
           </span>
         </li>
@@ -342,11 +342,11 @@ done</.docs_code>
         (start and result) in <.docs_inline_code>/var/log/emisar/events.jsonl</.docs_inline_code>,
         each line chained to the previous one by SHA-256.
         <.docs_inline_code>emisar audit verify --all</.docs_inline_code>
-        walks the chain, rotated files included, and flags a break.
+        checks the whole chain, rotated files included, and flags a break.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Verification covers the retained journal or retained suffix; it cannot prove that a
-        privileged host operator did not replace or truncate the entire local journal. The
+        Verification covers only the journal lines still on disk; it cannot rule out that a
+        privileged host operator replaced or truncated the entire local journal. The
         cloud trail is the independent copy, out of the host's reach.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -372,7 +372,7 @@ done</.docs_code>
             <strong class="text-zinc-200">Events repeat, or look missing.</strong>
             A collector that restarts from a timestamp rereads events, and a crash between
             handing off a page and saving its cursor repeats the page. It cannot skip
-            unprocessed events. Process pages idempotently and expect duplicates instead of
+            unprocessed events. Process pages idempotently (so a repeat is harmless) and expect duplicates instead of
             assuming exactly-once delivery.
           </span>
         </li>
@@ -387,7 +387,7 @@ done</.docs_code>
             means the bearer is unknown or revoked. A
             <.docs_inline_code>403</.docs_inline_code>
             means authentication succeeded, but this token lacks access. The usual causes are an
-            agent key used where an audit-export token belongs (the two never substitute), a plan
+            agent key used where an audit-export token belongs (one never works in place of the other), a plan
             without export, or a role without audit access. The poller must keep its cursor and
             retry, because a failed request is not an empty page.
           </span>

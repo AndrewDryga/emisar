@@ -138,8 +138,8 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A runner opens one long-lived outbound connection. On first connect it exchanges its
         enrollment key for a token (<.docs_inline_code>POST /runner/register</.docs_inline_code>), then upgrades to a
-        WebSocket at <.docs_inline_code>/runner/socket/websocket</.docs_inline_code>, sending the token as a bearer
-        during the upgrade. Every dispatch, result, and heartbeat rides that one connection.
+        WebSocket at <.docs_inline_code>/runner/socket/websocket</.docs_inline_code>, and sends the token as a bearer
+        token during the upgrade. Every dispatch, result, and heartbeat rides that one connection.
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -159,8 +159,8 @@
             <strong class="text-zinc-200">Redirects are not followed.</strong>
             Registration and the socket upgrade both stop at a
             <.docs_inline_code>3xx</.docs_inline_code>
-            rather than chase the bearer token to whatever host answered. A captive portal or a
-            proxy that answers with a redirect therefore fails closed instead of leaking a
+            rather than chase the bearer token to whatever host answered. So a captive portal or a
+            proxy that answers with a redirect fails closed instead of leaking a
             credential.
           </span>
         </li>
@@ -168,7 +168,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The runner reconnects on its own.</strong>
-            After a drop it retries with backoff and advertises again. A connection timeout often
+            After a drop it retries with backoff (growing delays) and advertises again. A connection timeout often
             means outbound port 443 is filtered. Use
             <.docs_inline_code>emisar doctor</.docs_inline_code>
             to check that the control plane is reachable.
@@ -190,8 +190,8 @@
         and <.docs_inline_code>tuf-repo.github.com:443</.docs_inline_code>, but no GitHub login.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        To permit the optional GitHub release fallback, also allow outbound HTTPS to <.docs_inline_code>api.github.com:443</.docs_inline_code>, <.docs_inline_code>github.com:443</.docs_inline_code>, and <.docs_inline_code>release-assets.githubusercontent.com:443</.docs_inline_code>.
-        An unavailable primary artifact may be fetched from that fallback. A malformed manifest,
+        To enable the optional GitHub release fallback, also allow outbound HTTPS to <.docs_inline_code>api.github.com:443</.docs_inline_code>, <.docs_inline_code>github.com:443</.docs_inline_code>, and <.docs_inline_code>release-assets.githubusercontent.com:443</.docs_inline_code>.
+        If the primary artifact is unavailable, the installers may fetch it from that fallback. A malformed manifest,
         invalid signature, or checksum mismatch stops the install instead of switching sources.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -208,7 +208,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Transfer that file with the selected archive, combined checksum, and
         <.docs_inline_code>*.sigstore.jsonl</.docs_inline_code>
-        bundle. Pass it to the manual bundle check as <.docs_inline_code>--custom-trusted-root trusted_root.jsonl</.docs_inline_code>, verify the
+        bundle. Pass the trusted-root file to the manual bundle check as <.docs_inline_code>--custom-trusted-root trusted_root.jsonl</.docs_inline_code>, verify the
         exact archive entry, then install the binary manually. The installers do not accept a
         custom trusted-root path. The
         <.link
@@ -220,7 +220,7 @@
           navigate={~p"/docs/runner-upgrades"}
           class="text-brand-400 hover:text-brand-300"
         >Upgrade runners</.link>
-        page owns the upgrade path.
+        page covers the upgrade path.
       </p>
 
       <.docs_h2 id="registry">The pack registry</.docs_h2>
@@ -239,7 +239,7 @@
         These commands look packs up by name, and the public emisar origin serves those
         lookups. A static tree built with <code>packctl</code>
         has a different layout. Install from its exact immutable tarball URL instead of passing
-        that host to <code>--registry</code>. Running one is covered in <.link
+        that host to <code>--registry</code>. Running your own registry is covered in <.link
           navigate={~p"/docs/pack-registry"}
           class="text-brand-400 hover:text-brand-300"
         >Host your own registry</.link>.
@@ -260,7 +260,7 @@
           <span>
             <strong class="text-zinc-200">Requests can take a while on purpose.</strong>
             A wait can hold a request for up to a minute on the control plane, and the bridge
-            allows 90 seconds before it gives up. An intermediary that cuts idle HTTP requests
+            allows 90 seconds before it gives up. A proxy or appliance that cuts idle HTTP requests
             shorter than that will break waits while ordinary calls keep working. That failure is
             confusing and worth ruling out early.
           </span>
@@ -269,7 +269,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">It refuses to put your key on the wire in the clear.</strong>
-            Loopback HTTP is accepted without an override; a cleartext
+            Loopback HTTP is accepted without an override. A cleartext
             <.docs_inline_code>http://</.docs_inline_code>
             URL to any other host is rejected unless insecure transport is explicitly enabled.
             That setting sends the key without TLS and is only for an isolated development network.
@@ -290,7 +290,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A pack action runs a real command on the host, and that command talks directly to its own
         systems, such as Nomad, a database, or a cloud API. The traffic never passes through
-        emisar, so build each pack's allowlist from the pack itself:
+        emisar, so build each pack's allowlist from the pack itself.
         <.docs_inline_code>emisar pack info &lt;id&gt;</.docs_inline_code>
         lists the binaries it needs and the environment variables it authenticates with, and
         their values carry the endpoints.
@@ -337,7 +337,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A runner resolves the emisar origin on every connection, not only at boot. It resolves
         the registry during pack installs and GitHub only when the release fallback is used.
-        Split-horizon DNS can send some hosts to an unreachable internal address. This often
+        Split-horizon DNS (different answers inside and outside your network) can send some hosts to an unreachable internal address. This often
         explains why one host works and another fails.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -346,7 +346,7 @@
           navigate={~p"/docs/signed-dispatch"}
           class="text-brand-400 hover:text-brand-300"
         >signed dispatch</.link>
-        checks signature freshness against it too. One skewed host can therefore refuse actions
+        checks signature freshness against it too. So one host with a wrong clock can refuse actions
         while the rest of the fleet works.
       </p>
 
@@ -384,7 +384,7 @@
           <span>
             If the host runs a pack that talks to a provider, one low-risk read-only action from
             it succeeds. Provider traffic leaves your host directly, so a real action is the
-            end-to-end check for that leg.
+            end-to-end check for that path.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

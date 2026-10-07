@@ -22,7 +22,7 @@
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each workspace has its own sign-in page at <.docs_inline_code>emisar.dev/app/&lt;workspace&gt;/sign_in</.docs_inline_code>, and a
-        member signs in to each workspace separately: a member exists only inside its workspace,
+        member signs in to each workspace separately. A member exists only inside its workspace,
         with its own email address, MFA, and sessions. Someone who belongs to two workspaces is
         two members and signs in to each.
       </p>
@@ -66,7 +66,7 @@
         </table>
       </div>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Sign-in codes are stored hashed, and an intercepted email is not enough to sign in,
+        Sign-in codes are stored hashed. An intercepted email is not enough to sign in,
         because the browser that asked for it must finish the sign-in. Each code allows five tries.
         Sign-in is rate-limited by IP and email address, and failed attempts appear in the
         audit log. A browser stays signed in to at most six workspaces at once; signing out
@@ -88,7 +88,7 @@
             app before continuing; other sessions enter an authenticator or recovery code.
             Completing setup proves only that session, and disabling then re-enrolling
             invalidates earlier session proofs. Before emisar reveals an authenticator secret, the
-            member proves the sign-in is still theirs: a code sent to their verified email
+            member proves the sign-in is still theirs. The proof is a code sent to their verified email
             address or, for a member who signs in only through single sign-on, a fresh sign-in at
             the identity provider. An SSO connection satisfies the requirement only when you mark
             that provider as enforcing MFA; otherwise emisar still asks for TOTP. Recovery codes
@@ -272,7 +272,7 @@
         <li class="flex items-start gap-2.5">
           <span class="flex-none text-zinc-500">—</span>
           <span>
-            SCIM offboarding preserves the person: deactivation suspends access, while DELETE also retires the directory resource. The full lifecycle is in <.link
+            SCIM offboarding keeps the person: deactivation suspends access, while DELETE also retires the directory resource. The full lifecycle is in <.link
               navigate={~p"/docs/scim"}
               class="text-brand-400 hover:text-brand-300"
             >Directory sync</.link>.
@@ -298,13 +298,13 @@
         When sign-in fails, start with the symptom table in <.link
           navigate={~p"/docs/sso#troubleshooting"}
           class="text-brand-400 hover:text-brand-300"
-        >SSO troubleshooting</.link>; when provisioning or group access is stale, use
+        >SSO troubleshooting</.link>. When provisioning or group access is stale, use
         <.link
           navigate={~p"/docs/scim#troubleshooting"}
           class="text-brand-400 hover:text-brand-300"
         >SCIM troubleshooting</.link>
-        and check the connection's <strong class="text-zinc-200">Last sync</strong>
-        first. If you are not sure identity is the cause, start at <.link
+        and check the connection's <strong class="text-zinc-200">last request</strong>
+        time first. If you are not sure identity is the cause, start at <.link
           navigate={~p"/docs/troubleshooting"}
           class="text-brand-400 hover:text-brand-300"
         >Troubleshooting</.link>. For a lockout with no working owner session, email <a

@@ -87,14 +87,14 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         emisar fetches the <strong class="text-zinc-200">issuer URL</strong>'s OIDC discovery
-        document and derives every other endpoint from it. Only enter the issuer. Do not enter
+        document and takes every other endpoint from it. Only enter the issuer. Do not enter
         authorization, token, or JWKS URLs. The issuer must use HTTPS and be reachable from emisar.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The <strong class="text-zinc-200">client ID</strong>
         and <strong class="text-zinc-200">client secret</strong>
         come from the application. The secret is write-only: emisar stores it server-side and
-        never shows it again. Because emisar must replay the secret on every sign-in, it cannot store
+        never shows it again. Because emisar must send the secret on every sign-in, it cannot store
         only a hash. Leave the field blank when editing later to keep the current secret.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -126,17 +126,17 @@
       <.docs_h3 id="provisioning-fields">Who gets in, and what they get</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">New members</strong>
-        controls a first sign-in when no emisar member exists:
+        controls a first sign-in when no emisar member exists.
         <span class="text-zinc-300">Add on first sign-in</span>
         creates the member immediately, and <span class="text-zinc-300">Require approval</span>
         holds the first sign-in for administrator approval. Adding on first sign-in is the usual setup
-        when the provider application is assigned only to approved users; require approval when you
+        when the provider application is assigned only to approved users. Require approval when you
         cannot control assignments that tightly.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Either way, single sign-on adds a member to this workspace. The member signs in through
         your provider and reaches only this workspace. A verified email from the provider becomes
-        the member's contact address but does not turn on email sign-in, so the member keeps
+        the member's contact address but does not turn on email sign-in. So the member keeps
         signing in through the provider. To set up an authenticator, the member signs in at the
         provider again instead of confirming an emailed code.
       </p>
@@ -146,13 +146,13 @@
           directory sync
         </.link>
         overrides this setting: the directory decides who exists, and a sign-in from an
-        unprovisioned account waits for approval either way.
+        account the directory has not provisioned waits for approval either way.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">Default role</strong>
         is configurable. Provisioning never grants <span class="text-zinc-300">owner</span>.
-        That stays a deliberate human grant, so no provider misconfiguration can grant this
-        role. In Groups &amp; access, the highest mapped role wins and the default is only the fallback
+        The owner role stays a deliberate human grant, so no provider misconfiguration can grant this
+        role. In Groups &amp; access, the highest mapped role wins. The default is only the fallback
         for someone in no mapped group, not a minimum role. With directory sync enabled, changes
         also apply to existing directory-managed members. See
         <.link navigate={~p"/docs/teams-and-access"} class="text-brand-400 hover:text-brand-300">roles</.link>
@@ -193,7 +193,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Enable this setting if your provider satisfies the account's MFA requirement. It saves
         members from setting up a second MFA token for emisar. Only turn it on if the provider
-        really enforces MFA. Otherwise it becomes a way around the account's requirement,
+        really enforces MFA. Otherwise the setting becomes a way around the account's requirement,
         which is described in <.link
           navigate={~p"/docs/authentication" <> "#enforcement"}
           class="text-brand-400 hover:text-brand-300"
@@ -214,16 +214,16 @@
         Members open the workspace's sign-in page, <.docs_inline_code>emisar.dev/app/&lt;workspace&gt;/sign_in</.docs_inline_code>, or enter
         the workspace address at <.docs_inline_code>/sign_in</.docs_inline_code>. They select
         <strong class="text-zinc-200">Continue with</strong>
-        and the connection's display name, authenticate at the provider, and return signed in to
+        and the connection's display name, sign in at the provider, and return signed in to
         that workspace.
       </p>
 
       <.docs_h3 id="subject-not-email">When the email already belongs to someone</.docs_h3>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         emisar recognises a returning member by the identifier claim, not by their email
-        address. People change addresses, and an address can be reassigned; a subject cannot.
+        address. People change addresses, and an address can be reassigned; the identifier claim cannot.
         Matching on email would let whoever controls an address inherit the membership behind
-        it, so a first SSO sign-in never silently merges into an existing one. emisar compares
+        it. So a first SSO sign-in never silently merges into an existing one. emisar compares
         its verified email only with the contact addresses of this workspace's members, and no
         two members of a workspace share an address:
       </p>
@@ -232,13 +232,13 @@
           <span class="mt-2.5 h-1 w-1 flex-none rounded-full bg-zinc-600"></span>
           <span>
             <strong class="text-zinc-200">One member uses the address.</strong>
-            The sign-in is held, and an owner or admin approves it under <a
+            emisar holds the sign-in, and an owner or admin approves it under <a
               href={~p"/app/team"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
             >Team → Pending access requests</a>. Approving binds
             that existing member to the SSO identity. It does not create a second person, and
             their role and runner access are left as they are. If their team invitation is still
-            pending, they accept the invitation first; only then can an administrator approve the
+            pending, they accept the invitation first. Only then can an administrator approve the
             SSO identity.
           </span>
         </li>
@@ -260,7 +260,7 @@
         <strong class="text-zinc-200">Check issuer</strong>
         checks discovery and reachability only. It does not check user assignment, callback
         acceptance, or claims, so it can pass on a connection nobody can actually sign in through. Keep an
-        owner signed in to this workspace through SSO while you test: turning the requirement on
+        owner signed in to this workspace through SSO while you test. Turning the requirement on
         signs out every email sign-in session, including your own. Then open
         <a
           href={~p"/app/team"}
@@ -279,8 +279,8 @@
           navigate={~p"/docs/integrations/entra"}
           class="text-brand-400 hover:text-brand-300"
         >Entra guide</.link>.
-        This option
-        cannot be enabled with no active SSO connection, and emisar refuses to disable or
+        You cannot enable this option
+        with no active SSO connection. emisar refuses to disable or
         delete the last active connection while the requirement remains on. Turn off Require
         SSO before retiring that last connection.
       </p>
@@ -311,7 +311,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         After an SSO connection's first sign-in, its issuer, client ID, and identifier claim
         cannot be updated any more. To move tenants, issuers, or clients, add a new connection
-        and migrate assignments to it. You can still change the client secret to rotate it.
+        and move assignments to it. You can still change the client secret to rotate it.
       </p>
 
       <.docs_h3 id="disable-provider">Disable or delete a connection</.docs_h3>
@@ -479,7 +479,7 @@
               <td class="px-4 py-3">
                 The callback must pass state, nonce, PKCE, ID-token signature, exact issuer,
                 expiration, and an audience equal to this connection's client ID with no
-                additional audience before emisar resolves an identity.
+                other audience before emisar resolves an identity.
               </td>
             </tr>
           </tbody>
@@ -533,7 +533,7 @@
               <td class="px-4 py-3">
                 Inspect the ID token. It must contain the configured stable identifier. If the
                 connection restricts an email domain or needs email-based linking, include an
-                explicitly verified email; Google Workspace may instead use a matching
+                explicitly verified email. Google Workspace may instead use a matching
                 <code>hd</code>
                 for its tenant boundary. UserInfo-only email or profile claims are not read. A
                 verified email that already belongs to a member holds the sign-in for approval;
@@ -559,7 +559,7 @@
               </td>
               <td class="px-4 py-3">
                 Make SCIM <code>externalId</code>
-                equal the OIDC identifier claim. The convergence contract and per-provider
+                equal the OIDC identifier claim. The identity-matching rules and per-provider
                 claims are in <.link
                   navigate={~p"/docs/scim" <> "#troubleshooting"}
                   class="text-brand-400 hover:text-brand-300"

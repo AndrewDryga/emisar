@@ -82,7 +82,7 @@
           <span>
             <strong class="text-zinc-200">Max uses.</strong>
             Cap the total number of runners the key can ever enroll. The cap still holds if the key leaks.
-            Uses are never refunded when an instance terminates, so budget for every boot over the
+            A use is never given back when an instance terminates, so budget for every boot over the
             key's life, not the group's peak size.
           </span>
         </li>
@@ -103,8 +103,7 @@
       </p>
       <.docs_callout kind={:warn} title="A reusable key is a fleet-wide credential">
         <p>
-          Anyone holding this key can enroll a runner into your account. Because
-          re-enrollment binds by runner id or hostname, they can also mint a fresh token for an
+          Anyone holding this key can enroll a runner into your account. Because re-enrollment matches by runner id or hostname, they can also mint a fresh token for an
           existing runner's identity (its name, group, trust, and dispatch queue) without touching that
           host. The limits above and account policy still apply, but treat it like a
           fleet-root credential. Rotating and revoking it, and what each step reaches, is
@@ -198,7 +197,7 @@ curl -fsSL https://emisar.dev/install.sh \
         The install line is identical on every cloud. All that changes is where the launch template
         runs a boot script. Save the command above as
         <.docs_inline_code>emisar-boot.sh</.docs_inline_code>
-        and wire it in:
+        and add it to the template:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -237,7 +236,7 @@ curl -fsSL https://emisar.dev/install.sh \
         A runner uses its hostname as its identity unless you set <.docs_inline_code>runner.id</.docs_inline_code>. A new scale-out
         instance receives a generated hostname and registers as a new runner. A reboot keeps the
         hostname and reconnects the same runner, so scaling out by ten creates ten runners. That
-        is expected for an ephemeral fleet. Two rules follow:
+        is expected for an ephemeral (short-lived) fleet. Two rules follow:
       </p>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-400">
         <li class="flex items-start gap-2.5">
@@ -274,13 +273,13 @@ curl -fsSL https://emisar.dev/install.sh \
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >Runners</a>,
         an owner or admin sets <strong>Remove runners inactive for</strong>, and an hourly sweep
-        removes runners past the window. It never removes a connected or disabled runner. It is
+        removes runners past the window. It never removes a connected or disabled runner. The setting is
         off by default. Pick a window longer than an expected disconnect, such as a rolling
-        deployment or a zone outage, but short enough to clear dead hosts promptly. A removed host that returns enrolls as a
+        deployment or a zone outage, but short enough to clear dead hosts quickly. A removed host that returns enrolls as a
         new runner.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Between sweeps, a high-churn group can still carry dead runners against its plan limit.
+        Between sweeps, a high-churn group (many boots and terminations) can still carry dead runners against its plan limit.
         To trim them sooner, use <strong>Clean up now</strong>
         on the same page. Removal, by sweep or by hand, keeps the runner's audit history.
       </p>

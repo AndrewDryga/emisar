@@ -95,7 +95,7 @@ Runner is connected and healthy.</.docs_code>
         really connected.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        The stock <code class="font-mono">linux-core</code>
+        The standard <code class="font-mono">linux-core</code>
         pack is trusted automatically because its hash matches the one emisar publishes. A
         custom or edited pack waits for a trust decision instead. That flow is in <.link
           navigate={~p"/docs/pack-updates"}
@@ -139,8 +139,8 @@ Runner is connected and healthy.</.docs_code>
               <span>
                 A <code class="font-mono">409</code>
                 means another runner already holds this name. A runner's name defaults to its
-                hostname and cannot be renamed, so this is what a rebuilt host or a restored
-                image looks like. Delete the existing one under
+                hostname and cannot be renamed, so this is the usual sign of a rebuilt host or a restored
+                image. Delete the existing one under
                 <a
                   href={~p"/app/runners"}
                   class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -160,7 +160,7 @@ Runner is connected and healthy.</.docs_code>
             <li class="flex items-start gap-2.5">
               <span class="flex-none text-zinc-500">—</span>
               <span>
-                A connect that hangs instead of failing is a blocked path, not a bad key. Allow
+                A connect that hangs instead of failing is a blocked network path, not a bad key. Allow
                 outbound HTTPS to <code class="font-mono">emisar.dev:443</code>.
               </span>
             </li>
@@ -267,16 +267,15 @@ Runner is connected and healthy.</.docs_code>
         <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
           <p class="text-base leading-7 text-zinc-400">
             Most clients ask <em>"allow this tool?"</em>
-            the first time a model calls one. That prompt is redundant for emisar's tools, because
+            the first time a model calls one. That prompt is not needed for emisar's tools, because
             emisar gates every action <strong class="text-zinc-200">server-side</strong>: account
             policy applies to every call, risky actions wait for human approval, and out-of-policy
             ones are denied.
           </p>
           <p class="mt-3 text-base leading-7 text-zinc-400">
-            The installer offers to do this for Claude Code, Gemini CLI, Codex CLI, and Grok CLI,
-            the four clients whose setting can name the
+            The installer offers to do this for Claude Code, Gemini CLI, Codex CLI, and Grok CLI. Those four clients have a setting that can name the
             <code class="font-mono text-brand-300">emisar</code>
-            server alone. It leaves Cursor alone, because Cursor's only control is global.
+            server alone. It skips Cursor, because Cursor's only control is global.
             Whichever way you answer, auto-permitting in a client never bypasses emisar's gate. To
             set it yourself:
           </p>
@@ -356,7 +355,7 @@ Runner is connected and healthy.</.docs_code>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         And cover as much of your infrastructure as you can: the more actions an agent can
-        reach, the more it can do for you, and breadth is safe because policy decides what
+        reach, the more it can do for you. Breadth is safe because policy decides what
         actually runs. Adding runners and matching packs to each host is in <.link
           navigate={~p"/docs/runner-fleet"}
           class="text-brand-400 hover:text-brand-300"
@@ -385,7 +384,7 @@ Runner is connected and healthy.</.docs_code>
 
       <.docs_callout kind={:tip} title="What you just set up">
         <p>
-          There is now a finite, reviewed catalog between an AI agent and your host: the model can
+          There is now a finite, reviewed catalog between an AI agent and your host. The model can
           call only declared actions, risky calls wait for a person, and configured patterns
           redact matching output on the host. The audit records who ran what, and why.
         </p>

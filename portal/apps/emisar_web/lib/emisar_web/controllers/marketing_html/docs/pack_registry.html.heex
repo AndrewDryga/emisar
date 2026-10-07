@@ -77,7 +77,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Build it from the same signed release tag your runners were installed
-        from, so the tool that hashes a pack is the one whose loader will
+        from. Then the tool that hashes a pack is the one whose loader will
         enforce that hash. An unpinned
         <.docs_inline_code>go install …@latest</.docs_inline_code>
         builds whatever the default branch holds that minute.
@@ -93,7 +93,7 @@ cd emisar-src/runner && go build -o ~/.local/bin/packctl ./cmd/packctl</.docs_co
       <.docs_h2 id="build">2. Build the registry tree</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <code>--base-url</code>
-        is wherever you will host it. Tarball URLs in the catalog join onto it:
+        is wherever you will host it. Tarball URLs in the catalog are built on it:
       </p>
       <.docs_code phx-no-format label="shell">packctl catalog build --packs ./packs --out ./dist \
   --base-url https://packs.acme.internal</.docs_code>
@@ -155,7 +155,7 @@ aws s3 cp ./dist/v1/catalog.json s3://acme-pack-registry/v1/catalog.json</.docs_
         <code>--previous</code>
         enforces immutability: a pack whose files changed for an
         already-published <code>id@version</code>
-        <strong class="text-zinc-200">fails the build</strong>. Bump the version instead. On a
+        <strong class="text-zinc-200">fails the build</strong>. Raise the version instead. On a
         critical fix, republish, then revoke trust on the old version in <a
           href={~p"/app/packs"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -194,7 +194,7 @@ packctl catalog build --packs ./packs --out ./dist \
           <code>pack diff redis --registry https://packs.acme.internal</code>
           previews the current version and
           <code>pack update redis --registry https://packs.acme.internal</code>
-          applies it; both verify the catalog's content hash. Initial installs by plain
+          applies it; both verify the catalog's content hash. First installs by plain
           name and <code>pack diff --to</code>
           still need the public registry's download routes.
         </li>

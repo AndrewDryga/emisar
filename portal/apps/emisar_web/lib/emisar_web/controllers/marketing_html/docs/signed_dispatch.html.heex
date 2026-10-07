@@ -53,7 +53,7 @@
         </li>
         <li>
           <strong>The control plane relays.</strong>
-          It forwards the signed envelope with the exact argument bytes. It cannot change it and cannot
+          It forwards the signed envelope with the exact argument bytes. It cannot change the envelope and cannot
           sign a new claim, since it does not hold a private key.
         </li>
         <li>
@@ -71,14 +71,14 @@
         <.docs_inline_code>name~sha256-prefix</.docs_inline_code>
         refs derived from each runner's identity (its hostname, or the
         <.docs_inline_code>runner.id</.docs_inline_code>
-        you declared): a replacement host that keeps the identity keeps the ref, and a new
+        you declared). A replacement host that keeps the identity keeps the ref, and a new
         identity makes a new ref.
       </.docs_callout>
 
       <.docs_h2 id="turn-on">Turn it on</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         One command mints a CA, an operator key, and a certificate, and prints everything you
-        need to wire up. Everything is generated offline; the private keys print locally and
+        need to set up. Everything is generated offline; the private keys print locally and
         are not sent anywhere.
       </p>
 
@@ -100,7 +100,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong class="text-zinc-200">2. Mint the CA, key, and certificate.</strong>
         <.docs_inline_code>signing init</.docs_inline_code>
-        mints the CA + leaf + cert in one shot. (Already have a CA? Use
+        mints the CA + leaf + cert in one step. (Already have a CA? Use
         <.docs_inline_code>emisar signing new-ca</.docs_inline_code>
         once, then
         <.docs_inline_code>emisar signing new-cert</.docs_inline_code>
@@ -146,7 +146,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
         <strong class="text-zinc-200">5. Turn it on with a restart.</strong>
         The first time you enable enforcement, <strong class="text-zinc-200">restart</strong>
         the runner. It opens the durable replay journal at startup and then advertises that it
-        verifies signatures. A reload cannot make that first switch. A runner that booted un-enforcing
+        verifies signatures. A reload cannot make that first switch. A runner that started with enforcement off
         holds an in-memory replay store, so
         <.docs_inline_code>reload</.docs_inline_code>
         leaves enforcement off and unsigned calls keep flowing. (Later CA rotations and trusted-key
@@ -155,7 +155,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
       </p>
       <.docs_code phx-no-format label="shell" copy_text="sudo systemctl restart emisar"><span class="text-zinc-500">$</span> sudo systemctl restart emisar</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Then confirm it landed before you rely on it:
+        Then confirm it took effect before you rely on it.
         <a
           href={~p"/app/runners"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -214,12 +214,12 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
             Keep it offline in a secrets store, and never let it reach a runner, the portal, or
             git. The signing key in
             <.docs_inline_code>EMISAR_SIGNING_KEY</.docs_inline_code>
-            is still a secret, but its reach is bounded by its cert's scope and short TTL.
+            is still a secret, but its reach is limited by its cert's scope and short TTL.
           </span>
         </li>
       </ul>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        If you already run your own PKI, it can issue these certificates: they are X.509, so
+        If you already run your own PKI, it can issue these certificates. They are X.509, so
         Vault PKI, AD CS, step-ca, or an HSM-backed CA works, and the anchor is an ordinary CA
         certificate. Issue against the profile below.
       </p>
@@ -269,7 +269,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
                 Key usage, if set, allows digital signature
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                An issuer that states the usage has to state one that permits signing.
+                An issuer that states the usage has to state one that allows signing.
               </td>
             </tr>
             <tr>
@@ -288,7 +288,7 @@ EMISAR_SIGNING_CERT=&lt;certificate chain from signing init&gt;</.docs_code>
         No extended key usage is required: we do not own an OID for it, and reusing
         <.docs_inline_code>serverAuth</.docs_inline_code>
         would accept the TLS certificates the scope URI exists to keep out. If you want a
-        second belt, name-constrain the issuing CA to
+        second safeguard, name-constrain the issuing CA to
         <.docs_inline_code>emisar://</.docs_inline_code>
         URIs. Then even a shared root cannot issue anything else that a runner would accept.
       </p>
@@ -369,7 +369,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The CA is the immediate lever.</strong>
-            To revoke before a cert expires, rotate the CA:
+            To revoke before a cert expires, rotate the CA.
             <.docs_inline_code>trusted_cas</.docs_inline_code>
             is a list, so add the new CA beside the old, re-issue operator certs under it, then
             remove the old CA and reload every runner. Each reload applies live without
@@ -443,7 +443,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
             The signature binds suffixes derived from durable runner identities. It does not
             make the display name truthful, and a compromised portal can lie about that mapping
             before signing. Narrow cert scopes limit what the lie can reach; verifying suffixes
-            out of band removes it.
+            through another channel removes it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -603,7 +603,7 @@ emisar://dispatch/v1?group=prod&amp;label.env=prod&amp;label.region=us</.docs_co
                 <.docs_inline_code>nonce_store_unavailable</.docs_inline_code>
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                The runner could not record the nonce, so it refused rather than risk a replay. The failure latches until restart.
+                The runner could not record the nonce, so it refused rather than risk a replay. The failure stays until restart.
               </td>
               <td class="px-4 py-3 align-top leading-6">
                 Check the data directory's disk space and permissions, then restart the runner.

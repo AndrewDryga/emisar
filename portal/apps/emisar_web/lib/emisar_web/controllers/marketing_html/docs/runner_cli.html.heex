@@ -244,7 +244,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
               {"emisar pack info <id>", "A pack's setup. Required binaries, the env vars its actions read, a verify command.", "Reads only"},
               {"emisar pack verify [id...]", "Run each pack's declared verify action to check it can reach and authenticate to its target.", "Reads its target"},
               {"emisar pack validate <path>", "Validate a pack directory on disk without loading it into the runner.", "Reads only"},
-              {"emisar pack diff <id>", "The changed lines between an installed pack and the registry's, with risk and redaction changes called out.", "Reads only"},
+              {"emisar pack diff <id>", "The changed lines between an installed pack and the registry's, with risk and redaction changes highlighted.", "Reads only"},
               {"emisar pack install <name|path|url>", "Fetch, validate, hash-verify, and install one pack into the packs dir.", "Changes the host"},
               {"emisar pack update [id...]", "Update installed packs to the registry's current versions.", "Changes the host"},
               {"emisar pack uninstall <id>", "Remove an installed pack. Aliases are rm, remove, and delete.", "Changes the host"}
@@ -305,7 +305,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <.docs_inline_code>--to &lt;version&gt;</.docs_inline_code>:
-            compare against a specific published version instead of the registry's current one. That URL carries no index entry, so the computed hash is printed for you to pin the install with.
+            compare against a specific published version instead of the registry's current one. That URL carries no index entry, so the CLI prints the computed hash for you to pin the install with.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -369,8 +369,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
 <span class="text-zinc-500">$</span> sudo emisar pack verify gcp-dns --arg project=acme-prod</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A skip is not a failure. If a pack's verify action needs a value this host cannot infer
-        (a project id, a hostname, a pid), the pack is skipped with the command that completes
-        it. So is a pack your
+        (a project id, a hostname, a pid), verify skips the pack and prints the command that completes
+        it. It also skips a pack your
         <.docs_inline_code>admission</.docs_inline_code>
         config refuses. Only a real failure exits non-zero. Read the detail before concluding the
         pack is misconfigured: a target that is simply down fails the same way a bad credential
@@ -401,7 +401,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
               {"emisar state", "Print the runner_state JSON this host advertises to the control plane.", "Reads only"},
               {"emisar events tail", "Print recent journal events. -f follows new events. --lines sets the count and defaults to 50.", "Reads only"},
               {"emisar events cat / grep", "Dump the whole journal, or filter it by --action, --type, --event-id, or --request-id. --type is the event_type a SIEM alerts on.", "Reads only"},
-              {"emisar audit verify [path]", "Re-derive a journal file's SHA-256 hash chain and report breaks. --all checks rotated siblings.", "Reads only"},
+              {"emisar audit verify [path]", "Recompute a journal file's SHA-256 hash chain and report breaks. --all checks rotated siblings.", "Reads only"},
               {"emisar version", "The runner version and build info.", "Reads only"}
             ] do %>
               <tr>
@@ -418,12 +418,12 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       <.docs_code phx-no-format label="shell"><span class="text-zinc-500">$</span> sudo emisar status              <span class="text-zinc-500"># running daemon + connection summary</span>
 <span class="text-zinc-500">$</span> sudo emisar doctor              <span class="text-zinc-500"># offline preflight when status reports a problem</span>
 <span class="text-zinc-500">$</span> sudo emisar events tail -f      <span class="text-zinc-500"># the local journal, live</span>
-<span class="text-zinc-500">$</span> sudo emisar audit verify --all  <span class="text-zinc-500"># re-derive the journal hash chain</span></.docs_code>
+<span class="text-zinc-500">$</span> sudo emisar audit verify --all  <span class="text-zinc-500"># recompute the journal hash chain</span></.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.docs_inline_code>status</.docs_inline_code>
         reads a mode-0600 snapshot written by the running daemon and verifies it against the held
         process lock, PID, and heartbeat freshness. It proves only the host's latest successful
-        send; the console is authoritative for current control-plane receipt.
+        send; the console has the final say on what the control plane has received.
         <.docs_inline_code>doctor</.docs_inline_code>
         never opens a cloud session, and executes no action unless you pass <.docs_inline_code>--probe</.docs_inline_code>, which adds the
         <.docs_inline_code>pack verify</.docs_inline_code>
@@ -431,7 +431,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
         rest, so one run surfaces every problem.
         <.docs_inline_code>audit verify</.docs_inline_code>
         exits 0 when the chain is intact and 1 on the first break, printing the line and event
-        ID;
+        ID.
         <.docs_inline_code>--all</.docs_inline_code>
         walks the active file plus every rotated
         <.docs_inline_code>.N</.docs_inline_code>
@@ -439,8 +439,8 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
       </p>
       <.docs_callout kind={:note} title="Tamper-evident, not tamper-proof.">
         <.docs_inline_code>audit verify</.docs_inline_code>
-        verifies continuity only within the retained journal or retained suffix. It cannot prove
-        that a privileged host operator did not replace or truncate the entire local journal. The
+        verifies continuity only within the journal lines still on disk. It cannot rule out
+        that a privileged host operator replaced or truncated the entire local journal. The
         record that cannot be changed from the host is the off-host cloud audit. Carry both into
         your SIEM and cross-reference them. See <.link
           navigate={~p"/docs/audit-and-siem"}
@@ -500,10 +500,10 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             <.docs_inline_code>--scope group=prod,env=edge</.docs_inline_code>
             (<.docs_inline_code>init</.docs_inline_code>
             and <.docs_inline_code>new-cert</.docs_inline_code>):
-            the cert's validity window, which accepts Go durations plus long-form <.docs_inline_code>30d</.docs_inline_code>/<.docs_inline_code>
+            the cert's validity window and the runners it binds to. The window accepts Go durations plus long-form <.docs_inline_code>30d</.docs_inline_code>/<.docs_inline_code>
               1y
             </.docs_inline_code>
-            and defaults to 24h, and the runners it binds to. Keep the TTL short. The only revocation is expiry, so a long TTL keeps a leaked cert usable longer. An empty scope means any runner that trusts the CA.
+            and defaults to 24h. Keep the TTL short. The only revocation is expiry, so a long TTL keeps a leaked cert usable longer. An empty scope means any runner that trusts the CA.
           </span>
         </li>
         <li class="flex items-start gap-2.5">
@@ -514,7 +514,7 @@ systemd-deep  0.1.10   24       sha256:84f814476179  Deeper systemd state + oper
             <.docs_inline_code>--ca-cert</.docs_inline_code>
             (both required on <.docs_inline_code>new-cert</.docs_inline_code>):
             the offline CA private key and certificate from <.docs_inline_code>new-ca</.docs_inline_code>. Both are read
-            locally and never transmitted; the certificate is required because an X.509 leaf
+            locally and never sent; the certificate is required because an X.509 leaf
             names its issuer exactly.
           </span>
         </li>

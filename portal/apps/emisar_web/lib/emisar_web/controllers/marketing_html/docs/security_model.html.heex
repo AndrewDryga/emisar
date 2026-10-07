@@ -105,12 +105,12 @@
           / <code>token=</code>
           assignments. AWS access-key IDs remain usable in follow-up actions; secret access-key
           fields are masked. Per-action rules layer on top,
-          but an unknown shape can pass through. Treat redaction as a backstop, not a
+          but an unknown shape can pass through. Treat redaction as best-effort, not a
           guarantee.
         </li>
         <li>
           <strong>Limits.</strong> Every action has a timeout and stdout/stderr byte
-          ceiling. Cloud opts can lower these but not raise them above the action's
+          ceiling. Cloud options can lower these but not raise them above the action's
           declared maximum.
         </li>
         <li>
@@ -126,8 +126,8 @@
           attempt writes a JSONL line to <code>/var/log/emisar/events.jsonl</code>
           with a previous-line hash. That is the host-side
           forensics copy. <code>emisar audit verify</code>
-          verifies continuity within the retained journal or retained suffix. It cannot prove that
-          a privileged host operator did not replace or truncate the entire local journal. The
+          verifies continuity within the journal lines still on disk. It cannot rule out that
+          a privileged host operator replaced or truncated the entire local journal. The
           off-host cloud audit cannot be changed from the host. Cross-reference the two.
         </li>
         <li>
@@ -145,10 +145,10 @@
           or <code>*.repair</code>. It also supports a risk ceiling. On a
           read-only host, <code>admission.max_risk: medium</code>
           drops every high-risk and critical
-          action, regardless of cloud policy. Blocked
-          actions are hidden from the catalog this runner advertises and refused at execution
+          action, regardless of cloud policy. The runner
+          hides blocked actions from the catalog it advertises and refuses them at execution
           time, so even a compromised portal cannot
-          push something the host operator did not sanction. Refusals land in
+          push something the host operator did not allow. Refusals land in
           the JSONL audit log as <code>action_blocked_by_admission</code>
           events for SIEM alerting.
         </li>
@@ -178,7 +178,7 @@
         <li>
           <strong>The target set and certificate scope are separate limits.</strong>
           Each call signs its exact identity-bound runner references. The certificate adds a
-          coarser group or label ceiling. Display names remain portal-owned metadata. Verify runner
+          broader group or label ceiling. Display names remain portal-owned metadata. Verify runner
           suffixes out of band for the highest-trust workflows. See
           <.link
             navigate={~p"/docs/signed-dispatch"}
@@ -198,14 +198,14 @@
         </li>
         <li>
           <strong>Not an EDR.</strong> emisar does not detect malicious binaries,
-          lateral movement, or host compromise. The retained-journal continuity check described
+          lateral movement, or host compromise. The journal continuity check described
           above does not change that boundary. The runner rejects a pack whose contents no longer
           match the cloud-pinned trusted hash before execution.
         </li>
         <li>
           <strong>Not a replacement for OS-level access control.</strong>
           The <code>user:</code>
-          drop only works because the OS already permits it.
+          drop only works because the OS already allows it.
         </li>
         <li>
           <strong>Redaction is pattern-based, not a guarantee.</strong>
@@ -215,7 +215,7 @@
         </li>
         <li>
           <strong>There is no per-certificate revocation for signed dispatch.</strong>
-          A leaked leaf key stays usable until its certificate expires. Short lifetimes bound the
+          A leaked leaf key stays usable until its certificate expires. Short lifetimes limit the
           routine case. The immediate lever is removing the trusted CA from every runner. This is a
           fleet operation, not a switch in the console.
         </li>

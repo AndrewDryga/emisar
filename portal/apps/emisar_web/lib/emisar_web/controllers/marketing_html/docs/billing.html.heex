@@ -207,7 +207,7 @@
         <p>
           Cancelling does not cut access immediately: the plan and its limits stay active
           until the cancellation date Paddle schedules, and Billing shows that date. At that
-          deadline the account moves to Free limits. Paid integrations become dormant, but their
+          deadline the account moves to Free limits. Paid integrations become inactive, but their
           configuration is kept so an owner can resubscribe or clean up.
         </p>
       </.docs_callout>
@@ -243,7 +243,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each workspace sees and changes only its own subscription. If the billing email
-        already pays for another workspace through Paddle, checkout asks to confirm it first:
+        already pays for another workspace through Paddle, checkout asks to confirm that address first.
         emisar emails a code to that address, and entering the code bills this workspace to
         the same Paddle account.
       </p>
@@ -271,7 +271,7 @@
       <.docs_h2 id="retention">Plan changes and audit retention</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Each audit event gets a fixed retention deadline when it is written, so a plan change
-        affects only later events: an upgrade keeps new history longer, and a downgrade shortens
+        affects only later events. An upgrade keeps new history longer, and a downgrade shortens
         the window for new events without deleting older retained history. Run history and run
         output are different: they follow the plan you are on right now, so a downgrade or a
         lapsed subscription shortens the window for existing runs too. Export anything you

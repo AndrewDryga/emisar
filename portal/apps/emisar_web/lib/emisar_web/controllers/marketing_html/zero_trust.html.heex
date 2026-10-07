@@ -100,9 +100,9 @@
                 {"Parameter validation, tool-side", "Foundation",
                  "The runner re-validates every argument against the action schema and clamps options to their min/max before exec."},
                 {"Version-controlled, integrity-checked configuration", "Enterprise",
-                 "Packs are versioned, content-addressed YAML. A hash the published catalog carries is trusted on sight; an unrecognized or changed one blocks dispatch until an admin reviews it, and the runner recomputes the hash and refuses a mismatch."},
+                 "Packs are versioned, content-addressed YAML. A hash the published catalog carries is trusted on sight; an unrecognized or changed one blocks dispatch until an admin reviews it. The runner also recomputes the hash and refuses a mismatch."},
                 {"Tamper-evident, hash-chained host journal", "Enterprise",
-                 "Every action is recorded to the searchable off-host portal audit and to a hash-chained JSONL journal retained on the runner. emisar audit verify reports breaks in that retained chain."},
+                 "Every action is recorded to the searchable off-host portal audit and to a hash-chained JSONL journal kept on the runner. emisar audit verify reports breaks in that chain."},
                 {"Human-in-the-loop approval for high-risk actions", "Advanced",
                  "Risk-tiered policy holds destructive actions for a person. The approver sees the actor, the args, the target host, and the rule that fired, then allows or denies with one click."},
                 {"Just-in-time / just-enough access", "Advanced",
@@ -161,7 +161,7 @@
       </ul>
       <p class="mt-8 text-lg leading-8 text-zinc-400 text-pretty">
         Instead of trying to keep the agent pure, emisar assumes the agent may already be
-        jailbroken or prompt-injected, and makes sure a
+        jailbroken or prompt-injected. It then makes sure a
         compromised agent <em class="text-zinc-200">still</em>
         can't exceed declared, gated, audited actions. That is the framework's first principle, <em class="text-zinc-200">assume breach</em>, applied to the one place an AI agent can do
         real damage: the keyboard in front of your servers.

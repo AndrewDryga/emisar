@@ -40,7 +40,7 @@
         The fabric was never quiet
       </h2>
       <p class="mt-4 text-base leading-7 text-zinc-400">
-        The wipe was not a bolt from the blue. For the weeks before it, the iSCSI / dm-multipath
+        The wipe had warning signs. For the weeks before it, the iSCSI / dm-multipath
         path was a slow drip of operational pain: queue depth tuned to 128 for the FlashArray,
         multipath retry behavior corrected, persistent iSCSI sessions pinned at boot, an iSCSI
         login race plus a <code>/run/multipathd</code>
@@ -48,7 +48,7 @@
         <code>kill_timeout</code>
         raised to 60s so <code>NodeUnstageVolume</code>
         could flush on drain. None of these was catastrophic alone. Together they made an unstable
-        substrate where a path group could come up with no active path, which is exactly the
+        base where a path group could come up with no active path. That is exactly the
         condition that makes a live device read empty.
       </p>
 
@@ -121,7 +121,7 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
         was the first I/O: it opened the device, the read sat in the queue, and it timed out
         empty. The driver read "empty" as "unformatted" and ran <code>mkfs.ext4 -F</code>
         over a live LUN, then mounted the fresh filesystem for VictoriaMetrics to write to.
-        It belongs to a whole bug class, tracked in
+        The failure belongs to a whole bug class, tracked in
         <a
           href="https://github.com/kubernetes/kubernetes/issues/95183"
           target="_blank"
@@ -151,8 +151,7 @@ pure.volumes_space &#123;"names": "vm-data"&#125;
 <span class="text-zinc-500">→ alloc stopped · writes halted · LUN frozen for forensics</span></pre>
       <p class="mt-3 text-base leading-7 text-zinc-400">
         Caught in the first minute, that freeze preserves the LUN for recovery. Here a human took
-        an hour to notice, the ext4 journal had wrapped, and the old blocks were already reused,
-        so we accepted the 33-hour gap (game-side state was untouched; only telemetry was lost).
+        an hour to notice, the ext4 journal had wrapped, and the old blocks were already reused. So we accepted the 33-hour gap (game-side state was untouched; only telemetry was lost).
       </p>
 
       <h2 class="mt-10 text-2xl font-semibold text-zinc-50 text-balance">
@@ -216,7 +215,7 @@ exec "$real" "$@"   # not a Pure device: the real mkfs runs
       </h2>
       <ul class="mt-4 space-y-3 text-base leading-7 text-zinc-300">
         <li>
-          <strong class="text-zinc-100">The forensics were legible and scoped.</strong>
+          <strong class="text-zinc-100">The forensics were readable and scoped.</strong>
           Every <code>dmesg</code>, multipath, CSI-log, and array-side read was a declared action
           against one host, logged with a reason, instead of a <code>tailscale ssh root@…</code>
           scramble across five tools with no record of who looked at what.

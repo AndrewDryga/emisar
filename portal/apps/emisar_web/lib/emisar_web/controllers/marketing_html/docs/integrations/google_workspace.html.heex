@@ -128,7 +128,7 @@
             https://emisar.dev/sign_in/sso/callback
           </.docs_value>
           <p class="mt-4">
-            Mind which list it goes in. <strong class="text-zinc-200">Authorized JavaScript
+            Check which list it goes in. <strong class="text-zinc-200">Authorized JavaScript
             origins</strong>
             sits directly above it and is not part of this flow. Google matches the URI
             exactly, so a trailing slash or
@@ -211,8 +211,7 @@
         waits for administrator approval. Neither setting removes members automatically.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Offboarding is therefore two steps: suspend the Google account to block new sign-ins,
-        then suspend or remove the member in
+        So offboarding is two steps. Suspend the Google account to block new sign-ins, then suspend or remove the member in
         <a
           href={~p"/app/team"}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
@@ -236,7 +235,7 @@
         </p>
       </.docs_callout>
       <p class="mt-6 text-base leading-7 text-zinc-400">
-        If the absence of Google directory sync is a deal-breaker for you, <a
+        If you need Google directory sync before you can use emisar, <a
           href={EmisarWeb.MailTo.sales()}
           class="font-medium text-brand-300 underline decoration-brand-500/30 underline-offset-4 hover:text-brand-200"
         >contact our sales team</a>.

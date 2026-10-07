@@ -68,7 +68,7 @@
         pack on the database tier,
         <.docs_inline_code>nginx</.docs_inline_code>
         on the web tier) and the observation packs everywhere. The more actions an agent can
-        reach, the more it can do for you, and breadth is safe: policy decides what actually
+        reach, the more it can do for you. Breadth is safe: policy decides what actually
         runs, so reads run at once while risky work waits for a person.
         <.docs_inline_code>sudo emisar pack suggest</.docs_inline_code>
         lists the published packs that match a host.
@@ -129,7 +129,7 @@
             <strong class="text-zinc-200">Revoke from the console.</strong>
             Revoking a key blocks new registrations; hosts already enrolled keep running on their
             own tokens. To take a runner itself offline, either by disabling it (reversible) or
-            deleting it (terminal), see <.link
+            deleting it (permanent), see <.link
               navigate={~p"/docs/runner-credentials"}
               class="text-brand-400 hover:text-brand-300"
             >Runner credentials</.link>.
@@ -160,8 +160,8 @@
       <.docs_h2 id="pack-credentials">Giving packs their credentials</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Packs that talk to a service (Nomad, Consul, Postgres) read credentials from the
-        runner's <em>environment</em>, never from call arguments, and the control plane does not
-        distribute or store them. An action can still print a value, and if redaction misses it,
+        runner's <em>environment</em>, never from call arguments. The control plane does not
+        distribute or store them. An action can still print a value, and if redaction misses the value,
         it can appear in run output. Two steps on the host:
       </p>
       <.docs_code phx-no-format label="config"><span class="text-zinc-500"># 1. /etc/emisar/runner.env (mode 0600) — the values</span>
@@ -181,7 +181,7 @@ execution:
         <.docs_inline_code>emisar pack info &lt;id&gt;</.docs_inline_code>
         to see what each pack needs, and
         <.docs_inline_code>sudo emisar pack verify</.docs_inline_code>
-        to make sure the wiring works. It probes every installed pack's verify action and prints ok,
+        to make sure the setup works. It probes every installed pack's verify action and prints ok,
         failed, or skipped per pack.
       </p>
 
@@ -228,11 +228,11 @@ execution:
         The CLI defaults to <.docs_inline_code>--config /etc/emisar/config.yaml</.docs_inline_code>,
         so these commands work on an installed host. The runner runs as its own unprivileged
         <.docs_inline_code>emisar</.docs_inline_code>
-        user; granting an action root (a scoped polkit rule, or running the service as root)
+        user. Granting an action root (a scoped polkit rule, or running the service as root)
         is covered on the <.link
           navigate={~p"/docs/host-install" <> "#user"}
           class="text-brand-400 hover:text-brand-300"
-        >Linux host page</.link>, and the
+        >Linux host page</.link>. The
         <.link
           navigate={~p"/docs/security-model"}
           class="text-brand-400 hover:text-brand-300"
@@ -364,7 +364,7 @@ execution:
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">The log shows no failure, and the connect hangs.</strong>
-            A hang is a blocked path, not a bad credential. The runner needs outbound TLS to
+            A hang is a blocked network path, not a bad credential. The runner needs outbound TLS to
             your emisar origin and nothing inbound. The exact hosts and ports are in <.link
               navigate={~p"/docs/network-requirements"}
               class="text-brand-400 hover:text-brand-300"
@@ -429,7 +429,7 @@ execution:
       <p class="mt-5 text-base leading-7 text-zinc-400">
         systemd reports <.docs_inline_code>failed</.docs_inline_code>. After five starts in
         five minutes the service stops retrying on purpose, so a revoked credential cannot hammer
-        the control plane. Fix what the log shows, then re-arm the service. Starting it without
+        the control plane. Fix what the log shows, then reset and start the service. Starting it without
         resetting the failure counter does nothing:
       </p>
       <.docs_code phx-no-format label="shell">sudo systemctl reset-failed emisar &amp;&amp; sudo systemctl start emisar</.docs_code>

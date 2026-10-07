@@ -226,7 +226,7 @@
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
             Packs live in a catalog, and each one is fingerprinted by its contents. The AI sees only the
             actions you declared — it can't ask for anything else. An exact hash in the published
-            catalog auto-pins; anything else — a pack edited on a host, one you wrote yourself —
+            catalog is trusted automatically. Anything else — a pack edited on a host, one you wrote yourself —
             waits for an admin to review it.
           </p>
           <div class="mt-6 overflow-hidden rounded-lg border border-zinc-900 bg-black/60">
@@ -258,7 +258,7 @@
           </div>
           <h3 class="mt-6 text-xl font-semibold text-white">Policy &amp; approval</h3>
           <p class="mt-3 text-sm text-zinc-400 leading-relaxed">
-            Set allow, ask-for-approval, or deny for each risk tier, then override specific actions or policy for a runner group.
+            Set allow, ask-for-approval, or deny for each risk tier, then override it for specific actions or for a runner group.
             Approvals can require one person or several — or hand out a limited, revocable pass so
             routine calls don't ask every time.
           </p>
@@ -483,7 +483,7 @@
            "The incident from the demo, in full — including the twist. The obvious one-line fix was a no-op, so the durable fix the agent shipped is a guard that refuses to trust the driver.",
            "infrastructure.database", ~p"/use-cases/csi-data-loss"},
           {"ingress", "A fleet-wide 502 no backend was causing",
-           "Every app behind one edge threw intermittent 502s — yet every backend was green. The agent traced it across five layers to an OOM loop and a wedged node still advertising a dead ingress, then stopped the bleed behind gated approvals.",
+           "Every app behind one edge threw intermittent 502s — yet every backend was green. The agent traced it across five layers to an OOM loop and a stuck node still advertising a dead ingress, then stopped the bleed behind gated approvals.",
            "infrastructure.network", ~p"/use-cases/ingress-502"}
         ] do %>
           <div class="group flex flex-col rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8 transition hover:-translate-y-0.5 hover:border-brand-500/40">

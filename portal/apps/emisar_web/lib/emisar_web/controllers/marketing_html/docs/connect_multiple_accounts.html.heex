@@ -16,7 +16,7 @@
         <:dek>
           You can belong to several accounts, such as production and staging, or a client's
           account beside your own. A connection binds one account, so working across several means one
-          connection per account, named so you and the model can always tell them apart.
+          connection per account. Name each one so you and the model can always tell them apart.
         </:dek>
       </.docs_header>
 
@@ -34,7 +34,7 @@
         <.docs_inline_code>emk-</.docs_inline_code>
         key belongs to the account that minted it, and a cloud connector's authorization is
         granted for one account you choose in the browser. A connection does not switch
-        accounts mid-conversation. The account is decided when you wire it up, which keeps
+        accounts mid-conversation. You choose the account when you set up the connection, which keeps
         every run and audit event attributed to the right place.
       </p>
 
@@ -46,7 +46,7 @@
         account's <strong>AI agents</strong>
         page, then add one server entry per account.
         Put the account in the entry's name: the client namespaces tool calls by that name,
-        so "check staging" has an unambiguous target and the model cannot mix accounts up.
+        so "check staging" has one clear target and the model cannot mix accounts up.
       </p>
       <.docs_code phx-no-format label="mcpServers — one entry per account">{~s({
   "mcpServers": {
@@ -74,7 +74,7 @@
         The console generates a ready snippet per client, and a
         client registered with
         <.docs_inline_code>claude mcp add</.docs_inline_code>
-        takes a second registration under the other name.
+        needs a second registration under the other name.
       </p>
 
       <.docs_h2 id="cli">The CLI: stored accounts</.docs_h2>
@@ -82,8 +82,7 @@
         The bridge is also a shell CLI, and it holds credentials for several accounts at once.
         Run
         <.docs_inline_code>emisar-mcp auth</.docs_inline_code>
-        once per account. It opens the browser, you choose the account, and the credential is
-        stored locally. Then:
+        once per account. It opens the browser, you choose the account, and the bridge stores the credential locally. Then:
       </p>
       <.docs_code phx-no-format label="shell">emisar-mcp accounts list
 <span class="text-zinc-500">CURRENT  ACCOUNT         SLUG  ENDPOINT
@@ -98,7 +97,7 @@
       <.docs_code phx-no-format label="shell">emisar-mcp --account demo recent_runs</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <.docs_inline_code>--account</.docs_inline_code>
-        is how an agent works across accounts from one shell: tell it which account each
+        is how an agent works across accounts from one shell. Tell it which account each
         command targets, and the audit trail in each account shows exactly what ran there.
         When
         <.docs_inline_code>EMISAR_URL</.docs_inline_code>

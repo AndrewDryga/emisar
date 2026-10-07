@@ -17,8 +17,7 @@
     >
       <.docs_header current="scim">
         <:dek>
-          Directory sync uses SCIM 2.0 to let your identity provider manage members in emisar:
-          it provisions people, and when they leave it suspends their workspace membership,
+          Directory sync uses SCIM 2.0 to let your identity provider manage members in emisar. It provisions people, and when they leave it suspends their workspace membership,
           ends their browser access to that workspace, and revokes keys issued from that membership.
         </:dek>
       </.docs_header>
@@ -108,7 +107,7 @@
             <.docs_inline_code>externalId</.docs_inline_code>
             to carry the same stable value as the connection's identifier claim, so the SSO
             login and the synced record resolve to one emisar identity. Matching never uses
-            email, so identifiers that differ cannot be reconciled.
+            email, so emisar cannot match identifiers that differ.
           </p>
           <ul class="mt-2 space-y-2">
             <li class="flex items-start gap-2.5">
@@ -161,10 +160,11 @@
           <span>
             When the directory deactivates or removes a user, <strong class="text-zinc-200">deprovisioning suspends the member</strong>. Their
             existing browser access to this workspace ends and keys issued from that
-            membership are revoked immediately. Their members in other workspaces are not
+            membership are revoked immediately. The same person's memberships in other workspaces are not
             affected. The person and audit history remain.
-            Deactivation can be reversed with <code>active:true</code>; after DELETE, the
-            directory must POST the same <code>externalId</code> to restore the resource.
+            The directory can reverse a deactivation with <code>active:true</code>; after DELETE, it must POST the same
+            <code>externalId</code>
+            to restore the resource.
             emisar refuses to deprovision the
             last active owner and returns an error to the directory. Promote another owner
             first.
@@ -186,7 +186,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             Unassigning the wrong group in your provider suspends everyone in it, and
-            reinstating them does not bring back their agent keys or standing approvals. Turn on
+            restoring them does not bring back their agent keys or standing approvals. Turn on
             your provider's safeguard where it has one: in Entra,
             <strong class="text-zinc-200">Prevent accidental deletions</strong>
             holds a large batch of deactivations until an admin allows it.
@@ -297,7 +297,8 @@
           <span>
             A <code>POST</code>
             for a new <code>externalId</code>
-            whose email a member of this workspace already uses answers <code>409</code>
+            answers <code>409</code>
+            when a member of this workspace already uses that email,
             and waits for approval under <a
               href={~p"/app/team"}
               class="font-medium text-brand-400 underline decoration-zinc-700 underline-offset-4 hover:text-brand-300"
@@ -345,11 +346,11 @@
             <code>PATCH active:false</code>
             suspends the membership while keeping the User resource addressable, and
             <code>active:true</code>
-            restores that suspension. <code>DELETE</code>
+            lifts that suspension. <code>DELETE</code>
             also retires the User resource: later reads and mutations return 404 until the
             directory POSTs the same <code>externalId</code>.
-            A manual administrator
-            suspension is not reversed by the directory.
+            The directory does not reverse a manual
+            administrator suspension.
           </span>
         </li>
       </ul>
@@ -472,7 +473,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         A mapping covers only the members your provider sends for that group. Entra sends the
-        direct members of an assigned group, never the members of a group nested inside it, so
+        direct members of an assigned group, never the members of a group nested inside it. So
         assign and map the groups that contain the people directly.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -504,7 +505,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Group runner access is <strong class="text-zinc-200">additive</strong>: emisar
-        combines Default runner access with every mapped group the member belongs to, a
+        combines Default access with every mapped group the member belongs to. A
         mapping cannot remove access granted elsewhere, and any All runners grant wins. For example, a no-runners default plus
         <code>database-team → group:database-prod</code>
         gives those members exactly the database runner group. If another mapped group
@@ -541,8 +542,8 @@
                 The IdP cannot verify credentials
               </td>
               <td class="px-4 py-3">
-                Use the connection's exact SCIM base URL and send the token as <code>Authorization: Bearer …</code>. If the token was rotated or sync was
-                disabled, the old value is invalid immediately.
+                Use the connection's exact SCIM base URL and send the token as <code>Authorization: Bearer …</code>. If you rotated the token or disabled
+                sync, the old value is invalid immediately.
               </td>
             </tr>
             <tr>
@@ -571,7 +572,7 @@
             </tr>
             <tr>
               <td class="px-4 py-3 font-semibold text-zinc-100">
-                SSO login and SCIM provisioning do not converge
+                SSO login and SCIM provisioning create different identities
               </td>
               <td class="px-4 py-3">
                 Compare one user's SCIM <code>externalId</code>

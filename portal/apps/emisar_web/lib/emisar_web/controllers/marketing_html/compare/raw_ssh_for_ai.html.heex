@@ -75,7 +75,7 @@
         {"Output redaction?", "None, so passwords leak into chat logs",
          "20 patterns (bearer/JWT, GitHub/Slack/Stripe keys, secret assignments + your custom ones) masked on the host before egress"},
         {"Lateral movement?", "SSH key on the model's box ≈ key everywhere",
-         "Per-runner token + per-user runner scopes every API key inherits, so revoking the user shrinks every key they minted"},
+         "Per-runner token + per-user runner scopes every API key inherits, so revoking the user shrinks every key they created"},
         {"Credential leaked?", "Rotate the SSH key on every host that trusts it",
          "Revoke one scoped API key; host credentials never reached the model. MCP bridge keys are short-lived and rotated automatically"},
         {"Recovery story?", "\"Read the chat scrollback and the logs and hope\"",

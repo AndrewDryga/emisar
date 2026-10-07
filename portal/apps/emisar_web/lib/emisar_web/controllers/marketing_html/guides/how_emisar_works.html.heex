@@ -9,13 +9,13 @@
     what that approach can do when it goes wrong.
   </p>
   <p>
-    Sandboxing the model did not solve this. Sandboxing constrains where a model runs; it does not
-    constrain a remote SSH session. Once you hand an agent a shell on a production host, it has
+    Sandboxing the model did not solve this. Sandboxing limits where a model runs; it does not
+    limit a remote SSH session. Once you hand an agent a shell on a production host, it has
     whatever that shell has.
   </p>
   <p>
     The approach we trust is to whitelist what the agent can do. The toolset is defined before the
-    agent asks for anything. Models are most useful in yolo mode, and we wanted to keep the
+    agent asks for anything. Models are most useful in yolo mode. We wanted to keep the
     experience of stepping away and coming back to a finished job without handing over a shell.
   </p>
   <p>
@@ -60,9 +60,9 @@
     changes and the new pack needs its own trust decision.
   </p>
   <p>
-    Anything not described by an installed and trusted action is not expressible through emisar. If
-    an operator deliberately installs an action capable of dropping a database, however, the agent
-    can request that action. emisar does not make a permitted destructive operation harmless.
+    Anything not described by an installed and trusted action cannot be requested through emisar. But if
+    an operator deliberately installs an action that can drop a database, the agent
+    can request that action. emisar does not make an allowed destructive operation harmless.
   </p>
 
   <h2>Following one request</h2>
@@ -137,16 +137,16 @@
     request is checked again before dispatch.
   </p>
   <p>
-    {"The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection."}
+    {"The runner opens an outbound TLS WebSocket and exposes no inbound listener. Commands come back through that same connection."}
   </p>
   <p>
     The runner does not rely on the control plane's validation. It looks up the action locally,
     hashes its copy of the pack, and compares the result with the requested <code>pack_ref</code>. It
     applies local admission rules, rejects arguments it does not recognize, validates the supplied
-    values, and clamps requested limits to the action's declared envelope.
+    values, and clamps requested limits to the bounds the action declares.
   </p>
   <p>
-    It then renders the argument vector from the template stored in the pack. For this action, it
+    It then builds the argument vector from the template stored in the pack. For this action, it
     executes <code>systemctl restart checkout.service</code>
     directly. There is no shell between the runner and the binary.
   </p>
@@ -209,7 +209,7 @@
 &#125;</.docs_code>
 
   <p>
-    A nonterminal response includes a continuation object describing the next call. The
+    A nonterminal response (one that is not the final result) includes a continuation object describing the next call. The
     <code>operation_id</code>
     allows a client to recover an operation after losing a response. Separately, the runner keeps a
     replay record so the same accepted dispatch cannot start another process during its retention
@@ -220,15 +220,15 @@
   <p>
     The control plane keeps the fleet-wide audit. A runner that receives a dispatch also writes to a
     local hash-chained JSONL journal before starting the process and again when it reaches a terminal
-    outcome. Verification covers the retained journal or retained suffix; it cannot prove that a
-    privileged host operator did not replace or truncate the entire local journal.
+    outcome. Verification covers only the journal lines still on disk; it cannot rule out that a
+    privileged host operator replaced or truncated the entire local journal.
   </p>
   <p>
     Redaction removes values that match configured patterns. A secret in an unexpected format can
     still appear in output.
   </p>
   <p>
-    The runner's OS privileges limit what a permitted action can affect. A permitted destructive
+    The runner's OS privileges limit what an allowed action can affect. An allowed destructive
     action remains destructive when it runs. emisar is not a VM, container, or kernel sandbox.
   </p>
   <p>
@@ -256,7 +256,7 @@
   <h2>Signed dispatch</h2>
   <p>
     In normal mode, the runner trusts the hosted control plane to authenticate callers, evaluate
-    policy, and send eligible work.
+    policy, and send allowed work.
   </p>
   <p>
     Signed dispatch is optional. A customer-authorized bridge signs each request with a key the

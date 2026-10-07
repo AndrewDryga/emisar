@@ -43,7 +43,7 @@
       <p class="mt-4 text-base leading-7 text-zinc-400">
         The page blamed one service: a health check 404-ing on a URL with a doubled slash. That
         diagnosis had two problems. The doubled-slash path matches no Traefik route, so the edge returns its
-        default <code>404 page not found</code>; the same backend answers 200 on its real path, and
+        default <code>404 page not found</code>. The same backend answers 200 on its real path, and
         Consul had it registered and passing the whole time. The dashboards weren't much help either: 47 targets up, a 5xx
         ratio rounding to zero, and a p99 of 9.8&nbsp;seconds that no single service accounted for.
         Every symptom shared the edge they all sat behind, so that is where the
@@ -141,7 +141,7 @@ vm.query_instant &#123;"query":
         The anycast VIP was the amplifier. Every node advertises the VIP whether or not its
         Traefik is up, so the firewall kept hashing connections onto nodes with nothing listening
         (<code>hvn05</code>
-        constantly, plus whichever proxies were mid-restart), and each of those connections got a
+        constantly, plus whichever proxies were mid-restart). Each of those connections got a
         reset. That explains the pattern: the errors were intermittent because ECMP picks per
         connection, fleet-wide because every app shares the edge, and self-healing because a
         recovered proxy rejoined on its own. A probe at the VIP settled it: about 40% of connections
@@ -172,7 +172,7 @@ nomad.task_resources_set &#123;"job": "traefik", "group": "traefik", "task": "tr
       <p class="mt-3 text-base leading-7 text-zinc-400">
         Neither change ran through a shell. The Consul restart isn't a special case:
         <code>linux.systemctl_restart</code>
-        takes the unit by a name that can't carry shell metacharacters, and which units a runner may
+        takes the unit by a name that can't carry shell metacharacters. Which units a runner may
         touch is a policy decision, high-risk and approval-gated by default. The memory change refuses
         to write if the jobspec moved under it, and it edits only that one task's limit.
       </p>

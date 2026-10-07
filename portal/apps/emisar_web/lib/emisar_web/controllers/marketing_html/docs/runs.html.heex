@@ -24,7 +24,7 @@
 
       <.docs_h2 id="the-list">The Runs list</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Each row is one invocation against one host: the time, action ID, target runner,
+        Each row is one action call on one host: the time, action ID, target runner,
         dispatcher, status, and duration. Rows update live as a run moves through its
         lifecycle, so you can watch a dispatch go from queued to finished without reloading.
         On a phone, the first line carries the action and status, and the second the origin,
@@ -45,7 +45,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Status.</strong>
-            One or more lifecycle states. You can pull up just the failures, just what is awaiting
+            One or more lifecycle states. You can show just the failures, just what is awaiting
             approval, or just what is still in flight.
           </span>
         </li>
@@ -151,8 +151,8 @@
         from the operator or agent. An agent can also include evidence and expected outcome:
         evidence records what it observed, and expected records the outcome that confirms
         success. When
-        policy intervenes, the run shows the matching rules and exact policy version. A routine
-        allow is omitted because every dispatched run already passed policy.
+        policy intervenes, the run shows the matching rules and exact policy version. The run does not show a routine
+        allow, because every dispatched run already passed policy.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Below that, <strong>Arguments</strong>
@@ -166,7 +166,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         <strong>Executed command</strong>
         shows the shell line the runner ran. The runner applies configured redaction to the
-        command and output before they leave the host. Redaction is a best-effort backstop, not a
+        command and output before they leave the host. Redaction is best-effort, not a
         guarantee. The
         <.link
           navigate={~p"/docs/security-model"}
@@ -191,7 +191,7 @@
         to read more. This display limit does not remove stored output.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Truncation can also happen at the source. The runner bounds the output it captures per the
+        Truncation can also happen at the source. The runner limits the output it captures according to the
         action's output settings. When it hits that limit it clips the stream and flags the run as
         truncated. Each run also records whether every progress chunk arrived, so a gap left by a
         mid-run disconnect is visible.
@@ -276,7 +276,7 @@
         guide covers reconnects and stuck runs.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        When an agent sends one action to a runner group, each host gets its own run, and
+        When an agent sends one action to a runner group, each host gets its own run.
         emisar groups them under one <strong class="text-zinc-200">operation</strong> of up
         to 16 runners, with one result per host. Replaying the operation returns the original
         runs. A lost response never causes a second execution.
@@ -331,8 +331,8 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">A queued run is usually not stuck.</strong>
-            It waits for its runner and is delivered as soon as that runner reconnects. Only when
-            the host is still gone after a short grace window does the sweep end it as
+            It waits for its runner and is delivered as soon as that runner reconnects. If the host
+            is still gone after a short grace window, emisar ends it as
             <.status_badge status={:error} /> rather than leave it queued indefinitely.
           </span>
         </li>
@@ -343,7 +343,7 @@
             <.docs_inline_code>execution_outcome_unknown</.docs_inline_code>
             can have completed its work.</strong>
             The runner reports this when its process or host dies after execution starts,
-            before the terminal result was durable. emisar never runs that dispatch again
+            before the terminal result was saved. emisar never runs that dispatch again
             automatically. Check the target system before you retry.
           </span>
         </li>
@@ -351,7 +351,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Output stopped but the run is still running.</strong>
-            Output is bounded per action and truncation is reported, so a quiet run is more often a
+            The runner limits output per action and reports truncation, so a quiet run is more often a
             quiet command than a lost stream. Check the host with <.docs_inline_code>sudo emisar events tail -f</.docs_inline_code>,
             which shows the local journal live.
           </span>

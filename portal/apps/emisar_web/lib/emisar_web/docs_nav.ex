@@ -58,7 +58,7 @@ defmodule EmisarWeb.DocsNav do
               icon: "infrastructure.container",
               keywords: "docker podman image sidecar",
               desc:
-                "Run the runner in a container: what it can see, the two shared mechanics, and a sidecar."
+                "Run the runner in a container: what it can see, identity and state, and a sidecar."
             },
             %{
               slug: "kubernetes",
@@ -153,7 +153,7 @@ defmodule EmisarWeb.DocsNav do
               icon: "interface.cli",
               keywords: "claude code cursor claude desktop stdio bridge",
               desc:
-                "Wire Claude Code, Cursor, Claude Desktop, and the CLIs in with the emisar-mcp bridge or a raw API key."
+                "Connect Claude Code, Cursor, Claude Desktop, and the CLIs with the emisar-mcp bridge or a raw API key."
             },
             %{
               slug: "connect-claude-ai",
@@ -534,7 +534,8 @@ defmodule EmisarWeb.DocsNav do
               path: "/docs/security-model",
               icon: "security.posture",
               keywords: "threat trust boundary redaction retention",
-              desc: "Trust boundary, searchable audit, hash-chained journal, redaction on egress."
+              desc:
+                "Trust boundary, searchable audit, hash-chained journal, redaction on the way out."
             },
             %{
               slug: "limits",

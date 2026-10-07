@@ -104,7 +104,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The diff covers the files behind the pack's content hash: <.docs_inline_code>pack.yaml</.docs_inline_code>, the action
         declarations, and the scripts. The command fetches and verifies the new version
-        the same way an update does, and it does not write to the packs dir or reload the
+        the same way an update does, and it does not write to the packs directory or reload the
         runner.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
@@ -174,7 +174,7 @@
             <strong class="text-zinc-200">The new version is verified before it goes live.</strong>
             The command fetches, validates, and hash-checks the tarball against the
             registry index, stages the new version beside the live pack, and only then
-            swaps it in. If activation fails, the previous version is restored
+            swaps it in. If activation fails, the command restores the previous version
             immediately, and the staged swap keeps a backup.
             After a power loss mid-swap, the next install or update recovers it.
           </span>
@@ -247,7 +247,7 @@
       <.docs_h2 id="fleet">5. Roll through the fleet</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Repeat the update on bounded runner groups. Trust is bound to the hash: another
-        runner with the trusted hash does not need a second decision, and a different
+        runner with the trusted hash does not need a second decision. A different
         hash for the same version is drift that stops and asks for review. After each
         group, make sure the versions and hashes match what you trusted, and run one
         representative action.
@@ -278,7 +278,7 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The
         <.docs_inline_code>--hash</.docs_inline_code>
-        pin makes this exact: the install aborts when the computed hash does not match.
+        pin makes this exact: the install stops when the computed hash does not match.
         Each version carries its own trust decision, so a version you trusted before
         resumes dispatch without another review, and a catalog hash does not need one
         either. A version the catalog dropped, or a hash the account never trusted, shows
@@ -354,7 +354,7 @@
       <.docs_h2 id="troubleshooting">Troubleshooting</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Four different states look the same from the catalog: the action you wanted is not
-        offered. They separate on the host and on the Packs page:
+        offered. You can tell them apart on the host and on the Packs page:
       </p>
       <div class="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
         <table class="w-full min-w-[720px] text-left text-sm">
@@ -411,7 +411,7 @@
                 One action is gone from a healthy pack
               </td>
               <td class="px-4 py-3 align-top leading-6">
-                Its program does not resolve on the service's <.docs_inline_code>PATH</.docs_inline_code>, or a local
+                Its program is not found on the service's <.docs_inline_code>PATH</.docs_inline_code>, or a local
                 admission rule hides it. A rule in the host's config always wins.
               </td>
               <td class="px-4 py-3 align-top leading-6">

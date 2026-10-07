@@ -174,7 +174,7 @@ defmodule EmisarWeb.MarketingHTML do
         <.link navigate={~p"/docs/quickstart"} class="text-brand-400 hover:text-brand-300">
           quickstart
         </.link>
-        first, then come back to wire in your LLM.
+        first, then come back to connect your LLM.
       </:item>
       <:item>
         A publicly reachable HTTPS server URL. The URL connection in these guides cannot reach

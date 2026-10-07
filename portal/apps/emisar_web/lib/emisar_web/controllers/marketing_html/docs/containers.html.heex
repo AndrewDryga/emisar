@@ -240,8 +240,8 @@ RUN apt-get update \
     && emisar pack install postgres=X.Y.Z --hash sha256:…
 USER 65532</.docs_code>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Pin the pack version and content hash so the image build is reproducible and a tampered
-        registry copy is rejected. The pack's page in the
+        Pin the pack version and content hash so the image build is reproducible and the install
+        rejects a tampered registry copy. The pack's page in the
         <.link navigate={~p"/packs"} class="text-brand-400 hover:text-brand-300">
           pack catalog
         </.link>

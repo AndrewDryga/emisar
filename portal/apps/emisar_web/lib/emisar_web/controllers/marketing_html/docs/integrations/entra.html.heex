@@ -77,7 +77,7 @@
             Open <strong class="text-zinc-200">Certificates &amp; secrets → New client secret</strong>. Copy the
             <strong class="text-zinc-200">Value</strong>
             column, not <strong class="text-zinc-200">Secret ID</strong>. The value is shown once
-            and is unrecoverable afterwards.
+            and cannot be recovered later.
           </p>
 
           <.docs_screenshot
@@ -112,7 +112,7 @@
             token type, select <.docs_inline_code>auth_time</.docs_inline_code>, and select <strong class="text-zinc-200">Add</strong>. Entra leaves this claim out by default.
             emisar checks it whenever it asks Entra for a fresh sign-in: verifying the connection,
             accepting an invitation in a workspace that requires SSO, and setting up or resetting
-            multi-factor authentication. Without it, those steps fail.
+            multi-factor authentication. Without the claim, those steps fail.
           </p>
         </.docs_step>
         <.docs_step n={6}>
@@ -158,9 +158,8 @@
 
       <.docs_h2 id="scim">Directory sync</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Directory sync makes Entra responsible for the member lifecycle, provisioning people and
-        removing their access after offboarding. It also supplies the active identity record used
-        to join Entra's
+        Directory sync makes Entra responsible for the member lifecycle: it provisions (adds) people and
+        removes their access after offboarding. It also supplies the active identity record that links Entra's
         <.docs_inline_code>oid</.docs_inline_code>
         claim to sign-in. <.plan_note tier={:enterprise} />
       </p>
@@ -198,7 +197,7 @@
           <.docs_screenshot
             src="/images/docs/sso/entra-create-enterprise-app.webp"
             title="Microsoft Entra · Browse App Gallery"
-            caption="The gallery is for apps Microsoft already ships an integration for. emisar is not one, so it is created by hand."
+            caption="The gallery is for apps Microsoft already ships an integration for. emisar is not one, so you create it by hand."
             alt="Entra's Browse Microsoft Entra App Gallery blade with the Create your own application button outlined in green, above gallery tiles for Amazon Web Services, Google Cloud Platform, Oracle and SAP."
           />
         </.docs_step>
@@ -268,7 +267,7 @@
             match the synced member and waits for administrator approval.
             <.docs_inline_code>objectId</.docs_inline_code>
             is the same
-            immutable value as <.docs_inline_code>oid</.docs_inline_code>, so
+            permanent value as <.docs_inline_code>oid</.docs_inline_code>, so
             both flows identify one person.
           </p>
         </.docs_step>
@@ -284,7 +283,7 @@
             to <strong class="text-zinc-200">Sync only assigned users and groups</strong>
             and turn <strong class="text-zinc-200">Provisioning Status</strong>
             on. Scope is separate from assignment and defaults to everyone. Change it, or Entra
-            sends the entire directory regardless of assignment. Entra syncs roughly every 40
+            sends the entire directory no matter what you assigned. Entra syncs roughly every 40
             minutes. New members appear under <strong class="text-zinc-200">Members</strong>
             after the next cycle. Their Entra groups then appear under <strong class="text-zinc-200">Groups &amp; access</strong>.
             An offboarding also waits for the next cycle. For an urgent one, also choose
@@ -306,7 +305,7 @@
             page, check <strong class="text-zinc-200">Prevent accidental deletions</strong>,
             set a threshold above your usual offboardings per cycle, and fill in <strong class="text-zinc-200">Notification Email</strong>. When one cycle would
             disable or delete more users than that, Entra pauses provisioning and emails you
-            to allow or reject the batch. Without it, unassigning the wrong group suspends
+            to allow or reject the batch. Without that guard, unassigning the wrong group suspends
             everyone in it in emisar and revokes their agent keys and standing approvals.
             Assigning the group again restores their access, but not those credentials.
           </p>

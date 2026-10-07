@@ -67,13 +67,13 @@ defmodule EmisarWeb.MarketingController do
      "Require customer-signed action dispatches, then issue, rotate, and revoke the keys and certificates."},
     {"/use-cases/csi-data-loss", :csi_data_loss, :csi_data_loss,
      "Case study: a CSI driver wiped 33h of metrics — contained via emisar",
-     "A real incident: democratic-csi ran mkfs over a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. An agent on emisar investigated through declared actions, stopped the bleed behind one approval, and landed the durable fix as reviewable infra: a guard that refuses to trust the driver, after the obvious one-line setting turned out to be a no-op."},
+     "A real incident: democratic-csi ran mkfs over a live Pure LUN on a multipath race, wiping 33 hours of VictoriaMetrics data. An agent on emisar investigated through declared actions, stopped the bleed behind one approval, and landed the durable fix as reviewable infra: a guard that refuses to trust the driver. The obvious one-line setting turned out to be a no-op."},
     {"/use-cases/ingress-502", :ingress_502, :ingress_502,
      "Case study: a fleet-wide 502 traced through five layers — via emisar",
-     "A real incident: every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was healthy. An agent on emisar traced it across five layers (FRR, Traefik, Nomad, Consul) to a Traefik OOM loop and a wedged node still advertising a dead ingress, stopped the bleed behind gated approvals, and named the durable fix: health-gate the anycast so a node withdraws itself instead of black-holing traffic."},
+     "A real incident: every app behind one anycast edge threw intermittent 502 Connection refused, yet every backend was healthy. An agent on emisar traced it across five layers (FRR, Traefik, Nomad, Consul) to a Traefik OOM loop and a stuck node still advertising a dead ingress. The agent stopped the bleed behind gated approvals and named the durable fix: health-gate the anycast so a node withdraws itself instead of black-holing traffic."},
     {"/use-cases/cassandra-migration", :cassandra_migration, :cassandra_migration,
      "Moving Cassandra from GCP to bare metal: an AI operator's field report",
-     "An AI operator explains how it authored and stress-tested a bare-metal Cassandra platform, then used emisar's bounded actions to help move 12 application jobs across 14 live keyspaces, with human decisions and corrections clearly separated."},
+     "An AI operator explains how it authored and stress-tested a bare-metal Cassandra platform, then used emisar's bounded actions to help move 12 application jobs across 14 live keyspaces. Human decisions and corrections are clearly separated."},
     {"/compare/raw-ssh-for-ai", :raw_ssh_for_ai, :raw_ssh_for_ai,
      "Why not just give the LLM SSH?",
      "Comparison: raw SSH-for-AI agents vs an emisar action pack. Both run real commands; the difference is whose recovery you're betting on."},
@@ -185,15 +185,15 @@ defmodule EmisarWeb.MarketingController do
     {"Where do approvals happen?",
      "In the web UI and your email inbox. The approver sees the actor, the arguments, the target host, and the policy rule that triggered the gate. One click to allow, one to deny."},
     {"Do I have to approve every action?",
-     "No. Policy decides by risk tier, action, runner, or runner group. We all know that agents are most useful when they are unleashed so routine, bounded reads can run automatically. Risky mutations can require approval, and destructive actions can be denied. You choose where the agent keeps moving and where a person must step in."},
+     "No. Policy decides by risk tier, action, runner, or runner group. Agents are most useful when they are unleashed, so routine, bounded reads can run automatically. Risky changes can require approval, and destructive actions can be denied. You choose where the agent keeps moving and where a person must step in."},
     {"What if my runner dies mid-run?",
      "On Linux, the runner stops the action if it exits. If the runner stays offline, emisar marks its in-flight runs as errored within minutes, so nothing appears to run forever."},
     {"Is this MCP-compatible?",
      "Yes. Claude.ai and ChatGPT connect to emisar's remote JSON-RPC MCP server through OAuth. Fifteen local clients — Claude Code, Claude Desktop, Cursor, Windsurf, Zed, Copilot CLI, Gemini CLI, Codex CLI, and more — plus almost any other MCP agent can use the emisar stdio bridge."},
     {"Can I self-host the control plane?",
-     "The current product uses the hosted emisar control plane. The repository includes deployable control-plane code for evaluation, but supported self-hosted and air-gapped deployments are not generally available today. Contact us if that boundary is a requirement."},
+     "The current product uses the hosted emisar control plane. The repository includes deployable control-plane code for evaluation, but supported self-hosted and air-gapped deployments are not generally available today. Contact us if self-hosting is a requirement."},
     {"What about secrets?",
-     "Runner output is redacted before leaving the host and retained in run history. The audit trail stores terminal outcome metadata, including who, when, action, runner, reason, and exit code. Patterns are declared per action; defaults catch about 20 built-in patterns."}
+     "Runner output is redacted before leaving the host and kept in run history. The audit trail stores the final outcome's metadata, including who, when, action, runner, reason, and exit code. Patterns are declared per action; defaults catch about 20 built-in patterns."}
   ]
 
   # The home page has bespoke JSON-LD; keep it as its own def. Every
@@ -257,11 +257,11 @@ defmodule EmisarWeb.MarketingController do
   # built from Billing in pricing_faqs/1 instead.
   @pricing_faqs [
     {"Do you store the output of my commands?",
-     "Runner output is redacted before leaving the host and retained in run history. The audit trail stores terminal outcome metadata, including who, when, action, runner, reason, and exit code. Redaction uses 20 built-in patterns plus your own per-action rules."},
+     "Runner output is redacted before leaving the host and kept in run history. The audit trail stores the final outcome's metadata, including who, when, action, runner, reason, and exit code. Redaction uses 20 built-in patterns plus your own per-action rules."},
     {"How does billing work?",
      "Paid plans are billed per runner through Paddle, our Merchant of Record. You get an invoice for each billing period, and Paddle handles sales tax and VAT. We never see or store full card numbers."},
     {"Can I self-host?",
-     "The current product uses the hosted emisar control plane. The runner, MCP bridge, and packs are Apache-2.0 open source, and the repository includes deployable control-plane code (Business Source License) for evaluation. Supported self-hosted and air-gapped deployments are not generally available today. Tell us if that boundary is a requirement."},
+     "The current product uses the hosted emisar control plane. The runner, MCP bridge, and packs are Apache-2.0 open source, and the repository includes deployable control-plane code (Business Source License) for evaluation. Supported self-hosted and air-gapped deployments are not generally available today. Tell us if self-hosting is a requirement."},
     {"Can I cancel any time?",
      "Yes. Cancel from billing settings to stop renewal in Paddle. Paid features and limits remain available until the scheduled end of the billing period, then the account moves to Free limits."},
     {"Do you offer startup discounts?",
@@ -391,7 +391,7 @@ defmodule EmisarWeb.MarketingController do
       {"Do you support SSO and SCIM?",
        "Yes. OIDC single sign-on (Okta, Entra ID, JumpCloud, Google Workspace, Keycloak, " <>
          "or any compliant provider) is on #{sso_plans}. Automatic offboarding needs SCIM " <>
-         "2.0 directory sync, which is on #{scim_plans}: deactivate someone in your IdP and " <>
+         "2.0 directory sync, which is on #{scim_plans}. Deactivate someone in your IdP and " <>
          "emisar ends their browser access to that workspace and revokes keys issued from " <>
          "that membership without anyone touching the " <>
          "console. With OIDC alone they can't sign in again, but a live session or an " <>

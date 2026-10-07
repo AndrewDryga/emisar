@@ -204,7 +204,7 @@ defmodule EmisarWeb.MarketingTest do
     assert trust =~ "Runner journal:"
     assert trust =~ "retained runner journal&#39;s chain"
     assert trust =~ "privileged host operator"
-    assert trust =~ "replace or truncate the entire local journal"
+    assert trust =~ "replaced or truncated the entire local journal"
     assert trust =~ "Portal audit:"
     refute trust =~ "catches any edited or missing line"
   end
@@ -219,10 +219,10 @@ defmodule EmisarWeb.MarketingTest do
         ] do
       text = conn |> get(route) |> html_response(200) |> squish()
 
-      assert text =~ "retained journal or retained suffix",
+      assert text =~ "journal lines still on disk",
              "#{route} does not scope verification to retained evidence"
 
-      assert text =~ "replace or truncate the entire local journal",
+      assert text =~ "replaced or truncated the entire local journal",
              "#{route} does not state the whole-journal blind spot"
 
       refute text =~ "truncate the tail and re-chain"
@@ -248,7 +248,7 @@ defmodule EmisarWeb.MarketingTest do
     end
 
     security = conn |> get(~p"/security") |> html_response(200) |> squish()
-    assert security =~ "A novel secret shape can still pass a pattern-based filter"
+    assert security =~ "A new secret shape can still pass a pattern-based filter"
   end
 
   test "pricing page carries a monthly/annual toggle with both Team prices", %{conn: conn} do
@@ -516,7 +516,7 @@ defmodule EmisarWeb.MarketingTest do
     assert html =~ "suspends"
     refute html =~ "deletes the user"
     assert squish(html) =~ "keys issued from that membership are revoked immediately"
-    assert squish(html) =~ "Their members in other workspaces are not affected"
+    assert squish(html) =~ "The same person's memberships in other workspaces are not affected"
     # Owner is never assignable via sync.
     assert html =~ "Owner is never assignable through"
     assert html =~ "Role mapping"
@@ -1130,7 +1130,7 @@ defmodule EmisarWeb.MarketingTest do
                "A customer-authorized bridge signs each request with a key the control plane never holds."
 
       assert html =~
-               "The runner opens an outbound TLS WebSocket and exposes no inbound listener; commands return through that established connection."
+               "The runner opens an outbound TLS WebSocket and exposes no inbound listener. Commands come back through that same connection."
 
       assert html =~ "Private packs"
       assert html =~ "not a VM, container, or kernel sandbox"
@@ -1214,12 +1214,12 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Runner credentials rotate automatically"
 
       assert html =~
-               "Runner output is redacted before leaving the host and retained in run history"
+               "Runner output is redacted before leaving the host and kept in run history"
 
       assert html =~ "Related state changes are recorded in the audit log"
       refute html =~ "redacted output in audit log"
 
-      assert html =~ "Verification covers the retained"
+      assert html =~ "Verification covers only the journal"
       assert html =~ "privileged host operator"
       refute html =~ "action a real person signed"
       refute html =~ "Recorded byte-for-byte"
@@ -1269,7 +1269,7 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/trust") |> html_response(200) |> squish()
 
       assert html =~ "Portal audit: actor, action, target"
-      assert html =~ "Run history: exact action arguments retained"
+      assert html =~ "Run history: exact action arguments kept"
       assert html =~ "masked in console and API views, not storage"
       assert html =~ "Runner journal: a redacted copy of action arguments"
       refute html =~ "Every action: actor, redacted arguments"
@@ -1985,7 +1985,7 @@ defmodule EmisarWeb.MarketingTest do
 
       # The reference link promises only what that page contains.
       refute html =~ "every method, parameter, error code"
-      assert html =~ "recovery semantics"
+      assert html =~ "recovery rules"
 
       runbooks = conn |> get(~p"/docs/runbooks") |> html_response(200)
       assert runbooks =~ "Polls every 5 seconds to 1 hour, 2 to 100 attempts"
@@ -2055,7 +2055,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "become read-only once a member identity exists"
       assert html =~ "not a minimum role"
       assert html =~ "reads these claims from the ID token and does not call UserInfo"
-      assert html =~ "with no additional audience"
+      assert html =~ "with no other audience"
       assert html =~ "Require SSO for the account"
       assert html =~ "Rotate a client secret"
       assert html =~ "Disable or delete a connection"
@@ -2073,7 +2073,7 @@ defmodule EmisarWeb.MarketingTest do
       html = conn |> get(~p"/docs/teams-and-access") |> html_response(200) |> squish()
 
       assert html =~
-               "confirms a code sent to the invited address; that accepts the invitation and signs them in to this workspace"
+               "confirms a code sent to the invited address. Confirming the code accepts the invitation and signs them in to this workspace"
 
       assert html =~ "only that mailbox can accept it"
       refute html =~ "sign out and sign in again"
@@ -2249,7 +2249,7 @@ defmodule EmisarWeb.MarketingTest do
       refute keys =~ "Reveal key"
 
       assert keys =~
-               "OAuth tokens, arbitrary Bearer tokens, and audit-export tokens bypass local rotation state."
+               "OAuth tokens, arbitrary Bearer tokens, and audit-export tokens do not take part in local rotation."
 
       refute keys =~ "non-expiring quick-connect keys"
 
@@ -2656,7 +2656,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "release-assets.githubusercontent.com"
       assert html =~ "tuf-repo-cdn.sigstore.dev"
       assert html =~ "tuf-repo.github.com"
-      assert html =~ "To permit the optional GitHub release fallback"
+      assert html =~ "To enable the optional GitHub release fallback"
       refute html =~ "GCS"
       refute html =~ "Google Storage"
       refute html =~ "needs no open port"
@@ -3446,7 +3446,7 @@ defmodule EmisarWeb.MarketingTest do
       assert text =~ "masked in console and API views, not removed from storage"
 
       assert text =~ "privileged host operator"
-      assert text =~ "replace or truncate the entire local journal"
+      assert text =~ "replaced or truncated the entire local journal"
 
       refute text =~
                "Signed dispatch and local admission control — a compromised control plane cannot forge an action"

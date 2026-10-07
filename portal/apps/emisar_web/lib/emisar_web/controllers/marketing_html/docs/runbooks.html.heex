@@ -82,7 +82,7 @@
         >New runbook</a>. Start with a short title,
         a stable slug, and the operator context: prerequisites, stop conditions, ownership, the
         expected outcome, and rollback instructions. Context supports headings, paragraphs, lists,
-        and fenced code. Links, images, and raw HTML stay inert.
+        and fenced code. Links, images, and raw HTML stay inactive.
       </p>
       <p class="mt-5 text-base text-zinc-400">
         If another tool or an LLM already produced Definition v1 JSON, choose <.link
@@ -137,7 +137,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             <strong class="text-zinc-200">Parallel</strong>
-            makes all stage items eligible together. Maximum concurrency limits the number of
+            makes all stage items ready to run together. Maximum concurrency limits the number of
             active attempts. Use
             <.docs_inline_code>1</.docs_inline_code>
             for one-host-at-a-time maintenance.
@@ -222,7 +222,7 @@
 
       <.docs_h3 id="extracted-outputs">Extracted outputs</.docs_h3>
       <p class="mt-3 text-base text-zinc-400">
-        Retain only the values that later work or a success condition needs. Choose stdout or
+        Keep only the values that later work or a success condition needs. Choose stdout or
         stderr, then extract with JSON Pointer, contains, literal grep, or a bounded
         regular expression. Give each value a stable output ID. Mark an output sensitive to mask it
         in results and evidence. Conditions and compatible sensitive arguments in later stages
@@ -281,7 +281,7 @@
       <.docs_h3 id="wait-policy">Wait policy</.docs_h3>
       <p class="mt-3 text-base text-zinc-400">
         When a successful observation does not yet meet its conditions, a wait can run the same
-        observation again after a fixed interval. Bound it with both a timeout and a maximum number
+        observation again after a fixed interval. Limit it with both a timeout and a maximum number
         of observations. A wait never retries an action failure, denial, refusal, extraction error,
         timeout, or cancellation. Those events halt the execution.
       </p>
@@ -300,7 +300,7 @@
       <.docs_h2 id="publish">3. Publish a resolvable release</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
         Save whenever you need to keep incomplete work. Use Test draft to try valid unpublished
-        changes. Publishing has a higher bar: the strict definition must be valid, every
+        changes. Publishing has stricter checks: the strict definition must be valid, every
         target must resolve in your scope, each selected runner must expose one compatible
         action contract, and the current trusted pack and policy plan must resolve. The
         editor lists every issue beside <strong class="text-zinc-200">Publish check</strong>
@@ -487,8 +487,8 @@
       <.docs_h2 id="failure">Failure and safety</.docs_h2>
       <p class="mt-5 text-base text-zinc-400">
         A denial, refusal, timeout, cancellation, action failure, extraction failure, unmet terminal
-        condition, lost authorization, or unusable frozen pack halts the execution. Peers already
-        running can settle and report their real outcomes. No new item or later stage
+        condition, lost authorization, or unusable frozen pack halts the execution. Items already
+        running can finish and report their real outcomes. No new item or later stage
         starts.
       </p>
       <p class="mt-5 text-base text-zinc-400">

@@ -89,8 +89,8 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The approver sees the action, runner, arguments, reason, evidence, and expected
-        result. If the pack, target, or a policy fact changed since the request, the
-        approval is refused.
+        result. If the pack, target, or a policy fact changed since the request, emisar refuses the
+        approval.
       </p>
 
       <.docs_h2 id="result">4. Read the result</.docs_h2>
@@ -99,7 +99,7 @@
         command, policy facts, actor, timestamps, and exit code.
       </p>
       <ol class="mt-5 list-decimal space-y-3 pl-6 text-base text-zinc-400">
-        <li>Wait for a terminal status.</li>
+        <li>Wait for a terminal status, one that will not change again.</li>
         <li>Read both standard output and standard error.</li>
         <li>Check the exit code and any structured result.</li>
         <li>Make sure the result matches the reason for the run.</li>
@@ -128,7 +128,7 @@
         </p>
       </.docs_callout>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Fix denied, refused, or failed runs at the reported gate, then create a new run with
+        Fix denied, refused, or failed runs at the check that reported the problem, then create a new run with
         a new reason. Do not retry with the local <code>emisar action run</code>
         command, because it bypasses the control plane's policy and approvals.
       </p>

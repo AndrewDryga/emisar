@@ -101,12 +101,12 @@
         <li>
           <strong class="text-zinc-200">A caller asks for one declared action.</strong>
           The control plane authenticates an operator session, API key, or OAuth client. It then
-          applies runner and pack scope to executable candidates and targeting.
+          applies runner and pack scope to which actions can run and which runners can be targeted.
         </li>
         <li>
           <strong class="text-zinc-200">The control plane resolves the exact pack.</strong>
           The model-facing contract comes from the trusted manifest for one exact hash. A
-          runner whose advertisement disagrees is excluded from the targets.
+          runner that advertises a different hash is excluded from the targets.
         </li>
         <li>
           <strong class="text-zinc-200">Policy decides.</strong>
@@ -122,18 +122,18 @@
           <strong class="text-zinc-200">The runner decides again.</strong>
           It re-hashes the pack, checks local admission, verifies the signature where
           enforced, re-validates every argument against the schema, clamps call options to the
-          action envelope, and renders the pack-authored program.
+          action envelope, and builds the pack-authored program.
         </li>
         <li>
           <strong class="text-zinc-200">It executes, redacts, and reports.</strong>
-          Output is bounded and redacted on the host before any chunk is sent. The runner writes
+          The runner bounds and redacts output on the host before it sends any chunk. It writes
           its local journal line, streams progress, and sends one terminal result. The control
           plane stores the terminal result as the searchable record.
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         The flow has two separate decisions: the control plane decides whether a
-        request is allowed, the runner decides whether it will execute, and neither can make
+        request is allowed, and the runner decides whether it will execute. Neither can make
         the other skip its own check.
       </p>
 
@@ -188,7 +188,7 @@
             <strong class="text-zinc-200">The control plane</strong>
             stores accounts, members, policies, approvals, trusted pack references, hashes,
             runbooks, exact action arguments, runner-returned output, and audit history. It stores
-            every issued bearer credential as a hash. It stores OIDC client secrets reversibly
+            every issued bearer credential as a hash. It stores OIDC client secrets in a form it can read back
             because it must present them to the identity provider. Exact arguments can contain
             operator-supplied secrets, so protect database copies accordingly.
           </span>
@@ -198,7 +198,7 @@
           <span>
             <strong class="text-zinc-200">A runner</strong>
             stores its token, durable dispatch state, installed packs, signed-dispatch nonce store,
-            and local journal; dispatch and nonce state prevent repeated execution, and only one
+            and local journal. Dispatch and nonce state prevent repeated execution, and only one
             runner process can own that state at a time.
           </span>
         </li>
@@ -242,7 +242,7 @@
                "Nothing new is authorized, created, or sent, because there is no offline dispatch path. An action already executing on a runner keeps running, and its result is delivered when the connection returns.",
                "Wait. No cleanup is needed for work that had not been dispatched."},
               {"The runner is disconnected before its dispatch",
-               "Nothing executes. The run waits and is delivered as soon as that runner reconnects and re-advertises. If the host is still gone after a short grace window, the sweep ends the run as Error rather than leaving it queued.",
+               "Nothing executes. The run waits and is delivered as soon as that runner reconnects and re-advertises. If the host is still gone after a short grace window, a cleanup sweep ends the run as Error rather than leaving it queued.",
                "Bring the host back and dispatch again through the normal path. Nothing is retried behind your back."},
               {"The network drops while an action is running",
                "The runner process is still alive, so the child process keeps running. The runner reconnects with backoff, re-advertises, and replays its progress and terminal result until the control plane acknowledges them.",
@@ -252,7 +252,7 @@
                "Check the target system before you re-run. The side effect happened outside emisar's control, and only you can tell whether it landed."},
               {"The LLM client cancels, or the bridge disconnects",
                "An operation the control plane already admitted keeps going. Cancellation stops the bridge wait and suppresses its reply. Closing the client input lets admitted requests finish.",
-               "Recover by operation id, with the same credential lineage that made the call. Never repeat the mutation because the response was lost."},
+               "Recover by operation id, with the same credential (or its rotation successor) that made the call. Never repeat the mutation because the response was lost."},
               {"An approval waits while the fleet changes",
                "The decision is rechecked against current facts, and the send rechecks them again. A fact that moved makes the approval fail rather than dispatch something else.",
                "Read the checks below, fix what moved, and dispatch again."},
@@ -302,7 +302,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Messages are delivered idempotently, but exactly-once delivery is not guaranteed. A
-        runner host can die after starting a process but before recording its outcome; when
+        runner host can die after starting a process but before recording its outcome. When
         that happens, emisar reports
         <.docs_inline_code>execution_outcome_unknown</.docs_inline_code>
         and refuses to guess by re-running it.
@@ -311,7 +311,7 @@
       <.docs_h2 id="approvals">What a wait revalidates</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         An approval can wait for hours while the fleet changes. When the approver decides,
-        these facts are checked before the run is released, and the delivery facts are checked
+        emisar checks these facts before it releases the run, and checks the delivery facts
         again at send:
       </p>
       <ul class="mt-5 space-y-3 text-base leading-7 text-zinc-400">
@@ -319,7 +319,7 @@
           <span class="flex-none text-zinc-500">—</span>
           <span>
             The run is still parked and still approvable. A cancellation or an expiry in the
-            meantime makes the approval fail rather than resurrect it.
+            meantime makes the approval fail rather than revive it.
           </span>
         </li>
         <li class="flex items-start gap-2.5">

@@ -23,11 +23,11 @@
         </:dek>
       </.docs_header>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        None of this needs much configuration, because the defaults are already conservative (<.link
+        None of this needs much configuration, because the defaults are already strict (<.link
           navigate={~p"/docs/policies-and-approvals"}
           class="text-brand-400 hover:text-brand-300"
         >policies &amp; approvals</.link>
-        states them). Going to production is mostly deciding <em>where</em>
+        lists them). Going to production is mostly deciding <em>where</em>
         to tighten, and doing it once.
       </p>
 
@@ -75,7 +75,7 @@
             Free-form <code class="font-mono">key=value</code>
             pairs, such as <code class="font-mono">region=us-east-1</code>, <code class="font-mono">environment=prod</code>,
             or <code class="font-mono">service=checkout</code>, let you filter and search the fleet
-            without redrawing your groups. (Policy targets a runner, a group, or the account, never
+            without changing your groups. (Policy targets a runner, a group, or the account, never
             a label.)
           </span>
         </li>
@@ -111,7 +111,7 @@
           <div class="font-mono text-sm text-zinc-300">staging</div>
           <div class="text-base leading-7 text-zinc-400">
             Two hosts use the full catalog, including the <code class="font-mono">shell</code>
-            break-glass pack. Its looser policy lets an agent iterate on a fix, and it cannot
+            break-glass (emergency access) pack. Its looser policy lets an agent iterate on a fix, and it cannot
             reach a production host.
           </div>
         </div>
@@ -146,7 +146,7 @@
         <li>
           <strong class="text-zinc-200">Scope people and agents.</strong>
           Let each member act only on the runners or groups they own. Their agents inherit
-          the same limit. Workspace inventory remains visible.
+          the same limit. They can still see the whole workspace inventory.
           See <.link
             navigate={~p"/docs/teams-and-access" <> "#runner-scopes"}
             class="text-brand-400 hover:text-brand-300"
@@ -190,7 +190,7 @@
         </li>
       </ol>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Before widening the rollout, prove the whole path once: run one low-risk read-only action
+        Before widening the rollout, prove the whole path once. Run one low-risk read-only action
         on one non-critical runner, confirm it succeeds and appears in run history, and confirm
         your collector sends it to the SIEM. Repeat that check after every runner upgrade and
         pack rollout. The pages under Operate cover the day-to-day signals: connectivity, run

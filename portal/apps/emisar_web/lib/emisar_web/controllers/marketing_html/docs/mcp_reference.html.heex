@@ -20,7 +20,7 @@
     >
       <.docs_header current="mcp-reference">
         <:dek>
-          The fixed tools, identifiers, and recovery semantics of the emisar MCP server. For client
+          The fixed tools, identifiers, and recovery rules of the emisar MCP server. For client
           setup, see <.link
             navigate={~p"/docs/connect-claude-ai"}
             class="font-medium text-brand-400 hover:text-brand-300"
@@ -395,14 +395,14 @@
           diagnosis or target selection. Pack and runner pages default to 15 items. Continue a list
           by passing the previous response's <code>next_cursor</code>
           (find_actions returns a ready-to-send <code>next</code>
-          call), and a cursor is bound to the identical query. A mismatched cursor is rejected.
+          call), and a cursor works only for the identical query. A mismatched cursor is rejected.
         </p>
         <p>
           <code>include: "executable"</code>
           is the normal path and omits capabilities that
           cannot run anywhere in scope. <code>include: "all"</code>
-          is diagnostic: it preserves
-          trusted packs and actions outside your action access or currently unavailable, with issues such as no
+          is diagnostic: it keeps
+          trusted packs and actions that are outside your action access or currently unavailable, with issues such as no
           connected runner, a missing executable, or a descriptor mismatch. Pending, rejected,
           revoked, and retirement-blocked pack refs are operator-only facts that discovery
           omits. When an expected ref is absent, review it in <a
@@ -488,14 +488,14 @@
           waits the same and returns the current state when its deadline expires. The 45-second
           default keeps each call inside the 60-second tool limit some clients, such as Slack,
           enforce. One
-          credential lineage can hold eight waits per portal node; the stdio bridge keeps up
+          credential lineage can hold eight waits per portal node. The stdio bridge keeps up
           to eight requests in flight on a 90-second HTTP deadline, and other calls stay
           responsive during a wait. Legacy clients can also use <code>ping</code>.
           Cancellation stops observation only. It does not undo committed infrastructure
           work.
         </p>
         <p>
-          To withdraw a run that has not reached a runner, call <code>cancel_run</code>
+          To cancel a run that has not reached a runner, call <code>cancel_run</code>
           with its <code>run_id</code>. The run is cancelled, its approval request closes, and
           the result is the same summary <code>wait_for_run</code>
           returns. A run already delivered to a runner is refused with <code>run_not_cancellable</code>; an operator stops it from the console.

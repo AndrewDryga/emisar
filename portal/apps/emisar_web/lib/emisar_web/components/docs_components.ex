@@ -483,7 +483,7 @@ defmodule EmisarWeb.DocsComponents do
           <li class="flex items-start gap-2.5">
             <span class="flex-none text-zinc-500">—</span>
             <span>
-              creates an unprivileged <code class="font-mono">emisar</code>
+              creates a non-root <code class="font-mono">emisar</code>
               system user, puts the binary at <code class="font-mono">/usr/local/bin/emisar</code>, and installs a hardened
               <code class="font-mono">emisar.service</code>
               unit (<code class="font-mono">Restart=on-failure</code>). Without systemd it stops
@@ -656,7 +656,7 @@ defmodule EmisarWeb.DocsComponents do
       </summary>
       <div class="border-t border-zinc-900 px-5 pb-5 pt-4">
         <p class="text-sm leading-7 text-zinc-400">
-          The installer runs these checks before the binary can run as <.docs_inline_code>sudo</.docs_inline_code>. Bundle verification uses GitHub CLI with <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>; without it the installer asks before continuing on the checksum alone, or warns and continues when run unattended. GitHub CLI needs no GitHub login, but a fresh cache loads public trust roots from the hosts listed under <.link
+          The installer runs these checks before the binary can run as <.docs_inline_code>sudo</.docs_inline_code>. Bundle verification uses GitHub CLI with <.docs_inline_code>gh attestation verify --bundle</.docs_inline_code>. Without GitHub CLI, the installer asks before continuing on the checksum alone, or warns and continues when run unattended. GitHub CLI needs no GitHub login, but a fresh cache loads public trust roots from the hosts listed under <.link
             href="/docs/network-requirements#installers"
             class="text-brand-400 hover:text-brand-300"
           >Network requirements</.link>.

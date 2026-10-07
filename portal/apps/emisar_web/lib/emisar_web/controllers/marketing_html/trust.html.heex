@@ -50,16 +50,16 @@
              "Owner / admin / billing manager / operator / viewer roles, least-privilege by default",
              "Per-user runner and pack access limits where people and agents can act",
              "MCP bridge keys are short-lived and rotate themselves.",
-             "Automatic rotation requires an expiring portal-issued agent key and persistent writable bridge credential storage",
+             "Automatic rotation requires an expiring portal-issued agent key and a persistent, writable store for the bridge credential",
              "Full session management for browser and API-key access",
              "Agent connect by browser approval: the key is installed, never pasted or put on a command line"
            ]},
           {"product.audit", "Audit & monitoring", "Audit & SIEM", ~p"/docs/audit-and-siem",
            [
              "Portal audit: actor, action, target, policy and approval decisions, outcome, exit code, and linked run",
-             "Run history: exact action arguments retained for the plan's window; sensitive fields are masked in console and API views, not storage",
-             "Runner journal: a redacted copy of action arguments in SHA-256 hash-chained JSONL retained on each host",
-             "emisar audit verify reports breaks in the retained runner journal's chain; it cannot prove that a privileged host operator did not replace or truncate the entire local journal",
+             "Run history: exact action arguments kept for the plan's window; sensitive fields are masked in console and API views, not storage",
+             "Runner journal: a redacted copy of action arguments in SHA-256 hash-chained JSONL kept on each host",
+             "emisar audit verify reports breaks in the retained runner journal's chain; it cannot rule out that a privileged host operator replaced or truncated the entire local journal",
              "Poll NDJSON into your SIEM with a read-only audit-export token"
            ]},
           {"state.locked", "Data handling", "Privacy policy", ~p"/privacy",
@@ -79,7 +79,7 @@
              "Signed dispatch (Ed25519 or ECDSA P-256 leaf keys): the cloud can relay a request but never forge one",
              "Local admission control: the host has the last word",
              "Known secret patterns redacted before output leaves the host",
-             "Content-addressed packs: unrecognized drift blocks dispatch pending review"
+             "Content-addressed packs: an unrecognized change blocks dispatch until an admin reviews it"
            ]}
         ] do %>
           <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-8">
@@ -133,9 +133,9 @@
       <div>
         <h2 class="text-2xl font-bold text-white">Change control &amp; software delivery</h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          Pull requests run with read-only permissions and no deployment credentials. The same
-          reusable CI workflow is called again from the main-branch delivery workflow, so production
-          receives the commit that passed compilation, tests, dependency-advisory checks, static
+          Pull requests run with read-only permissions and no deployment credentials. The main-branch delivery workflow calls the same
+          reusable CI workflow again, so production
+          receives the commit that passed CI. That run covers compilation, tests, dependency-advisory checks, static
           security analysis, architecture checks, and an image smoke test. GitHub Actions are pinned
           to exact commits; downloaded tools are version-pinned and checksum-verified.
         </p>
@@ -191,7 +191,7 @@
             <span>
               <strong class="text-zinc-200">Sentry</strong>: error monitoring, hosted in the United
               States; request bodies, parameters, user email and IP fields are removed before
-              transmission, and configured secret keys are redacted.
+              sending, and configured secret keys are redacted.
             </span>
           </li>
           <li class="flex gap-2.5">
@@ -199,7 +199,7 @@
             <span>
               <strong class="text-zinc-200">X Corp</strong>: advertising attribution for signups
               arriving from an X ad; server-side, and only the ad's click identifier, the signup
-              time, and an opaque deduplication hash.
+              time, and an opaque one-way hash that lets X discard duplicates.
             </span>
           </li>
         </ul>
@@ -226,7 +226,7 @@
           >
             Data Processing Addendum you can sign
           </.link>
-          (email support@emisar.dev for an executable copy).
+          (email support@emisar.dev to request one).
         </p>
       </div>
 
@@ -252,9 +252,9 @@
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
           emisar runs as a hosted control plane today. The code that runs on your hosts (the
           runner, the MCP bridge, and the action packs) is <strong class="text-zinc-200">open
-            source under the Apache License 2.0</strong>, so you can inspect, build, and keep
+            source under the Apache License 2.0</strong>. You can inspect, build, and keep
           operating it independently of us. The control plane is source-available under the
-          Business Source License, and each release converts to Apache-2.0 on its change date, so
+          Business Source License, and each release converts to Apache-2.0 on its change date. So
           the code can't end up locked behind a vendor that disappears. Supported self-hosted and
           air-gapped deployments are not generally available. If on-prem or air-gap is a hard
           requirement, contact us. We want to hear about it.
@@ -264,10 +264,10 @@
       <div id="release-integrity">
         <h2 class="text-2xl font-bold text-white">Release integrity</h2>
         <p class="mt-4 text-base leading-relaxed text-zinc-400">
-          Current runner and MCP-bridge releases are built by a
-          <strong class="text-zinc-200">public
+          A <strong class="text-zinc-200">public
           GitHub Actions workflow</strong>
-          that publishes <strong class="text-zinc-200">SLSA Build Level 2 provenance</strong>
+          builds the current runner and MCP-bridge releases. It publishes
+          <strong class="text-zinc-200">SLSA Build Level 2 provenance</strong>
           for
           the combined checksum and each archive, signed by Sigstore and bound to the exact tag
           and workflow that produced it. Before a binary ever
@@ -307,7 +307,7 @@
           >Network requirements</.link>, but no GitHub login. Without GitHub CLI, the installers
           and <code class="font-mono text-zinc-300">emisar update</code>
           ask before continuing, or warn and
-          continue when run unattended, and the checksum from the release mirror alone proves the
+          continue when run unattended. In that case the checksum from the release mirror alone proves the
           selected archive's bytes. An authenticated GitHub CLI can add the per-archive online check.
         </p>
       </div>

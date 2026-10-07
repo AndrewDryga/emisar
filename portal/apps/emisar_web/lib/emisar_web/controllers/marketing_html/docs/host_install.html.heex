@@ -159,11 +159,11 @@
           </thead>
           <tbody class="divide-y divide-zinc-900 text-zinc-400">
             <%= for {name, meaning} <- [
-              {"EMISAR_URL", "The control plane to enroll against, baked into config.yaml. Defaults to https://emisar.dev; set it only for a test or evaluation portal."},
+              {"EMISAR_URL", "The control plane to enroll against, written to config.yaml. Defaults to https://emisar.dev; set it only for a test or evaluation portal."},
               {"EMISAR_ENROLLMENT_KEY", "The emkey-enroll-… key the runner exchanges for its own token on first connect."},
               {"EMISAR_GROUP", "How the console groups runners, written to runner.group. Defaults to the host's short hostname."},
               {"EMISAR_RUNNER_ID", "Registers the runner under a declared name and identity, written to runner.id. Defaults to the hostname. Declare one for containers and hosts with colliding hostnames."},
-              {"EMISAR_RUNNER_LABEL_<KEY>", "Bake a free-form runner label into config.yaml. For example, use EMISAR_RUNNER_LABEL_ROLE=web or EMISAR_RUNNER_LABEL_ENVIRONMENT=prod. The console filters and searches these labels."},
+              {"EMISAR_RUNNER_LABEL_<KEY>", "Write a free-form runner label to config.yaml. For example, use EMISAR_RUNNER_LABEL_ROLE=web or EMISAR_RUNNER_LABEL_ENVIRONMENT=prod. The console filters and searches these labels."},
               {"--packs LIST", "Install named packs during setup. For example, use --packs linux-core,docker."},
               {"-y / --yes", "Skip the confirmation prompts for unattended installs. Requires an explicit --packs LIST or EMISAR_PACKS (an empty value installs none)."},
               {"--version TAG", "Pin a specific release instead of latest."},
@@ -200,7 +200,7 @@
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
         For systemd operations, grant exactly the operation with a polkit rule. systemd asks
-        polkit who may manage its units, and no privilege changes hands in the action:
+        polkit who may manage its units, and the action itself gains no privilege:
       </p>
       <.docs_code phx-no-format label="/etc/polkit-1/rules.d/50-emisar.rules"><span class="text-zinc-500">// let the emisar user restart exactly nginx, nothing else</span>
 polkit.addRule(function(action, subject) &#123;
@@ -215,7 +215,7 @@ polkit.addRule(function(action, subject) &#123;
         The action then calls
         <.docs_inline_code>systemctl restart nginx</.docs_inline_code>
         and polkit allows exactly that call. For packs that need more than systemd verbs, run the
-        service as root instead and let policy, approvals, and the local admission list bound what
+        service as root instead and let policy, approvals, and the local admission list limit what
         runs. An action that declares a
         <.docs_inline_code>user:</.docs_inline_code>
         drops to that user before it runs, even when the runner account is broader. The
@@ -233,7 +233,7 @@ polkit.addRule(function(action, subject) &#123;
           Manage the runner fleet
         </.link>
         covers work after the first connection. It explains groups, labels, pack credentials,
-        updates, reconnects, the host CLI, and removal. To boot ephemeral hosts from an autoscaling
+        updates, reconnects, the host CLI, and removal. To boot ephemeral (short-lived) hosts from an autoscaling
         group with one reusable key, see <.link
           navigate={~p"/docs/autoscaling-fleets"}
           class="text-brand-400 hover:text-brand-300"

@@ -194,11 +194,11 @@ unset EMISAR_ENROLLMENT_KEY</.docs_code>
 
       <.docs_h2 id="mutating">Letting a node action mutate</.docs_h2>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A node mutation needs more than the read-only profile. Restarting a unit, for example,
+        An action that changes the node needs more than the read-only profile. Restarting a unit, for example,
         needs writable systemd and D-Bus sockets, so mount
         <code class="font-mono">/run/systemd</code>
         and <code class="font-mono">/run/dbus</code>
-        writable. Grant exactly what the intended actions need and nothing more; the runner's user
+        writable. Grant exactly what the intended actions need and nothing more. The runner's user
         and polkit pattern on the
         <.link
           navigate={~p"/docs/host-install" <> "#user"}

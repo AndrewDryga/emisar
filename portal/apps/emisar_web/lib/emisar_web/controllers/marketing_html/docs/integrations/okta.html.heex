@@ -112,14 +112,14 @@
           <.docs_step_venue>Okta</.docs_step_venue>
           <p class="font-semibold text-zinc-100">Copy the client credentials.</p>
           <p class="mt-1.5">
-            Saving lands you on the app's General tab with its
+            Saving takes you to the app's General tab with its
             <strong class="text-zinc-200">Client ID</strong>
             and <strong class="text-zinc-200">Client secret</strong>. You need both, plus your <strong class="text-zinc-200">issuer</strong>.
           </p>
           <.docs_screenshot
             src="/images/docs/sso/okta-oidc-credentials.webp"
             title="Okta Admin Console · Client Credentials"
-            caption="Keep Client authentication on Client secret. emisar is a confidential client and replays that secret to your IdP."
+            caption="Keep Client authentication on Client secret. emisar is a confidential client and sends that secret to your IdP."
             alt="The Okta app's General tab showing Client Credentials, with the Client ID row and the Client secrets table each outlined in green as the two values to copy: the Client ID with a copy button, Client authentication set to Client secret rather than public key, PKCE unchecked, and a masked client secret with its creation date and Active status."
           />
         </.docs_step>
@@ -237,7 +237,7 @@
             <.docs_inline_code>Bearer</.docs_inline_code>
             keyword. The
             <.docs_inline_code>ems-</.docs_inline_code>
-            prefix lets emisar accept it unambiguously. Select
+            prefix lets emisar still recognize it as a token. Select
             <strong class="text-zinc-200">Test API Credentials</strong>
             before saving.
           </p>
@@ -292,7 +292,7 @@
           <.docs_step_venue>Okta</.docs_step_venue>
           <p class="font-semibold text-zinc-100">Assign the people to sync.</p>
           <p class="mt-1.5">
-            Assignment is what actually provisions someone. On the
+            Assignment is what provisions someone. On the
             <strong class="text-zinc-200">Assignments</strong>
             tab, use <strong class="text-zinc-200">Assign</strong>
             → <strong class="text-zinc-200">Assign to People</strong>
@@ -331,8 +331,8 @@
       <.docs_callout kind={:note} title="Okta lines up on identity by default.">
         <p>
           Okta sends the user ID as SCIM <.docs_inline_code>externalId</.docs_inline_code>. ID tokens from the
-          organization authorization server use the same value as <.docs_inline_code>sub</.docs_inline_code>. Sign-in and directory sync
-          therefore identify one emisar member. Two
+          organization authorization server use the same value as <.docs_inline_code>sub</.docs_inline_code>. So sign-in and directory sync
+          identify one emisar member. Two
           things break that: a <strong class="text-zinc-200">custom</strong>
           authorization server, whose subject claim an admin can rewrite, and access tokens, whose
           <.docs_inline_code>sub</.docs_inline_code>

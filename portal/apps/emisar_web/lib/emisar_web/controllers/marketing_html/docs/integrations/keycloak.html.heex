@@ -173,7 +173,7 @@
           <.docs_callout kind={:warn} title="Your Keycloak has to be reachable from emisar">
             <p>
               emisar fetches the realm's discovery document, JWKS, and token endpoint from
-              its own network, so the realm URL must resolve to a public address with a
+              its own network. So the realm URL must resolve to a public address with a
               certificate from a public CA. emisar refuses private and internal addresses.
             </p>
             <p class="mt-3">
@@ -206,11 +206,11 @@
       <p class="mt-5 text-base leading-7 text-zinc-400">
         Keycloak cannot push users to emisar because it has no outbound SCIM (its own SCIM Realm
         API only receives users into Keycloak). Sign-in still works: members are created on their
-        first sign-in, automatically or held for approval, but roles are not mapped and nobody
+        first sign-in, automatically or held for approval. But roles are not mapped and nobody
         is removed automatically.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        Offboarding is therefore two steps: disable the user in Keycloak to block new
+        So offboarding is two steps. Disable the user in Keycloak to block new
         sign-ins, then suspend or remove the member in
         <a
           href={~p"/app/team"}
@@ -220,7 +220,7 @@
         that membership.
       </p>
       <p class="mt-5 text-base leading-7 text-zinc-400">
-        A third-party Keycloak provisioning plugin can drive emisar's SCIM endpoint with the
+        A third-party Keycloak provisioning plugin can call emisar's SCIM endpoint with the
         base URL and bearer token. emisar does not ship or certify one. You choose,
         configure, and support it. <.plan_note tier={:enterprise} />
       </p>
