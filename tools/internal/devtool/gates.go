@@ -800,13 +800,17 @@ func (a *App) reviewGate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("the Coop review base is unavailable: %w", err)
 	}
-	selection, err := ci.Select(ctx, a.Root, "pull_request", strings.TrimSpace(string(base)))
+	// Keep nested comparisons on this exact candidate's baseline, even when
+	// origin/main is absent or DEP_AGE_BASE_REF names a different revision.
+	reviewApp := *a
+	reviewApp.reviewBase = strings.TrimSpace(string(base))
+	selection, err := ci.Select(ctx, a.Root, "pull_request", reviewApp.reviewBase)
 	if err != nil {
 		return fmt.Errorf("select review gates: %w", err)
 	}
 	for _, target := range reviewGateTargets(selection) {
 		if err := a.gatePhase("review "+target+" gate", func() error {
-			return a.gate(ctx, []string{target})
+			return reviewApp.gate(ctx, []string{target})
 		}); err != nil {
 			return err
 		}

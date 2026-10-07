@@ -153,6 +153,29 @@ runner's admission excludes the run-mutating HCP actions (`tfc.apply_run`,
 plan-only runs, and the ordinary lock/unlock stay. Confirm & Apply in HCP
 remains the only deploy gate, and no runner can reach it.
 
+For container diagnostics, run `gcp.log_entries` with the deployment's
+`project`, `view_id: emisar-vm-containers`, `resource_type: gce_instance`, and
+`log_id: cos_containers`. Add `minimum_severity: ERROR` for errors, or
+`json_message: recurrent_job.failed` for recurrent-job failures. Follow
+`next_page_cursor` with the same filters to read another bounded page.
+The pinned `gcp-monitoring` release supports this view target; 0.3.9 only
+queried the project and could not use the VM identity's view-only grant.
+An omitted view still requests project-wide logs and is intentionally denied.
+The view excludes audit, SQL, and network logs; no broader Logging reader role
+is needed. After deployment, verify the scoped read through Emisar and confirm
+that project-wide reads remain denied.
+
+The latest published pack pins do not by themselves restore every pack's
+availability. Runner releases 0.28.0 and 0.29.0 omit locally denied actions
+from their advertisements, while Portal requires the complete trusted manifest.
+With this configuration, `debugging`, `docker`, and `hcp-terraform` therefore
+remain incompatible: the omitted actions are `debugging.pid_environ`,
+`docker.inspect`, and the five Terraform mutations denied above. Preserve those
+denials. Restoring these packs requires a runner release that advertises complete
+descriptors with separate admission evidence, plus Portal support that subtracts
+denied actions after manifest verification. A pack refresh does not establish
+that this compatibility problem or missing host executables has been resolved.
+
 Set the reusable runner enrollment credential as the sensitive HCP
 Terraform variable `emisar_runner_enrollment_key`. A regional MIG can create
 several runners and replaces their boot disks during rollouts, so a single-use
