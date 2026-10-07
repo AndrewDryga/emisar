@@ -20,4 +20,3 @@
 # fresh reason. An exemption also covers a DOWNGRADE, because a patched older
 # line is a real answer to an urgent advisory; the date is what keeps that a
 # decision rather than a permanent hole.
-hex mint 1.10.2 2026-10-07 EEF-CVE-2026-91043 (HIGH) / EEF-CVE-2026-92103 / EEF-CVE-2026-94194 — a server the portal connects to can exhaust its memory over HTTP/2 (about 1 GB per response through HPACK-indexed cookie fields, 16 MiB per frame) or mis-frame an HTTP/1 response, and the OAuth client-metadata fetch dials URLs a client chooses; the advisories also fail mix hex.audit on 1.10.1 in every CI run, so the backport (published 2026-09-29 10:05 UTC) cannot wait out its 7-day window
