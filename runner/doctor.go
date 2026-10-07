@@ -123,14 +123,14 @@ host binaries the installed actions need on PATH, and that the control plane
 is reachable over TLS.
 
 No control-plane session is opened and a failing check never aborts the
-rest, so a single run surfaces every problem at once. Exit status is
+rest, so a single run shows every problem at once. Exit status is
 non-zero if any check fails. --json reports the same checks as a
 machine-readable object.
 
 doctor executes no action by default: every check reads local state or opens
 one HTTP request. --probe adds the online check — it runs each installed
 pack's declared verify action, the same probe as 'pack verify', which
-authenticates to that pack's target. Ask for it when diagnosing why a pack's
+authenticates to that pack's target. Use it when diagnosing why a pack's
 actions fail; it costs one real call per pack.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -334,7 +334,7 @@ func checkDispatchLog(cfg *config.Config) checkResult {
 				report.Entries, report.Path)}
 	case cloud.DispatchLogCorrupt:
 		return checkResult{"dispatch log", checkFail,
-			fmt.Sprintf("%s is unreadable (%v) — connect refuses to start over it; quarantine the file (mv %s %s.corrupt) to begin a clean dispatch log",
+			fmt.Sprintf("%s is unreadable (%v) — connect refuses to start over it; move the file aside (mv %s %s.corrupt) to begin a clean dispatch log",
 				report.Path, report.Err, report.Path, report.Path)}
 	default:
 		return checkResult{"dispatch log", checkOK,
@@ -401,7 +401,7 @@ func checkActionBinaries(registry *packs.Registry) checkResult {
 		}
 	}
 	if len(missing) == 0 {
-		return checkResult{"action tools", checkOK, fmt.Sprintf("all %d resolve on PATH", len(needs))}
+		return checkResult{"action tools", checkOK, fmt.Sprintf("all %d found on PATH", len(needs))}
 	}
 	sort.Strings(missing)
 	return checkResult{"action tools", checkWarn,
@@ -482,7 +482,7 @@ func checkCloud(ctx context.Context, cfg *config.Config, client *http.Client) ch
 	}
 	if shutdownErr != nil {
 		return checkResult{"cloud", checkWarn, fmt.Sprintf(
-			"%s, but the terminal shutdown state could not be read: %v", detail, shutdownErr)}
+			"%s, but the saved terminal-shutdown record could not be read: %v", detail, shutdownErr)}
 	}
 	if skew, ok := clockSkew(resp.Header.Get("Date")); ok && skew > clockSkewThreshold {
 		return checkResult{"cloud", checkWarn, fmt.Sprintf(

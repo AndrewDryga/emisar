@@ -146,7 +146,7 @@ existing object is never overwritten — a precondition failure means the
 identical bytes are already published and the object is skipped. The four
 mutable pointer objects (the catalog and suggest documents at their versioned
 and facade paths) are overwritten; enable object versioning on the bucket to
-retain prior generations.
+keep prior generations.
 
 Hosting somewhere else (S3, MinIO, plain nginx)? Skip 'publish' and upload the
 objects listed in manifest.json with any tool. Upload immutable objects before

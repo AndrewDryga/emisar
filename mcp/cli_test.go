@@ -180,7 +180,7 @@ func TestCLIToolHelpComesFromPublishedSchema(t *testing.T) {
 			"ids  array<integer> · optional",
 			"items 1–4; each item: value 1–9",
 			"CROSS-FIELD RULES",
-			"Some arguments are conditionally required or mutually exclusive.",
+			"Some arguments are required only in some cases, or cannot be used together.",
 			"Complete input schema: emisar-mcp help future_tool --json",
 		} {
 			if !strings.Contains(stdout, want) {
@@ -962,7 +962,7 @@ func TestCLIToolHelpCallsOutCrossFieldRules(t *testing.T) {
 	}
 	for _, want := range []string{
 		"CROSS-FIELD RULES",
-		"conditionally required or mutually exclusive",
+		"required only in some cases, or cannot be used together",
 		"complete input schema is authoritative; print it with the command below",
 		"reason  string · required",
 		"runbook_ref  string · optional",

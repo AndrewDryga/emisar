@@ -289,7 +289,7 @@ automatically (SIGHUP) so it re-reads the catalog and re-advertises;
 without one, reload manually: systemctl reload emisar.
 
 After a successful install the pack's declared verify action runs once
-(--no-verify skips it), so a wrong credential surfaces here instead of at
+(--no-verify skips it), so a wrong credential shows up here instead of at
 the first dispatch. A failed probe does not fail the install — the pack is
 on disk either way; fix the host's environment and re-run 'pack verify'.
 

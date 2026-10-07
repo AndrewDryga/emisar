@@ -681,7 +681,7 @@ func renderToolHelp(descriptor cliToolDescriptor) (string, error) {
 	arguments, crossFieldRules, ok := describeTopLevelArguments(schema)
 	if crossFieldRules {
 		out.WriteString("\nCROSS-FIELD RULES\n")
-		out.WriteString("  Some arguments are conditionally required or mutually exclusive.\n")
+		out.WriteString("  Some arguments are required only in some cases, or cannot be used together.\n")
 		out.WriteString("  The complete input schema is authoritative; print it with the command below.\n")
 	}
 	out.WriteString("\nARGUMENTS\n")

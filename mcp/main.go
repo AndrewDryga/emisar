@@ -188,7 +188,7 @@ COMMANDS
       Recover a request by operation ID before retrying a mutation.
 
     emisar-mcp cancel_run [JSON | -]
-      Cancel your own run before it reaches a runner, even mid-approval.
+      Cancel your own run before it reaches a runner, even during approval.
 
     emisar-mcp recent_runs [JSON | -]
       List recent action runs and their status.
@@ -212,8 +212,8 @@ COMMANDS
       defaults to the current account, or https://emisar.dev the first time.
 
     emisar-mcp auth status [URL]
-      Show the current or --account credential without printing its key. URL
-      optionally requires an exact endpoint match.
+      Show the current or --account credential without printing its key. Add URL
+      to require an exact endpoint match.
 
     emisar-mcp accounts list
       List locally authenticated accounts. A star marks the current account.
@@ -261,7 +261,7 @@ OUTPUT AND EXIT STATUS
 
   1  Tool, MCP, and tool-call transport/response errors use the selected output
      format on stdout. In JSON mode, a call that may have reached the server
-     includes data.operation_id; a call rejected before transmission omits it.
+     includes data.operation_id; a call rejected before it was sent omits it.
      Recover a mutation with get_operation before retrying it. A safe local
      diagnostic may also appear on stderr. Configuration and list/help failures
      write diagnostics to stderr.
@@ -296,7 +296,7 @@ ENVIRONMENT
   EMISAR_CLIENT_METADATA (optional)
     Self-reported client metadata as a JSON object whose values are strings or
     numbers. Example: {"asset_tag":"LT-4417","device_id":"laptop-7"}
-    Emisar snapshots it onto MCP action runs for audit and SIEM correlation.
+    Emisar copies it onto MCP action runs for audit and SIEM correlation.
     Maximum 10 keys; keys are limited to 128 characters and values to 512,
     and neither may carry control or formatting characters. This data is
     untrusted and is never used for authorization, posture, or approval.
@@ -323,7 +323,7 @@ CLIENT SETUP
   Install the bridge:
     curl -fsSL https://emisar.dev/install-mcp.sh | sudo bash
 
-  An interactive install runs 'emisar-mcp connect' for you: it authenticates
+  An interactive install runs 'emisar-mcp connect' for you. It authenticates
   direct CLI commands and configures the supported local clients you pick, each
   with its own key, from one browser approval.
 
@@ -1438,7 +1438,7 @@ func (b *bridge) forwardRequestContext(
 				return
 			}
 			b.diagnose("the control plane rejected this API key — "+
-				"check EMISAR_API_KEY or mint a new one at %s/app/agents", b.portalOrigin)
+				"check EMISAR_API_KEY or create a new one at %s/app/agents", b.portalOrigin)
 		})
 	}
 	if err != nil {

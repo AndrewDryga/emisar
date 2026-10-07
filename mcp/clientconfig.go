@@ -242,7 +242,7 @@ func (client detectedClient) renderJSON(request clientEntryRequest, raw string) 
 func (client detectedClient) renderTOML(request clientEntryRequest, raw string) (string, error) {
 	withoutEmisar := removeTOMLTable(raw)
 	if tomlEmisarReference.MatchString(withoutEmisar) {
-		return "", errors.New("this config uses an unsupported TOML spelling for emisar")
+		return "", errors.New("this config uses an unsupported TOML form for the emisar entry")
 	}
 	command, err := quoteConfigString(request.Command)
 	if err != nil {

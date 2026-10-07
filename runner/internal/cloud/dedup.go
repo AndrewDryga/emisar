@@ -179,7 +179,7 @@ func (d *dedupRing) adoptLegacyStore() {
 			d.loadErr = err
 			d.loadErrPath = d.legacyPath
 			d.logger.Error("cloud.dedup_legacy_unreadable", "error", err, "path", d.legacyPath,
-				"detail", "connect refuses to start; quarantine the file (mv "+
+				"detail", "connect refuses to start; move the file aside (mv "+
 					d.legacyPath+" "+d.legacyPath+".corrupt) to begin a clean dispatch log")
 		}
 		return
@@ -230,7 +230,7 @@ func (d *dedupRing) startupRefusal() error {
 		path = d.loadErrPath
 	}
 	return fmt.Errorf(
-		"load durable dispatch state from %s: %w — quarantine the file (mv %s %s.corrupt) and restart to begin a clean dispatch log",
+		"load durable dispatch state from %s: %w — move the file aside (mv %s %s.corrupt) and restart to begin a clean dispatch log",
 		path, d.loadErr, path, path)
 }
 

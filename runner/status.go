@@ -31,10 +31,10 @@ func statusCmd() *cobra.Command {
 		Long: `status reads the runner daemon's owner-only local health snapshot and
 correlates it with the held process lock. It reports the last successful
 heartbeat send, the last catalog advertisement, process uptime, connection
-attempts, and in-flight runs, then surfaces any failing local readiness checks.
+attempts, and in-flight runs, then shows any failing local readiness checks.
 
-The snapshot is advisory operational evidence, not control-plane proof. The
-console remains authoritative for whether the control plane currently sees the
+The snapshot is local evidence only, not control-plane proof. The console
+remains authoritative for whether the control plane currently sees the
 runner. Use doctor for the complete offline preflight and the service journal
 for detailed connection errors.`,
 		Args: cobra.NoArgs,

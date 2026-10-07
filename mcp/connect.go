@@ -126,7 +126,7 @@ func connectClients(
 	if err != nil {
 		return cliCommandError(
 			stderr,
-			"Could not determine this bridge's own path",
+			"Could not find this bridge's own path",
 			[]string{err.Error()},
 			"Reinstall emisar-mcp, then run `emisar-mcp connect` again.",
 		)
@@ -144,7 +144,7 @@ func connectClients(
 	if err != nil {
 		return cliCommandError(
 			stderr,
-			"Could not locate your home directory",
+			"Could not find your home directory",
 			[]string{err.Error()},
 			"Set HOME (or USERPROFILE on Windows) and run `emisar-mcp connect` again.",
 		)
@@ -174,7 +174,7 @@ func connectClients(
 		return 0
 	}
 	if len(selection.clients) == 0 && !selection.cliNeeded {
-		fmt.Fprintln(stdout, "Everything detected is already connected.")
+		fmt.Fprintln(stdout, "Every detected client is already connected.")
 		return 0
 	}
 
@@ -274,7 +274,7 @@ func connectClients(
 		fmt.Fprintln(stdout, "Some clients were not connected. Manual snippets: "+origin+"/app/agents/connect")
 		return 1
 	}
-	fmt.Fprintln(stdout, "Restart any client you just connected so it picks up the new server.")
+	fmt.Fprintln(stdout, "Restart any client you just connected so it starts using the new server.")
 	return 0
 }
 
@@ -283,7 +283,7 @@ func disconnectClients(options connectOptions, stdin io.Reader, stdout, stderr i
 	if err != nil {
 		return cliCommandError(
 			stderr,
-			"Could not locate your home directory",
+			"Could not find your home directory",
 			[]string{err.Error()},
 			"Set HOME (or USERPROFILE on Windows) and run `emisar-mcp disconnect` again.",
 		)
@@ -332,7 +332,7 @@ func disconnectClients(options connectOptions, stdin io.Reader, stdout, stderr i
 		if err := client.removeAutoPermit(roots); err != nil {
 			writeCLIWarning(
 				stderr,
-				client.Label+": left its emisar auto-permit entry in place",
+				client.Label+": could not remove its emisar auto-permit entry",
 				[]string{err.Error()},
 				"Remove it by hand.",
 			)
@@ -634,15 +634,15 @@ USAGE
   emisar-mcp connect [--url <origin>] [--all | --client <id>] [--auto-permit]
 
 WHAT IT DOES
-  Detects the supported LLM clients installed for your user, runs one browser
+  Detects the supported LLM clients installed for your user. Runs one browser
   approval covering the direct CLI and every client you choose, and writes each
-  client's own configuration shape. --all leaves connected clients alone;
+  client's own configuration format. --all skips already connected clients;
   explicitly naming one with --client refreshes its key and server URL.
 
 FLAGS
   --url <origin>
-    The Emisar server to connect to. Defaults to the stored account, then
-    https://emisar.dev.
+    The Emisar server to connect to. Defaults to the stored account's server,
+    then https://emisar.dev.
 
   --all
     Connect every detected client that is not connected yet, without asking.
@@ -683,6 +683,6 @@ FLAGS
     Also delete every stored direct-CLI account and the bridge's rotation state.
 
 NOTES
-  A key removed from a config keeps working until it is revoked in the portal
+  A key removed from a config keeps working until you revoke it in the portal
   under LLM agents.
 `

@@ -252,7 +252,7 @@ func storeCLIAccountCredential(
 	if err != nil {
 		return cliCommandError(
 			stderr,
-			"Could not locate credential storage",
+			"Could not find credential storage",
 			[]string{err.Error()},
 			"Check that your user configuration directory is available and writable.",
 		)
@@ -781,8 +781,8 @@ USAGE
   emisar-mcp [--account <slug-or-id>] auth status [URL]
 
 DESCRIPTION
-  With no subcommand, open the browser. Choose an account there, approve the
-  CLI, and the CLI stores that account locally and makes it current. Login does
+  With no subcommand, open the browser. Choose an account there and approve the
+  CLI. The CLI then stores that account locally and makes it current. Login does
   the same thing. URL selects a custom or self-hosted endpoint.
 
   Status shows the current or --account credential without printing its key.
@@ -806,7 +806,7 @@ USAGE
 DESCRIPTION
   List shows every account authenticated in this CLI. The star marks the
   current account. --json also prints immutable account IDs for scripts and for
-  disambiguating the same slug stored against more than one endpoint.
+  telling apart the same slug stored against more than one endpoint.
 
   Use changes the current account for later commands:
     emisar-mcp accounts use immersive

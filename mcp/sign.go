@@ -82,7 +82,7 @@ func newSigner(keyEncoded, certEncoded string) (*signer, error) {
 	signerPublic, ok := key.Public().(interface{ Equal(crypto.PublicKey) bool })
 	if !ok || !signerPublic.Equal(leaf.PublicKey) {
 		return nil, fmt.Errorf(
-			"EMISAR_SIGNING_CERT vouches for a different key than EMISAR_SIGNING_KEY - " +
+			"EMISAR_SIGNING_CERT was issued for a different key than EMISAR_SIGNING_KEY - " +
 				"use the matching key+cert pair printed by `emisar signing new-cert`")
 	}
 	return &signer{key: key, certChain: chain, newNonce: newNonce}, nil

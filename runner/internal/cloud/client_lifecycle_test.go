@@ -834,7 +834,7 @@ func TestClient_Run_UnwritableDispatchLogNamesTheFileAndTheCause(t *testing.T) {
 				t.Errorf("refusal must blame the data directory: %v", err)
 			}
 			// The remedy that cannot be performed must be gone.
-			if strings.Contains(err.Error(), "quarantine the file") ||
+			if strings.Contains(err.Error(), "move the file aside") ||
 				strings.Contains(err.Error(), "stop the runner and prove it is idle") {
 				t.Errorf("refusal still prescribes quarantining a file that was never written: %v", err)
 			}

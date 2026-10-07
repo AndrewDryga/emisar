@@ -80,7 +80,7 @@ func stateCheckDispatchLogCmd() *cobra.Command {
 			switch report.State {
 			case cloud.DispatchLogCorrupt:
 				return fmt.Errorf(
-					"dispatch log %s is unreadable: %v\nquarantine it to start a clean log: mv %s %s.corrupt",
+					"dispatch log %s is unreadable: %v\nmove it aside to start a clean log: mv %s %s.corrupt",
 					report.Path, report.Err, report.Path, report.Path)
 			case cloud.DispatchLogLegacy:
 				fmt.Fprintf(cmd.OutOrStdout(),

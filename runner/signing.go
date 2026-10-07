@@ -431,7 +431,7 @@ EMISAR_SIGNING_KEY and EMISAR_SIGNING_CERT.
 
 The CA private key is read locally and used only to sign; it is never
 transmitted. Pass it as a file (--ca-key-file): --ca-key takes the key material
-itself, which writes the root of trust into shell history and exposes it in
+itself. That writes the root of trust into shell history and exposes it in
 /proc/<pid>/cmdline to every other user on the host while the command runs.
 Prefer short --ttl values (24h): expiry is the only revocation, so a long TTL
 keeps a leaked certificate usable longer.`,
@@ -516,8 +516,8 @@ func signingCmd() *cobra.Command {
 		Short: "Set up bridge-attested (signed) dispatch",
 		Long: `Signed dispatch lets an enforcing runner require a CA-signed certificate on
 every action, so a compromised control plane can relay but never mint a
-dispatch. "signing init" is the one-shot on-ramp; "new-ca" and "new-cert" are
-the granular operations for CA rotation and routine cert renewal.
+dispatch. "signing init" is the one-step setup; "new-ca" and "new-cert" are
+the separate steps for CA rotation and routine cert renewal.
 
 Certificates are X.509, so your own PKI can issue them instead — the profile is
 documented at https://emisar.dev/docs/signed-dispatch.`,
@@ -539,8 +539,9 @@ func signingInitCmd() *cobra.Command {
 		Short: "Set up signed dispatch in one shot (CA + cert + config)",
 		Long: `signing init mints a CA, a leaf keypair, and a certificate in one step and
 prints the full runner config block, the offline CA private key to store, and
-the two MCP env vars. The simplest on-ramp to bridge-attested dispatch — after
-this, issue fresh certificates as they expire with "emisar signing new-cert".`,
+the two MCP env vars. The simplest way to start bridge-attested dispatch —
+after this, issue fresh certificates as they expire with
+"emisar signing new-cert".`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			scope, err := parseScope(scopeStr)

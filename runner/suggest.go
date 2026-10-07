@@ -90,7 +90,7 @@ service-specific binary present (on $PATH, in the standard bin dirs, or
 running as a process), or a service process running — and recommends the
 pack when one of those fires. So a host running Nomad is pointed at the
 nomad pack. A listening port identifies nobody (any process can bind it),
-so a pack's declared ports only corroborate a pack already recommended;
+so a pack's declared ports only confirm a pack already recommended;
 a pack declaring ports alone is never auto-suggested. The read-only core
 (linux-core, debugging, and systemd-deep on a systemd host) is always
 recommended.

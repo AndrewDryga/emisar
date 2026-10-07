@@ -10,7 +10,7 @@ func TestUpdateCommandDocumentsVerifiedInstallerManagedBoundary(t *testing.T) {
 	if command.Use != "update" || command.Args == nil {
 		t.Fatalf("unexpected command shape: use=%q args=%v", command.Use, command.Args)
 	}
-	for _, want := range []string{"checksum file is authenticated", "Sigstore bundle", "installer receipt", "rolls back"} {
+	for _, want := range []string{"verifies the release checksum file", "Sigstore bundle", "installer receipt", "rolls back"} {
 		if !strings.Contains(command.Long, want) {
 			t.Errorf("long help missing %q:\n%s", want, command.Long)
 		}

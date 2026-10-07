@@ -34,9 +34,9 @@ control-plane websocket, advertises this runner's actions, and processes
 incoming RunAction messages. There is no inbound listener on this host.
 
 On first connect, the runner presents the bootstrap enrollment key (env var
-named by cloud.enrollment_key_env) to POST /runner/register, persists the
+named by cloud.enrollment_key_env) to POST /runner/register, saves the
 returned per-runner token to cloud.token_path, then upgrades to the
-websocket. Subsequent boots reuse the cached token, so the enrollment key
+websocket. Later starts reuse the cached token, so the enrollment key
 env var can be unset after the first successful connect.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -200,7 +200,7 @@ env var can be unset after the first successful connect.`,
 
 func validateConnectDataDir(dataDir string) error {
 	if strings.TrimSpace(dataDir) == "" {
-		return fmt.Errorf("connect requires paths.data_dir for durable dispatch reservations")
+		return fmt.Errorf("connect requires paths.data_dir to keep its dispatch log on disk")
 	}
 	return nil
 }
