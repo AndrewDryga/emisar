@@ -17,6 +17,38 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-10-07],
+      slug: "workspace-sign-in-service-accounts-and-clearer-pack-availability",
+      title: "Workspace sign-in, service accounts, and clearer pack availability",
+      tag: "v0.51.0",
+      summary:
+        "Sign in to the workspace you want to use, with its own email, MFA, and SSO settings. Personal logins are gone: a workspace member is the only person record, and removing one member does not remove anyone else's access or billing. Apps such as Ryker connect as service accounts, with their own keys and scoped access. The Packs page now shows which actions are available and which runners reported each exact pack version and hash.",
+      details: [
+        {"Console",
+         [
+           "Service accounts have their own Settings page, where you can create an account, set its access, and issue its API keys without treating an app as a person.",
+           "Members who sign in by email can change their address from Profile after proving the new mailbox. Directory sync can update a member's email, and refused directory changes are visible.",
+           "Pack availability separates trust, connectivity, host readiness, and local runner admission. A reporter is not necessarily eligible to execute an action, and partial fleet evidence is labeled as partial.",
+           "Forms, confirmations, filters, icons, emails, and setup instructions use clearer wording and more consistent layouts."
+         ]},
+        {"Runner",
+         [
+           "Local admission no longer removes actions from a pack's advertised descriptor. The runner reports its admission decision separately, preserving the complete trusted manifest while still refusing locally disallowed actions.",
+           "Runner and MCP Bridge CLI messages explain failures and next steps in plainer English. This Portal release recommends Runner v0.30.0 and MCP Bridge v0.17.0."
+         ]},
+        {"Security",
+         [
+           "Staff sign-in is separate from every workspace login. Sign-in, MFA, SSO, invitation, session, and member-erasure paths have tighter bounds and current-authority checks, with refused SSO sign-ins recorded in the workspace audit trail.",
+           "MCP and audit-export requests are capped per client address. The portal moves to Erlang/OTP 29.1.1, Mint 1.10.2, and a Debian snapshot containing the PCRE2 fixes."
+         ]},
+        {"Packs",
+         [
+           "The new SuperTokens pack reads auth-core health, users, sessions, and roles, with gated actions for changes.",
+           "EMQX reports which required credential is missing without having that message masked by redaction. Prometheus deletion behavior checks a fixed historical sample rather than racing the next scrape."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-09-25],
       slug: "workspace-owned-members-and-per-workspace-billing",
       title: "Workspace-owned members and per-workspace billing",

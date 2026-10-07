@@ -119,17 +119,24 @@ cases:
   - action: prom.tsdb_stats
     expect:
       stdout_contains: ['"status":"success"', '"headStats"']
-  # The admin API answers 204 with an empty body, so the tombstone the delete
-  # left behind is the evidence rather than the action's own output.
+  # Freeze the query time before deletion: a live query sees new samples from
+  # the one-second scrape even when the existing samples were deleted correctly.
   - action: prom.delete_series
     args: {matcher: '{__name__="up"}'}
-    probes:
-      - name: the tombstoned series stops answering queries
-        argv: [/bin/sh, -c, "curl -sSf 'http://prometheus:9090/api/v1/query?query=up'"]
+    arrange:
+      - name: an existing sample answers at the frozen query time
+        argv: [/bin/sh, -c, 'set -eu; date +%s > /tmp/packtest-prom-delete-time; curl -sSf "http://prometheus:9090/api/v1/query?query=up&time=$(cat /tmp/packtest-prom-delete-time)"']
         retry_for: 30s
         retry_every: 2s
         expect:
-          stdout_contains: ['"result":[]']
+          stdout_contains: ['"status":"success"', '"job":"prometheus"']
+    probes:
+      - name: the deleted sample no longer answers at the same query time
+        argv: [/bin/sh, -c, 'set -eu; curl -sSf "http://prometheus:9090/api/v1/query?query=up&time=$(cat /tmp/packtest-prom-delete-time)"']
+        retry_for: 30s
+        retry_every: 2s
+        expect:
+          stdout_contains: ['"status":"success"', '"result":[]']
 
   - action: prom.snapshot
     expect:
