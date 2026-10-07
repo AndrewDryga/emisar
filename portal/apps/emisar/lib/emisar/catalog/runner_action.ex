@@ -27,6 +27,7 @@ defmodule Emisar.Catalog.RunnerAction do
     # Mutable host evidence. Nil means an older runner did not advertise this
     # fact; false can only remove this action from otherwise trusted targets.
     field :primary_executable_available, :boolean
+    field :admission_allowed, :boolean
     field :missing_executable, :string
     field :first_seen_at, :utc_datetime_usec
     field :last_seen_at, :utc_datetime_usec

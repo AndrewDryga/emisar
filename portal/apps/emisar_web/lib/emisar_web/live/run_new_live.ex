@@ -12,6 +12,12 @@ defmodule EmisarWeb.RunNewLive do
          |> put_flash(:error, "Action not found.")
          |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners/#{runner_id}")}
 
+      {:ok, %{admission_allowed: false}} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "This action is denied by the runner's local admission policy.")
+         |> push_navigate(to: ~p"/app/#{socket.assigns.current_account}/runners/#{runner_id}")}
+
       {:ok, %{primary_executable_available: false} = action} ->
         {:ok,
          socket
@@ -230,6 +236,14 @@ defmodule EmisarWeb.RunNewLive do
                socket,
                :error,
                "This action is no longer available on the runner. Choose another action from the runner's page."
+             )}
+
+          {:error, :action_denied_by_admission} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "This action is denied by the runner's local admission policy."
              )}
 
           {:error, :action_unavailable} ->

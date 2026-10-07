@@ -70,12 +70,14 @@ updated: 2026-10-05
     signals. Losing the websocket is deliberately not an exit: in-flight
     actions keep running and replay their result on the next connection.
 11. **Local admission control.** An optional `admission:` block in
-    `config.yaml` filters what this host will even advertise, by action
+    `config.yaml` restricts what this host will execute, by action
     id (allow/deny globs) and by a `max_risk` ceiling (one flag turns a
-    fleet read-only for a demo, dropping high/critical actions). A rule
+    fleet read-only for a demo, denying high/critical actions). A rule
     baked into the image overrides anything the cloud asks for: a
-    suppressed action is hidden from the catalog AND refused at dispatch,
-    journaling `action_blocked_by_admission`.
+    denied action remains in the complete descriptor advertisement with separate
+    `admission_allowed: false` evidence and is excluded from executable targets
+    only after full trusted-manifest verification. The engine independently
+    refuses it at dispatch, journaling `action_blocked_by_admission`.
 12. **A local hash-chained JSONL log.** Every dispatch decision produces a
    terminal line in `/var/log/emisar/events.jsonl`. An accepted execution first
    records `execution_started` immediately before crossing the process boundary,

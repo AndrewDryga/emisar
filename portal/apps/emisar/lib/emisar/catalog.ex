@@ -72,7 +72,7 @@ defmodule Emisar.Catalog do
   @upsert_replace_fields ~w[
     action_id pack_id pack_version pack_hash title summary kind risk description
     side_effects args_schema output_schema examples search_terms descriptor_digest
-    primary_executable_available missing_executable last_seen_at updated_at
+    primary_executable_available missing_executable admission_allowed last_seen_at updated_at
   ]a
 
   # Postgres caps a statement at 65,535 bindings and a row here spends about
@@ -1816,6 +1816,7 @@ defmodule Emisar.Catalog do
       examples: descriptor["examples"] || [],
       search_terms: descriptor["search_terms"] || [],
       primary_executable_available: primary_executable_available,
+      admission_allowed: admission_allowed(descriptor),
       missing_executable: missing_executable,
       first_seen_at: now,
       last_seen_at: now
@@ -1840,6 +1841,17 @@ defmodule Emisar.Catalog do
 
       {:ok, _malformed} ->
         {false, "unknown"}
+    end
+  end
+
+  # Host eligibility is separate from descriptor identity. Only literal
+  # booleans are evidence; omitted fields clear stale rolling-upgrade state.
+  defp admission_allowed(descriptor) do
+    case Map.fetch(descriptor, "admission_allowed") do
+      :error -> nil
+      {:ok, true} -> true
+      {:ok, false} -> false
+      {:ok, _malformed} -> false
     end
   end
 

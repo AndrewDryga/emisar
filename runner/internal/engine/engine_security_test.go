@@ -300,7 +300,7 @@ output:
 }
 
 // TestEngine_MaxRiskBlocksAboveCeiling proves the risk ceiling is enforced at
-// dispatch, not just hidden from the catalog: a resolvable, trusted high-risk
+// dispatch, not just advertised as unavailable: a resolvable, trusted high-risk
 // action is refused with StatusBlockedByAdmission + a journal entry when the
 // runner's ceiling is below it, so a stale or compromised portal cannot run
 // what a read-only demo suppressed. The low-risk action still passes.
@@ -341,6 +341,33 @@ func TestEngine_MaxRiskBlocksAboveCeiling(t *testing.T) {
 	}
 	if res.EventID == "" {
 		t.Fatal("expected an event id on the blocked result")
+	}
+}
+
+func TestEngine_AdmissionRefusesLoadedAction(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		allow, deny []string
+	}{
+		{name: "denylist", deny: []string{"t.echo"}},
+		{name: "allowlist", allow: []string{"other.*"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, j, _ := setupEngineExtra(t, nil)
+			defer j.Close()
+			policy, err := admission.New(tc.allow, tc.deny, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.SetAdmission(policy)
+			result, err := e.Run(context.Background(), Request{ActionID: "t.echo", Args: map[string]any{"msg": "hi"}, Reason: "test"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != StatusBlockedByAdmission || result.EventID == "" {
+				t.Fatalf("host policy bypassed: %+v", result)
+			}
+		})
 	}
 }
 

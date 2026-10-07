@@ -364,9 +364,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		return e.refuse(ctx, ev, StatusUnknownAction, req.ActionID, "unknown action"), nil
 	}
 
-	// Risk-ceiling admission — defense in depth on the advertised catalog
-	// filter. A too-risky action is hidden from cloud, but a stale or
-	// compromised portal that dispatches it anyway is refused here, with a
+	// Risk-ceiling admission — defense in depth independent of advertised
+	// eligibility. A stale or compromised portal that dispatches a denied
+	// action anyway is refused here, with a
 	// host-side journal entry, exactly like an allow/deny block.
 	if ok, reason := policy.AdmitRisk(act.Risk); !ok {
 		ev := e.actionEvent(req, act, audit.EventActionBlockedByAdmission, now)

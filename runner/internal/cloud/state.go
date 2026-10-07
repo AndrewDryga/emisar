@@ -42,13 +42,9 @@ type StateBuilder struct {
 	Group       string
 	Labels      map[string]string
 	GetRegistry func() *packs.Registry
-	// GetAdmission, if set, filters the advertised action list — any
-	// action rejected by the host operator's allow/deny policy is
-	// hidden from the cloud catalog entirely. The engine ALSO enforces
-	// admission at run time, so a compromised portal trying to dispatch
-	// a hidden id still gets a hard refusal; this filter just keeps
-	// the UI honest. Called every Build, like GetRegistry, so a policy
-	// reloaded on SIGHUP cannot advertise a catalog the engine would refuse.
+	// GetAdmission snapshots mutable host eligibility once per Build. All loaded
+	// descriptors remain advertised for complete trusted-manifest comparison.
+	// The engine independently enforces the current policy at dispatch.
 	GetAdmission func() *admission.Policy
 	// GetVerifier returns the dispatch verifier (nil = signature enforcement off). When it
 	// enforces, Build advertises that this runner verifies a client signature
@@ -114,16 +110,11 @@ func (b *StateBuilder) Build() RunnerStateMsg {
 		policy = b.GetAdmission()
 	}
 	for _, a := range reg.Actions() {
-		if ok, _ := policy.Admit(a.ID); !ok {
-			continue
-		}
-		// Risk ceiling: a too-risky action is hidden from the catalog (and
-		// refused at dispatch, in the engine), so a read-only demo never shows
-		// high/critical actions to the operator or the LLM.
-		if ok, _ := policy.AdmitRisk(a.Risk); !ok {
-			continue
-		}
-		msg.Actions = append(msg.Actions, descriptorFor(a))
+		descriptor := descriptorFor(a)
+		idAllowed, _ := policy.Admit(a.ID)
+		riskAllowed, _ := policy.AdmitRisk(a.Risk)
+		descriptor.AdmissionAllowed = idAllowed && riskAllowed
+		msg.Actions = append(msg.Actions, descriptor)
 	}
 	return msg
 }
@@ -135,7 +126,7 @@ func validateRunnerStateSize(msg RunnerStateMsg) error {
 	}
 	if len(encoded) > maxRunnerStateBytes {
 		return fmt.Errorf(
-			"runner_state is %d bytes; maximum is %d bytes: reduce installed packs or narrow admission rules",
+			"runner_state is %d bytes; maximum is %d bytes: reduce installed packs",
 			len(encoded), maxRunnerStateBytes,
 		)
 	}

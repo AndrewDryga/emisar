@@ -18,6 +18,7 @@ defmodule EmisarWeb.MCP.RunbookTools do
     :action_contract_changed,
     :action_not_found,
     :action_unavailable,
+    :action_denied_by_admission,
     :incomplete_contract,
     :not_found,
     :pack_ref_mismatch,

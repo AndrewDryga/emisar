@@ -6,6 +6,7 @@ defmodule EmisarWeb.ApprovalDetailLive do
   @availability_blocks [
     :action_not_found,
     :action_unavailable,
+    :action_denied_by_admission,
     :pack_untrusted,
     :pack_retired,
     :action_contract_changed
@@ -677,6 +678,14 @@ defmodule EmisarWeb.ApprovalDetailLive do
       title: "Required executable missing",
       body:
         "A runner is missing an executable this request needs. Restore the executable, then recheck."
+    }
+  end
+
+  defp approval_block_copy(:action_denied_by_admission) do
+    %{
+      title: "Denied by runner admission",
+      body:
+        "The runner's local admission policy now denies this action. Review the host policy, then recheck."
     }
   end
 

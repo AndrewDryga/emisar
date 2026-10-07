@@ -146,7 +146,7 @@ defmodule Emisar.Catalog.RunnerAction.Query do
   # compare — the jsonb the projection never renders.
   @manifest_match_columns ~w[
     id runner_id action_id pack_id pack_version pack_hash
-    primary_executable_available descriptor_digest
+    primary_executable_available admission_allowed descriptor_digest
   ]a
 
   def select_manifest_match_columns(queryable),

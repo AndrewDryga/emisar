@@ -6,9 +6,9 @@
 // action whose id doesn't match the local policy.
 //
 // Admission has two axes — action id (allow/deny globs) and risk ceiling.
-// Both hide a rejected action from the advertised catalog AND refuse it at
-// dispatch, so neither a stale nor a compromised portal can run what the
-// operator suppressed.
+// Both mark a rejected action unavailable in separate advertisement evidence
+// AND refuse it at dispatch. Complete descriptors remain intact for trust
+// matching; neither a stale nor a compromised portal can bypass host policy.
 //
 // Policy rules:
 //

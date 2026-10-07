@@ -141,6 +141,7 @@ defmodule Emisar.Catalog.MCPProjectionTest do
         pack_version: action.pack_version,
         pack_hash: action.pack_hash,
         primary_executable_available: action.primary_executable_available,
+        admission_allowed: action.admission_allowed,
         descriptor_digest: action.descriptor_digest
       )
 
@@ -156,6 +157,45 @@ defmodule Emisar.Catalog.MCPProjectionTest do
              MCPProjection.build([trusted], [unjudgeable], [runner]).packs
 
     assert "descriptor_mismatch" in Enum.map(issues, & &1.code)
+  end
+
+  test "admission only subtracts actions after full manifest identity matches" do
+    {trusted, read, runner} = deployment("custom", "1.0.0", @hash)
+    denied = with_descriptor_digest(%{read | action_id: "custom.write", admission_allowed: false})
+    {:ok, manifest} = TrustedManifest.from_runner_actions([read, denied])
+    trusted = %{trusted | trusted_manifest: manifest}
+    assert [pack] = MCPProjection.build([trusted], [read, denied], [runner]).packs
+    assert pack.availability == "executable"
+
+    assert Enum.find(pack.actions, &(&1["action_id"] == "custom.read")).compatible_runner_ids == [
+             runner.id
+           ]
+
+    assert Enum.find(pack.actions, &(&1["action_id"] == "custom.write")).compatible_runner_ids ==
+             []
+
+    assert "admission_denied" in Enum.map(pack.issues, & &1.code)
+    refute "descriptor_mismatch" in Enum.map(pack.issues, & &1.code)
+
+    other_id = Ecto.UUID.generate()
+    other = %{runner | id: other_id, external_id: Ecto.UUID.generate(), name: "other"}
+
+    other_rows = [
+      %{read | runner_id: other_id},
+      %{denied | runner_id: other_id, admission_allowed: true}
+    ]
+
+    assert [mixed] =
+             MCPProjection.build([trusted], [read, denied] ++ other_rows, [runner, other]).packs
+
+    assert Enum.find(mixed.actions, &(&1["action_id"] == "custom.write")).compatible_runner_ids ==
+             [other_id]
+
+    for rows <- [[read], [read, readvertise(denied, title: "Different", admission_allowed: true)]] do
+      assert [blocked] = MCPProjection.build([trusted], rows, [runner]).packs
+      assert blocked.availability == "unavailable"
+      assert "descriptor_mismatch" in Enum.map(blocked.issues, & &1.code)
+    end
   end
 
   test "a runner with unsafe metadata stays in the snapshot, cleaned and flagged" do

@@ -827,6 +827,12 @@ defmodule Emisar.Runbooks.Scheduler do
   defp dispatch_error_message(:runner_not_found), do: "A frozen runner is no longer available."
   defp dispatch_error_message(:pack_untrusted), do: "The frozen pack is no longer trusted."
 
+  defp dispatch_error_message(:action_denied_by_admission),
+    do: "The runner's local admission policy denied the action."
+
+  defp dispatch_error_message(:action_unavailable),
+    do: "The runner reports that the action's primary executable is missing."
+
   defp dispatch_error_message(:action_contract_changed),
     do: "The frozen action contract changed before dispatch."
 

@@ -179,9 +179,11 @@ hosts.
 
 ## Local admission
 
-Admission is a host-side check that adds defense in depth. It hides and refuses
-actions that should never be available on that runner, even if the control plane
-asks for one.
+Admission is a host-side check that adds defense in depth. It refuses actions
+that should never execute on that runner, even if the control plane asks for one.
+All loaded descriptors remain advertised for complete trusted-pack verification;
+separate admission evidence removes denied actions from executable targets without
+disabling their admitted siblings.
 
 ```yaml
 admission:

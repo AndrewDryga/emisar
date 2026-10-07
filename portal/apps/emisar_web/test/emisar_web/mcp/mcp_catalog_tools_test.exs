@@ -22,6 +22,90 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     {:ok, conn: conn, account: account, subject: subject, membership: user, key: key}
   end
 
+  test "HCP admin admission preserves trusted read discovery and refuses the five mutators", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    pack_id = "hcp-terraform"
+    version = "0.8.9"
+    hash = "sha256:7d808108fe995fbb94f0c44396a2df00f6bae257b1cccef204193063660d59c6"
+    pack_ref = "#{pack_id}@#{version}/#{hash}"
+    manifest = Catalog.PackBaseline.manifest(pack_id, version, hash)
+    assert map_size(manifest["actions"]) == 15
+
+    denied =
+      ~w(tfc.apply_run tfc.discard_run tfc.cancel_run tfc.retry_run tfc.force_unlock_workspace)
+
+    runner = Fixtures.Runners.create_runner(account_id: account.id, name: "admin-runner")
+    packs = %{pack_id => %{"version" => version, "hash" => hash}}
+
+    actions =
+      Enum.map(manifest["actions"], fn {id, descriptor} ->
+        descriptor
+        |> Map.put("id", id)
+        |> Map.put("pack_id", pack_id)
+        |> Map.put("args", descriptor["args_schema"]["args"])
+        |> Map.put("admission_allowed", id not in denied)
+        |> Map.put("primary_executable_available", true)
+      end)
+
+    observe!(runner, packs, actions)
+    assert {:ok, ref} = Runners.public_ref(runner)
+    found = call(conn, "find_actions", %{"query" => "terraform"})
+    assert found["ok"]
+    ids = Enum.map(found["candidates"], & &1["action_id"])
+    assert "tfc.plan_summary" in ids
+    assert "tfc.workspace_details" in ids
+    refute Enum.any?(denied, &(&1 in ids))
+
+    assert [%{"action_id" => "tfc.run_details"}] =
+             call(conn, "find_actions", %{"action_id" => "tfc.run_details"})["candidates"]
+
+    detail = call(conn, "get_action", %{"action_id" => "tfc.run_details", "pack_ref" => pack_ref})
+    assert [%{"runner_ref" => ^ref}] = detail["compatible_runners"]
+    listing = call(conn, "list_packs", %{"pack_id" => pack_id, "include" => "all"})
+    assert [pack] = listing["packs"]
+    assert pack["availability"] == "executable"
+    refute Enum.any?(pack["issues"], &(&1["code"] == "descriptor_mismatch"))
+    Runners.subscribe_runner_transport(runner)
+
+    attrs = %{
+      runner_id: runner.id,
+      action_id: "tfc.run_details",
+      reason: "Review the saved HCP Terraform plan without applying it",
+      args: %{"run_id" => "run-example"},
+      source: "operator"
+    }
+
+    assert {:ok, :running, _} = Runs.dispatch_run(attrs, subject)
+    assert_receive {:cloud_to_runner, _, %{"action_id" => "tfc.run_details"}}, 500
+
+    for id <- denied do
+      unavailable = call(conn, "get_action", %{"action_id" => id, "pack_ref" => pack_ref})
+      assert unavailable["compatible_runners"] == []
+
+      assert Runs.dispatch_run(%{attrs | action_id: id}, subject) ==
+               {:error, :action_denied_by_admission}
+    end
+
+    for broken <- [
+          Enum.reject(actions, &(&1["id"] == "tfc.apply_run")),
+          Enum.map(
+            actions,
+            &if(&1["id"] == "tfc.apply_run", do: Map.put(&1, "title", "Changed"), else: &1)
+          )
+        ] do
+      observe!(runner, packs, broken)
+
+      assert [blocked] =
+               call(conn, "list_packs", %{"pack_id" => pack_id, "include" => "all"})["packs"]
+
+      assert blocked["availability"] == "unavailable"
+      assert Enum.any?(blocked["issues"], &(&1["code"] == "descriptor_mismatch"))
+    end
+  end
+
   test "tools/list advertises the complete fixed catalog within the frame budget", %{conn: conn} do
     result = conn |> rpc("tools/list") |> json_response(200) |> get_in(["result", "tools"])
 

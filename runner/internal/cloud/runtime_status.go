@@ -301,7 +301,7 @@ func setRuntimeCatalog(status *RuntimeStatus, state RunnerStateMsg) {
 	status.DegradedPacks = len(state.DegradedPacks)
 	status.UnavailableActions = 0
 	for _, action := range state.Actions {
-		if !action.PrimaryExecutableAvailable {
+		if !action.AdmissionAllowed || !action.PrimaryExecutableAvailable {
 			status.UnavailableActions++
 		}
 	}

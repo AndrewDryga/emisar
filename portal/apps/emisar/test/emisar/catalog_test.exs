@@ -424,6 +424,31 @@ defmodule Emisar.CatalogTest do
       refute updated.descriptor_digest == loaded.descriptor_digest
     end
 
+    test "strict admission evidence is mutable and clears on older advertisements", %{
+      runner: runner,
+      subject: subject
+    } do
+      for {evidence, expected} <- [
+            {false, false},
+            {true, true},
+            {"true", false},
+            {nil, false},
+            {1, false}
+          ] do
+        descriptor = Map.put(action("linux.uptime"), "admission_allowed", evidence)
+        assert {:ok, _} = Catalog.observe_state(runner, state_payload(actions: [descriptor]))
+        assert {:ok, [row], _} = Catalog.list_actions_for_runner(runner.id, subject)
+        assert row.admission_allowed == expected
+        assert row.descriptor_digest == TrustedManifest.runner_action_digest(row)
+      end
+
+      assert {:ok, _} =
+               Catalog.observe_state(runner, state_payload(actions: [action("linux.uptime")]))
+
+      assert {:ok, [%RunnerAction{admission_allowed: nil}], _} =
+               Catalog.list_actions_for_runner(runner.id, subject)
+    end
+
     test "persists primary executable readiness and clears it for an older runner", %{
       runner: runner,
       subject: subject

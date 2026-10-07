@@ -212,6 +212,7 @@
             "type": "object"
           },
           "pack_id": "database",
+          "admission_allowed": false,
           "primary_executable_available": true
         }
       ],

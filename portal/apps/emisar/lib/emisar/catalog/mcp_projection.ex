@@ -291,6 +291,7 @@ defmodule Emisar.Catalog.MCPProjection do
           [
             descriptor_mismatch_issue(compatibility),
             primary_executable_missing_issue(compatibility),
+            admission_denied_issue(compatibility),
             no_connected_runner_issue(executable?),
             partially_deployed_issue(executable?, compatibility)
           ]
@@ -370,10 +371,18 @@ defmodule Emisar.Catalog.MCPProjection do
       expected_action_ids == matching_action_ids and
         advertised_action_ids == expected_action_ids
 
+    admission_denied_action_ids =
+      rows
+      |> Enum.filter(&(&1.admission_allowed == false))
+      |> Enum.map(& &1.action_id)
+      |> MapSet.new()
+      |> MapSet.intersection(expected_action_ids)
+
     compatible_action_ids =
       if descriptor_match? and deployment.runner_status == "connected" do
         matching_action_ids
         |> MapSet.difference(unavailable_action_ids)
+        |> MapSet.difference(admission_denied_action_ids)
         |> MapSet.to_list()
         |> Enum.sort()
       else
@@ -403,6 +412,15 @@ defmodule Emisar.Catalog.MCPProjection do
           )
         else
           nil
+        end,
+        if descriptor_match? and deployment.runner_status == "connected" and
+             MapSet.size(admission_denied_action_ids) > 0 do
+          issue(
+            "admission_denied",
+            admission_denied_message(admission_denied_action_ids)
+          )
+        else
+          nil
         end
       ]
       |> Enum.reject(&is_nil/1)
@@ -413,6 +431,7 @@ defmodule Emisar.Catalog.MCPProjection do
       descriptor_match?: descriptor_match?,
       compatible_action_ids: compatible_action_ids,
       unavailable_action_ids: unavailable_action_ids |> MapSet.to_list() |> Enum.sort(),
+      admission_denied_action_ids: admission_denied_action_ids |> Enum.sort(),
       issues: issues
     }
   end
@@ -423,6 +442,25 @@ defmodule Emisar.Catalog.MCPProjection do
     suffix = if length(ids) > 5, do: ", +#{length(ids) - 5} more", else: ""
 
     "Primary executables are missing for #{length(ids)} action(s): #{shown}#{suffix}."
+  end
+
+  defp admission_denied_issue(compatibility) do
+    if Enum.any?(compatibility, fn {_id, result} ->
+         result.status == "connected" and result.descriptor_match? and
+           result.admission_denied_action_ids != []
+       end) do
+      issue(
+        "admission_denied",
+        "Some actions are denied by a connected runner's local admission policy."
+      )
+    end
+  end
+
+  defp admission_denied_message(action_ids) do
+    ids = Enum.sort(action_ids)
+    shown = ids |> Enum.take(5) |> Enum.join(", ")
+    suffix = if length(ids) > 5, do: ", +#{length(ids) - 5} more", else: ""
+    "Local admission denies #{length(ids)} action(s): #{shown}#{suffix}."
   end
 
   defp pack_issues_by_runner(packs) do

@@ -165,6 +165,16 @@ listeners, and commands invoked inside `/bin/sh -c` still require pack setup and
 functional verification. The runner refreshes the advertisement after reload
 and when this executable evidence changes.
 
+Every loaded descriptor also includes the literal boolean `admission_allowed`,
+computed from one local allow/deny and risk-ceiling policy snapshot. Denied
+descriptors remain in the complete advertisement: admission is mutable host
+evidence outside the trusted descriptor identity, distinct from executable
+readiness. Portal first verifies the exact trusted hash and complete descriptor
+set, then removes actions with either evidence set to false. Missing admission
+evidence from older runners is unknown and rolling-compatible; malformed present
+values fail closed. Re-advertisement clears stale evidence when a field is absent.
+The runner still rechecks admission immediately before every execution.
+
 The optional `degraded_packs` array names installed packs the runner's loader
 skipped (unparseable or invalid on disk): each entry carries the pack
 directory's basename as `pack` (the manifest may not have parsed, so no pack
@@ -205,7 +215,8 @@ portal ignores the field, and an older runner never sends it.
       "description": "Runs nodetool status and returns the bounded result.",
       "side_effects": [],
       "args": [],
-      "primary_executable_available": true
+      "primary_executable_available": true,
+      "admission_allowed": true
     }
   ]
 }

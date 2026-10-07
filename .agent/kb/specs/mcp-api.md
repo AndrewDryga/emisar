@@ -297,7 +297,12 @@ An action is catalog-executable only when at least one in-scope runner:
 1. is authenticated, connected, and not disabled;
 2. advertises the exact trusted `pack_ref` and action ID;
 3. matches the trusted complete descriptor; and
-4. is allowed to dispatch that pack under trust and retirement rules.
+4. is allowed to dispatch that pack under trust and retirement rules; and
+5. has no definite local-admission denial or missing-primary-executable evidence.
+
+Mutable host evidence never changes descriptor identity or relaxes complete
+manifest matching. Missing evidence from older runners is unknown and remains
+rolling-compatible; the runner independently enforces current admission.
 
 This is not a policy promise. Policy may allow, deny, or require approval only
 after the exact arguments, reason, and targets are known.
@@ -486,7 +491,7 @@ deployment do not diagnose health, and repeating targets under every action
 wastes context. Use `list_runners` for deployment evidence.
 
 Initial deployment issue codes are `descriptor_mismatch`,
-`no_connected_runner`, `partially_deployed`, `primary_executable_missing`, and
+`no_connected_runner`, `partially_deployed`, `primary_executable_missing`, `admission_denied`, and
 `version_skew`.
 
 ## `list_runners`

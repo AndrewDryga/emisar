@@ -285,7 +285,7 @@ func TestStateBuilder_Build_ReflectsSwappedVerifier(t *testing.T) {
 	}
 }
 
-func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
+func TestStateBuilder_AdmissionDenylistKeepsDescriptor(t *testing.T) {
 	reg := setupRegistry(t)
 	pol, err := admission.New(nil, []string{"t.echo"}, "")
 	if err != nil {
@@ -297,8 +297,15 @@ func TestStateBuilder_AdmissionDenylistHidesAction(t *testing.T) {
 		GetAdmission: func() *admission.Policy { return pol },
 	}
 	msg := b.Build()
-	if len(msg.Actions) != 0 {
-		t.Fatalf("expected denied action to be hidden, got %d actions", len(msg.Actions))
+	if len(msg.Actions) != 1 {
+		t.Fatalf("expected denied action descriptor to remain, got %d actions", len(msg.Actions))
+	}
+	if msg.Actions[0].AdmissionAllowed {
+		t.Fatal("denied action advertised as admitted")
+	}
+	encoded, err := json.Marshal(msg.Actions[0])
+	if err != nil || !strings.Contains(string(encoded), `"admission_allowed":false`) {
+		t.Fatalf("denial missing from wire: %s, %v", encoded, err)
 	}
 	// The pack itself still advertises (for hash tracking) — the
 	// filter is per-action, not per-pack.
@@ -329,9 +336,8 @@ output:
   max_stderr_bytes: 1024
 `
 
-// A risk ceiling hides actions above the tier from the advertised catalog,
-// exactly like an allow/deny rule — the read-only-demo switch.
-func TestStateBuilder_MaxRiskHidesActionsAboveCeiling(t *testing.T) {
+// A risk ceiling is mutable eligibility, never immutable descriptor identity.
+func TestStateBuilder_MaxRiskKeepsCompleteDescriptors(t *testing.T) {
 	root := t.TempDir()
 	must := func(err error) {
 		if err != nil {
@@ -364,8 +370,13 @@ actions:
 		GetAdmission: func() *admission.Policy { return pol },
 	}
 	msg := b.Build()
-	if len(msg.Actions) != 1 || msg.Actions[0].ID != "t.echo" {
-		t.Fatalf("expected only the low-risk t.echo under a medium ceiling, got %+v", msg.Actions)
+	if len(msg.Actions) != 2 {
+		t.Fatalf("expected complete descriptors under a medium ceiling, got %+v", msg.Actions)
+	}
+	for _, a := range msg.Actions {
+		if a.AdmissionAllowed != (a.ID == "t.echo") {
+			t.Fatalf("incorrect risk admission: %+v", a)
+		}
 	}
 }
 
@@ -383,6 +394,33 @@ func TestStateBuilder_AdmissionAllowlistKeepsMatching(t *testing.T) {
 	msg := b.Build()
 	if len(msg.Actions) != 1 || msg.Actions[0].ID != "t.echo" {
 		t.Fatalf("expected t.echo to survive allowlist, got %+v", msg.Actions)
+	}
+}
+
+func TestStateBuilder_AdmissionReloadUsesOneSnapshot(t *testing.T) {
+	reg := setupRegistry(t)
+	current, err := admission.New([]string{"other.*"}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	b := &StateBuilder{GetRegistry: func() *packs.Registry { return reg },
+		GetAdmission: func() *admission.Policy { calls++; return current }}
+	denied := b.Build()
+	if len(denied.Actions) != 1 || denied.Actions[0].AdmissionAllowed || calls != 1 {
+		t.Fatalf("allowlist denial/snapshot: %+v calls=%d", denied.Actions, calls)
+	}
+	current = nil
+	allowed := b.Build()
+	if !allowed.Actions[0].AdmissionAllowed || calls != 2 {
+		t.Fatalf("reloaded admission/snapshot: %+v calls=%d", allowed.Actions, calls)
+	}
+	if denied.Actions[0].ModelDescriptor.ID != allowed.Actions[0].ModelDescriptor.ID ||
+		denied.Packs["t"] != allowed.Packs["t"] {
+		t.Fatal("admission reload changed descriptor/pack identity")
+	}
+	if hostActionAvailability(denied) == hostActionAvailability(allowed) {
+		t.Fatal("admission transition would not trigger periodic advertisement")
 	}
 }
 

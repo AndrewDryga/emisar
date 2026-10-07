@@ -16,15 +16,18 @@ contract.
 
 ## Good
 
-- Advertise every admitted action descriptor.
+- Advertise every loaded action descriptor, including locally denied actions.
 - Compare the complete descriptor set to the exact trusted manifest.
 - Filter an otherwise compatible action only when separate host evidence is
   definitively unavailable.
 - Preserve unknown readiness from older runners as rolling-compatible.
+- Keep local admission and primary-executable evidence separate; either can
+  subtract targets, neither can establish trust or weaken complete matching.
 
 ## Bad
 
 - Drop a descriptor because a binary is missing.
+- Drop a descriptor because the allow/deny policy or risk ceiling rejects it.
 - Mark the whole pack unavailable because one action cannot start.
 - Treat a positive host check as a substitute for pack trust or functional
   verification.

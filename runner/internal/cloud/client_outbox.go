@@ -215,7 +215,7 @@ func (c *Client) readvertiseLoop(
 	defer sessionCancel()
 	ticker := time.NewTicker(c.opts.AvailabilityRefreshEvery)
 	defer ticker.Stop()
-	lastAvailability := primaryExecutableAvailability(initial)
+	lastAvailability := hostActionAvailability(initial)
 
 	sendState := func(state RunnerStateMsg) bool {
 		if err := validateRunnerStateSize(state); err != nil {
@@ -226,7 +226,7 @@ func (c *Client) readvertiseLoop(
 			c.opts.Logger.Warn("cloud.readvertise_failed", "error", err)
 			return false
 		}
-		lastAvailability = primaryExecutableAvailability(state)
+		lastAvailability = hostActionAvailability(state)
 		c.opts.Logger.Info("cloud.readvertised",
 			"actions", len(state.Actions),
 			"packs", len(state.Packs),
@@ -248,7 +248,7 @@ func (c *Client) readvertiseLoop(
 			}
 		case <-ticker.C:
 			state := c.buildState()
-			availability := primaryExecutableAvailability(state)
+			availability := hostActionAvailability(state)
 			if availability == lastAvailability {
 				continue
 			}
@@ -259,10 +259,10 @@ func (c *Client) readvertiseLoop(
 	}
 }
 
-func primaryExecutableAvailability(state RunnerStateMsg) string {
+func hostActionAvailability(state RunnerStateMsg) string {
 	var b strings.Builder
 	for _, action := range state.Actions {
-		fmt.Fprintf(&b, "%s=%t:%s\n", action.ID, action.PrimaryExecutableAvailable, action.MissingExecutable)
+		fmt.Fprintf(&b, "%s=%t:%t:%s\n", action.ID, action.AdmissionAllowed, action.PrimaryExecutableAvailable, action.MissingExecutable)
 	}
 	return b.String()
 }

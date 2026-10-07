@@ -26,6 +26,10 @@ defmodule Emisar.Fixtures.Catalog do
   def default_pack_hash, do: pack_hash("#{@default_pack_id}@#{@default_pack_version}")
   def default_pack_ref, do: "#{@default_pack_id}@#{@default_pack_version}/" <> default_pack_hash()
 
+  def set_admission_allowed(action, allowed) do
+    action |> Ecto.Changeset.change(admission_allowed: allowed) |> Repo.update!()
+  end
+
   @doc """
   Inserts a catalog action row for a runner. Mirrors what
   `Catalog.observe_state` would do when a runner advertises this action —
@@ -54,6 +58,7 @@ defmodule Emisar.Fixtures.Catalog do
       output_schema: Map.get(attrs, :output_schema),
       examples: attrs[:examples] || [],
       primary_executable_available: Map.get(attrs, :primary_executable_available),
+      admission_allowed: Map.get(attrs, :admission_allowed),
       missing_executable: attrs[:missing_executable],
       first_seen_at: DateTime.utc_now(),
       last_seen_at: DateTime.utc_now()

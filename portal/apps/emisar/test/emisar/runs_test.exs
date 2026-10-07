@@ -2047,6 +2047,19 @@ defmodule Emisar.RunsTest do
              ) == {:error, :action_not_found}
     end
 
+    test "rejects locally denied dispatch before reserving a run" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      Fixtures.Catalog.create_action(runner: runner, admission_allowed: false)
+      Fixtures.Policies.create_policy(account_id: account.id)
+      subject = owner_subject_for(account)
+
+      assert Runs.dispatch_run(base_attrs(account.id, runner.id), subject) ==
+               {:error, :action_denied_by_admission}
+
+      refute Repo.exists?(ActionRun)
+    end
+
     test "rejects dispatch when the runner reports the primary executable missing" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -2604,6 +2617,21 @@ defmodule Emisar.RunsTest do
   end
 
   describe "compose_dispatch_batch_in_multi/5" do
+    test "a current local admission denial rolls back the entire atomic batch" do
+      %{subject: subject, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
+      descriptor = mcp_action_descriptor(%{"admission_allowed" => false})
+      assert {:ok, _} = Catalog.observe_state(runner, mcp_state_payload(runner, descriptor))
+      target = mcp_target_attrs(runner, key, "op_334NN9NMDZ1T76NARWCKM5A0D6")
+
+      assert {:ok, multi} =
+               Runs.compose_dispatch_batch_in_multi(Multi.new(), [target], subject, :admission)
+
+      assert {:error, {:dispatch_batch, :admission}, :action_denied_by_admission, _} =
+               Repo.transaction(multi)
+
+      refute Repo.exists?(ActionRun)
+    end
+
     test "rejects a subject without dispatch permission" do
       %{account: account, runners: [runner], key: key} = mcp_fanout_fixture(["low"])
       target = mcp_target_attrs(runner, key, "op_334NN9NMDZ1T76NARWCKM5A0D6")
@@ -3214,6 +3242,27 @@ defmodule Emisar.RunsTest do
       assert DateTime.compare(request.expires_at, cert_deadline) != :gt
     end
 
+    test "a signed request cannot bypass current local admission" do
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+
+      assert {:ok, runner} =
+               Emisar.Runners.apply_state(runner, %{
+                 "enforce_signatures" => true,
+                 "max_attestation_age_seconds" => 3_600
+               })
+
+      facts = mcp_action_facts("op_614NN9NMDZ1T76NARWCKM5A0D6", [runner])
+      signed = signed_mcp_attestation(facts, [runner])
+      descriptor = mcp_action_descriptor(%{"admission_allowed" => false})
+      assert {:ok, _} = Catalog.observe_state(runner, mcp_state_payload(runner, descriptor))
+
+      assert Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject) ==
+               {:error, :target_contract_changed}
+
+      refute Repo.exists?(MCPOperations.Operation)
+      refute Repo.exists?(ActionRun)
+    end
+
     test "a valid signed fan-out persists and relays the normalized envelope" do
       %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
 
@@ -3701,6 +3750,29 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       %{account: account, runner: runner}
+    end
+
+    test "refuses a stale authorized run after admission becomes denied", %{
+      account: account,
+      runner: runner
+    } do
+      Fixtures.Catalog.create_action(runner: runner, admission_allowed: true)
+
+      assert {:ok, run} =
+               Runs.create_run(%{
+                 account_id: account.id,
+                 runner_id: runner.id,
+                 action_id: "linux.uptime",
+                 source: "operator",
+                 args: %{},
+                 expected_pack_hash: Fixtures.Catalog.default_pack_hash(),
+                 pack_ref: Fixtures.Catalog.default_pack_ref()
+               })
+
+      Fixtures.Catalog.create_action(runner: runner, admission_allowed: false)
+
+      assert Runs.recheck_run_pack_trust_for_approval(run.id) ==
+               {:error, :action_denied_by_admission}
     end
 
     test "refuses an authorized run when the executable becomes unavailable", %{
@@ -4461,6 +4533,20 @@ defmodule Emisar.RunsTest do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       %{account: account, runner: runner}
+    end
+
+    test "a locally denied action cannot be delivered even without a snapshotted hash", %{
+      account: account,
+      runner: runner
+    } do
+      action = Fixtures.Catalog.create_action(runner: runner, admission_allowed: true)
+      assert {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+      Fixtures.Catalog.set_admission_allowed(action, false)
+      Emisar.Runners.subscribe_runner_transport(runner)
+      assert Runs.dispatch_to_runner(run) == {:error, :action_denied_by_admission}
+      assert Runs.peek_run_by_id(run.id).status == :refused
+      assert Runs.peek_run_by_id(run.id).error_message =~ "admission policy"
+      refute_receive {:cloud_to_runner, _, _}, 100
     end
 
     test "delivers a dispatchable (:pending) run and marks it :sent", %{

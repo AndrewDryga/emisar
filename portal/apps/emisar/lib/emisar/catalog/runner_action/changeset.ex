@@ -5,7 +5,7 @@ defmodule Emisar.Catalog.RunnerAction.Changeset do
   @fields ~w[
     account_id runner_id action_id pack_id pack_version pack_hash title kind risk
     summary description side_effects args_schema output_schema examples search_terms
-    primary_executable_available missing_executable
+    primary_executable_available missing_executable admission_allowed
     first_seen_at last_seen_at
   ]a
 

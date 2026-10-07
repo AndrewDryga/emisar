@@ -22,8 +22,9 @@ admission decides *which* target may be acted on.
   There is no place to put a value.
 - Runner admission has two axes, action-id shell globs and a risk ceiling:
   `Admit(actionID string)` never receives the arguments
-  (`runner/internal/admission/admission.go`). It hides a whole action from a
-  host; it cannot hide one unit from an admitted action.
+  (`runner/internal/admission/admission.go`). It denies a whole action on a
+  host; it cannot restrict one unit within an admitted action. Denied descriptors
+  remain advertised for integrity matching, with separate admission evidence.
 
 **Which decision a tier produces is the operator's, not the tier's.**
 `Policies.evaluate_with_policy/3` first resolves the policy that applies to the

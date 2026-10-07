@@ -1719,6 +1719,23 @@ defmodule Emisar.ApprovalsTest do
     # for. Release is the gate: `approve_request` re-checks availability and
     # keeps the run parked. Both halves are pinned together here, because each
     # alone reads as a bug in the other.
+    test "a pending run denied by local admission cannot gain an approval or be released" do
+      %{account: account, action: action, runner: runner, request: request, run: run} =
+        provable_gated_request(min_approvals: 1)
+
+      approver = named_reviewer(account, "Dana Reviewer")
+      Emisar.Runners.subscribe_runner_transport(runner)
+      Fixtures.Catalog.set_admission_allowed(action, false)
+
+      assert Approvals.approve_request(request, approver, "release it") ==
+               {:error, :action_denied_by_admission}
+
+      assert %Request{status: :pending} = Repo.reload!(request)
+      assert %ActionRun{status: :pending_approval} = Repo.reload!(run)
+      assert approved_count(request.id) == 0
+      refute_receive {:cloud_to_runner, _, _}, 100
+    end
+
     test "a pending run whose executable vanished keeps its preview and still cannot be released" do
       %{account: account, action: action, runner: runner, request: request, run: run} =
         provable_gated_request(min_approvals: 1)
