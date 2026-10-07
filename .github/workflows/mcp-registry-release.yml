@@ -88,6 +88,7 @@ jobs:
 
           if ! registry_response=$(curl --fail --silent --show-error --retry 3 --max-time 15 --get \
             --data-urlencode "search=dev.emisar/emisar" \
+            --data-urlencode "version=latest" \
             https://registry.modelcontextprotocol.io/v0/servers); then
             echo "The MCP Registry API is unavailable; the next scheduled tick will retry without publishing." >> "$GITHUB_STEP_SUMMARY"
             echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -246,6 +247,7 @@ jobs:
           while true; do
             latest=$(curl --fail --silent --show-error --get \
               --data-urlencode "search=dev.emisar/emisar" \
+              --data-urlencode "version=latest" \
               https://registry.modelcontextprotocol.io/v0/servers \
               | jq -r '[.servers[] | select(.server.name == "dev.emisar/emisar")
                         | select(._meta."io.modelcontextprotocol.registry/official".isLatest == true)]
