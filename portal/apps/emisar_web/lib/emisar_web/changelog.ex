@@ -17,7 +17,7 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
-      date: ~D[2026-10-08],
+      date: ~D[2026-10-09],
       slug: "tls-probe-overrides-and-generated-nomad-jobs",
       title: "TLS probe overrides and generated Nomad jobs",
       tag: "v0.53.0",
