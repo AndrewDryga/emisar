@@ -313,6 +313,41 @@ defmodule EmisarWeb.RunNewLiveTest do
              "The tool this action needs isn't installed on the runner. Install it and reload the runner."
   end
 
+  test "runner admission denial redirects before opening a dispatch form", %{conn: conn} do
+    {conn, _owner, account} = register_and_log_in(conn)
+    runner = Fixtures.Runners.create_runner(account_id: account.id)
+    action = Fixtures.Catalog.create_action(runner: runner, admission_allowed: false)
+
+    assert {:error, {:live_redirect, %{to: to, flash: flash}}} =
+             live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+
+    assert to == ~p"/app/#{account}/runners/#{runner.id}"
+
+    assert flash["error"] ==
+             "This action is denied by the runner's local admission policy."
+
+    refute Repo.one(Runs.ActionRun)
+  end
+
+  test "dispatch rechecks admission after the form opens without recording a run", %{conn: conn} do
+    {conn, owner, account} = register_and_log_in(conn)
+    Fixtures.Policies.create_policy(account_id: account.id, updated_by_membership_id: owner.id)
+    {runner, action} = action_with_required_arg(account)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runs/new/#{runner.id}/#{action.action_id}")
+    Fixtures.Catalog.set_admission_allowed(action, false)
+
+    submit_dispatch(lv)
+
+    assert has_element?(
+             lv,
+             "#flash-error",
+             "This action is denied by the runner's local admission policy."
+           )
+
+    refute has_element?(lv, "#flash-error", "Install")
+    refute Repo.one(Runs.ActionRun)
+  end
+
   test "a tool removed while the form is open is named from current runner evidence", %{
     conn: conn
   } do

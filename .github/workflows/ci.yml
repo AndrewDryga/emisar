@@ -59,6 +59,7 @@ jobs:
       runner: ${{ steps.detect.outputs.runner }}
       packs: ${{ steps.detect.outputs.packs }}
       infra: ${{ steps.detect.outputs.infra }}
+      admin_diagnostics: ${{ steps.detect.outputs.admin_diagnostics }}
       deps: ${{ steps.detect.outputs.deps }}
       mcp_listing: ${{ steps.detect.outputs.mcp_listing }}
       go_modules: ${{ steps.detect.outputs.go_modules }}
@@ -252,6 +253,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      - name: Set up Go for exact-byte artifact contract
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+
       - name: Build release image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -262,6 +270,7 @@ jobs:
           build-args: |
             SOURCE_REVISION=${{ github.sha }}
           labels: |
+            org.emisar.image-purpose=portal
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=portal-release
@@ -444,13 +453,17 @@ jobs:
           set -euo pipefail
           docker save emisar/portal:ci | gzip -1 > /tmp/emisar-portal-image.tar.gz
           test -s /tmp/emisar-portal-image.tar.gz
+          go run ./tools/cmd/ci image-contract create portal "$GITHUB_SHA" emisar/portal:ci \
+            /tmp/emisar-portal-image.tar.gz /tmp/emisar-portal.cdx.json /tmp/emisar-portal-contract.json
 
       - name: Upload tested image
         if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: portal-image-${{ github.sha }}
-          path: /tmp/emisar-portal-image.tar.gz
+          path: |
+            /tmp/emisar-portal-image.tar.gz
+            /tmp/emisar-portal-contract.json
           retention-days: 2
           if-no-files-found: error
           overwrite: true
@@ -461,6 +474,81 @@ jobs:
         with:
           name: portal-sbom-${{ github.sha }}
           path: /tmp/emisar-portal.cdx.json
+          retention-days: 2
+          if-no-files-found: error
+          overwrite: true
+
+  admin-diagnostics:
+    name: Infra - Native diagnostics
+    needs: changes
+    if: needs.changes.outputs.admin_diagnostics == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+      # Explicit Docker qualifier; canonical gates remain Docker-free.
+      - name: Build once and qualify extracted Linux native bundle
+        run: ./run ops qualify-admin-diagnostics "$GITHUB_SHA" emisar/admin-diagnostics:ci
+      - name: Install Trivy (pinned, checksum-verified)
+        env:
+          TRIVY_VERSION: "0.74.0"
+          TRIVY_SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
+        run: |
+          set -euo pipefail
+          artifact="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${artifact}"
+          printf '%s  %s\n' "$TRIVY_SHA256" "$artifact" | sha256sum --check --
+          tar -xzf "$artifact" trivy
+          sudo install -m 0755 trivy /usr/local/bin/trivy
+      - name: Generate bound Debian and shipped runtime SBOM
+        run: |
+          go run ./tools/cmd/ci verify-debian-sbom-decoder
+          trivy image --format cyclonedx --output /tmp/emisar-admin-runtime.cdx.json emisar/admin-diagnostics:ci
+          go run ./tools/cmd/ci diagnostics-sbom "$GITHUB_SHA" emisar/admin-diagnostics:ci \
+            /tmp/emisar-admin-runtime.cdx.json /tmp/emisar-admin-diagnostics.cdx.json
+      - name: Scan Debian closure and final shipped Go/Python bytes
+        run: |
+          set -euo pipefail
+          status=0
+          trivy sbom --exit-code 1 --severity HIGH,CRITICAL --ignorefile .trivyignore.yaml \
+            --list-all-pkgs --format json --output /tmp/emisar-admin-diagnostics-scan.json \
+            /tmp/emisar-admin-diagnostics.cdx.json || status=$?
+          jq -e 'any(.Results[]; .Type == "debian" and (.Packages | length) > 0)' /tmp/emisar-admin-diagnostics-scan.json
+          jq -e '[.Results[] | select(.Type == "debian") | .Packages[]] |
+            any(.Name == "libc6" and .SrcName == "glibc") and
+            any(.Name == "libssl3" and .SrcName == "openssl") and
+            any(.Name == "ntpsec" and .SrcName == "ntpsec") and
+            any(.Name == "sysstat" and .SrcName == "sysstat")' /tmp/emisar-admin-diagnostics-scan.json
+          jq '[.Results[] | {Target,Type,package_count:(.Packages | length)}]' /tmp/emisar-admin-diagnostics-scan.json
+          test "$status" = 0
+          trivy image --exit-code 1 --severity HIGH,CRITICAL --ignorefile .trivyignore.yaml emisar/admin-diagnostics:ci
+      - name: Export exact qualified bytes and bind their contract
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          docker save emisar/admin-diagnostics:ci | gzip -1 > /tmp/emisar-admin-diagnostics-image.tar.gz
+          go run ./tools/cmd/ci image-contract create admin-diagnostics "$GITHUB_SHA" emisar/admin-diagnostics:ci \
+            /tmp/emisar-admin-diagnostics-image.tar.gz /tmp/emisar-admin-diagnostics.cdx.json /tmp/emisar-admin-diagnostics-contract.json
+      - name: Upload qualified artifacts
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: admin-diagnostics-${{ github.sha }}
+          path: |
+            /tmp/emisar-admin-diagnostics-image.tar.gz
+            /tmp/emisar-admin-diagnostics.cdx.json
+            /tmp/emisar-admin-diagnostics-contract.json
           retention-days: 2
           if-no-files-found: error
           overwrite: true
@@ -859,7 +947,7 @@ jobs:
   ci-gate:
     name: Required - CI
     if: always()
-    needs: [changes, portal, portal-image, mcp-listing, go, mcp-windows, runner-root, packs, runner-image, pack-behavior, signing-e2e, sso-e2e, infra, dep-age]
+    needs: [changes, portal, portal-image, admin-diagnostics, mcp-listing, go, mcp-windows, runner-root, packs, runner-image, pack-behavior, signing-e2e, sso-e2e, infra, dep-age]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -887,6 +975,8 @@ jobs:
       SELECT_SSO_E2E: ${{ needs.changes.outputs.sso_e2e }}
       INFRA: ${{ needs.infra.result }}
       SELECT_INFRA: ${{ needs.changes.outputs.infra }}
+      ADMIN_DIAGNOSTICS: ${{ needs.admin-diagnostics.result }}
+      SELECT_ADMIN_DIAGNOSTICS: ${{ needs.changes.outputs.admin_diagnostics }}
       DEP_AGE: ${{ needs.dep-age.result }}
       SELECT_DEP_AGE: ${{ needs.changes.outputs.deps }}
     steps:
@@ -938,4 +1028,5 @@ jobs:
           require_selected SIGNING_E2E "$SELECT_SIGNING_E2E"
           require_selected SSO_E2E "$SELECT_SSO_E2E"
           require_selected INFRA "$SELECT_INFRA"
+          require_selected ADMIN_DIAGNOSTICS "$SELECT_ADMIN_DIAGNOSTICS"
           require_selected DEP_AGE "$SELECT_DEP_AGE"

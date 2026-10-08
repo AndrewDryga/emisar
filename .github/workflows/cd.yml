@@ -33,6 +33,16 @@ jobs:
       image: ${{ steps.push.outputs.image }}
       digest: ${{ steps.push.outputs.digest }}
     steps:
+      - name: Check out contract verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
       - name: Download tested image
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -55,6 +65,12 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_ACTOR: ${{ github.actor }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+
+      - name: Require tested portal purpose and exact image/SBOM contract
+        run: >-
+          go run ./tools/cmd/ci image-contract verify portal "$GITHUB_SHA" emisar/portal:ci
+          /tmp/portal-image/emisar-portal-image.tar.gz /tmp/portal-sbom/emisar-portal.cdx.json
+          /tmp/portal-image/emisar-portal-contract.json
 
       - name: Publish tested image
         id: push
@@ -126,6 +142,83 @@ jobs:
           set -euo pipefail
           docker tag emisar/portal:ci "${IMAGE}:latest"
           docker push "${IMAGE}:latest"
+
+  admin-diagnostics-publish:
+    name: CD - Publish native diagnostics
+    needs: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: admin-diagnostics-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Check out contract verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+      - name: Download qualified artifacts from this CI run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: admin-diagnostics-${{ github.sha }}
+          path: /tmp/admin-diagnostics
+      - name: Load and verify exact qualified artifact
+        run: |
+          set -euo pipefail
+          gunzip -c /tmp/admin-diagnostics/emisar-admin-diagnostics-image.tar.gz | docker load
+          go run ./tools/cmd/ci image-contract verify admin-diagnostics "$GITHUB_SHA" emisar/admin-diagnostics:ci \
+            /tmp/admin-diagnostics/emisar-admin-diagnostics-image.tar.gz /tmp/admin-diagnostics/emisar-admin-diagnostics.cdx.json \
+            /tmp/admin-diagnostics/emisar-admin-diagnostics-contract.json
+      - name: Sign in to existing public GHCR repository
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+      - name: Publish exact qualified bytes with immutable purpose tag
+        id: push
+        env:
+          IMAGE: ghcr.io/andrewdryga/emisar
+        run: |
+          set -euo pipefail
+          immutable="${IMAGE}:admin-diagnostics-sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker tag emisar/admin-diagnostics:ci "$immutable"
+          docker push "$immutable"
+          repo_digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$immutable")
+          digest=${repo_digest#*@}
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "image=${IMAGE}@${digest}" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Published native diagnostics"
+            echo "- immutable purpose tag: \`${immutable}\`"
+            echo "- qualified digest: \`${IMAGE}@${digest}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: ghcr.io/andrewdryga/emisar
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Attest the exact scanned conservative inventory SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/andrewdryga/emisar
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: /tmp/admin-diagnostics/emisar-admin-diagnostics.cdx.json
+          push-to-registry: true
 
   packs-publish:
     name: CD - Publish pack registry
@@ -379,9 +472,10 @@ jobs:
       always() &&
       needs.ci.result == 'success' &&
       needs.portal-publish.result == 'success' &&
+      needs.admin-diagnostics-publish.result == 'success' &&
       ((needs.ci.outputs.packs_release == 'true' && needs.packs-publish.result == 'success') ||
        (needs.ci.outputs.packs_release != 'true' && needs.packs-publish.result == 'skipped'))
-    needs: [ci, portal-publish, packs-publish]
+    needs: [ci, portal-publish, admin-diagnostics-publish, packs-publish]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -403,6 +497,7 @@ jobs:
       TF_CLOUD_ORGANIZATION: Dryga
       TFC_WORKSPACE: emisar
       PUBLISHED_IMAGE: ${{ needs.portal-publish.outputs.image }}
+      PUBLISHED_DIAGNOSTICS_IMAGE: ${{ needs.admin-diagnostics-publish.outputs.image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -425,6 +520,45 @@ jobs:
               echo "Skipped because \`${GITHUB_SHA}\` is no longer current main (\`${current_sha}\`)."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Set up Go for saved-plan artifact verification
+        if: steps.current.outputs.current == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.*
+      - name: Download tested portal image contract
+        if: steps.current.outputs.current == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: portal-image-${{ github.sha }}
+          path: /tmp/portal-image
+      - name: Download tested portal SBOM
+        if: steps.current.outputs.current == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: portal-sbom-${{ github.sha }}
+          path: /tmp/portal-sbom
+      - name: Download qualified diagnostics contract
+        if: steps.current.outputs.current == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: admin-diagnostics-${{ github.sha }}
+          path: /tmp/admin-diagnostics
+      - name: Reject swapped artifacts before planning
+        if: steps.current.outputs.current == 'true'
+        run: |
+          set -euo pipefail
+          for image in "$PUBLISHED_IMAGE" "$PUBLISHED_DIAGNOSTICS_IMAGE"; do
+            [[ "$image" =~ ^ghcr\.io/andrewdryga/emisar@sha256:[a-f0-9]{64}$ ]]
+            docker pull "$image"
+          done
+          go run ./tools/cmd/ci image-contract verify portal "$GITHUB_SHA" "$PUBLISHED_IMAGE" \
+            /tmp/portal-image/emisar-portal-image.tar.gz /tmp/portal-sbom/emisar-portal.cdx.json /tmp/portal-image/emisar-portal-contract.json
+          go run ./tools/cmd/ci image-contract verify admin-diagnostics "$GITHUB_SHA" "$PUBLISHED_DIAGNOSTICS_IMAGE" \
+            /tmp/admin-diagnostics/emisar-admin-diagnostics-image.tar.gz /tmp/admin-diagnostics/emisar-admin-diagnostics.cdx.json \
+            /tmp/admin-diagnostics/emisar-admin-diagnostics-contract.json
 
       - name: Verify HCP workspace and select image
         if: steps.current.outputs.current == 'true'
@@ -456,8 +590,11 @@ jobs:
             exit 1
           }
 
-          echo "image=$image" >> "$GITHUB_OUTPUT"
-          echo "workspace_id=$workspace_id" >> "$GITHUB_OUTPUT"
+          {
+            echo "image=$image"
+            echo "diagnostics_image=$PUBLISHED_DIAGNOSTICS_IMAGE"
+            echo "workspace_id=$workspace_id"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Require published pack catalog
         # Only pack releases need the live registry equality check. Portal,
@@ -503,17 +640,20 @@ jobs:
           WORKSPACE_ID: ${{ steps.image.outputs.workspace_id }}
           CONFIGURATION_VERSION_ID: ${{ steps.upload.outputs.configuration_version_id }}
           IMAGE: ${{ steps.image.outputs.image }}
+          DIAGNOSTICS_IMAGE: ${{ steps.image.outputs.diagnostics_image }}
         run: |
           set -euo pipefail
           api=https://app.terraform.io/api/v2
           auth=(-H "Authorization: Bearer ${TF_API_TOKEN}" -H "Content-Type: application/vnd.api+json")
           hcl_image=$(jq -cn --arg image "$IMAGE" '$image')
+          hcl_diagnostics_image=$(jq -cn --arg image "$DIAGNOSTICS_IMAGE" '$image')
           payload=$(jq -cn \
             --arg message "main ${GITHUB_SHA} (@${GITHUB_ACTOR}, gh run ${GITHUB_RUN_ID})" \
             --arg workspace "$WORKSPACE_ID" \
             --arg configuration "$CONFIGURATION_VERSION_ID" \
             --arg image "$hcl_image" \
-            '{data: {type: "runs", attributes: {message: $message, "save-plan": true, variables: [{key: "container_image", value: $image}]}, relationships: {workspace: {data: {type: "workspaces", id: $workspace}}, "configuration-version": {data: {type: "configuration-versions", id: $configuration}}}}}')
+            --arg diagnostics_image "$hcl_diagnostics_image" \
+            '{data: {type: "runs", attributes: {message: $message, "save-plan": true, variables: [{key: "container_image", value: $image}, {key: "admin_runner_diagnostics_image", value: $diagnostics_image}]}, relationships: {workspace: {data: {type: "workspaces", id: $workspace}}, "configuration-version": {data: {type: "configuration-versions", id: $configuration}}}}}')
           # A saved plan is provisional, so HCP discards it the moment someone
           # confirms an apply — exactly what the summary below has always called
           # normal. Planning again against the new state is the honest response;

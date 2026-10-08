@@ -7,12 +7,22 @@ set -eu
 host=$1
 port=$2
 sni=$3
-[ -n "$sni" ] || sni=$host
+case "$host" in
+*:*) endpoint="[$host]:$port" ;;
+*) endpoint="$host:$port" ;;
+esac
+if [ -z "$sni" ]; then
+	case "$host" in
+	*:*|*[!0-9.]*) case "$host" in *:*) : ;; *) sni=$host ;; esac ;;
+	esac
+fi
+set -- -noservername
+[ -z "$sni" ] || set -- -servername "$sni"
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/emisar-tls-expiry.XXXXXX")
 trap 'rm -rf -- "$tmp"' EXIT HUP INT TERM
 
-if openssl s_client -connect "$host:$port" -servername "$sni" </dev/null \
+if openssl s_client -connect "$endpoint" "$@" </dev/null \
 	>"$tmp/handshake" 2>"$tmp/handshake.err"; then
 	:
 else

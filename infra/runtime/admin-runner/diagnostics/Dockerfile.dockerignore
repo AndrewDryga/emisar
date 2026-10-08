@@ -1,0 +1,10 @@
+# Only the bundle and the shared signed Debian snapshot are build inputs.
+**
+!infra
+!infra/runtime
+!infra/runtime/admin-runner
+!infra/runtime/admin-runner/diagnostics
+!infra/runtime/admin-runner/diagnostics/**
+!portal
+!portal/docker
+!portal/docker/debian.sources

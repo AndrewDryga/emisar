@@ -54,7 +54,7 @@ project_backend='
     affinityCookieTtlSec,
     connectionDraining,
     localityLbPolicy,
-    enableCdn,
+    enableCdn: .enableCDN,
     cdnPolicy,
     securityPolicy,
     edgeSecurityPolicy,

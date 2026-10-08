@@ -18,6 +18,32 @@ defmodule EmisarWeb.Changelog do
   @entries [
     %{
       date: ~D[2026-10-08],
+      slug: "tls-probe-overrides-and-generated-nomad-jobs",
+      title: "TLS probe overrides and generated Nomad jobs",
+      tag: "v0.53.0",
+      summary:
+        "HTTP probes can connect to a chosen IP while keeping the URL hostname for Host, SNI, and certificate checks. Nomad reads now accept periodic and dispatched child job IDs, including nested children. GCP backend-service reads report whether Cloud CDN is enabled instead of returning null for every service.",
+      details: [
+        {"Packs",
+         [
+           "Update Network/TLS to 0.3.0 for hostname-to-IP HTTP overrides and IPv6 certificate inspection. Certificate verification stays on unless you explicitly disable it; certificate inspection alone does not verify trust or hostname.",
+           "Nomad 0.4.15 accepts generated child IDs in seven job reads. Mutation targets retain their existing validation.",
+           "GCP Load Balancing 0.1.4 preserves true, false, and absent Cloud CDN evidence in the public enableCdn field."
+         ]},
+        {"Platform",
+         [
+           "Infrastructure delivery adds a separately qualified native diagnostics bundle. Publication and saved plans bind its immutable image to the exact tested source; infrastructure Apply remains a manual step.",
+           "Bucket-policy reads are restricted to the two required buckets. Log and bucket inventory permissions do not grant log payload or object access.",
+           "Review checks use a resolved baseline for each invocation. Terraform checks match the selected 1.16.5 release, and MySQL behavior fixtures wait for the bridge TCP listener."
+         ]},
+        {"Also",
+         [
+           "Regression tests cover runner admission denials, fixed-view log access, generated Nomad children, and HTTP/TLS overrides. Runner remains at v0.31.0 and MCP Bridge at v0.17.0."
+         ]}
+      ]
+    },
+    %{
+      date: ~D[2026-10-08],
       slug: "clearer-mfa-and-dependency-updates",
       title: "Clearer MFA and dependency updates",
       tag: "v0.52.0",

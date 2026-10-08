@@ -1,7 +1,7 @@
 schema_version: 1
 id: net.http_probe
 title: HTTP probe with timing
-kind: exec
+kind: script
 risk: low
 description: >
   Probe a URL with curl, returning HTTP status, DNS / TCP / TLS / total
@@ -12,6 +12,10 @@ description: >
   the status is the evidence, not a reason to repeat the same request. A DNS,
   connection, or TLS failure exits unsuccessfully with curl's diagnostic; do
   not retry it unchanged unless the target may have recovered.
+  An optional resolve mapping selects one destination IP for the URL's exact
+  hostname and port, without changing Host, SNI, or certificate verification.
+  A mapping bypasses proxies for this request; without it, normal proxy and
+  DNS settings apply. This probe does not follow redirects.
 side_effects:
   - Outbound HTTP(S) to the URL.
   - Read-only.
@@ -26,7 +30,16 @@ args:
     required: true
     description: URL to probe.
     validation:
-      pattern: "^https?://[a-zA-Z0-9.:/_\\-?=&%+]{1,512}$"
+      max_length: 520
+      pattern: "^https?://[a-zA-Z0-9.:/_\\-?=&%+\\[\\]]{1,512}$"
+  - name: resolve
+    type: string
+    required: false
+    default: ""
+    description: "One hostname:port:IP mapping matching the URL's hostname and effective port (80 for HTTP, 443 for HTTPS). Use a literal IPv4 or bracketed IPv6 address, for example example.com:443:[2001:db8::1]."
+    validation:
+      max_length: 512
+      pattern: "^([a-zA-Z0-9][a-zA-Z0-9.\\-]{0,252}:[1-9][0-9]{0,4}:([0-9]{1,3}(\\.[0-9]{1,3}){3}|\\[[0-9a-fA-F:.]{2,45}\\]))?$"
   - name: max_time
     type: integer
     required: false
@@ -41,15 +54,10 @@ args:
     default: false
     description: Skip TLS certificate verification (curl -k). Use for internal or self-signed certs.
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - 'set --; [ "$INSECURE" = "true" ] && set -- -k; exec curl -q -sS --globoff --proto =http,https "$@" -o /dev/null --max-time "$MAX_TIME" -w "http_code=%{http_code}\nlookup=%{time_namelookup}\nconnect=%{time_connect}\nappconnect=%{time_appconnect}\nstarttransfer=%{time_starttransfer}\ntotal=%{time_total}\nsize=%{size_download}\n" "$URL"'
-  env:
-    URL: "{{ args.url }}"
-    MAX_TIME: "{{ args.max_time }}"
-    INSECURE: "{{ args.insecure }}"
+  script:
+    path: scripts/http.sh
+    interpreter: /bin/sh
+  argv: [probe, "{{ args.url }}", "{{ args.resolve }}", "{{ args.insecure }}", "{{ args.max_time }}"]
   timeout: 90s
 output:
   parser: text
@@ -63,3 +71,7 @@ examples:
     args:
       url: "https://10.0.0.5:8443/healthz"
       insecure: true
+  - title: Check a new backend before changing DNS
+    args:
+      url: "https://example.com/healthz"
+      resolve: "example.com:443:192.0.2.10"

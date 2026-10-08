@@ -4,9 +4,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 CANARY = "packtest-canary-gcp-lb-secret-c3a7"
 
 
-def backend():
-    return {
-        "name": "harness-backend",
+def backend(name="harness-backend", enable_cdn=True):
+    result = {
+        "name": name,
         "loadBalancingScheme": "EXTERNAL_MANAGED",
         "protocol": "HTTP",
         "portName": "http",
@@ -23,6 +23,11 @@ def backend():
         "customResponseHeaders": [f"X-Harness-Response: {CANARY}"],
         "description": CANARY,
     }
+    if enable_cdn is not None:
+        result["enableCDN"] = enable_cdn
+    if enable_cdn:
+        result["cdnPolicy"] = {"cacheMode": "CACHE_ALL_STATIC"}
+    return result
 
 
 def response(path):
@@ -38,10 +43,21 @@ def response(path):
                 "annotations": {"note": "fixture"},
             }],
         }
-    if "/global/backendServices/harness-backend" in path:
-        return backend()
+    if "/global/backendServices/" in path:
+        name = path.split("?", 1)[0].rsplit("/", 1)[-1]
+        variants = {
+            "harness-backend": True,
+            "harness-backend-cdn-disabled": False,
+            "harness-backend-cdn-missing": None,
+        }
+        if name in variants:
+            return backend(name, variants[name])
     if "/aggregated/backendServices" in path:
-        return {"items": {"global": {"backendServices": [backend()]}}}
+        return {"items": {"global": {"backendServices": [
+            backend(),
+            backend("harness-backend-cdn-disabled", False),
+            backend("harness-backend-cdn-missing", None),
+        ]}}}
     if "/aggregated/healthChecks" in path:
         return {
             "items": {

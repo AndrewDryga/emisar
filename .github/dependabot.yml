@@ -83,6 +83,7 @@ updates:
       - "/"
       - "/portal"
       - "/runner/release"
+      - "/infra/runtime/admin-runner/diagnostics"
       - "/dev/runner"
       - "/dev/mcp"
       - "/dev/cloud-init"

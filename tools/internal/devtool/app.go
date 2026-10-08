@@ -105,6 +105,8 @@ type App struct {
 
 	certsChanged        bool
 	serviceForwardStops []func()
+	// reviewBase binds nested dependency checks to this review invocation.
+	reviewBase string
 	// launchDetachedServe starts the detached server's child; nil means the real
 	// re-exec. A test sets it to record the launch without starting Phoenix.
 	launchDetachedServe func(*os.File) error

@@ -684,10 +684,12 @@ func (a *App) check(ctx context.Context, args []string) error {
 
 // depAgeCheck enforces the dependency release-age and non-registry-source
 // rules. It diffs manifests against a base ref (--base, default origin/main)
-// and no-ops when none changed, so it is cheap on an unchanged tree; with no
-// resolvable base it skips rather than treating every existing dependency as
-// newly added.
+// and no-ops when none changed. Reviews use their resolved comparison commit;
+// a missing baseline fails rather than leaving dependencies unjudged.
 func (a *App) depAgeCheck(ctx context.Context, rest []string) error {
 	args := append([]string{"run", "./cmd/depgate", "check"}, rest...)
+	if a.reviewBase != "" {
+		args = append(args, "--base", a.reviewBase)
+	}
 	return a.run(ctx, filepath.Join(a.Root, "tools"), nil, "go", args...)
 }

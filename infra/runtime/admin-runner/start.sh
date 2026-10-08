@@ -98,9 +98,12 @@ install -m 0755 /var/lib/emisar-admin-runner/beam.sh "$runner_bin_dir/beam-runti
 ln -sfn beam-runtime "$runner_bin_dir/elixir"
 ln -sfn beam-runtime "$runner_bin_dir/erl"
 ln -sfn beam-runtime "$runner_bin_dir/epmd"
-export PATH="$runner_bin_dir:$PATH"
-declared_dependencies='bash cloud-init curl docker ethtool jq ps ss systemctl'
-for dependency in $declared_dependencies; do
+bash /var/lib/emisar-admin-runner/install-diagnostics.sh "${diagnostics_image}"
+# Preserve COS-owned commands and our fixed gcloud/BEAM wrappers. Export only
+# the bundle's reviewed bin allowlist, never Debian's full /bin or /usr/bin.
+export PATH="$runner_bin_dir:$PATH:/run/emisar-admin-runner/diagnostics/bin"
+export DOCKER_CONFIG=/run/emisar-admin-runner/docker
+for dependency in bash cloud-init curl docker jq sha256sum systemctl; do
   command -v "$dependency" >/dev/null || {
     echo "admin runner dependency is missing: $dependency" >&2
     exit 1
@@ -209,6 +212,17 @@ PACKS
 # satisfy its own declared dependency; remove a copy left by an older template
 # so none of its partially runnable actions remain advertised.
 rm -rf /var/lib/emisar-admin-runner/packs/firewall
-"$runner" pack list --packs-dir /var/lib/emisar-admin-runner/packs >/dev/null
+# This producer must succeed before jq: otherwise a failed list could look like
+# an empty dependency set. Read the actual authenticated installed manifests,
+# including retained older pins, rather than a second hard-coded tool list.
+installed_packs=$("$runner" pack list --packs-dir /var/lib/emisar-admin-runner/packs --json)
+declared_dependencies=$(jq -er '[.[].requires.binaries[]?] | unique | .[]' <<< "$installed_packs")
+while IFS= read -r dependency; do
+  command -v "$dependency" >/dev/null || {
+    echo "admin runner dependency is missing: $dependency" >&2
+    exit 1
+  }
+done <<< "$declared_dependencies"
+docker compose version >/dev/null
 
 exec "$runner" connect --config /var/lib/emisar-admin-runner/config.yaml

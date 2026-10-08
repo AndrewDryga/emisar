@@ -110,6 +110,45 @@ cases:
       json:
         /entries/0/severity: ERROR
         /more_available: true
+  - name: gcp.log_entries-view-only-identity-reads-the-granted-view
+    action: gcp.log_entries
+    env: &view-only-identity
+      CLOUDSDK_AUTH_ACCESS_TOKEN: packtest-canary-gcp-monitoring-view-access-9581
+    args: {project: example-prod, view_id: emisar-vm-containers, resource_type: gce_instance, log_id: cos_containers}
+    expect:
+      json:
+        /entries/0/resource_type: gce_instance
+        /entries/1/message: worker retry [REDACTED]
+        /more_available: true
+    probes:
+      - argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect:
+          json:
+            /requests/0/resourceNames/0: projects/example-prod/locations/global/buckets/_Default/views/emisar-vm-containers
+  - name: gcp.log_entries-view-only-identity-refuses-project-without-fallback
+    action: gcp.log_entries
+    env: *view-only-identity
+    args: {project: example-prod}
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: [Permission denied for this log scope]
+      stdout_not_contains: [entries]
+    probes:
+      - argv: [/bin/sh, -c, "curl -fsS --cacert /packs/gcp-monitoring/test/fixtures/server.crt https://gcp-api:8443/probe/state | jq -e '.requests | length == 1'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.log_entries-view-only-identity-refuses-another-view-without-fallback
+    action: gcp.log_entries
+    env: *view-only-identity
+    args: {project: example-prod, view_id: other-workload}
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: [Permission denied for this log scope]
+      stdout_not_contains: [entries]
+    probes:
+      - argv: [/bin/sh, -c, "curl -fsS --cacert /packs/gcp-monitoring/test/fixtures/server.crt https://gcp-api:8443/probe/state | jq -e '.requests | length == 1'"]
+        expect: {stdout_contains: ["true"]}
   # Five entries whose projected fields are floods of the six-byte escaped
   # U+2028 codepoint. Success proves the advertised maximum remains below the
   # runner's 8 KiB structured-result cap after canonical JSON encoding.

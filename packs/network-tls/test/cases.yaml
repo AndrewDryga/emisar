@@ -4,6 +4,98 @@ versions:
     digest: "@sha256:05b8cb60c354a44ab824ea6e7dc69b46d50762cdbe728a347a5b656e6fb3d7c4"
     default: true
 cases:
+  - name: net.http_probe-verified-address-mapping
+    action: net.http_probe
+    args: {url: 'https://packtest.invalid:24443/selected', resolve: 'packtest.invalid:24443:127.0.0.1'}
+    env: {CURL_CA_BUNDLE: /tmp/packtest-net-fixture/ca.crt}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, start]
+    expect:
+      stdout_contains: [http_code=201, appconnect=]
+    probes:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, observe]
+        expect: {stdout_contains: [HTTP Host and TLS SNI retained]}
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, matrix, addresses]
+        expect: {stdout_contains: [HTTP addresses contract verified]}
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, matrix, inputs]
+        expect: {stdout_contains: [HTTP inputs contract verified]}
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, stop]
+  - name: net.http_probe-proxy-and-status-contract
+    action: net.http_probe
+    args: {url: 'https://packtest.invalid:24443/selected', resolve: 'packtest.invalid:24443:127.0.0.1'}
+    env: {CURL_CA_BUNDLE: /tmp/packtest-net-fixture/ca.crt}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, start]
+    expect: {stdout_contains: [http_code=201]}
+    probes:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, matrix, proxy-status]
+        expect: {stdout_contains: [HTTP proxy-status contract verified]}
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, stop]
+  - name: net.http_headers-address-mapping-redirect-contract
+    action: net.http_headers
+    args: {url: 'http://packtest.invalid:24480/selected', resolve: 'packtest.invalid:24480:127.0.0.1'}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, start]
+    expect: {stdout_contains: ['201 Created', 'X-Fixture-Host: packtest.invalid:24480']}
+    probes:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, matrix, redirects]
+        expect: {stdout_contains: [HTTP redirects contract verified]}
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, stop]
+  - name: net.http_probe-wrong-san-still-fails
+    action: net.http_probe
+    args: {url: 'https://packtest.invalid:24443/selected', resolve: 'packtest.invalid:24443:127.0.0.1'}
+    env: {CURL_CA_BUNDLE: /tmp/packtest-net-fixture/ca.crt}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, start, wrong-san]
+    expect: {status: failure, stderr_contains: [packtest.invalid], stdout_contains: [http_code=000]}
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, stop]
+  - name: net.http_headers-unknown-ca-still-fails
+    action: net.http_headers
+    args: {url: 'https://packtest.invalid:24443/selected', resolve: 'packtest.invalid:24443:127.0.0.1'}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, start]
+    expect: {status: failure, stderr_contains: [SSL certificate problem]}
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, stop]
+  - name: net.http_probe-explicit-insecure-opt-out
+    action: net.http_probe
+    args: {url: 'https://packtest.invalid:24443/selected', resolve: 'packtest.invalid:24443:127.0.0.1', insecure: true}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, start, wrong-san]
+    expect: {stdout_contains: [http_code=201]}
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, stop]
+  - name: net.http_probe-unresolved-without-mapping
+    action: net.http_probe
+    args: {url: 'http://does-not-exist.invalid/'}
+    expect: {status: failure, stderr_contains: [Could not resolve host], stdout_contains: [http_code=000]}
+  - name: net.tls_cert_expiry-ipv6-with-dns-sni
+    action: net.tls_cert_expiry
+    args: {host: '::1', port: 24446, sni: packtest.invalid}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, start]
+    expect: {stdout_contains: [notBefore=, notAfter=, packtest.invalid]}
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, stop]
+  - name: net.tls_cert_expiry-ipv6-closed-port
+    action: net.tls_cert_expiry
+    args: {host: '::1', port: 24447}
+    expect: {status: failure, stderr_contains: ['TLS connection to ::1:24447 failed'], stdout_not_contains: [notAfter=]}
+  - name: net.tls_cert_expiry-default-sni-preserves-dns-not-ip
+    action: net.tls_cert_expiry
+    args: {host: '::1', port: 24446}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, start]
+    expect: {stdout_contains: [notAfter=, packtest.invalid]}
+    probes:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, matrix, expiry-sni]
+        expect: {stdout_contains: [HTTP expiry-sni contract verified]}
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/http-fixture.sh, stop]
   - action: net.tls_cert_expiry
     args: {host: 127.0.0.1, port: 24443, sni: packtest.example}
     arrange:

@@ -1395,6 +1395,27 @@ defmodule EmisarWeb.ApprovalDetailLiveTest do
     refute_receive {:cloud_to_runner, _generation, _}, 100
   end
 
+  test "runner admission denial blocks approval but keeps the pending request deniable", %{
+    conn: conn
+  } do
+    {conn, owner, account} = register_and_log_in(conn)
+    request = pending_request(account, owner)
+    subject = Fixtures.Subjects.subject_for(owner)
+
+    {:ok, action} =
+      Emisar.Catalog.fetch_action_by_id("linux.uptime", request.context["runner_id"], subject)
+
+    Fixtures.Catalog.set_admission_allowed(action, false)
+    {:ok, lv, html} = live(conn, ~p"/app/#{account}/approvals/#{request.id}")
+
+    assert html =~ "Denied by runner admission"
+    assert has_element?(lv, "#approval-availability", "Review the host policy, then recheck.")
+    refute has_element?(lv, "#approval-decision-form button[value=approve]")
+    assert has_element?(lv, "#approval-decision-form button[value=deny]:not([disabled])", "Deny")
+    refute html =~ "Required executable missing"
+    assert Repo.reload!(request).status == :pending
+  end
+
   test "warns when the target runner is offline (queues on approve)", %{conn: conn} do
     {conn, owner, account} = register_and_log_in(conn)
     # pending_request/2 targets a freshly-registered runner that never connects,

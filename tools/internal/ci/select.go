@@ -20,21 +20,22 @@ import (
 )
 
 type Selection struct {
-	Portal        bool
-	Runner        bool
-	MCP           bool
-	Tools         bool
-	Packs         bool
-	Infra         bool
-	Deps          bool
-	Workflows     bool
-	MCPListing    bool
-	PortalRelease bool
-	PacksRelease  bool
-	RunnerImage   bool
-	PackBehavior  []packtest.MatrixRow
-	SigningE2E    bool
-	SSOE2E        bool
+	Portal           bool
+	Runner           bool
+	MCP              bool
+	Tools            bool
+	Packs            bool
+	Infra            bool
+	Deps             bool
+	Workflows        bool
+	MCPListing       bool
+	PortalRelease    bool
+	PacksRelease     bool
+	RunnerImage      bool
+	AdminDiagnostics bool
+	PackBehavior     []packtest.MatrixRow
+	SigningE2E       bool
+	SSOE2E           bool
 }
 
 func Select(ctx context.Context, root, event, base string) (Selection, error) {
@@ -70,6 +71,7 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 		selection.Deps = true
 		selection.MCPListing = true
 		selection.RunnerImage = true
+		selection.AdminDiagnostics = true
 		selection.SigningE2E = true
 		selection.SSOE2E = true
 	}
@@ -79,6 +81,7 @@ func Select(ctx context.Context, root, event, base string) (Selection, error) {
 	}
 	selection.PackBehavior = packBehavior
 	if event == "push" {
+		selection.AdminDiagnostics = true
 		selection.Portal = true
 		selection.PortalRelease = true
 		if !selection.PacksRelease {
@@ -103,13 +106,17 @@ func (selection *Selection) include(file string) {
 		*selection = Selection{
 			Portal: true, Runner: true, MCP: true, Tools: true, Packs: true,
 			Infra: true, Deps: true, Workflows: true, MCPListing: true,
-			PortalRelease: true, PacksRelease: true, RunnerImage: true,
+			PortalRelease: true, PacksRelease: true, RunnerImage: true, AdminDiagnostics: true,
 			SigningE2E: true, SSOE2E: true,
 		}
 		return
 	}
 
 	packFile := isPackFile(file)
+	if toolutil.HasAnyPrefix(file, "infra/runtime/admin-runner/", "tools/internal/infraops/", "tools/internal/ci/", "tools/cmd/ci/") ||
+		slices.Contains([]string{".dockerignore", "portal/docker/debian.sources", "portal/Dockerfile", "infra/compute.tf", "infra/runtime/portal/cloud-init.yaml", "infra/variables.tf"}, file) {
+		selection.AdminDiagnostics = true
+	}
 	packRegistryPointerContract := file == "infra/pack_registry_mutable_pointers.json"
 	packRuntimeSource := packFile && !isPackTestFile(file)
 	goCheckoutContract := file == ".gitattributes"
@@ -542,11 +549,11 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 	if err != nil {
 		return err
 	}
-	output := fmt.Sprintf("portal=%t\nmcp=%t\nrunner=%t\npacks=%t\ninfra=%t\ndeps=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\n",
+	output := fmt.Sprintf("portal=%t\nmcp=%t\nrunner=%t\npacks=%t\ninfra=%t\ndeps=%t\nmcp_listing=%t\ngo_modules=%s\nportal_release=%t\npacks_release=%t\nrunner_image=%t\npack_behavior=%s\nsigning_e2e=%t\nsso_e2e=%t\nadmin_diagnostics=%t\n",
 		selection.Portal, selection.MCP, selection.Runner, selection.Packs, selection.Infra, selection.Deps,
 		selection.MCPListing, modules,
 		selection.PortalRelease, selection.PacksRelease, selection.RunnerImage, packBehavior,
-		selection.SigningE2E, selection.SSOE2E)
+		selection.SigningE2E, selection.SSOE2E, selection.AdminDiagnostics)
 	if err := appendOrPrint(outputPath, output); err != nil {
 		return err
 	}
@@ -566,6 +573,7 @@ func WriteSelection(ctx context.Context, root, event, base, outputPath, summaryP
 		mark(selection.Infra), mark(selection.Deps),
 		mark(selection.MCPListing))
 	if summaryPath != "" {
+		summary += fmt.Sprintf("| Infra - Native diagnostics | %s |\n", mark(selection.AdminDiagnostics))
 		return appendFile(summaryPath, summary)
 	}
 	return nil

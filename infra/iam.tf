@@ -134,9 +134,44 @@ resource "google_project_iam_custom_role" "vm_storage_policy_reader" {
 
 }
 
-resource "google_project_iam_member" "vm_storage_policy_reader" {
+resource "google_storage_bucket_iam_member" "vm_storage_policy_reader" {
+  for_each = toset([google_storage_bucket.pack_registry.name, google_storage_bucket.mta_sts.name])
+
+  bucket = each.value
+  role   = google_project_iam_custom_role.vm_storage_policy_reader.name
+  member = "serviceAccount:${google_service_account.vm.email}"
+}
+
+# Listing names is not authority to read entries, objects or other bucket IAM.
+resource "google_project_iam_custom_role" "vm_log_inventory" {
+  depends_on  = [google_project_service.apis]
+  project     = var.project_id
+  role_id     = "emisarLogInventory"
+  title       = "Emisar Log Inventory"
+  description = "List log names without reading log entries."
+  permissions = ["logging.logs.list"]
+  stage       = "GA"
+}
+
+resource "google_project_iam_member" "vm_log_inventory" {
   project = var.project_id
-  role    = google_project_iam_custom_role.vm_storage_policy_reader.name
+  role    = google_project_iam_custom_role.vm_log_inventory.name
+  member  = "serviceAccount:${google_service_account.vm.email}"
+}
+
+resource "google_project_iam_custom_role" "vm_bucket_inventory" {
+  depends_on  = [google_project_service.apis]
+  project     = var.project_id
+  role_id     = "emisarBucketInventory"
+  title       = "Emisar Bucket Inventory"
+  description = "List bucket metadata without reading objects or IAM policies."
+  permissions = ["storage.buckets.list"]
+  stage       = "GA"
+}
+
+resource "google_project_iam_member" "vm_bucket_inventory" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.vm_bucket_inventory.name
   member  = "serviceAccount:${google_service_account.vm.email}"
 }
 

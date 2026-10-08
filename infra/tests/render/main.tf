@@ -46,12 +46,15 @@ locals {
       for line in split("\n", trimspace(file("${path.module}/../../runtime/admin-runner/pack-pins.txt"))) :
       line if line != "" && !startswith(line, "#")
     ])
+    diagnostics_image = "ghcr.io/andrewdryga/emisar@sha256:1111111111111111111111111111111111111111111111111111111111111111"
   })
 
   admin_runner_gcloud = templatefile("${path.module}/../../runtime/admin-runner/gcloud.sh", {
     gcloud_image = local.common.gcloud_image
   })
-  admin_runner_beam = file("${path.module}/../../runtime/admin-runner/beam.sh")
+  admin_runner_beam               = file("${path.module}/../../runtime/admin-runner/beam.sh")
+  admin_runner_diagnostics        = file("${path.module}/../../runtime/admin-runner/install-diagnostics.sh")
+  admin_runner_diagnostics_verify = file("${path.module}/../../runtime/admin-runner/verify-diagnostics.sh")
 
   admin_runner_pack_files = {
     for relative_path in fileset("${path.module}/../../packs/emisar-admin", "**") :
@@ -59,16 +62,18 @@ locals {
   }
 
   cloud_init = templatefile("${path.module}/../../runtime/portal/cloud-init.yaml", {
-    ensure_image_script        = local.ensure_image
-    start_script               = local.start
-    admin_runner_config        = local.admin_runner_config
-    admin_runner_start_script  = local.admin_runner_start
-    admin_runner_gcloud_script = local.admin_runner_gcloud
-    admin_runner_beam_script   = local.admin_runner_beam
-    admin_runner_pack_files    = local.admin_runner_pack_files
-    cloud_sql_proxy_image      = local.common.cloud_sql_proxy_image
-    database_connection_name   = local.common.database_connection_name
-    app_port                   = local.common.app_port
+    ensure_image_script             = local.ensure_image
+    start_script                    = local.start
+    admin_runner_config             = local.admin_runner_config
+    admin_runner_start_script       = local.admin_runner_start
+    admin_runner_gcloud_script      = local.admin_runner_gcloud
+    admin_runner_beam_script        = local.admin_runner_beam
+    admin_runner_diagnostics_script = local.admin_runner_diagnostics
+    admin_runner_diagnostics_verify = local.admin_runner_diagnostics_verify
+    admin_runner_pack_files         = local.admin_runner_pack_files
+    cloud_sql_proxy_image           = local.common.cloud_sql_proxy_image
+    database_connection_name        = local.common.database_connection_name
+    app_port                        = local.common.app_port
   })
 
   livebook = {

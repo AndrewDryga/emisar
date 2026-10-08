@@ -63,6 +63,7 @@ func adminRunnerPins(path string) ([]string, error) {
 		return nil, err
 	}
 	var pins []string
+	seen := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -71,6 +72,11 @@ func adminRunnerPins(path string) ([]string, error) {
 		if !strings.Contains(line, "=") || !strings.Contains(line, "|sha256:") {
 			return nil, fmt.Errorf("malformed pack pin line %q in %s", line, path)
 		}
+		id, _, _ := strings.Cut(line, "=")
+		if seen[id] {
+			return nil, fmt.Errorf("duplicate pack pin %q in %s", id, path)
+		}
+		seen[id] = true
 		pins = append(pins, line)
 	}
 	if len(pins) == 0 {
@@ -404,7 +410,11 @@ func (a *App) validateTemplates(ctx context.Context) error {
 		`ln -sfn beam-runtime "$runner_bin_dir/elixir"`,
 		`ln -sfn beam-runtime "$runner_bin_dir/erl"`,
 		`ln -sfn beam-runtime "$runner_bin_dir/epmd"`,
-		"declared_dependencies='bash cloud-init curl docker ethtool jq ps ss systemctl'",
+		`bash /var/lib/emisar-admin-runner/install-diagnostics.sh "`,
+		`installed_packs=$("$runner" pack list --packs-dir /var/lib/emisar-admin-runner/packs --json)`,
+		`declared_dependencies=$(jq -er '[.[].requires.binaries[]?] | unique | .[]' <<< "$installed_packs")`,
+		`export DOCKER_CONFIG=/run/emisar-admin-runner/docker`,
+		`docker compose version >/dev/null`,
 		`command -v "$dependency" >/dev/null`,
 		"elixir --version >/dev/null",
 		`erl -noshell -eval 'io:format("~s~n", [erlang:system_info(system_version)]), halt().' >/dev/null`,

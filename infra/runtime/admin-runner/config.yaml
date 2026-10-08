@@ -17,6 +17,7 @@ paths:
 
 execution:
   inherit_env:
+    - DOCKER_CONFIG
     - TFE_TOKEN
     - SENTRY_AUTH_TOKEN
     - SENTRY_URL

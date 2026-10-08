@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+command=${0##*/}
+case "$command" in
+  chronyc|dmidecode|ethtool|findmnt|free|iostat|jq|last|lscpu|lvs|mdadm|ntpq|ping|ps|pvs|sar|sadc|slabtop|smartctl|ss|sysctl|uptime|vgs|vmstat) ;;
+  *) echo 'unexpected admin diagnostics command' >&2; exit 1 ;;
+esac
+bundle=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
+unset LD_PRELOAD LD_LIBRARY_PATH PYTHONHOME PYTHONPATH
+if [ "$command" = ntpq ]; then
+  export PYTHONHOME="$bundle/python"
+  export PYTHONPATH="$bundle/python/lib/python3/dist-packages"
+  exec "$bundle/lib/loader" --library-path "$bundle/lib" \
+    "$bundle/libexec/python3" "$bundle/libexec/ntpq" "$@"
+fi
+exec "$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/$command" "$@"

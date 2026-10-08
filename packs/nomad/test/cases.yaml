@@ -17,6 +17,94 @@ env:
   # declaring it here makes the harness fail any surface that leaks it unredacted.
   NOMAD_PACKTEST_CANARY: packtest-canary-nomad-e57d31
 cases:
+  - name: nomad.job_health_snapshot-generated-children
+    action: nomad.job_health_snapshot
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, setup, nested, default]
+    resolve_args:
+      job:
+        argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, id]
+    expect:
+      stdout_contains: ['"id":"packtest-nested/dispatch-', '/periodic-', '"namespace":"default"', '"desired":1', '"allocations_available":0', '"allocations":[]', '"deployments":[]']
+    probes:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, reads, periodic]
+        expect: {stdout_contains: [Generated-job reads verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, reads, dispatch]
+        expect: {stdout_contains: [Generated-job reads verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, reads, nested]
+        expect: {stdout_contains: [Generated-job reads verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, reads, long]
+        expect: {stdout_contains: [Generated-job reads verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, isolation]
+        expect: {stdout_contains: [Generated-job isolation verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, bounds, job_allocations]
+        expect: {stdout_contains: [Generated-job bounds verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, bounds, job_status_one]
+        expect: {stdout_contains: [Generated-job bounds verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, bounds, job_deployments]
+        expect: {stdout_contains: [Generated-job bounds verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, bounds, job_history]
+        expect: {stdout_contains: [Generated-job bounds verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, bounds, job_inspect]
+        expect: {stdout_contains: [Generated-job bounds verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, bounds, job_resources]
+        expect: {stdout_contains: [Generated-job bounds verified]}
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, bounds, job_health_snapshot]
+        expect: {stdout_contains: [Generated-job bounds verified]}
+  - name: nomad.job_health_snapshot-generated-non-default-namespace
+    action: nomad.job_health_snapshot
+    args: {namespace: packtest-ns}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, setup, periodic, default]
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, setup, periodic, packtest-ns]
+    resolve_args:
+      job:
+        argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, id]
+    expect:
+      stdout_contains: ['"id":"packtest-periodic/periodic-', '"namespace":"packtest-ns"', '"desired":1', '"allocations":[]']
+  - name: nomad.job_allocations-generated-periodic-child
+    action: nomad.job_allocations
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, setup, periodic, default]
+    resolve_args:
+      job: {argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, id]}
+    expect: {stdout_contains: [No allocations placed]}
+  - name: nomad.job_status_one-generated-long-child
+    action: nomad.job_status_one
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, setup, long, default]
+    resolve_args:
+      job: {argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, id]}
+    expect: {stdout_contains: [packtest-long-, /periodic-, default, batch]}
+  - name: nomad.job_deployments-generated-dispatched-child
+    action: nomad.job_deployments
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, setup, dispatch, default]
+    resolve_args:
+      job: {argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, id]}
+    expect: {stdout_contains: [No deployments found]}
+  - name: nomad.job_history-generated-nested-child
+    action: nomad.job_history
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, setup, nested, default]
+    resolve_args:
+      job: {argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, id]}
+    expect: {stdout_contains: [Version, '= 0', Stable, Submit Date]}
+  - name: nomad.job_inspect-generated-dispatched-child
+    action: nomad.job_inspect
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, setup, dispatch, default]
+    resolve_args:
+      job: {argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, id]}
+    expect: {stdout_contains: ['"ID":"packtest-dispatch/dispatch-', '"ParentID":"packtest-dispatch"', '"Dispatched":true', '"Namespace":"default"']}
+  - name: nomad.job_resources-generated-nested-child
+    action: nomad.job_resources
+    args: {namespace: packtest-ns}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, setup, nested, packtest-ns]
+    resolve_args:
+      job: {argv: [/bin/sh, /packs/nomad/test/fixtures/generated-jobs.sh, id]}
+    expect: {stdout_contains: ['"job":"packtest-nested/dispatch-', '/periodic-', '"namespace":"packtest-ns"', '"cpu":100', '"memory_mb":64']}
   - name: nomad.job_list_by_meta-response-bounds
     action: nomad.job_list_by_meta
     arrange:

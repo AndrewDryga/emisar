@@ -1448,6 +1448,8 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "Workspace-owned members and per-workspace billing"
       assert html =~ "Workspace sign-in, service accounts, and clearer pack availability"
       assert html =~ "Clearer MFA and dependency updates"
+      assert html =~ "TLS probe overrides and generated Nomad jobs"
+      assert html =~ "HTTP probes can connect to a chosen IP"
       assert html =~ "Update the Symbolicator pack to 0.2.6."
       assert html =~ "Apps such as Ryker connect as service accounts"
       assert html =~ "Each workspace now owns its members."
@@ -1500,6 +1502,7 @@ defmodule EmisarWeb.MarketingTest do
       assert html =~ "v0.50.0"
       assert html =~ "v0.51.0"
       assert html =~ "v0.52.0"
+      assert html =~ "v0.53.0"
       assert html =~ "v0.15.0"
 
       # The first-party RSS feed, the repo, and the "see all" out-link.

@@ -1,0 +1,348 @@
+package infraops
+
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+	"testing"
+)
+
+const diagnosticsRevision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func diagnosticsFixture(t *testing.T) string {
+	t.Helper()
+	bundle := t.TempDir()
+	commands, err := os.ReadFile(filepath.Join(repositoryRoot(t), "infra/runtime/admin-runner/diagnostics/commands.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{"bin", "libexec", "lib", "cli-plugins", "python/lib/python3/dist-packages/ntp"} {
+		if err := os.MkdirAll(filepath.Join(bundle, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := []string{"run-tool", "lib/loader", "libexec/python3", "cli-plugins/docker-compose", "python/lib/python3/dist-packages/ntp/libntpc.so", "debian-inventory.tsv", "source-builds.tsv"}
+	for _, command := range strings.Fields(string(commands)) {
+		files = append(files, "libexec/"+command)
+		if err := os.Symlink("../run-tool", filepath.Join(bundle, "bin", command)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range files {
+		if err := os.WriteFile(filepath.Join(bundle, path), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "commands.txt"), commands, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sealDiagnosticsFixture(t, bundle)
+	return bundle
+}
+
+func sealDiagnosticsFixture(t *testing.T, bundle string) {
+	t.Helper()
+	var entries []string
+	err := filepath.WalkDir(bundle, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || entry.Name() == "manifest" || entry.Name() == "SHA256SUMS" {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(bundle, path)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, fmt.Sprintf("%x  ./%s\n", sha256.Sum256(data), filepath.ToSlash(rel)))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(entries)
+	sums := []byte(strings.Join(entries, ""))
+	if err := os.WriteFile(filepath.Join(bundle, "SHA256SUMS"), sums, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := fmt.Sprintf("schema=1\npurpose=admin-diagnostics\nos=linux\narchitecture=amd64\nrevision=%s\nchecksums_sha256=%x\ninventory_scope=conservative signed Debian builder inventory, including build-only packages\n", diagnosticsRevision, sha256.Sum256(sums))
+	if err := os.WriteFile(filepath.Join(bundle, "manifest"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDiagnosticsManifestRejectsWrongIdentityAndIncompleteClosure(t *testing.T) {
+	validator := filepath.Join(repositoryRoot(t), "infra/runtime/admin-runner/verify-diagnostics.sh")
+	for _, tc := range []struct {
+		name string
+		edit func(string) error
+	}{
+		{"valid", nil},
+		{"corrupt bytes", func(dir string) error {
+			return os.WriteFile(filepath.Join(dir, "libexec/sar"), []byte("corrupt"), 0o700)
+		}},
+		{"collector absent even after reseal", func(dir string) error {
+			err := os.Remove(filepath.Join(dir, "libexec/sadc"))
+			sealDiagnosticsFixture(t, dir)
+			return err
+		}},
+		{"libntpc absent even after reseal", func(dir string) error {
+			err := os.Remove(filepath.Join(dir, "python/lib/python3/dist-packages/ntp/libntpc.so"))
+			sealDiagnosticsFixture(t, dir)
+			return err
+		}},
+		{"wrong purpose", func(dir string) error { return replaceFixtureText(dir, "purpose=admin-diagnostics", "purpose=portal") }},
+		{"wrong arch", func(dir string) error { return replaceFixtureText(dir, "architecture=amd64", "architecture=arm64") }},
+		{"wrong revision", func(dir string) error { return replaceFixtureText(dir, diagnosticsRevision, strings.Repeat("b", 40)) }},
+		{"escaping link", func(dir string) error { return os.Symlink("/etc/passwd", filepath.Join(dir, "python/escape")) }},
+		{"extra protected command", func(dir string) error { return os.Symlink("../run-tool", filepath.Join(dir, "bin/docker")) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := diagnosticsFixture(t)
+			if tc.edit != nil {
+				if err := tc.edit(bundle); err != nil {
+					t.Fatal(err)
+				}
+			}
+			output, err := exec.Command("bash", validator, bundle, diagnosticsRevision, "amd64").CombinedOutput()
+			if (err != nil) != (tc.edit != nil) {
+				t.Fatalf("unexpected validation: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+func replaceFixtureText(dir, old, replacement string) error {
+	path := filepath.Join(dir, "manifest")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(strings.ReplaceAll(string(data), old, replacement)), 0o600)
+}
+
+func TestDiagnosticsQualifierRequiresDockerWithoutAddingGateDependency(t *testing.T) {
+	a := New(repositoryRoot(t), nil, nil, nil)
+	a.LookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	err := a.Run(context.Background(), []string{"qualify-admin-diagnostics", diagnosticsRevision, "emisar/admin-diagnostics:test"})
+	if err == nil || !strings.Contains(err.Error(), "docker is required") {
+		t.Fatalf("Docker absence must fail explicit qualification: %v", err)
+	}
+}
+
+func TestAdminInventoryIAMIsNarrow(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(repositoryRoot(t), "infra/iam.tf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if strings.Contains(text, `resource "google_project_iam_member" "vm_storage_policy_reader"`) {
+		t.Fatal("bucket IAM policies readable project-wide")
+	}
+	for _, needle := range []string{`resource "google_storage_bucket_iam_member" "vm_storage_policy_reader"`, `toset([google_storage_bucket.pack_registry.name, google_storage_bucket.mta_sts.name])`, `permissions = ["storage.buckets.getIamPolicy"]`, `permissions = ["logging.logs.list"]`, `permissions = ["storage.buckets.list"]`} {
+		if !strings.Contains(text, needle) {
+			t.Errorf("IAM boundary missing %s", needle)
+		}
+	}
+}
+
+func TestDiagnosticsInstallIsAtomicBoundedAndUsesCachedDigest(t *testing.T) {
+	root := repositoryRoot(t)
+	mvBinary, err := exec.LookPath("mv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "darwin" {
+		mvBinary, err = exec.LookPath("gmv")
+		if err != nil {
+			t.Skip("GNU mv is required to exercise the COS atomic rename on macOS")
+		}
+	}
+	temp := t.TempDir()
+	runtimeDir, mock := filepath.Join(temp, "runtime"), filepath.Join(temp, "mock")
+	if err := os.Mkdir(mock, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, source string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(mock, name), []byte(source), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("id", "#!/bin/sh\nprintf '0\\n'\n")
+	write("uname", "#!/bin/sh\nprintf 'x86_64\\n'\n")
+	write("chown", "#!/bin/sh\nexit 0\n")
+	write("mv", "#!/bin/sh\nexec '"+mvBinary+"' \"$@\"\n")
+	write("install", "#!/bin/bash\nargs=()\nwhile [ $# -gt 0 ]; do case \"$1\" in -o|-g) shift 2 ;; *) args+=(\"$1\"); shift ;; esac; done\nexec /usr/bin/install \"${args[@]}\"\n")
+	write("docker", `#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$TEST_DOCKER_LOG"
+case "$1" in
+  image) [ "$TEST_CACHED" = true ] ;;
+  pull) [ "$TEST_PULL_AVAILABLE" = true ] ;;
+  inspect)
+    case "$3" in
+      *RepoDigests*) printf '%s\n' "$TEST_IMAGE" ;;
+      *) printf 'linux|amd64|%s|`+diagnosticsRevision+`\n' "$TEST_PURPOSE" ;;
+    esac ;;
+  create) printf 'never-started-container\n' ;;
+  cp) [ "$TEST_CP_OK" = true ]; cp -a "$TEST_BUNDLE/." "${@: -1}" ;;
+  rm) exit 0 ;;
+  *) echo 'unexpected Docker execution' >&2; exit 1 ;;
+esac
+`)
+	source, err := os.ReadFile(filepath.Join(root, "infra/runtime/admin-runner/install-diagnostics.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(string(source), "/run/emisar-admin-runner", runtimeDir)
+	script = strings.ReplaceAll(script, "/var/lib/emisar-admin-runner/verify-diagnostics.sh", filepath.Join(root, "infra/runtime/admin-runner/verify-diagnostics.sh"))
+	installer := filepath.Join(temp, "install.sh")
+	if err := os.WriteFile(installer, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bundle := diagnosticsFixture(t)
+	if err := os.Chmod(filepath.Join(bundle, "libexec/ping"), 0o755|os.ModeSetuid|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(temp, "docker.log")
+	image := "ghcr.io/andrewdryga/emisar@sha256:" + strings.Repeat("b", 64)
+	t.Setenv("PATH", mock+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_IMAGE", image)
+	t.Setenv("TEST_BUNDLE", bundle)
+	t.Setenv("TEST_DOCKER_LOG", log)
+	t.Setenv("TEST_CACHED", "true")
+	t.Setenv("TEST_PULL_AVAILABLE", "false")
+	t.Setenv("TEST_CP_OK", "true")
+	t.Setenv("TEST_PURPOSE", "admin-diagnostics")
+	run := func() error {
+		t.Helper()
+		output, err := exec.Command("bash", installer, image).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%w: %s", err, output)
+		}
+		return nil
+	}
+	for n := 0; n < 4; n++ {
+		if err := run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	generations, err := filepath.Glob(filepath.Join(runtimeDir, "diagnostics.*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, generation := range generations {
+		info, err := os.Lstat(generation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.IsDir() {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Fatalf("repeated installs retain %d generations, want active + one prior", count)
+	}
+	active, err := os.Readlink(filepath.Join(runtimeDir, "diagnostics"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(runtimeDir, "diagnostics/libexec/ping"))
+	if err != nil || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
+		t.Fatalf("installed privilege bits survived: %v %v", info, err)
+	}
+	assertPreserved := func() {
+		t.Helper()
+		got, err := os.Readlink(filepath.Join(runtimeDir, "diagnostics"))
+		if err != nil || got != active {
+			t.Fatalf("failed install replaced active generation: %s %v", got, err)
+		}
+	}
+	for _, failure := range []string{"cp", "hash", "helper", "purpose", "registry"} {
+		t.Run(failure, func(t *testing.T) {
+			fixture := diagnosticsFixture(t)
+			t.Setenv("TEST_BUNDLE", fixture)
+			switch failure {
+			case "cp":
+				t.Setenv("TEST_CP_OK", "false")
+			case "hash":
+				if err := os.WriteFile(filepath.Join(fixture, "libexec/sar"), []byte("corrupt"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "helper":
+				if err := os.WriteFile(filepath.Join(fixture, "run-tool"), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				sealDiagnosticsFixture(t, fixture)
+			case "purpose":
+				t.Setenv("TEST_PURPOSE", "portal")
+			case "registry":
+				t.Setenv("TEST_CACHED", "false")
+			}
+			if err := run(); err == nil {
+				t.Fatal("invalid install succeeded")
+			}
+			assertPreserved()
+		})
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if strings.Contains(text, "run ") || strings.Contains(text, "--mount") || strings.Contains(text, "--volume") || !strings.Contains(text, "rm never-started-container") {
+		t.Fatalf("extraction was executed/mounted or not cleaned up: %s", text)
+	}
+	if strings.Count(text, "pull ") != 1 {
+		t.Fatalf("cached restarts contacted registry: %s", text)
+	}
+}
+
+func TestInstalledManifestPreflightFailsClosed(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join(repositoryRoot(t), "infra/runtime/admin-runner/start.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(source), "installed_packs=$(")
+	if start < 0 {
+		t.Fatal("installed-manifest preflight missing")
+	}
+	end := strings.Index(string(source)[start:], "docker compose version") + start
+	if start < 0 || end < start {
+		t.Fatal("installed-manifest preflight missing")
+	}
+	block := string(source)[start:end]
+	for _, tc := range []struct {
+		name, output string
+		exit         int
+		ok           bool
+	}{
+		{"complete installed manifests", `[{"requires":{"binaries":["bash","jq"]}}]`, 0, true},
+		{"failed producer with valid partial output", `[{"requires":{"binaries":["bash"]}}]`, 1, false},
+		{"empty installed set", `[]`, 0, false},
+		{"malformed installed set", `{`, 0, false},
+		{"missing declared binary", `[{"requires":{"binaries":["missing-emisar-fixture-binary"]}}]`, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := filepath.Join(t.TempDir(), "runner")
+			if err := os.WriteFile(mock, []byte(fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' '%s'\nexit %d\n", tc.output, tc.exit)), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			command := exec.Command("bash", "-c", "set -euo pipefail\nrunner=$1\n"+block, "preflight", mock)
+			output, err := command.CombinedOutput()
+			if (err == nil) != tc.ok {
+				t.Fatalf("unexpected preflight result: %v\n%s", err, output)
+			}
+		})
+	}
+}

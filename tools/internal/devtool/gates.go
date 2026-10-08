@@ -800,13 +800,17 @@ func (a *App) reviewGate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("the Coop review base is unavailable: %w", err)
 	}
-	selection, err := ci.Select(ctx, a.Root, "pull_request", strings.TrimSpace(string(base)))
+	// Do not let nested checks choose a different baseline, or leak the review
+	// baseline into a later ordinary check on the same App.
+	reviewApp := *a
+	reviewApp.reviewBase = strings.TrimSpace(string(base))
+	selection, err := ci.Select(ctx, a.Root, "pull_request", reviewApp.reviewBase)
 	if err != nil {
 		return fmt.Errorf("select review gates: %w", err)
 	}
 	for _, target := range reviewGateTargets(selection) {
 		if err := a.gatePhase("review "+target+" gate", func() error {
-			return a.gate(ctx, []string{target})
+			return reviewApp.gate(ctx, []string{target})
 		}); err != nil {
 			return err
 		}

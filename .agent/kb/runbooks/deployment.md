@@ -1,7 +1,7 @@
 ---
 name: deployment
 sources: [.github/workflows/ci.yml, .github/workflows/cd.yml, infra/iam.tf, infra/github_oidc.tf, infra/versions.tf, portal/config/runtime.exs, portal/apps/emisar/lib/emisar/release.ex]
-updated: 2026-10-03
+updated: 2026-10-08
 ---
 
 # CI/CD production setup
@@ -14,11 +14,17 @@ commit, then performs delivery:
 1. `Required - CI` completes for the exact commit.
 2. Every successful `main` push builds, smoke-tests, vulnerability-scans, and
    publishes a portal image for that exact commit. CD publishes it by digest and
-   attests it with its CI-produced SBOM. No second image is built for the private
-   admin runner; COS installs its pinned runner release.
+   attests it with its CI-produced SBOM. A separate extraction-only native
+   diagnostics artifact is qualified on Linux amd64 at its real `/run` layout,
+   scanned and published in the same public GHCR repository with an immutable
+   `admin-diagnostics-sha-…` purpose tag. It never becomes `latest` or starts on
+   the production host; COS still installs the runner from its pinned release.
 3. The same commit's `infra/` directory is uploaded as a provisional HCP
    Terraform configuration version and planned with that commit's immutable
-   image digest. Production planning fails closed if publication does not finish.
+   portal and diagnostics digests. Publisher and planner verify purpose,
+   architecture, revision, image identity, archive/SBOM hashes and the native
+   file manifest. Production planning fails closed if either publication fails;
+   neither job rebuilds or substitutes an older artifact.
 4. CD stops. A reviewer inspects the linked plan and uses HCP Terraform's
    **Confirm & Apply** button. GitHub never calls the apply API. Before applying,
    verify the run's commit in its `main <sha>` message is the commit intended
@@ -137,7 +143,7 @@ repository.
 1. Open the saved plan linked from the successful `deployment-plan` job.
 2. Verify its run message names the intended `main <commit>`, the image revision
    matches that commit, and inspect every resource action, output, and immutable
-   portal image digest.
+   portal and `admin_runner_diagnostics_image` digests.
 3. Select **Confirm & Apply** in HCP Terraform. GitHub never applies the plan.
 4. Wait for the managed instance group to replace instances with zero
    unavailable capacity. A replacement must pass `/healthz` after reaching the

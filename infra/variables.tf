@@ -163,6 +163,15 @@ variable "container_image" {
   }
 }
 
+variable "admin_runner_diagnostics_image" {
+  type        = string
+  description = "Extraction-only Linux amd64 diagnostics artifact on the existing public GHCR repository, pinned by digest. CD supplies the same commit's qualified bytes to the saved plan; no default or mutable fallback."
+  validation {
+    condition     = can(regex("^ghcr\\.io/andrewdryga/emisar@sha256:[0-9a-f]{64}$", var.admin_runner_diagnostics_image))
+    error_message = "admin_runner_diagnostics_image must be an immutable ghcr.io/andrewdryga/emisar@sha256:<64 hex> digest reference."
+  }
+}
+
 variable "backend_timeout_sec" {
   type        = number
   description = "LB backend timeout (caps a single connection, incl. the runner WebSocket; the runner reconnects)."

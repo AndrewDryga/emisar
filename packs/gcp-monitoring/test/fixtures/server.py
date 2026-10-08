@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 ACCESS_TOKEN = "packtest-canary-gcp-monitoring-access-token-281b"
+VIEW_ACCESS_TOKEN = "packtest-canary-gcp-monitoring-view-access-9581"
 SAMPLE_TIME = "2026-07-27T22:00:00Z"
 POLICY_ID = "8675309001234"
 
@@ -146,7 +147,7 @@ def response(raw_path):
     return None
 
 
-def log_entries(request_body):
+def log_entries(request_body, access_token):
     filter_value = request_body.get("filter", "")
     if "worst_case" in filter_value:
         flood = "\u2028" * 400
@@ -183,12 +184,12 @@ def log_entries(request_body):
                 "resource": {"type": "cloud_run_revision"},
                 "logName": "projects/example-prod/logs/harness-worker",
                 "jsonPayload": {
-                    "message": f"worker retry {ACCESS_TOKEN}",
+                    "message": f"worker retry {access_token}",
                     "job": "Emisar.Runbooks.Jobs.AdvanceExecutions",
                     "error": "DBConnection.ConnectionError",
                     "event": "worker retry",
                     "attempt": 2,
-                    "internalCredential": ACCESS_TOKEN,
+                    "internalCredential": access_token,
                 },
             },
         ],
@@ -276,6 +277,11 @@ class Handler(BaseHTTPRequestHandler):
             self.write_json(400, {"error": {"message": "invalid json"}})
             return
         REQUESTS.append(request_body)
+        if self.headers.get("Authorization") == f"Bearer {VIEW_ACCESS_TOKEN}" and request_body.get("resourceNames") != [
+            "projects/example-prod/locations/global/buckets/_Default/views/emisar-vm-containers"
+        ]:
+            self.write_json(403, {"error": {"code": 403, "message": "Permission denied for this log scope"}})
+            return
         if request_body.get("pageToken"):
             current = {k: v for k, v in request_body.items() if k != "pageToken"}
             previous = {k: v for k, v in REQUESTS[-2].items() if k != "pageToken"} if len(REQUESTS) > 1 else None
@@ -288,7 +294,7 @@ class Handler(BaseHTTPRequestHandler):
                 {"error": {"code": 503, "message": "fixture unavailable"}},
             )
             return
-        payload = log_entries(request_body)
+        payload = log_entries(request_body, self.headers["Authorization"].removeprefix("Bearer "))
         if request_body.get("pageToken"):
             payload["entries"][0]["jsonPayload"]["job"] = "continued-page"
             payload.pop("nextPageToken", None)
@@ -298,7 +304,7 @@ class Handler(BaseHTTPRequestHandler):
         if urlparse(self.path).path in ("/health", "/probe/state"):
             return True
         authorization = self.headers.get("Authorization")
-        if authorization != f"Bearer {ACCESS_TOKEN}":
+        if authorization not in (f"Bearer {ACCESS_TOKEN}", f"Bearer {VIEW_ACCESS_TOKEN}"):
             self.write_json(
                 401,
                 {"error": {"code": 401, "message": "invalid token"}},

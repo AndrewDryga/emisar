@@ -11,6 +11,10 @@ region=$3
 allocation_limit=$4
 events_per_task=$5
 export NOMAD_CLI_NO_COLOR=1
+# The API treats the whole generated child ID as one path segment; the CLI
+# takes the original literal ID. Encoding only a slash-bearing suffix loses
+# nested periodic/dispatch identity.
+job_path=$(jq -nr --arg job "$job" '$job | @uri')
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
@@ -65,18 +69,18 @@ require_json_type() {
 	fi
 }
 
-run_stage "job read" "$tmp/job.json" nomad_api "/v1/job/$job"
+run_stage "job read" "$tmp/job.json" nomad_api "/v1/job/$job_path"
 require_json_type "job read" object "$tmp/job.json"
 
 # Pin subsequent list reads to the namespace returned for this exact job.
 namespace=$(jq -er '.Namespace | strings | select(length > 0)' "$tmp/job.json")
-run_stage "job summary read" "$tmp/summary.json" nomad_api "/v1/job/$job/summary"
+run_stage "job summary read" "$tmp/summary.json" nomad_api "/v1/job/$job_path/summary"
 
 # Cluster-wide list reads have broader discovery behavior on some ACL/version
 # combinations even when filtered to one exact JobID. Use the job-scoped paths
 # instead; they require only read-job on this namespace.
 run_stage "job allocations read" "$tmp/all_allocations.json" \
-	nomad_api "/v1/job/$job/allocations?all=false"
+	nomad_api "/v1/job/$job_path/allocations?all=false"
 run_stage "job deployments read" "$tmp/all_deployments.json" \
 	nomad_cli job deployments -json "$job"
 

@@ -98,6 +98,9 @@ execution:
     - HTTPD_ACCESS_LOG
     - HTTPD_ERROR_LOG
     - HTTPD_STATUS_URL
+    # Real proxy behavior for network-tls; this is test config only.
+    - http_proxy
+    - no_proxy
     - IDRAC_ALLOWED_HOSTS
     - IDRAC_INSECURE
     - IDRAC_PASSWORD

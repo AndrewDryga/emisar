@@ -27,6 +27,28 @@ defmodule EmisarWeb.RunnerDetailLiveTest do
     refute html =~ "Your pack access limits this list"
   end
 
+  test "runner admission denial disables Run with the host-policy reason", %{
+    conn: conn,
+    account: account
+  } do
+    runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: true)
+    action = Fixtures.Catalog.create_action(runner: runner, admission_allowed: false)
+    {:ok, lv, _html} = live(conn, ~p"/app/#{account}/runners/#{runner.id}")
+
+    assert has_element?(lv, "#action-admission-#{action.id}-tt button[disabled]", "Run")
+
+    assert has_element?(
+             lv,
+             "#action-admission-#{action.id}[role=tooltip]",
+             "This action is denied by the runner's local admission policy."
+           )
+
+    refute has_element?(
+             lv,
+             ~s(a[href="/app/#{account.slug}/runs/new/#{runner.id}/#{action.action_id}"])
+           )
+  end
+
   test "shows current key expiry and queues automatic rotation for an offline runner", %{
     conn: conn,
     account: account,

@@ -16,10 +16,32 @@ cases:
     args: {project: example-prod}
     expect:
       stdout_contains: [harness-backend, harness-neg, X-Harness-Request]
+      json:
+        /0/enableCdn: true
+        /0/cdnPolicy/cacheMode: CACHE_ALL_STATIC
+        /1/enableCdn: false
+        /2/enableCdn: null
   - action: gcp.backend_service_describe
     args: {project: example-prod, backend_service: harness-backend, scope: global}
     expect:
       stdout_contains: [harness-backend, harness-neg, X-Harness-Request]
+      json:
+        /enableCdn: true
+        /cdnPolicy/cacheMode: CACHE_ALL_STATIC
+  - name: gcp.backend_service_describe-cdn-disabled
+    action: gcp.backend_service_describe
+    args: {project: example-prod, backend_service: harness-backend-cdn-disabled, scope: global}
+    expect:
+      json:
+        /name: harness-backend-cdn-disabled
+        /enableCdn: false
+  - name: gcp.backend_service_describe-cdn-missing
+    action: gcp.backend_service_describe
+    args: {project: example-prod, backend_service: harness-backend-cdn-missing, scope: global}
+    expect:
+      json:
+        /name: harness-backend-cdn-missing
+        /enableCdn: null
   - action: gcp.backend_health
     args: {project: example-prod, backend_service: harness-backend, scope: global}
     expect:

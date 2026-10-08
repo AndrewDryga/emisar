@@ -153,6 +153,16 @@ runner's admission excludes the run-mutating HCP actions (`tfc.apply_run`,
 plan-only runs, and the ordinary lock/unlock stay. Confirm & Apply in HCP
 remains the only deploy gate, and no runner can reach it.
 
+For container diagnostics, use `gcp.log_entries` with the deployment's
+`project`, `view_id: emisar-vm-containers`, `resource_type: gce_instance`, and
+`log_id: cos_containers`. Add `minimum_severity: ERROR` for errors or
+`json_message: recurrent_job.failed` for recurrent-job failures. Follow
+`next_page_cursor` with every other argument unchanged. Omitting the view
+requests project-wide logs and is intentionally denied. The view excludes
+audit, SQL, and network logs; no broader Logging reader role is needed.
+After Apply, verify the scoped read through Emisar and confirm that project-wide
+and other-view reads remain denied.
+
 Set the reusable runner enrollment credential as the sensitive HCP
 Terraform variable `emisar_runner_enrollment_key`. A regional MIG can create
 several runners and replaces their boot disks during rollouts, so a single-use
@@ -162,6 +172,41 @@ deploys a new exact Secret Manager version without storing the payload in state.
 Set the HCP Terraform API token separately as the sensitive workspace variable
 `emisar_tfe_token`; changing it likewise writes and rolls to an exact managed
 secret version.
+
+### Native diagnostic utilities
+
+COS receives a separate, extraction-only Linux amd64 bundle at
+`/run/emisar-admin-runner/diagnostics`. Its private ELF loader, Python imports
+and NTPsec `libntpc` stay together. Sysstat is rebuilt from signed Debian source
+with `sadc` fixed to that executable `/run` location; qualification samples
+`sar` without a distribution or previous collector that could mask a broken
+bundle. Only the reviewed `bin` allowlist enters PATH, after COS and the owned
+gcloud/BEAM wrappers. Compose is a checksum-pinned private Docker CLI plugin.
+
+The installer checks the image digest, purpose, architecture, revision, complete
+file hashes and layout before executing staged version checks. It never starts
+its extraction container, strips privilege bits, atomically selects a root-owned
+generation and retains at most the active generation plus one previous valid
+generation. An exact cached image permits restart during a GHCR outage; a
+missing image or failed qualification cannot replace the active bundle.
+Startup derives the prerequisite union from the authenticated installed pack
+manifests, not a hand-maintained dependency list.
+
+`./run gate infra` remains Docker-free for this artifact. On a Docker host,
+run `./run ops qualify-admin-diagnostics <40-hex-revision> emisar/admin-diagnostics:check`.
+CI requires this qualifier for every main push and relevant PRs. The bundle's
+SBOM combines Trivy's shipped Go/Python components with conservative signed
+Debian builder inventory, explicitly including build-only packages. Debian
+source name/version, epoch and revision are preserved for advisory matching;
+the scan must report a nonempty Debian target. CD publishes those exact image
+and SBOM bytes, verifies their contract again, and supplies the diagnostics
+digest alongside the Portal digest to the saved plan. No HCP workspace pin
+update is needed; Apply remains manual.
+
+The VM's added inventory roles permit only `logging.logs.list` and
+`storage.buckets.list`. Bucket IAM policy reads are bound to the pack-registry
+and MTA-STS buckets, not granted project-wide. Listing names or metadata does
+not grant log-entry, private-object or other-bucket policy access.
 
 This is a fully trusted administration runner. It runs on the COS host and its
 fixed script uses `docker exec emisar /app/bin/emisar rpc` to call the
