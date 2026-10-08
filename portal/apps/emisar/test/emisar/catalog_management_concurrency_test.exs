@@ -27,6 +27,8 @@ defmodule Emisar.CatalogManagementConcurrencyTest do
         assert_receive :unrelated_runner_locked, 5_000
         assert {:ok, revoked} = Catalog.revoke_pack_version_trust(version.id, admin)
         assert revoked.trust_state == :rejected
+        send(updater.pid, :commit)
+        assert Task.await(updater, 30_000) == {:ok, :committed}
       after
         send(updater.pid, :commit)
         stop_tasks([updater])
