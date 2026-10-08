@@ -25,9 +25,12 @@ up itself. Five shapes to recognize:
    on loopback or a unix socket, then stops it and starts the real one. A check
    pointed at loopback passes against that temporary daemon, so `up --wait`
    returns healthy and the case gets `ECONNREFUSED` over the network. Point the
-   check at the container's own routable address — `"$$(hostname -i)"` in
-   Compose — which only the real daemon binds. Cadence hides this: a coarse
-   `interval` polls late enough to miss the window by luck, so tightening
+   check at the Compose service name the case uses and require network transport
+   when the client can fall back to a socket. Use `"$$(hostname -i)"` only after
+   verifying that helper exists in every pinned image: the pinned MySQL 8.4.11
+   image lacks it, and an empty host silently admitted the temporary socket
+   server. Cadence hides this: a coarse `interval` polls late enough to miss
+   the window by luck, so tightening
    readiness is what exposes it.
 5. **A probe must not out-race the entrypoint.** `start_interval` polls during
    the start period, and a check that is itself a client of the service can
@@ -79,7 +82,7 @@ environment:
 ```yaml
 # compose.yaml — readiness proves the daemon a case can actually reach
 healthcheck:
-  test: ["CMD-SHELL", "pg_isready -h \"$$(hostname -i)\" -U postgres"]
+  test: ["CMD", "pg_isready", "-h", "postgres", "-U", "postgres"]
   interval: 5s
   start_period: 30s
   start_interval: 1s
