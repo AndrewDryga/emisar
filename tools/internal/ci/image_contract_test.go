@@ -200,6 +200,10 @@ func TestDiagnosticsSBOMContainsMeasuredRuntimeAndFullBoundProvenance(t *testing
 	if err := json.Unmarshal(data, &sbom); err != nil {
 		t.Fatal(err)
 	}
+	// The pinned attestation action recognizes CycloneDX by this envelope.
+	if sbom.Format == "" || sbom.Spec == "" || sbom.SerialNumber == "" {
+		t.Fatal("generated SBOM cannot be recognized by the attestation action")
+	}
 	for _, component := range sbom.Components {
 		if component.Name == "linux-libc-dev" {
 			t.Fatal("builder-only headers misrepresented as runtime components")
@@ -226,6 +230,13 @@ func TestDiagnosticsSBOMContainsMeasuredRuntimeAndFullBoundProvenance(t *testing
 		name string
 		edit func(*diagnosticSBOM)
 	}{
+		{"missing serial number", func(s *diagnosticSBOM) { s.SerialNumber = "" }},
+		{"malformed serial number", func(s *diagnosticSBOM) { s.SerialNumber = "urn:uuid:not-a-uuid" }},
+		{"wrong UUID version", func(s *diagnosticSBOM) { s.SerialNumber = "urn:uuid:00000000-0000-5000-8000-000000000000" }},
+		{"wrong UUID variant", func(s *diagnosticSBOM) { s.SerialNumber = "urn:uuid:00000000-0000-4000-7000-000000000000" }},
+		{"wrong SBOM format", func(s *diagnosticSBOM) { s.Format = "SPDX" }},
+		{"wrong specification version", func(s *diagnosticSBOM) { s.Spec = "1.5" }},
+		{"wrong document version", func(s *diagnosticSBOM) { s.Version = 0 }},
 		{"source identity changed", func(s *diagnosticSBOM) { s.Components[0].Properties[1].Value = "wrong-source" }},
 		{"file origins changed", func(s *diagnosticSBOM) {
 			s.Components[0].Properties[len(s.Components[0].Properties)-1].Value = "guessed"

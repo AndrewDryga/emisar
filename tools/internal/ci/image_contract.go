@@ -3,6 +3,7 @@ package ci
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -185,10 +186,11 @@ type sbomComponent struct {
 }
 
 type diagnosticSBOM struct {
-	Format   string `json:"bomFormat"`
-	Spec     string `json:"specVersion"`
-	Version  int    `json:"version"`
-	Metadata struct {
+	Format       string `json:"bomFormat"`
+	SerialNumber string `json:"serialNumber,omitempty"`
+	Spec         string `json:"specVersion"`
+	Version      int    `json:"version"`
+	Metadata     struct {
 		Properties []sbomProperty `json:"properties"`
 	} `json:"metadata"`
 	Components []sbomComponent `json:"components"`
@@ -248,7 +250,14 @@ func writeDiagnosticsSBOM(bundle, revision, imageID, runtimeSBOM, destination st
 	if err != nil {
 		return err
 	}
-	sbom := diagnosticSBOM{Format: "CycloneDX", Spec: "1.6", Version: 1}
+	var serial [16]byte
+	if _, err := rand.Read(serial[:]); err != nil {
+		return fmt.Errorf("generate diagnostics SBOM serial number: %w", err)
+	}
+	serial[6] = serial[6]&0x0f | 0x40
+	serial[8] = serial[8]&0x3f | 0x80
+	sbom := diagnosticSBOM{Format: "CycloneDX", Spec: "1.6", Version: 1,
+		SerialNumber: fmt.Sprintf("urn:uuid:%x-%x-%x-%x-%x", serial[:4], serial[4:6], serial[6:8], serial[8:10], serial[10:])}
 	sbom.Metadata.Properties = []sbomProperty{{"emisar:purpose", "admin-diagnostics"}, {"emisar:revision", revision}, {"emisar:architecture", "amd64"}, {"emisar:image-id", imageID}, {"emisar:bundle-manifest-sha256", manifestHash}, {"emisar:inventory-scope", "measured shipped Debian closure; complete builder provenance retained"}}
 	for _, name := range diagnosticsEvidenceFiles {
 		data, err := os.ReadFile(filepath.Join(bundle, name))
@@ -388,6 +397,10 @@ func verifyDiagnosticsSBOM(path string, contract imageContract, bundle string) e
 	if err := json.Unmarshal(data, &sbom); err != nil {
 		return err
 	}
+	if sbom.Format != "CycloneDX" || sbom.Spec != "1.6" || sbom.Version != 1 ||
+		!regexp.MustCompile(`^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(sbom.SerialNumber) {
+		return fmt.Errorf("diagnostics SBOM requires CycloneDX 1.6 version 1 and an RFC 4122 UUIDv4 serial number")
+	}
 	properties := map[string]string{}
 	for _, property := range sbom.Metadata.Properties {
 		if _, exists := properties[property.Name]; exists {
@@ -395,7 +408,7 @@ func verifyDiagnosticsSBOM(path string, contract imageContract, bundle string) e
 		}
 		properties[property.Name] = property.Value
 	}
-	if sbom.Format != "CycloneDX" || len(sbom.Components) == 0 ||
+	if len(sbom.Components) == 0 ||
 		properties["emisar:purpose"] != contract.Purpose ||
 		properties["emisar:revision"] != contract.Revision ||
 		properties["emisar:architecture"] != contract.Architecture ||
