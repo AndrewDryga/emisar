@@ -384,7 +384,7 @@ func proveDiagnosticsNonaffected(bundle string, rule nonaffectedRule) error {
 			return err
 		}
 	case "no-infocmp":
-		if err := allowOnly("./lib/libncursesw.so.6", "./lib/libtinfo.so.6"); err != nil {
+		if err := allowOnly("./lib/libncursesw.so.6", "./lib/libpanelw.so.6", "./lib/libtinfo.so.6"); err != nil {
 			return err
 		}
 	case "no-homed":

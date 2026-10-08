@@ -5,6 +5,7 @@ import (
 	"debug/elf"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -203,5 +204,27 @@ func TestFindmntAssessmentRejectsUnreviewedBytes(t *testing.T) {
 	writeFixture(t, bundle, "libexec/findmnt", "unreviewed replacement")
 	if err := proveReadOnlyFindmnt(bundle, nil); err == nil || !strings.Contains(err.Error(), "exact authenticated") {
 		t.Fatalf("unreviewed libmount consumer accepted: %v", err)
+	}
+}
+
+func TestNcursesAssessmentIncludesPanelButRejectsOtherOwnedFiles(t *testing.T) {
+	for _, extra := range []bool{false, true} {
+		t.Run(fmt.Sprintf("extra=%t", extra), func(t *testing.T) {
+			bundle := t.TempDir()
+			var origins strings.Builder
+			paths := []string{"./lib/libncursesw.so.6", "./lib/libpanelw.so.6", "./lib/libtinfo.so.6"}
+			if extra {
+				paths = append(paths, "./libexec/infocmp")
+			}
+			for _, path := range paths {
+				scanELFFixture(t, filepath.Join(bundle, path), "reviewedLibrarySymbol", elf.ELFCLASS64)
+				fmt.Fprintf(&origins, "%s\tdebian\t/usr/%s\tlibncursesw6\t6.4-4\tamd64\tncurses\t6.4-4\n", path, strings.TrimPrefix(path, "./"))
+			}
+			writeFixture(t, bundle, "file-origins.tsv", origins.String())
+			err := proveDiagnosticsNonaffected(bundle, diagnosticsNonaffected["CVE-2025-69720"])
+			if (err != nil) != extra {
+				t.Fatalf("ncurses source membership: %v", err)
+			}
+		})
 	}
 }
