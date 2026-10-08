@@ -17,6 +17,40 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
+      date: ~D[2026-10-08],
+      slug: "clearer-mfa-and-dependency-updates",
+      title: "Clearer MFA and dependency updates",
+      tag: "v0.52.0",
+      summary:
+        "MFA setup and Profile now give authenticator status, recovery codes, and sign-out actions a clearer place. Pack reporting names the runners that reported the exact content, without repeated counts or empty tooltips. This release also refreshes dependencies and fixes Cloud Logging pagination and Symbolicator cleanup-preview declarations.",
+      details: [
+        {"Console",
+         [
+           "MFA setup has consistent steps and buttons. Profile brings authenticator status, recovery-code management, and verification flows into one ordered section.",
+           "Service-account guidance is shorter, and workspace labels omit the internal route prefix."
+         ]},
+        {"Security",
+         [
+           "Update the Symbolicator pack to 0.2.6. Earlier versions are retired and cannot dispatch actions. Cleanup preview is medium risk: the vendor's dry run preserves expired cache entries, but can create cache directories or remove invalid or unreadable metadata sidecars.",
+           "Eligible Go and Hex dependencies are updated, and the Debian security snapshot includes the Perl fix."
+         ]},
+        {"Runner",
+         [
+           "Runner v0.31.0 accompanies this release with an updated runtime dependency. MCP Bridge remains at v0.17.0."
+         ]},
+        {"Packs",
+         [
+           "Compatibility checks add MongoDB 8.3, Kubernetes 1.37, ClickHouse 26.9, and Symbolicator 26.9 while retaining previous supported families.",
+           "Symbolicator cleanup checks use real fresh and expired cache files to prove preview preservation and selective deletion.",
+           "Cloud Logging continuation requests keep the original query fixed across pages."
+         ]},
+        {"Platform",
+         [
+           "Terraform providers, container images, runtime helpers, and build tooling move to current eligible releases. Versions still inside their release-age window remain pinned."
+         ]}
+      ]
+    },
+    %{
       date: ~D[2026-10-07],
       slug: "workspace-sign-in-service-accounts-and-clearer-pack-availability",
       title: "Workspace sign-in, service accounts, and clearer pack availability",

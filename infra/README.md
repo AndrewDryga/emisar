@@ -175,7 +175,7 @@ so read it from the advertisement; this README does not record it. Critical
 erasure actions remain subject to the management account's normal policy and
 approval rules.
 
-The pinned `runner-v0.30.0` release understands the current pack setup and
+The pinned `runner-v0.31.0` release understands the current pack setup and
 structured output schemas; the private pack does not require a custom runner
 build.
 

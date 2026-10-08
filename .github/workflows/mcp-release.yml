@@ -27,4 +27,4 @@ jobs:
       checks: read
       contents: write
       id-token: write
-    uses: AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml@a1876129e37e6d848622980a339c88a2a5ddaf46
+    uses: AndrewDryga/emisar/.github/workflows/mcp-release-trusted.yml@9898f3486f46286aabb65ca4719b0d0e88e020a7
