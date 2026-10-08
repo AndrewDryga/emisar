@@ -114,10 +114,42 @@ case "$mode" in
     view_id=$8
     json_message=$9
     page_cursor=${10}
-    end_epoch=$(date -u +%s)
+    now_epoch=$(date -u +%s)
+    end_epoch=$now_epoch
+    # A cursor is bounded query data, not authority. Bind every current argument
+    # and rebuild the request here; never accept a cursor-supplied target/filter.
+    query_fingerprint=$(jq -nc \
+      --arg endpoint "$api_base" --arg project "$project" \
+      --arg severity "$minimum_severity" --arg resource_type "$resource_type" \
+      --arg log_id "$log_id" --arg view_id "$view_id" --arg message "$json_message" \
+      --argjson window "$window_minutes" --argjson size "$page_size" \
+      '[$endpoint,$project,$severity,$resource_type,$log_id,$window,$size,$view_id,$message]' | sha256sum)
+    query_fingerprint=${query_fingerprint%% *}
+    invalid_cursor() {
+      printf '%s\n' 'Invalid Cloud Logging continuation; start a new query with an empty page_cursor.' >&2
+      exit 2
+    }
+    provider_cursor=''
+    if [ -n "$page_cursor" ]; then
+      [ "${#page_cursor}" -le 1152 ] || invalid_cursor
+      case "$page_cursor" in v1.*.*.*) ;; *) invalid_cursor ;; esac
+      remaining=${page_cursor#v1.}
+      end_epoch=${remaining%%.*}
+      remaining=${remaining#*.}
+      fingerprint=${remaining%%.*}
+      provider_cursor=${remaining#*.}
+      case "$end_epoch" in ''|0*|*[!0-9]*) invalid_cursor ;; esac
+      [ "${#end_epoch}" -le 10 ] || invalid_cursor
+      [ "$end_epoch" -le "$now_epoch" ] || invalid_cursor
+      [ "$end_epoch" -ge "$((window_minutes * 60))" ] || invalid_cursor
+      [ "$fingerprint" = "$query_fingerprint" ] || invalid_cursor
+      [ -n "$provider_cursor" ] && [ "${#provider_cursor}" -le 1024 ] || invalid_cursor
+      case "$provider_cursor" in *[!A-Za-z0-9+./=_~-]*) invalid_cursor ;; esac
+    fi
     start_epoch=$((end_epoch - window_minutes * 60))
     start_time=$(date -u -d "@$start_epoch" +%Y-%m-%dT%H:%M:%SZ)
-    recent_filter="timestamp >= \"$start_time\" AND severity >= $minimum_severity"
+    end_time=$(date -u -d "@$end_epoch" +%Y-%m-%dT%H:%M:%SZ)
+    recent_filter="timestamp >= \"$start_time\" AND timestamp <= \"$end_time\" AND severity >= $minimum_severity"
     if [ -n "$resource_type" ]; then
       recent_filter="$recent_filter AND resource.type = \"$resource_type\""
     fi
@@ -135,7 +167,7 @@ case "$mode" in
     jq -nce \
       --arg resource "$resource" \
       --arg filter "$recent_filter" \
-      --arg page_cursor "$page_cursor" \
+      --arg page_cursor "$provider_cursor" \
       --argjson page_size "$page_size" '
         {
           resourceNames: [$resource],
@@ -153,6 +185,7 @@ case "$mode" in
 
     jq -ce \
       --argjson page_size "$page_size" \
+      --arg anchor "$end_epoch" --arg fingerprint "$query_fingerprint" \
       --rawfile access_token "$tmp/access-token" '
       def controls_collapsed:
         (explode | map(if . <= 31 or (. >= 127 and . <= 159) then 0 else . end)) as $cs
@@ -194,7 +227,7 @@ case "$mode" in
           elif ($value | length) <= 1024 and
                ($value | utf8bytelength) <= 1024 and
                ($value | chars_allowed)
-        then {value: $value, omitted: false}
+        then {value: ("v1." + $anchor + "." + $fingerprint + "." + $value), omitted: false}
         else {value: null, omitted: true}
         end;
       (.nextPageToken | cursor) as $cursor
@@ -218,7 +251,15 @@ case "$mode" in
           more_available: ($next_page_token != ""),
           next_page_cursor: $cursor.value,
           cursor_omitted: $cursor.omitted
-        }' "$tmp/response.json"
+        }
+      # Match runner canonical encoding: HTML stays literal, but
+      # U+2028/U+2029 grow from three UTF-8 bytes to six escaped bytes.
+      | (tojson) as $encoded
+      | if .next_page_cursor != null and
+           (($encoded | utf8bytelength) +
+            ([$encoded | explode[] | select(. == 8232 or . == 8233)] | length) * 3) > 8192
+        then .next_page_cursor = null | .cursor_omitted = true
+        else . end' "$tmp/response.json"
     ;;
 
   *)

@@ -157,8 +157,9 @@ def log_entries(request_body):
                 "resource": {"type": flood},
                 "logName": flood,
                 "textPayload": flood,
+                "jsonPayload": {"job": flood, "error": flood},
             } for _ in range(5)],
-            "nextPageToken": "N" * 1200,
+            "nextPageToken": "N" * (1024 if "valid_cursor" in filter_value else 1200),
         }
     return {
         "entries": [
@@ -191,7 +192,8 @@ def log_entries(request_body):
                 },
             },
         ],
-        "nextPageToken": "log-entries-next",
+        "nextPageToken": ("C" * 1024 if "max_cursor" in filter_value else
+                          "log.entries+/_=-~" if "cursor_punctuation" in filter_value else "log-entries-next"),
     }
 
 
@@ -274,13 +276,23 @@ class Handler(BaseHTTPRequestHandler):
             self.write_json(400, {"error": {"message": "invalid json"}})
             return
         REQUESTS.append(request_body)
+        if request_body.get("pageToken"):
+            current = {k: v for k, v in request_body.items() if k != "pageToken"}
+            previous = {k: v for k, v in REQUESTS[-2].items() if k != "pageToken"} if len(REQUESTS) > 1 else None
+            if current != previous:
+                self.write_json(400, {"error": {"message": "continuation query changed"}})
+                return
         if "provider_failure" in request_body.get("filter", ""):
             self.write_json(
                 503,
                 {"error": {"code": 503, "message": "fixture unavailable"}},
             )
             return
-        self.write_json(200, log_entries(request_body))
+        payload = log_entries(request_body)
+        if request_body.get("pageToken"):
+            payload["entries"][0]["jsonPayload"]["job"] = "continued-page"
+            payload.pop("nextPageToken", None)
+        self.write_json(200, payload)
 
     def authorized(self):
         if urlparse(self.path).path in ("/health", "/probe/state"):

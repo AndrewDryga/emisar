@@ -60,8 +60,8 @@ cases:
         /entries/0/error: DBConnection.ConnectionError
         /entries/1/message: worker retry [REDACTED]
         /more_available: true
-        /next_page_cursor: log-entries-next
         /cursor_omitted: false
+      stdout_contains: ['"next_page_cursor":"v1.']
     probes:
       - name: the bounded project query reached Cloud Logging
         argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
@@ -74,16 +74,21 @@ cases:
             - '"pageSize": 5'
   - name: gcp.log_entries-reads-a-scoped-view-and-follows-the-cursor
     action: gcp.log_entries
-    args:
+    env: &logging-clock
+      PATH: /packs/gcp-monitoring/test/fixtures/clock:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    args: &logging-query
       project: example-prod
       view_id: emisar-vm-containers
       json_message: recurrent_job.failed
-      page_cursor: log-entries-next
+    resolve_args: &logging-first-page
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/first-page.sh, example-prod, DEFAULT, "", "", "60", "5", emisar-vm-containers, recurrent_job.failed]
     expect:
       json:
-        /entries/0/job: Emisar.Runs.Jobs.FleetObservability
+        /entries/0/job: continued-page
         /entries/0/error: DBConnection.ConnectionError
-        /next_page_cursor: log-entries-next
+        /next_page_cursor: null
+        /more_available: false
     probes:
       - name: the exact view and continuation reached Cloud Logging
         argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
@@ -130,6 +135,144 @@ cases:
   # stdout_not_empty is a success-only default (mergeActionExpectation), so
   # without this exclusion nothing here looks at stdout at all. The needle is
   # the fixture's own sentinel, not provider wording.
+  - name: gcp.log_entries-fits-full-diagnostic-fields-and-a-valid-max-cursor
+    action: gcp.log_entries
+    args: {project: example-prod, resource_type: worst_case_valid_cursor, page_size: 5}
+    expect:
+      json:
+        /entries/0/message_truncated: true
+        /entries/4/message_truncated: true
+        /more_available: true
+        /next_page_cursor: null
+        /cursor_omitted: true
+  - name: gcp.log_entries-follows-max-provider-cursor
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, resource_type: max_cursor}
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/first-page.sh, example-prod, DEFAULT, max_cursor, "", "60", "5", emisar-vm-containers, recurrent_job.failed]
+    expect:
+      json: {/entries/0/job: continued-page, /next_page_cursor: null, /more_available: false}
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS --cacert /packs/gcp-monitoring/test/fixtures/server.crt https://gcp-api:8443/probe/state | jq -e ''.requests[-1].pageToken | length == 1024''']
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.log_entries-follows-provider-cursor-with-periods-and-punctuation
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, resource_type: cursor_punctuation}
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/first-page.sh, example-prod, DEFAULT, cursor_punctuation, "", "60", "5", emisar-vm-containers, recurrent_job.failed]
+    expect:
+      json: {/entries/0/job: continued-page, /next_page_cursor: null, /more_available: false}
+    probes:
+      - argv: [curl, -fsS, --cacert, /packs/gcp-monitoring/test/fixtures/server.crt, https://gcp-api:8443/probe/state]
+        expect: {stdout_contains: ['"pageToken": "log.entries+/_=-~"']}
+  - name: gcp.log_entries-rejects-unsupported-cursor-version
+    action: gcp.log_entries
+    args: {<<: *logging-query, page_cursor: v2.1700000000.fingerprint.provider}
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-legacy-unanchored-cursor
+    action: gcp.log_entries
+    args: {<<: *logging-query, page_cursor: log-entries-next}
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-changed-project
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, project: another-prod}
+    resolve_args: *logging-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-changed-minimum-severity
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, minimum_severity: ERROR}
+    resolve_args: *logging-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-changed-resource-type
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, resource_type: gce_instance}
+    resolve_args: *logging-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-changed-log-id
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, log_id: harness-api}
+    resolve_args: *logging-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-changed-window-minutes
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, window_minutes: 30}
+    resolve_args: *logging-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-changed-page-size
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, page_size: 1}
+    resolve_args: *logging-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-changed-view-id
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, view_id: another-view}
+    resolve_args: *logging-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-changed-json-message
+    action: gcp.log_entries
+    env: *logging-clock
+    args: {<<: *logging-query, json_message: other.event}
+    resolve_args: *logging-first-page
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-future-cursor
+    action: gcp.log_entries
+    env: *logging-clock
+    args: *logging-query
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/tampered-cursor.sh, future, example-prod, DEFAULT, "", "", "60", "5", emisar-vm-containers, recurrent_job.failed]
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-overflow-cursor
+    action: gcp.log_entries
+    env: *logging-clock
+    args: *logging-query
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/tampered-cursor.sh, overflow, example-prod, DEFAULT, "", "", "60", "5", emisar-vm-containers, recurrent_job.failed]
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-negative-cursor
+    action: gcp.log_entries
+    env: *logging-clock
+    args: *logging-query
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/tampered-cursor.sh, negative, example-prod, DEFAULT, "", "", "60", "5", emisar-vm-containers, recurrent_job.failed]
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-leading-zero-cursor
+    action: gcp.log_entries
+    env: *logging-clock
+    args: *logging-query
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/tampered-cursor.sh, leading-zero, example-prod, DEFAULT, "", "", "60", "5", emisar-vm-containers, recurrent_job.failed]
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-empty-provider-cursor
+    action: gcp.log_entries
+    env: *logging-clock
+    args: *logging-query
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/tampered-cursor.sh, empty-provider, example-prod, DEFAULT, "", "", "60", "5", emisar-vm-containers, recurrent_job.failed]
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
+  - name: gcp.log_entries-rejects-long-provider-cursor
+    action: gcp.log_entries
+    env: *logging-clock
+    args: *logging-query
+    resolve_args:
+      page_cursor:
+        argv: [/bin/sh, /packs/gcp-monitoring/test/fixtures/tampered-cursor.sh, long-provider, example-prod, DEFAULT, "", "", "60", "5", emisar-vm-containers, recurrent_job.failed]
+    expect: {status: failure, exit: [2], stderr_contains: [Invalid Cloud Logging continuation]}
   - name: gcp.log_entries-propagates-provider-errors
     action: gcp.log_entries
     args:

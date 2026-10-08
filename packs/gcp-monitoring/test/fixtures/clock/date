@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+if [ "$*" = '-u +%s' ] && [ -f /tmp/gcp-logging-clock ]; then
+  cat /tmp/gcp-logging-clock
+else
+  exec /usr/bin/date "$@"
+fi
