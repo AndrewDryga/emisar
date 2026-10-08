@@ -51,6 +51,13 @@ func (a *App) qualifyAdminDiagnostics(ctx context.Context, revision, image strin
 			return err
 		}
 	}
+	// This staging tree contains only public release bytes and owned scripts.
+	// Container root has no DAC override with all capabilities dropped, so it
+	// needs normal read/traverse access to a bind owned by the CI runner UID.
+	// Keep the mount read-only; production installation remains private.
+	if err := os.Chmod(temp, 0o755); err != nil {
+		return err
+	}
 	if err := a.run(ctx, a.Root, nil, "docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
 		"--tmpfs", "/run:rw,exec,nosuid,nodev,size=256m", "--mount", "type=bind,src="+temp+",dst=/qualification,readonly", diagnosticsBase,
 		"/bin/bash", "/qualification/qualify.sh", revision); err != nil {

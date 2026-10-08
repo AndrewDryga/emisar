@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -135,6 +136,69 @@ func TestDiagnosticsQualifierRequiresDockerWithoutAddingGateDependency(t *testin
 	err := a.Run(context.Background(), []string{"qualify-admin-diagnostics", diagnosticsRevision, "emisar/admin-diagnostics:test"})
 	if err == nil || !strings.Contains(err.Error(), "docker is required") {
 		t.Fatalf("Docker absence must fail explicit qualification: %v", err)
+	}
+}
+
+func TestDiagnosticsQualifierBindIsReadableWithoutCapabilitiesAndCleaned(t *testing.T) {
+	for _, failure := range []bool{false, true} {
+		t.Run(fmt.Sprintf("failure=%t", failure), func(t *testing.T) {
+			temp := t.TempDir()
+			log := filepath.Join(temp, "docker.log")
+			mock := filepath.Join(temp, "docker")
+			source := `#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$TEST_DOCKER_LOG"
+case "$1" in
+  build|cp|rm) ;;
+  create) printf 'never-started-container\n' ;;
+  run)
+    for arg in "$@"; do
+      case "$arg" in
+        type=bind,src=*,dst=/qualification,readonly)
+          staging=${arg#type=bind,src=}; staging=${staging%,dst=/qualification,readonly}
+          # No DAC_OVERRIDE: an unrelated UID needs the other read/execute bits.
+          [ "$(find "$staging" -maxdepth 0 -perm -0005 -print)" = "$staging" ]
+          test -r "$staging/qualify.sh"
+          test -r "$staging/verify-diagnostics.sh"
+          ;;
+      esac
+    done
+    [ "$TEST_FAIL_QUALIFICATION" = false ] ;;
+  *) exit 1 ;;
+esac
+`
+			if err := os.WriteFile(mock, []byte(source), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", temp+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("TEST_DOCKER_LOG", log)
+			t.Setenv("TEST_FAIL_QUALIFICATION", fmt.Sprint(failure))
+			a := New(repositoryRoot(t), nil, io.Discard, io.Discard)
+			err := a.Run(context.Background(), []string{"qualify-admin-diagnostics", diagnosticsRevision, "emisar/admin-diagnostics:test"})
+			if (err != nil) != failure {
+				t.Fatalf("qualification result: %v", err)
+			}
+			data, err := os.ReadFile(log)
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := strings.Split(strings.TrimSpace(string(data)), "\n")
+			if len(calls) != 5 || calls[4] != "rm never-started-container" {
+				t.Fatalf("unexpected lifecycle: %s", data)
+			}
+			for _, flag := range []string{"--network none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "/run:rw,exec,nosuid,nodev,size=256m", ",dst=/qualification,readonly"} {
+				if !strings.Contains(calls[3], flag) {
+					t.Errorf("qualification lost isolation: %s", flag)
+				}
+			}
+			_, staging, ok := strings.Cut(calls[2], "never-started-container:/bundle ")
+			if !ok {
+				t.Fatalf("missing extraction call: %s", calls[2])
+			}
+			if _, err := os.Stat(filepath.Dir(staging)); !os.IsNotExist(err) {
+				t.Fatalf("qualification staging survived cleanup: %v", err)
+			}
+		})
 	}
 }
 

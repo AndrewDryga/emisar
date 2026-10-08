@@ -4,8 +4,11 @@ set -euo pipefail
 test ! -e /usr/lib/sysstat/sadc
 test ! -e /run/emisar-admin-runner/diagnostics
 install -d -m 0700 /run/emisar-admin-runner/diagnostics
-cp -a /qualification/bundle/. /run/emisar-admin-runner/diagnostics/
+# Docker extraction belongs to the host CI UID. Match production root ownership
+# without granting this isolated container CAP_CHOWN.
+cp -a --no-preserve=ownership /qualification/bundle/. /run/emisar-admin-runner/diagnostics/
 bundle=/run/emisar-admin-runner/diagnostics
+test -z "$(find "$bundle" \( ! -uid 0 -o ! -gid 0 \) -print)"
 bash /qualification/verify-diagnostics.sh "$bundle" "$1" amd64
 for executable in "$bundle"/libexec/*; do
   [ "$(basename "$executable")" = ntpq ] && continue
