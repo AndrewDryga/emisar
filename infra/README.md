@@ -188,7 +188,10 @@ the other Debian static modules and matching its version and ABI. Compiler,
 configuration and before/after identity evidence stay hash-bound. Python runs without site/cwd import
 fallback or bytecode writes. Qualification runs the real `ntpq -pn` against isolated
 valid and malformed NTP control responses and rejects library fallback to the
-qualifier's distribution. Only the reviewed `bin` allowlist enters PATH, after
+qualifier's distribution. The unchanged Debian client uses COS's service database
+to resolve `ntp/udp` to port 123; the isolated Debian-slim qualifier supplies that
+entry through a read-only fixture, without modifying production host files.
+Only the reviewed `bin` allowlist enters PATH, after
 COS and the owned gcloud/BEAM wrappers. Compose is a checksum-pinned private
 Docker CLI plugin.
 

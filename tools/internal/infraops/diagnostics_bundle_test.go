@@ -327,6 +327,7 @@ case "$1" in
   build|cp|rm) ;;
   create) printf 'never-started-container\n' ;;
   run)
+    service_fixture=false
     for arg in "$@"; do
       case "$arg" in
         type=bind,src=*,dst=/qualification,readonly)
@@ -338,8 +339,15 @@ case "$1" in
           test -r "$staging/verify-linkage.sh"
           test -r "$staging/qualify-ntpq.py"
           ;;
+        type=bind,src=*,dst=/etc/services,readonly)
+          services=${arg#type=bind,src=}; services=${services%,dst=/etc/services,readonly}
+          [ "$(find "$services" -maxdepth 0 -perm -0004 -print)" = "$services" ]
+          [ "$(awk '!/^#/ && NF {print}' "$services")" = 'ntp 123/udp' ]
+          service_fixture=true
+          ;;
       esac
     done
+    [ "$service_fixture" = true ]
     [ "$TEST_FAIL_QUALIFICATION" = false ] ;;
   *) exit 1 ;;
 esac
@@ -363,7 +371,7 @@ esac
 			if len(calls) != 5 || calls[4] != "rm never-started-container" {
 				t.Fatalf("unexpected lifecycle: %s", data)
 			}
-			for _, flag := range []string{"--network none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "/run:rw,exec,nosuid,nodev,size=256m", ",dst=/qualification,readonly"} {
+			for _, flag := range []string{"--network none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "/run:rw,exec,nosuid,nodev,size=256m", ",dst=/qualification,readonly", ",dst=/etc/services,readonly"} {
 				if !strings.Contains(calls[3], flag) {
 					t.Errorf("qualification lost isolation: %s", flag)
 				}

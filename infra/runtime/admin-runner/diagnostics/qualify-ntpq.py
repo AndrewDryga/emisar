@@ -8,6 +8,10 @@ import pathlib
 import os
 import importlib.util
 
+# The production COS service database maps NTP to UDP 123. Keep named-service
+# resolution so qualification exercises the unchanged Debian client's lookup.
+assert socket.getservbyname("ntp", "udp") == 123
+
 
 def query(wrapper, malformed, cwd, environment):
     address = socket.getaddrinfo(

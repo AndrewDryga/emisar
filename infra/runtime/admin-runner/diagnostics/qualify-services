@@ -1,0 +1,3 @@
+# Match the NTP service provided by the pinned COS baselayout. Debian slim
+# omits /etc/services; this qualifier-only fixture does not change host files.
+ntp 123/udp

@@ -42,7 +42,7 @@ func (a *App) qualifyAdminDiagnostics(ctx context.Context, revision, image strin
 	if err := a.run(ctx, a.Root, nil, "docker", "cp", container+":/bundle", filepath.Join(temp, "bundle")); err != nil {
 		return err
 	}
-	for _, path := range []string{"diagnostics/qualify.sh", "diagnostics/verify-linkage.sh", "diagnostics/qualify-ntpq.py", "verify-diagnostics.sh"} {
+	for _, path := range []string{"diagnostics/qualify.sh", "diagnostics/verify-linkage.sh", "diagnostics/qualify-ntpq.py", "diagnostics/qualify-services", "verify-diagnostics.sh"} {
 		data, err := os.ReadFile(filepath.Join(a.Infra, "runtime/admin-runner", path))
 		if err != nil {
 			return err
@@ -59,7 +59,8 @@ func (a *App) qualifyAdminDiagnostics(ctx context.Context, revision, image strin
 		return err
 	}
 	if err := a.run(ctx, a.Root, nil, "docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
-		"--tmpfs", "/run:rw,exec,nosuid,nodev,size=256m", "--mount", "type=bind,src="+temp+",dst=/qualification,readonly", diagnosticsBase,
+		"--tmpfs", "/run:rw,exec,nosuid,nodev,size=256m", "--mount", "type=bind,src="+temp+",dst=/qualification,readonly",
+		"--mount", "type=bind,src="+filepath.Join(temp, "qualify-services")+",dst=/etc/services,readonly", diagnosticsBase,
 		"/bin/bash", "/qualification/qualify.sh", revision); err != nil {
 		return fmt.Errorf("extracted Linux diagnostics qualification: %w", err)
 	}
