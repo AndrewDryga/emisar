@@ -11,6 +11,6 @@ if [ "$command" = ntpq ]; then
   export PYTHONHOME="$bundle/python"
   export PYTHONPATH="$bundle/python/lib/python3/dist-packages"
   exec "$bundle/lib/loader" --library-path "$bundle/lib" \
-    "$bundle/libexec/python3" "$bundle/libexec/ntpq" "$@"
+    "$bundle/libexec/python3" -B -P -S "$bundle/libexec/ntpq" "$@"
 fi
 exec "$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/$command" "$@"

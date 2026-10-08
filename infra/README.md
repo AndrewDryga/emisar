@@ -180,8 +180,17 @@ COS receives a separate, extraction-only Linux amd64 bundle at
 and NTPsec `libntpc` stay together. Sysstat is rebuilt from signed Debian source
 with `sadc` fixed to that executable `/run` location; qualification samples
 `sar` without a distribution or previous collector that could mask a broken
-bundle. Only the reviewed `bin` allowlist enters PATH, after COS and the owned
-gcloud/BEAM wrappers. Compose is a checksum-pinned private Docker CLI plugin.
+bundle. The private interpreter supports `ntpq`, not general Python applications;
+unused SQLite, XML, tar-extraction and SSL standard-library consumers are omitted
+before library closure is measured. The private interpreter is rebuilt from the
+same signed Debian source with its two XML parser built-ins disabled, preserving
+the other Debian static modules and matching its version and ABI. Compiler,
+configuration and before/after identity evidence stay hash-bound. Python runs without site/cwd import
+fallback or bytecode writes. Qualification runs the real `ntpq -pn` against isolated
+valid and malformed NTP control responses and rejects library fallback to the
+qualifier's distribution. Only the reviewed `bin` allowlist enters PATH, after
+COS and the owned gcloud/BEAM wrappers. Compose is a checksum-pinned private
+Docker CLI plugin.
 
 The installer checks the image digest, purpose, architecture, revision, complete
 file hashes and layout before executing staged version checks. It never starts
@@ -195,10 +204,20 @@ manifests, not a hand-maintained dependency list.
 `./run gate infra` remains Docker-free for this artifact. On a Docker host,
 run `./run ops qualify-admin-diagnostics <40-hex-revision> emisar/admin-diagnostics:check`.
 CI requires this qualifier for every main push and relevant PRs. The bundle's
-SBOM combines Trivy's shipped Go/Python components with conservative signed
-Debian builder inventory, explicitly including build-only packages. Debian
-source name/version, epoch and revision are preserved for advisory matching;
-the scan must report a nonempty Debian target. CD publishes those exact image
+SBOM combines Trivy's shipped Go/Python components with measured shipped Debian
+package owners. Every payload file has a recorded origin; generated Python
+bytecode must match its Debian-owned source. The complete signed builder
+inventory remains separate provenance, not runtime components. The SBOM retains
+the exact file hashes, origins, both inventories and source-build evidence,
+hash-bound to the final bundle so package reachability is independently
+inspectable. Debian source name/version, epoch and revision are preserved for
+advisory matching. The scan must cover every bound Debian, Go and Python package.
+Its raw HIGH/CRITICAL findings remain unchanged. A diagnostics-only classifier
+accepts finite, expiring non-affected assessments only for the exact reviewed
+source/binary versions and successful final-file/ELF predicates. Missing evidence,
+changed identities and new findings block publication; Portal exceptions never
+apply. The assessment record binds the raw report, SBOM, policy and image hashes.
+The final image is also scanned without exceptions. CD publishes those exact image
 and SBOM bytes, verifies their contract again, and supplies the diagnostics
 digest alongside the Portal digest to the saved plan. No HCP workspace pin
 update is needed; Apply remains manual.

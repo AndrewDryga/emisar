@@ -10,15 +10,30 @@ cp -a --no-preserve=ownership /qualification/bundle/. /run/emisar-admin-runner/d
 bundle=/run/emisar-admin-runner/diagnostics
 test -z "$(find "$bundle" \( ! -uid 0 -o ! -gid 0 \) -print)"
 bash /qualification/verify-diagnostics.sh "$bundle" "$1" amd64
+# Prove the qualifier's own libc cannot hide an omitted private dependency.
+# This is the extracted test copy only; restore it before positive qualification.
+mv "$bundle/lib/libc.so.6" /run/diagnostics-removed-libc.so.6
+trap 'mv /run/diagnostics-removed-libc.so.6 "$bundle/lib/libc.so.6"' EXIT
+if bash /qualification/verify-linkage.sh "$bundle" "$bundle/libexec/python3"; then
+  echo 'missing private libc passed through the qualifier distribution' >&2
+  exit 1
+fi
+mv /run/diagnostics-removed-libc.so.6 "$bundle/lib/libc.so.6"
+trap - EXIT
 for executable in "$bundle"/libexec/*; do
   [ "$(basename "$executable")" = ntpq ] && continue
-  "$bundle/lib/loader" --library-path "$bundle/lib" --list "$executable"
+  bash /qualification/verify-linkage.sh "$bundle" "$executable"
 done
+while IFS= read -r -d '' extension; do
+  bash /qualification/verify-linkage.sh "$bundle" "$extension"
+done < <(find "$bundle/python" -type f -name '*.so*' -print0)
 export PYTHONHOME="$bundle/python"
 export PYTHONPATH="$bundle/python/lib/python3/dist-packages"
-"$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/python3" -c \
-  'import ntp.packet, ntp.control, ntp.ntpc; print(ntp.ntpc.statustoa(0, 0))'
+"$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/python3" -B -P -S -c \
+  'import importlib.util, ntp.packet, ntp.control, ntp.ntpc; print(ntp.ntpc.statustoa(0, 0)); assert all(importlib.util.find_spec(name) is None for name in ("sqlite3", "_sqlite3", "xml", "pyexpat", "_elementtree", "ssl", "_ssl", "tarfile"))'
 "$bundle/bin/ntpq" --version
+"$bundle/lib/loader" --library-path "$bundle/lib" "$bundle/libexec/python3" -B -P -S \
+  /qualification/qualify-ntpq.py "$bundle/bin/ntpq"
 "$bundle/bin/chronyc" -v
 "$bundle/bin/iostat" -V
 "$bundle/bin/sar" -u 1 1
@@ -31,3 +46,5 @@ for protected in docker cloud-init curl gcloud elixir erl epmd systemctl journal
   test ! -e "$bundle/bin/$protected"
 done
 test -z "$(find "$bundle" -type f -perm /6000 -print)"
+# Imports must not generate unmanifested bytecode or alter any shipped bytes.
+bash /qualification/verify-diagnostics.sh "$bundle" "$1" amd64

@@ -520,11 +520,11 @@ jobs:
       - name: Scan Debian closure and final shipped Go/Python bytes
         run: |
           set -euo pipefail
-          status=0
-          # Portal-only reachability exceptions do not apply to privileged tools.
-          trivy sbom --exit-code 1 --severity HIGH,CRITICAL \
+          # Preserve raw findings. Scanner errors still fail this command; the
+          # mandatory classifier blocks every unassessed HIGH/CRITICAL finding.
+          trivy sbom --exit-code 0 --severity HIGH,CRITICAL \
             --list-all-pkgs --format json --output /tmp/emisar-admin-diagnostics-scan.json \
-            /tmp/emisar-admin-diagnostics.cdx.json || status=$?
+            /tmp/emisar-admin-diagnostics.cdx.json
           jq -e 'any(.Results[]; .Type == "debian" and (.Packages | length) > 0)' /tmp/emisar-admin-diagnostics-scan.json
           jq -e '[.Results[] | select(.Type == "debian") | .Packages[]] |
             any(.Name == "libc6" and .SrcName == "glibc") and
@@ -535,7 +535,9 @@ jobs:
           jq '[.Results[] | .Type as $type | .Vulnerabilities[]? |
             {type:$type,VulnerabilityID,PkgName,InstalledVersion,FixedVersion,Severity,Title}]' \
             /tmp/emisar-admin-diagnostics-scan.json
-          test "$status" = 0
+          go run ./tools/cmd/ci diagnostics-scan "$GITHUB_SHA" emisar/admin-diagnostics:ci \
+            /tmp/emisar-admin-diagnostics.cdx.json /tmp/emisar-admin-diagnostics-scan.json \
+            /tmp/emisar-admin-diagnostics-assessments.json
           trivy image --exit-code 1 --severity HIGH,CRITICAL emisar/admin-diagnostics:ci
       - name: Preserve diagnostic scan evidence even on failure
         if: always()
@@ -545,6 +547,7 @@ jobs:
           path: |
             /tmp/emisar-admin-diagnostics.cdx.json
             /tmp/emisar-admin-diagnostics-scan.json
+            /tmp/emisar-admin-diagnostics-assessments.json
           retention-days: 2
           if-no-files-found: warn
           overwrite: true

@@ -16,7 +16,14 @@ commit, then performs delivery:
    publishes a portal image for that exact commit. CD publishes it by digest and
    attests it with its CI-produced SBOM. A separate extraction-only native
    diagnostics artifact is qualified on Linux amd64 at its real `/run` layout,
-   scanned and published in the same public GHCR repository with an immutable
+   including real NTP peer/error responses and private-library resolution without
+   distribution fallback. Its runtime SBOM is derived from every shipped file's
+   Debian owner, with the complete builder inventory and file/source evidence
+   retained separately as hash-bound provenance. Raw scan findings are retained;
+   finite diagnostics-only assessments require exact identities and final-byte
+   predicates, expire, and never cover unknown findings. The final image scan
+   has no exceptions. It is scanned and published in
+   the same public GHCR repository with an immutable
    `admin-diagnostics-sha-…` purpose tag. It never becomes `latest` or starts on
    the production host; COS still installs the runner from its pinned release.
 3. The same commit's `infra/` directory is uploaded as a provisional HCP

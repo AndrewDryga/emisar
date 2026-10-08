@@ -36,6 +36,11 @@ func main() {
 			fatal(fmt.Errorf("usage: ci diagnostics-sbom REVISION IMAGE RUNTIME_SBOM DESTINATION"))
 		}
 		err = ci.DiagnosticsSBOM(ctx, root, os.Args[2], os.Args[3], os.Args[4], os.Args[5])
+	case "diagnostics-scan":
+		if len(os.Args) != 7 {
+			fatal(fmt.Errorf("usage: ci diagnostics-scan REVISION IMAGE SBOM RAW_SCAN DECISIONS"))
+		}
+		err = ci.DiagnosticsScan(ctx, root, os.Args[2], os.Args[3], os.Args[4], os.Args[5], os.Args[6])
 	case "select":
 		if len(os.Args) != 4 {
 			fatal(fmt.Errorf("usage: ci select EVENT BASE"))

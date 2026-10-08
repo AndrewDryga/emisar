@@ -29,7 +29,7 @@ func diagnosticsFixture(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	files := []string{"run-tool", "lib/loader", "libexec/python3", "cli-plugins/docker-compose", "python/lib/python3/dist-packages/ntp/libntpc.so", "debian-inventory.tsv", "source-builds.tsv"}
+	files := []string{"run-tool", "lib/loader", "libexec/python3", "cli-plugins/docker-compose", "python/lib/python3/dist-packages/ntp/libntpc.so"}
 	for _, command := range strings.Fields(string(commands)) {
 		files = append(files, "libexec/"+command)
 		if err := os.Symlink("../run-tool", filepath.Join(bundle, "bin", command)); err != nil {
@@ -44,6 +44,32 @@ func diagnosticsFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(bundle, "commands.txt"), commands, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	identity := "fixture-runtime\t1.0-1\tamd64\tfixture-runtime\t1.0-1"
+	var origins []string
+	for _, path := range append(files, "commands.txt") {
+		kind, source, owner := "debian", "/usr/"+path, identity
+		switch path {
+		case "run-tool", "commands.txt":
+			kind, source, owner = "repository", "/build/"+path, "emisar\t"+diagnosticsRevision+"\tall\temisar\t"+diagnosticsRevision
+		case "cli-plugins/docker-compose":
+			kind, source, owner = "github-release", "https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-linux-x86_64", "docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1"
+		}
+		origins = append(origins, "./"+path+"\t"+kind+"\t"+source+"\t"+owner+"\n")
+	}
+	sort.Strings(origins)
+	for path, data := range map[string]string{
+		"debian-runtime.tsv":             identity + "\n",
+		"debian-builder.tsv":             identity + "\nlinux-libc-dev\t6.1.1-1\tamd64\tlinux\t6.1.1-1\n",
+		"file-origins.tsv":               strings.Join(origins, ""),
+		"source-builds.tsv":              "sysstat\t12.6.1-1\tDebian-signed-source; fixture\n",
+		"python-installed-identity.json": "{\"abi\":{\"fixture\":true},\"builtins\":[\"sys\",\"pyexpat\",\"_elementtree\"]}\n",
+		"python-private-identity.json":   "{\"abi\":{\"fixture\":true},\"builtins\":[\"sys\"]}\n",
+		"python-private-build.txt":       "source_version=3.11.2-6+deb12u9\nfixture compiler/config evidence\n",
+	} {
+		if err := os.WriteFile(filepath.Join(bundle, path), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	sealDiagnosticsFixture(t, bundle)
 	return bundle
 }
@@ -52,7 +78,7 @@ func sealDiagnosticsFixture(t *testing.T, bundle string) {
 	t.Helper()
 	var entries []string
 	err := filepath.WalkDir(bundle, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || entry.Name() == "manifest" || entry.Name() == "SHA256SUMS" {
+		if err != nil || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || path == filepath.Join(bundle, "manifest") || path == filepath.Join(bundle, "SHA256SUMS") {
 			return err
 		}
 		data, err := os.ReadFile(path)
@@ -74,7 +100,7 @@ func sealDiagnosticsFixture(t *testing.T, bundle string) {
 	if err := os.WriteFile(filepath.Join(bundle, "SHA256SUMS"), sums, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := fmt.Sprintf("schema=1\npurpose=admin-diagnostics\nos=linux\narchitecture=amd64\nrevision=%s\nchecksums_sha256=%x\ninventory_scope=conservative signed Debian builder inventory, including build-only packages\n", diagnosticsRevision, sha256.Sum256(sums))
+	manifest := fmt.Sprintf("schema=2\npurpose=admin-diagnostics\nos=linux\narchitecture=amd64\nrevision=%s\nchecksums_sha256=%x\ninventory_scope=measured shipped Debian closure; complete builder provenance retained\n", diagnosticsRevision, sha256.Sum256(sums))
 	if err := os.WriteFile(filepath.Join(bundle, "manifest"), []byte(manifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +123,38 @@ func TestDiagnosticsManifestRejectsWrongIdentityAndIncompleteClosure(t *testing.
 		}},
 		{"libntpc absent even after reseal", func(dir string) error {
 			err := os.Remove(filepath.Join(dir, "python/lib/python3/dist-packages/ntp/libntpc.so"))
+			sealDiagnosticsFixture(t, dir)
+			return err
+		}},
+		{"omitted file owner even after reseal", func(dir string) error {
+			path := filepath.Join(dir, "file-origins.tsv")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			var rows []string
+			for _, row := range strings.Split(string(data), "\n") {
+				if !strings.HasPrefix(row, "./libexec/sar\t") {
+					rows = append(rows, row)
+				}
+			}
+			err = os.WriteFile(path, []byte(strings.Join(rows, "\n")), 0o600)
+			sealDiagnosticsFixture(t, dir)
+			return err
+		}},
+		{"builder-only package declared runtime", func(dir string) error {
+			path := filepath.Join(dir, "debian-runtime.tsv")
+			file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				return err
+			}
+			_, err = file.WriteString("linux-libc-dev\t6.1.1-1\tamd64\tlinux\t6.1.1-1\n")
+			_ = file.Close()
+			sealDiagnosticsFixture(t, dir)
+			return err
+		}},
+		{"nested metadata name is still a payload", func(dir string) error {
+			err := os.WriteFile(filepath.Join(dir, "python/manifest"), []byte("unowned payload bytes"), 0o600)
 			sealDiagnosticsFixture(t, dir)
 			return err
 		}},
@@ -139,6 +197,123 @@ func TestDiagnosticsQualifierRequiresDockerWithoutAddingGateDependency(t *testin
 	}
 }
 
+func TestDiagnosticsLinkageRejectsHostFallbackAndMissingLibraries(t *testing.T) {
+	for _, tc := range []struct {
+		name, listing string
+		fail          bool
+	}{
+		{"private closure", "linux-vdso.so.1 (0x1234)\nlibc.so.6 => $TEST_BUNDLE/lib/libc.so.6 (0x2345)\n$TEST_BUNDLE/lib/loader (0x3456)\n", false},
+		{"host fallback", "libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x2345)\n", true},
+		{"unresolved library", "libmissing.so => not found\n", true},
+		{"host loader", "/lib64/ld-linux-x86-64.so.2 (0x3456)\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := t.TempDir()
+			if err := os.Mkdir(filepath.Join(bundle, "lib"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(bundle, "lib/loader"), []byte("#!/bin/sh\ncat <<EOF\n"+tc.listing+"EOF\n"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("TEST_BUNDLE", bundle)
+			validator := filepath.Join(repositoryRoot(t), "infra/runtime/admin-runner/diagnostics/verify-linkage.sh")
+			output, err := exec.Command("bash", validator, bundle, "fixture-ELF").CombinedOutput()
+			if (err != nil) != tc.fail {
+				t.Fatalf("private dependency check: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+func TestDiagnosticsOwnerLookupRejectsUnknownAndAmbiguousAndFollowsBytes(t *testing.T) {
+	temp := t.TempDir()
+	owned := filepath.Join(temp, "owned")
+	if err := os.WriteFile(owned, []byte("owned bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := filepath.EvalSymlinks(owned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(temp, "foreign-link")
+	if err := os.Symlink(owned, link); err != nil {
+		t.Fatal(err)
+	}
+	query := `#!/bin/bash
+set -euo pipefail
+case "$1" in
+  -S)
+    path=${@: -1}
+    [ "$path" = "$TEST_OWNED_FILE" ] || exit 1
+    case "$TEST_OWNER_MODE" in
+      missing) exit 1 ;;
+      ambiguous) printf 'runtime: %s\nother: %s\n' "$path" "$path" ;;
+      valid) printf 'runtime: %s\n' "$path" ;;
+    esac ;;
+  -W) printf 'ii \truntime\t1.0-1\tamd64\truntime-source\t1.0-1\n' ;;
+  *) exit 1 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(temp, "dpkg-query"), []byte(query), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", temp+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TEST_OWNED_FILE", canonical)
+	validator := filepath.Join(repositoryRoot(t), "infra/runtime/admin-runner/diagnostics/inventory.sh")
+	for _, mode := range []string{"valid", "missing", "ambiguous"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("TEST_OWNER_MODE", mode)
+			command := exec.Command("bash", "-c", `set -euo pipefail; bundle_root=$1; ownership_rows=$1/origins; source "$2"; diagnostics_debian_owner "$3"`, "owner-test", temp, validator, link)
+			output, err := command.CombinedOutput()
+			if mode == "valid" {
+				if err != nil || string(output) != "runtime\t1.0-1\tamd64\truntime-source\t1.0-1\n" {
+					t.Fatalf("target byte ownership was lost: %v\n%s", err, output)
+				}
+			} else if err == nil {
+				t.Fatalf("%s Debian ownership accepted", mode)
+			}
+		})
+	}
+}
+
+func TestDiagnosticsNTPWrapperUsesPrivateImmutablePythonConfiguration(t *testing.T) {
+	bundle := t.TempDir()
+	for _, directory := range []string{"bin", "lib"} {
+		if err := os.Mkdir(filepath.Join(bundle, directory), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source, err := os.ReadFile(filepath.Join(repositoryRoot(t), "infra/runtime/admin-runner/diagnostics/run-tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "run-tool"), source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../run-tool", filepath.Join(bundle, "bin/ntpq")); err != nil {
+		t.Fatal(err)
+	}
+	loader := "#!/bin/sh\nset -eu\n[ -z \"${LD_PRELOAD+x}${LD_LIBRARY_PATH+x}\" ]\nprintf '%s\\n' \"$@\" \"$PYTHONHOME\" \"$PYTHONPATH\"\n"
+	if err := os.WriteFile(filepath.Join(bundle, "lib/loader"), []byte(loader), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LD_LIBRARY_PATH", "/hostile")
+	t.Setenv("PYTHONHOME", "/hostile")
+	t.Setenv("PYTHONPATH", "/hostile")
+	output, err := exec.Command(filepath.Join(bundle, "bin/ntpq"), "-pn").CombinedOutput()
+	if err != nil {
+		t.Fatalf("private launcher: %v\n%s", err, output)
+	}
+	canonical, err := filepath.EvalSymlinks(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{"--library-path", canonical + "/lib", canonical + "/libexec/python3", "-B", "-P", "-S", canonical + "/libexec/ntpq", "-pn", canonical + "/python", canonical + "/python/lib/python3/dist-packages", ""}, "\n")
+	if string(output) != want {
+		t.Fatalf("unsafe Python configuration: %s", output)
+	}
+}
+
 func TestDiagnosticsQualifierBindIsReadableWithoutCapabilitiesAndCleaned(t *testing.T) {
 	for _, failure := range []bool{false, true} {
 		t.Run(fmt.Sprintf("failure=%t", failure), func(t *testing.T) {
@@ -160,6 +335,8 @@ case "$1" in
           [ "$(find "$staging" -maxdepth 0 -perm -0005 -print)" = "$staging" ]
           test -r "$staging/qualify.sh"
           test -r "$staging/verify-diagnostics.sh"
+          test -r "$staging/verify-linkage.sh"
+          test -r "$staging/qualify-ntpq.py"
           ;;
       esac
     done

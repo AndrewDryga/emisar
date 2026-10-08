@@ -42,7 +42,7 @@ func (a *App) qualifyAdminDiagnostics(ctx context.Context, revision, image strin
 	if err := a.run(ctx, a.Root, nil, "docker", "cp", container+":/bundle", filepath.Join(temp, "bundle")); err != nil {
 		return err
 	}
-	for _, path := range []string{"diagnostics/qualify.sh", "verify-diagnostics.sh"} {
+	for _, path := range []string{"diagnostics/qualify.sh", "diagnostics/verify-linkage.sh", "diagnostics/qualify-ntpq.py", "verify-diagnostics.sh"} {
 		data, err := os.ReadFile(filepath.Join(a.Infra, "runtime/admin-runner", path))
 		if err != nil {
 			return err
