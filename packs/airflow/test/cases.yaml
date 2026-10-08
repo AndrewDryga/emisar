@@ -7,9 +7,9 @@ versions:
   - version: "2.11.2-python3.11"
     digest: "@sha256:aac8468234dfa802c5ac4d6318bbf3b620793b55569ac230f584dc3c1f0ca49d"
     env: {AIRFLOW_API_VERSION: v1}
-# Each fresh stack takes over two minutes in CI. Five shards keep the two-worker
+# Each fresh stack takes over three minutes in CI. Six shards keep the two-worker
 # waves inside the execution budget while leaving time for cleanup and reports.
-shards: 5
+shards: 6
 # Each case starts scheduler, webserver, triggerer and metadata database.
 # Two concurrent stacks keep provider imports inside Airflow 2's startup bound.
 workers: 2
