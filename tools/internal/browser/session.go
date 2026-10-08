@@ -195,9 +195,13 @@ func (s *Session) Ready(timeout time.Duration, target string) error {
 }
 
 func (s *Session) readinessDiagnostic() string {
+	// Ready has exhausted its deadline; diagnostics get a fresh small budget
+	// without detaching from session cancellation.
+	ctx, cancel := context.WithTimeout(s.Context, 500*time.Millisecond)
+	defer cancel()
 	var diagnostic string
 	script := `(function(){const root=document.querySelector('[data-phx-main]');const pending=[...document.images].filter(img=>{const b=img.getBoundingClientRect();return b.width>0&&b.height>0&&!img.complete}).length;return 'url='+location.href+' readyState='+document.readyState+' liveRoot='+(!!root)+' connected='+(root?.classList.contains('phx-connected')||false)+' fonts='+(document.fonts?.status||'unknown')+' pendingImages='+pending})()`
-	if err := chromedp.Run(s.Context, chromedp.Evaluate(script, &diagnostic)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &diagnostic)); err != nil {
 		return "diagnostic unavailable: " + err.Error()
 	}
 	return diagnostic

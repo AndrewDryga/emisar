@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -165,6 +166,101 @@ func TestReadyAnchorsAndTwoScaleScreenshot(t *testing.T) {
 	}
 	if image.Bounds().Dx() < 120 || image.Bounds().Dy() < 50 {
 		t.Fatalf("2x crop dimensions = %v", image.Bounds())
+	}
+}
+
+func TestReadyFailureDiagnostics(t *testing.T) {
+	if _, err := ResolveChrome(); err != nil {
+		t.Skip(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	session, err := New(Config{InBox: testInBox()}).isolatedSessionWithOptions(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if err := chromedp.Run(session.Context, chromedp.Evaluate(`document.body.innerHTML='<main data-phx-main></main>'`, nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("responsive diagnostic survives readiness deadline", func(t *testing.T) {
+		err := session.Ready(100*time.Millisecond, "")
+		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "connected=false") {
+			t.Fatalf("readiness failure = %v", err)
+		}
+		if session.Context.Err() != nil {
+			t.Fatal("readiness failure canceled the session")
+		}
+	})
+
+	t.Run("stalled diagnostic is bounded", func(t *testing.T) {
+		entered := make(chan struct{}, 1)
+		listener, stopListener := context.WithCancel(session.Context)
+		defer stopListener()
+		chromedp.ListenTarget(listener, func(event any) {
+			if called, ok := event.(*cdpruntime.EventConsoleAPICalled); ok && len(called.Args) == 1 && string(called.Args[0].Value) == `"diagnostic-stalled"` {
+				select {
+				case entered <- struct{}{}:
+				default:
+				}
+			}
+		})
+		// Polling returns before reading images on a disconnected root; only the
+		// failure diagnostic enters this getter and receives no CDP reply.
+		if err := chromedp.Run(session.Context, chromedp.Evaluate(`Object.defineProperty(document,'images',{configurable:true,get(){console.log('diagnostic-stalled');for(;;){}}})`, nil)); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			cleanup, cancel := context.WithTimeout(session.Context, 2*time.Second)
+			defer cancel()
+			if err := chromedp.Run(cleanup, cdpruntime.TerminateExecution(), chromedp.Evaluate(`delete document.images`, nil)); err != nil {
+				t.Errorf("terminate stalled diagnostic: %v", err)
+			}
+		}()
+		// A longer outer bound makes the unbounded regression fail rather than
+		// hang the suite, without canceling the real session used for cleanup.
+		outer, stopOuter := context.WithTimeout(session.Context, 3*time.Second)
+		defer stopOuter()
+		failed := *session
+		failed.Context = outer
+		started := time.Now()
+		err := failed.Ready(100*time.Millisecond, "")
+		if elapsed := time.Since(started); elapsed > 2*time.Second {
+			t.Errorf("readiness diagnostic delayed original deadline: %v", elapsed)
+		}
+		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "diagnostic unavailable") {
+			t.Errorf("stalled diagnostic failure = %v", err)
+		}
+		select {
+		case <-entered:
+		default:
+			t.Error("fixture did not enter the stalled diagnostic")
+		}
+		if outer.Err() != nil || session.Context.Err() != nil {
+			t.Error("diagnostic used the outer session deadline")
+		}
+	})
+
+	t.Run("parent cancellation remains the original error", func(t *testing.T) {
+		parent, cancel := context.WithCancel(session.Context)
+		cancel()
+		failed := *session
+		failed.Context = parent
+		started := time.Now()
+		if err := failed.Ready(time.Second, ""); !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled readiness = %v", err)
+		}
+		if time.Since(started) > 500*time.Millisecond {
+			t.Fatal("diagnostic ignored parent cancellation")
+		}
+	})
+
+	if err := chromedp.Run(session.Context, chromedp.Evaluate(`document.querySelector('main').classList.add('phx-connected')`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Ready(time.Second, ""); err != nil {
+		t.Fatalf("session unusable after failure diagnostics: %v", err)
 	}
 }
 
