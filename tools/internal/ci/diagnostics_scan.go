@@ -140,9 +140,10 @@ func debianPURL(value, name, version, arch string) bool {
 		return false
 	}
 	gotName, gotVersion, ok := strings.Cut(strings.TrimPrefix(base, "pkg:deb/debian/"), "@")
+	decodedName, nameErr := url.PathUnescape(gotName)
 	decoded, err := url.PathUnescape(gotVersion)
 	qualifiers, queryErr := url.ParseQuery(query)
-	return ok && err == nil && queryErr == nil && gotName == name && decoded == version &&
+	return ok && nameErr == nil && err == nil && queryErr == nil && decodedName == name && decoded == version &&
 		len(qualifiers) == 2 && len(qualifiers["arch"]) == 1 && len(qualifiers["distro"]) == 1 &&
 		qualifiers.Get("arch") == arch && qualifiers.Get("distro") == "debian-12"
 }

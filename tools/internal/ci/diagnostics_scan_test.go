@@ -184,6 +184,20 @@ func TestDebianPURLDoesNotBroadenEpochOrIdentity(t *testing.T) {
 	}
 }
 
+func TestDebianPURLPreservesEncodedPackageNameIdentity(t *testing.T) {
+	// Trivy 0.74 escapes the C++ package name in PURL but not its BOMRef.
+	for _, name := range []string{"libstdc++6", "libstdc%2B%2B6", "libstdc%2b%2b6"} {
+		if !debianPURL("pkg:deb/debian/"+name+"@12.2.0-14%2Bdeb12u1?arch=amd64&distro=debian-12", "libstdc++6", "12.2.0-14+deb12u1", "amd64") {
+			t.Fatalf("equivalent package name encoding rejected: %s", name)
+		}
+	}
+	for _, name := range []string{"libstdc%252B%252B6", "libstdc%2B6", "libstdc%2F%2B6", "libstdc%ZZ6"} {
+		if debianPURL("pkg:deb/debian/"+name+"@12.2.0-14%2Bdeb12u1?arch=amd64&distro=debian-12", "libstdc++6", "12.2.0-14+deb12u1", "amd64") {
+			t.Fatalf("different or malformed package name accepted: %s", name)
+		}
+	}
+}
+
 func TestFindmntAssessmentRejectsUnreviewedBytes(t *testing.T) {
 	bundle := t.TempDir()
 	writeFixture(t, bundle, "libexec/findmnt", "unreviewed replacement")
