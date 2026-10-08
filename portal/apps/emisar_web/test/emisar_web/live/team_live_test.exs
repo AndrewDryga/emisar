@@ -1175,6 +1175,22 @@ defmodule EmisarWeb.TeamLiveTest do
   end
 
   describe "service accounts" do
+    test "connection guidance explains identity, connection and inherited access once", %{
+      conn: conn
+    } do
+      {conn, _owner, account} = register_and_log_in(conn)
+      Fixtures.Memberships.create_service_account(account_id: account.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/service-accounts")
+
+      assert has_element?(lv, "aside", "Connecting apps")
+      assert has_element?(lv, "aside", "Apps keep working when people leave")
+      assert has_element?(lv, "aside", "Choose it under Connect as")
+      assert has_element?(lv, "aside", "Create API key")
+      assert has_element?(lv, "aside", "New accounts inherit your runner and pack access.")
+      assert has_element?(lv, "aside", "Edit access")
+      refute has_element?(lv, "aside", "Service account basics")
+    end
+
     test "an owner adds one and sees the reach it starts with", %{conn: conn} do
       {conn, _owner, account} = register_and_log_in(conn)
       {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/service-accounts/new")

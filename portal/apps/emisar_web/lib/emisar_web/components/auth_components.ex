@@ -471,7 +471,8 @@ defmodule EmisarWeb.AuthComponents do
            the profile page (email change, disable, regenerate) — one block
            rhythm for the whole step instead of a wrapper with its own gap. --%>
       <p class="text-sm text-zinc-300">
-        Enter the 6-digit code sent to <span class="break-all font-medium text-zinc-100">{@email}</span>.
+        Enter the 6-digit code sent to
+        <span class="block break-all font-medium text-zinc-100">{@email}</span>
       </p>
       <.code_input
         id="mfa-enrollment-email-code"
@@ -491,7 +492,7 @@ defmodule EmisarWeb.AuthComponents do
   TOTP enrollment block — the white QR wrapper, the "Can't scan?" setup-key
   disclosure, and ONE `code_input` confirm form (`#mfa_form`, submits
   `confirm_mfa` as `mfa[otp]`). Shared by the profile page's voluntary
-  setup (`variant={:split}` — QR beside the guidance) and the enforced-MFA
+  setup (`variant={:split}` — QR beside the form) and the enforced-MFA
   interstitial (`:stacked` — centered in the narrow auth card). The page
   passes its own submit/cancel buttons via `:actions`.
 
@@ -516,6 +517,9 @@ defmodule EmisarWeb.AuthComponents do
 
   def mfa_enrollment(assigns) do
     ~H"""
+    <p :if={@instructions != []} class="mb-4 text-pretty text-sm leading-6 text-zinc-300">
+      {render_slot(@instructions)}
+    </p>
     <div class={mfa_enrollment_wrapper(@variant)}>
       <div class="flex shrink-0 flex-col items-center gap-2">
         <%!-- raw/1 is safe here: the SVG comes from MfaQr rendering OUR
@@ -523,14 +527,10 @@ defmodule EmisarWeb.AuthComponents do
         <div class="rounded-lg bg-white p-3 [&>svg]:block [&>svg]:h-60 [&>svg]:w-60">
           {Phoenix.HTML.raw(@qr_svg)}
         </div>
-        <p class="text-[11px] text-zinc-400">Scan with your authenticator</p>
+        <p :if={@instructions == []} class="text-xs text-zinc-400">Scan with your authenticator</p>
       </div>
 
       <div class={["min-w-0 space-y-4", @variant == :split && "flex-1 basis-80"]}>
-        <p :if={@instructions != []} class="text-sm text-zinc-300">
-          {render_slot(@instructions)}
-        </p>
-
         <.disclosure>
           <:summary>Can't scan? Enter a setup key</:summary>
           <div class="space-y-2">
@@ -560,17 +560,27 @@ defmodule EmisarWeb.AuthComponents do
   attr :step, :integer, required: true, values: [1, 2, 3]
 
   def mfa_setup_progress(assigns) do
-    assigns =
-      assign(
-        assigns,
-        :label,
-        Enum.at(["Verify email", "Add authenticator", "Save recovery codes"], assigns.step - 1)
-      )
+    assigns = assign(assigns, :steps, ["Verify identity", "Authenticator", "Recovery codes"])
 
     ~H"""
-    <p class="mb-4 text-xs text-zinc-400" role="status">
-      Step {@step} of 3 <span aria-hidden="true">·</span> <span class="text-zinc-200">{@label}</span>
+    <p class="sr-only" role="status">
+      Step {@step} of 3: {Enum.at(@steps, @step - 1)}
     </p>
+    <ol aria-label="Authenticator setup progress" class="mb-6 grid grid-cols-3 gap-3">
+      <li
+        :for={{label, number} <- Enum.with_index(@steps, 1)}
+        aria-current={number == @step && "step"}
+        class={[
+          "min-w-0 border-t-2 pt-3 text-xs leading-5",
+          number < @step && "border-brand-500 text-zinc-200",
+          number == @step && "border-zinc-200 font-medium text-zinc-100",
+          number > @step && "border-zinc-800 text-zinc-400"
+        ]}
+      >
+        <span :if={number < @step} class="sr-only">Completed:</span>
+        <span aria-hidden="true" class="mr-1 tabular-nums">{number}.</span>{label}
+      </li>
+    </ol>
     """
   end
 
@@ -578,6 +588,7 @@ defmodule EmisarWeb.AuthComponents do
   attr :saved, :boolean, required: true
   attr :event, :string, required: true
   attr :label, :string, default: "Done"
+  attr :button_class, :string, default: nil
 
   def recovery_code_acknowledgement(assigns) do
     ~H"""
@@ -588,7 +599,12 @@ defmodule EmisarWeb.AuthComponents do
         checked={@saved}
         label="I've saved my recovery codes somewhere safe"
       />
-      <.button phx-click={@event} disabled={not @saved} phx-disable-with="Continuing…">
+      <.button
+        class={@button_class}
+        phx-click={@event}
+        disabled={not @saved}
+        phx-disable-with="Continuing…"
+      >
         {@label}
       </.button>
     </div>

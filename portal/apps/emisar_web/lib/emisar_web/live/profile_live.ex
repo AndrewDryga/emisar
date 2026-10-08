@@ -1118,25 +1118,25 @@ defmodule EmisarWeb.ProfileLive do
               </.secret_reveal>
             <% @mfa_facts.enabled? -> %>
               <% remaining = @mfa_facts.recovery_codes_remaining %>
-              <div
-                id="mfa-status"
-                class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div class="min-w-0">
-                  <.chip tone={:brand}>Enabled</.chip>
-                  <div class="mt-2 space-y-1 text-sm">
-                    <p class="text-zinc-400">
+              <div id="mfa-status" class="max-w-2xl space-y-4">
+                <div class="space-y-2">
+                  <div class="flex flex-wrap items-center gap-3">
+                    <.chip tone={:brand}>Enabled</.chip>
+                    <p class="text-sm text-zinc-400">
                       <span class="tabular-nums">{remaining}</span>
                       recovery {if remaining == 1, do: "code", else: "codes"} remaining.
                     </p>
-                    <p :if={remaining <= 2} class="text-amber-300">
-                      Generate new codes before these run out.
-                    </p>
                   </div>
+                  <p :if={remaining <= 2} class="text-sm text-amber-300">
+                    Generate new codes before these run out.
+                  </p>
                 </div>
                 <div
                   :if={@mfa_recovery_regeneration_step == :idle and @mfa_disable_step == :idle}
-                  class="flex shrink-0 flex-wrap gap-2 sm:justify-end"
+                  id="mfa-management-actions"
+                  role="group"
+                  aria-label="Multi-factor authentication actions"
+                  class="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center"
                 >
                   <.button
                     id="regen-codes"
@@ -1152,6 +1152,7 @@ defmodule EmisarWeb.ProfileLive do
                     variant={:secondary}
                     tone={:rose}
                     size={:sm}
+                    type="button"
                     phx-click="start_disable_mfa"
                   >
                     Disable MFA

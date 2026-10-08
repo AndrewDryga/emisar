@@ -350,6 +350,11 @@ the commit button, where the operator can reach the action before reading what i
     slots that duplicate markup use the component's idless `aria_label` mode. A parent
     `title`, color, or visual convention is not a substitute; a decorative icon beside
     text that already says the same thing stays decorative.
+    **Text metadata tooltips add detail, never repeat the trigger.** A reporter count
+    stays in the row; its tooltip lists names, not the count again. A complete zero
+    says `Not reported by any runner` as plain text with no tooltip. Keep incomplete
+    and unavailable evidence distinct from zero. Omit generic observation disclaimers
+    that do not help the operator act.
 16. **Relationship eyebrows lead with the variable entity kind.** In an Actor-to-Target
     detail, position and the arrow already establish the fixed structural roles; `user`,
     `API key`, `runner`, or `policy` is the information that changes. Render

@@ -29,7 +29,7 @@ defmodule EmisarWeb.PacksLiveTest do
   end
 
   describe "pack availability and reporter metadata" do
-    test "shows complete denied contents, compact names and an accessible overflow tooltip", %{
+    test "shows complete denied contents, a count and an accessible names-only tooltip", %{
       conn: conn
     } do
       {conn, user, account} = register_and_log_in(conn)
@@ -58,10 +58,12 @@ defmodule EmisarWeb.PacksLiveTest do
       assert has_element?(
                lv,
                "##{version_reporters_id(version)}-tt[tabindex='0'][phx-hook='Tooltip']",
-               "from admin-a, admin-b and 2 others"
+               "Reported by 4 runners"
              )
 
       assert has_element?(lv, "##{version_reporters_id(version)}[role='tooltip']", "admin-d")
+      refute has_element?(lv, "##{version_reporters_id(version)}[role='tooltip']", "4 runners")
+      refute render(lv) =~ "Last reported is this version"
       refute render(lv) =~ "foreign-secret"
 
       render_click(lv, "inspect_pack", %{
@@ -91,6 +93,69 @@ defmodule EmisarWeb.PacksLiveTest do
       html = render_click(lv, "filter", %{"name" => "tfc.apply_run", "risk" => ""})
       assert html =~ "1 matching action"
       assert has_element?(lv, ~s(li[data-action-id="tfc.apply_run"]), "unavailable")
+    end
+
+    test "complete zero reports is plain text, without a tooltip", %{conn: conn} do
+      {conn, _user, account} = register_and_log_in(conn)
+      version = Fixtures.Catalog.create_trusted_pack_version(account_id: account.id)
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      assert has_element?(
+               lv,
+               "span##{version_reporters_id(version)}",
+               "Not reported by any runner"
+             )
+
+      refute has_element?(lv, "##{version_reporters_id(version)}-tt")
+      refute has_element?(lv, "##{version_reporters_id(version)}[role=tooltip]")
+    end
+
+    test "partial fleet absence stays unknown and a positive preview is a lower bound", %{
+      conn: conn
+    } do
+      {conn, _user, account} = register_and_log_in(conn)
+      version = Fixtures.Catalog.create_trusted_pack_version(account_id: account.id)
+
+      for n <- 1..101 do
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "fleet-#{n}",
+          connected?: false
+        )
+      end
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/packs")
+
+      assert has_element?(lv, "span##{version_reporters_id(version)}", "Runner reports unknown")
+      refute render(lv) =~ "Not reported by any runner"
+      refute has_element?(lv, "##{version_reporters_id(version)}-tt")
+
+      runner =
+        Fixtures.Runners.create_runner(
+          account_id: account.id,
+          name: "aaa-reporter",
+          connected?: false
+        )
+
+      Fixtures.Runners.advertise_packs(runner, %{
+        version.pack_id => %{"version" => version.version, "hash" => version.hash}
+      })
+
+      send(lv.pid, :refresh_packs)
+
+      assert has_element?(
+               lv,
+               "##{version_reporters_id(version)}-tt",
+               "Reported by at least 1 runner"
+             )
+
+      assert has_element?(lv, "##{version_reporters_id(version)}[role=tooltip]", "aaa-reporter")
+
+      assert has_element?(
+               lv,
+               "##{version_reporters_id(version)}[role=tooltip]",
+               "Fleet preview is incomplete."
+             )
     end
 
     test "catalog and fleet refresh update open contents without losing filter state", %{

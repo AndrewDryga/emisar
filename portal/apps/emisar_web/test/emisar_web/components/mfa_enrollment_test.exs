@@ -69,13 +69,30 @@ defmodule EmisarWeb.Components.MfaEnrollmentTest do
         |> Map.merge(%{variant: :split, instructions: "Scan, then confirm."})
         |> render_enrollment()
 
-      assert html =~ "Scan, then confirm."
+      {instruction, _} = :binary.match(html, "Scan, then confirm.")
+      {qr, _} = :binary.match(html, "<svg")
+      {code, _} = :binary.match(html, ~s(id="mfa-otp"))
+      assert instruction < qr
+      assert qr < code
+      refute html =~ "Scan with your authenticator"
     end
 
     test "no instructions slot → no empty guidance paragraph" do
       html = render_enrollment(base_assigns())
 
       refute html =~ ~s(class="text-sm text-zinc-300")
+    end
+  end
+
+  test "setup progress names identity proof without assuming email and marks the current step" do
+    for step <- 1..3 do
+      html = render_component(&AuthComponents.mfa_setup_progress/1, step: step)
+      assert html =~ "Verify identity"
+      refute html =~ "Verify email"
+      assert html =~ "Step #{step} of 3"
+
+      assert Enum.count(LazyHTML.query(LazyHTML.from_fragment(html), "li[aria-current=step]")) ==
+               1
     end
   end
 

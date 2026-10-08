@@ -96,14 +96,17 @@ defmodule EmisarWeb.MfaSetupLive do
 
   def render(assigns) do
     ~H"""
-    <.auth_layout title="Multi-factor authentication">
-      <p class="mb-6 text-sm text-zinc-400">
-        <span class="font-semibold text-zinc-200">{@current_account.name}</span>
-        <%= case @mfa_mode do %>
-          <% :enrollment -> %>
-            uses multi-factor authentication. Set up an authenticator app to continue.
-          <% :challenge -> %>
-            requires MFA. Enter an authenticator or recovery code to continue.
+    <.auth_layout title={
+      if @mfa_mode == :enrollment, do: "Set up your authenticator", else: "Verify your sign-in"
+    }>
+      <p class="mb-6 text-pretty text-sm leading-6 text-zinc-400">
+        <%= if @mfa_mode == :enrollment do %>
+          Secure your access to <span class="font-medium text-zinc-200">{@current_account.name}</span>
+          with an authenticator app.
+        <% else %>
+          <span class="font-medium text-zinc-200">{@current_account.name}</span>
+          requires multi-factor authentication.
+          Enter an authenticator or recovery code to continue.
         <% end %>
       </p>
 
@@ -167,6 +170,7 @@ defmodule EmisarWeb.MfaSetupLive do
                   saved={@codes_saved?}
                   event="continue"
                   label="Continue"
+                  button_class="w-full"
                 />
               </:actions>
             </.secret_reveal>
@@ -179,7 +183,7 @@ defmodule EmisarWeb.MfaSetupLive do
             error={@mfa_enrollment_email_error}
           >
             <:actions>
-              <.button phx-disable-with="Verifying...">Verify email</.button>
+              <.button class="flex-1" phx-disable-with="Verifying...">Verify email</.button>
               <%!-- Resending sends a real email, so it wears a bordered face (§7.47) —
                    the same grammar as the profile copy of this step. --%>
               <.button
@@ -204,29 +208,31 @@ defmodule EmisarWeb.MfaSetupLive do
               Scan this QR code with your authenticator app, then enter its 6-digit code.
             </:instructions>
             <:actions>
-              <.button phx-disable-with="Enabling...">Enable MFA</.button>
+              <.button class="w-full" phx-disable-with="Enabling...">Enable MFA</.button>
             </:actions>
           </.mfa_enrollment>
         <% is_nil(@mfa_facts) -> %>
-          <p role="status" class="text-sm text-zinc-400">Loading…</p>
+          <.loading_state />
         <% @mfa_facts.enrollment_proof == :email -> %>
+          <.mfa_setup_progress step={1} />
           <div class="space-y-4">
-            <p class="text-sm text-zinc-300">
-              First verify your email, then connect your authenticator app.
+            <p class="text-pretty text-sm leading-6 text-zinc-300">
+              First, confirm it's you with a code sent to
+              <span class="block break-all font-medium text-zinc-100">{@current_membership.email}</span>
             </p>
             <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
-            <.button phx-click="start_mfa" phx-disable-with="Sending...">
+            <.button class="w-full" phx-click="start_mfa" phx-disable-with="Sending...">
               Email me a verification code
             </.button>
           </div>
         <% @mfa_facts.enrollment_proof == :sso -> %>
+          <.mfa_setup_progress step={1} />
           <div class="space-y-4">
             <p class="text-sm text-zinc-300">
-              First sign in again with {sso_provider_name(@current_auth)} to confirm it's you,
-              then connect your authenticator app.
+              Sign in again with {sso_provider_name(@current_auth)} to confirm it's you.
             </p>
             <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
-            <.button href={~p"/app/#{@current_account}/mfa_setup/sso"} method="post">
+            <.button class="w-full" href={~p"/app/#{@current_account}/mfa_setup/sso"} method="post">
               Verify with {sso_provider_name(@current_auth)}
             </.button>
           </div>
@@ -243,9 +249,11 @@ defmodule EmisarWeb.MfaSetupLive do
             contact support@emisar.dev.
           </.empty_state>
       <% end %>
-      <.auth_footer_link href={~p"/sign_out"} method="delete">
-        Sign out
-      </.auth_footer_link>
+      <div class="mt-6">
+        <.button variant={:secondary} class="w-full" href={~p"/sign_out"} method="delete">
+          Sign out
+        </.button>
+      </div>
     </.auth_layout>
     """
   end

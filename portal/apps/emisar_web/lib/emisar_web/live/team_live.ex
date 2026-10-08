@@ -3172,21 +3172,18 @@ defmodule EmisarWeb.TeamLive do
              empty page stays full width, where its empty state teaches. --%>
         <.docs_rail
           :if={@live_action == :service_accounts and @member_facts != []}
-          title="Service account basics"
+          title="Connecting apps"
         >
           <p>
-            An app connected as a service account keeps working when people leave, and the
-            audit log attributes its requests to the service account.
+            Apps keep working when people leave, with requests attributed to this identity in the audit log.
           </p>
           <p :if={@can_manage_team?}>
-            To connect an app as a service account, choose the service account under Connect as when the app asks you to
-            authorize it. Or use Create API key in the service account's row. <.doc_link href={
+            Choose it under Connect as when authorizing an app, or use Create API key in its row. <.doc_link href={
               ~p"/docs/agents-and-keys" <> "#minting"
-            }>How to create its key</.doc_link>.
+            }>Key setup</.doc_link>.
           </p>
           <p :if={@can_manage_team?}>
-            A service account starts with the runner and pack access of the person who adds it. To narrow that access,
-            use Edit access in its row.
+            New accounts inherit your runner and pack access. Use Edit access to narrow it.
           </p>
           <p :if={not @can_manage_team?}>Only owners and admins add or change service accounts.</p>
         </.docs_rail>

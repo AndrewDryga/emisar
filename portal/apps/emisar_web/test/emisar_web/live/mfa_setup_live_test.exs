@@ -130,7 +130,13 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     {:ok, lv, html} = live(conn, setup_path(account))
 
     assert html =~ account.name
-    assert html =~ "Set up an authenticator app to continue."
+    assert html =~ "Set up your authenticator"
+
+    assert has_element?(
+             lv,
+             "ol[aria-label='Authenticator setup progress'] li[aria-current=step]",
+             "Verify identity"
+           )
 
     html = begin_mfa_enrollment(lv)
 
@@ -141,6 +147,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     html = submit_concurrent_mfa_enrollment(lv, secret)
 
     assert html =~ "Save your recovery codes"
+    assert has_element?(lv, "ol li[aria-current=step]", "Recovery codes")
     # The codes are downloadable as a file, not just copyable.
     assert html =~ "Download .txt"
 
@@ -161,7 +168,7 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     assert sibling_session.mfa_enrollment_verified_at == nil
 
     # Continue is gated until the operator acknowledges saving the codes.
-    assert has_element?(lv, "button[disabled]", "Continue")
+    assert has_element?(lv, "button.w-full[disabled]", "Continue")
     refute has_element?(lv, "input[type=checkbox][checked]")
 
     # A crafted socket event cannot bypass the disabled button.
@@ -187,6 +194,8 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     {:ok, lv, _html} = live(conn, setup_path(account))
 
     assert has_element?(lv, "a[href='/sign_out'][data-method=delete]", "Sign out")
+    assert has_element?(lv, "a[href='/sign_out'].w-full", "Sign out")
+    refute has_element?(lv, "form a[href='/sign_out']")
 
     signed_out = delete(conn, ~p"/sign_out")
 
@@ -215,7 +224,22 @@ defmodule EmisarWeb.MfaSetupLiveTest do
     render_submit(lv, "verify_mfa_enrollment_email", %{"mfa_enrollment" => %{"code" => code}})
 
     assert has_element?(lv, "#mfa_form")
+    assert has_element?(lv, "ol li[aria-current=step]", "Authenticator")
     refute has_element?(lv, "#mfa_enrollment_email_form")
+  end
+
+  test "email verification keeps the progress and exit outside its form", %{
+    conn: conn,
+    account: account
+  } do
+    {:ok, lv, _html} = live(conn, setup_path(account))
+    render_click(lv, "start_mfa", %{})
+    assert_received {:email, _email}
+
+    assert has_element?(lv, "ol li[aria-current=step]", "Verify identity")
+    assert has_element?(lv, "#mfa_enrollment_email_form button", "Verify email")
+    assert has_element?(lv, "#mfa_enrollment_email_form button[type=button]", "Resend code")
+    refute has_element?(lv, "#mfa_enrollment_email_form a[href='/sign_out']")
   end
 
   test "a wrong code is rejected inline at the form, not as a flash", %{
@@ -593,6 +617,34 @@ defmodule EmisarWeb.MfaSetupLiveTest do
       refute render(lv) =~ "mfa-setup-key"
       assert is_nil(Repo.reload!(member).mfa_enabled_at)
       refute_received {:email, _}
+    end
+
+    test "voluntary setup after an IdP callback does not claim a workspace MFA requirement", %{
+      sso_conn: conn,
+      identity: identity,
+      account: account
+    } do
+      Fixtures.Accounts.set_account_settings(account, %{require_mfa: false})
+      Emisar.Config.put_override(:emisar, :sso_oidc_impl, StubOIDC)
+
+      completed =
+        conn
+        |> post(~p"/app/#{account}/mfa_setup/sso")
+        |> recycle()
+        |> get(~p"/sign_in/sso/callback", %{
+          "_claims" => %{
+            "sub" => identity.provider_identifier,
+            "auth_time" => System.system_time(:second)
+          }
+        })
+
+      assert redirected_to(completed) == setup_path(account)
+      {:ok, lv, html} = live(recycle(completed), setup_path(account))
+      assert html =~ "Set up your authenticator"
+      assert html =~ "Secure your access to"
+      refute html =~ "requires multi-factor authentication"
+      assert has_element?(lv, "#mfa_form")
+      assert has_element?(lv, ~s(li[aria-current="step"]), "Authenticator")
     end
 
     test "enrolls after a fresh sign-in at its IdP", %{

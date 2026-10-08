@@ -862,10 +862,16 @@ defmodule EmisarWeb.PacksLive do
   attr :reporting, :map, required: true
 
   defp reporting_runners(assigns) do
-    assigns = assigns |> assign(:names, Enum.map(assigns.reporting.runners, & &1.name))
-
     ~H"""
+    <span
+      :if={@reporting.runners == []}
+      id={"#{@id}-reporters"}
+      class="text-[11px] text-zinc-400"
+    >
+      {reporter_count(@reporting)}
+    </span>
     <.tooltip
+      :if={@reporting.runners != []}
       id={"#{@id}-reporters"}
       text={reporter_tip(@reporting)}
       align={:left}
@@ -873,54 +879,38 @@ defmodule EmisarWeb.PacksLive do
     >
       <:content>
         <div class="max-h-64 overflow-y-auto text-[11px]">
-          <p>{reporter_count(@reporting)}</p>
-          <ul :if={@names != []} class="mt-1 space-y-1">
-            <li :for={name <- @names} class="text-zinc-200">{name}</li>
+          <ul class="space-y-1">
+            <li :for={runner <- @reporting.runners} class="text-zinc-200">{runner.name}</li>
           </ul>
           <p :if={@reporting.coverage == :partial} class="mt-2 text-zinc-400">
-            Partial fleet preview; the count is a lower bound.
+            Fleet preview is incomplete.
           </p>
           <p :if={@reporting.other_hash_runners != []} class="mt-2 text-zinc-400">
-            Different hash: {Enum.map_join(@reporting.other_hash_runners, ", ", & &1.name)}.
-            These runners do not report the displayed contents.
-          </p>
-          <p class="mt-2 text-zinc-400">
-            Last reported is this version's latest observation, not a simultaneous report from every runner.
+            Different contents: {Enum.map_join(@reporting.other_hash_runners, ", ", & &1.name)}.
           </p>
         </div>
       </:content>
-      <span class="hidden break-words sm:inline">{reporter_summary(@reporting)}</span>
-      <span class="sm:hidden">{reporter_count(@reporting)}</span>
+      {reporter_count(@reporting)}
     </.tooltip>
     """
   end
 
-  defp reporter_count(%{coverage: :unavailable}), do: "reporters unavailable"
-  defp reporter_count(%{coverage: :partial, runners: []}), do: "reporters unknown"
+  defp reporter_count(%{coverage: :unavailable}), do: "Runner reports unavailable"
+  defp reporter_count(%{coverage: :partial, runners: []}), do: "Runner reports unknown"
 
   defp reporter_count(%{coverage: :partial, runners: runners}),
-    do: "at least #{length(runners)} #{runner_noun(length(runners))}"
+    do: "Reported by at least #{length(runners)} #{runner_noun(length(runners))}"
 
-  defp reporter_count(%{runners: []}), do: "no reporters"
+  defp reporter_count(%{runners: []}), do: "Not reported by any runner"
 
   defp reporter_count(%{runners: runners}),
-    do: "#{length(runners)} #{runner_noun(length(runners))}"
+    do: "Reported by #{length(runners)} #{runner_noun(length(runners))}"
 
   defp runner_noun(1), do: "runner"
   defp runner_noun(_), do: "runners"
 
-  defp reporter_summary(%{runners: []} = reporting), do: reporter_count(reporting)
-
-  defp reporter_summary(reporting) do
-    names = Enum.map(reporting.runners, & &1.name)
-    first = names |> Enum.take(2) |> Enum.join(", ")
-    overflow = if length(names) > 2, do: " and #{length(names) - 2} others", else: ""
-    preview = if reporting.coverage == :partial, do: " (partial preview)", else: ""
-    "from #{first}#{overflow}#{preview}"
-  end
-
   defp reporter_tip(reporting),
-    do: reporter_count(reporting) <> ": " <> Enum.map_join(reporting.runners, ", ", & &1.name)
+    do: Enum.map_join(reporting.runners, ", ", & &1.name)
 
   defp matched?(nil, _action_id), do: false
   defp matched?(matched, action_id), do: MapSet.member?(matched, action_id)

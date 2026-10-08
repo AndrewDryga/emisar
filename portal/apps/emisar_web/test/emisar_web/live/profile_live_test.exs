@@ -1010,6 +1010,44 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute html =~ "api.qrserver.com"
     end
 
+    test "enabled MFA groups its status and actions, then shows only the chosen verification form",
+         %{
+           conn: conn,
+           owner: owner,
+           account: account
+         } do
+      Fixtures.Memberships.enable_mfa!(
+        Auth.generate_mfa_secret(),
+        Fixtures.Subjects.subject_for(owner)
+      )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+      assert has_element?(lv, "#mfa-status", "10 recovery codes remaining")
+
+      assert has_element?(
+               lv,
+               ~s(#mfa-management-actions[role="group"]),
+               "Generate new recovery codes"
+             )
+
+      assert has_element?(lv, ~s(#mfa-management-actions #regen-codes[type="button"]))
+      assert has_element?(lv, ~s(#mfa-management-actions #disable-mfa[type="button"]))
+
+      lv |> element("#regen-codes") |> render_click()
+      assert has_element?(lv, "#mfa_recovery_regeneration_form")
+      refute has_element?(lv, "#mfa-management-actions")
+      refute has_element?(lv, "#mfa_disable_form")
+      render_click(lv, "cancel_regenerate_recovery_codes", %{})
+
+      lv |> element("#disable-mfa") |> render_click()
+      assert has_element?(lv, "#mfa_disable_form")
+      refute has_element?(lv, "#mfa-management-actions")
+      refute has_element?(lv, "#mfa_recovery_regeneration_form")
+      render_click(lv, "cancel_disable_mfa", %{})
+      assert has_element?(lv, "#mfa-management-actions")
+    end
+
     test "a low recovery-code count nudges to regenerate (amber)", %{
       conn: conn,
       owner: owner,
