@@ -1,5 +1,5 @@
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
-ARG PACKTEST_VERSION=13-slim
+ARG PACKTEST_VERSION=trixie-20260918-slim
 ARG PACKTEST_DIGEST
 
 # A real systemd-owned Fail2ban daemon. The emisar user shares the harness

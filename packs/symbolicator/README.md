@@ -12,7 +12,7 @@ Sentry's native symbolication service, and keeping the host it runs on healthy.
 | `symbolicator.version`                | none        | low  |
 | `symbolicator.request_status`         | none        | low  |
 | `symbolicator.cache_usage`            | none        | low  |
-| `symbolicator.cleanup_preview`        | none        | low  |
+| `symbolicator.cleanup_preview`        | cache_metadata | medium |
 | `symbolicator.cleanup`                | cache_state | medium |
 | `symbolicator.config_show`            | none        | high |
 
@@ -49,10 +49,19 @@ cache is the answer far more often than the total is.
 
 `cleanup` is Symbolicator's own routine maintenance: it removes entries past
 the retention windows in the configuration, not everything. Preview it first —
-`cleanup_preview` runs the same pass with `--dry-run` and reports retained and
-removed bytes per cache, so the decision is made on numbers. What a cleanup
+`cleanup_preview` runs the same pass with `--dry-run` and leaves expired cache
+entries in place. The vendor can still create missing cache directories or
+remove invalid or unreadable metadata sidecars, so this is not a strictly read-only pass.
+CLI progress is on stderr. Older releases also report retained and removed
+bytes per cache; 26.9 reports progress instead. Use `cache_usage` for sizes.
+What a cleanup
 removes gets re-downloaded from the symbol sources the next time it is needed,
 so the cost is bandwidth and slower symbolication, not lost data.
+
+Versions before 0.2.6 are retired because the preview was mislabeled as low
+risk. Its bounded metadata changes require medium, so a low-only runner or
+policy must not admit it. The shipped account policy allows both tiers;
+stricter policies can gate them differently.
 
 ## Why config_show is high risk
 

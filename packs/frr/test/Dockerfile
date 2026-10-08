@@ -6,7 +6,7 @@
 # Debian's frr package, not frrouting/frr: the official image is amd64-only,
 # which the snmp pack's routing SUT already established (packs/snmp/test/snmpd-frr).
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
-ARG PACKTEST_VERSION=13-slim
+ARG PACKTEST_VERSION=trixie-20260918-slim
 ARG PACKTEST_DIGEST
 
 # The product under test: zebra + bgpd + bfdd, with a BGP neighbor configured

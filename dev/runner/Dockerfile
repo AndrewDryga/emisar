@@ -5,9 +5,9 @@
 # runner/ and packs/.
 #
 # Base images are digest-pinned for reproducible builds. Refresh with:
-#   docker buildx imagetools inspect golang:1.26-alpine --format '{{.Manifest.Digest}}'
+#   docker buildx imagetools inspect golang:1.27.1-alpine3.24 --format '{{.Manifest.Digest}}'
 
-FROM golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS builder
+FROM golang:1.27.1-alpine3.24@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS builder
 
 WORKDIR /src
 
@@ -28,6 +28,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 FROM debian:bookworm-20260918-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
 
 RUN apt-get update -y \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
         bash bind9-dnsutils ca-certificates chrony coreutils curl grep \
         mtr-tiny postgresql-client procps redis-tools tini \

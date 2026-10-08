@@ -3,7 +3,7 @@
 # each compose file, so the packs stay independent rows while the Dockerfile
 # cannot drift ten ways.
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
-ARG PACKTEST_VERSION=577.0.0-slim
+ARG PACKTEST_VERSION=587.0.0-slim
 ARG PACKTEST_DIGEST
 FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS gcloud
 

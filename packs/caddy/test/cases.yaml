@@ -1,7 +1,7 @@
 services: [caddy]
 versions:
   - version: "2.11.4"
-    digest: "@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9"
+    digest: "@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52"
     default: true
   - version: "2.10.2"
     digest: "@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb"

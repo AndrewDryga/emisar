@@ -5,13 +5,13 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-rancher/k3s:${PACKTEST_VERSION:-v1.36.4-k3s1}${PACKTEST_DIGEST-}}
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-rancher/k3s:${PACKTEST_VERSION:-v1.37.1-k3s1}${PACKTEST_DIGEST-}}
     image: emisar-packtest-kubernetes-tools:latest
     volumes:
       - k3s_kubeconfig:/shared:ro
 
   k3s:
-    image: ${PACKTEST_IMAGE:-rancher/k3s:${PACKTEST_VERSION:-v1.36.4-k3s1}${PACKTEST_DIGEST-}}
+    image: ${PACKTEST_IMAGE:-rancher/k3s:${PACKTEST_VERSION:-v1.37.1-k3s1}${PACKTEST_DIGEST-}}
     command: server --node-name=harness --tls-san=k3s --disable=traefik
     privileged: true
     environment:
@@ -30,7 +30,7 @@ services:
       retries: 30
 
   k3s-kubeconfig:
-    image: busybox:1.38.0@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d
+    image: busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
     depends_on: [k3s]
     volumes:
       - k3s_kubeconfig:/shared

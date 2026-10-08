@@ -9,8 +9,8 @@ services: [docker-cli, docker-dind]
 env:
   DOCKER_HOST: tcp://docker-dind:2375
 versions:
-  - version: "29.8.0-cli"
-    digest: "@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66"
+  - version: "29.8.1-cli"
+    digest: "@sha256:018edbc908e08fcc9dbf029c812c34251e9b4719e6f71ca0e5eae2a987d014ca"
     default: true
 cases:
   # docker.compose_config is the one action in this pack that needs no daemon —
@@ -114,21 +114,21 @@ cases:
   - action: docker.inspect
     args: {container: packtest-probe}
     arrange:
-      - argv: [docker, run, -d, --name, packtest-probe, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", sleep, "600"]
+      - argv: [docker, run, -d, --name, packtest-probe, "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6", sleep, "600"]
     expect:
       stdout_contains: ["packtest-probe", "Running"]
 
   - action: docker.image_inspect
-    args: {image: "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"}
+    args: {image: "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"}
     arrange:
-      - argv: [docker, pull, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"]
+      - argv: [docker, pull, "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"]
     expect:
       stdout_contains: ["Architecture", "RootFS"]
 
   - action: docker.image_history
-    args: {image: "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"}
+    args: {image: "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"}
     arrange:
-      - argv: [docker, pull, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce"]
+      - argv: [docker, pull, "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"]
     expect:
       stdout_contains: ["CREATED", "SIZE"]
 
@@ -138,7 +138,7 @@ cases:
   - action: docker.restart
     args: {container: packtest-probe, timeout: 2}
     arrange:
-      - argv: [docker, run, -d, --name, packtest-probe, --entrypoint, /bin/sh, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", -c, "echo started >> /tmp/starts; sleep 600"]
+      - argv: [docker, run, -d, --name, packtest-probe, --entrypoint, /bin/sh, "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6", -c, "echo started >> /tmp/starts; sleep 600"]
     probes:
       - name: the entrypoint ran a second time
         argv: [docker, exec, packtest-probe, wc, -l, /tmp/starts]
@@ -148,7 +148,7 @@ cases:
   - action: docker.kill
     args: {container: packtest-probe, signal: KILL}
     arrange:
-      - argv: [docker, run, -d, --name, packtest-probe, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", sleep, "600"]
+      - argv: [docker, run, -d, --name, packtest-probe, "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6", sleep, "600"]
     probes:
       - name: the container was killed, not stopped
         argv: [/bin/sh, -c, "docker inspect -f '{{.State.Status}}/{{.State.ExitCode}}' packtest-probe"]
@@ -158,7 +158,7 @@ cases:
   - action: docker.stop
     args: {container: packtest-probe, timeout: 2}
     arrange:
-      - argv: [docker, run, -d, --name, packtest-probe, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", sleep, "600"]
+      - argv: [docker, run, -d, --name, packtest-probe, "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6", sleep, "600"]
     probes:
       - name: the container left the running state
         argv: [/bin/sh, -c, "docker inspect -f '{{.State.Status}}' packtest-probe"]
@@ -169,8 +169,8 @@ cases:
   # not, so the case keeps one of each and the probe checks both outcomes.
   - action: docker.system_prune
     arrange:
-      - argv: [docker, run, -d, --name, packtest-keep, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", sleep, "600"]
-      - argv: [docker, run, --name, packtest-spent, "alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce", "true"]
+      - argv: [docker, run, -d, --name, packtest-keep, "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6", sleep, "600"]
+      - argv: [docker, run, --name, packtest-spent, "alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6", "true"]
     probes:
       - name: the spent container is gone and the running one is not
         argv: [/bin/sh, -c, "docker ps -a --format '{{.Names}}'"]

@@ -3,7 +3,7 @@
 # So there is no separate SUT: the version matrix pins the Debian release whose
 # apt and dpkg are under test, and the client image is built from it.
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
-ARG PACKTEST_VERSION=13-slim
+ARG PACKTEST_VERSION=trixie-20260918-slim
 ARG PACKTEST_DIGEST
 
 # Present only so the matrix's pinned release is what supplies apt: the shared

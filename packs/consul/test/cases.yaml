@@ -1,7 +1,7 @@
 services: [consul]
 versions:
-  - version: "2.0.3"
-    digest: "@sha256:56a8d0fdbfcb35836c4ce2fc8a5d34eac48594ef067bbe4af7d5ceb9fb08c28d"
+  - version: "2.0.4"
+    digest: "@sha256:1c59f007df8ea1c21b2558dc73ef8d99047bc895d9e52e635d1e745e35fe9a54"
     default: true
 env:
   CONSUL_HTTP_ADDR: "http://consul:8500"

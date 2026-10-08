@@ -999,7 +999,9 @@ the commit button, where the operator can reach the action before reading what i
     tile, then apply only a proportional optical correction for the visible glyph; centering the
     font's full ascent/descent line box or nudging every size by a fixed pixel offset is not enough.
     Sweep: circular selected-workspace checks beside square account avatars, and initial-only tiles
-    centered by their line box instead of their visible capital.
+    centered by their line box instead of their visible capital. Workspace chooser labels show
+    the authored slug, not the internal `app/` route prefix; actual URLs retain their full path.
+    Keep a signed-in email when it disambiguates the identity.
 84. **A responsive rail may hide help, never an active setting.** Interactive controls and read-only
     current settings remain in document flow at every width. Below the two-column split, stack them
     after the primary table or list and hide only optional explanatory content. Sweep: a

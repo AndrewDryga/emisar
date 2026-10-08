@@ -3,7 +3,7 @@
 # runner joins that container's PID namespace and /run to talk to it. Sharing
 # the base is what keeps systemctl and systemd from drifting a version apart.
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
-ARG PACKTEST_VERSION=13-slim
+ARG PACKTEST_VERSION=trixie-20260918-slim
 ARG PACKTEST_DIGEST
 
 # The product under test. cron is here because the cases need a real unit to

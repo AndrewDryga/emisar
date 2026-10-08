@@ -17,7 +17,7 @@ services:
   # exit, and `services:` waits for HEALTHY, not for completion. The healthcheck
   # is the generated bundle existing, so no case can read a half-written file.
   ssl-material:
-    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    image: debian:${PACKTEST_VERSION:-trixie-20260918-slim}${PACKTEST_DIGEST-}
     volumes:
       - ssl-material:/out
     command:

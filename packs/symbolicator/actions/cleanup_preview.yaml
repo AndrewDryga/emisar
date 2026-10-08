@@ -2,16 +2,17 @@ schema_version: 1
 id: symbolicator.cleanup_preview
 title: symbolicator cleanup --dry-run
 kind: exec
-risk: low
+risk: medium
 description: >
-  Show what a cache cleanup would remove and what it would keep, per cache,
-  without deleting anything. Symbolicator prints retained and removed byte
-  counts for each cache, so this is the read that decides whether
-  symbolicator.cleanup is worth running.
+  Preview Symbolicator's cache cleanup with its own dry-run mode. Expired
+  cache entries remain in place, but the CLI can create missing cache
+  directories and remove invalid or unreadable metadata sidecars. Progress is on stderr;
+  older releases also report retained and removed bytes per cache. Use
+  symbolicator.cache_usage for current cache sizes.
 side_effects:
   - Walks the caches to evaluate their retention, which is disk-read heavy on a large cache.
-  - Deletes nothing.
-  - Read-only.
+  - Leaves expired cache entries in place.
+  - Can create missing cache directories and remove invalid or unreadable metadata sidecars during the vendor's cache inspection.
 args: []
 execution:
   command:
@@ -31,5 +32,5 @@ output:
   max_stdout_bytes: 262144
   max_stderr_bytes: 262144
 examples:
-  - title: What would a cleanup reclaim?
+  - title: Preview the vendor's cache cleanup
     args: {}

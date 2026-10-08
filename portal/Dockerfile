@@ -35,8 +35,8 @@ RUN apt-get update -y \
 
 WORKDIR /app
 ARG HEX_VERSION=2.5.1
-ARG REBAR3_VERSION=3.27.0
-ARG REBAR3_SHA512=0d00494d849fdc521a55142278d1f6ba552954fbd65b80d40df8022f594f05d6c99ed1d731bc263691a04176e11d4c6e126c56ba20dca19c5e42d4ffab2e7e36
+ARG REBAR3_VERSION=3.27.1
+ARG REBAR3_SHA512=cd9a88e42a1d804b9b01581ea24aacf4563f2746a2bf4900215331c36400fc8f1f19a8272632e83a2da3206e42f1f46425966d4dee51bf16f19538a0b5e0632a
 RUN mix local.hex "${HEX_VERSION}" --force \
   && curl -fsSL "https://github.com/erlang/rebar3/releases/download/${REBAR3_VERSION}/rebar3" -o /tmp/rebar3 \
   && printf '%s  %s\n' "$REBAR3_SHA512" /tmp/rebar3 | sha512sum --check -- \

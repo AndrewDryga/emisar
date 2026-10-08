@@ -254,8 +254,8 @@ keep the read-only defaults exposed by the runtime:
 
 ```elixir
 Mix.install([
-  {:postgrex, "~> 0.22.0"},
-  {:kino, "~> 0.19.0"},
+  {:postgrex, "~> 0.22.4"},
+  {:kino, "~> 0.19.1"},
   {:kino_vega_lite, "~> 0.1.13"}
 ])
 

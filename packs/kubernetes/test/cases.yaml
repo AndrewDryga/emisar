@@ -1,10 +1,12 @@
 services: [k3s, k3s-kubeconfig]
 versions:
-  - version: v1.36.4-k3s1
-    digest: "@sha256:edad48e12bf81c3a09ac1c05c0c0ffaaa22145980b989d6fae84543a76b83657"
+  - version: "v1.37.1-k3s1"
+    digest: "@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d"
     default: true
-  - version: v1.34.11-k3s1
-    digest: "@sha256:5d52389a0f4fd7ebdb5a1fb2d7c67c35da966230782c4abb0667d86bcccea9c2"
+  - version: v1.36.5-k3s1
+    digest: "@sha256:057cfd5a9d51b89f1f0ee139c28d5d5fdd5aa7ddeac2742a0ba90c6dbc0329bb"
+  - version: v1.34.12-k3s1
+    digest: "@sha256:4ea0adb6b0ffedab0c58ffe5c99a49f2f7be871f38636c8baa2692899648d8c5"
 # A single-node k3s server plus its probe pod takes about a minute to reach
 # Ready, and every case pays that boot for its own cluster. Split the cases
 # across matrix rows instead of sharing a cluster between them.

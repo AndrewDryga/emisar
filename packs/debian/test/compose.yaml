@@ -9,7 +9,7 @@ services:
       target: tools
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-trixie-20260918-slim}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-debian-tools:latest
 
@@ -18,7 +18,7 @@ services:
   # is what pins the matrix row and proves the digest, the same job docker-cli
   # does in the docker pack.
   debian:
-    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    image: debian:${PACKTEST_VERSION:-trixie-20260918-slim}${PACKTEST_DIGEST-}
     command: ["sleep", "3600"]
     healthcheck:
       test: ["CMD", "apt-get", "--version"]

@@ -1,7 +1,7 @@
 services: [pfsense-api]
 versions:
-  - version: "1.31-alpine"
-    digest: "@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3"
+  - version: "1.31.6-alpine"
+    digest: "@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2"
     default: true
 env:
   PFSENSE_URL: "http://pfsense-api"

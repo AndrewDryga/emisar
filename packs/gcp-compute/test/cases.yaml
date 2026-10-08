@@ -1,7 +1,7 @@
 services: [gcp-api]
 versions:
-  - version: 583.0.0-slim
-    digest: "@sha256:87eaf69da735ab8dfc1c640df1e85a467a4feedf2256d35dad368f970d9cd35f"
+  - version: 587.0.0-slim
+    digest: "@sha256:be4876b4311056bf3ce236a14a7dea1288e70b7cfea2454ea15e4165c819921f"
     default: true
 secret_env: [CLOUDSDK_AUTH_ACCESS_TOKEN]
 env:

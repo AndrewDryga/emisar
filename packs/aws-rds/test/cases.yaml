@@ -1,7 +1,7 @@
 services: [rds-api]
 versions:
-  - version: "2.36.41"
-    digest: "@sha256:be7c8de0160a2e2269159bc2634c002c85b1a21d6322e2ad513b3f7f48325c99"
+  - version: "2.37.7"
+    digest: "@sha256:95f8d1e6d31aaa16997d1406eb532b0ca6a9830fe8a859c37a0fd223f10959e5"
     default: true
 secret_env: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]
 env:

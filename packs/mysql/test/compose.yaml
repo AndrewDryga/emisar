@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:${PACKTEST_VERSION:-9.7.1}${PACKTEST_DIGEST-}
+    image: mysql:${PACKTEST_VERSION:-9.7.2}${PACKTEST_DIGEST-}
     environment:
       MYSQL_ROOT_PASSWORD: packtest-canary-mysql-root-b813
       MYSQL_DATABASE: testdb

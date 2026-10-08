@@ -24,7 +24,7 @@ defmodule EmisarWeb.AccountRedirectHTML do
             <span class="flex min-w-0 flex-col text-left">
               <span class="truncate">{choice.account.name}</span>
               <span class="truncate font-mono text-xs text-zinc-400">
-                app/{choice.account.slug}<span :if={choice.email}> · {choice.email}</span>
+                {choice.account.slug}<span :if={choice.email}> · {choice.email}</span>
               </span>
             </span>
             <span aria-hidden="true">→</span>

@@ -7,9 +7,9 @@ services:
     build:
       context: ${EMISAR_ROOT}/packs/snmp/test/snmpd
       args:
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-trixie-20260918-slim}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
-    image: emisar-packtest-snmpd:${PACKTEST_VERSION:-13-slim}
+    image: emisar-packtest-snmpd:${PACKTEST_VERSION:-trixie-20260918-slim}
     command: ["/usr/sbin/snmpd", "-f", "-Lo", "-C", "-c", "/etc/snmp/snmpd.conf"]
     environment:
       MIBS: ""
@@ -27,9 +27,9 @@ services:
     build:
       context: ${EMISAR_ROOT}/packs/snmp/test/snmpd-frr
       args:
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-trixie-20260918-slim}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
-    image: emisar-packtest-snmpd-frr:${PACKTEST_VERSION:-13-slim}
+    image: emisar-packtest-snmpd-frr:${PACKTEST_VERSION:-trixie-20260918-slim}
     cap_add:
       - NET_ADMIN
       - SYS_ADMIN

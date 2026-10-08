@@ -21,7 +21,7 @@ services:
   # stat from. Declaring it keeps the compatibility matrix able to say which
   # userland these assertions were proved against.
   fs-target:
-    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    image: debian:${PACKTEST_VERSION:-trixie-20260918-slim}${PACKTEST_DIGEST-}
     command: [sleep, infinity]
     healthcheck:
       test: [CMD, "true"]

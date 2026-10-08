@@ -44,8 +44,8 @@ defmodule EmisarWeb.SignInControllerTest do
       html = conn |> with_recent(account) |> get(~p"/sign_in") |> html_response(200)
 
       assert html =~ account.name
-      # The slug sub-label disambiguates similar names and teaches the URL form.
-      assert html =~ "app/#{account.slug}"
+      label = html |> LazyHTML.from_document() |> LazyHTML.query("a span.font-mono")
+      assert LazyHTML.text(label) == account.slug
       assert html =~ ~s(href="/app/#{account.slug}/sign_in")
     end
 

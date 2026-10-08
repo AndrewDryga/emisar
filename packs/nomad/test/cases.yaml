@@ -1,7 +1,7 @@
 services: [nomad, nomad-response]
 versions:
-  - version: "2.0.5"
-    digest: "@sha256:0754c89e1edbce069c6c8a81e34b3c61a277256382552f5788e40ab4b949a871"
+  - version: "2.0.7"
+    digest: "@sha256:e3f31dad30ec4ae6ab2f3799cea40a87d12bb4be88bbb75234f63f4f90c6c52d"
     default: true
   - version: "1.10.5"
     digest: "@sha256:d52fdb89745d8309de690d53c29d6baec8867e920051eb50b2c7f7f85c127e43"

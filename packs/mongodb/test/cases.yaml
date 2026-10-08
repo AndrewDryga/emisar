@@ -1,10 +1,12 @@
 services: [mongodb]
 versions:
+  - version: "8.3.9"
+    digest: "@sha256:81a1c8842a09589fc8d5f285266f3340bf4abdf66700ba22988f14cc9b2b3118"
+    default: true
   - version: "8.2.12"
     digest: "@sha256:e0ce8c35124d4a9f9785532d1f268f39e9728ffa1cb38f46fa482436424c4bd3"
-    default: true
-  - version: "7.0.40"
-    digest: "@sha256:b6421fd6d1c5ded6377b397d8983e2f82e2100dc5123332dcfda2065a472be5b"
+  - version: "7.0.41"
+    digest: "@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0"
 secret_env: [MONGO_URI]
 env:
   MONGO_URI: "mongodb://root:packtest-canary-mongodb-c936@mongodb:27017/?authSource=admin"

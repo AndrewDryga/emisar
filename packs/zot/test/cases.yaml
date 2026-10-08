@@ -1,7 +1,7 @@
 services: [zot]
 versions:
-  - version: v2.1.8
-    digest: "@sha256:cd2aea942f428630bcb4190542be6abd35e14177aab84fc7ccad0dca8ecb363d"
+  - version: v2.1.21
+    digest: "@sha256:6b69512c00dceaad05b1144e6079aac6aa7309d7fd200f9947ecb1de09cf48c8"
     default: true
 cases:
   # Every action runs the one shared zotget.sh; covering the OCI-distribution
@@ -14,7 +14,7 @@ cases:
 
   - action: zot.mgmt
     expect:
-      stdout_contains: ['"distSpecVersion"', '"releaseTag":"v2.1.8"']
+      stdout_contains: ['"distSpecVersion"', '"releaseTag":"v2.1.21"']
 
   - action: zot.metrics
     expect:

@@ -13,7 +13,7 @@ services:
   # Targets started by arrange steps therefore look like host-local processes
   # and own real sockets, without exposing the test to the Docker host.
   debug-target:
-    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    image: debian:${PACKTEST_VERSION:-trixie-20260918-slim}${PACKTEST_DIGEST-}
     command: [sleep, infinity]
     healthcheck:
       test: [CMD, "true"]

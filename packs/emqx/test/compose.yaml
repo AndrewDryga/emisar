@@ -1,6 +1,6 @@
 services:
   emqx:
-    image: emqx/emqx:${PACKTEST_VERSION:-5.8.9}${PACKTEST_DIGEST-}
+    image: emqx/emqx:${PACKTEST_VERSION:-6.3.1}${PACKTEST_DIGEST-}
     environment:
       EMQX_NODE__NAME: emqx@127.0.0.1
       # The fixture's key:secret pair is loaded before any listener starts.
@@ -33,7 +33,7 @@ services:
   # independently of PACKTEST_VERSION. It reconnects after a kick or a listener
   # restart and exits once a ban refuses it.
   mqtt-client:
-    image: eclipse-mosquitto:2.1.1-alpine@sha256:9fec559dbc89664d171ac8ea8230bbbeb50c2eb52615d631599ec31cbccbfb39
+    image: eclipse-mosquitto:2.1.2-alpine@sha256:38c0da4f2ef84284d47b3b3eeea1cb3bdeabe81ee10caf0cd5c5ff61ee3ea408
     depends_on:
       emqx:
         condition: service_healthy

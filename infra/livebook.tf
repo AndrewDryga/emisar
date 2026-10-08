@@ -1,5 +1,5 @@
 locals {
-  livebook_image               = "ghcr.io/livebook-dev/livebook:0.19.9@sha256:22c9a4f0a5836f52f7c6cf30a1467a4646c1fb27a2a7aea1ed793e4735658562"
+  livebook_image               = "ghcr.io/livebook-dev/livebook:0.19.10@sha256:216af978b9300980117ae8a362f866c9414026d55f98f15fa6d35def0699a348"
   livebook_port                = 8080
   livebook_backend_name        = "emisar-livebook-backend"
   livebook_public_backend_name = "emisar-livebook-public-backend"

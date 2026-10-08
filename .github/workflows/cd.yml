@@ -479,7 +479,7 @@ jobs:
           TF_API_TOKEN: ${{ secrets.TFC_PLAN_TOKEN }}
         run: |
           set -euo pipefail
-          # tfci v1.3.2 supports provisional configuration versions, but its
+          # tfci v1.4.0 supports provisional configuration versions, but its
           # GitHub Action wrapper does not expose the flag. Run the same pinned
           # tool directly so an unapplied plan cannot replace the workspace's
           # current configuration.
@@ -488,7 +488,7 @@ jobs:
             --env TF_CLOUD_ORGANIZATION \
             --volume "${GITHUB_WORKSPACE}:/workspace:ro" \
             --workdir /workspace \
-            hashicorp/tfci@sha256:6fc488db7a14bddb98bd92138cda8e0113758448d908981a479a1207546e48a8 \
+            hashicorp/tfci@sha256:57fead054ee0779e8f682711840fa6af4e60c0bc6cd883e1a91dc3bb20b4eace \
             tfci upload -json \
               -workspace="${TFC_WORKSPACE}" \
               -directory=./infra \

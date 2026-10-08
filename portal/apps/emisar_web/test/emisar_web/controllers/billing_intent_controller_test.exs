@@ -32,6 +32,8 @@ defmodule EmisarWeb.BillingIntentControllerTest do
     assert html =~ "Selected plan"
     assert html =~ "Monthly"
     assert html =~ account.name
+    label = html |> LazyHTML.from_document() |> LazyHTML.query("button span.font-mono")
+    assert label |> LazyHTML.text() |> String.trim() == account.slug
     assert html =~ "review the price in checkout"
     assert html =~ "Cancel"
     refute html =~ "Keep my current plan"

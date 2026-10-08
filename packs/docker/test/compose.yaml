@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-29.8.0-cli}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-29.8.1-cli}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-docker-tools:latest
     volumes:
@@ -23,7 +23,7 @@ services:
   # file and reaches no daemon, so this service exists to pin and prove the CLI
   # version rather than to serve a case.
   docker-cli:
-    image: docker:${PACKTEST_VERSION:-29.8.0-cli}${PACKTEST_DIGEST-}
+    image: docker:${PACKTEST_VERSION:-29.8.1-cli}${PACKTEST_DIGEST-}
     entrypoint: ["/bin/sh", "-c"]
     command: ["docker compose version >/dev/null && sleep 3600"]
     healthcheck:
@@ -43,7 +43,7 @@ services:
   # image and Compose cannot rewrite that suffix. The daemon only has to be a
   # daemon the pinned client can talk to.
   docker-dind:
-    image: docker:29.8.0-dind@sha256:5efed980cba3fc126cf54e21a5a6ff8849d05b6e0623d6e7612f48e9cd6cd17e
+    image: docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0
     privileged: true
     environment:
       # TLS off is safe here and only here: the daemon listens on the case's own

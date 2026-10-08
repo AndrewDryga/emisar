@@ -1,7 +1,7 @@
 services: [terraform]
 versions:
-  - version: "1.16.1"
-    digest: "@sha256:f4d9594d2c8010c03f0149352682166410c58c21d46344cf256fd5a4b721a011"
+  - version: "1.16.4"
+    digest: "@sha256:985cdc6c1d9b0a65b83377f666efd2f740b47f02ac55be1ced3d18f7d3b0e829"
     default: true
 secret_env: []
 env:

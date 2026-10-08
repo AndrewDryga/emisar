@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/andrewdryga/emisar/runner/internal/packs"
 	"github.com/andrewdryga/emisar/runner/pkg/actionspec"
 )
 
@@ -172,6 +173,40 @@ func TestAdmitRisk(t *testing.T) {
 			}
 			if !ok && reason == "" {
 				t.Fatal("a rejection must carry an operator-readable reason")
+			}
+		})
+	}
+}
+
+func TestSymbolicatorPreviewRespectsReadOnlyCeiling(t *testing.T) {
+	// The vendor's dry run can repair cache metadata. Load its real descriptor
+	// so accidentally lowering the tier cannot admit that mutation as a read.
+	registry, err := packs.LoadOne(filepath.Join("..", "..", "..", "packs", "symbolicator"), packs.LoadOptions{})
+	if err != nil {
+		t.Fatalf("load Symbolicator: %v", err)
+	}
+	action, ok := registry.Action("symbolicator.cleanup_preview")
+	if !ok {
+		t.Fatal("Symbolicator preview is missing")
+	}
+	for _, test := range []struct {
+		ceiling actionspec.Risk
+		admit   bool
+	}{
+		{actionspec.RiskLow, false},
+		{actionspec.RiskMedium, true},
+	} {
+		t.Run(string(test.ceiling), func(t *testing.T) {
+			policy, err := New(nil, nil, test.ceiling)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			admitted, reason := policy.AdmitRisk(action.Risk)
+			if admitted != test.admit {
+				t.Fatalf("preview admitted=%v under %s ceiling, want %v", admitted, test.ceiling, test.admit)
+			}
+			if !admitted && !strings.Contains(reason, "exceeds runner ceiling") {
+				t.Fatalf("unexpected refusal: %s", reason)
 			}
 		})
 	}

@@ -16,7 +16,7 @@ services:
   # into. It runs nothing: nft comes from the client image above, so the
   # version matrix pins the namespace's base image and no more.
   firewall:
-    image: debian:${PACKTEST_VERSION:-13-slim}${PACKTEST_DIGEST-}
+    image: debian:${PACKTEST_VERSION:-trixie-20260918-slim}${PACKTEST_DIGEST-}
     command: [sleep, infinity]
     cap_add: [NET_ADMIN]
     healthcheck:

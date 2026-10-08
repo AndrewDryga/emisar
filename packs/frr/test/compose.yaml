@@ -9,9 +9,9 @@ services:
       target: tools
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-trixie-20260918-slim}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
-    image: emisar-packtest-frr-tools:${PACKTEST_VERSION:-13-slim}
+    image: emisar-packtest-frr-tools:${PACKTEST_VERSION:-trixie-20260918-slim}
     volumes:
       - frrsockets:/run/frr
 
@@ -21,9 +21,9 @@ services:
       dockerfile: Dockerfile
       target: sut
       args:
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-trixie-20260918-slim}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
-    image: emisar-packtest-frr-sut:${PACKTEST_VERSION:-13-slim}
+    image: emisar-packtest-frr-sut:${PACKTEST_VERSION:-trixie-20260918-slim}
     # NET_ADMIN creates the dummy link the daemons run on. SYS_ADMIN is FRR's
     # own requirement, not the fixture's: zebra, bgpd, and bfdd each list
     # ZCAP_SYS_ADMIN in the permitted set libfrr's zprivs keeps across the drop

@@ -156,8 +156,8 @@ jobs:
 
       - name: Install pinned client CLIs
         env:
-          CLAUDE_CODE_VERSION: "2.1.266"
-          CODEX_CLI_VERSION: "0.153.4"
+          CLAUDE_CODE_VERSION: "2.1.286"
+          CODEX_CLI_VERSION: "0.159.3"
         run: |
           set -euo pipefail
           npm install -g \

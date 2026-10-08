@@ -1,11 +1,13 @@
 services: [symbolicator]
-# 25.12.1 (2025-12) ships a distroless image with no /bin/sh, so the client
-# stage in test/Dockerfile can neither install jq nor run the case shell; the
-# fixture stays on 25.9.0 until that stage is rebuilt on its own base.
+# Both supported families use the official GHCR runtime. The client extracts
+# that exact binary into the shared shell-capable image; the SUT stays non-root
+# and distroless, with a static helper for the real HTTP readiness check.
 versions:
-  - version: "25.9.0"
-    digest: "@sha256:ff16ec0110c73c0ce644f2a56f8e5ff6ed31adc9a3cf731788d425e1dc5f8ecb"
+  - version: "26.9.0"
+    digest: "@sha256:f38cf17e84e1d6ae0571f326684fdc5f4e7d27fa6bc6c847f687fc51ea8beebc"
     default: true
+  - version: "25.12.1"
+    digest: "@sha256:6885a72b10e360c2eb6889be72c83c815f9f9c19a913bb2a578ccdf5d7e95139"
 env:
   SYMBOLICATOR_URL: http://127.0.0.1:3021
   SYMBOLICATOR_CONFIG: /etc/symbolicator/config.yml
@@ -74,26 +76,70 @@ cases:
       exit: [1]
       reason_contains: [process exited with code 1]
       stderr_contains: ["cache directory /tmp/packtest-unreadable-cache is not readable"]
-  # The seeded object is inside its retention window, so the preview reports it
-  # retained and removes nothing — proving it reads the real caches and that a
-  # preview never deletes.
+  # Arrange the retention ages per case, not at image-build time. The older
+  # family reports byte totals; 26.9 reports progress instead. Both must retain
+  # a fresh object, and only the real cleanup may remove an expired object.
   - action: symbolicator.cleanup_preview
+    versions: ["25.12.1"]
+    arrange:
+      - argv: [/bin/sh, -c, "touch /data/objects/packtest/debug-file && printf expired > /data/objects/packtest/expired-file && touch -t 200001010000 /data/objects/packtest/expired-file"]
     expect:
-      stdout_contains: ["dry_run=true", "cache=objects", "retained.bytes=4096"]
+      stderr_contains: ["dry_run=true", "cache=objects", "retained.bytes=4096"]
     probes:
-      - name: the preview left the cached object in place
-        argv: [/bin/sh, -c, "test -f /data/objects/packtest/debug-file && echo retained"]
+      - name: the preview preserves fresh and expired cache entries
+        argv: [/bin/sh, -c, "test -f /data/objects/packtest/debug-file && test -f /data/objects/packtest/expired-file && echo retained"]
         expect:
           stdout_contains: ["retained"]
   - action: symbolicator.cleanup
+    versions: ["25.12.1"]
+    arrange:
+      - argv: [/bin/sh, -c, "touch /data/objects/packtest/debug-file && printf expired > /data/objects/packtest/expired-file && touch -t 200001010000 /data/objects/packtest/expired-file"]
     expect:
-      stdout_contains: ["cache=objects", "retained.bytes=4096"]
-      stdout_not_contains: ["dry_run=true"]
+      stderr_contains: ["cache=objects", "retained.bytes=4096"]
+      stderr_not_contains: ["dry_run=true"]
     probes:
-      - name: an object inside its retention window survives the cleanup
-        argv: [/bin/sh, -c, "test -f /data/objects/packtest/debug-file && echo retained"]
+      - name: cleanup removes only the expired cache entry
+        argv: [/bin/sh, -c, "test -f /data/objects/packtest/debug-file && test ! -e /data/objects/packtest/expired-file && echo retained"]
         expect:
           stdout_contains: ["retained"]
+  - name: symbolicator.cleanup-preview-with-progress
+    action: symbolicator.cleanup_preview
+    versions: ["26.9.0"]
+    arrange:
+      - argv: [/bin/sh, -c, "touch /data/objects/packtest/debug-file && printf expired > /data/objects/packtest/expired-file && touch -t 200001010000 /data/objects/packtest/expired-file"]
+    expect:
+      stderr_contains: ["dry_run=true", "cache=objects"]
+    probes:
+      - name: the preview preserves fresh and expired cache entries
+        argv: [/bin/sh, -c, "test -f /data/objects/packtest/debug-file && test -f /data/objects/packtest/expired-file && echo retained"]
+        expect:
+          stdout_contains: ["retained"]
+  - name: symbolicator.cleanup-with-progress
+    action: symbolicator.cleanup
+    versions: ["26.9.0"]
+    arrange:
+      - argv: [/bin/sh, -c, "touch /data/objects/packtest/debug-file && printf expired > /data/objects/packtest/expired-file && touch -t 200001010000 /data/objects/packtest/expired-file"]
+    expect:
+      stderr_contains: ["cache=objects"]
+      stderr_not_contains: ["dry_run=true"]
+    probes:
+      - name: cleanup removes only the expired cache entry
+        argv: [/bin/sh, -c, "test -f /data/objects/packtest/debug-file && test ! -e /data/objects/packtest/expired-file && echo retained"]
+        expect:
+          stdout_contains: ["retained"]
+  # Vendor dry-run does not delete expired objects, but does repair metadata
+  # and initialize cache directories. This is why its tier is medium.
+  - name: symbolicator.cleanup-preview-repairs-cache-metadata
+    action: symbolicator.cleanup_preview
+    arrange:
+      - argv: [/bin/sh, -c, "test ! -d /data/object_meta && touch /data/objects/packtest/debug-file && printf invalid-json > /data/objects/packtest/debug-file.metadata"]
+    expect:
+      stderr_contains: ["Failed to parse cache metadata file", "dry_run=true"]
+    probes:
+      - name: preview retains the object but removes invalid metadata and creates missing cache directories
+        argv: [/bin/sh, -c, "test -f /data/objects/packtest/debug-file && test ! -e /data/objects/packtest/debug-file.metadata && test -d /data/object_meta && echo metadata-repaired"]
+        expect:
+          stdout_contains: ["metadata-repaired"]
   # The configuration is the one secret-bearing read in this pack. Its S3
   # credentials are declared canaries: the shape must come back, the values
   # must not.

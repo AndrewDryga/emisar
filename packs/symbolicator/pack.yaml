@@ -2,7 +2,10 @@ schema_version: 1
 
 id: symbolicator
 name: Symbolicator native symbolication
-version: 0.2.5
+version: 0.2.6
+# Older descriptors classify the vendor's metadata-writing dry run as low,
+# admitting cache mutations through a low-only policy or admission ceiling.
+retired_below: 0.2.6
 description: >
   Debug native crashes with Symbolicator and keep the host it runs on healthy.
   Symbolicate a stack trace, a minidump, or an Apple crash report against the

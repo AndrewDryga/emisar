@@ -12,7 +12,7 @@ side_effects:
   - Removes cached debug files and derived caches whose retention has expired; a later symbolication that needs one re-downloads it from the configured symbol sources.
   - Symbolication is slower until the working set is cached again, and the re-download costs bandwidth against those sources.
   - Runs while the service serves; it does not restart or interrupt Symbolicator.
-  - Reclaims nothing when the caches are within retention, which is what the preview reports.
+  - Leaves cache entries within retention in place. CLI progress is on stderr; older releases also report byte totals.
 args: []
 execution:
   command:

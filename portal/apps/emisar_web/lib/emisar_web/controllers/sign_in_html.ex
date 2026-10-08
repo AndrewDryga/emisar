@@ -17,7 +17,7 @@ defmodule EmisarWeb.SignInHTML do
           <span class="flex w-full min-w-0 items-center justify-between gap-3">
             <span class="flex min-w-0 flex-col text-left">
               <span class="truncate">{workspace["name"]}</span>
-              <span class="font-mono text-xs text-zinc-400">app/{workspace["slug"]}</span>
+              <span class="font-mono text-xs text-zinc-400">{workspace["slug"]}</span>
             </span>
             <span aria-hidden="true">→</span>
           </span>

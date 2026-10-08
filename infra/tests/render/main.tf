@@ -5,8 +5,8 @@ locals {
     mailer_from_email        = "hello@example.test"
     app_port                 = 4000
     container_image          = "ghcr.io/andrewdryga/emisar@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-    cloud_sql_proxy_image    = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.25.4@sha256:88501f0a695a586988add1b8a206fdf3f29f9a1a3deeb9b45ef2b1481ea6be83"
-    gcloud_image             = "gcr.io/google.com/cloudsdktool/google-cloud-cli:583.0.0-stable@sha256:c458b41dcd5fa7fa66934a7ffe872b8a06e7134f51b01c007ed025858bc75b9c"
+    cloud_sql_proxy_image    = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.0@sha256:86e4f3cc266020e7ee07740df78d7511e2c340c274b56f84d80b7251913af9ad"
+    gcloud_image             = "gcr.io/google.com/cloudsdktool/google-cloud-cli:587.0.0-stable@sha256:73a97b855d386c74bee3facd59ccc261006c55a9812b7913fa6b93816010a1bc"
     cluster_value            = "emisar"
     database_user            = "emisar-vm@test-project.iam"
     database_name            = "emisar"
@@ -75,7 +75,7 @@ locals {
     project_id                    = "test-project"
     project_number                = "123456789"
     domain                        = "example.test"
-    livebook_image                = "ghcr.io/livebook-dev/livebook:0.19.9@sha256:22c9a4f0a5836f52f7c6cf30a1467a4646c1fb27a2a7aea1ed793e4735658562"
+    livebook_image                = "ghcr.io/livebook-dev/livebook:0.19.10@sha256:216af978b9300980117ae8a362f866c9414026d55f98f15fa6d35def0699a348"
     cloud_sql_proxy_image         = local.common.cloud_sql_proxy_image
     livebook_port                 = 8080
     livebook_backend_name         = "emisar-livebook-backend"

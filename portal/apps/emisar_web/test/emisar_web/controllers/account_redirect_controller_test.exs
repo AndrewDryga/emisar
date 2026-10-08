@@ -54,17 +54,19 @@ defmodule EmisarWeb.AccountRedirectControllerTest do
     test "with several signed-in workspaces each shorthand asks which, keeping the page", %{
       conn: conn
     } do
-      {conn, _owner_a, account_a} = register_and_log_in(conn, %{account: %{name: "Alpha Ops"}})
-      {conn, _owner_b, account_b} = register_and_log_in(conn, %{account: %{name: "Bravo Ops"}})
+      {conn, owner_a, account_a} = register_and_log_in(conn, %{account: %{name: "Alpha Ops"}})
+      {conn, owner_b, account_b} = register_and_log_in(conn, %{account: %{name: "Bravo Ops"}})
 
       for {source, destination} <- @current_account_redirects do
         document = conn |> get(source) |> html_response(200) |> LazyHTML.from_document()
 
         assert document |> LazyHTML.query("h1") |> LazyHTML.text() =~ "Choose a workspace"
 
-        for account <- [account_a, account_b] do
+        for {account, owner} <- [{account_a, owner_a}, {account_b, owner_b}] do
           link = LazyHTML.query(document, ~s(a[href="/app/#{account.slug}#{destination}"]))
           assert LazyHTML.text(link) =~ account.name, "#{source} lost #{destination}"
+          label = link |> LazyHTML.query("span.font-mono") |> LazyHTML.text() |> String.trim()
+          assert label == "#{account.slug} · #{owner.email}"
         end
 
         assert document |> LazyHTML.query(~s(a[href="/sign_in"])) |> Enum.count() == 1

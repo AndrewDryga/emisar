@@ -1,7 +1,7 @@
 services: [airflow]
 versions:
-  - version: "3.3.1"
-    digest: "@sha256:0c4bcc0370e526de1b7892a3bf4343d260c6c82359c66f77155b53cd773d6339"
+  - version: "3.3.2"
+    digest: "@sha256:e9982ad3f49a60418622e1baf80c34b0daf3fa5091a336cb5ee61f0cdd189371"
     default: true
     env: {AIRFLOW_API_VERSION: v2}
   - version: "2.11.2-python3.11"
@@ -104,7 +104,7 @@ cases:
       stdout_contains: ['"version"', '"git_version"']
 
   - action: airflow.jobs
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     expect:
       stdout_contains: [SchedulerJob, TriggererJob]
 
@@ -142,7 +142,7 @@ cases:
   # is listening.
   - action: airflow.dags
     name: airflow.dags-accepts-a-literal-ipv6-endpoint
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     env:
       AIRFLOW_URL: "http://[::1]:8080"
     expect:
@@ -227,7 +227,7 @@ cases:
   # its extra document; the plan-wide stdout_not_contains is what proves
   # neither leaves the host.
   - action: airflow.connections
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     expect:
       stdout_contains: [packtest_conn, warehouse.packtest.invalid, '"has_auth":true', '"has_extra":true']
 
@@ -236,19 +236,19 @@ cases:
       stdout_contains: [packtest_variable, '"value_bytes":37']
 
   - action: airflow.assets
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     expect:
       json:
         /total_entries: 0
 
   - action: airflow.asset_events
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     expect:
       json:
         /total_entries: 0
 
   - action: airflow.backfills
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     args: {dag_id: packtest_scheduled}
     expect:
       json:
@@ -325,7 +325,7 @@ cases:
           json: {/state: failed}
 
   - action: airflow.dag_run_clear
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     args: {dag_id: packtest_failing, dag_run_id: packtest_seed_failed}
     expect:
       json:
@@ -427,7 +427,7 @@ cases:
   # Airflow refuses a backfill on a DAG without a periodic schedule, so the
   # backfill cases use packtest_scheduled.
   - action: airflow.backfill_create
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     args:
       dag_id: packtest_scheduled
       from_date: "2026-01-01T00:00:00Z"
@@ -444,7 +444,7 @@ cases:
           stdout_contains: ['"id":1', packtest_scheduled]
 
   - action: airflow.backfill_pause
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     args: {backfill_id: 1}
     arrange:
       - name: create the backfill this case pauses
@@ -469,7 +469,7 @@ cases:
           stdout_contains: ['"is_paused":true']
 
   - action: airflow.backfill_cancel
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     args: {backfill_id: 1}
     arrange:
       - name: create the backfill this case cancels
@@ -498,7 +498,7 @@ cases:
   # A wrong password must fail the action, not return an empty success.
   - action: airflow.dags
     name: airflow.dags-invalid-credentials
-    versions: ["3.3.1"]
+    versions: ["3.3.2"]
     env:
       AIRFLOW_PASSWORD: packtest-canary-airflow-wrong-1c4a
     expect:

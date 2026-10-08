@@ -2,9 +2,9 @@ services: [emqx, mqtt-client]
 versions:
   - version: 5.8.9
     digest: "@sha256:35b46f7aa7a0d51f3959e4344221ac5ec7f948b03e43099286b6c40a07bb393b"
-    default: true
   - version: 6.3.1
     digest: "@sha256:5ecbf93d04e34aaf4096af074e93b773d0838c8ea668cfabdec7976b272d9606"
+    default: true
 secret_env: [EMQX_API_KEY, EMQX_API_SECRET]
 env:
   EMQX_API_KEY: packtest-canary-emqx-key-3b7d

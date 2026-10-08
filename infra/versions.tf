@@ -9,7 +9,7 @@
 terraform {
   # Keep exact parity with /.tool-versions and the HCP workspace. A broader
   # constraint lets local CI validate with semantics production never uses.
-  required_version = "= 1.16.2"
+  required_version = "= 1.16.4"
 
   required_providers {
     google = {
@@ -22,7 +22,7 @@ terraform {
     }
     betteruptime = {
       source  = "BetterStackHQ/better-uptime"
-      version = "~> 0.21.0" # 0.x minors are breaking by convention; pin the minor.
+      version = "~> 0.22.0" # 0.x minors are breaking by convention; pin the minor.
     }
   }
 

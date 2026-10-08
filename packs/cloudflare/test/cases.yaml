@@ -1,7 +1,7 @@
 services: [cloudflare-api]
 versions:
   - version: "3.14.7-alpine3.24"
-    digest: "@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc"
+    digest: "@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01"
     default: true
 secret_env: [CF_API_TOKEN, CF_PURGE_URL]
 env:

@@ -6,7 +6,7 @@ services:
       target: tools
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-trixie-20260918-slim}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-fail2ban-tools:latest
     pid: "service:fail2ban"
@@ -20,7 +20,7 @@ services:
       target: sut
       args:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
-        PACKTEST_VERSION: ${PACKTEST_VERSION:-13-slim}
+        PACKTEST_VERSION: ${PACKTEST_VERSION:-trixie-20260918-slim}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-fail2ban-sut:latest
     privileged: true

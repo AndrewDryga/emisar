@@ -100,7 +100,7 @@ jobs:
       postgres:
         # Track prod's Cloud SQL major (POSTGRES_18, infra/database.tf) so the
         # suite runs against what production runs.
-        image: &postgres-image postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+        image: &postgres-image postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -173,8 +173,8 @@ jobs:
       - name: Install Hex and Rebar
         env:
           HEX_VERSION: "2.5.1"
-          REBAR3_VERSION: "3.27.0"
-          REBAR3_SHA512: 0d00494d849fdc521a55142278d1f6ba552954fbd65b80d40df8022f594f05d6c99ed1d731bc263691a04176e11d4c6e126c56ba20dca19c5e42d4ffab2e7e36
+          REBAR3_VERSION: "3.27.1"
+          REBAR3_SHA512: cd9a88e42a1d804b9b01581ea24aacf4563f2746a2bf4900215331c36400fc8f1f19a8272632e83a2da3206e42f1f46425966d4dee51bf16f19538a0b5e0632a
         # The tooling gate's release-toolchain phase holds portal/Dockerfile's ARG
         # defaults to these pins, and a Dockerfile change selects that gate.
         run: |
@@ -250,10 +250,10 @@ jobs:
           persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build release image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: portal/Dockerfile
@@ -527,7 +527,7 @@ jobs:
         # version. A reachable finding in client-shipped security code blocks.
         working-directory: ${{ matrix.module }}
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck ./...
 
       - name: Summarize coverage
@@ -655,10 +655,10 @@ jobs:
             -o ../dist/image/linux-amd64/emisar .
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build container image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: runner/release/Dockerfile
@@ -767,8 +767,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      TERRAFORM_VERSION: 1.16.2
-      TERRAFORM_SHA256: 0d17011f0c4664539b164b044903d04e296c86c13cb9f28040076c65cfb3985a
+      TERRAFORM_VERSION: 1.16.4
+      TERRAFORM_SHA256: dc94af0eef1147718ad7c8daea792ed199e3e0492eec180d0adafa2a65a879df
       TFLINT_VERSION: v0.64.0
       TFLINT_SHA256: cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
     steps:

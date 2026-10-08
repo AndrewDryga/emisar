@@ -18,8 +18,8 @@ defmodule EmisarWeb.BillingIntentHTML do
             <span class="flex w-full min-w-0 items-center justify-between gap-3">
               <span class="min-w-0 text-left">
                 <span class="block truncate">{account.name}</span>
-                <span class="block truncate font-mono text-xs font-normal text-zinc-500">
-                  app/{account.slug}
+                <span class="block truncate font-mono text-xs font-normal text-zinc-400">
+                  {account.slug}
                 </span>
               </span>
               <span aria-hidden="true">→</span>
