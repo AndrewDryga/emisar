@@ -521,7 +521,8 @@ jobs:
         run: |
           set -euo pipefail
           status=0
-          trivy sbom --exit-code 1 --severity HIGH,CRITICAL --ignorefile .trivyignore.yaml \
+          # Portal-only reachability exceptions do not apply to privileged tools.
+          trivy sbom --exit-code 1 --severity HIGH,CRITICAL \
             --list-all-pkgs --format json --output /tmp/emisar-admin-diagnostics-scan.json \
             /tmp/emisar-admin-diagnostics.cdx.json || status=$?
           jq -e 'any(.Results[]; .Type == "debian" and (.Packages | length) > 0)' /tmp/emisar-admin-diagnostics-scan.json
@@ -531,8 +532,22 @@ jobs:
             any(.Name == "ntpsec" and .SrcName == "ntpsec") and
             any(.Name == "sysstat" and .SrcName == "sysstat")' /tmp/emisar-admin-diagnostics-scan.json
           jq '[.Results[] | {Target,Type,package_count:(.Packages | length)}]' /tmp/emisar-admin-diagnostics-scan.json
+          jq '[.Results[] | .Type as $type | .Vulnerabilities[]? |
+            {type:$type,VulnerabilityID,PkgName,InstalledVersion,FixedVersion,Severity,Title}]' \
+            /tmp/emisar-admin-diagnostics-scan.json
           test "$status" = 0
-          trivy image --exit-code 1 --severity HIGH,CRITICAL --ignorefile .trivyignore.yaml emisar/admin-diagnostics:ci
+          trivy image --exit-code 1 --severity HIGH,CRITICAL emisar/admin-diagnostics:ci
+      - name: Preserve diagnostic scan evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: admin-diagnostics-scan-${{ github.sha }}
+          path: |
+            /tmp/emisar-admin-diagnostics.cdx.json
+            /tmp/emisar-admin-diagnostics-scan.json
+          retention-days: 2
+          if-no-files-found: warn
+          overwrite: true
       - name: Export exact qualified bytes and bind their contract
         if: github.event_name == 'push'
         run: |
