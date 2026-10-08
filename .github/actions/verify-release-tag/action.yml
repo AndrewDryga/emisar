@@ -97,5 +97,5 @@ runs:
       shell: bash
       working-directory: ${{ inputs.module }}
       run: |
-        go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+        go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
         govulncheck ./...
