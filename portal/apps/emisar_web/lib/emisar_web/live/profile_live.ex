@@ -1086,230 +1086,250 @@ defmodule EmisarWeb.ProfileLive do
 
         <.section_with_note id="multi-factor-authentication">
           <:header>
-            <.section_header title="Multi-factor authentication">
-              <:subtitle>Use an authenticator app for an extra check when you sign in.</:subtitle>
-            </.section_header>
+            <.section_header title="Multi-factor authentication" />
           </:header>
-          <:note :if={
-            not is_nil(@mfa_facts) and not @mfa_facts.enabled? and @mfa_enrollment_step == :idle
-          }>
-            We recommend enabling MFA to help protect your account in this workspace.
-          </:note>
 
-          <%= cond do %>
-            <% is_nil(@mfa_facts) -> %>
-              <p role="status" class="text-sm text-zinc-400">Loading MFA settings…</p>
-            <% @mfa_recovery_codes -> %>
-              <.mfa_setup_progress :if={@mfa_enrollment_step == :recovery} step={3} />
-              <.secret_reveal
-                id="mfa-recovery-codes"
-                title="Save your recovery codes"
-                codes={@mfa_recovery_codes}
-                download_name="emisar-recovery-codes.txt"
-              >
-                Use a recovery code if you can't access your authenticator. Each code works once.
-                Save these somewhere safe. You won't be able to view them again.
-                <:actions>
-                  <.recovery_code_acknowledgement
-                    saved={@codes_saved?}
-                    event="dismiss_recovery_codes"
-                  />
-                </:actions>
-              </.secret_reveal>
-            <% @mfa_facts.enabled? -> %>
-              <% remaining = @mfa_facts.recovery_codes_remaining %>
-              <div id="mfa-status" class="max-w-2xl space-y-4">
-                <div class="space-y-2">
-                  <div class="flex flex-wrap items-center gap-3">
-                    <.chip tone={:brand}>Enabled</.chip>
-                    <p class="text-sm text-zinc-400">
-                      <span class="tabular-nums">{remaining}</span>
-                      recovery {if remaining == 1, do: "code", else: "codes"} remaining.
+          <div class="max-w-2xl">
+            <%= cond do %>
+              <% is_nil(@mfa_facts) -> %>
+                <p role="status" class="text-sm text-zinc-400">Loading MFA settings…</p>
+              <% @mfa_recovery_codes -> %>
+                <.mfa_setup_progress :if={@mfa_enrollment_step == :recovery} step={3} />
+                <.secret_reveal
+                  id="mfa-recovery-codes"
+                  title="Save your recovery codes"
+                  codes={@mfa_recovery_codes}
+                  download_name="emisar-recovery-codes.txt"
+                >
+                  Use a recovery code if you can't access your authenticator. Each code works once.
+                  Save these somewhere safe. You won't be able to view them again.
+                  <:actions>
+                    <.recovery_code_acknowledgement
+                      saved={@codes_saved?}
+                      event="dismiss_recovery_codes"
+                    />
+                  </:actions>
+                </.secret_reveal>
+              <% @mfa_facts.enabled? -> %>
+                <% remaining = @mfa_facts.recovery_codes_remaining %>
+                <div id="mfa-status" class="space-y-8">
+                  <.section_header level={3} title="Authenticator app">
+                    <:badge>
+                      <span class="text-sm text-brand-300">Enabled</span>
+                    </:badge>
+                    <:subtitle>
+                      Codes from your app add an extra check when you sign in to this workspace.
+                    </:subtitle>
+                  </.section_header>
+
+                  <section id="mfa-recovery-settings" aria-label="Recovery codes">
+                    <.section_header level={3} title="Recovery codes">
+                      <:subtitle>
+                        <%= if @mfa_recovery_regeneration_step == :code do %>
+                          New recovery codes will replace your existing codes. Enter an authenticator
+                          or recovery code to continue.
+                        <% else %>
+                          <span class="block text-zinc-300">
+                            <span class="tabular-nums">{remaining}</span>
+                            recovery {if remaining == 1, do: "code", else: "codes"} remaining.
+                          </span>
+                          Use a saved code if you can't access your authenticator.
+                        <% end %>
+                      </:subtitle>
+                    </.section_header>
+                    <p
+                      :if={remaining <= 2 and @mfa_recovery_regeneration_step == :idle}
+                      class="mb-4 text-sm leading-6 text-amber-300"
+                    >
+                      <%= if remaining == 0 do %>
+                        No recovery codes left. Generate a new set now.
+                      <% else %>
+                        Generate new codes before these run out.
+                      <% end %>
                     </p>
-                  </div>
-                  <p :if={remaining <= 2} class="text-sm text-amber-300">
-                    Generate new codes before these run out.
-                  </p>
+                    <.button
+                      :if={@mfa_recovery_regeneration_step == :idle and @mfa_disable_step == :idle}
+                      id="regen-codes"
+                      class="w-full sm:w-auto"
+                      variant={if remaining <= 2, do: :primary, else: :secondary}
+                      type="button"
+                      phx-click="start_regenerate_recovery_codes"
+                    >
+                      Generate new recovery codes
+                    </.button>
+
+                    <.simple_form
+                      :if={@mfa_recovery_regeneration_step == :code}
+                      for={@mfa_recovery_regeneration_form}
+                      id="mfa_recovery_regeneration_form"
+                      phx-submit="regenerate_recovery_codes"
+                    >
+                      <.input
+                        field={@mfa_recovery_regeneration_form[:code]}
+                        type="text"
+                        label="Authenticator or recovery code"
+                        autocomplete="one-time-code"
+                        required
+                      />
+                      <.error :if={@mfa_recovery_regeneration_error}>
+                        {@mfa_recovery_regeneration_error}
+                      </.error>
+                      <:actions>
+                        <.button class="flex-1 sm:flex-none" phx-disable-with="Generating...">
+                          Generate new codes
+                        </.button>
+                        <.button
+                          variant={:secondary}
+                          type="button"
+                          phx-click="cancel_regenerate_recovery_codes"
+                        >
+                          Cancel
+                        </.button>
+                      </:actions>
+                    </.simple_form>
+                  </section>
+
+                  <section
+                    :if={@mfa_recovery_regeneration_step == :idle}
+                    id="mfa-disable-settings"
+                    aria-label="Disable MFA"
+                  >
+                    <.section_header level={3} title="Disable MFA">
+                      <:subtitle>
+                        You'll stop using an authenticator code to sign in to this workspace.
+                        <span :if={@mfa_disable_step == :code}>
+                          If the workspace requires MFA, you'll set one up again on your next visit.
+                        </span>
+                      </:subtitle>
+                    </.section_header>
+                    <.button
+                      :if={@mfa_disable_step == :idle}
+                      id="disable-mfa"
+                      class="w-full sm:w-auto"
+                      variant={:secondary}
+                      tone={:rose}
+                      type="button"
+                      phx-click="start_disable_mfa"
+                    >
+                      Disable MFA
+                    </.button>
+
+                    <.simple_form
+                      :if={@mfa_disable_step == :code}
+                      for={@mfa_disable_form}
+                      id="mfa_disable_form"
+                      phx-submit="disable_mfa"
+                    >
+                      <.input
+                        field={@mfa_disable_form[:code]}
+                        type="text"
+                        label="Authenticator or recovery code"
+                        autocomplete="one-time-code"
+                        required
+                      />
+                      <.error :if={@mfa_disable_error}>{@mfa_disable_error}</.error>
+                      <:actions>
+                        <.button
+                          class="flex-1 sm:flex-none"
+                          variant={:secondary}
+                          tone={:rose}
+                          phx-disable-with="Disabling..."
+                        >
+                          Disable MFA
+                        </.button>
+                        <.button variant={:secondary} type="button" phx-click="cancel_disable_mfa">
+                          Cancel
+                        </.button>
+                      </:actions>
+                    </.simple_form>
+                  </section>
                 </div>
-                <div
-                  :if={@mfa_recovery_regeneration_step == :idle and @mfa_disable_step == :idle}
-                  id="mfa-management-actions"
-                  role="group"
-                  aria-label="Multi-factor authentication actions"
-                  class="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center"
+              <% @mfa_enrollment_step == :email -> %>
+                <.mfa_setup_progress step={1} />
+                <.mfa_enrollment_email_verification
+                  email={@current_membership.email}
+                  form={@mfa_enrollment_email_form}
+                  error={@mfa_enrollment_email_error}
                 >
-                  <.button
-                    id="regen-codes"
-                    variant={:secondary}
-                    size={:sm}
-                    type="button"
-                    phx-click="start_regenerate_recovery_codes"
-                  >
-                    Generate new recovery codes
-                  </.button>
-                  <.button
-                    id="disable-mfa"
-                    variant={:secondary}
-                    tone={:rose}
-                    size={:sm}
-                    type="button"
-                    phx-click="start_disable_mfa"
-                  >
-                    Disable MFA
-                  </.button>
-                </div>
-              </div>
-              <.simple_form
-                :if={@mfa_recovery_regeneration_step == :code}
-                for={@mfa_recovery_regeneration_form}
-                id="mfa_recovery_regeneration_form"
-                phx-submit="regenerate_recovery_codes"
-                class="mt-5 max-w-2xl"
-              >
-                <.section_header level={3} title="Generate new recovery codes">
-                  <:subtitle>
-                    New recovery codes will replace your existing codes. Enter an authenticator
-                    or recovery code to continue.
-                  </:subtitle>
-                </.section_header>
-                <.input
-                  field={@mfa_recovery_regeneration_form[:code]}
-                  type="text"
-                  label="Authenticator or recovery code"
-                  autocomplete="one-time-code"
-                  required
-                />
-                <.error :if={@mfa_recovery_regeneration_error}>
-                  {@mfa_recovery_regeneration_error}
-                </.error>
-                <:actions>
-                  <.button phx-disable-with="Generating...">Generate new codes</.button>
-                  <.button
-                    variant={:ghost}
-                    type="button"
-                    phx-click="cancel_regenerate_recovery_codes"
-                  >
-                    Cancel
-                  </.button>
-                </:actions>
-              </.simple_form>
-              <.simple_form
-                :if={@mfa_disable_step == :code}
-                for={@mfa_disable_form}
-                id="mfa_disable_form"
-                phx-submit="disable_mfa"
-                class="mt-5 max-w-2xl"
-              >
-                <.section_header level={3} title="Disable MFA">
-                  <:subtitle>
-                    You'll stop using an authenticator code to sign in to this workspace. If the workspace
-                    requires MFA, you'll set one up again on your next visit.
-                  </:subtitle>
-                </.section_header>
-                <.input
-                  field={@mfa_disable_form[:code]}
-                  type="text"
-                  label="Authenticator or recovery code"
-                  autocomplete="one-time-code"
-                  required
-                />
-                <.error :if={@mfa_disable_error}>{@mfa_disable_error}</.error>
-                <:actions>
-                  <.button variant={:secondary} tone={:rose} phx-disable-with="Disabling...">
-                    Disable MFA
-                  </.button>
-                  <.button
-                    variant={:ghost}
-                    type="button"
-                    phx-click="cancel_disable_mfa"
-                  >
-                    Cancel
-                  </.button>
-                </:actions>
-              </.simple_form>
-            <% @mfa_enrollment_step == :email -> %>
-              <.mfa_setup_progress step={1} />
-              <.mfa_enrollment_email_verification
-                email={@current_membership.email}
-                form={@mfa_enrollment_email_form}
-                error={@mfa_enrollment_email_error}
-              >
-                <:actions>
-                  <.button phx-disable-with="Verifying...">Verify email</.button>
-                  <%!-- Resending sends a real email — a bordered face (§7.47), so it
+                  <:actions>
+                    <.button phx-disable-with="Verifying...">Verify email</.button>
+                    <%!-- Resending sends a real email — a bordered face (§7.47), so it
                        doesn't read as a second Cancel beside the actual one. --%>
-                  <.button
-                    variant={:secondary}
-                    type="button"
-                    phx-click="resend_mfa_enrollment_email"
-                  >
-                    Resend code
-                  </.button>
-                  <.button variant={:ghost} type="button" phx-click="cancel_mfa">
-                    Cancel
-                  </.button>
-                </:actions>
-              </.mfa_enrollment_email_verification>
-            <% @mfa_enrollment_step == :totp -> %>
-              <.mfa_setup_progress step={2} />
-              <.mfa_enrollment
-                qr_svg={@mfa_qr_svg}
-                setup_key={@mfa_setup_key}
-                form={@mfa_form}
-                variant={:split}
-                error={@mfa_error}
-              >
-                <:instructions>
-                  Scan this QR code with your authenticator app, then enter its 6-digit code.
-                </:instructions>
-                <:actions>
-                  <.button phx-disable-with="Enabling...">Enable MFA</.button>
-                  <.button variant={:ghost} type="button" phx-click="cancel_mfa">
-                    Cancel
-                  </.button>
-                </:actions>
-              </.mfa_enrollment>
-            <% @mfa_facts.enrollment_proof == :email -> %>
-              <div id="mfa-status" class="flex flex-wrap items-center justify-between gap-4">
-                <.chip tone={:amber}>Not enabled</.chip>
-                <.button
-                  variant={:primary}
-                  phx-click="start_mfa"
-                  phx-disable-with="Sending…"
-                  size={:sm}
+                    <.button
+                      variant={:secondary}
+                      type="button"
+                      phx-click="resend_mfa_enrollment_email"
+                    >
+                      Resend code
+                    </.button>
+                    <.button variant={:ghost} type="button" phx-click="cancel_mfa">
+                      Cancel
+                    </.button>
+                  </:actions>
+                </.mfa_enrollment_email_verification>
+              <% @mfa_enrollment_step == :totp -> %>
+                <.mfa_setup_progress step={2} />
+                <.mfa_enrollment
+                  qr_svg={@mfa_qr_svg}
+                  setup_key={@mfa_setup_key}
+                  form={@mfa_form}
+                  variant={:split}
+                  error={@mfa_error}
                 >
-                  Set up MFA
-                </.button>
-              </div>
-              <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
-            <% @mfa_facts.enrollment_proof == :sso -> %>
-              <%!-- An SSO-only Member proves itself with a fresh sign-in at its identity
-                   provider; the callback continues enrollment on the MFA setup page. --%>
-              <div id="mfa-status" class="flex flex-wrap items-center justify-between gap-4">
-                <.chip tone={:amber}>Not enabled</.chip>
-                <.button
-                  id="verify-with-sso"
-                  href={~p"/app/#{@current_account}/mfa_setup/sso"}
-                  method="post"
-                  size={:sm}
-                >
-                  Verify with {sso_provider_name(@current_auth)}
-                </.button>
-              </div>
-              <p class="mt-3 text-sm text-zinc-400">
-                To set up MFA, first sign in again with {sso_provider_name(@current_auth)} to confirm
-                it's you.
-              </p>
-            <% true -> %>
-              <div id="mfa-status" class="flex flex-wrap items-center justify-between gap-4">
-                <.chip tone={:amber}>Not enabled</.chip>
-              </div>
-              <p class="mt-3 text-sm text-zinc-400">
-                Setting up an authenticator needs fresh proof that it's you: a code sent to a
-                verified email address, or a new sign-in through this workspace's identity provider.
-                Neither is available from this session. Ask a workspace administrator for help.
-              </p>
-          <% end %>
+                  <:instructions>
+                    Scan this QR code with your authenticator app, then enter its 6-digit code.
+                  </:instructions>
+                  <:actions>
+                    <.button phx-disable-with="Enabling...">Enable MFA</.button>
+                    <.button variant={:ghost} type="button" phx-click="cancel_mfa">
+                      Cancel
+                    </.button>
+                  </:actions>
+                </.mfa_enrollment>
+              <% true -> %>
+                <div id="mfa-status">
+                  <.section_header level={3} title="Authenticator app">
+                    <:badge>
+                      <span class="text-sm text-zinc-400">Not enabled</span>
+                    </:badge>
+                    <:subtitle>
+                      <%= case @mfa_facts.enrollment_proof do %>
+                        <% :email -> %>
+                          Add an extra code check when you sign in to this workspace.
+                        <% :sso -> %>
+                          First, sign in again with {sso_provider_name(@current_auth)} to confirm it's you.
+                        <% _ -> %>
+                          Setting up an authenticator needs fresh proof that it's you: a code sent to a
+                          verified email address, or a new sign-in through this workspace's identity provider.
+                          Neither is available from this session. Ask a workspace administrator for help.
+                      <% end %>
+                    </:subtitle>
+                  </.section_header>
+                  <%= case @mfa_facts.enrollment_proof do %>
+                    <% :email -> %>
+                      <.button
+                        class="w-full sm:w-auto"
+                        type="button"
+                        phx-click="start_mfa"
+                        phx-disable-with="Sending…"
+                      >
+                        Set up MFA
+                      </.button>
+                    <% :sso -> %>
+                      <.button
+                        id="verify-with-sso"
+                        class="w-full sm:w-auto"
+                        href={~p"/app/#{@current_account}/mfa_setup/sso"}
+                        method="post"
+                      >
+                        Verify with {sso_provider_name(@current_auth)}
+                      </.button>
+                    <% _ -> %>
+                  <% end %>
+                  <.error :if={@mfa_start_error}>{@mfa_start_error}</.error>
+                </div>
+            <% end %>
+          </div>
         </.section_with_note>
 
         <.section_with_note id="sessions">

@@ -86,6 +86,15 @@ list, detail, and forms use the archetype widths below, never per-page drift.
 
 Structural rules that ride along:
 
+- **Security settings attach state to the mechanism and actions to their concern.**
+  Profile MFA names the authenticator with a readable inline state, then groups recovery
+  inventory and regeneration together, with disabling protection as a separate final concern.
+  The state supports the heading: keep it smaller and quieter, and use neutral styling
+  for optional MFA that is off rather than turning it into an amber attention state.
+  Never reduce this to an orphan tiny `Enabled` chip and two adjacent maintenance/destructive
+  buttons. A chosen verification form replaces its own action in the same group; off,
+  loading, enrollment and one-time reveal states replace the overview rather than accumulating
+  below it. Keep normal-size controls and a consistent bounded reading measure.
 - **Complex editors follow operator decision order.** Identity and intent precede
   workflow; action and target precede version pins and stable identifiers;
   runtime-relevant controls stay visible beside the behavior they qualify; and a

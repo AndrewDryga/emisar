@@ -914,11 +914,9 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert has_element?(lv, "#multi-factor-authentication", "Not enabled")
       assert has_element?(lv, "#mfa-status > button[phx-click=start_mfa]", "Set up MFA")
 
-      assert has_element?(
-               lv,
-               "aside#multi-factor-authentication-help",
-               "We recommend enabling MFA to help protect your account in this workspace."
-             )
+      assert has_element?(lv, "#mfa-status h3", "Authenticator app")
+      assert has_element?(lv, "#mfa-status", "Add an extra code check")
+      refute has_element?(lv, "aside#multi-factor-authentication-help")
 
       refute has_element?(lv, "#multi-factor-authentication > div", "recommend")
       refute html =~ "First verify your email"
@@ -936,7 +934,8 @@ defmodule EmisarWeb.ProfileLiveTest do
       assert_received {:email, _}
 
       render_click(lv, "cancel_mfa", %{})
-      assert has_element?(lv, "#multi-factor-authentication-help", "We recommend enabling MFA")
+      assert has_element?(lv, "#mfa-status > button[phx-click=start_mfa]", "Set up MFA")
+      assert has_element?(lv, "#mfa-status", "Not enabled")
     end
 
     test "a suppressed current address does not claim or advance delivery", %{
@@ -1010,7 +1009,7 @@ defmodule EmisarWeb.ProfileLiveTest do
       refute html =~ "api.qrserver.com"
     end
 
-    test "enabled MFA groups its status and actions, then shows only the chosen verification form",
+    test "enabled MFA separates factor, recovery inventory and disable proof in their owning groups",
          %{
            conn: conn,
            owner: owner,
@@ -1025,27 +1024,64 @@ defmodule EmisarWeb.ProfileLiveTest do
 
       assert has_element?(lv, "#mfa-status", "10 recovery codes remaining")
 
-      assert has_element?(
-               lv,
-               ~s(#mfa-management-actions[role="group"]),
-               "Generate new recovery codes"
-             )
-
-      assert has_element?(lv, ~s(#mfa-management-actions #regen-codes[type="button"]))
-      assert has_element?(lv, ~s(#mfa-management-actions #disable-mfa[type="button"]))
+      assert has_element?(lv, "#mfa-status h3", "Authenticator app")
+      assert has_element?(lv, "#mfa-status header span", "Enabled")
+      assert has_element?(lv, "#mfa-recovery-settings h3", "Recovery codes")
+      assert has_element?(lv, "#mfa-disable-settings h3", "Disable MFA")
+      assert has_element?(lv, ~s(#mfa-recovery-settings #regen-codes[type="button"]))
+      assert has_element?(lv, ~s(#mfa-disable-settings #disable-mfa[type="button"]))
 
       lv |> element("#regen-codes") |> render_click()
-      assert has_element?(lv, "#mfa_recovery_regeneration_form")
-      refute has_element?(lv, "#mfa-management-actions")
+      assert has_element?(lv, "#mfa-recovery-settings #mfa_recovery_regeneration_form")
+      refute has_element?(lv, "#regen-codes")
+      refute has_element?(lv, "#disable-mfa")
+      refute has_element?(lv, "#mfa-disable-settings")
       refute has_element?(lv, "#mfa_disable_form")
       render_click(lv, "cancel_regenerate_recovery_codes", %{})
 
       lv |> element("#disable-mfa") |> render_click()
-      assert has_element?(lv, "#mfa_disable_form")
-      refute has_element?(lv, "#mfa-management-actions")
+      assert has_element?(lv, "#mfa-disable-settings #mfa_disable_form")
+      refute has_element?(lv, "#regen-codes")
+      refute has_element?(lv, "#disable-mfa")
       refute has_element?(lv, "#mfa_recovery_regeneration_form")
       render_click(lv, "cancel_disable_mfa", %{})
-      assert has_element?(lv, "#mfa-management-actions")
+      assert has_element?(lv, "#regen-codes")
+      assert has_element?(lv, "#disable-mfa")
+    end
+
+    for remaining <- [0, 1] do
+      @remaining remaining
+      test "#{remaining} recovery codes remaining uses precise count and recovery guidance", %{
+        conn: conn,
+        owner: owner,
+        account: account
+      } do
+        codes = if @remaining == 0, do: [], else: ["digest-1"]
+
+        owner
+        |> Ecto.Changeset.change(mfa_enabled_at: DateTime.utc_now(), mfa_recovery_codes: codes)
+        |> Emisar.Repo.update!()
+
+        {:ok, lv, html} = live(conn, ~p"/app/#{account}/settings/profile")
+
+        count =
+          if @remaining == 1, do: "1 recovery code remaining", else: "0 recovery codes remaining"
+
+        assert has_element?(lv, "#mfa-recovery-settings", count)
+
+        assert has_element?(
+                 lv,
+                 "#mfa-recovery-settings #regen-codes",
+                 "Generate new recovery codes"
+               )
+
+        if @remaining == 0 do
+          assert html =~ "No recovery codes left. Generate a new set now."
+          refute html =~ "before these run out"
+        else
+          assert html =~ "Generate new codes before these run out."
+        end
+      end
     end
 
     test "a low recovery-code count nudges to regenerate (amber)", %{
