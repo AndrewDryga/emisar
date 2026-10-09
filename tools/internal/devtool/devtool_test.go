@@ -1830,6 +1830,7 @@ func writeAttestParityFixture(t *testing.T, root string) {
 func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 	root := t.TempDir()
 	writeAttestParityFixture(t, root)
+	writeStaticcheckFixture(t, root)
 	// The installer parity phase reads both scripts from the root and expects
 	// them to share every helper installerSharedFunctions pins.
 	for _, name := range []string{"install.sh", "install-mcp.sh"} {
@@ -1837,7 +1838,7 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	bin := filepath.Join(root, "fake-bin")
+	bin := filepath.Join(root, "bin")
 	if err := os.Mkdir(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1846,6 +1847,9 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 	t.Setenv("PATH", bin)
 	for _, name := range []string{"bash", "gofmt", "go", "git", "shellcheck"} {
 		script := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$PWD\" '" + name + "' \"$*\" >> \"$COMMAND_LOG\"\n"
+		if name == "go" {
+			script += fakeStaticcheckGo
+		}
 		path := filepath.Join(bin, name)
 		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 			t.Fatal(err)
@@ -1868,7 +1872,14 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 		module + "|gofmt|-l -s .",
 		module + "|go|mod verify",
 		module + "|go|vet ./...",
-		module + "|go|run " + staticcheckVersion + " ./...",
+		filepath.Dir(module) + "/tools|go|env GOROOT",
+		"<toolbuild>|go|list -m -mod=readonly -json honnef.co/go/tools",
+		"<toolbuild>|go|mod download -json honnef.co/go/tools@v0.8.1",
+		"<toolbuild>|go|list -m -mod=readonly -json golang.org/x/tools",
+		"<toolbuild>|go|mod verify",
+		"<toolbuild>|go|mod edit -replace=honnef.co/go/tools@v0.8.1=<toolbuild>/source",
+		"<toolbuild>|go|build -mod=readonly -trimpath -o <toolbuild>/staticcheck honnef.co/go/tools/cmd/staticcheck",
+		module + "|staticcheck|./...|" + os.Getenv("GOWORK") + "|" + os.Getenv("GOTOOLCHAIN"),
 		module + "|go|mod tidy -diff",
 		module + "|go|test -race -count=1 -coverprofile=coverage.out ./...",
 	}
@@ -1883,6 +1894,11 @@ func TestRunnerGateUsesModuleDirectoryAndCoverage(t *testing.T) {
 		filepath.Dir(module)+"|go|run ./tools/cmd/installtest runner",
 	)
 	got := strings.Split(strings.TrimSpace(string(data)), "\n")
+	// Build paths are fresh private directories, never the analysis module.
+	private := strings.SplitN(got[4], "|", 2)[0]
+	for i := range got {
+		got[i] = strings.ReplaceAll(got[i], private, "<toolbuild>")
+	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("commands:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -1910,6 +1926,7 @@ func TestGoRaceSupported(t *testing.T) {
 
 func TestMCPGateRejectsDependencyChecksumFile(t *testing.T) {
 	root := t.TempDir()
+	writeStaticcheckFixture(t, root)
 	module := filepath.Join(root, "mcp")
 	if err := os.Mkdir(module, 0o755); err != nil {
 		t.Fatal(err)
@@ -1918,17 +1935,22 @@ func TestMCPGateRejectsDependencyChecksumFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeAttestParityFixture(t, root)
-	bin := filepath.Join(root, "fake-bin")
+	bin := filepath.Join(root, "bin")
 	if err := os.Mkdir(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)
 	for _, name := range []string{"gofmt", "go"} {
 		path := filepath.Join(bin, name)
-		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		script := "#!/bin/sh\n"
+		if name == "go" {
+			script += fakeStaticcheckGo
+		}
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
+	t.Setenv("COMMAND_LOG", filepath.Join(root, "commands.log"))
 	app := New(root, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 
 	err := app.Run(t.Context(), []string{"gate", "mcp"})

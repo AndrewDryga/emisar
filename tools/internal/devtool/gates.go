@@ -38,9 +38,6 @@ func (a *App) gatePhase(label string, action func() error) error {
 }
 
 // Keep this in step with the version any workflow installs directly.
-const staticcheckVersion = "honnef.co/go/tools/cmd/staticcheck@2026.2.1"
-
-// Keep this in step with the version any workflow installs directly.
 const actionlintVersion = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
 
 // GitHub's $/ self-repository action reference is newer than the latest
@@ -289,10 +286,10 @@ func (a *App) goGate(ctx context.Context, module, coverage string) error {
 	}
 	// staticcheck belongs to the canonical gate, not a CI-only step: as a CI-only
 	// step it let a green local gate ship a red job, which is how forty findings
-	// accumulated unseen. Pinned so a new staticcheck release cannot fail an
-	// unchanged tree; `go run` keeps it off the contributor's PATH.
+	// accumulated unseen. The pinned tool build stays off the contributor's PATH
+	// and keeps Go export-format compatibility separate from analyzer changes.
 	if err := a.gatePhase(module+" staticcheck", func() error {
-		if err := a.run(ctx, dir, nil, "go", "run", staticcheckVersion, "./..."); err != nil {
+		if err := a.runStaticcheck(ctx, dir, "./..."); err != nil {
 			return fmt.Errorf("%s staticcheck findings: %w", module, err)
 		}
 		return nil
