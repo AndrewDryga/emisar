@@ -37,6 +37,21 @@ cases:
       exit: [2]
       stderr_contains: ["EMQX_API_SECRET did not reach this action. Allowlist it in the runner's execution.inherit_env."]
       stderr_not_contains: ["[REDACTED]"]
+    probes:
+      - name: Empty secret has its own actionable message
+        argv: [/bin/sh, /packs/emqx/scripts/emqx_api.sh, nodes]
+        env: {EMQX_API_SECRET: ""}
+        expect:
+          exit: [2]
+          stderr_contains: ["EMQX_API_SECRET is empty. Set it to the API key's secret in the runner's environment."]
+          stderr_not_contains: ["did not reach this action", "[REDACTED]"]
+      - name: Empty key has its own actionable message
+        argv: [/bin/sh, /packs/emqx/scripts/emqx_api.sh, nodes]
+        env: {EMQX_API_KEY: ""}
+        expect:
+          exit: [2]
+          stderr_contains: ["EMQX_API_KEY is empty. Set it to an EMQX API key in the runner's environment."]
+          stderr_not_contains: ["did not reach this action", "[REDACTED]"]
   - action: emqx.listeners
     expect:
       stdout_contains: ['"id":"tcp:default"', current_connections]

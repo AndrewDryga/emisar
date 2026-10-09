@@ -102,6 +102,52 @@ func TestExecutor_AllowlistedParentEnvPassesThrough(t *testing.T) {
 	}
 }
 
+func TestExecutor_PreservesEmptyInheritedEnv(t *testing.T) {
+	const key = "EMISAR_EMPTY_PROBE"
+	tests := []struct {
+		name        string
+		parentSet   bool
+		parentValue string
+		inherit     bool
+		explicit    map[string]string
+		want        string
+	}{
+		{name: "inherited empty", parentSet: true, inherit: true, want: "set-empty"},
+		{name: "inherited unset", inherit: true, want: "unset"},
+		{name: "unlisted empty", parentSet: true, want: "unset"},
+		{name: "explicit empty wins", parentSet: true, parentValue: "visible", inherit: true, explicit: map[string]string{key: ""}, want: "set-empty"},
+		{name: "inherited nonempty", parentSet: true, parentValue: "visible", inherit: true, want: "set-nonempty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(key, tt.parentValue)
+			if !tt.parentSet {
+				if err := os.Unsetenv(key); err != nil {
+					t.Fatal(err)
+				}
+			}
+			e := New()
+			if tt.inherit {
+				e.AllowInheritEnv(key)
+			}
+			res, err := e.Execute(context.Background(), Plan{
+				Binary: "/bin/sh",
+				Argv: []string{"-c", `if [ "${EMISAR_EMPTY_PROBE+x}" != x ]; then printf unset
+elif [ -z "$EMISAR_EMPTY_PROBE" ]; then printf set-empty
+else printf set-nonempty; fi`},
+				Env:    tt.explicit,
+				Limits: Limits{Timeout: 5 * time.Second, MaxStdoutBytes: 1024, MaxStderrBytes: 1024},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Status != StatusOK || res.ExitCode != 0 || res.Stdout != tt.want || res.Stderr != "" {
+				t.Fatalf("status=%s exit=%d stdout=%q stderr=%q; want success and %q", res.Status, res.ExitCode, res.Stdout, res.Stderr, tt.want)
+			}
+		})
+	}
+}
+
 // TestStreamPipe_BoundsUnboundedLine: a child that emits a huge line with NO
 // newline must not force streamPipe to buffer the whole line in RAM — the old
 // ReadBytes('\n') accumulated the entire line before the size limit applied (an
