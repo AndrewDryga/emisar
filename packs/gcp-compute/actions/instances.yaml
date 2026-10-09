@@ -1,0 +1,43 @@
+schema_version: 1
+id: gcp.instances
+title: List a project's Compute Engine instances
+kind: script
+risk: low
+description: >
+  Read one bounded project-wide page of instances across zones, including
+  unmanaged and stopped VMs. Return name, zone, status, machine type, internal
+  and external IP addresses, and full labels. IPv6 addresses are the first
+  addresses of their assigned ranges, not single-address range claims.
+  Metadata, descriptions, disks, and service accounts are omitted. Continue
+  with next_page_cursor and the same project; pagination is not a snapshot.
+side_effects:
+  - One read-only Compute Engine instances.aggregatedList request.
+  - Returns at most 100 instances; oversized or incomplete pages fail without partial data.
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: page_size
+    type: integer
+    default: 50
+    description: Instances per request, capped at 100 within the 4 MiB response budget.
+    validation: {min: 1, max: 100}
+  - name: page_cursor
+    type: string
+    default: ""
+    description: Opaque next_page_cursor from the preceding page in the same target scope.
+    validation: {pattern: "^[^\\x00-\\x1f\\x7f-\\x9f]*$", max_length: 1024}
+execution:
+  script: {path: scripts/instances.sh, interpreter: /bin/sh}
+  argv: ["{{ args.project }}", "{{ args.page_size }}", "{{ args.page_cursor }}"]
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Find unmanaged and stopped VMs
+    args: {project: example-prod, page_size: 50}

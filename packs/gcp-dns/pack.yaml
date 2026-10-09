@@ -2,13 +2,12 @@ schema_version: 1
 
 id: gcp-dns
 name: Google Cloud DNS diagnostics and record control
-version: 0.2.3
+version: 0.2.4
 description: >
   Cloud DNS diagnostics plus governed exact-record control: managed-zone,
-  DNSSEC, server-policy, response-policy, and exact-record reads, and
+  DNSSEC, server-policy, response-policy, paginated zone record sets, and exact-record reads, and
   upsert or delete of one exact record set with explicit zone, name, type,
-  TTL, and value semantics. Zone-wide record dumps and arbitrary change
-  batches are intentionally excluded.
+  TTL, and value semantics. Arbitrary change batches are intentionally excluded.
 vendor: emisar
 homepage: https://emisar.dev/packs/gcp-dns
 
@@ -18,10 +17,11 @@ requires:
   binaries:
     - gcloud
     - jq
+    - curl
 
 setup:
   summary: >
-    Drives gcloud and projects Cloud DNS API responses locally before they
+    Drives gcloud and bounded HTTPS reads, and projects Cloud DNS API responses locally before they
     leave the runner. Authenticate gcloud before loading the pack.
   env:
     - name: CLOUDSDK_CONFIG
@@ -31,8 +31,10 @@ setup:
       description: Optional credential file that overrides the active gcloud account.
       example: /etc/emisar/gcp-reader.json
   notes:
+    - "Credential/config env and any operator endpoint override or CURL_CA_BUNDLE must be allowlisted in the runner's `execution.inherit_env`."
     - "Grant least privilege for the actions you enable: reads need roles/dns.reader or equivalent; the record upsert and delete mutations need roles/dns.admin-equivalent permissions on the target zones."
-    - "Exact record and response-policy-rule actions return DNS record data, including TXT values when explicitly requested."
+    - "Record-set pages, exact records, and response-policy rules return full DNS record data, including TXT values."
+    - "The paginated record-set read uses gcloud authentication and curl over HTTPS. It sends a quota-project header only for an explicitly configured concrete billing/quota_project; that opt-in requires serviceusage.services.use on the quota project."
     - "Projected actions use mode-0600 temporary response files and remove them before exit."
     - "This remote-target pack declares no host detection signal and is never auto-suggested merely because gcloud is installed."
   verify: gcp.dns_zones
@@ -41,6 +43,7 @@ actions:
   - actions/zones.yaml
   - actions/zone_describe.yaml
   - actions/record_lookup.yaml
+  - actions/record_sets.yaml
   - actions/record_upsert.yaml
   - actions/record_delete.yaml
   - actions/policies.yaml

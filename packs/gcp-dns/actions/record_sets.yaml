@@ -1,0 +1,46 @@
+schema_version: 1
+id: gcp.dns_record_sets
+title: List a zone's DNS record sets
+kind: script
+risk: low
+description: >
+  Read one bounded page of a managed zone's record sets, retaining each name,
+  type, TTL, and full record data, including TXT values. Routing-policy-only
+  records are identified without returning the policy. Continue with
+  next_page_cursor and the same project and zone; pagination is not a snapshot.
+side_effects:
+  - One read-only Cloud DNS resourceRecordSets.list request.
+  - Returns at most 100 record sets; oversized pages fail without returning partial data.
+args:
+  - name: project
+    type: string
+    required: true
+    description: Google Cloud project ID.
+    validation: {pattern: "^[a-z][a-z0-9-]{4,28}[a-z0-9]$", max_length: 30}
+  - name: zone
+    type: string
+    required: true
+    description: Managed-zone name.
+    validation: {pattern: "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$", max_length: 63}
+  - name: page_size
+    type: integer
+    default: 50
+    description: Record sets per request, capped at 100 within the 4 MiB response budget.
+    validation: {min: 1, max: 100}
+  - name: page_cursor
+    type: string
+    default: ""
+    description: Opaque next_page_cursor from the preceding page in the same target scope.
+    validation: {pattern: "^[^\\x00-\\x1f\\x7f-\\x9f]*$", max_length: 1024}
+execution:
+  script: {path: scripts/record_sets.sh, interpreter: /bin/sh}
+  argv: ["{{ args.project }}", "{{ args.zone }}", "{{ args.page_size }}", "{{ args.page_cursor }}"]
+  timeout: 90s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 4194304
+  max_stderr_bytes: 16384
+examples:
+  - title: Audit an application's zone
+    args: {project: example-prod, zone: app, page_size: 50}

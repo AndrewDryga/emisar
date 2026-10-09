@@ -11,7 +11,329 @@ defaults:
   expect:
     stdout_not_empty: true
     stdout_not_contains: [packtest-canary-gcp-compute-secret-a951]
+    stderr_not_contains: [packtest-canary-gcp-compute-secret-a951]
 cases:
+  - action: gcp.instances
+    env: &compute-rest
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE: https://gcp-api:8443/compute/v1/
+      CURL_CA_BUNDLE: /packs/gcp-compute/test/fixtures/server.crt
+    args: {project: example-prod, page_size: 2}
+    expect:
+      json:
+        /instances/0/name: harness-vm
+        /instances/0/zone: us-central1-a
+        /instances/0/status: RUNNING
+        /instances/0/machine_type: e2-small
+        /instances/0/internal_ips/0: 10.20.0.10
+        /instances/0/internal_ips: [10.20.0.10, 10.21.0.10, "fd20::10"]
+        /instances/0/external_ips: [203.0.113.10, "2001:db8::10"]
+        /instances/0/labels/cluster: harness
+        /instances/0/labels/password: "[REDACTED]"
+        /instances/1/name: unmanaged-vm
+        /instances/1/status: TERMINATED
+        /more_available: true
+        /next_page_cursor: 'compute:2&value=+/"λ'
+        /cursor_omitted: false
+      stdout_not_contains: [metadata, description, disks, serviceAccounts, unknown, packtest-canary-gcp-compute-secret-a951]
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS http://gcp-api:8080/probe/state | jq -e ''.requests | length == 1 and .[0].billing_project == null and .[0].query.maxResults == ["2"] and .[0].query.returnPartialSuccess == ["true"]''']
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-next-page
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"example-prod","page_size":2,"page_cursor":"compute:2&value=+/\"λ"}
+    expect: {"json":{"/instances/0/name":"third-vm","/instances/0/zone":"europe-west1-b","/instances/0/labels":{},"/instances/0/internal_ips":[],"/more_available":false,"/next_page_cursor":null}}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 1 and .[0].project == \"example-prod\" and .[0].query.pageToken == [\"compute:2&value=+/\\\"λ\"] and .[0].query.returnPartialSuccess == [\"true\"]'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-empty
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"empty-prod","page_size":2}
+    expect: {"json":{"/instances":[],"/more_available":false,"/cursor_omitted":false,"/next_page_cursor":null}}
+  - name: gcp.instances-empty-with-continuation
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"empty-page-prod","page_size":2}
+    expect: {"json":{"/instances":[],"/more_available":true,"/next_page_cursor":"empty-page-next"}}
+  - name: gcp.instances-continue-empty-page
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"empty-page-prod","page_size":2,"page_cursor":"empty-page-next"}
+    expect: {"json":{"/instances/0/name":"third-vm","/more_available":false}}
+  - name: gcp.instances-forbidden
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"denied-prod","page_size":2}
+    expect: {"status":"failure","exit":[22],"stdout_not_empty":false,"stderr_contains":["instance list permission denied"]}
+  - name: gcp.instances-missing-target
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"missing-prod","page_size":2}
+    expect: {"status":"failure","exit":[22],"stdout_not_empty":false,"stderr_contains":["project not found"]}
+  - name: gcp.instances-reject-badjson
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"badjson-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-multidoc
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"multidoc-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-errorpage
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"errorpage-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-badcursor
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"badcursor-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-overfull
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"overfull-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-badscope
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"badscope-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-badinstances
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"badinstances-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-badlabels
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"badlabels-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-badnetwork
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"badnetwork-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-partial
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"partial-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-reject-warning
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"warning-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed, incomplete, or overfull"]}
+  - name: gcp.instances-oversize-response
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"oversize-prod","page_size":2}
+    expect: {"status":"failure","exit":[63],"stdout_not_empty":false,"stderr_contains":["request failed"]}
+  - name: gcp.instances-transport-failure-keeps-body-private
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"transport-prod","page_size":2}
+    expect: {"status":"failure","exit":[18,56],"stdout_not_empty":false,"stderr_contains":["request failed"]}
+  - name: gcp.instances-refuse-redirect
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"redirect-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["unexpected HTTP 302"]}
+  - name: gcp.instances-omit-longcursor
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"longcursor-prod","page_size":2}
+    expect: {"json":{"/instances":[],"/more_available":true,"/cursor_omitted":true,"/next_page_cursor":null}}
+  - name: gcp.instances-omit-controlcursor
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"controlcursor-prod","page_size":2}
+    expect: {"json":{"/instances":[],"/more_available":true,"/cursor_omitted":true,"/next_page_cursor":null}}
+  - name: gcp.instances-omit-unicodecursor
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"unicodecursor-prod","page_size":2}
+    expect: {"json":{"/instances":[],"/more_available":true,"/cursor_omitted":true,"/next_page_cursor":null}}
+  - name: gcp.instances-max-byte-cursor
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"maxcursor-prod","page_size":2,"page_cursor":"𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨"}
+    expect: {"json":{"/more_available":true,"/cursor_omitted":false,"/next_page_cursor":"𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨"}}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests[0].query.pageToken[0] | length == 256 and utf8bytelength == 1024'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-maximum-page
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"maximum-prod","page_size":100}
+    expect: {"json":{"/instances/99/name":"max-vm-99","/instances/99/labels/label063𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨":"𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨","/more_available":false}}
+  - name: gcp.instances-invalid-project
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"../../another","page_size":2}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must match pattern"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-page-too-large
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"example-prod","page_size":101}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must be <= 100"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-page-too-small
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"example-prod","page_size":0}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must be >= 1"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-invalid-cursor-control
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"example-prod","page_size":2,"page_cursor":"next\npage"}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must match pattern"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-invalid-cursor-byte-budget
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+    args: {"project":"example-prod","page_size":2,"page_cursor":"𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨"}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must be at most 1024 bytes"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-explicit-quota-project
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+      CLOUDSDK_BILLING_QUOTA_PROJECT: "quota-prod"
+    args: {"project":"example-prod","page_size":2}
+    expect: {"json":{"/instances/0/name":"harness-vm"}}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 1 and .[0].billing_project == \"quota-prod\"'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-legacy-quota-omitted
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+      CLOUDSDK_BILLING_QUOTA_PROJECT: "LEGACY"
+    args: {"project":"example-prod","page_size":2}
+    expect: {"json":{"/instances/0/name":"harness-vm"}}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 1 and .[0].billing_project == null'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-quota-header-injection
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+      CLOUDSDK_BILLING_QUOTA_PROJECT: "quota-prod\nInjected: bad"
+    args: {"project":"example-prod","page_size":2}
+    expect: {"status":"failure","exit":[2],"stdout_not_empty":false,"stderr_contains":["concrete project ID or number"]}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-credential-header-injection
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+      CLOUDSDK_AUTH_ACCESS_TOKEN: "packtest-canary-gcp-compute-access-token-011a\nInjected: bad"
+    args: {"project":"example-prod","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["invalid access credential"]}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-https-required
+    action: gcp.instances
+    env:
+      <<: *compute-rest
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE: "http://gcp-api:8080/compute/v1/"
+    args: {"project":"example-prod","page_size":2}
+    expect: {"status":"failure","exit":[2],"stdout_not_empty":false,"stderr_contains":["endpoint must use HTTPS"]}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.instances-top-level-empty
+    action: gcp.instances
+    env: *compute-rest
+    args: {project: empty-top-prod}
+    expect:
+      json: {/instances: [], /more_available: false, /next_page_cursor: null}
+  - name: gcp.instances-top-level-empty-with-continuation
+    action: gcp.instances
+    env: *compute-rest
+    args: {project: empty-top-page-prod}
+    expect:
+      json: {/instances: [], /more_available: true, /next_page_cursor: empty-page-next}
+  - name: gcp.instances-top-level-empty-continue
+    action: gcp.instances
+    env: *compute-rest
+    args: {project: empty-top-page-prod, page_cursor: empty-page-next}
+    expect:
+      json: {/instances/0/name: third-vm, /more_available: false}
+  - name: gcp.instances-top-level-warning
+    action: gcp.instances
+    env: *compute-rest
+    args: {project: warning-top-prod}
+    expect: {status: failure, exit: [1], stdout_not_empty: false, stderr_contains: ["incomplete"]}
+  - name: gcp.instances-contradictory-top-level-empty
+    action: gcp.instances
+    env: *compute-rest
+    args: {project: contradictory-top-prod}
+    expect: {status: failure, exit: [1], stdout_not_empty: false, stderr_contains: ["incomplete"]}
+  - name: gcp.instances-contradictory-scope-empty
+    action: gcp.instances
+    env: *compute-rest
+    args: {project: contradictory-scope-prod}
+    expect: {status: failure, exit: [1], stdout_not_empty: false, stderr_contains: ["incomplete"]}
   - action: gcp.instance_describe
     args:
       project: example-prod

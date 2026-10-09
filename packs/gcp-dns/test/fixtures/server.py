@@ -1,10 +1,13 @@
 import json
+import ssl
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 CANARY = "packtest-canary-gcp-dns-secret-b521"
 
 MUTATIONS = []
+READ_REQUESTS = []
 RECORDS = {
     ("api.example.test.", "A"): {"ttl": 300, "rrdatas": ["203.0.113.30"]},
 }
@@ -35,6 +38,84 @@ def rrset(name, rtype):
 
 def error(code, message):
     return {"error": {"code": code, "message": message}}
+
+
+def inventory(path, query, billing_project):
+    project = path.split("/projects/", 1)[1].split("/", 1)[0]
+    zone_name = path.split("/managedZones/", 1)[1].split("/", 1)[0]
+    READ_REQUESTS.append({"project": project, "zone": zone_name, "query": query,
+                          "billing_project": billing_project})
+    if project == "denied-prod":
+        return 403, error(403, "record-set list permission denied")
+    if zone_name != "harness-zone":
+        return 404, error(404, "managed zone not found")
+    if project == "badjson-prod":
+        return 200, b'{"rrsets":'
+    if project == "multidoc-prod":
+        return 200, b'{"rrsets":[]}\n{"rrsets":[]}'
+    if project == "errorpage-prod":
+        return 200, error(403, "unexpected success error")
+    if project == "badarray-prod":
+        return 200, {"rrsets": {"name": CANARY}}
+    if project == "badttl-prod":
+        return 200, {"rrsets": [{"name": "api.example.test.", "type": "A",
+                                 "ttl": -1, "rrdatas": ["203.0.113.30"]}]}
+    if project == "redirect-prod":
+        return 302, {"rrsets": [], "unknown": CANARY}
+    if project == "transport-prod":
+        return 200, {"rrsets": [], "unknown": CANARY}
+    if project == "badtype-prod":
+        return 200, {"rrsets": [{"name": "api.example.test.", "type": "A", "ttl": 300,
+                                 "rrdatas": [{"metadata": CANARY}]}]}
+    if project == "oversize-prod":
+        return 200, {"rrsets": [], "unknown": "x" * 4194304}
+    if project == "overfull-prod":
+        return 200, {"rrsets": [rrset("api.example.test.", "A")] * 3,
+                     "nextPageToken": "must-not-skip"}
+    if project == "empty-prod":
+        return 200, {"rrsets": []}
+    if project == "empty-page-prod" and not query.get("pageToken"):
+        return 200, {"rrsets": [], "nextPageToken": "empty-page-next"}
+    if project == "longcursor-prod":
+        return 200, {"rrsets": [], "nextPageToken": "x" * 1025}
+    if project == "controlcursor-prod":
+        return 200, {"rrsets": [], "nextPageToken": "next\npage"}
+    if project == "unicodecursor-prod":
+        return 200, {"rrsets": [], "nextPageToken": "𐐨" * 257}
+    if project == "maxcursor-prod":
+        return 200, {"rrsets": [], "nextPageToken": "𐐨" * 256}
+    if project == "badcursor-prod":
+        return 200, {"rrsets": [], "nextPageToken": {"value": CANARY}}
+    if project == "maximum-prod":
+        return 200, {"rrsets": [{
+            "name": f"record-{i}.example.test.", "type": "TXT", "ttl": 2147483647,
+            "rrdatas": ['"' + "x" * 255 + '" "' + "x" * 255 + '"'] * 4,
+            "unknown": CANARY,
+        } for i in range(100)]}
+    records = [
+        rrset("api.example.test.", "A"),
+        {"name": "ipv6.example.test.", "type": "AAAA", "ttl": 60,
+         "rrdatas": ["2001:db8::30"]},
+        {"name": "txt.example.test.", "type": "TXT", "ttl": 120,
+         "rrdatas": ['"verification=value"', '"quoted \\"value\\""'],
+         "description": CANARY},
+        {"name": "policy.example.test.", "type": "A", "ttl": 30,
+         "routingPolicy": {"wrr": {"items": [{"weight": 1, "rrdatas": ["203.0.113.40"]}]}},
+         "unknown": CANARY},
+        {"name": "mail.example.test.", "type": "MX", "ttl": 600,
+         "rrdatas": ["10 mail.example.test.", "20 backup.example.test."]},
+    ]
+    cursor = query.get("pageToken", [""])[0]
+    cursor_positions = {"": 0, "dns:2&value=+/\"λ": 2, "dns:4&value=+/\"λ": 4,
+                        "empty-page-next": 4}
+    if cursor not in cursor_positions:
+        return 400, error(400, "invalid continuation")
+    size = int(query.get("maxResults", ["100"])[0])
+    offset = cursor_positions[cursor]
+    payload = {"rrsets": records[offset:offset + size], "unknown": CANARY}
+    if offset + size < len(records):
+        payload["nextPageToken"] = f'dns:{offset + size}&value=+/"λ'
+    return 200, payload
 
 
 def rrset_collection(method, query, body):
@@ -111,7 +192,7 @@ def response(method, raw_path, body):
     if path == "/health":
         return 200, {"ok": True}
     if path == "/probe/state":
-        return 200, {"mutations": MUTATIONS}
+        return 200, {"mutations": MUTATIONS, "requests": READ_REQUESTS}
     if path.endswith("/managedZones/harness-zone/rrsets"):
         return rrset_collection(method, query, body)
     if "/managedZones/harness-zone/rrsets/" in path:
@@ -170,16 +251,29 @@ class Handler(BaseHTTPRequestHandler):
     def handle_request(self):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length).decode() if length else ""
-        result = response(self.command, self.path, body)
+        if self.server.server_port == 8443 and self.command == "GET" and self.path.split("?", 1)[0].endswith("/rrsets"):
+            parsed = urlparse(self.path)
+            if self.headers.get("Authorization") != "Bearer packtest-canary-gcp-access-token-27be":
+                result = 401, error(401, "authentication required")
+            else:
+                result = inventory(parsed.path, parse_qs(parsed.query, keep_blank_values=True),
+                                   self.headers.get("X-Goog-User-Project"))
+        else:
+            result = response(self.command, self.path, body)
         if result is None:
             result = 404, error(404, f"unhandled path {self.path}")
         status, payload = result
-        encoded = json.dumps(payload).encode()
+        encoded = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(encoded)))
+        truncated = "/projects/transport-prod/" in self.path
+        self.send_header("Content-Length", str(len(encoded) + (1 if truncated else 0)))
+        if status == 302:
+            self.send_header("Location", "https://gcp-api:8443/must-not-follow")
         self.end_headers()
         self.wfile.write(encoded)
+        if truncated:
+            self.close_connection = True
 
     do_GET = handle_request
     do_POST = handle_request
@@ -190,4 +284,9 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+tls = ThreadingHTTPServer(("0.0.0.0", 8443), Handler)
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.load_cert_chain("/fixture/server.crt", "/fixture/server.key")
+tls.socket = context.wrap_socket(tls.socket, server_side=True)
+threading.Thread(target=tls.serve_forever, daemon=True).start()
 ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()

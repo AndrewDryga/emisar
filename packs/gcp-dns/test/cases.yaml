@@ -11,7 +11,287 @@ defaults:
   expect:
     stdout_not_empty: true
     stdout_not_contains: [packtest-canary-gcp-dns-secret-b521]
+    stderr_not_contains: [packtest-canary-gcp-dns-secret-b521]
 cases:
+  - action: gcp.dns_record_sets
+    env: &dns-rest
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_DNS: https://gcp-api:8443/dns/v1/
+      CURL_CA_BUNDLE: /packs/gcp-dns/test/fixtures/server.crt
+    args: {project: example-prod, zone: harness-zone, page_size: 2}
+    expect:
+      json:
+        /record_sets/0/name: api.example.test.
+        /record_sets/0/type: A
+        /record_sets/0/ttl: 300
+        /record_sets/0/rrdatas/0: 203.0.113.30
+        /record_sets/1/type: AAAA
+        /more_available: true
+        /next_page_cursor: 'dns:2&value=+/"λ'
+        /cursor_omitted: false
+    probes:
+      - argv: [/bin/sh, -c, 'curl -fsS http://gcp-api:8080/probe/state | jq -e ''.requests | length == 1 and .[0].billing_project == null and .[0].query.maxResults == ["2"]''']
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-next-page
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"example-prod","zone":"harness-zone","page_size":2,"page_cursor":"dns:2&value=+/\"λ"}
+    expect: {"json":{"/record_sets/0/name":"txt.example.test.","/record_sets/0/rrdatas":["\"verification=value\"","\"quoted \\\"value\\\"\""],"/record_sets/1/name":"policy.example.test.","/record_sets/1/rrdatas":[],"/record_sets/1/routing_policy":true,"/next_page_cursor":"dns:4&value=+/\"λ"}}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 1 and .[0].project == \"example-prod\" and .[0].zone == \"harness-zone\" and .[0].query.pageToken == [\"dns:2&value=+/\\\"λ\"] and .[0].query.maxResults == [\"2\"]'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-final-page
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"example-prod","zone":"harness-zone","page_size":2,"page_cursor":"dns:4&value=+/\"λ"}
+    expect: {"json":{"/record_sets/0/rrdatas":["10 mail.example.test.","20 backup.example.test."],"/more_available":false,"/next_page_cursor":null}}
+  - name: gcp.dns_record_sets-empty
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"empty-prod","zone":"harness-zone","page_size":2}
+    expect: {"json":{"/record_sets":[],"/more_available":false,"/cursor_omitted":false,"/next_page_cursor":null}}
+  - name: gcp.dns_record_sets-empty-with-continuation
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"empty-page-prod","zone":"harness-zone","page_size":2}
+    expect: {"json":{"/record_sets":[],"/more_available":true,"/next_page_cursor":"empty-page-next"}}
+  - name: gcp.dns_record_sets-continue-empty-page
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"empty-page-prod","zone":"harness-zone","page_size":2,"page_cursor":"empty-page-next"}
+    expect: {"json":{"/record_sets/0/name":"mail.example.test.","/more_available":false}}
+  - name: gcp.dns_record_sets-forbidden
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"denied-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[22],"stdout_not_empty":false,"stderr_contains":["record-set list permission denied"]}
+  - name: gcp.dns_record_sets-missing-target
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"example-prod","zone":"missing-zone","page_size":2}
+    expect: {"status":"failure","exit":[22],"stdout_not_empty":false,"stderr_contains":["managed zone not found"]}
+  - name: gcp.dns_record_sets-reject-badjson
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"badjson-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed or overfull"]}
+  - name: gcp.dns_record_sets-reject-multidoc
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"multidoc-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed or overfull"]}
+  - name: gcp.dns_record_sets-reject-errorpage
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"errorpage-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed or overfull"]}
+  - name: gcp.dns_record_sets-reject-badcursor
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"badcursor-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed or overfull"]}
+  - name: gcp.dns_record_sets-reject-overfull
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"overfull-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed or overfull"]}
+  - name: gcp.dns_record_sets-reject-badtype
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"badtype-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed or overfull"]}
+  - name: gcp.dns_record_sets-reject-badarray
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"badarray-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed or overfull"]}
+  - name: gcp.dns_record_sets-reject-badttl
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"badttl-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["malformed or overfull"]}
+  - name: gcp.dns_record_sets-oversize-response
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"oversize-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[63],"stdout_not_empty":false,"stderr_contains":["request failed"]}
+  - name: gcp.dns_record_sets-transport-failure-keeps-body-private
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"transport-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[18,56],"stdout_not_empty":false,"stderr_contains":["request failed"]}
+  - name: gcp.dns_record_sets-refuse-redirect
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"redirect-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["unexpected HTTP 302"]}
+  - name: gcp.dns_record_sets-omit-longcursor
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"longcursor-prod","zone":"harness-zone","page_size":2}
+    expect: {"json":{"/record_sets":[],"/more_available":true,"/cursor_omitted":true,"/next_page_cursor":null}}
+  - name: gcp.dns_record_sets-omit-controlcursor
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"controlcursor-prod","zone":"harness-zone","page_size":2}
+    expect: {"json":{"/record_sets":[],"/more_available":true,"/cursor_omitted":true,"/next_page_cursor":null}}
+  - name: gcp.dns_record_sets-omit-unicodecursor
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"unicodecursor-prod","zone":"harness-zone","page_size":2}
+    expect: {"json":{"/record_sets":[],"/more_available":true,"/cursor_omitted":true,"/next_page_cursor":null}}
+  - name: gcp.dns_record_sets-max-byte-cursor
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"maxcursor-prod","zone":"harness-zone","page_size":2,"page_cursor":"𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨"}
+    expect: {"json":{"/more_available":true,"/cursor_omitted":false,"/next_page_cursor":"𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨"}}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests[0].query.pageToken[0] | length == 256 and utf8bytelength == 1024'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-maximum-page
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"maximum-prod","zone":"harness-zone","page_size":100}
+    expect: {"json":{"/record_sets/99/name":"record-99.example.test.","/record_sets/99/ttl":2147483647,"/record_sets/99/rrdatas":["\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\" \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"","\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\" \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"","\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\" \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"","\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\" \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\""],"/more_available":false}}
+  - name: gcp.dns_record_sets-invalid-project
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"../../another","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must match pattern"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-page-too-large
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"example-prod","zone":"harness-zone","page_size":101}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must be <= 100"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-page-too-small
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"example-prod","zone":"harness-zone","page_size":0}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must be >= 1"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-invalid-cursor-control
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"example-prod","zone":"harness-zone","page_size":2,"page_cursor":"next\npage"}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must match pattern"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-invalid-cursor-byte-budget
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"example-prod","zone":"harness-zone","page_size":2,"page_cursor":"𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨𐐨"}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must be at most 1024 bytes"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-invalid-zone
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+    args: {"project":"example-prod","zone":"zone/escape","page_size":2}
+    expect: {"status":"failure","reason":"argument_invalid","error_contains":["must match pattern"],"stdout_not_empty":false}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-explicit-quota-project
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+      CLOUDSDK_BILLING_QUOTA_PROJECT: "quota-prod"
+    args: {"project":"example-prod","zone":"harness-zone","page_size":2}
+    expect: {"json":{"/record_sets/0/name":"api.example.test."}}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 1 and .[0].billing_project == \"quota-prod\"'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-legacy-quota-omitted
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+      CLOUDSDK_BILLING_QUOTA_PROJECT: "LEGACY"
+    args: {"project":"example-prod","zone":"harness-zone","page_size":2}
+    expect: {"json":{"/record_sets/0/name":"api.example.test."}}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 1 and .[0].billing_project == null'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-quota-header-injection
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+      CLOUDSDK_BILLING_QUOTA_PROJECT: "quota-prod\nInjected: bad"
+    args: {"project":"example-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[2],"stdout_not_empty":false,"stderr_contains":["concrete project ID or number"]}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-credential-header-injection
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+      CLOUDSDK_AUTH_ACCESS_TOKEN: "packtest-canary-gcp-access-token-27be\nInjected: bad"
+    args: {"project":"example-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[1],"stdout_not_empty":false,"stderr_contains":["invalid access credential"]}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
+  - name: gcp.dns_record_sets-https-required
+    action: gcp.dns_record_sets
+    env:
+      <<: *dns-rest
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_DNS: "http://gcp-api:8080/dns/v1/"
+    args: {"project":"example-prod","zone":"harness-zone","page_size":2}
+    expect: {"status":"failure","exit":[2],"stdout_not_empty":false,"stderr_contains":["endpoint must use HTTPS"]}
+    probes:
+      - name: Verify the exact provider request
+        argv: ["/bin/sh","-c","curl -fsS http://gcp-api:8080/probe/state | jq -e '.requests | length == 0'"]
+        expect: {stdout_contains: ["true"]}
   - action: gcp.dns_zones
     args: {project: example-prod}
     expect:
