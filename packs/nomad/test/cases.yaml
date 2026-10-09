@@ -139,6 +139,59 @@ cases:
   - action: nomad.agent_self
     expect:
       stdout_contains: [config, member]
+  - name: nomad.agent_self-denied
+    action: nomad.agent_self
+    unset_env: [NOMAD_TOKEN]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Permission denied]
+  - name: nomad.agent_self-response-contract
+    action: nomad.agent_self
+    expect:
+      stdout_contains: [config, member]
+    probes:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/api-contract.sh]
+        expect: {stdout_contains: [Nomad API response contract verified]}
+  - name: nomad.server_members-denied
+    action: nomad.server_members
+    unset_env: [NOMAD_TOKEN]
+    expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
+  - name: nomad.host_volume_list-empty
+    action: nomad.host_volume_list
+    expect: {stdout_contains: ['[]']}
+  - name: nomad.host_volume_list-denied
+    action: nomad.host_volume_list
+    unset_env: [NOMAD_TOKEN]
+    expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
+  - name: nomad.operator_autopilot_state-denied
+    action: nomad.operator_autopilot_state
+    unset_env: [NOMAD_TOKEN]
+    expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
+  - name: nomad.node_purge-denied
+    action: nomad.node_purge
+    args: {node_id: '11111111-2222-3333-4444-555555555555'}
+    unset_env: [NOMAD_TOKEN]
+    expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
+  - name: nomad.alloc_stats-denied
+    action: nomad.alloc_stats
+    args: {alloc_id: '11111111-2222-3333-4444-555555555555'}
+    env: {NOMAD_TOKEN: '11111111-2222-3333-4444-555555555555'}
+    expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
+  - name: nomad.alloc_fs_ls-denied
+    action: nomad.alloc_fs_ls
+    args: {alloc_id: '11111111-2222-3333-4444-555555555555'}
+    env: {NOMAD_TOKEN: '11111111-2222-3333-4444-555555555555'}
+    expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
+  - name: nomad.alloc_fs_stat-denied
+    action: nomad.alloc_fs_stat
+    args: {alloc_id: '11111111-2222-3333-4444-555555555555', path: local/app.log}
+    env: {NOMAD_TOKEN: '11111111-2222-3333-4444-555555555555'}
+    expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
+  - name: nomad.leader-invalid-token
+    action: nomad.leader
+    env: {NOMAD_TOKEN: '11111111-2222-3333-4444-555555555555'}
+    expect: {stdout_contains: [4647]}
   - action: nomad.leader
     expect:
       stdout_contains: ["4647"]

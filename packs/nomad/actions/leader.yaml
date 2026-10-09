@@ -1,13 +1,14 @@
 schema_version: 1
 id: nomad.leader
 title: GET /v1/status/leader
-kind: exec
+kind: script
 risk: low
 description: Show the current Raft leader address (host:port).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: nomad, argv: ["operator", "api", "/v1/status/leader"]}
+  script: {path: scripts/api.sh, interpreter: /bin/sh}
+  argv: [GET, /v1/status/leader, string, "", ""]
   timeout: 15s
 output:
   parser: text

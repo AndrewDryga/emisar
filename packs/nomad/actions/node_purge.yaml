@@ -1,7 +1,7 @@
 schema_version: 1
 id: nomad.node_purge
 title: Purge a dead node (PUT /v1/node/<id>/purge)
-kind: exec
+kind: script
 risk: critical
 description: >
   Remove a dead (down) node from the catalog; allocations on it are GC'd. There
@@ -19,7 +19,8 @@ args:
     validation:
       pattern: "^[a-fA-F0-9][a-fA-F0-9\\-]{3,35}$"
 execution:
-  command: {binary: nomad, argv: ["operator", "api", "-X", "PUT", "/v1/node/{{ args.node_id }}/purge"]}
+  script: {path: scripts/api.sh, interpreter: /bin/sh}
+  argv: [PUT, "/v1/node/{{ args.node_id }}/purge", object, "", ""]
   timeout: 30s
 output:
   parser: json

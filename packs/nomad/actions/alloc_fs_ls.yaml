@@ -41,9 +41,9 @@ args:
       pattern: "^([a-zA-Z0-9][a-zA-Z0-9_\\-]{0,127})?$"
 execution:
   script:
-    path: scripts/nomad_nsr.sh
+    path: scripts/api.sh
     interpreter: /bin/sh
-  argv: ["{{ args.namespace }}", "", "operator api", "/v1/client/fs/ls/{{ args.alloc_id }}?path={{ args.path }}"]
+  argv: [GET, "/v1/client/fs/ls/{{ args.alloc_id }}?path={{ args.path }}", array, "{{ args.namespace }}", ""]
   timeout: 30s
 output:
   parser: json

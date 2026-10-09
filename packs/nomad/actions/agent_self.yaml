@@ -1,13 +1,14 @@
 schema_version: 1
 id: nomad.agent_self
 title: GET /v1/agent/self
-kind: exec
+kind: script
 risk: low
 description: Show this agent's effective config (member name, region, datacenter, tags).
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
-  command: {binary: nomad, argv: ["operator", "api", "/v1/agent/self"]}
+  script: {path: scripts/api.sh, interpreter: /bin/sh}
+  argv: [GET, /v1/agent/self, object, "", ""]
   timeout: 15s
 output:
   parser: json

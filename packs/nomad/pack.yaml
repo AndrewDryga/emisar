@@ -2,7 +2,7 @@ schema_version: 1
 
 id: nomad
 name: HashiCorp Nomad
-version: 0.4.15
+version: 0.4.16
 retired_below: 0.4.12
 description: >
   Deep Nomad operations — full job lifecycle (inspect, history, scale
@@ -31,6 +31,7 @@ requires:
   binaries:
     - nomad
     - jq
+    - curl
     # event_snapshot bounds the forward-only event stream with it. Undeclared,
     # its absence surfaced only as a bare 127 from the script.
     - timeout
@@ -43,10 +44,9 @@ detect:
 
 setup:
   summary: >
-    Every action goes through the nomad CLI (the API reads via
-    `nomad operator api`), so the server address, ACL token, and TLS
-    material are read uniformly from the standard NOMAD_* env on the
-    runner host.
+    Actions use the nomad CLI or a status-checked HTTP request. Both read
+    the server address, ACL token and TLS material from the standard
+    NOMAD_* environment on the runner host.
   env:
     - name: NOMAD_ADDR
       description: >

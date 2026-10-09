@@ -8,6 +8,8 @@ services:
         PACKTEST_VERSION: ${PACKTEST_VERSION:-2.0.7}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-nomad-tools:latest
+    volumes:
+      - nomad-api-sockets:/fixture-sockets:ro
 
   nomad:
     image: hashicorp/nomad:${PACKTEST_VERSION:-2.0.7}${PACKTEST_DIGEST-}
@@ -42,9 +44,14 @@ services:
     entrypoint: [python3, /fixture/response-server.py]
     volumes:
       - ${EMISAR_ROOT}/packs/nomad/test/fixtures/response-server.py:/fixture/response-server.py:ro
+      - ${EMISAR_ROOT}/packs/nomad/test/fixtures/tls:/fixture/tls:ro
+      - nomad-api-sockets:/fixture-sockets
     healthcheck:
       test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 2s
       start_period: 10s
       start_interval: 1s
       retries: 10
+
+volumes:
+  nomad-api-sockets:
