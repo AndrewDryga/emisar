@@ -1,12 +1,14 @@
 schema_version: 1
 id: tailscale.ping
-title: tailscale ping <host>
+title: Ping a Tailscale peer
 kind: exec
 risk: low
 description: >
-  Ping a tailnet peer over Tailscale and report the path (direct vs DERP)
-  and latency. Terminates on its own — the bounded count (default 5, max
-  20) means it stops after that many replies or attempts.
+  Ping a remote tailnet peer and show each reply's path (direct or DERP)
+  and latency. Send count probes (default 5, max 20), waiting up to five
+  seconds per probe, and succeed if any reply arrives. Resolution and
+  LocalAPI errors still fail; a local-node target is reported without
+  sending peer probes.
 side_effects: ["Sends Tailscale ping probes to one peer.", "Read-only."]
 search_terms:
   - peer unreachable
@@ -16,6 +18,7 @@ args:
     required: true
     description: Peer to ping — a tailnet hostname, MagicDNS name, or Tailscale IP.
     validation:
+      max_length: 128
       pattern: "^[A-Za-z0-9._:][A-Za-z0-9._:-]{0,127}$"
   - name: count
     type: integer
@@ -26,8 +29,8 @@ args:
       min: 1
       max: 20
 execution:
-  command: {binary: tailscale, argv: ["ping", "--c", "{{ args.count }}", "{{ args.host }}"]}
-  timeout: 30s
+  command: {binary: tailscale, argv: ["ping", "--until-direct=false", "--timeout=5s", "--c", "{{ args.count }}", "{{ args.host }}"]}
+  timeout: 3m
 output:
   parser: text
   max_stdout_bytes: 16384
