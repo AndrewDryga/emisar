@@ -143,7 +143,22 @@ defmodule EmisarWeb.ConnCaseTest do
     """
 
     %{rows: rows} = Repo.query!(query, [backend])
-    "Isolated owner did not finish registration: #{inspect(%{process: process, database: rows})}"
+
+    loaders =
+      Map.new([:code_server, :erl_prim_loader, :file_server_2], fn name ->
+        info =
+          case Process.whereis(name) do
+            nil ->
+              nil
+
+            pid ->
+              Process.info(pid, [:current_stacktrace, :status, :message_queue_len, :reductions])
+          end
+
+        {name, info}
+      end)
+
+    "Isolated owner did not finish registration: #{inspect(%{process: process, database: rows, loaders: loaders})}"
   end
 
   # Runs `fun` as its own sandbox owner on a separate connection. Dropping

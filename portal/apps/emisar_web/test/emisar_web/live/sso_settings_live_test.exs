@@ -1497,10 +1497,6 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
     } do
       Emisar.Config.put_override(:emisar, :rate_limit_enabled, true)
 
-      for _attempt <- 1..60 do
-        assert Emisar.Throttle.check("sso_oidc_account_work", account.id, 60, 60_000) == :ok
-      end
-
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/settings/sso/new")
 
       lv
@@ -1508,6 +1504,11 @@ defmodule EmisarWeb.SSOSettingsLiveTest do
         "provider" => %{"kind" => "okta", "issuer" => "https://idp.test"}
       })
       |> render_change()
+
+      Fixtures.Throttle.cap("sso_oidc_account_work", account.id, 60, 60_000)
+
+      assert Emisar.Throttle.check("sso_oidc_account_work", account.id, 60, 60_000) ==
+               {:error, :rate_limited}
 
       html = render_click(lv, "test_connection", %{})
       assert html =~ "Too many connection tests. Wait a minute and try again."
