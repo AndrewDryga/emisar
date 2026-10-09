@@ -127,9 +127,20 @@ cases:
     expect:
       stdout_contains: [harness-deployment, CPU]
   - action: kubernetes.pv_list
+    # Node/probe readiness does not establish that the volume binder finished.
+    arrange:
+      - name: persistent volume is bound
+        argv: [kubectl, wait, "--for=jsonpath={.status.phase}=Bound", pv/harness-pv, --timeout=20s]
+        retry_for: 60s
+        retry_every: 5s
     expect:
       stdout_contains: [harness-pv, Bound]
   - action: kubernetes.pvcs_list
+    arrange:
+      - name: persistent volume claim is bound
+        argv: [kubectl, wait, "--for=jsonpath={.status.phase}=Bound", pvc/harness-pvc, --namespace, default, --timeout=20s]
+        retry_for: 60s
+        retry_every: 5s
     expect:
       stdout_contains: [harness-pvc, Bound]
   - action: kubernetes.quotas_list
