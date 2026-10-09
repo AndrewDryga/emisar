@@ -1,0 +1,15 @@
+#!/bin/sh
+# Supplemental bitmask inputs only; the native /proc read is tested separately.
+set -eu
+if [ "$*" != /proc/sys/kernel/tainted ]; then
+  exec /bin/cat "$@"
+fi
+case "${PACKTEST_TAINT_CASE:-mixed}" in
+  zero) printf '0\n' ;;
+  mixed) printf '4609\n' ;;
+  all) printf '1048575\n' ;;
+  high) printf '9223372036854775809\n' ;;
+  failure) printf 'kernel taint mask is not readable\n' >&2; exit 13 ;;
+  invalid) printf 'not-a-mask\n' ;;
+  *) printf 'unknown taint fixture\n' >&2; exit 2 ;;
+esac

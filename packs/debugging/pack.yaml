@@ -2,7 +2,7 @@ schema_version: 1
 
 id: debugging
 name: Linux debugging toolkit
-version: 0.3.3
+version: 0.3.4
 retired_below: 0.2.14
 description: >
   General-purpose Linux diagnostics + low-level remediation: process
@@ -171,6 +171,7 @@ actions:
   - actions/lsof_port.yaml
   - actions/tcp_summary.yaml
   - actions/tcp_retrans_top.yaml
+  - actions/tcp_peer_counts.yaml
   - actions/socket_summary.yaml
   - actions/top_open_files.yaml
   # Per-PID introspection

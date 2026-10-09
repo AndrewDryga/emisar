@@ -1,0 +1,62 @@
+schema_version: 1
+
+id: debugging.tcp_peer_counts
+title: TCP sockets by state and peer port
+kind: script
+risk: low
+
+description: >
+  Count TCP sockets by state, numeric peer address and peer port, including
+  TIME-WAIT and LISTEN, from `ss -tan`. Return the largest groups first with a
+  bounded row limit. The optional peer filter matches the displayed address
+  exactly without IPv6 brackets; keep any interface scope such as %eth0.
+  It performs no DNS lookup and returns no process data. Read-only.
+
+side_effects:
+  - One read-only ss invocation and local aggregation.
+
+search_terms:
+  - time wait pressure
+  - connection storm
+  - ephemeral ports exhausted
+  - connections to one peer
+
+args:
+  - name: peer
+    type: string
+    required: false
+    default: ""
+    description: Exact numeric peer address, without brackets; empty means all peers.
+    validation:
+      max_length: 64
+      pattern: "^[A-Za-z0-9:.%_-]*$"
+  - name: limit
+    type: integer
+    required: false
+    default: 30
+    description: Maximum state/address/port groups to return.
+    validation:
+      min: 1
+      max: 500
+
+execution:
+  script:
+    path: scripts/tcp_peer_counts.sh
+    interpreter: /bin/sh
+  argv:
+    - "{{ args.peer }}"
+    - "{{ args.limit }}"
+  timeout: 15s
+
+output:
+  parser: text
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+
+examples:
+  - title: Largest TCP peer groups
+    args: {}
+  - title: TIME-WAIT and other states for a loopback peer
+    args:
+      peer: "::1"
+      limit: 10

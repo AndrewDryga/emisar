@@ -2,17 +2,18 @@ schema_version: 1
 
 id: debugging.kernel_taint
 title: Kernel taint state
-kind: exec
+kind: script
 risk: low
 
 description: >
-  Read /proc/sys/kernel/tainted. A non-zero value means a binary
-  module, a proprietary driver, or a kernel crash has compromised
-  the integrity of the running kernel. The number is a bitmask;
-  this action returns both the raw value and the decoded flags.
+  Read /proc/sys/kernel/tainted and decode its diagnostic bitmask without
+  installed kernel documentation. Return the raw value and set flag letters
+  for bits 0–19, or "unknown bit N" for newer flags. Zero means not tainted;
+  nonzero records events such as warnings, external modules or live patching,
+  not necessarily a current kernel failure. Read-only.
 
 side_effects:
-  - Two /proc reads.
+  - One /proc read.
   - Read-only.
 
 search_terms:
@@ -22,17 +23,9 @@ search_terms:
 args: []
 
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      # `cat … | head` always exited 0, so the `||` notice was dead code and an
-      # absent doc left the flags silently undecoded. The doc is optional, so
-      # test for it and say so — never fail the taint read itself.
-      - |
-        echo "tainted: $(cat /proc/sys/kernel/tainted)"
-        doc=/usr/share/doc/linux-doc/admin-guide/tainted-kernels.rst
-        if [ -r "$doc" ]; then head -50 "$doc"; else echo 'flags doc not installed'; fi
+  script:
+    path: scripts/kernel_taint.sh
+    interpreter: /bin/sh
   timeout: 5s
 
 output:

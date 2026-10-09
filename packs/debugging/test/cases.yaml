@@ -7,6 +7,232 @@ versions:
     digest: "@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
     default: true
 cases:
+  - action: debugging.kernel_taint
+    arrange:
+      - argv: [/bin/sh, -c, "test ! -r /usr/share/doc/linux-doc/admin-guide/tainted-kernels.rst && test -r /proc/sys/kernel/tainted"]
+    expect:
+      stdout_contains: ["tainted:", "flags:"]
+      stdout_not_contains: [flags doc not installed]
+
+  - name: debugging.kernel-taint-zero
+    action: debugging.kernel_taint
+    env: &taint_env
+      PATH: /opt/packtest-taint-mask:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PACKTEST_TAINT_CASE: zero
+    expect:
+      stdout_contains: ["tainted: 0\nflags: not tainted"]
+
+  - name: debugging.kernel-taint-mixed-flags
+    action: debugging.kernel_taint
+    env: {<<: *taint_env, PACKTEST_TAINT_CASE: mixed}
+    expect:
+      stdout_contains: ["tainted: 4609\nflags:\n0 P\n9 W\n12 O"]
+
+  - name: debugging.kernel-taint-all-known-flags-including-fwctl
+    action: debugging.kernel_taint
+    env: {<<: *taint_env, PACKTEST_TAINT_CASE: all}
+    expect:
+      stdout_contains: ["0 P\n1 F\n2 S\n3 R\n4 M\n5 B\n6 U\n7 D\n8 A\n9 W\n10 C\n11 I\n12 O\n13 E\n14 L\n15 K\n16 X\n17 T\n18 N\n19 J"]
+      stdout_not_contains: [unknown bit]
+
+  - name: debugging.kernel-taint-exact-unsigned-mask-and-unknown-bit
+    action: debugging.kernel_taint
+    env: {<<: *taint_env, PACKTEST_TAINT_CASE: high}
+    expect:
+      stdout_contains: ["tainted: 9223372036854775809", "flags:\n0 P\nunknown bit 63"]
+
+  - name: debugging.kernel-taint-read-failure-is-not-zero
+    action: debugging.kernel_taint
+    env: {<<: *taint_env, PACKTEST_TAINT_CASE: failure}
+    expect:
+      status: failure
+      exit: [13]
+      stderr_contains: [kernel taint mask is not readable]
+      stdout_not_contains: ["tainted:", "flags:"]
+
+  - name: debugging.kernel-taint-invalid-mask-fails
+    action: debugging.kernel_taint
+    env: {<<: *taint_env, PACKTEST_TAINT_CASE: invalid}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [invalid kernel taint mask]
+      stdout_not_contains: ["tainted:", "flags:"]
+
+  - action: debugging.lsof_port
+    args: {port: 23456}
+    arrange: &port_listener
+      - argv: [/bin/sh, -c, "nc -4 -lk 127.0.0.1 23456 </dev/null >/dev/null 2>&1 & echo $! > /tmp/packtest-port-listener.pid"]
+      - argv: [/bin/sh, -c, "ss -H -ltnp 'sport = :23456' | grep -F 'pid=' | grep -F '127.0.0.1:23456'"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: [LISTEN, "127.0.0.1:23456", pid=]
+    cleanup: &port_listener_cleanup
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-port-listener.pid) 2>/dev/null || true"]
+
+  - name: debugging.lsof-port-includes-connected-sockets
+    action: debugging.lsof_port
+    args: {port: 23456}
+    arrange: &established_sockets
+      - argv: [/bin/sh, -c, "python3 /opt/packtest-sockets.py established > /tmp/packtest-sockets-ready 2>&1 & echo $! > /tmp/packtest-sockets.pid"]
+      - argv: [/bin/sh, -c, "grep -Fx ready /tmp/packtest-sockets-ready && ss -H -tnp | grep -F '127.0.0.1:23456' && ss -H -tnp | grep -F '[::1]:23458'"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: [ESTAB, LISTEN, "127.0.0.1:23456", pid=]
+    cleanup: &established_sockets_cleanup
+      - argv: [/bin/sh, -c, "kill $(cat /tmp/packtest-sockets.pid) 2>/dev/null || true"]
+
+  - name: debugging.tcp-retrans-ranks-total-and-preserves-socket-owner
+    action: debugging.tcp_retrans_top
+    env:
+      PATH: /opt/packtest-socket-transcript:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [/bin/sh, -c, "ss -H -tnpi state established | grep -F 'retrans:0/10'"]
+    expect:
+      stdout_contains:
+        - "10\t0\t[::1]:40010\t[2001:db8::10]:443\tusers:((\"large\",pid=210,fd=3))\n4\t3\t127.0.0.1:40004\t10.0.0.4:80\tusers:((\"current\",pid=204,fd=3))\n2\t1\t127.0.0.1:40002\t10.0.0.2:80\tusers:((\"small\",pid=202,fd=3))"
+      stdout_not_contains: [10.0.0.99, bytes_sent, wscale, rtt:]
+
+  - name: debugging.tcp-retrans-native-ipv4-ipv6-shape
+    action: debugging.tcp_retrans_top
+    arrange: *established_sockets
+    expect:
+      stdout_contains: ["total_retrans\tcurrent_retrans\tlocal\tpeer\tprocess"]
+      stdout_not_contains: [bytes_sent, wscale, rtt:]
+    probes:
+      - argv: [/bin/sh, -c, "ss -H -tnpi state established | awk '$1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ { if ($4 == \"127.0.0.1:23456\") ipv4 = 1; if ($4 == \"[::1]:23458\") ipv6 = 1; if (index($0, \"pid=\")) owner = 1 } END { if (!ipv4 || !ipv6 || !owner) exit 1; print \"native endpoints and ownership present\" }'"]
+        expect:
+          stdout_contains: [native endpoints and ownership present]
+    cleanup: *established_sockets_cleanup
+
+  - name: debugging.tcp-retrans-source-failure-is-not-empty-success
+    action: debugging.tcp_retrans_top
+    env: &ss_env
+      PATH: /opt/packtest-socket-transcript:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PACKTEST_SS_CASE: failure
+    arrange:
+      - argv: [test, -x, /opt/packtest-socket-transcript/ss]
+    expect:
+      status: failure
+      exit: [13]
+      stderr_contains: [ss cannot read socket inventory]
+      stdout_not_contains: [total_retrans, 127.0.0.1]
+
+  - name: debugging.tcp-retrans-zero-is-successful-without-ownership
+    action: debugging.tcp_retrans_top
+    env: {<<: *ss_env, PACKTEST_SS_CASE: zero}
+    arrange:
+      - argv: [/bin/sh, -c, "ss -H -tnpi state established | grep -F '10.0.0.99:80'"]
+    expect:
+      stdout_contains: [total_retrans]
+      stdout_not_contains: [10.0.0.99]
+
+  - name: debugging.tcp-retrans-sorts-before-taking-fifty
+    action: debugging.tcp_retrans_top
+    env: {<<: *ss_env, PACKTEST_SS_CASE: many}
+    arrange:
+      - argv: [/bin/sh, -c, "ss -H -tnpi state established | grep -F 'retrans:0/75'"]
+    expect:
+      stdout_contains: ["75\t0\t127.0.0.1:40075", "26\t0\t127.0.0.1:40026"]
+      stdout_not_contains: ["25\t0\t127.0.0.1:40025", "1\t0\t127.0.0.1:40001"]
+
+  - action: debugging.tcp_peer_counts
+    arrange: &timewait_sockets
+      - argv: [python3, /opt/packtest-sockets.py, timewait]
+      - argv: [/bin/sh, -c, "ss -H -tan | grep -F 'TIME-WAIT' | grep -F '127.0.0.1:23456' && ss -H -tan | grep -F 'TIME-WAIT' | grep -F '[::1]:23458'"]
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: ["count\tstate\tpeer\tport\n3\tTIME-WAIT\t127.0.0.1\t23456\n2\tTIME-WAIT\t127.0.0.1\t23457\n2\tTIME-WAIT\t::1\t23458"]
+      # A disposable container network can have infrastructure listeners too.
+      # Assert our exact peer-port groups, not absence of other TCP states.
+      stdout_not_contains: [pid=]
+
+  - name: debugging.tcp-peer-counts-filters-ipv4-without-merging-ports
+    action: debugging.tcp_peer_counts
+    args: {peer: "127.0.0.1"}
+    arrange: *timewait_sockets
+    expect:
+      stdout_contains: ["3\tTIME-WAIT\t127.0.0.1\t23456\n2\tTIME-WAIT\t127.0.0.1\t23457"]
+      stdout_not_contains: ["::1", pid=]
+
+  - name: debugging.tcp-peer-counts-filters-ipv6
+    action: debugging.tcp_peer_counts
+    args: {peer: "::1"}
+    arrange: *timewait_sockets
+    expect:
+      stdout_contains: ["2\tTIME-WAIT\t::1\t23458"]
+      stdout_not_contains: [127.0.0.1, pid=]
+
+  - name: debugging.tcp-peer-counts-limits-after-ranking
+    action: debugging.tcp_peer_counts
+    args: {limit: 1}
+    arrange: *timewait_sockets
+    expect:
+      stdout_contains: ["3\tTIME-WAIT\t127.0.0.1\t23456"]
+      stdout_not_contains: [23457, 23458]
+
+  - name: debugging.tcp-peer-counts-no-match-is-successful
+    action: debugging.tcp_peer_counts
+    args: {peer: "203.0.113.10"}
+    arrange: *timewait_sockets
+    expect:
+      stdout_contains: ["count\tstate\tpeer\tport"]
+      stdout_not_contains: [TIME-WAIT, 127.0.0.1, "::1"]
+
+  - name: debugging.tcp-peer-counts-native-listen-and-established-states
+    action: debugging.tcp_peer_counts
+    arrange: *established_sockets
+    expect:
+      stdout_contains: ["\tLISTEN\t0.0.0.0\t*", "\tLISTEN\t::\t*", "1\tESTAB\t127.0.0.1\t23456", "1\tESTAB\t::1\t23458"]
+      stdout_not_contains: [pid=]
+    cleanup: *established_sockets_cleanup
+
+  - name: debugging.tcp-peer-counts-scoped-ipv6-and-separate-states
+    action: debugging.tcp_peer_counts
+    args: {peer: "fe80::1%eth0"}
+    env: {<<: *ss_env, PACKTEST_SS_CASE: peers}
+    arrange:
+      - argv: [/bin/sh, -c, "ss -H -tan | grep -F '[fe80::1]%eth0:443'"]
+    expect:
+      stdout_contains: ["2\tTIME-WAIT\tfe80::1%eth0\t443\n1\tESTAB\tfe80::1%eth0\t443"]
+      stdout_not_contains: [127.0.0.10, LISTEN]
+
+  - name: debugging.tcp-peer-counts-source-failure-is-not-empty-success
+    action: debugging.tcp_peer_counts
+    env: *ss_env
+    expect:
+      status: failure
+      exit: [13]
+      stderr_contains: [ss cannot read socket inventory]
+      stdout_not_contains: ["count\tstate"]
+
+  - name: debugging.tcp-peer-counts-rejects-filter-syntax
+    action: debugging.tcp_peer_counts
+    args: {peer: "127.0.0.1 or dport = :443"}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  - name: debugging.tcp-peer-counts-rejects-overlong-filter
+    action: debugging.tcp_peer_counts
+    args: {peer: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must be at most 64 bytes]
+
+  - name: debugging.tcp-peer-counts-rejects-unbounded-limit
+    action: debugging.tcp_peer_counts
+    args: {limit: 501}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must be <= 500]
+
   - name: debugging.dmesg-tail-falls-back-and-truncates
     action: debugging.dmesg_tail
     args: {lines: 2}

@@ -1,0 +1,46 @@
+#!/bin/sh
+# Supplemental parser/failure transcripts, never the native socket proof.
+set -eu
+case "$*" in
+  '-tnpi state established'|'-H -tnpi state established'|'-H -tan') ;;
+  *) printf 'unexpected transcript ss arguments\n' >&2; exit 2 ;;
+esac
+case "${PACKTEST_SS_CASE:-ranking}" in
+  ranking)
+    printf '%s\n' \
+      '0 0 127.0.0.1:40002 10.0.0.2:80 users:(("small",pid=202,fd=3))' \
+      ' cubic wscale:7,7 rtt:1.0 retrans:1/2 bytes_sent:100' \
+      '0 0 [::1]:40010 [2001:db8::10]:443 users:(("large",pid=210,fd=3))' \
+      ' cubic wscale:7,7 rtt:9.0 retrans:0/10 bytes_sent:1000' \
+      '0 0 127.0.0.1:40004 10.0.0.4:80 users:(("current",pid=204,fd=3))' \
+      ' cubic wscale:7,7 rtt:3.0 retrans:3/4 bytes_sent:200' \
+      '0 0 127.0.0.1:40000 10.0.0.99:80 users:(("zero",pid=299,fd=3))' \
+      ' cubic wscale:7,7 rtt:1.0 bytes_sent:300'
+    ;;
+  failure)
+    printf 'ss cannot read socket inventory\n' >&2
+    exit 13
+    ;;
+  zero)
+    printf '%s\n' \
+      '0 0 127.0.0.1:40000 10.0.0.99:80' \
+      ' cubic wscale:7,7 rtt:1.0 bytes_sent:300'
+    ;;
+  many)
+    awk 'BEGIN {
+      for (i = 1; i <= 75; i++) {
+        printf "0 0 127.0.0.1:%d 10.0.0.1:80\n", 40000 + i
+        printf " cubic retrans:0/%d\n", i
+      }
+    }'
+    ;;
+  peers)
+    printf '%s\n' \
+      'LISTEN 0 128 [::]:80 [::]:*' \
+      'TIME-WAIT 0 0 [::1]:40001 [fe80::1]%eth0:443' \
+      'TIME-WAIT 0 0 [::1]:40002 [fe80::1]%eth0:443' \
+      'ESTAB 0 0 [::1]:40003 [fe80::1]%eth0:443' \
+      'TIME-WAIT 0 0 127.0.0.1:40004 127.0.0.10:443'
+    ;;
+  *) printf 'unknown transcript case\n' >&2; exit 2 ;;
+esac

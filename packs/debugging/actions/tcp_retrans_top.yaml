@@ -2,13 +2,14 @@ schema_version: 1
 
 id: debugging.tcp_retrans_top
 title: TCP connections with retransmits
-kind: exec
+kind: script
 risk: low
 
 description: >
-  List established TCP flows with retransmission counters (`ss -i state
-  established`, filtered). Use when network latency is high — surfaces which
-  peers are seeing TCP loss without a tcpdump. Read-only.
+  List up to 50 established TCP sockets ranked by lifetime retransmit total
+  from `ss -tnpi state established`. Return total/current counters, local and
+  peer endpoints, and process ownership when permitted. Sockets with no
+  retransmits are omitted. Read-only.
 
 side_effects:
   - One ss invocation.
@@ -21,11 +22,9 @@ search_terms:
 args: []
 
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "ss -tnpi state established | awk '/retrans/{print}' | sort -k 5 | head -50"
+  script:
+    path: scripts/tcp_retrans_top.sh
+    interpreter: /bin/sh
   timeout: 15s
 
 output:

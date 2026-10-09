@@ -120,6 +120,9 @@ execution:
     - NOMAD_ADDR
     - NOMAD_TOKEN
     - OIDC_CA_CERT
+    # Supplemental debugging parser/failure inputs; not production config.
+    - PACKTEST_SS_CASE
+    - PACKTEST_TAINT_CASE
     - PFSENSE_API_KEY
     - PFSENSE_INSECURE
     - PFSENSE_URL
