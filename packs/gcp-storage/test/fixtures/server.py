@@ -1,6 +1,6 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 CANARY = "packtest-canary-gcp-storage-secret-e939"
 
@@ -52,10 +52,48 @@ def object_metadata():
         "md5Hash": "CY9rzUYh03PK3k6DJie09g==",
         "crc32c": "ImIEBA==",
         "etag": "CKCnk9qXxocDEAE=",
+        "retention": {
+            "mode": "Unlocked",
+            "retainUntilTime": "2027-07-01T00:00:00Z",
+        },
         "metadata": {"secret": CANARY, "owner": "app"},
         "contexts": {"custom": {"trace": {"value": CANARY}}},
         "mediaLink": f"https://storage.example.test/download?token={CANARY}",
     }
+
+
+def object_list(query):
+    prefix = query.get("prefix", [""])[0]
+    page_token = query.get("pageToken", [""])[0]
+    # Apitools encodes Boolean query values as Python's True/False strings.
+    versions = query.get("versions", ["false"])[0].lower() == "true"
+    live = object_metadata()
+    old = dict(live, generation="1720000000000000",
+               timeDeleted="2026-07-01T00:01:00Z")
+    if prefix.startswith("denied/"):
+        return {"error": {"code": 403, "message": "fixture list permission denied"}}
+    if prefix.startswith("page-denied/"):
+        if page_token:
+            return {"error": {"code": 403, "message": "fixture second page denied"}}
+        old["name"] = "page-denied/app.log"
+        live["name"] = old["name"]
+        rows = [old, live] if versions else [live]
+    elif prefix.startswith("old-only/"):
+        old["name"] = "old-only/app.log"
+        rows = [old] if versions else []
+    elif live["name"].startswith(prefix):
+        rows = [old, live] if versions else [live]
+    else:
+        rows = []
+    # This is API pagination, not gcloud's local filter or returned-row limit.
+    if page_token not in ("", "live-generation"):
+        return {"error": {"code": 400, "message": "invalid fixture page token"}}
+    if page_token == "live-generation":
+        rows = rows[1:]
+    result = {"kind": "storage#objects", "items": rows[:1]}
+    if len(rows) > 1:
+        result["nextPageToken"] = "live-generation"
+    return result
 
 
 def response(raw_path):
@@ -75,7 +113,7 @@ def response(raw_path):
             }],
         }
     if path.endswith("/b/harness-bucket/o"):
-        return {"kind": "storage#objects", "items": [object_metadata()]}
+        return object_list(parse_qs(split.query))
     if path.endswith("/b/harness-bucket/o/logs/app.log"):
         return object_metadata()
     if path.endswith("/b/harness-bucket"):
@@ -86,7 +124,7 @@ def response(raw_path):
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         payload = response(self.path)
-        status = 404 if "error" in payload else 200
+        status = payload.get("error", {}).get("code", 200)
         body = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")

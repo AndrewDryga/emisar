@@ -2,7 +2,7 @@ schema_version: 1
 
 id: gcp-storage
 name: Google Cloud Storage diagnostics
-version: 0.1.2
+version: 0.1.3
 description: >
   Read-only Cloud Storage diagnostics for buckets, IAM policies, bounded
   object listings, and fixed object metadata. Object bodies, custom metadata

@@ -28,7 +28,109 @@ cases:
     args: {project: example-prod, bucket: harness-bucket, prefix: logs/, limit: 25}
     expect:
       stdout_contains: [logs/app.log, metadataKeys, contextKeys]
+      stdout_not_contains: ['1720000000000000']
+      json:
+        /0/generation: '1721000000000000'
+        /0/timeDeleted: null
+        /0/retention/mode: Unlocked
+        /0/retention/retainUntilTime: '2027-07-01T00:00:00+00:00'
+  - name: gcp.storage_objects-live-after-noncurrent-page
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: logs/, limit: 1}
+    expect:
+      stdout_not_contains: ['1720000000000000']
+      json:
+        /0/generation: '1721000000000000'
+        /0/timeDeleted: null
+  - name: gcp.storage_objects-empty-prefix
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: empty/, limit: 1}
+    expect:
+      json: {'': []}
+  - name: gcp.storage_objects-explicit-live-only
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: logs/, limit: 1, include_versions: false}
+    expect:
+      stdout_not_contains: ['1720000000000000']
+      json:
+        /0/generation: '1721000000000000'
+        /0/timeDeleted: null
+  - name: gcp.storage_objects-including-one-noncurrent-version
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: logs/, limit: 1, include_versions: true}
+    expect:
+      stdout_not_contains: ['1721000000000000']
+      json:
+        /0/generation: '1720000000000000'
+        /0/timeDeleted: '2026-07-01T00:01:00+0000'
+        /0/retention/mode: Unlocked
+  - name: gcp.storage_objects-including-all-versions
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: logs/, limit: 2, include_versions: true}
+    expect:
+      json:
+        /0/generation: '1720000000000000'
+        /0/timeDeleted: '2026-07-01T00:01:00+0000'
+        /1/generation: '1721000000000000'
+        /1/timeDeleted: null
+        /1/retention/retainUntilTime: '2027-07-01T00:00:00+00:00'
+  - name: gcp.storage_objects-noncurrent-only-prefix
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: old-only/, limit: 1}
+    expect:
+      json: {'': []}
+  - name: gcp.storage_objects-permission-denied
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: denied/, limit: 1}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stderr_contains: [fixture list permission denied]
+  - name: gcp.storage_objects-explicit-live-only-noncurrent-prefix
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: old-only/, limit: 1, include_versions: false}
+    expect:
+      json: {'': []}
+  - name: gcp.storage_objects-including-noncurrent-only-prefix
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: old-only/, limit: 1, include_versions: true}
+    expect:
+      json:
+        /0/name: old-only/app.log
+        /0/generation: '1720000000000000'
+        /0/timeDeleted: '2026-07-01T00:01:00+0000'
+  - name: gcp.storage_objects-second-page-denied
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: page-denied/, limit: 1}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ['1720000000000000', '1721000000000000']
+      stderr_contains: [fixture second page denied]
+  - name: gcp.storage_objects-selected-first-page-then-denied
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, prefix: page-denied/, limit: 2, include_versions: true}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ['1720000000000000', '1721000000000000']
+      stderr_contains: [fixture second page denied]
+  - name: gcp.storage_objects-invalid-version-choice
+    action: gcp.storage_objects
+    args: {project: example-prod, bucket: harness-bucket, include_versions: 'true'}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [expected boolean]
+      stdout_not_empty: false
   - action: gcp.storage_object_describe
     args: {project: example-prod, bucket: harness-bucket, key: logs/app.log}
     expect:
       stdout_contains: [logs/app.log, secret, owner, trace]
+      json:
+        /timeDeleted: null
+        /retention/mode: Unlocked
+        /retention/retainUntilTime: '2027-07-01T00:00:00+00:00'

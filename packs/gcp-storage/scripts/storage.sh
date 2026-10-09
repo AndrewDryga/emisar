@@ -62,7 +62,7 @@ object_projection='
     timeCreated: .creation_time,
     updated: .update_time,
     timeStorageClassUpdated: .storage_class_update_time,
-    timeDeleted: .deletion_time,
+    timeDeleted: .noncurrent_time,
     softDeleteTime: .soft_delete_time,
     hardDeleteTime: .hard_delete_time,
     md5Hash: .md5_hash,
@@ -71,7 +71,7 @@ object_projection='
     kmsKeyName: .kms_key,
     temporaryHold: .temporary_hold,
     eventBasedHold: .event_based_hold,
-    retention,
+    retention: .retention_settings,
     metadataKeys: ((.custom_fields // {}) | keys),
     contextKeys: ((.contexts // {}) | keys)
   }
@@ -100,9 +100,17 @@ case "$mode" in
     ;;
   objects)
     url="gs://$3/$4**"
-    project_with_jq "map($object_projection)" \
-      gcloud storage objects list "$url" \
+    include_versions=$6
+    set -- gcloud storage objects list "$url" \
       "--project=$project" "--limit=$5" --format=json --quiet
+    case "$include_versions" in
+      # list() preserves the timestamp string but disables gcloud's implicit
+      # date comparison, which otherwise tries to parse the existence '*'.
+      false) set -- "$@" '--filter=-noncurrent_time.list():*' ;;
+      true) ;;
+      *) echo "include_versions must be true or false" >&2; exit 2 ;;
+    esac
+    project_with_jq "map($object_projection)" "$@"
     ;;
   object-describe)
     project_with_jq "$object_projection" \

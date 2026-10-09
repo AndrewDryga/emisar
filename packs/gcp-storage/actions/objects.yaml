@@ -1,9 +1,13 @@
 schema_version: 1
 id: gcp.storage_objects
-title: gcloud storage objects list
+title: List Cloud Storage objects
 kind: script
 risk: low
-description: List bounded object system metadata under a literal prefix without custom metadata values.
+description: >
+  List live object metadata under a literal prefix. Set include_versions to
+  include noncurrent generations, marked by timeDeleted; soft-deleted objects
+  are excluded. The limit caps returned rows, not API pages. Custom metadata
+  and context values are omitted.
 side_effects: ["Read-only Cloud Storage API pagination.", "Uses a mode-0600 temporary response file and removes it before exit."]
 args:
   - name: project
@@ -26,11 +30,16 @@ args:
     type: integer
     required: false
     default: 100
-    description: Maximum objects to return.
+    description: Maximum rows returned after version filtering.
     validation: {min: 1, max: 500}
+  - name: include_versions
+    type: boolean
+    required: false
+    default: false
+    description: Include noncurrent generations alongside live objects, but not soft-deleted objects.
 execution:
   script: {path: scripts/storage.sh, interpreter: /bin/sh}
-  argv: [objects, "{{ args.project }}", "{{ args.bucket }}", "{{ args.prefix }}", "{{ args.limit }}"]
+  argv: [objects, "{{ args.project }}", "{{ args.bucket }}", "{{ args.prefix }}", "{{ args.limit }}", "{{ args.include_versions }}"]
   timeout: 60s
 output:
   parser: json
@@ -40,3 +49,5 @@ output:
 examples:
   - title: Application logs
     args: {project: example-prod, bucket: example-prod-assets, prefix: logs/}
+  - title: Include earlier generations
+    args: {project: example-prod, bucket: example-prod-assets, prefix: logs/, include_versions: true}
