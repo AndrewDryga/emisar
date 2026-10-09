@@ -149,7 +149,7 @@ the packs whose actions the harness genuinely cannot run, and why:
 | `cloud-init` | reads a boot that already happened; a container has none |
 
 Anything else without a plan is a gap, not an exemption. The ordinary
-containerizable ones left today are `java-jvm`, `vector`, `podman`, `php-fpm`,
+containerizable ones left today are `vector`, `podman`, `php-fpm`,
 `python-app`, `nodejs-pm2`, `elixir-beam`, `dnf-rpm`, `rke2`, `nfs`,
 `time-sync`, `wireguard`, and `zfs`. Rank them by mutator risk, not by
 action count.

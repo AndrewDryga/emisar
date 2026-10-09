@@ -1,0 +1,67 @@
+services:
+  runner-tools:
+    build:
+      context: ${EMISAR_ROOT}/packs/java-jvm/test
+      dockerfile: Dockerfile
+      target: client
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-eclipse-temurin:${PACKTEST_VERSION:-25.0.4.1_1-jdk-jammy}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-java-jvm-tools:${PACKTEST_VERSION:-25.0.4.1_1-jdk-jammy}
+    # jvmstat and attach use the target host's PID namespace and /tmp.
+    pid: service:java-jvm
+    volumes:
+      - jvm_tmp:/tmp
+
+  java-jvm:
+    build:
+      context: ${EMISAR_ROOT}/packs/java-jvm/test
+      dockerfile: Dockerfile
+      target: sut
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-eclipse-temurin:${PACKTEST_VERSION:-25.0.4.1_1-jdk-jammy}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-java-jvm-sut:${PACKTEST_VERSION:-25.0.4.1_1-jdk-jammy}
+    init: true
+    user: "65532:65532"
+    volumes:
+      - jvm_tmp:/tmp
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          kill -0 "$$(cat /tmp/normal.pid)" "$$(cat /tmp/no_shared.pid)" "$$(cat /tmp/no_data.pid)" &&
+          jcmd "$$(cat /tmp/normal.pid)" PerfCounter.print | grep -q '^java.cls.loadedClasses='
+      interval: 5s
+      start_period: 30s
+      start_interval: 5s
+      timeout: 10s
+      retries: 12
+
+  other-jvm:
+    build:
+      context: ${EMISAR_ROOT}/packs/java-jvm/test
+      dockerfile: Dockerfile
+      target: sut
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-eclipse-temurin:${PACKTEST_VERSION:-25.0.4.1_1-jdk-jammy}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-java-jvm-sut:${PACKTEST_VERSION:-25.0.4.1_1-jdk-jammy}
+    entrypoint: [java, -Xms32m, -Xmx64m, -XX:+UseSerialGC, -XX:ActiveProcessorCount=1, -cp, /fixture, PerfFixture, foreign]
+    user: "65533:65533"
+    pid: service:java-jvm
+    volumes:
+      - jvm_tmp:/tmp
+    depends_on:
+      java-jvm:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          jcmd "$$(cat /tmp/foreign.pid)" PerfCounter.print | grep -q '^java.cls.loadedClasses='
+      interval: 5s
+      start_period: 30s
+      start_interval: 5s
+      timeout: 10s
+      retries: 12
+
+volumes:
+  jvm_tmp:

@@ -17,8 +17,18 @@ args:
       max: 4194304
 execution:
   command:
-    binary: jcmd
-    argv: ["{{ args.pid }}", "PerfCounter.print"]
+    binary: /bin/sh
+    argv:
+      - -c
+      - |
+        out=$(jcmd "$1" PerfCounter.print) || exit $?
+        if ! printf '%s\n' "$out" | grep -E '^[[:alnum:]_][[:alnum:]_.]*=' >/dev/null; then
+          printf '%s\n' 'No jvmstat perf counters available (disabled perf data or access restrictions).' >&2
+          exit 1
+        fi
+        printf '%s\n' "$out"
+      - jvm.perfdata
+      - "{{ args.pid }}"
   timeout: 15s
 output:
   parser: text

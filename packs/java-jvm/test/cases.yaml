@@ -1,0 +1,86 @@
+services: [java-jvm, other-jvm]
+versions:
+  - version: "25.0.4.1_1-jdk-jammy"
+    digest: "@sha256:318f90a80337fb6f26b025dbec0a95fa6f48abf60ce129babf555618356bdbf8"
+    default: true
+  - version: "17.0.20.1_1-jdk-jammy"
+    digest: "@sha256:43f4431cc895d37ceb115e2e1f160545ec45caee9c1cb4246fc6bb879d58aeda"
+
+cases:
+  - name: jvm.perfdata-counters
+    action: jvm.perfdata
+    resolve_args:
+      pid:
+        argv: [cat, /tmp/normal.pid]
+    expect:
+      stdout_contains: ["java.cls.loadedClasses=", "java.threads.live="]
+      stderr_not_contains: [MonitorException]
+
+  - name: jvm.perfdata-shared-memory-disabled
+    action: jvm.perfdata
+    resolve_args:
+      pid:
+        argv: [cat, /tmp/no_shared.pid]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [MonitorException, "No jvmstat perf counters available"]
+      stdout_not_contains: [":", "="]
+
+  - name: jvm.perfdata-counters-disabled
+    action: jvm.perfdata
+    resolve_args:
+      pid:
+        argv: [cat, /tmp/no_data.pid]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [MonitorException, "No jvmstat perf counters available"]
+      stdout_not_contains: [":", "="]
+
+  - name: jvm.perfdata-other-owner
+    action: jvm.perfdata
+    resolve_args:
+      pid:
+        argv: [cat, /tmp/foreign.pid]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [MonitorException, "No jvmstat perf counters available"]
+      stdout_not_contains: [":", "="]
+
+  - name: jvm.perfdata-missing-pid
+    action: jvm.perfdata
+    args: {pid: 4194304}
+    arrange:
+      - argv: [/bin/sh, -c, "test ! -e /proc/4194304"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [MonitorException, "No jvmstat perf counters available"]
+      stdout_not_contains: [":", "="]
+
+  - name: jvm.perfdata-invalid-low-pid
+    action: jvm.perfdata
+    args: {pid: 0}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: ["argument pid: must be >= 1"]
+
+  - name: jvm.perfdata-invalid-high-pid
+    action: jvm.perfdata
+    args: {pid: 4194305}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: ["argument pid: must be <= 4.194304e+06"]
+
+  - name: jvm.vm_flags-shared-memory-disabled
+    action: jvm.vm_flags
+    resolve_args:
+      pid:
+        argv: [cat, /tmp/no_shared.pid]
+    expect:
+      stdout_contains: ["-XX:+PerfDisableSharedMem", "-XX:MaxHeapSize=67108864"]
+      stderr_not_contains: [MonitorException]
