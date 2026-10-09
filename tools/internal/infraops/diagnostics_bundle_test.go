@@ -24,12 +24,12 @@ func diagnosticsFixture(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{"bin", "libexec", "lib", "cli-plugins", "python/lib/python3/dist-packages/ntp"} {
+	for _, dir := range []string{"bin", "libexec", "lib", "cli-plugins", "compose", "python/lib/python3/dist-packages/ntp"} {
 		if err := os.MkdirAll(filepath.Join(bundle, dir), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	files := []string{"run-tool", "lib/loader", "libexec/python3", "cli-plugins/docker-compose", "python/lib/python3/dist-packages/ntp/libntpc.so"}
+	files := []string{"run-tool", "lib/loader", "libexec/python3", "cli-plugins/docker-compose", "compose/LICENSE", "compose/NOTICE", "compose/GO-LICENSE", "python/lib/python3/dist-packages/ntp/libntpc.so"}
 	for _, command := range strings.Fields(string(commands)) {
 		files = append(files, "libexec/"+command)
 		if err := os.Symlink("../run-tool", filepath.Join(bundle, "bin", command)); err != nil {
@@ -51,8 +51,10 @@ func diagnosticsFixture(t *testing.T) string {
 		switch path {
 		case "run-tool", "commands.txt":
 			kind, source, owner = "repository", "/build/"+path, "emisar\t"+diagnosticsRevision+"\tall\temisar\t"+diagnosticsRevision
-		case "cli-plugins/docker-compose":
-			kind, source, owner = "github-release", "https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-linux-x86_64", "docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1"
+		case "cli-plugins/docker-compose", "compose/LICENSE", "compose/NOTICE":
+			kind, source, owner = "github-source", "https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de", "docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1"
+		case "compose/GO-LICENSE":
+			kind, source, owner = "compiler-image", "golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673", "stdlib\tv1.27.2\tall\tgolang/go\tgo1.27.2"
 		}
 		origins = append(origins, "./"+path+"\t"+kind+"\t"+source+"\t"+owner+"\n")
 	}
@@ -65,10 +67,23 @@ func diagnosticsFixture(t *testing.T) string {
 		"python-installed-identity.json": "{\"abi\":{\"fixture\":true},\"builtins\":[\"sys\",\"pyexpat\",\"_elementtree\"]}\n",
 		"python-private-identity.json":   "{\"abi\":{\"fixture\":true},\"builtins\":[\"sys\"]}\n",
 		"python-private-build.txt":       "source_version=3.11.2-6+deb12u9\nfixture compiler/config evidence\n",
+		"compose-buildinfo.txt":          "manifest-only fixture; actual ELF inspection belongs to CI\n",
 	} {
 		if err := os.WriteFile(filepath.Join(bundle, path), []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	binary, err := os.ReadFile(filepath.Join(bundle, "cli-plugins/docker-compose"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.ReadFile(filepath.Join(bundle, "compose-buildinfo.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := fmt.Sprintf("source_url=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de\nsource_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2\nsource_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de\ntoolchain_image=golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673\ntoolchain_version=go1.27.2\ngo_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868\ngo_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10\nbuild_flags=GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1\nbinary_sha256=%x\nbuild_info_sha256=%x\n", sha256.Sum256(binary), sha256.Sum256(info))
+	if err := os.WriteFile(filepath.Join(bundle, "compose-build.txt"), []byte(build), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	sealDiagnosticsFixture(t, bundle)
 	return bundle
@@ -115,6 +130,36 @@ func TestDiagnosticsManifestRejectsWrongIdentityAndIncompleteClosure(t *testing.
 		{"valid", nil},
 		{"corrupt bytes", func(dir string) error {
 			return os.WriteFile(filepath.Join(dir, "libexec/sar"), []byte("corrupt"), 0o700)
+		}},
+		{"old Compose asset origin after reseal", func(dir string) error {
+			path := filepath.Join(dir, "file-origins.tsv")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			err = os.WriteFile(path, []byte(strings.ReplaceAll(string(data), "\tgithub-source\t", "\tgithub-release\t")), 0o600)
+			sealDiagnosticsFixture(t, dir)
+			return err
+		}},
+		{"old compiler provenance after reseal", func(dir string) error {
+			path := filepath.Join(dir, "compose-build.txt")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			err = os.WriteFile(path, []byte(strings.ReplaceAll(string(data), "toolchain_version=go1.27.2", "toolchain_version=go1.26.8")), 0o600)
+			sealDiagnosticsFixture(t, dir)
+			return err
+		}},
+		{"foreign compiler license origin after reseal", func(dir string) error {
+			path := filepath.Join(dir, "file-origins.tsv")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			err = os.WriteFile(path, []byte(strings.ReplaceAll(string(data), "\tcompiler-image\tgolang:", "\tcompiler-image\tforeign:")), 0o600)
+			sealDiagnosticsFixture(t, dir)
+			return err
 		}},
 		{"collector absent even after reseal", func(dir string) error {
 			err := os.Remove(filepath.Join(dir, "libexec/sadc"))

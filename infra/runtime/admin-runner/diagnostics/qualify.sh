@@ -40,7 +40,12 @@ export PYTHONPATH="$bundle/python/lib/python3/dist-packages"
 "$bundle/bin/free" -b
 "$bundle/bin/vmstat" 1 2
 "$bundle/cli-plugins/docker-compose" version
+test "$("$bundle/cli-plugins/docker-compose" version --short)" = 5.5.1
 "$bundle/cli-plugins/docker-compose" docker-cli-plugin-metadata
+# Exercise the real plugin's parser without a daemon or host configuration.
+printf '%s\n' 'services:' '  probe:' '    image: example.invalid/qualification:fixed' | \
+  "$bundle/cli-plugins/docker-compose" -p qualification -f - config --format json > /run/compose-config.json
+"$bundle/bin/jq" -e '.services.probe.image == "example.invalid/qualification:fixed"' /run/compose-config.json
 # Only native diagnostics may be exported; system control stays on COS.
 for protected in docker cloud-init curl gcloud elixir erl epmd systemctl journalctl; do
   test ! -e "$bundle/bin/$protected"

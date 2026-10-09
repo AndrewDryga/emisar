@@ -56,11 +56,28 @@ test -x cli-plugins/docker-compose
 test -s python/lib/python3/dist-packages/ntp/libntpc.so
 test -s debian-runtime.tsv && test -s debian-builder.tsv && test -s file-origins.tsv && test -s source-builds.tsv
 test -s python-installed-identity.json && test -s python-private-identity.json && test -s python-private-build.txt
+test -s compose-build.txt && test -s compose-buildinfo.txt && test -s compose/LICENSE && test -s compose/NOTICE && test -s compose/GO-LICENSE
+# These fixed source/compiler inputs and the measured output hashes are bound
+# by the manifest. Never accept the old upstream binary under rebuilt provenance.
+{
+  read -r line; [ "$line" = source_url=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de ]
+  read -r line; [ "$line" = source_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2 ]
+  read -r line; [ "$line" = source_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de ]
+  read -r line; [ "$line" = toolchain_image=golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 ]
+  read -r line; [ "$line" = toolchain_version=go1.27.2 ]
+  read -r line; [ "$line" = go_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868 ]
+  read -r line; [ "$line" = go_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10 ]
+  read -r line; [ "$line" = 'build_flags=GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1' ]
+  read -r line; [ "$line" = "binary_sha256=$(sha256sum cli-plugins/docker-compose | cut -d' ' -f1)" ]
+  read -r line; [ "$line" = "build_info_sha256=$(sha256sum compose-buildinfo.txt | cut -d' ' -f1)" ]
+  if read -r line; then exit 1; fi
+} < compose-build.txt
 # Every payload file has one origin. Metadata is separately bound by SHA256SUMS;
 # it is not executable runtime code and must not become a fake Debian component.
 payload_files=$(find . -type f ! -path ./SHA256SUMS ! -path ./manifest ! -path ./debian-runtime.tsv \
   ! -path ./debian-builder.tsv ! -path ./file-origins.tsv ! -path ./source-builds.tsv \
-  ! -path ./python-installed-identity.json ! -path ./python-private-identity.json ! -path ./python-private-build.txt | sort)
+  ! -path ./python-installed-identity.json ! -path ./python-private-identity.json ! -path ./python-private-build.txt \
+  ! -path ./compose-build.txt ! -path ./compose-buildinfo.txt | sort)
 origin_files=$(cut -f1 file-origins.tsv | sort)
 [ "$payload_files" = "$origin_files" ]
 awk -F '\t' -v revision="$revision" '
@@ -74,8 +91,12 @@ awk -F '\t' -v revision="$revision" '
     if (($1 != "./run-tool" && $1 != "./commands.txt") || $4 != "emisar" || $5 != revision || $6 != "all" || $7 != "emisar" || $8 != revision) exit 1
     next
   }
-  $2 == "github-release" {
-    if ($1 != "./cli-plugins/docker-compose" || $3 != "https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-linux-x86_64" || $4 != "docker-compose" || $5 != "5.5.1" || $6 != "amd64" || $7 != "docker/compose" || $8 != "v5.5.1") exit 1
+  $2 == "github-source" {
+    if (($1 != "./cli-plugins/docker-compose" && $1 != "./compose/LICENSE" && $1 != "./compose/NOTICE") || $3 != "https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de" || $4 != "docker-compose" || $5 != "5.5.1" || $6 != "amd64" || $7 != "docker/compose" || $8 != "v5.5.1") exit 1
+    next
+  }
+  $2 == "compiler-image" {
+    if ($1 != "./compose/GO-LICENSE" || $3 != "golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673" || $4 != "stdlib" || $5 != "v1.27.2" || $6 != "all" || $7 != "golang/go" || $8 != "go1.27.2") exit 1
     next
   }
   {exit 1}

@@ -77,16 +77,26 @@ done < <(find /bundle/libexec /bundle/python -type f -print0)
 loader=$(readlink -f /lib64/ld-linux-x86-64.so.2)
 install -m 0755 "$loader" /bundle/lib/loader
 diagnostics_record_debian "$loader" /bundle/lib/loader
-# Exact upstream v5.5.1 asset; not a mutable release download at boot.
-curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-  https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-linux-x86_64 \
-  -o /bundle/cli-plugins/docker-compose
-printf '%s  %s\n' db1889184726840f75c4f9c001048430d4f25b3be3cb084d3ddd762bc0aed576 \
-  /bundle/cli-plugins/docker-compose | sha256sum --check --status
-chmod 0755 /bundle/cli-plugins/docker-compose
-diagnostics_record_origin /bundle/cli-plugins/docker-compose github-release \
-  https://github.com/docker/compose/releases/download/v5.5.1/docker-compose-linux-x86_64 \
+# Rebuilt upstream source is not the official release asset. Keep its license,
+# actual compiler/build information and measured binary identity together.
+install -m 0755 /compose-source-build/docker-compose /bundle/cli-plugins/docker-compose
+install -d /bundle/compose
+cp /compose-source-build/build.txt /bundle/compose-build.txt
+cp /compose-source-build/buildinfo.txt /bundle/compose-buildinfo.txt
+compose_source=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
+diagnostics_record_origin /bundle/cli-plugins/docker-compose github-source "$compose_source" \
   $'docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1'
+for license in LICENSE NOTICE; do
+  cp "/compose-source-build/$license" "/bundle/compose/$license"
+  diagnostics_record_origin "/bundle/compose/$license" github-source "$compose_source" \
+    $'docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1'
+done
+# The embedded Go runtime's notice comes from the pinned compiler image, not
+# from the Compose source archive.
+cp /compose-source-build/GO-LICENSE /bundle/compose/GO-LICENSE
+diagnostics_record_origin /bundle/compose/GO-LICENSE compiler-image \
+  golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673 \
+  $'stdlib\tv1.27.2\tall\tgolang/go\tgo1.27.2'
 # Retain all signed build dependencies honestly, separately from shipped bytes.
 dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n' | \
   awk -F '\t' '$1 == "ii " {print $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}' | sort > /bundle/debian-builder.tsv
@@ -107,6 +117,7 @@ python_dsc=(/python-source/python3.11_*.dsc)
 printf 'python3.11\t%s\tDebian-signed-source; dsc_sha256=%s; private interpreter; pyexpat/_elementtree disabled\n' \
   "$(dpkg-query -W -f='${source:Version}' python3.11-minimal)" \
   "$(sha256sum "${python_dsc[0]}" | cut -d' ' -f1)" >> /bundle/source-builds.tsv
+printf 'docker/compose\tv5.5.1\tcommit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de; pinned Go1.27.2; compose-build.txt/compose-buildinfo.txt\n' >> /bundle/source-builds.tsv
 find /bundle -type f -exec chmod a-s,go-w {} +
 cd /bundle
 find . -type f ! -path ./SHA256SUMS ! -path ./manifest -print0 | sort -z | xargs -0 sha256sum > /tmp/bundle-SHA256SUMS

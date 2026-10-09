@@ -380,6 +380,12 @@ jobs:
           }
           echo "release revision OK"
 
+          # Inspect the completed release, including NIFs copied after apt ran.
+          # This complements migration/boot smoke and the unchanged image scan.
+          docker exec -i "$cid" /bin/sh -s < portal/docker/verify-runtime.sh
+
+          docker exec -i "$cid" /bin/sh -s < portal/docker/verify-tls.sh
+
           docker exec "$cid" /app/bin/emisar rpc \
             'case Application.fetch_env!(:emisar, :sso_allowed_idp_hosts) do
                [] -> :ok

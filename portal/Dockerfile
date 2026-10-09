@@ -133,6 +133,8 @@ RUN apt-get update -y \
   && rm -rf /var/lib/apt/lists/*
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+COPY portal/docker/prune-runtime-packages.sh /tmp/prune-runtime-packages.sh
+RUN /bin/sh /tmp/prune-runtime-packages.sh && rm /tmp/prune-runtime-packages.sh
 ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
 
 WORKDIR /app

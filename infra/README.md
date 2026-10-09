@@ -193,7 +193,10 @@ to resolve `ntp/udp` to port 123; the isolated Debian-slim qualifier supplies th
 entry through a read-only fixture, without modifying production host files.
 Only the reviewed `bin` allowlist enters PATH, after
 COS and the owned gcloud/BEAM wrappers. Compose is a checksum-pinned private
-Docker CLI plugin.
+Docker CLI plugin rebuilt from its checksum-pinned upstream source with the
+repository's patched Go compiler. Its license, actual Go build information,
+source/compiler identities and measured binary hash travel with the bundle;
+qualification also parses a real Compose configuration without a daemon.
 
 The installer checks the image digest, purpose, architecture, revision, complete
 file hashes and layout before executing staged version checks. It never starts

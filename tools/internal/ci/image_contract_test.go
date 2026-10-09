@@ -172,8 +172,9 @@ func diagnosticsSBOMFixture(t *testing.T) (string, string, imageContract) {
 			t.Fatal(err)
 		}
 	}
+	composeBinaryFixture(t, bundle)
 	runtime := filepath.Join(t.TempDir(), "runtime.cdx.json")
-	if err := os.WriteFile(runtime, []byte(`{"components":[{"type":"library","name":"example-go","version":"1.2.3","purl":"pkg:golang/example@v1.2.3","licenses":[{"license":{"id":"MIT"}}],"hashes":[{"alg":"SHA-256","content":"kept"}]}]}`), 0o600); err != nil {
+	if err := os.WriteFile(runtime, []byte(`{"components":[{"type":"library","bom-ref":"go-runtime","name":"stdlib","version":"v1.27.2","purl":"pkg:golang/stdlib@v1.27.2"},{"type":"library","name":"example-go","version":"1.2.3","purl":"pkg:golang/example@v1.2.3","licenses":[{"license":{"id":"MIT"}}],"hashes":[{"alg":"SHA-256","content":"kept"}]}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	hash, err := hashFile(filepath.Join(bundle, "manifest"))
@@ -243,6 +244,20 @@ func TestDiagnosticsSBOMContainsMeasuredRuntimeAndFullBoundProvenance(t *testing
 		}},
 		{"runtime component omitted", func(s *diagnosticSBOM) { s.Components = s.Components[1:] }},
 		{"runtime component duplicated", func(s *diagnosticSBOM) { s.Components = append(s.Components, s.Components[0]) }},
+		{"upstream binary hash falsely retained", func(s *diagnosticSBOM) {
+			for i, component := range s.Components {
+				if component.Name == "docker-compose" {
+					s.Components[i].Properties[0].Value = "db1889184726840f75c4f9c001048430d4f25b3be3cb084d3ddd762bc0aed576"
+				}
+			}
+		}},
+		{"vulnerable Go runtime", func(s *diagnosticSBOM) {
+			for i, component := range s.Components {
+				if component.Name == "stdlib" {
+					s.Components[i].Version, s.Components[i].PURL = "v1.26.8", "pkg:golang/stdlib@v1.26.8"
+				}
+			}
+		}},
 		{"builder component inserted", func(s *diagnosticSBOM) {
 			component, _ := debianInventoryComponent("linux-libc-dev\t6.1.187-1\tamd64\tlinux\t6.1.187-1")
 			s.Components = append(s.Components, component)

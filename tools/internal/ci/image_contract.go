@@ -224,7 +224,7 @@ func debianInventoryComponent(line string) (sbomComponent, error) {
 			{"aquasecurity:trivy:SrcEpoch", epoch}, {"aquasecurity:trivy:SrcRelease", release}}}, nil
 }
 
-var diagnosticsEvidenceFiles = []string{"manifest", "SHA256SUMS", "file-origins.tsv", "debian-runtime.tsv", "debian-builder.tsv", "source-builds.tsv", "python-installed-identity.json", "python-private-identity.json", "python-private-build.txt"}
+var diagnosticsEvidenceFiles = []string{"manifest", "SHA256SUMS", "file-origins.tsv", "debian-runtime.tsv", "debian-builder.tsv", "source-builds.tsv", "python-installed-identity.json", "python-private-identity.json", "python-private-build.txt", "compose-build.txt", "compose-buildinfo.txt"}
 
 // DiagnosticsSBOM declares only measured shipped packages as runtime components.
 // The complete builder inventory remains independently inspectable provenance,
@@ -282,8 +282,11 @@ func writeDiagnosticsSBOM(bundle, revision, imageID, runtimeSBOM, destination st
 		return err
 	}
 	sbom.Metadata.Properties = append(sbom.Metadata.Properties, sbomProperty{"emisar:source-builds", string(source)})
-	sbom.Components = append(sbom.Components, sbomComponent{Reference: "debian-12", Type: "operating-system", Name: "debian", Version: "12"},
-		sbomComponent{Reference: "docker-compose-v5.5.1", Type: "application", Name: "docker-compose", Version: "5.5.1", PURL: "pkg:github/docker/compose@v5.5.1", Properties: []sbomProperty{{"emisar:binary-sha256", "db1889184726840f75c4f9c001048430d4f25b3be3cb084d3ddd762bc0aed576"}}})
+	compose, err := diagnosticsComposeComponent(bundle)
+	if err != nil {
+		return err
+	}
+	sbom.Components = append(sbom.Components, sbomComponent{Reference: "debian-12", Type: "operating-system", Name: "debian", Version: "12"}, compose)
 	// Preserve Trivy's exact Go/Python component metadata, licenses and hashes.
 	runtimeData, err := os.ReadFile(runtimeSBOM)
 	if err != nil {
@@ -380,7 +383,16 @@ func readDiagnosticsOrigins(bundle string) (map[string][]string, error) {
 		case "debian", "debian-source", "debian-extracted", "debian-bytecode":
 			identity := strings.Join(fields[3:], "\t")
 			origins[identity] = append(origins[identity], strings.Join(fields[:3], "\t"))
-		case "repository", "github-release":
+		case "repository":
+		case "github-source":
+			if (fields[0] != "./cli-plugins/docker-compose" && fields[0] != "./compose/LICENSE" && fields[0] != "./compose/NOTICE") ||
+				fields[2] != composeSourceURL || strings.Join(fields[3:], "\t") != "docker-compose\t5.5.1\tamd64\tdocker/compose\tv5.5.1" {
+				return nil, fmt.Errorf("unexpected Compose source origin")
+			}
+		case "compiler-image":
+			if fields[0] != "./compose/GO-LICENSE" || fields[2] != composeCompilerImage || strings.Join(fields[3:], "\t") != "stdlib\tv1.27.2\tall\tgolang/go\tgo1.27.2" {
+				return nil, fmt.Errorf("unexpected Go runtime license origin")
+			}
 		default:
 			return nil, fmt.Errorf("unknown diagnostics file origin: %s", fields[1])
 		}
@@ -455,6 +467,27 @@ func verifyDiagnosticsSBOM(path string, contract imageContract, bundle string) e
 		if !exists || string(wantJSON) != string(gotJSON) {
 			return fmt.Errorf("sbom runtime ownership/source differs from final bundle: %s", component.Name)
 		}
+	}
+	compose, err := diagnosticsComposeComponent(bundle)
+	if err != nil {
+		return err
+	}
+	composeCount, toolchainCount := 0, 0
+	for _, component := range sbom.Components {
+		if component.Reference == compose.Reference || component.PURL == compose.PURL {
+			wantJSON, _ := json.Marshal(compose)
+			gotJSON, _ := json.Marshal(component)
+			if string(wantJSON) != string(gotJSON) {
+				return fmt.Errorf("sbom Compose identity differs from source-built bytes")
+			}
+			composeCount++
+		}
+		if component.PURL == "pkg:golang/stdlib@v1.27.2" && component.Name == "stdlib" && component.Version == "v1.27.2" {
+			toolchainCount++
+		}
+	}
+	if composeCount != 1 || toolchainCount != 1 {
+		return fmt.Errorf("sbom omits or duplicates rebuilt Compose/patched Go runtime")
 	}
 	return nil
 }
