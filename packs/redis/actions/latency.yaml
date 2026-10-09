@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.latency
 title: LATENCY LATEST + HISTORY
-kind: exec
+kind: script
 risk: low
 
 description: >
@@ -22,11 +22,10 @@ search_terms:
 args: []
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "LATENCY"
-      - "LATEST"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "LATENCY"
+    - "LATEST"
   timeout: 10s
 
 output:

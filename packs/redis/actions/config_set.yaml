@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.config_set
 title: CONFIG SET
-kind: exec
+kind: script
 risk: high
 description: >
   Change one runtime tuning parameter. Effects are immediate and may
@@ -72,9 +72,8 @@ args:
     validation:
       pattern: "^[a-zA-Z0-9_./ %:][a-zA-Z0-9_\\-./ %:]{0,255}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["CONFIG", "SET", "{{ args.parameter }}", "{{ args.value }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["CONFIG", "SET", "{{ args.parameter }}", "{{ args.value }}"]
   timeout: 10s
 output:
   parser: text

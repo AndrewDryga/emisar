@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.cluster_info
 title: CLUSTER INFO
-kind: exec
+kind: script
 risk: low
 description: >
   Show cluster status — state ok/fail, slots assigned/ok/pfail/fail,
@@ -14,9 +14,8 @@ search_terms:
   - clusterdown
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["CLUSTER", "INFO"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["CLUSTER", "INFO"]
   timeout: 10s
 output:
   parser: text

@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.lastsave
 title: LASTSAVE
-kind: exec
+kind: script
 risk: low
 description: >
   Show the Unix timestamp of the last successful background save (RDB). Use
@@ -11,9 +11,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["LASTSAVE"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["LASTSAVE"]
   timeout: 5s
 output:
   parser: text

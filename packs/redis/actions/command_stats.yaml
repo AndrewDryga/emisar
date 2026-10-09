@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.command_stats
 title: INFO commandstats
-kind: exec
+kind: script
 risk: low
 
 description: >
@@ -20,11 +20,10 @@ search_terms:
 args: []
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "INFO"
-      - "commandstats"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "INFO"
+    - "commandstats"
   timeout: 10s
 
 output:

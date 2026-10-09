@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.client_kill
 title: CLIENT KILL
-kind: exec
+kind: script
 risk: high
 
 description: >
@@ -38,13 +38,12 @@ args:
         - ID
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "CLIENT"
-      - "KILL"
-      - "{{ args.mode }}"
-      - "{{ args.target }}"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "CLIENT"
+    - "KILL"
+    - "{{ args.mode }}"
+    - "{{ args.target }}"
   timeout: 10s
 
 output:

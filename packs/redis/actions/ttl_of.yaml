@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.ttl_of
 title: TTL key
-kind: exec
+kind: script
 risk: low
 description: >
   Show seconds until the key expires. -2 means missing, -1 means no
@@ -17,9 +17,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9_:.{}@#/=+][A-Za-z0-9_:.\\-{}@#/=+]{0,511}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["TTL", "{{ args.key }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["TTL", "{{ args.key }}"]
   timeout: 5s
 output:
   parser: text

@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.slowlog
 title: SLOWLOG GET
-kind: exec
+kind: script
 risk: medium
 
 description: >
@@ -31,12 +31,11 @@ args:
       max: 1024
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "SLOWLOG"
-      - "GET"
-      - "{{ args.limit }}"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "SLOWLOG"
+    - "GET"
+    - "{{ args.limit }}"
   timeout: 10s
 
 output:

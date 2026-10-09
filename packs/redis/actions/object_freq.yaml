@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.object_freq
 title: OBJECT FREQ key
-kind: exec
+kind: script
 risk: low
 description: >
   Show the LFU access-frequency counter for the key. Requires an LFU
@@ -18,9 +18,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9_:.{}@#/=+][A-Za-z0-9_:.\\-{}@#/=+]{0,511}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["OBJECT", "FREQ", "{{ args.key }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["OBJECT", "FREQ", "{{ args.key }}"]
   timeout: 5s
 output:
   parser: text

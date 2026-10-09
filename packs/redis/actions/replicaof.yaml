@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.replicaof
 title: REPLICAOF
-kind: exec
+kind: script
 risk: critical
 description: >
   Reconfigure replication. REPLICAOF NO ONE promotes this node to
@@ -26,9 +26,8 @@ args:
     validation:
       pattern: "^([1-9][0-9]{0,4}|ONE)$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["REPLICAOF", "{{ args.host }}", "{{ args.port }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["REPLICAOF", "{{ args.host }}", "{{ args.port }}"]
   timeout: 15s
 output:
   parser: text

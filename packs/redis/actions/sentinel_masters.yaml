@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.sentinel_masters
 title: SENTINEL MASTERS
-kind: exec
+kind: script
 risk: low
 description: >
   List every master this Sentinel monitors with full state — name,
@@ -13,9 +13,8 @@ side_effects:
   - No Sentinel state changed, no failover triggered.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["-p", "26379", "SENTINEL", "MASTERS"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["-p", "26379", "SENTINEL", "MASTERS"]
   timeout: 10s
 output:
   parser: text

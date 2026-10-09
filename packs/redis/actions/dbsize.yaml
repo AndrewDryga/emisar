@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.dbsize
 title: DBSIZE
-kind: exec
+kind: script
 risk: low
 
 description: >
@@ -29,12 +29,11 @@ args:
       max: 15
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "-n"
-      - "{{ args.db }}"
-      - "DBSIZE"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "-n"
+    - "{{ args.db }}"
+    - "DBSIZE"
   timeout: 5s
 
 output:

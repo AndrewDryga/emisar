@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.bgsave
 title: BGSAVE
-kind: exec
+kind: script
 risk: medium
 description: >
   Trigger a background RDB snapshot. The fork briefly doubles RSS
@@ -15,9 +15,8 @@ search_terms:
   - backup now
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["BGSAVE"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["BGSAVE"]
   timeout: 15s
 output:
   parser: text

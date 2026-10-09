@@ -37,11 +37,10 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
     # both the Go hash and this expectation must move together — a
     # mismatch here means the portal's Elixir hash has drifted from the
     # runner's, which would make every `--hash` install fail for users.
-    # redis is exec-only; cassandra includes a script-kind action, so
-    # the pair covers both hash code paths.
+    # Redis shares a CLI guard across actions; Cassandra has per-action scripts.
     test "content_hash matches the Go runner byte-for-byte (golden values)" do
       assert PublishedRegistry.get("redis").content_hash ==
-               "sha256:2ac4dbfcb8f6cdf3269a6b7a75faec78c524b4b3ec6c8ee62df99be90954bbdd"
+               "sha256:dcdb0c8c4625e192bf156a906a59fe3c3272dc02b8741d46a93c7d0cd2aede43"
 
       assert PublishedRegistry.get("cassandra").content_hash ==
                "sha256:17c6ab7ba3c15e38c50210c38fb506583ed81f5c2589a504366653ed0e62834a"
@@ -175,25 +174,14 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
       assert Enum.find(action.args, &(&1["name"] == "frequency"))["default"] == "always"
     end
 
-    test "the Redis Sentinel down-state action publishes only the non-voting form" do
+    test "the guarded Redis Sentinel down-state action publishes only target arguments" do
       pack = PublishedRegistry.get("redis")
       action = Enum.find(pack.actions, &(&1.id == "redis.sentinel_is_master_down"))
 
       assert Enum.map(action.args, & &1["name"]) == ["ip", "port"]
 
-      assert action.command == %{
-               binary: "redis-cli",
-               argv: [
-                 "-p",
-                 "26379",
-                 "SENTINEL",
-                 "IS-MASTER-DOWN-BY-ADDR",
-                 "{{ args.ip }}",
-                 "{{ args.port }}",
-                 "0",
-                 "*"
-               ]
-             }
+      assert action.kind == "script"
+      assert action.command == nil
 
       # Raised to 0.3.15 with the ACL redaction fix: acl_getuser's rule required
       # ACL LIST's `#` prefix, which ACL GETUSER never emits, so every pinned

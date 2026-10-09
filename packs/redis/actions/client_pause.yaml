@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.client_pause
 title: CLIENT PAUSE
-kind: exec
+kind: script
 risk: high
 description: >
   Pause all clients for N milliseconds. Used during safe failover
@@ -21,9 +21,8 @@ args:
       min: 1
       max: 10000
 execution:
-  command:
-    binary: redis-cli
-    argv: ["CLIENT", "PAUSE", "{{ args.ms }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["CLIENT", "PAUSE", "{{ args.ms }}"]
   timeout: 30s
 output:
   parser: text

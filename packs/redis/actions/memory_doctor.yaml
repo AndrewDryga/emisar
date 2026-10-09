@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.memory_doctor
 title: MEMORY DOCTOR
-kind: exec
+kind: script
 risk: low
 description: >
   Run the built-in memory advisor. Returns a human-readable
@@ -16,9 +16,8 @@ search_terms:
   - memory fragmentation
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["MEMORY", "DOCTOR"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["MEMORY", "DOCTOR"]
   timeout: 10s
 output:
   parser: text

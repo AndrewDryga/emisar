@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.config_get
 title: CONFIG GET
-kind: exec
+kind: script
 risk: medium
 
 description: >
@@ -36,12 +36,11 @@ args:
       pattern: "^[a-zA-Z0-9_*?][a-zA-Z0-9_\\-*?]{0,63}$"
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "CONFIG"
-      - "GET"
-      - "{{ args.pattern }}"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "CONFIG"
+    - "GET"
+    - "{{ args.pattern }}"
   timeout: 10s
 
 output:

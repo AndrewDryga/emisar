@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.type_of
 title: TYPE key
-kind: exec
+kind: script
 risk: low
 description: Show the datatype of one key (string, list, set, hash, zset, stream, none).
 side_effects:
@@ -15,9 +15,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9_:.{}@#/=+][A-Za-z0-9_:.\\-{}@#/=+]{0,511}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["TYPE", "{{ args.key }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["TYPE", "{{ args.key }}"]
   timeout: 5s
 output:
   parser: text

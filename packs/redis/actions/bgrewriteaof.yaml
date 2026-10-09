@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.bgrewriteaof
 title: BGREWRITEAOF
-kind: exec
+kind: script
 risk: medium
 description: >
   Rewrite the AOF file in the background, compacting it to the
@@ -13,9 +13,8 @@ side_effects:
   - Concurrent BGSAVE will queue behind this.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["BGREWRITEAOF"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["BGREWRITEAOF"]
   timeout: 15s
 output:
   parser: text

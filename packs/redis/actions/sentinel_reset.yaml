@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.sentinel_reset
 title: SENTINEL RESET
-kind: exec
+kind: script
 risk: high
 description: >
   Reset every monitored master whose name matches the glob pattern.
@@ -23,9 +23,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9._*?][A-Za-z0-9._*?-]{0,127}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["-p", "26379", "SENTINEL", "RESET", "{{ args.pattern }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["-p", "26379", "SENTINEL", "RESET", "{{ args.pattern }}"]
   timeout: 10s
 output:
   parser: text

@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.cluster_slots
 title: CLUSTER SLOTS
-kind: exec
+kind: script
 risk: low
 description: >
   Show the slot-range → master/replica mapping. Use to confirm a given hash
@@ -12,9 +12,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["CLUSTER", "SLOTS"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["CLUSTER", "SLOTS"]
   timeout: 10s
 output:
   parser: text

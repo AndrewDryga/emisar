@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.randomkey
 title: RANDOMKEY
-kind: exec
+kind: script
 risk: low
 description: >
   Get a random key from the current database (or nil if empty).
@@ -11,9 +11,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["RANDOMKEY"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["RANDOMKEY"]
   timeout: 5s
 output:
   parser: text

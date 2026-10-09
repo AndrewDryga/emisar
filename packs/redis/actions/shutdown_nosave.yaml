@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.shutdown_nosave
 title: SHUTDOWN NOSAVE
-kind: exec
+kind: script
 risk: critical
 description: >
   Stop the Redis process without writing an RDB. Any data not
@@ -15,9 +15,8 @@ side_effects:
   - Supervisor restart depends on host config.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["SHUTDOWN", "NOSAVE"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["SHUTDOWN", "NOSAVE"]
   timeout: 15s
 output:
   parser: text

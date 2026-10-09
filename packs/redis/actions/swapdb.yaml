@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.swapdb
 title: SWAPDB
-kind: exec
+kind: script
 risk: high
 description: >
   Atomically swap the contents of two logical databases. Clients
@@ -27,9 +27,8 @@ args:
       min: 0
       max: 15
 execution:
-  command:
-    binary: redis-cli
-    argv: ["SWAPDB", "{{ args.i }}", "{{ args.j }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["SWAPDB", "{{ args.i }}", "{{ args.j }}"]
   timeout: 10s
 output:
   parser: text

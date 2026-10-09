@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.acl_getuser
 title: ACL GETUSER
-kind: exec
+kind: script
 risk: medium
 description: >
   Get the full rule listing for one ACL user — categories, commands, key
@@ -17,9 +17,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9_][A-Za-z0-9_\\-]{0,63}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["ACL", "GETUSER", "{{ args.username }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["ACL", "GETUSER", "{{ args.username }}"]
   timeout: 10s
 output:
   parser: text

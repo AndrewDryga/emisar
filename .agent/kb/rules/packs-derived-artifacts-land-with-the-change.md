@@ -35,7 +35,7 @@ version when the exact prior history matters, `packs/PUBLISHING.md` → Rollback
 (`go build -o ../bin/packctl ./cmd/packctl`); `bin/emisar` runs `pack validate`.
 
 **The hash golden.** `apps/emisar/test/emisar/catalog/published_registry_test.exs`
-pins the `content_hash` of `redis` (exec-only) and `cassandra` (script-kind)
+pins the `content_hash` of `redis` (shared CLI guard) and `cassandra` (per-action scripts)
 byte-for-byte — the proof that `Emisar.Catalog.PublishedRegistry` and the Go
 runner hash a pack identically. `emisar pack validate` does not run it, so any
 byte change to those two packs, including a catalog-wide sweep that touches

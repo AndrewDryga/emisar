@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.config_resetstat
 title: CONFIG RESETSTAT
-kind: exec
+kind: script
 risk: medium
 description: >
   Reset INFO stats counters (commandstats, keyspace hits/misses,
@@ -14,9 +14,8 @@ side_effects:
   - No keys read or written.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["CONFIG", "RESETSTAT"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["CONFIG", "RESETSTAT"]
   timeout: 5s
 output:
   parser: text

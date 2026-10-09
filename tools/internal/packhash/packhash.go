@@ -18,7 +18,7 @@ import (
 const goldenPath = "portal/apps/emisar/test/emisar/catalog/published_registry_test.exs"
 
 // GoldenPacks are the packs whose content hash the Portal test pins byte for
-// byte: redis (exec-only actions) and cassandra (a script-kind action) between
+// byte: redis (a shared CLI guard) and cassandra (per-action scripts) between
 // them exercise every hash input. Every loop here and the `pack check` route
 // in devtool read this one list.
 var GoldenPacks = []string{"redis", "cassandra"}

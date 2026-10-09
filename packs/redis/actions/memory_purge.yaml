@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.memory_purge
 title: MEMORY PURGE
-kind: exec
+kind: script
 risk: medium
 description: >
   Ask jemalloc to release unused memory back to the OS. Use after
@@ -13,9 +13,8 @@ side_effects:
   - Does not affect keys.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["MEMORY", "PURGE"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["MEMORY", "PURGE"]
   timeout: 60s
   cancel_grace: 10s
 output:

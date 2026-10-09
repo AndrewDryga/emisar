@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.latency_history
 title: LATENCY HISTORY
-kind: exec
+kind: script
 risk: low
 description: >
   Show per-event latency time series (e.g. fork, aof-write, expire).
@@ -17,9 +17,8 @@ args:
     validation:
       pattern: "^[a-z0-9][a-z0-9\\-_]{0,31}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["LATENCY", "HISTORY", "{{ args.event }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["LATENCY", "HISTORY", "{{ args.event }}"]
   timeout: 10s
 output:
   parser: text

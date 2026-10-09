@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.script_flush
 title: SCRIPT FLUSH
-kind: exec
+kind: script
 risk: medium
 description: >
   Drop all cached EVAL scripts (server-side Lua). Clients using
@@ -21,9 +21,8 @@ args:
         - SYNC
         - ASYNC
 execution:
-  command:
-    binary: redis-cli
-    argv: ["SCRIPT", "FLUSH", "{{ args.mode }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["SCRIPT", "FLUSH", "{{ args.mode }}"]
   timeout: 30s
 output:
   parser: text

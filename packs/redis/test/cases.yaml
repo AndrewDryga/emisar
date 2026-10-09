@@ -49,13 +49,150 @@ cases:
   - name: redis.cluster_check-targets-local-instance
     action: redis.cluster_check
     expect:
-      stdout_contains: [PACKTEST_REDIS_CLUSTER_TARGET, "127.0.0.1:6379"]
+      status: failure
+      exit: [1]
+      stderr_contains: ["[ERR] Node 127.0.0.1:6379 is not configured as a cluster node."]
+      stdout_not_contains: ["[ERR]"]
     probes:
       - argv: [cat, /tmp/packtest-redis-cluster-check-argv]
         expect:
-          stdout_contains: ["--cluster check 127.0.0.1:6379"]
+          stdout_contains: ["-e --cluster check 127.0.0.1:6379"]
     cleanup:
       - argv: [rm, -f, /tmp/packtest-redis-cluster-check-argv]
+  - name: redis.cluster_info-disabled
+    action: redis.cluster_info
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [cluster support disabled]
+      stdout_not_contains: [cluster support disabled]
+  - name: redis.cluster_nodes-disabled
+    action: redis.cluster_nodes
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [cluster support disabled]
+      stdout_not_contains: [cluster support disabled]
+  - name: redis.cluster_slots-disabled
+    action: redis.cluster_slots
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [cluster support disabled]
+      stdout_not_contains: [cluster support disabled]
+  - name: redis.cluster_countkeysinslot-disabled
+    action: redis.cluster_countkeysinslot
+    args: {slot: 0}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [cluster support disabled]
+      stdout_not_contains: [cluster support disabled]
+  - name: redis.cluster_failover-disabled
+    action: redis.cluster_failover
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [cluster support disabled]
+      stdout_not_contains: [cluster support disabled]
+    probes:
+      - argv: [redis-cli, ROLE]
+        expect:
+          stdout_contains: [master]
+  - name: redis.cluster_forget-disabled
+    action: redis.cluster_forget
+    args: {node_id: "1111111111111111111111111111111111111111"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [cluster support disabled]
+      stdout_not_contains: [cluster support disabled]
+  - name: redis.object_freq-without-lfu
+    action: redis.object_freq
+    args: {key: "packtest:frequency"}
+    arrange:
+      - argv: [redis-cli, CONFIG, SET, maxmemory-policy, noeviction]
+      - argv: [redis-cli, SET, "packtest:frequency", value]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [An LFU maxmemory policy is not selected]
+      stdout_not_contains: [An LFU maxmemory policy is not selected]
+  - name: redis.object_freq-with-lfu
+    action: redis.object_freq
+    args: {key: "packtest:frequency"}
+    arrange:
+      - argv: [redis-cli, CONFIG, SET, maxmemory-policy, allkeys-lfu]
+      - argv: [redis-cli, CONFIG, SET, lfu-decay-time, "0"]
+      - argv: [redis-cli, SET, "packtest:frequency", value]
+    # Both supported servers initialize LFU counters to 5; OBJECT does not
+    # touch the key's frequency and decay is disabled in this isolated case.
+    expect:
+      json: {"": 5}
+  - name: redis.info-fails-after-auth-error
+    action: redis.info
+    args: {section: server}
+    arrange:
+      # Keep REDISCLI_AUTH in the action environment after making AUTH invalid.
+      # redis-cli still executes INFO successfully unless stderr affects exit.
+      - argv: [redis-cli, ACL, SETUSER, default, nopass]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [AUTH failed]
+  - name: redis.dbsize-fails-after-select-error
+    action: redis.dbsize
+    args: {db: 1}
+    arrange:
+      - argv: [redis-cli, SET, "packtest:db0", one]
+      - argv: [redis-cli, -n, "1", SET, "packtest:db1a", one]
+      - argv: [redis-cli, -n, "1", SET, "packtest:db1b", two]
+      - argv: [redis-cli, ACL, SETUSER, default, -select]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [SELECT, NOPERM]
+  - name: redis.info-acl-denied
+    action: redis.info
+    args: {section: server}
+    arrange:
+      - argv: [redis-cli, ACL, SETUSER, default, -info]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [NOPERM]
+      stdout_not_contains: [NOPERM]
+  - name: redis.xlen-wrong-type
+    action: redis.xlen
+    args: {key: "packtest:not-a-stream"}
+    arrange:
+      - argv: [redis-cli, SET, "packtest:not-a-stream", value]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [WRONGTYPE]
+      stdout_not_contains: [WRONGTYPE]
+  - name: redis.sentinel_master-unknown
+    action: redis.sentinel_master
+    args: {master_name: not-configured}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [No such master]
+      stdout_not_contains: [No such master]
+  - name: redis.shutdown-acl-denied
+    action: redis.shutdown_nosave
+    arrange:
+      - argv: [redis-cli, ACL, SETUSER, default, -shutdown]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [NOPERM]
+      stdout_not_contains: [NOPERM]
+    probes:
+      - argv: [redis-cli, PING]
+        expect:
+          stdout_contains: [PONG]
   - action: redis.config_get
     args: {pattern: maxmemory}
     expect:
@@ -85,6 +222,11 @@ cases:
     args: {section: server}
     expect:
       stdout_contains: [redis_version, process_id]
+    probes:
+      - name: record the real client version independently of the server row
+        argv: [redis-cli, --version]
+        expect:
+          stdout_contains: [redis-cli]
   - action: redis.lastsave
     probes:
       - argv: [/bin/sh, -c, 'test "$(redis-cli LASTSAVE)" -gt 0 && echo valid-timestamp']
@@ -106,6 +248,24 @@ cases:
           stdout_contains: [positive-bytes]
     cleanup:
       - argv: [redis-cli, DEL, "packtest:value"]
+  - name: redis.memory_usage-missing-key-is-not-an-error
+    action: redis.memory_usage
+    args: {key: "packtest:missing"}
+    expect:
+      stdout_not_contains: [ERR, WRONGTYPE, "(nil)"]
+    probes:
+      - argv: [redis-cli, EXISTS, "packtest:missing"]
+        expect:
+          json: {"": 0}
+  - name: redis.pubsub_channels-empty-is-not-an-error
+    action: redis.pubsub_channels
+    args: {pattern: "packtest:*"}
+    expect:
+      stdout_not_contains: [packtest, ERR]
+    probes:
+      - argv: [redis-cli, PUBSUB, NUMPAT]
+        expect:
+          json: {"": 0}
   - action: redis.object_encoding
     args: {key: "packtest:value"}
     arrange:
@@ -174,7 +334,7 @@ cases:
           - /bin/sh
           - -ec
           - >-
-            grep -Fqx -- '-p 26379 SENTINEL IS-MASTER-DOWN-BY-ADDR 127.0.0.1 6379 0 *'
+            grep -Fqx -- '-e -p 26379 SENTINEL IS-MASTER-DOWN-BY-ADDR 127.0.0.1 6379 0 *'
             /tmp/packtest-redis-sentinel-argv;
             echo non-voting-argv
         expect:

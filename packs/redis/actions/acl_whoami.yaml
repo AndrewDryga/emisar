@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.acl_whoami
 title: ACL WHOAMI
-kind: exec
+kind: script
 risk: low
 description: >
   Show the ACL username of the current connection. Use to verify the runner
@@ -11,9 +11,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["ACL", "WHOAMI"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["ACL", "WHOAMI"]
   timeout: 5s
 output:
   parser: text

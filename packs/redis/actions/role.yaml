@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.role
 title: ROLE
-kind: exec
+kind: script
 risk: low
 description: >
   Report whether this Redis is master, replica, or sentinel.
@@ -13,9 +13,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["ROLE"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["ROLE"]
   timeout: 5s
 output:
   parser: text

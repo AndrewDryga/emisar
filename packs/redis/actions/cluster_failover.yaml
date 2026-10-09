@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.cluster_failover
 title: CLUSTER FAILOVER
-kind: exec
+kind: script
 risk: critical
 description: >
   Promote the connected REPLICA to master. Default mode (empty)
@@ -27,13 +27,10 @@ args:
         - FORCE
         - TAKEOVER
 execution:
-  command:
-    # The optional marker DROPS the whole element when `mode` is empty, which is
-    # the default safe failover. It is also what lets the catalog's only
-    # `critical` action reach its tool directly: the shell was here solely to
-    # swallow the empty word, and a critical action should not need one.
-    binary: redis-cli
-    argv: ["CLUSTER", "FAILOVER", "{{ args.mode? }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  # Drop the optional element for the default safe failover; the common guard
+  # passes these original argv elements to redis-cli without reconstruction.
+  argv: ["CLUSTER", "FAILOVER", "{{ args.mode? }}"]
   timeout: 60s
   cancel_grace: 30s
 output:

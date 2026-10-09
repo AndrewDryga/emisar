@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.xinfo_stream
 title: XINFO STREAM
-kind: exec
+kind: script
 risk: low
 description: >
   Show one stream's length, last-generated-id, groups, first/last entry.
@@ -21,9 +21,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9_:.{}@#/=+][A-Za-z0-9_:.\\-{}@#/=+]{0,511}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["XINFO", "STREAM", "{{ args.key }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["XINFO", "STREAM", "{{ args.key }}"]
   timeout: 10s
 output:
   parser: text

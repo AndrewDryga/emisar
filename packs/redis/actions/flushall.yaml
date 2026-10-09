@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.flushall
 title: FLUSHALL
-kind: exec
+kind: script
 risk: critical
 description: >
   Delete EVERY key from EVERY database. Irreversible. Replicas
@@ -23,9 +23,8 @@ args:
         - SYNC
         - ASYNC
 execution:
-  command:
-    binary: redis-cli
-    argv: ["FLUSHALL", "{{ args.mode }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["FLUSHALL", "{{ args.mode }}"]
   timeout: 60s
   cancel_grace: 10s
 output:

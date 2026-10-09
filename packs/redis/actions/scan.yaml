@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.scan
 title: SCAN cursor MATCH COUNT
-kind: exec
+kind: script
 risk: low
 description: >
   Show one SCAN page. Returns next-cursor + up to COUNT keys matching
@@ -37,9 +37,8 @@ args:
       min: 1
       max: 10000
 execution:
-  command:
-    binary: redis-cli
-    argv: ["SCAN", "{{ args.cursor }}", "MATCH", "{{ args.match }}", "COUNT", "{{ args.count }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["SCAN", "{{ args.cursor }}", "MATCH", "{{ args.match }}", "COUNT", "{{ args.count }}"]
   timeout: 30s
 output:
   parser: text

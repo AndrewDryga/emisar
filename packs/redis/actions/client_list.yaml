@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.client_list
 title: CLIENT LIST
-kind: exec
+kind: script
 risk: low
 
 description: >
@@ -23,11 +23,10 @@ search_terms:
 args: []
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "CLIENT"
-      - "LIST"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "CLIENT"
+    - "LIST"
   timeout: 15s
 
 output:

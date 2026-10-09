@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.acl_list
 title: ACL LIST
-kind: exec
+kind: script
 risk: medium
 description: >
   List all ACL users and their rules. Read-only. Use to audit access
@@ -11,9 +11,8 @@ side_effects:
   - Read-only.
 args: []
 execution:
-  command:
-    binary: redis-cli
-    argv: ["ACL", "LIST"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["ACL", "LIST"]
   timeout: 10s
 output:
   parser: text

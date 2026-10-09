@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis
 name: Redis operations pack
-version: 0.3.19
+version: 0.3.20
 # Older versions allowed credential redirection or caller-controlled Sentinel
 # votes, and 0.3.16 let config_set take `dir`/`dbfilename`/`logfile` —
 # with the medium, auto-running bgsave that is an arbitrary file write.
@@ -48,6 +48,7 @@ setup:
     - name: REDISCLI_AUTH
       description: Password sent via AUTH. Omit for an instance with no requirepass/ACL. The matching user must hold the commands the actions you enable will run.
   notes:
+    - "Requires redis-cli 6.2 or newer for `-e`. Command and connection-setup errors fail the action; cluster-check failures are reported on stderr."
     - "`REDISCLI_AUTH` must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - Host and port are not configurable through this pack's env — ordinary actions use redis-cli's 127.0.0.1:6379 default, while Sentinel actions set only port 26379 and keep the same local host.
     - Sentinel must accept the same `REDISCLI_AUTH` password as the ordinary Redis service; every Sentinel action uses that shared runner credential on local port 26379.

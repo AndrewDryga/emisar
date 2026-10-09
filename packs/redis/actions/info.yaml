@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.info
 title: Redis INFO section
-kind: exec
+kind: script
 risk: low
 
 description: >
@@ -44,11 +44,10 @@ args:
         - errorstats
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "INFO"
-      - "{{ args.section }}"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "INFO"
+    - "{{ args.section }}"
   timeout: 10s
 
 output:

@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.memory_usage
 title: MEMORY USAGE key
-kind: exec
+kind: script
 risk: low
 description: >
   Show bytes used by a single key (estimate, including value and internal
@@ -21,9 +21,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9_:.{}@#/=+][A-Za-z0-9_:.\\-{}@#/=+]{0,511}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["MEMORY", "USAGE", "{{ args.key }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["MEMORY", "USAGE", "{{ args.key }}"]
   timeout: 10s
 output:
   parser: text

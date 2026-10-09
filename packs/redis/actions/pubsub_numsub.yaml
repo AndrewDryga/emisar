@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.pubsub_numsub
 title: PUBSUB NUMSUB
-kind: exec
+kind: script
 risk: low
 description: Count subscribers on a channel. Useful before tearing down a producer.
 side_effects:
@@ -15,9 +15,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9_:.{}@#/=+][A-Za-z0-9_:.\\-{}@#/=+]{0,255}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["PUBSUB", "NUMSUB", "{{ args.channel }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["PUBSUB", "NUMSUB", "{{ args.channel }}"]
   timeout: 5s
 output:
   parser: text

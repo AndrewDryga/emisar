@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.sentinel_is_master_down
 title: SENTINEL IS-MASTER-DOWN-BY-ADDR
-kind: exec
+kind: script
 risk: low
 description: >
   Check whether this Sentinel considers the master at ip:port subjectively
@@ -26,17 +26,16 @@ args:
     validation:
       pattern: "^[1-9][0-9]{0,4}$"
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "-p"
-      - "26379"
-      - "SENTINEL"
-      - "IS-MASTER-DOWN-BY-ADDR"
-      - "{{ args.ip }}"
-      - "{{ args.port }}"
-      - "0"
-      - "*"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "-p"
+    - "26379"
+    - "SENTINEL"
+    - "IS-MASTER-DOWN-BY-ADDR"
+    - "{{ args.ip }}"
+    - "{{ args.port }}"
+    - "0"
+    - "*"
   timeout: 10s
 output:
   parser: text

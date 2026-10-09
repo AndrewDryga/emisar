@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.memory_stats
 title: MEMORY STATS
-kind: exec
+kind: script
 risk: low
 
 description: >
@@ -22,11 +22,10 @@ search_terms:
 args: []
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "MEMORY"
-      - "STATS"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "MEMORY"
+    - "STATS"
   timeout: 10s
 
 output:

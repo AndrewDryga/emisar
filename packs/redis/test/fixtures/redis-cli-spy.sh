@@ -1,15 +1,15 @@
 #!/bin/sh
-set -u
+set -eu
 
-if [ "${1:-}" = "--cluster" ] && [ "${2:-}" = "check" ]; then
+# Observe the fixed target and non-voting arguments without replacing vendor
+# behavior. Both forms keep this spy useful for the pre-fix negative control.
+case "$*" in
+--cluster\ check\ *|-e\ --cluster\ check\ *)
 	printf '%s\n' "$*" >/tmp/packtest-redis-cluster-check-argv
-	printf 'PACKTEST_REDIS_CLUSTER_TARGET %s\n' "${3:-}"
-	exit 0
-fi
-
-if [ "${1:-}" = "-p" ] && [ "${2:-}" = "26379" ] &&
-	[ "${3:-}" = "SENTINEL" ] && [ "${4:-}" = "IS-MASTER-DOWN-BY-ADDR" ]; then
+	;;
+-p\ 26379\ SENTINEL\ IS-MASTER-DOWN-BY-ADDR\ *|-e\ -p\ 26379\ SENTINEL\ IS-MASTER-DOWN-BY-ADDR\ *)
 	printf '%s\n' "$*" >>/tmp/packtest-redis-sentinel-argv
-fi
+	;;
+esac
 
 exec /usr/bin/redis-cli "$@"

@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.cluster_check
 title: redis-cli --cluster check
-kind: exec
+kind: script
 risk: low
 description: >
   Run `redis-cli --cluster check` from the local Redis entry point at
@@ -11,9 +11,8 @@ side_effects:
   - Talks to every cluster node briefly.
   - Read-only.
 execution:
-  command:
-    binary: redis-cli
-    argv: ["--cluster", "check", "127.0.0.1:6379"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["--cluster", "check", "127.0.0.1:6379"]
   timeout: 60s
 output:
   parser: text

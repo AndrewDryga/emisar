@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.sentinel_get_master_addr
 title: SENTINEL GET-MASTER-ADDR-BY-NAME
-kind: exec
+kind: script
 risk: low
 description: >
   Show the ip and port Sentinel currently believes is the master
@@ -24,9 +24,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["-p", "26379", "SENTINEL", "GET-MASTER-ADDR-BY-NAME", "{{ args.master_name }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["-p", "26379", "SENTINEL", "GET-MASTER-ADDR-BY-NAME", "{{ args.master_name }}"]
   timeout: 10s
 output:
   parser: text

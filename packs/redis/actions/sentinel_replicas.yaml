@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.sentinel_replicas
 title: SENTINEL REPLICAS
-kind: exec
+kind: script
 risk: low
 description: >
   List the replicas Sentinel has discovered for one master, each
@@ -22,9 +22,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["-p", "26379", "SENTINEL", "REPLICAS", "{{ args.master_name }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["-p", "26379", "SENTINEL", "REPLICAS", "{{ args.master_name }}"]
   timeout: 10s
 output:
   parser: text

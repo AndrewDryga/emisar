@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.cluster_forget
 title: CLUSTER FORGET
-kind: exec
+kind: script
 risk: high
 description: >
   Remove a node from the connected node's cluster view for 60s.
@@ -20,9 +20,8 @@ args:
     validation:
       pattern: "^[a-f0-9]{40}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["CLUSTER", "FORGET", "{{ args.node_id }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["CLUSTER", "FORGET", "{{ args.node_id }}"]
   timeout: 10s
 output:
   parser: text

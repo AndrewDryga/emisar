@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.sentinel_info
 title: Sentinel INFO
-kind: exec
+kind: script
 risk: low
 description: >
   Run INFO against the Sentinel process itself (port 26379) and
@@ -29,9 +29,8 @@ args:
         - stats
         - sentinel
 execution:
-  command:
-    binary: redis-cli
-    argv: ["-p", "26379", "INFO", "{{ args.section }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["-p", "26379", "INFO", "{{ args.section }}"]
   timeout: 10s
 output:
   parser: text

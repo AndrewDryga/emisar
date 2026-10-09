@@ -2,7 +2,7 @@ schema_version: 1
 
 id: redis.flush_db
 title: FLUSHDB (single database)
-kind: exec
+kind: script
 risk: critical
 
 description: >
@@ -42,13 +42,12 @@ args:
         - ASYNC
 
 execution:
-  command:
-    binary: redis-cli
-    argv:
-      - "-n"
-      - "{{ args.db }}"
-      - "FLUSHDB"
-      - "{{ args.mode }}"
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv:
+    - "-n"
+    - "{{ args.db }}"
+    - "FLUSHDB"
+    - "{{ args.mode }}"
   timeout: 30s
 
 output:

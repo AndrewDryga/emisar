@@ -1,7 +1,7 @@
 schema_version: 1
 id: redis.pubsub_channels
 title: PUBSUB CHANNELS
-kind: exec
+kind: script
 risk: low
 description: >
   List active pub/sub channels matching the optional pattern. Useful to
@@ -18,9 +18,8 @@ args:
     validation:
       pattern: "^[A-Za-z0-9_:.*?{}@#/=+][A-Za-z0-9_:.\\-*?{}@#/=+]{0,255}$"
 execution:
-  command:
-    binary: redis-cli
-    argv: ["PUBSUB", "CHANNELS", "{{ args.pattern }}"]
+  script: {path: scripts/redis_cli.sh, interpreter: /bin/sh}
+  argv: ["PUBSUB", "CHANNELS", "{{ args.pattern }}"]
   timeout: 10s
 output:
   parser: text
