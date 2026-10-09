@@ -15,6 +15,33 @@ runner:
     Changing units and reading every user's crontab are privileged operations;
     a case that ran them as anyone else would only ever assert the denial.
 cases:
+  - action: linux.inode_usage
+    runner_user: nonroot
+    arrange:
+      - name: Real disk volume and excluded rows exist in native inode output
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            fs=$(df --output=fstype /run) || exit $?
+            fs=$(printf '%s\n' "$fs" | awk 'NR == 2 { print }')
+            case "$fs" in
+              ''|tmpfs|devtmpfs|overlay|squashfs)
+                printf '%s\n' '/run needs a disk-backed fixture filesystem' >&2; exit 1 ;;
+            esac
+            table=$(df -i -h) || exit $?
+            printf '%s\n' "$table" | awk '
+              $NF == "/run" { disk = 1 }
+              $1 == "overlay" || $1 == "tmpfs" { excluded = 1 }
+              END {
+                if (!disk || !excluded) {
+                  print "Native inode fixture needs /run and excluded rows" > "/dev/stderr"
+                  exit 1
+                }
+              }'
+    expect:
+      stdout_contains: [Inodes, IUsed, IFree, /run]
+      stdout_not_contains: [overlay, tmpfs, devtmpfs, squashfs]
   - action: linux.journalctl_grep
     args:
       unit: packtest-journal.service

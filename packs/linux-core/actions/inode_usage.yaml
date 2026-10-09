@@ -6,7 +6,8 @@ kind: exec
 risk: low
 
 description: >
-  Show inode usage per filesystem (`df -i`). A "disk full" report
+  Show a bounded inode-usage snapshot of disk filesystems (`df -i`),
+  excluding tmpfs, devtmpfs, overlay and squashfs mounts. A "disk full" report
   that doesn't match `df -h` is almost always inode exhaustion —
   this surfaces it directly. Read-only.
 
@@ -25,11 +26,19 @@ execution:
     argv:
       - "-i"
       - "-h"
+      - "-x"
+      - tmpfs
+      - "-x"
+      - devtmpfs
+      - "-x"
+      - overlay
+      - "-x"
+      - squashfs
   timeout: 10s
 
 output:
   parser: text
-  max_stdout_bytes: 16384
+  max_stdout_bytes: 65536
   max_stderr_bytes: 8192
 
 examples:
