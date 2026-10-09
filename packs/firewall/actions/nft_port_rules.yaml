@@ -4,9 +4,10 @@ title: Project nftables rules for one port
 kind: script
 risk: low
 description: >
-  Project rules with direct source or destination port expressions for one
-  numeric port. Rules that reference named sets, maps, or unsupported
-  expressions are returned separately as unresolved. This is inspection
+  Show rules with direct source or destination port expressions for one
+  numeric port, including inline anonymous sets of ports and ranges and
+  their inverses. Rules that reference named sets, maps, malformed operands
+  or unsupported expressions are returned separately as unresolved. This is inspection
   evidence, not an effective allow or deny decision: chain order, jumps,
   policies, and other predicates still apply.
 side_effects:

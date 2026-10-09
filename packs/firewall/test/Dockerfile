@@ -2,13 +2,14 @@
 # created and read inside the SUT's network namespace, so what the cases need is
 # the shared client image plus those two — starting FROM that image is also what
 # keeps the jq built --with-oniguruma=no at /opt/jq-without-regex available to
-# the compatibility case.
+# the compatibility cases. Conntrack and bounded native packet tools exercise
+# real protocol tuples in that same disposable namespace.
 ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
 FROM ${PACKTEST_RUNNER_IMAGE}
 
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nftables iptables \
+    && apt-get install -y --no-install-recommends nftables iptables conntrack iputils-ping netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Back to the default identity: a case that needs root asks for it, and the

@@ -1,0 +1,17 @@
+#!/usr/sbin/nft -f
+
+# Real kernel-held rules, not the scalar-string rewrite fixture. Named sets
+# deliberately stay unresolved even though their contents are visible here.
+table inet packtest_sets {
+    set named_ports {
+        type inet_service
+        elements = { 443 }
+    }
+    chain input {
+        type filter hook input priority 0; policy accept;
+        tcp dport { 80, 443 } accept comment "inline-scalar"
+        tcp dport { 8080, 9000-9010 } accept comment "inline-range"
+        tcp dport != { 80, 443 } accept comment "inline-inverse"
+        tcp dport @named_ports accept comment "named-reference"
+    }
+}

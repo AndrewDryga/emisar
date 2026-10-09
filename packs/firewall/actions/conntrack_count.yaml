@@ -1,9 +1,9 @@
 schema_version: 1
 id: fw.conntrack_count
-title: conntrack count
+title: Show connection-tracking counts
 kind: exec
 risk: low
-description: Show active connection-tracking entry count + per-state breakdown.
+description: Show the active connection-tracking count and per-protocol/state totals. A dash denotes protocols without a named state, such as UDP and ICMP.
 side_effects:
   - One conntrack query.
   - Read-only.
@@ -21,7 +21,7 @@ execution:
       # load-bearing — -C prints "0" to stdout even while failing.
       # -L keeps its stderr: "N flow entries have been shown" and any failure
       # reason are the evidence that says which of two opposite facts you have.
-      - "set -e; echo 'Total:'; conntrack -C; echo; echo 'Per-state:'; conntrack -L | awk '{print $1,$4}' | sort | uniq -c | sort -rn | head -20"
+      - "set -e; echo 'Total:'; conntrack -C; echo; echo 'Per-protocol/state:'; conntrack -L | awk '{print $1, ($4 != \"\" && $4 !~ /=/ ? $4 : \"-\")}' | sort | uniq -c | sort -rn | head -20"
   timeout: 30s
 output:
   parser: text

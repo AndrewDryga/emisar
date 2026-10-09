@@ -7,6 +7,131 @@ versions:
     digest: "@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
     default: true
 cases:
+  - name: fw.conntrack_count-real-protocol-states
+    action: fw.conntrack_count
+    runner_user: root
+    runner_reason: >
+      Creating and reading real conntrack entries in the disposable network
+      namespace requires CAP_NET_ADMIN; no host namespace is used.
+    arrange:
+      - argv: [iptables, -I, OUTPUT, -m, conntrack, --ctstate, 'NEW,ESTABLISHED', -j, ACCEPT]
+      # Dropping the isolated destination prevents a closed-port ICMP reply
+      # deleting the UDP entry, and leaves the TCP entry in SYN_SENT.
+      - argv: [iptables, -I, INPUT, -p, udp, --dport, '54444', -j, DROP]
+      - argv: [iptables, -I, INPUT, -p, tcp, --dport, '54446', -j, DROP]
+      - argv: [/bin/sh, -c, 'printf "%s\n" packtest | nc -u -w 1 -p 54445 127.0.0.2 54444']
+      - argv: [/bin/sh, -c, 'status=0; nc -w 1 127.0.0.2 54446 </dev/null || status=$?; test "$status" = 1']
+      - argv: [ping, -c, '1', -W, '1', 127.0.0.2]
+      - argv: [conntrack, -L, -p, udp, --dport, '54444']
+        expect:
+          stdout_contains: [udp, 'dport=54444']
+      - argv: [conntrack, -L, -p, tcp, --dport, '54446']
+        expect:
+          stdout_contains: [SYN_SENT]
+      - argv: [conntrack, -L, -p, icmp]
+        expect:
+          stdout_contains: [icmp, 'type=8']
+    expect:
+      stdout_contains: ['udp -', 'icmp -', 'tcp SYN_SENT']
+      stdout_not_contains: ['src=']
+
+  - name: fw.conntrack_count-missing-authority
+    action: fw.conntrack_count
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [CAP_NET_ADMIN]
+
+  - name: fw.nft_port_rules-inline-scalar
+    action: fw.nft_port_rules
+    args: {port: 443}
+    runner_user: root
+    runner_reason: Read real kernel-held nftables rules with CAP_NET_ADMIN in the disposable namespace.
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [/usr/sbin/nft, -f, /packs/firewall/test/fixtures/inline-sets.nft]
+      - argv: [/bin/sh, -c, 'set -eu; rules=$(/usr/sbin/nft -j -n -a -t list ruleset); printf "%s\n" "$rules" | jq -e "[.nftables[]?.rule?.expr[]?.match? | select(.left.payload.field? == \"dport\")] | any(.[]; .right == {set: [80,443]} and .op == \"==\") and any(.[]; .right == {set: [80,443]} and .op == \"!=\") and any(.[]; .right == \"@named_ports\")" >/dev/null; printf "%s\n" native-inline-sets-confirmed']
+        expect:
+          stdout_contains: [native-inline-sets-confirmed]
+    expect:
+      json:
+        /port: 443
+        /direct_matches/0/comment: inline-scalar
+        /unresolved/0/comment: named-reference
+      stdout_not_contains: [inline-range, inline-inverse]
+
+  - name: fw.nft_port_rules-inline-range-scalar-member
+    action: fw.nft_port_rules
+    args: {port: 8080}
+    runner_user: root
+    runner_reason: Read real kernel-held nftables rules with CAP_NET_ADMIN in the disposable namespace.
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [/usr/sbin/nft, -f, /packs/firewall/test/fixtures/inline-sets.nft]
+    expect:
+      json:
+        /direct_matches/0/comment: inline-range
+        /direct_matches/1/comment: inline-inverse
+        /unresolved/0/comment: named-reference
+      stdout_not_contains: [inline-scalar]
+
+  - name: fw.nft_port_rules-inline-range-lower-endpoint
+    action: fw.nft_port_rules
+    args: {port: 9000}
+    runner_user: root
+    runner_reason: Read real kernel-held nftables rules with CAP_NET_ADMIN in the disposable namespace.
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [/usr/sbin/nft, -f, /packs/firewall/test/fixtures/inline-sets.nft]
+    expect:
+      json:
+        /direct_matches/0/comment: inline-range
+        /direct_matches/1/comment: inline-inverse
+        /unresolved/0/comment: named-reference
+      stdout_not_contains: [inline-scalar]
+
+  - name: fw.nft_port_rules-inline-range-upper-endpoint
+    action: fw.nft_port_rules
+    args: {port: 9010}
+    runner_user: root
+    runner_reason: Read real kernel-held nftables rules with CAP_NET_ADMIN in the disposable namespace.
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [/usr/sbin/nft, -f, /packs/firewall/test/fixtures/inline-sets.nft]
+    expect:
+      json:
+        /direct_matches/0/comment: inline-range
+        /direct_matches/1/comment: inline-inverse
+        /unresolved/0/comment: named-reference
+      stdout_not_contains: [inline-scalar]
+
+  - name: fw.nft_port_rules-inline-range-outside
+    action: fw.nft_port_rules
+    args: {port: 9011}
+    runner_user: root
+    runner_reason: Read real kernel-held nftables rules with CAP_NET_ADMIN in the disposable namespace.
+    env:
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    arrange:
+      - argv: [/usr/sbin/nft, -f, /packs/firewall/test/fixtures/inline-sets.nft]
+    expect:
+      json:
+        /direct_matches/0/comment: inline-inverse
+        /unresolved/0/comment: named-reference
+      stdout_not_contains: [inline-scalar, inline-range]
+
+  - name: fw.nft_port_rules-missing-authority
+    action: fw.nft_port_rules
+    args: {port: 443}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [Operation not permitted]
+
   # The port projection reads every rule in the ruleset, so its numeric parse
   # is on the path of every answer. That parse used to be test("^[0-9]+$"),
   # which a jq built --with-oniguruma=no refuses rather than degrades — after
