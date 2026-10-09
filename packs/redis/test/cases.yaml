@@ -431,9 +431,10 @@ cases:
     args: {parameter: dir, value: /var/lib/redis/.ssh}
     expect:
       status: failure
-      # Refused by argument validation before the action runs, so the message
-      # is the run's reason rather than the command's stderr.
-      reason_contains: ["must be one of"]
+      # Refused before execution: the fixed reason identifies validation,
+      # and the human error explains which argument was rejected.
+      reason: argument_invalid
+      error_contains: ["must be one of"]
     probes:
       - name: the data directory is unchanged
         argv: [redis-cli, CONFIG, GET, dir]

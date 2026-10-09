@@ -66,7 +66,8 @@ cases:
     args: {candidate_file: ../terraform.tfstate}
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
 
   # A candidate .tfstate is an operator-placed file this action exists to
   # inspect BEFORE anyone trusts it, so its two free-text fields can be any
@@ -403,7 +404,8 @@ cases:
       TF_PLAN_DIR: /tmp/tfreview/plans
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
 
   # TF_BIN reaches both execution shapes: the /bin/sh -c argv programs and the
   # packaged script. Proving only one would leave the other free to drift back

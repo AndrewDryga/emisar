@@ -1009,7 +1009,8 @@ cases:
     id: ch_../../balance
   expect:
     status: failure
-    reason_contains:
+    reason: argument_invalid
+    error_contains:
     - must match pattern
 - action: stripe.create_refund
   args:

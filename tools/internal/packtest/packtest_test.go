@@ -187,6 +187,91 @@ func TestFailureExpectationDoesNotInheritSuccessSmokeDefault(t *testing.T) {
 	}
 }
 
+func TestValidationFailureAssertionsKeepCodeAndDetailSeparate(t *testing.T) {
+	expect := Expectation{
+		Status: "failure", Reason: "argument_invalid",
+		ErrorContains: []string{"argument table", "is required"},
+	}
+	tests := []struct {
+		name   string
+		result actionResult
+		valid  bool
+	}{
+		{"code and detail", actionResult{Reason: "argument_invalid", Error: "argument table: is required"}, true},
+		{"wrong code", actionResult{Reason: "reason_required", Error: "argument table: is required"}, false},
+		{"code substring", actionResult{Reason: "prefix argument_invalid", Error: "argument table: is required"}, false},
+		{"missing detail", actionResult{Reason: "argument_invalid"}, false},
+		{"wrong detail", actionResult{Reason: "argument_invalid", Error: "output is invalid"}, false},
+		{"detail in reason", actionResult{Reason: "argument table: is required", Error: "argument_invalid"}, false},
+		{"detail in stdout", actionResult{Reason: "argument_invalid", Stdout: "argument table: is required"}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := test.result
+			result.Status = "validation_failed"
+			err := checkActionResult(result, expect, true)
+			if (err == nil) != test.valid {
+				t.Fatalf("checkActionResult = %v, valid=%t", err, test.valid)
+			}
+		})
+	}
+}
+
+func TestFailureFieldsAreSemanticActionOnlyExpectations(t *testing.T) {
+	for _, expect := range []Expectation{
+		{Reason: "argument_invalid"},
+		{ErrorContains: []string{"must match pattern"}},
+	} {
+		if !expect.semantic() {
+			t.Fatalf("failure field must count as a semantic assertion: %#v", expect)
+		}
+		expect.Status = "failure"
+		if err := validateActionExpectation(expect); err != nil {
+			t.Fatalf("valid failure expectation: %v", err)
+		}
+		expect.Status = "success"
+		if err := validateActionExpectation(expect); err == nil {
+			t.Fatalf("success accepted a failure field: %#v", expect)
+		}
+		expect.Status = ""
+		if err := validateStep(Step{Argv: []string{"true"}, Expect: expect}, true); err == nil {
+			t.Fatalf("direct command accepted an action-result field: %#v", expect)
+		}
+	}
+}
+
+func TestFailureExpectationMergesExactCodeAndErrorDetails(t *testing.T) {
+	defaults := Expectation{
+		Status: "failure", Reason: "argument_invalid", ErrorContains: []string{"argument"},
+	}
+	merged := mergeActionExpectation(defaults, Expectation{ErrorContains: []string{"table"}})
+	if merged.Reason != "argument_invalid" || !slices.Equal(merged.ErrorContains, []string{"argument", "table"}) {
+		t.Fatalf("merged expectation = %#v", merged)
+	}
+	overridden := mergeActionExpectation(defaults, Expectation{Reason: "reason_required"})
+	if overridden.Reason != "reason_required" || !slices.Equal(defaults.ErrorContains, []string{"argument"}) {
+		t.Fatalf("override=%#v mutated defaults=%#v", overridden, defaults)
+	}
+
+	path := filepath.Join(t.TempDir(), "cases.yaml")
+	write(t, path, `services: [fixture]
+cases:
+  - action: example.inspect
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+`)
+	plan, err := loadPlan(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Cases) != 1 || plan.Cases[0].Expect.Reason != "argument_invalid" ||
+		!slices.Equal(plan.Cases[0].Expect.ErrorContains, []string{"must match pattern"}) {
+		t.Fatalf("decoded expectation = %#v", plan.Cases)
+	}
+}
+
 func TestSecretCanariesAreAbsentFromResultAndEventLog(t *testing.T) {
 	eventLog := filepath.Join(t.TempDir(), "events.jsonl")
 	write(t, eventLog, `{"action_id":"example.inspect"}`+"\n")
@@ -195,10 +280,17 @@ func TestSecretCanariesAreAbsentFromResultAndEventLog(t *testing.T) {
 	if err := checkSecretCanaries([]string{"PASSWORD"}, env, result, eventLog); err != nil {
 		t.Fatal(err)
 	}
-	result.Reason = env["PASSWORD"]
-	if err := checkSecretCanaries([]string{"PASSWORD"}, env, result, eventLog); err == nil ||
-		!strings.Contains(err.Error(), "reason") {
-		t.Fatalf("leaked canary passed: %v", err)
+	for _, surface := range []string{"reason", "error"} {
+		leaked := result
+		if surface == "reason" {
+			leaked.Reason = env["PASSWORD"]
+		} else {
+			leaked.Error = env["PASSWORD"]
+		}
+		if err := checkSecretCanaries([]string{"PASSWORD"}, env, leaked, eventLog); err == nil ||
+			!strings.Contains(err.Error(), surface) {
+			t.Fatalf("leaked canary in %s passed: %v", surface, err)
+		}
 	}
 }
 

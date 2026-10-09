@@ -330,7 +330,8 @@ cases:
       resource_type: "gce_instance) OR true"
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
   - name: gcp.log_entries-rejects-http-endpoint
     action: gcp.log_entries
     env:
@@ -499,7 +500,8 @@ cases:
     args: {project: example-prod, policy: harness-policy}
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
   - name: gcp.metric-query-rejects-http-endpoint
     action: gcp.metric_query
     env:

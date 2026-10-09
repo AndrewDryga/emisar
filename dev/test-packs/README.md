@@ -161,11 +161,19 @@ Action expectations support:
 - `status`: `success` (default) or `failure`
 - `exit`: accepted underlying command exit codes; successful actions default to
   `[0]`
-- `reason_contains`
+- `reason`: exact action-result reason, such as `argument_invalid`
+- `reason_contains`: substring assertions for descriptive runtime reasons
+- `error_contains`: substring assertions for the independently redacted human error
 - `stdout_not_empty` for smoke only
 - `stdout_contains` / `stdout_not_contains`
 - `stderr_contains` / `stderr_not_contains`
 - `json`: stdlib JSON Pointer assertions
+
+`reason`, `reason_contains`, and `error_contains` require failure status and are
+action-only, not assertions for direct command probes. Validation failures use
+fixed reason codes; assert their meaningful detail separately with
+`error_contains`. For example, a malformed argument checks both
+`reason: argument_invalid` and `error_contains: [must match pattern]`.
 
 Actions declaring `output.parser: json` are always required to emit valid JSON.
 Pointers address objects and arrays without jq or JSONPath:

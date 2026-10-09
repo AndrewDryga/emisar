@@ -144,7 +144,8 @@ cases:
     args: {workspace_id: ws-8Rp2nKcQvWxYzA1b, page_size: 13}
     expect:
       status: failure
-      reason_contains: ["must be <= 12"]
+      reason: argument_invalid
+      error_contains: ["must be <= 12"]
 
   - action: tfc.run_details
     args: {run_id: run-4Qm7TvLpXsRbNc2d}
@@ -502,7 +503,8 @@ cases:
     args: {run_id: ws-8Rp2nKcQvWxYzA1b}
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
 
   - action: tfc.workspace_details
     args: {organization: example-corp, workspace: production-network}
@@ -563,4 +565,5 @@ cases:
     args: {workspace_id: run-4Qm7TvLpXsRbNc2d, reason: ""}
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]

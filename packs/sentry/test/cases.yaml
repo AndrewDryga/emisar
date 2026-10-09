@@ -243,4 +243,5 @@ cases:
     args: {organization: "Bad Slug"}
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]

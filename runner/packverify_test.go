@@ -164,6 +164,20 @@ func TestPackVerify_ArgFlagCompletesASkippedProbe(t *testing.T) {
 	}
 }
 
+func TestPackVerify_InvalidArgRetainsTheHumanValidationDetail(t *testing.T) {
+	stageProbePacks(t, probePack{id: "needsarg", binary: "true", reqArg: "project"})
+
+	out, err := runPackVerify(t, "needsarg", "--arg", "project="+strings.Repeat("x", 65))
+	if err == nil {
+		t.Fatalf("an invalid argument must fail verification:\n%s", out)
+	}
+	for _, detail := range []string{"validation_failed", "argument project", "must be at most 64 bytes"} {
+		if !strings.Contains(out, detail) {
+			t.Errorf("verification must explain the invalid argument (%q):\n%s", detail, out)
+		}
+	}
+}
+
 // --arg names one action's parameters. Spread across a set it would feed the
 // same value to unrelated schemas and fail them all as unknown_arg, so the
 // command refuses instead of running.
@@ -320,7 +334,8 @@ func TestClassifyVerify(t *testing.T) {
 		{
 			name: "validation failure explains which argument was wrong",
 			result: engine.Result{
-				Status: engine.StatusValidationFailed, Reason: "argument project: is required",
+				Status: engine.StatusValidationFailed, Reason: "argument_invalid",
+				Error: "argument project: is required",
 			},
 			wantStatus: verifyFailed,
 			wantDetail: "validation_failed: argument project: is required",

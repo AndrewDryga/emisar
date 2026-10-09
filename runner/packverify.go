@@ -230,10 +230,10 @@ func classifyVerify(result *engine.Result) (status, detail string) {
 // the actionable message lives ("permission denied", "invalid API key"), so
 // dropping it for a bare exit code would make the check unusable.
 //
-// Stderr leads because it carries the target's own message; Reason is the
-// engine's explanation and only wins when the process produced nothing (it
-// failed to start, or the arguments never passed validation). Every one of
-// these fields is redacted before the engine returns it.
+// Stderr leads because it carries the target's own message. Validation failures
+// keep their human explanation in Error and a fixed code in Reason; other
+// failures keep their engine explanation in Reason. Every field is redacted
+// before the engine returns it.
 func verifyFailureDetail(result *engine.Result) string {
 	status := string(result.Status)
 	// A negative exit code means the process never ran, so printing it would
@@ -241,7 +241,11 @@ func verifyFailureDetail(result *engine.Result) string {
 	if result.ExitCode > 0 {
 		status = fmt.Sprintf("%s (exit %d)", status, result.ExitCode)
 	}
-	for _, candidate := range []string{result.Stderr, result.Reason, result.Error, result.Stdout} {
+	candidates := []string{result.Stderr, result.Reason, result.Error, result.Stdout}
+	if result.Status == engine.StatusValidationFailed {
+		candidates = []string{result.Stderr, result.Error, result.Reason, result.Stdout}
+	}
+	for _, candidate := range candidates {
 		if line := firstLine(candidate); line != "" {
 			return status + ": " + line
 		}

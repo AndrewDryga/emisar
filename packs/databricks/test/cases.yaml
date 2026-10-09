@@ -172,7 +172,8 @@ cases:
       warehouse_id: "not-a-warehouse!"
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
 
   # A statement-level failure arrives as HTTP 200 with status.state FAILED;
   # the action fails with the API's error code and message instead of
@@ -374,7 +375,8 @@ cases:
     args: {full_name: analytics.gaming}
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
 
   - action: databricks.dashboards_list
     expect:

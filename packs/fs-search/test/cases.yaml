@@ -347,7 +347,8 @@ cases:
     args: {path: /proc/self/environ}
     expect:
       status: failure
-      reason_contains: ["is inside the runner's own configuration or state"]
+      reason: argument_invalid
+      error_contains: ["is inside the runner's own configuration or state"]
     probes:
       - name: head was not invoked
         argv: [/bin/sh, -c, "test ! -e /tmp/packtest-head-invoked && echo not-invoked"]
@@ -371,7 +372,8 @@ cases:
     args: {path: /proc/thread-self/environ, pattern: packtest}
     expect:
       status: failure
-      reason_contains: ["is inside the runner's own configuration or state"]
+      reason: argument_invalid
+      error_contains: ["is inside the runner's own configuration or state"]
     probes:
       - name: grep was not invoked
         argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
@@ -382,7 +384,8 @@ cases:
     args: {path: /proc/self/fd/2147483647, pattern: packtest}
     expect:
       status: failure
-      reason_contains: ["is inside the runner's own configuration or state"]
+      reason: argument_invalid
+      error_contains: ["is inside the runner's own configuration or state"]
     probes:
       - name: grep was not invoked
         argv: [/bin/sh, -c, "test ! -e /tmp/packtest-grep-invoked && echo not-invoked"]
@@ -474,7 +477,8 @@ cases:
       # shared script carries the same check as defense in depth.
       status: failure
       exit: [0]
-      reason_contains: ["argument path: path /proc/kcore is denied"]
+      reason: argument_invalid
+      error_contains: ["argument path: path /proc/kcore is denied"]
     probes:
       - name: head was not invoked
         argv: [/bin/sh, -c, "test ! -e /tmp/packtest-head-invoked && echo not-invoked"]

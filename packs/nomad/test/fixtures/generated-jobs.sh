@@ -119,7 +119,7 @@ child' "$(printf '%032769d' 0)"; do
 			if emisar --config "$scratch/config.yaml" action run "nomad.$action" --arg "job=$bad" --reason 'Reject an unsafe Job ID' >"$scratch/result" 2>"$scratch/err"; then
 				echo 'Unsafe Job ID accepted' >&2; exit 1
 			fi
-			jq -e '.status == "validation_failed" and .reason != "reason required" and (.executed_command // "") == ""' "$scratch/result" >/dev/null
+			jq -e '.status == "validation_failed" and .reason == "argument_invalid" and (.error | contains("argument job")) and (.executed_command // "") == ""' "$scratch/result" >/dev/null
 		done
 	fi
 	printf 'Generated-job %s verified\n' "$mode"

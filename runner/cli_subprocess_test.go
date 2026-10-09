@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/andrewdryga/emisar/runner/internal/engine"
 )
 
 // The runner's main() builds the full cobra tree and calls os.Exit(1) on any
@@ -733,8 +735,15 @@ func TestCLI_ActionRunResultStatusesAndArgError(t *testing.T) {
 		if code == 0 {
 			t.Fatalf("a validation failure must not exit 0; stderr=%q", stderr)
 		}
-		if !strings.Contains(stdout, `"status": "validation_failed"`) || !strings.Contains(stdout, "reason required") {
-			t.Errorf("expected a validation_failed result naming the missing reason:\n%s", stdout)
+		var result engine.Result
+		if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+			t.Fatalf("stdout must be one Result JSON: %v; stderr=%s", err, stderr)
+		}
+		if result.Status != engine.StatusValidationFailed || result.Reason != "reason_required" || result.Error != "reason required" {
+			t.Errorf("expected fixed missing-reason code and separate human error: %#v", result)
+		}
+		if result.ExecutedCommand != "" || result.Stdout != "" || result.Stderr != "" {
+			t.Errorf("missing reason must refuse before execution: %#v", result)
 		}
 		if !strings.Contains(stderr, "validation_failed") {
 			t.Errorf("expected the status on stderr:\n%s", stderr)

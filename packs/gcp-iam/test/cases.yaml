@@ -71,14 +71,16 @@ cases:
     expect:
       status: failure
       stdout_not_empty: false
-      reason_contains: [must be >= 1]
+      reason: argument_invalid
+      error_contains: [must be >= 1]
   - name: gcp.projects-rejects-excessive-limit
     action: gcp.projects
     args: {limit: 501}
     expect:
       status: failure
       stdout_not_empty: false
-      reason_contains: [must be <= 500]
+      reason: argument_invalid
+      error_contains: [must be <= 500]
   - action: gcp.workload_identity_pools
     args: {project: example-prod, limit: 5}
     expect:

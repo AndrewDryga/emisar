@@ -38,7 +38,9 @@ var waitDelay = 5 * time.Second
 type Expectation struct {
 	Status            string         `yaml:"status,omitempty"`
 	Exit              []int          `yaml:"exit,omitempty"`
+	Reason            string         `yaml:"reason,omitempty"`
 	ReasonContains    []string       `yaml:"reason_contains,omitempty"`
+	ErrorContains     []string       `yaml:"error_contains,omitempty"`
 	StdoutNotEmpty    bool           `yaml:"stdout_not_empty,omitempty"`
 	StdoutContains    []string       `yaml:"stdout_contains,omitempty"`
 	StdoutNotContains []string       `yaml:"stdout_not_contains,omitempty"`
@@ -956,8 +958,8 @@ func validateStep(step Step, semantic bool) error {
 	if semantic && !step.Expect.semantic() {
 		return fmt.Errorf("probe needs a semantic output assertion")
 	}
-	if step.Expect.Status != "" || len(step.Expect.ReasonContains) > 0 {
-		return fmt.Errorf("direct command steps cannot assert action status or reason")
+	if step.Expect.Status != "" || step.Expect.Reason != "" || len(step.Expect.ReasonContains) > 0 || len(step.Expect.ErrorContains) > 0 {
+		return fmt.Errorf("direct command steps cannot assert action status, reason or error")
 	}
 	if err := validateJSONPointers(step.Expect.JSON); err != nil {
 		return err
@@ -969,7 +971,7 @@ func validateStep(step Step, semantic bool) error {
 }
 
 func (expect Expectation) semantic() bool {
-	return len(expect.ReasonContains) > 0 || len(expect.StdoutContains) > 0 ||
+	return expect.Reason != "" || len(expect.ReasonContains) > 0 || len(expect.ErrorContains) > 0 || len(expect.StdoutContains) > 0 ||
 		len(expect.StderrContains) > 0 || len(expect.JSON) > 0
 }
 
@@ -979,6 +981,9 @@ func validateActionExpectation(expect Expectation) error {
 	}
 	if expect.Status == "success" && len(expect.ReasonContains) > 0 {
 		return fmt.Errorf("reason_contains requires failure status")
+	}
+	if expect.Status == "success" && (expect.Reason != "" || len(expect.ErrorContains) > 0) {
+		return fmt.Errorf("reason and error_contains require failure status")
 	}
 	return validateJSONPointers(expect.JSON)
 }
@@ -1000,7 +1005,11 @@ func mergeActionExpectation(defaults, override Expectation) Expectation {
 	if merged.Status == "success" {
 		merged.StdoutNotEmpty = merged.StdoutNotEmpty || defaults.StdoutNotEmpty
 	}
+	if merged.Reason == "" {
+		merged.Reason = defaults.Reason
+	}
 	merged.ReasonContains = mergeStrings(defaults.ReasonContains, merged.ReasonContains)
+	merged.ErrorContains = mergeStrings(defaults.ErrorContains, merged.ErrorContains)
 	merged.StdoutContains = mergeStrings(defaults.StdoutContains, merged.StdoutContains)
 	merged.StdoutNotContains = mergeStrings(defaults.StdoutNotContains, merged.StdoutNotContains)
 	merged.StderrContains = mergeStrings(defaults.StderrContains, merged.StderrContains)
@@ -1446,9 +1455,19 @@ func checkActionResult(result actionResult, expect Expectation, requireJSON bool
 			return fmt.Errorf("reason does not contain %q\nreason: %s", needle, result.Reason)
 		}
 	}
+	if expect.Reason != "" && result.Reason != expect.Reason {
+		return fmt.Errorf("reason=%q, expected=%q", result.Reason, expect.Reason)
+	}
+	for _, needle := range expect.ErrorContains {
+		if !strings.Contains(result.Error, needle) {
+			return fmt.Errorf("error does not contain %q\nerror: %s", needle, result.Error)
+		}
+	}
 	streamExpect := expect
 	streamExpect.Exit = nil
+	streamExpect.Reason = ""
 	streamExpect.ReasonContains = nil
+	streamExpect.ErrorContains = nil
 	streamExpect.JSON = nil
 	if err := checkResult(commandResult{
 		exitCode: result.ExitCode, stdout: result.Stdout, stderr: result.Stderr,

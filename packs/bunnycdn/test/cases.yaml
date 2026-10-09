@@ -390,7 +390,8 @@ cases:
     args: {name: rejected-zone, origin_url: "https://user:password@origin.example.test"}
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
 
   - name: bunny.set_cache_ttl-requires-a-change
     action: bunny.set_cache_ttl

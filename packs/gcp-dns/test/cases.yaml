@@ -93,7 +93,8 @@ cases:
       values: "203.0.113.40"
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
   - action: gcp.dns_record_delete
     args:
       project: example-prod
@@ -138,7 +139,8 @@ cases:
       values: "203.0.113.30"
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
   - name: gcp.dns_record_upsert-rejects-delimiter-override-values
     action: gcp.dns_record_upsert
     args:
@@ -150,4 +152,5 @@ cases:
       values: "^;^203.0.113.40;203.0.113.41"
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]

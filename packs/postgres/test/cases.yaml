@@ -193,7 +193,8 @@ cases:
     expect:
       status: failure
       exit: [0]
-      reason_contains: [argument table, is required]
+      reason: argument_invalid
+      error_contains: [argument table, is required]
   - name: postgres.vacuum-table-missing-target
     action: postgres.vacuum_table
     args: {schema: public, table: missing_table, analyze: true}

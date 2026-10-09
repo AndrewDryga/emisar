@@ -77,7 +77,8 @@ cases:
     args: {project: example-prod, instance: -bad-name-}
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
   - action: gcp.sql_query_insights
     args: {project: example-prod, instance: harness-sql, metric: execution_time, window_minutes: 60, top_n: 2}
     expect:

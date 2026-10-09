@@ -157,7 +157,8 @@ cases:
       instance: -bad-name-
     expect:
       status: failure
-      reason_contains: [must match pattern]
+      reason: argument_invalid
+      error_contains: [must match pattern]
   - name: gcp.mig-resize-zonal
     action: gcp.mig_resize
     args:
@@ -213,4 +214,5 @@ cases:
       size: 1001
     expect:
       status: failure
-      reason_contains: ["must be <= 1000"]
+      reason: argument_invalid
+      error_contains: ["must be <= 1000"]
