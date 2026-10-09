@@ -15,6 +15,12 @@ defaults:
     stdout_not_contains:
       - packtest-canary-cloudflare-token-9f3e2
       - packtest-canary-cf-purge-token-3b7d
+      - pages-banner-fixture-a17b
+      - pages-runtime-fixture-b28c
+      - pages-named-env-vars-fixture-c39d
+      - pages-array-fixture-d40e
+      - pages-type-fixture-e51f
+      - pages-scalar-fixture-f62a
 cases:
   - action: cf.list_zones
     expect:
@@ -153,6 +159,16 @@ cases:
         /result/0/name: marketing-site
         /result/0/production_branch: main
         /result/0/latest_deployment/environment: production
+        /result/0/deployment_configs/production/env_vars: &pages_env_metadata
+          BANNER_TEXT: {type: plain_text}
+          RUNTIME_MODE: {type: secret_text}
+          env_vars: {type: plain_text}
+          UNSET_OPTION: null
+        /result/0/deployment_configs/preview/env_vars: *pages_env_metadata
+        /result/0/deployment_configs/production/kv_namespaces/env_vars: {namespace_id: public-fixture-namespace}
+        /result/0/deployment_configs/production/services/env_vars: {service: fixture-worker, environment: production}
+        /result/0/canonical_deployment/env_vars: *pages_env_metadata
+        /result/0/latest_deployment/env_vars: *pages_env_metadata
 
   - action: cf.pages_deployments
     args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site, environment: production}
@@ -161,6 +177,62 @@ cases:
         /result/0/id: aaaabbbb-cccc-4ddd-8eee-ffff00001111
         /result/0/latest_stage/status: success
         /result_info/count: 2
+        /result/0/env_vars: *pages_env_metadata
+        /result/1/env_vars: *pages_env_metadata
+
+  - name: cf.pages-env-empty
+    action: cf.list_pages_projects
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/pages-env-empty"}
+    expect:
+      json:
+        /result/1/env_vars: {}
+
+  - name: cf.pages-env-null
+    action: cf.pages_deployments
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/pages-env-null"}
+    expect:
+      json:
+        /result/1/env_vars: null
+
+  - name: cf.pages-env-missing
+    action: cf.list_pages_projects
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/pages-env-missing"}
+    expect:
+      json:
+        /result/0: {name: marketing-site}
+
+  - name: cf.pages-env-rejects-array
+    action: cf.list_pages_projects
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/pages-env-array"}
+    expect:
+      status: failure
+      exit: [5]
+      stderr_contains: [invalid Pages environment metadata]
+      stdout_not_contains: [marketing-site, BANNER_TEXT]
+
+  - name: cf.pages-env-rejects-unknown-type
+    action: cf.pages_deployments
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/pages-env-bad-type"}
+    expect:
+      status: failure
+      exit: [5]
+      stderr_contains: [invalid Pages environment metadata]
+      stdout_not_contains: [marketing-site, BANNER_TEXT]
+
+  - name: cf.pages-env-rejects-scalar
+    action: cf.pages_deployments
+    args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/pages-env-scalar"}
+    expect:
+      status: failure
+      exit: [5]
+      stderr_contains: [invalid Pages environment metadata]
+      stdout_not_contains: [marketing-site, BANNER_TEXT]
 
   - action: cf.pages_deployment_logs
     args: {account_id: 9f8e7d6c5b4a39281706f5e4d3c2b1a0, project_name: marketing-site, deployment_id: ccccdddd-eeee-4fff-8000-111122223333}
@@ -558,6 +630,7 @@ cases:
       json:
         /result/id: bbbbcccc-dddd-4eee-8fff-000011112222
         /result/environment: production
+        /result/env_vars: *pages_env_metadata
     probes:
       - name: Cloudflare accepted the rollback
         argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
@@ -570,6 +643,7 @@ cases:
       json:
         /result/id: ccccdddd-eeee-4fff-8000-111122223333
         /result/latest_stage/name: queued
+        /result/env_vars: *pages_env_metadata
     probes:
       - name: Cloudflare accepted the retry
         argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]

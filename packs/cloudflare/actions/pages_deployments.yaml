@@ -3,7 +3,7 @@ id: cf.pages_deployments
 title: List Pages deployments
 kind: script
 risk: low
-description: List one bounded page of a Pages project's deployments — build status, environment, trigger, and commit — newest first, optionally filtered to production or preview.
+description: List one bounded page of a Pages project's deployments — build status, environment, trigger, and commit — newest first, optionally filtered to production or preview. Environment variables show names and types only, never values.
 side_effects: [One read-only API request.]
 args:
   - name: account_id

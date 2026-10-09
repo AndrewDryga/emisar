@@ -3,7 +3,7 @@ id: cf.list_pages_projects
 title: List Pages projects
 kind: script
 risk: low
-description: List one bounded page of an account's Cloudflare Pages projects with domains, production branch, and each project's latest deployment.
+description: List one bounded page of an account's Cloudflare Pages projects with domains, production branch, and each project's latest deployment. Environment variables show names and types only, never values.
 side_effects: [One read-only API request.]
 args:
   - name: account_id

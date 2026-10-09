@@ -3,7 +3,7 @@ id: cf.rollback_pages_deployment
 title: Roll back Pages deployment
 kind: script
 risk: high
-description: Roll a Pages project's production traffic back to an earlier deployment; the live site switches to that build's content immediately.
+description: Roll a Pages project's production traffic back to an earlier deployment; the live site switches to that build's content immediately. Returned environment variables show names and types only, never values.
 side_effects:
   - Production serves the selected deployment's content within seconds.
   - Rolling back skips whatever the newer deployments shipped, including fixes.

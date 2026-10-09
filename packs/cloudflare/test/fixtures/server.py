@@ -116,6 +116,18 @@ def pages_deployment(deployment_id, environment, stage_name, stage_status, branc
         "latest_stage": {"name": stage_name, "status": stage_status},
         "deployment_trigger": {"type": "push", "metadata": {"branch": branch, "commit_hash": "4f2d9c1"}},
         "source": {"type": "github"},
+        "env_vars": pages_environment(),
+    }
+
+
+def pages_environment():
+    # These provider-returned values are not inherited runner credentials: the
+    # regressions must prove projection, rather than literal-secret masking.
+    return {
+        "BANNER_TEXT": {"type": "plain_text", "value": "pages-banner-fixture-a17b"},
+        "RUNTIME_MODE": {"type": "secret_text", "value": "pages-runtime-fixture-b28c"},
+        "env_vars": {"type": "plain_text", "value": "pages-named-env-vars-fixture-c39d"},
+        "UNSET_OPTION": None,
     }
 
 
@@ -189,6 +201,31 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(STATE)
             return
         if not self.authorized():
+            return
+
+        # Fixed fixture-only bases exercise absent, empty, nullable and malformed
+        # provider metadata through the real action and HTTP response path.
+        pages_fixture_prefix = "/client/v4/pages-env-"
+        if path.startswith(pages_fixture_prefix):
+            mode = path.removeprefix(pages_fixture_prefix).split("/", 1)[0]
+            metadata = {
+                "empty": {},
+                "null": None,
+                "array": [{"type": "plain_text", "value": "pages-array-fixture-d40e"}],
+                "bad-type": {"BANNER_TEXT": {"type": "pages-type-fixture-e51f", "value": "pages-banner-fixture-a17b"}},
+                "scalar": {"BANNER_TEXT": "pages-scalar-fixture-f62a"},
+            }
+            if mode == "missing":
+                self.send_ok([{"name": PAGES_PROJECT}])
+                return
+            if mode in metadata:
+                # A malformed later item must not publish the earlier safe one.
+                self.send_ok([
+                    {"name": PAGES_PROJECT, "env_vars": pages_environment()},
+                    {"name": PAGES_PROJECT, "env_vars": metadata[mode]},
+                ])
+                return
+            self.send_err(404, 7000, "No Pages metadata fixture")
             return
 
         if path == "/client/v4/zones":
@@ -467,7 +504,16 @@ class Handler(BaseHTTPRequestHandler):
                             "domains": ["www.example.test"],
                             "production_branch": "main",
                             "created_on": "2026-05-01T10:00:00Z",
-                            "latest_deployment": {"id": DEPLOY_LIVE, "environment": "production"},
+                            "deployment_configs": {
+                                "production": {
+                                    "env_vars": pages_environment(),
+                                    "kv_namespaces": {"env_vars": {"namespace_id": "public-fixture-namespace"}},
+                                    "services": {"env_vars": {"service": "fixture-worker", "environment": "production"}},
+                                },
+                                "preview": {"env_vars": pages_environment()},
+                            },
+                            "canonical_deployment": PAGES_DEPLOYMENTS[0],
+                            "latest_deployment": PAGES_DEPLOYMENTS[0],
                         }
                     ],
                     query,

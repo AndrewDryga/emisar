@@ -91,6 +91,45 @@ rest_json() {
   rest "$method" "$path" -H 'Content-Type: application/json' --data "$body"
 }
 
+# Project only Cloudflare's environment-map locations. Both environment and
+# binding names are customer-controlled and can themselves be env_vars.
+# Nullable maps/records stay unknown rather than becoming empty.
+pages_metadata() {
+  jq -ce '
+    def env_metadata:
+      if . == null then null
+      elif type != "object" then error("invalid Pages environment metadata")
+      else with_entries(.value |= (
+        if . == null then null
+        elif type != "object" then error("invalid Pages environment metadata")
+        elif .type == "plain_text" or .type == "secret_text" then {type}
+        else error("invalid Pages environment metadata")
+        end
+      )) end;
+    def environment:
+      if . == null then null
+      elif type != "object" then error("invalid Pages environment metadata")
+      elif has("env_vars") then .env_vars |= env_metadata
+      else . end;
+    def item:
+      environment |
+      if . == null then null
+      else
+        (if has("deployment_configs") then .deployment_configs |= (
+          if . == null then null
+          elif type != "object" then error("invalid Pages environment metadata")
+          else with_entries(
+            if .key == "production" or .key == "preview" then .value |= environment
+            else . end
+          ) end
+        ) else . end) |
+        (if has("canonical_deployment") then .canonical_deployment |= environment else . end) |
+        (if has("latest_deployment") then .latest_deployment |= environment else . end)
+      end;
+    .result |= (if type == "array" then map(item) else item end)
+  '
+}
+
 hours_ago() {
   jq -nr --argjson hours "$1" 'now - ($hours * 3600) | todate'
 }
@@ -187,14 +226,14 @@ delete_worker_route() {
 list_pages_projects() {
   rest GET "/accounts/$1/pages/projects" -G \
     --data-urlencode "page=$2" \
-    --data-urlencode "per_page=$3"
+    --data-urlencode "per_page=$3" | pages_metadata
 }
 
 pages_deployments() {
   local account_id=$1 project=$2 environment=$3 page=$4 per_page=$5
   local -a query=(-G --data-urlencode "page=$page" --data-urlencode "per_page=$per_page")
   [[ -z "$environment" ]] || query+=(--data-urlencode "env=$environment")
-  rest GET "/accounts/$account_id/pages/projects/$project/deployments" "${query[@]}"
+  rest GET "/accounts/$account_id/pages/projects/$project/deployments" "${query[@]}" | pages_metadata
 }
 
 pages_deployment_logs() {
@@ -202,11 +241,11 @@ pages_deployment_logs() {
 }
 
 rollback_pages_deployment() {
-  rest POST "/accounts/$1/pages/projects/$2/deployments/$3/rollback"
+  rest POST "/accounts/$1/pages/projects/$2/deployments/$3/rollback" | pages_metadata
 }
 
 retry_pages_deployment() {
-  rest POST "/accounts/$1/pages/projects/$2/deployments/$3/retry"
+  rest POST "/accounts/$1/pages/projects/$2/deployments/$3/retry" | pages_metadata
 }
 
 purge_pages_build_cache() {
