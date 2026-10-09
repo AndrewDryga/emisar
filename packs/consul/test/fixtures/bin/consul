@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+# Accept the old and fixed argv so the regression proves projection, not flags.
+case "$*" in
+  'acl token list'|'acl token list -format=json') ;;
+  *) printf '%s\n' 'unexpected Consul fixture command' >&2; exit 2 ;;
+esac
+
+case "${CONSUL_HTTP_ADDR-}" in
+  http://packtest-consul/empty)
+    printf '%s\n' '[]'
+    ;;
+  http://packtest-consul/malformed)
+    printf '%s\n' '[invalid'
+    ;;
+  http://packtest-consul/nonarray)
+    printf '%s\n' '{"SecretID":"consul-acl-secret-fixture-a91d"}'
+    ;;
+  http://packtest-consul/failed)
+    printf '%s\n' '[{"AccessorID":"11111111-1111-4111-8111-111111111111","SecretID":"consul-acl-secret-fixture-a91d"}]'
+    printf '%s\n' 'fixture Consul request failed' >&2
+    exit 42
+    ;;
+  *)
+    printf '%s\n' '[{"AccessorID":"11111111-1111-4111-8111-111111111111","SecretID":"consul-acl-secret-fixture-a91d","Description":"read metadata","Policies":[{"ID":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","Name":"metadata-reader"}],"Local":false,"CreateIndex":9},{"AccessorID":"22222222-2222-4222-8222-222222222222","SecretID":"consul-acl-secret-fixture-b72e","Description":"local metadata","Policies":null,"Local":true},{"AccessorID":"33333333-3333-4333-8333-333333333333","SecretID":"consul-acl-secret-fixture-c53f","Description":"no policies","Local":false}]'
+    ;;
+esac

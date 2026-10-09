@@ -1,22 +1,27 @@
 schema_version: 1
 id: consul.list_acl_tokens
 title: consul acl token list
-kind: exec
+kind: script
 risk: low
-description: List ACL tokens (descriptions + accessor IDs only, not secrets).
+description: List ACL token metadata — accessor IDs, descriptions, policy names and whether each token is local. SecretIDs and all other fields are omitted.
 side_effects:
   - One ACL request.
   - Read-only.
 args: []
 execution:
-  command:
-    binary: consul
-    argv: ["acl", "token", "list"]
+  script:
+    path: scripts/list_acl_tokens.sh
+    interpreter: /bin/sh
   timeout: 15s
 output:
-  parser: text
+  parser: json
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
+  redact:
+    - name: consul-token-secretid
+      type: regex
+      pattern: '("SecretID"\s*:\s*)"[^"]*"'
+      replacement: '${1}"[REDACTED]"'
 examples:
   - title: ACL tokens
     args: {}
