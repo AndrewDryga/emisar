@@ -1198,12 +1198,14 @@ defmodule Emisar.Runs do
       {:ok, %{action: action, runners: runners}} ->
         {:ok, Enum.map(runners, &%{id: &1.id, runner_ref: &1.runner_ref}), action}
 
-      {:error, :not_found} ->
+      {:error, reason}
+      when reason in [:not_found, :action_unavailable, :action_denied_by_admission] ->
         attrs = put_dispatcher_context(facts, subject)
+        reason = if reason == :not_found, do: :target_contract_changed, else: reason
 
         {:error,
          Audit.Rejection.new(
-           :target_contract_changed,
+           reason,
            Audit.Events.dispatch_blocked_target_unavailable(subject.account.id, attrs)
          )}
 

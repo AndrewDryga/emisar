@@ -2336,7 +2336,7 @@ Tool-domain errors use the common structured error shape. Initial stable codes:
 
 | Code | Meaning | Automatic action |
 | --- | --- | --- |
-| `action_unavailable` | The trusted action is unavailable, or not every requested runner can execute it. | Follow returned diagnostics. |
+| `action_unavailable` | The trusted action is unavailable, or not every selected runner can execute it. A dispatch uses this terminal code for definite host prerequisites or local admission exclusions only after current access, connectivity and complete trusted descriptors are verified. | Follow the returned `list_runners` continuation to choose compatible targets; do not retry the unchanged selection. |
 | `ambiguous_output` | An output binding does not have exactly one producer for the selected runner. | Make the producer unambiguous for each target. |
 | `ambiguous_pack_version` | The selected pack version has conflicting trusted hashes. | Resolve catalog trust; do not choose a hash client-side. |
 | `catalog_scope_too_large` | The selected deployments exceed the bounded catalog-resolution limit. | Narrow the target set or split the runbook. |

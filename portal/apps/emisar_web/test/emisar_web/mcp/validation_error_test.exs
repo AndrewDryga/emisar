@@ -57,21 +57,23 @@ defmodule EmisarWeb.MCP.ValidationErrorTest do
     test "logs the fixed reason with the identifiers the call carried", %{conn: conn} do
       pack_ref = "linux@1.0.0/sha256:" <> String.duplicate("a", 64)
 
-      log =
-        capture_log([level: :info], fn ->
-          :ok =
-            ValidationError.log_dispatch_rejected(conn, "run_action", "not_allowed",
-              action_id: "linux.uptime",
-              pack_ref: pack_ref
-            )
-        end)
+      for reason <- ~w(not_allowed action_unavailable) do
+        log =
+          capture_log([level: :info], fn ->
+            :ok =
+              ValidationError.log_dispatch_rejected(conn, "run_action", reason,
+                action_id: "linux.uptime",
+                pack_ref: pack_ref
+              )
+          end)
 
-      assert log =~ "mcp.dispatch_rejected"
-      assert log =~ "mcp_dispatch_reject_reason=not_allowed"
-      assert log =~ "mcp_action_id=linux.uptime"
-      assert log =~ "mcp_pack_ref=#{pack_ref}"
-      assert log =~ "mcp_tool=run_action"
-      refute log =~ "mcp_runbook_ref"
+        assert log =~ "mcp.dispatch_rejected"
+        assert log =~ "mcp_dispatch_reject_reason=#{reason}"
+        assert log =~ "mcp_action_id=linux.uptime"
+        assert log =~ "mcp_pack_ref=#{pack_ref}"
+        assert log =~ "mcp_tool=run_action"
+        refute log =~ "mcp_runbook_ref"
+      end
     end
 
     test "collapses a reason outside the published vocabulary", %{conn: conn} do

@@ -45,7 +45,7 @@ defmodule EmisarWeb.MCP.ValidationError do
     "dependency" => "dependency",
     "schema" => "schema"
   }
-  @reject_reasons ~w(target_contract_changed not_allowed rate_limited)
+  @reject_reasons ~w(target_contract_changed action_unavailable not_allowed rate_limited)
   @action_id ~r/\A[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+\z/
   @max_issues 8
   @max_message_chars 512

@@ -81,13 +81,14 @@ defmodule EmisarWeb.MCP.ActionTools do
       {:error, {:invalid_action_arguments, issue}} ->
         {:error, invalid_action_arguments(issue)}
 
+      {:error, reason} when reason in [:action_unavailable, :action_denied_by_admission] ->
+        action_unavailable(conn, input)
+
       {:error, reason}
       when reason in [
              :runner_not_found,
              :runner_out_of_scope,
              :action_not_found,
-             :action_unavailable,
-             :action_denied_by_admission,
              :pack_ref_mismatch,
              :pack_untrusted,
              :pack_retired,
@@ -207,6 +208,23 @@ defmodule EmisarWeb.MCP.ActionTools do
       |> put_in([:error, :next], next)
 
     {:error, payload}
+  end
+
+  defp action_unavailable(conn, input) do
+    :ok = log_rejected(conn, input, "action_unavailable")
+
+    payload =
+      error(
+        "action_unavailable",
+        "The selected runners cannot execute this action. Choose compatible runners."
+      )
+
+    next = %{
+      tool: "list_runners",
+      arguments: %{pack_ref: input.pack_ref, action_id: input.action_id, limit: 15}
+    }
+
+    {:error, put_in(payload, [:error, :next], next)}
   end
 
   defp not_allowed(conn, input) do

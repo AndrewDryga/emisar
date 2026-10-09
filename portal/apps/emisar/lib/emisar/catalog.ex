@@ -2085,11 +2085,15 @@ defmodule Emisar.Catalog do
   ref present in the subject's own snapshot AND compatible — and comes back in
   the requested order. Anything else fails the whole call closed. Requires
   `view_catalog`; returns `{:ok, %{action: action, pack: pack, runners: runners}}`
-  or `{:error, :not_found | :unauthorized}`.
+  or `{:error, :not_found | :unauthorized | :action_unavailable | :action_denied_by_admission}`.
+  A specific host exclusion requires current dispatch scope, connectivity and
+  a complete trusted descriptor match for every requested target. Otherwise the
+  whole explicit selection remains opaque as `:not_found`.
   """
   @spec resolve_model_action(String.t(), String.t(), [String.t()], Subject.t()) ::
           {:ok, %{action: map(), pack: map(), runners: [map()]}}
-          | {:error, :not_found | :unauthorized}
+          | {:error,
+             :not_found | :unauthorized | :action_unavailable | :action_denied_by_admission}
   def resolve_model_action(action_id, pack_ref, runner_refs, %Subject{} = subject)
       when is_list(runner_refs) do
     with :ok <-
@@ -2101,7 +2105,7 @@ defmodule Emisar.Catalog do
            model_snapshot(subject, runner_ids: runner_ids, pack_refs: [pack_ref]),
          %{} = pack <- Enum.find(snapshot.packs, &(&1.pack_ref == pack_ref)),
          %{} = action <- Enum.find(pack.actions, &(&1["action_id"] == action_id)),
-         {:ok, runners} <- compatible_model_runners(snapshot.runners, action, runner_refs) do
+         {:ok, runners} <- compatible_model_runners(snapshot.runners, action, pack, runner_refs) do
       {:ok, %{action: action, pack: pack, runners: runners}}
     else
       {:error, reason} -> {:error, reason}
@@ -2201,7 +2205,12 @@ defmodule Emisar.Catalog do
         action_ids =
           if MapSet.member?(eligible_ids, id), do: deployment.compatible_action_ids, else: []
 
-        {id, %{deployment | compatible_action_ids: action_ids}}
+        deployment =
+          deployment
+          |> Map.put(:compatible_action_ids, action_ids)
+          |> Map.put(:dispatch_in_scope?, MapSet.member?(eligible_ids, id))
+
+        {id, deployment}
       end)
 
     availability =
@@ -2243,7 +2252,7 @@ defmodule Emisar.Catalog do
     if Enum.all?(ids), do: {:ok, ids}, else: {:error, :not_found}
   end
 
-  defp compatible_model_runners(runners, action, []) do
+  defp compatible_model_runners(runners, action, _pack, []) do
     compatible_ids = MapSet.new(action.compatible_runner_ids)
 
     compatible =
@@ -2254,17 +2263,45 @@ defmodule Emisar.Catalog do
     {:ok, compatible}
   end
 
-  defp compatible_model_runners(runners, action, runner_refs) do
+  defp compatible_model_runners(runners, action, pack, runner_refs) do
     runners_by_ref = Map.new(runners, &{&1.runner_ref, &1})
-    compatible_ids = MapSet.new(action.compatible_runner_ids)
 
     requested =
       Enum.map(runner_refs, fn runner_ref ->
         runner = Map.get(runners_by_ref, runner_ref)
-        if runner && MapSet.member?(compatible_ids, runner.id), do: runner
+        model_action_target(runner, action, pack)
       end)
 
-    if Enum.all?(requested), do: {:ok, requested}, else: {:error, :not_found}
+    cond do
+      {:error, :not_found} in requested -> {:error, :not_found}
+      {:error, :action_denied_by_admission} in requested -> {:error, :action_denied_by_admission}
+      {:error, :action_unavailable} in requested -> {:error, :action_unavailable}
+      true -> {:ok, Enum.map(requested, &elem(&1, 1))}
+    end
+  end
+
+  defp model_action_target(nil, _action, _pack), do: {:error, :not_found}
+
+  defp model_action_target(runner, action, pack) do
+    case Map.get(pack.compatibility, runner.id) do
+      %{dispatch_in_scope?: true, status: "connected", descriptor_match?: true} = deployment ->
+        cond do
+          action["action_id"] in deployment.admission_denied_action_ids ->
+            {:error, :action_denied_by_admission}
+
+          action["action_id"] in deployment.unavailable_action_ids ->
+            {:error, :action_unavailable}
+
+          runner.id in action.compatible_runner_ids ->
+            {:ok, runner}
+
+          true ->
+            {:error, :not_found}
+        end
+
+      _opaque ->
+        {:error, :not_found}
+    end
   end
 
   @doc """

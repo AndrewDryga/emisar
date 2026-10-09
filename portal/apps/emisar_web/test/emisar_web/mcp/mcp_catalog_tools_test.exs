@@ -106,6 +106,108 @@ defmodule EmisarWeb.MCPCatalogToolsTest do
     end
   end
 
+  test "host and admission exclusions return terminal dispatch errors with runner discovery", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    pack_ref = "demo@1.0.0/#{@hash}"
+    packs = %{"demo" => %{"version" => "1.0.0", "hash" => @hash}}
+
+    for {readiness, index} <-
+          Enum.with_index([
+            %{
+              "primary_executable_available" => false,
+              "missing_executable" => "private-host-path"
+            },
+            %{"admission_allowed" => false},
+            %{"primary_executable_available" => false, "admission_allowed" => false}
+          ]) do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "blocked-#{index}")
+      descriptor = Map.merge(action("demo.inspect", "demo"), readiness)
+      observe!(runner, packs, [descriptor])
+      trust_all!(subject)
+      assert {:ok, ref} = Runners.public_ref(runner)
+
+      implicit =
+        call(conn, "get_action", %{"action_id" => "demo.inspect", "pack_ref" => pack_ref})
+
+      assert implicit["ok"]
+      assert implicit["compatible_runners"] == []
+
+      result =
+        raw_action(
+          conn,
+          run_action_body(pack_ref, ref, "{}", "Inspect host", "0", "demo.inspect"),
+          "op_044NN9NMDZ1T76NARWCKM5A0D6"
+        )
+
+      assert result["ok"] == false
+      assert result["dispatch_started"] == false
+      assert result["error"]["code"] == "action_unavailable"
+      assert result["error"]["retryable"] == false
+
+      assert result["error"]["next"] == %{
+               "tool" => "list_runners",
+               "arguments" => %{
+                 "pack_ref" => pack_ref,
+                 "action_id" => "demo.inspect",
+                 "limit" => 15
+               }
+             }
+
+      refute Jason.encode!(result) =~ "private-host-path"
+      assert call(conn, "list_runners", result["error"]["next"]["arguments"])["runners"] == []
+    end
+
+    assert {:ok, [], _} = Runs.list_runs(subject)
+  end
+
+  test "an opaque target dominates a host-blocked target in both dispatch orders", %{
+    conn: conn,
+    account: account,
+    subject: subject
+  } do
+    blocked = Fixtures.Runners.create_runner(account_id: account.id, name: "blocked")
+    offline = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+    pack_ref = "demo@1.0.0/#{@hash}"
+    packs = %{"demo" => %{"version" => "1.0.0", "hash" => @hash}}
+    descriptor = Map.put(action("demo.inspect", "demo"), "admission_allowed", false)
+    observe!(blocked, packs, [descriptor])
+    observe!(offline, packs, [descriptor])
+    trust_all!(subject)
+    assert {:ok, blocked_ref} = Runners.public_ref(blocked)
+    assert {:ok, offline_ref} = Runners.public_ref(offline)
+
+    for refs <- [[blocked_ref, offline_ref], [offline_ref, blocked_ref]] do
+      body =
+        Jason.encode!(%{
+          jsonrpc: "2.0",
+          id: 7,
+          method: "tools/call",
+          params: %{
+            name: "run_action",
+            arguments: %{
+              action_id: "demo.inspect",
+              pack_ref: pack_ref,
+              runner_refs: refs,
+              args: %{},
+              reason: "Inspect hosts",
+              wait: "0"
+            }
+          }
+        })
+
+      result = raw_action(conn, body, "op_054NN9NMDZ1T76NARWCKM5A0D6")
+      assert result["dispatch_started"] == false
+      assert result["error"]["code"] == "target_contract_changed"
+      assert result["error"]["retryable"] == true
+      assert result["error"]["next"]["tool"] == "get_action"
+    end
+
+    assert {:ok, [], _} = Runs.list_runs(subject)
+  end
+
   test "tools/list advertises the complete fixed catalog within the frame budget", %{conn: conn} do
     result = conn |> rpc("tools/list") |> json_response(200) |> get_in(["result", "tools"])
 

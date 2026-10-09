@@ -168,6 +168,7 @@ defmodule Emisar.CatalogTest do
               pack_id: pack_id,
               title: Keyword.get(opts, :title, "Inspect")
             )
+            |> Map.merge(Keyword.get(opts, :action_overrides, %{}))
           ]
         )
       )
@@ -4047,6 +4048,149 @@ defmodule Emisar.CatalogTest do
   end
 
   describe "resolve_model_action/4" do
+    test "classifies only definite host exclusions and preserves implicit discovery" do
+      for {readiness, expected} <- [
+            {%{"primary_executable_available" => false}, :action_unavailable},
+            {%{"admission_allowed" => false}, :action_denied_by_admission},
+            {%{"primary_executable_available" => false, "admission_allowed" => false},
+             :action_denied_by_admission}
+          ] do
+        {account, subject} = account_with_owner()
+        runner = Fixtures.Runners.create_runner(account_id: account.id)
+        advertise_pack(runner, "demo", action_overrides: readiness)
+        trust_advertised_packs(subject)
+        assert {:ok, ref} = Runners.public_ref(runner)
+
+        assert Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), [ref], subject) ==
+                 {:error, expected}
+
+        assert {:ok, resolved} =
+                 Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), [], subject)
+
+        assert resolved.runners == []
+      end
+    end
+
+    test "refuses the whole explicit fanout when a trusted target is host-blocked" do
+      {account, subject} = account_with_owner()
+      healthy = Fixtures.Runners.create_runner(account_id: account.id, name: "healthy")
+      blocked = Fixtures.Runners.create_runner(account_id: account.id, name: "blocked")
+      advertise_pack(healthy, "demo")
+
+      advertise_pack(blocked, "demo",
+        action_overrides: %{"primary_executable_available" => false}
+      )
+
+      trust_advertised_packs(subject)
+      assert {:ok, healthy_ref} = Runners.public_ref(healthy)
+      assert {:ok, blocked_ref} = Runners.public_ref(blocked)
+
+      for refs <- [[healthy_ref, blocked_ref], [blocked_ref, healthy_ref]] do
+        assert Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), refs, subject) ==
+                 {:error, :action_unavailable}
+      end
+
+      assert {:ok, resolved} =
+               Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), [], subject)
+
+      assert Enum.map(resolved.runners, & &1.runner_ref) == [healthy_ref]
+    end
+
+    test "opaque targets dominate definite exclusions in either fanout order" do
+      {account, subject} = account_with_owner()
+      blocked = Fixtures.Runners.create_runner(account_id: account.id, name: "blocked")
+      offline = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
+      drifted = Fixtures.Runners.create_runner(account_id: account.id, name: "drifted")
+      advertise_pack(blocked, "demo", action_overrides: %{"admission_allowed" => false})
+
+      advertise_pack(offline, "demo",
+        action_overrides: %{"primary_executable_available" => false}
+      )
+
+      advertise_pack(drifted, "demo")
+      trust_advertised_packs(subject)
+
+      advertise_pack(drifted, "demo",
+        title: "Changed descriptor",
+        action_overrides: %{"primary_executable_available" => false}
+      )
+
+      assert {:ok, blocked_ref} = Runners.public_ref(blocked)
+      assert {:ok, offline_ref} = Runners.public_ref(offline)
+      assert {:ok, drifted_ref} = Runners.public_ref(drifted)
+      unknown_ref = "unknown~" <> String.duplicate("a", 32)
+
+      for opaque_ref <- [offline_ref, drifted_ref, unknown_ref],
+          refs <- [[blocked_ref, opaque_ref], [opaque_ref, blocked_ref]] do
+        assert Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), refs, subject) ==
+                 {:error, :not_found}
+      end
+    end
+
+    test "physical exclusions do not classify runner or pack access loss" do
+      {account, subject} = account_with_owner()
+
+      subject =
+        subject.actor
+        |> Fixtures.Memberships.force_role("admin")
+        |> Fixtures.Subjects.subject_for()
+
+      healthy = Fixtures.Runners.create_runner(account_id: account.id)
+      blocked = Fixtures.Runners.create_runner(account_id: account.id)
+      advertise_pack(healthy, "demo")
+
+      advertise_pack(blocked, "demo",
+        action_overrides: %{"primary_executable_available" => false, "admission_allowed" => false}
+      )
+
+      trust_advertised_packs(subject)
+      assert {:ok, ref} = Runners.public_ref(blocked)
+
+      assert Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), [ref], subject) ==
+               {:error, :action_denied_by_admission}
+
+      {:ok, runner_only} = Accounts.RunnerAccess.new(:restricted, [], [healthy.id])
+      {:ok, other_pack_only} = Accounts.RunnerAccess.new(:all, [], [], :restricted, ["other"])
+
+      for access <- [runner_only, other_pack_only] do
+        force_runner_access(subject, access)
+        assert Accounts.runner_access_for_subject(subject) == access
+
+        assert Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), [ref], subject) ==
+                 {:error, :not_found}
+      end
+    end
+
+    test "missing, extra and changed sibling descriptors stay opaque despite host evidence" do
+      {account, subject} = account_with_owner()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      packs = %{"demo" => %{"version" => "1.0.0", "hash" => "demo-bytes"}}
+      inspect_action = action("demo.inspect")
+      sibling = action("demo.sibling")
+
+      assert {:ok, _} =
+               Catalog.observe_state(
+                 runner,
+                 state_payload(packs: packs, actions: [inspect_action, sibling])
+               )
+
+      trust_advertised_packs(subject)
+      assert {:ok, ref} = Runners.public_ref(runner)
+      blocked = Map.put(inspect_action, "primary_executable_available", false)
+
+      for actions <- [
+            [blocked],
+            [blocked, sibling, action("demo.extra")],
+            [blocked, Map.put(sibling, "title", "Changed")]
+          ] do
+        assert {:ok, _} =
+                 Catalog.observe_state(runner, state_payload(packs: packs, actions: actions))
+
+        assert Catalog.resolve_model_action("demo.inspect", pack_ref("demo"), [ref], subject) ==
+                 {:error, :not_found}
+      end
+    end
+
     test "returns the explicitly requested runners in the requested order" do
       {account, subject} = account_with_owner()
       runner_one = Fixtures.Runners.create_runner(account_id: account.id, name: "alpha")

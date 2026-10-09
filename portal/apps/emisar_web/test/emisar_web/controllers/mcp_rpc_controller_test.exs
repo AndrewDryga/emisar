@@ -2,7 +2,7 @@ defmodule EmisarWeb.MCPRpcControllerTest do
   use EmisarWeb.ConnCase, async: false
   import EmisarWeb.MCPContractAssertions
   import ExUnit.CaptureLog
-  alias Emisar.{Accounts, ApiKeys, Crypto, Repo}
+  alias Emisar.{Accounts, ApiKeys, Catalog, Crypto, Repo, Runners}
   alias Emisar.ApiKeys.ApiKey
   alias Emisar.MCPOperations.Operation
   alias EmisarWeb.MCP.SchemaRegistry
@@ -640,6 +640,84 @@ defmodule EmisarWeb.MCPRpcControllerTest do
       assert log =~ "mcp_action_id=linux.uptime"
       assert log =~ "mcp_pack_ref=#{pack_ref}"
       assert log =~ "mcp_tool=run_action"
+      assert log =~ ~r/mcp_call_fingerprint=[0-9a-f]{64}/
+      refute log =~ sentinel
+      refute log =~ raw
+    end
+
+    test "a host-rejected dispatch logs one safe event without private host or request values", %{
+      conn: conn,
+      raw: raw,
+      account: account,
+      subject: subject
+    } do
+      :ok = Logger.put_application_level(:emisar_web, :info)
+      on_exit(fn -> Logger.delete_application_level(:emisar_web) end)
+
+      sentinel = "sentinel_DO_NOT_LOG_host_9b1d"
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      hash = Fixtures.Catalog.default_pack_hash()
+      pack_ref = Fixtures.Catalog.default_pack_ref()
+
+      assert {:ok, _} =
+               Catalog.observe_state(runner, %{
+                 "hostname" => runner.hostname,
+                 "version" => runner.runner_version,
+                 "labels" => runner.labels,
+                 "packs" => %{"fixture-pack" => %{"version" => "1.0", "hash" => hash}},
+                 "actions" => [
+                   %{
+                     "id" => "linux.uptime",
+                     "pack_id" => "fixture-pack",
+                     "title" => "Uptime",
+                     "kind" => "exec",
+                     "risk" => "low",
+                     "description" => "Reports uptime + load.",
+                     "side_effects" => ["reads /proc"],
+                     "args" => [],
+                     "examples" => [],
+                     "primary_executable_available" => false,
+                     "missing_executable" => sentinel
+                   }
+                 ]
+               })
+
+      [version] = Fixtures.Catalog.list_pack_versions(account.id)
+      assert {:ok, _} = Catalog.trust_pack_version(version.id, subject)
+      assert {:ok, ref} = Runners.public_ref(runner)
+
+      log =
+        capture_log([level: :info], fn ->
+          result =
+            conn
+            |> authorize(raw)
+            |> put_req_header("emisar-operation-id", "op_044NN9NMDZ1T76NARWCKM5A0D6")
+            |> rpc("tools/call", %{
+              "name" => "run_action",
+              "arguments" => %{
+                "action_id" => "linux.uptime",
+                "pack_ref" => pack_ref,
+                "runner_refs" => [ref],
+                "args" => %{},
+                "reason" => sentinel,
+                "evidence" => sentinel,
+                "expected" => sentinel
+              }
+            })
+            |> json_response(200)
+            |> get_in(["result", "structuredContent"])
+
+          assert_valid_tool_result("run_action", result)
+          assert result["error"]["code"] == "action_unavailable"
+          assert result["error"]["retryable"] == false
+          assert result["dispatch_started"] == false
+          refute Jason.encode!(result) =~ sentinel
+        end)
+
+      assert length(String.split(log, "mcp.dispatch_rejected")) == 2
+      assert log =~ "mcp_dispatch_reject_reason=action_unavailable"
+      assert log =~ "mcp_action_id=linux.uptime"
+      assert log =~ "mcp_pack_ref=#{pack_ref}"
       assert log =~ ~r/mcp_call_fingerprint=[0-9a-f]{64}/
       refute log =~ sentinel
       refute log =~ raw

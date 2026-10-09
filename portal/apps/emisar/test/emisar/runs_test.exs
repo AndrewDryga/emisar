@@ -2867,6 +2867,57 @@ defmodule Emisar.RunsTest do
   end
 
   describe "dispatch_mcp_action/2" do
+    test "host-only refusals roll back every target and preserve one caller-scoped receipt" do
+      for {readiness, expected} <- [
+            {%{"primary_executable_available" => false}, :action_unavailable},
+            {%{"admission_allowed" => false}, :action_denied_by_admission},
+            {%{"primary_executable_available" => false, "admission_allowed" => false},
+             :action_denied_by_admission}
+          ] do
+        %{account: account, subject: subject, runners: [ready, blocked]} =
+          mcp_fanout_fixture(["low", "low"])
+
+        readvertise_mcp_action(blocked, readiness)
+        :ok = Emisar.Runners.subscribe_runner_transport(ready)
+        :ok = Emisar.Runners.subscribe_runner_transport(blocked)
+        facts = mcp_action_facts("op_024NN9NMDZ1T76NARWCKM5A0D6", [ready, blocked])
+
+        assert Runs.dispatch_mcp_action(facts, subject) == {:error, expected}
+        refute Repo.exists?(MCPOperations.Operation)
+        refute Repo.exists?(ActionRun)
+        refute Repo.exists?(Emisar.Approvals.Request)
+        refute_receive {:cloud_to_runner, _generation, _}, 100
+
+        assert [receipt] = Enum.filter(dispatch_rejections(), &(&1.account_id == account.id))
+        assert receipt.event_type == "dispatch_blocked_target_unavailable"
+        assert receipt.actor_id == subject.actor.id
+        assert receipt.target_id == nil
+
+        assert receipt.payload == %{
+                 "requested_action_id" => facts.action_id,
+                 "requested_pack_ref" => facts.pack_ref,
+                 "operation_id" => facts.operation_id
+               }
+      end
+    end
+
+    test "accepted operation replay survives a later host exclusion without dispatching again" do
+      %{subject: subject, runners: [runner]} = mcp_fanout_fixture(["low"])
+      :ok = Emisar.Runners.subscribe_runner_transport(runner)
+      facts = mcp_action_facts("op_034NN9NMDZ1T76NARWCKM5A0D6", [runner])
+
+      assert {:ok, :created, [run]} = Runs.dispatch_mcp_action(facts, subject)
+      assert_receive {:cloud_to_runner, _generation, %{"type" => "run_action"}}, 500
+      readvertise_mcp_action(runner, %{"primary_executable_available" => false})
+
+      assert {:ok, :replay, [replayed]} = Runs.dispatch_mcp_action(facts, subject)
+      assert replayed.id == run.id
+      assert Repo.aggregate(MCPOperations.Operation, :count) == 1
+      assert Repo.aggregate(ActionRun, :count) == 1
+      assert dispatch_rejections() == []
+      refute_receive {:cloud_to_runner, _generation, _}, 100
+    end
+
     test "rejects a subject without dispatch permission" do
       %{account: account, runners: [runner]} = mcp_fanout_fixture(["low"])
       facts = mcp_action_facts("op_334NN9NMDZ1T76NARWCKM5A0D6", [runner])
@@ -3283,7 +3334,7 @@ defmodule Emisar.RunsTest do
       assert {:ok, _} = Catalog.observe_state(runner, mcp_state_payload(runner, descriptor))
 
       assert Runs.dispatch_mcp_action(signed_mcp_facts(facts, signed.header), subject) ==
-               {:error, :target_contract_changed}
+               {:error, :action_denied_by_admission}
 
       refute Repo.exists?(MCPOperations.Operation)
       refute Repo.exists?(ActionRun)
