@@ -29,7 +29,20 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "openssl s_client -connect \"$1\":{{ args.port }} -servername \"$1\" -showcerts </dev/null 2>/dev/null"
+      - |
+        set -eu
+        status=0
+        handshake=$(openssl s_client -connect "$1":{{ args.port }} -servername "$1" -showcerts </dev/null 2>/dev/null) || status=$?
+        # Print only the first server-sent chain, never later session or peer text.
+        printf '%s\n' "$handshake" | awk '
+          /^Certificate chain$/ && !seen { seen=1; printing=1 }
+          printing { print }
+          printing && /^---$/ { printing=0 }
+        '
+        if [ "$status" -ne 0 ]; then
+          printf 'TLS connection to %s:%s failed\n' "$1" '{{ args.port }}' >&2
+        fi
+        exit "$status"
       - "emisar"
       - "{{ args.host }}"
   timeout: 30s

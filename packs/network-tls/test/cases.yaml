@@ -113,6 +113,55 @@ cases:
       stderr_contains: ["TLS connection to 127.0.0.1:24444 failed"]
       stdout_not_contains: [notAfter=]
 
+  - name: net.tls_chain_dump-tls12-certificate-chain-only
+    action: net.tls_chain_dump
+    args: {host: 127.0.0.1, port: 24443}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, start]
+      - argv: [nc, -z, 127.0.0.1, '24443']
+        retry_for: 5s
+        retry_every: 100ms
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, verify-raw-tls12]
+    expect:
+      stdout_contains: [Certificate chain, '0 s:CN=packtest-chain.example', '1 s:CN=Packtest-Chain-CA', '-----BEGIN CERTIFICATE-----', '-----END CERTIFICATE-----']
+      stdout_not_contains: [SSL-Session, Session-ID, Master-Key, TLS session ticket, Resumption PSK, Server certificate, Cipher is]
+      stderr_not_contains: [SSL-Session, Session-ID, Master-Key, TLS session ticket, Resumption PSK]
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, stop]
+
+  - name: net.tls_chain_dump-closed-port-keeps-exit-status
+    action: net.tls_chain_dump
+    args: {host: 127.0.0.1, port: 24444}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ['TLS connection to 127.0.0.1:24444 failed']
+      stdout_not_contains: [Certificate chain, SSL-Session, Session-ID, Master-Key, TLS session ticket, Resumption PSK]
+
+  - name: net.tls_chain_dump-tls13-certificate-chain-only
+    action: net.tls_chain_dump
+    args: {host: 127.0.0.1, port: 24443}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, start, tls1_3]
+      - argv: [nc, -z, 127.0.0.1, '24443']
+        retry_for: 5s
+        retry_every: 100ms
+    expect:
+      stdout_contains: [Certificate chain, '0 s:CN=packtest-chain.example', '1 s:CN=Packtest-Chain-CA', '-----BEGIN CERTIFICATE-----', '-----END CERTIFICATE-----']
+      stdout_not_contains: [SSL-Session, Session-ID, Master-Key, TLS session ticket, Resumption PSK, Server certificate, Cipher is, Post-Handshake New Session Ticket]
+      stderr_not_contains: [SSL-Session, Session-ID, Master-Key, TLS session ticket, Resumption PSK]
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, stop]
+
+  - name: net.tls_chain_dump-plaintext-keeps-exit-status
+    action: net.tls_chain_dump
+    args: {host: tcp, port: 80}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ['TLS connection to tcp:80 failed']
+      stdout_not_contains: [SSL-Session, Session-ID, Master-Key, TLS session ticket, Resumption PSK, Cipher is]
+
   - name: net.tls_cert_expiry-plaintext-keeps-handshake-error
     action: net.tls_cert_expiry
     args: {host: tcp, port: 80}
