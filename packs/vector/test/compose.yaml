@@ -1,0 +1,46 @@
+services:
+  vector:
+    build:
+      context: ${EMISAR_ROOT}/packs/vector/test
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-timberio/vector:${PACKTEST_VERSION:-0.59.0-debian}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-vector:${PACKTEST_VERSION:-0.59.0-debian}
+    command: ["--config", "/etc/vector/vector.yaml"]
+    user: "65532:65532"
+    volumes:
+      - ${EMISAR_ROOT}/packs/vector/test/fixtures/vector.yaml:/etc/vector/vector.yaml:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -q -fsS --globoff --proto =http --output /tmp/ready.metrics http://127.0.0.1:9598/metrics &&
+          grep -q '^vector_component_sent_events_total{.*component_id="fixture_logs"' /tmp/ready.metrics
+      interval: 2s
+      start_period: 20s
+      start_interval: 1s
+      timeout: 5s
+      retries: 15
+
+  runner-tools:
+    # The default endpoint is loopback on the same host as Vector.
+    network_mode: service:vector
+    build:
+      context: ${EMISAR_ROOT}/packs/vector/test
+      args:
+        PACKTEST_IMAGE: ${PACKTEST_IMAGE:-timberio/vector:${PACKTEST_VERSION:-0.59.0-debian}${PACKTEST_DIGEST-}}
+    image: emisar-packtest-vector:${PACKTEST_VERSION:-0.59.0-debian}
+    entrypoint: ["/bin/sh"]
+
+  vector-response:
+    image: python:3.14.7-alpine3.24@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01
+    entrypoint: [python3, /fixture/response-server.py]
+    environment:
+      VECTOR_RESPONSE_CANARY: packtest-canary-vector-label-3ea17
+    volumes:
+      - ${EMISAR_ROOT}/packs/vector/test/fixtures/response-server.py:/fixture/response-server.py:ro
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10

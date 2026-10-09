@@ -1,0 +1,27 @@
+data_dir: /tmp/vector
+api:
+  enabled: true
+  address: "0.0.0.0:8686"
+sources:
+  fixture_logs:
+    type: demo_logs
+    format: json
+    interval: 0.1
+  internal_metrics:
+    type: internal_metrics
+    scrape_interval_secs: 1
+transforms:
+  fixture_remap:
+    type: remap
+    inputs: [fixture_logs]
+    source: '.pipeline = "packtest"'
+sinks:
+  fixture_console:
+    type: console
+    inputs: [fixture_remap]
+    encoding:
+      codec: json
+  fixture_metrics:
+    type: prometheus_exporter
+    inputs: [internal_metrics]
+    address: "0.0.0.0:9598"

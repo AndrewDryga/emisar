@@ -1,0 +1,281 @@
+services: [vector, vector-response]
+versions:
+  - version: "0.59.0-debian"
+    digest: "@sha256:98e7b4dfe50750e61470697bbd2fbeca643d12bea97f351005038ef506eab630"
+    default: true
+  - version: "0.55.0-debian"
+    digest: "@sha256:a4be1111b40303524aae2ffb02cd59cef2a4e9753bd13d265bf0233e921828d9"
+secret_env: [VECTOR_RESPONSE_CANARY]
+env:
+  VECTOR_API: http://vector:8686
+  VECTOR_METRICS_URL: http://vector:9598/metrics
+  VECTOR_RESPONSE_CANARY: packtest-canary-vector-label-3ea17
+cases:
+  - action: vector.component_metrics
+    expect:
+      stdout_contains: [vector_component_sent_events_total, vector_component_sent_bytes_total, 'component_id="fixture_logs"', 'component_id="fixture_remap"', 'component_id="fixture_console"', 'component_kind="source"', 'component_kind="transform"', 'component_kind="sink"']
+      stdout_not_contains: ["host=", "protocol=", "output="]
+  - name: vector.component_metrics-default-loopback
+    action: vector.component_metrics
+    unset_env: [VECTOR_METRICS_URL]
+    expect:
+      stdout_contains: [vector_component_sent_events_total, 'component_id="fixture_logs"']
+  - name: vector.component_metrics-independent-of-api
+    action: vector.component_metrics
+    env: {VECTOR_API: "http://127.0.0.1:1"}
+    expect:
+      stdout_contains: [vector_component_sent_events_total, 'component_id="fixture_logs"']
+  - name: vector.component_metrics-unreachable
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://127.0.0.1:1/metrics"}
+    expect:
+      status: failure
+      exit: [7]
+      stderr_contains: ["Vector metrics request failed"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-invalid-protocol
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "file:///etc/vector/vector.yaml"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["must use HTTP or HTTPS"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-url-newline
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/sum\nurl=http://vector-response:8080/zero"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["contains invalid control characters"]
+      stdout_not_contains: [vector_component_]
+
+  - name: vector.component_metrics-empty
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/empty"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["No Vector component counters found"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-comments
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/comments"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["No Vector component counters found"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-unrelated
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/unrelated"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["No Vector component counters found"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-duplicate
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/duplicate"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["Duplicate Vector counter series"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-duplicate-label
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/duplicate-label"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["Duplicate Vector counter label"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-missing-identity
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/missing-identity"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["missing component identity"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-empty-identity
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/empty-identity"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["missing component identity"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-invalid-escape
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/invalid-escape"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["Invalid Vector counter escape"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-unterminated
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/unterminated"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["Unterminated Vector counter label"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-malformed-after-valid
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/malformed-after-valid"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["Invalid Vector counter value"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-negative
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/negative"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["finite and nonnegative"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-nonfinite
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/nonfinite"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["Invalid Vector counter value"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-overflow
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/overflow"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["finite and nonnegative"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-aggregate-overflow
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/aggregate-overflow"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["aggregate overflow"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-timestamp-overflow
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/timestamp-overflow"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["Invalid Vector counter value or timestamp"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-extra-value
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/extra-value"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["Invalid Vector counter value or timestamp"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-missing
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/missing"}
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["Vector metrics request failed"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-unavailable
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/unavailable"}
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["Vector metrics request failed"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-redirect
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/redirect"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["did not return HTTP 200"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-truncated
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/truncated"}
+    expect:
+      status: failure
+      exit: [18]
+      stderr_contains: ["Vector metrics request failed"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-raw-over-cap
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/raw-over-cap"}
+    expect:
+      status: failure
+      exit: [63]
+      stderr_contains: ["Vector metrics request failed"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-chunked-over-cap
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/chunked-over-cap"}
+    expect:
+      status: failure
+      exit: [63]
+      stderr_contains: ["Vector metrics request failed"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-output-over-cap
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/output-over-cap"}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["exceed the 1 MiB output budget"]
+      stdout_not_contains: [vector_component_]
+  - name: vector.component_metrics-sum
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/sum"}
+    expect:
+      stdout_contains: ["vector_component_sent_events_total{component_id=\"fixture\",component_kind=\"source\",component_type=\"demo\"} 5","vector_component_sent_bytes_total{component_id=\"fixture\",component_kind=\"source\",component_type=\"demo\"} 9"]
+      stdout_not_contains: ["output=","file=","endpoint=","auth=","private"]
+  - name: vector.component_metrics-zero
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/zero"}
+    expect:
+      stdout_contains: ["vector_component_sent_events_total{component_id=\"fixture\",component_kind=\"source\",component_type=\"demo\"} 0"]
+  - name: vector.component_metrics-url-quoted-backslash
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: 'http://vector-response:8080/url-quote"back\slash'}
+    expect:
+      stdout_contains: ['component_id="url_escaped"', " 42"]
+    probes:
+      - name: Real GNU awk POSIX mode preserves the URL
+        argv: [/bin/sh, /packs/vector/scripts/component_metrics.sh]
+        env:
+          PATH: /opt/posix-awk:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        expect:
+          stdout_contains: ['component_id="url_escaped"', " 42"]
+  - name: vector.component_metrics-scientific
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/scientific"}
+    expect:
+      stdout_contains: ["vector_component_sent_events_total{component_id=\"fixture\",component_kind=\"source\",component_type=\"demo\"} 250"]
+  - name: vector.component_metrics-timestamp
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/timestamp"}
+    expect:
+      stdout_contains: ["vector_component_sent_events_total{component_id=\"fixture\",component_kind=\"source\",component_type=\"demo\"} 3"]
+      stdout_not_contains: ["1791579684121"]
+  - name: vector.component_metrics-escaped
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/escaped"}
+    expect:
+      stdout_contains: ["component_id=\"escape,}\\\"\\\\\\n\""," 4"]
+      stdout_not_contains: ["output="]
+  - name: vector.component_metrics-near-cap
+    action: vector.component_metrics
+    env: {VECTOR_METRICS_URL: "http://vector-response:8080/near-cap"}
+    expect:
+      stdout_contains: ["component_id=\"component_0\"","component_id=\"component_8000\""," 100000000"]

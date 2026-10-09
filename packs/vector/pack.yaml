@@ -2,14 +2,15 @@ schema_version: 1
 
 id: vector
 name: Vector observability pipeline
-version: 0.1.15
+version: 0.1.16
 retired_below: 0.1.3
 description: >
   Read-only ops for a Vector (vector.dev) pipeline running on the runner
   host: version + compiled-component inventory, offline config validation,
   the configured topology as Graphviz DOT, a bounded live event tap, plus
-  health and per-component throughput reads over the local API. CLI
-  subcommands talk to the local binary; the API reads hit 127.0.0.1:8686.
+  health and per-component counters. CLI subcommands use the local binary;
+  health reads the API at 127.0.0.1:8686, and counters read the Prometheus
+  exporter at 127.0.0.1:9598/metrics.
 vendor: emisar
 homepage: https://emisar.dev/packs/vector
 
@@ -29,20 +30,25 @@ detect:
 
 setup:
   summary: >
-    Drives the local Vector instance on the runner host: the CLI actions
-    invoke the `vector` binary directly, and the health / metrics reads call
-    Vector's HTTP API at `$VECTOR_API` (default 127.0.0.1:8686). No
-    credentials — the API is unauthenticated and binds loopback only.
+    Inspect the Vector instance on this host using its CLI, health API,
+    and Prometheus exporter. Configure the exporter separately from the API;
+    neither read starts or reconfigures Vector.
   env:
     - name: VECTOR_API
       default: "http://127.0.0.1:8686"
       description: >
-        Vector GraphQL/health API base URL; requires api.enabled=true in the
+        Vector health API base URL; requires api.enabled=true in the
         Vector config.
+    - name: VECTOR_METRICS_URL
+      default: "http://127.0.0.1:9598/metrics"
+      description: >
+        Complete URL of this instance's Prometheus exporter. Connect an
+        internal_metrics source with the default vector namespace to the sink.
   notes:
-    - "`VECTOR_API` only reaches an action when the runner allowlists it in `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default. Unset, it falls back to http://127.0.0.1:8686, so a Vector API bound elsewhere silently reads the local one instead."
-    - "The HTTP API is unauthenticated and binds 127.0.0.1:8686 only when `api.enabled = true` in the Vector config. The CLI actions (version, list, validate, graph, tap) do not need it — they talk to the local binary and work whether or not the API is on."
-    - "VERSION CAVEAT: Vector's observability API was GraphQL (`/graphql`, `/playground`) through v0.54, then migrated to gRPC in v0.55 (April 2026), which REMOVED both. So the CLI subcommands work on ANY version, plain `GET /health` works on ANY version, but the raw GraphQL component_metrics action only works on Vector <= 0.54 (it 404s on >= 0.55). Run `vector.version` first; on >= 0.55 use gRPC tooling for component metrics instead."
+    - "Allowlist `VECTOR_API` and `VECTOR_METRICS_URL` in the runner's `execution.inherit_env` when overriding their defaults. Otherwise each read uses its loopback default."
+    - "Enable the health API with `api.enabled: true` and `api.address: 127.0.0.1:8686`. The live tap also needs the API; version, list, validate, and graph use the local binary."
+    - "For counters, add `sources.emisar_internal.type: internal_metrics` and `sources.emisar_internal.namespace: vector`; add `sinks.emisar_metrics.type: prometheus_exporter`, `sinks.emisar_metrics.inputs: [emisar_internal]`, and `sinks.emisar_metrics.address: 127.0.0.1:9598`. The exporter serves `/metrics` without needing `api.enabled`. Bind it explicitly to loopback: the sink's vendor default is 0.0.0.0:9598."
+    - "Keep unauthenticated API/exporter endpoints private. `vector.component_metrics` supports the Vector 0.55+ exporter, requires curl 8.4+, and fails when no valid per-component counters arrive; it does not call the removed GraphQL endpoint."
     - "Every action is read-only — none start, stop, reload, or reconfigure Vector. `tap` adds slight overhead on the running instance while sampling, then auto-exits."
   host_access:
     - actions:

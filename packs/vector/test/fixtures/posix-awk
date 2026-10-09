@@ -1,0 +1,3 @@
+#!/bin/sh
+# Exercise the published script with the real GNU awk POSIX implementation.
+exec gawk --posix "$@"

@@ -4,11 +4,8 @@ title: vector --version
 kind: exec
 risk: low
 description: >
-  Show the Vector binary version and build metadata. Run this FIRST: it
-  tells you whether the observability API is GraphQL (Vector <= 0.54) or
-  gRPC (>= 0.55, April 2026). That determines whether the GraphQL
-  component_metrics action will work or 404. Talks only to the local
-  binary — needs no API.
+  Show the Vector binary version and build metadata. Uses the local binary;
+  needs neither the health API nor the Prometheus exporter.
 side_effects: ["Reads the local Vector binary version.", "Read-only."]
 args: []
 execution:
@@ -19,5 +16,5 @@ output:
   max_stdout_bytes: 16384
   max_stderr_bytes: 8192
 examples:
-  - title: Show version (and pick GraphQL vs gRPC)
+  - title: Show version and build metadata
     args: {}

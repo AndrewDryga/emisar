@@ -1,32 +1,33 @@
 schema_version: 1
 id: vector.component_metrics
-title: POST /graphql (component metrics)
-kind: exec
+title: Show per-component counters
+kind: script
 risk: low
 description: >
-  Show per-component throughput from the Vector GraphQL API: received and sent
-  event totals for every source, transform, and sink, plus sent-bytes for
-  sinks. GraphQL API — Vector <= 0.54 ONLY. On Vector >= 0.55 (gRPC
-  migration, April 2026) the /graphql endpoint was REMOVED and this returns
-  404; run vector.version first and, if >= 0.55, use gRPC tooling instead.
-  Requires api.enabled=true; binds 127.0.0.1:8686.
+  Show per-component counters from this Vector instance's Prometheus exporter:
+  received and sent events and bytes, errors, and discarded events where
+  present. Retains component id, kind, and type; sums other label dimensions
+  and omits timestamps. Requires an internal_metrics source with the default
+  vector namespace connected to a prometheus_exporter sink, and curl 8.4+.
+  Reads VECTOR_METRICS_URL (default http://127.0.0.1:9598/metrics), independently
+  of api.enabled. Returns sorted Prometheus text, bounded to 1 MiB, with
+  floating-point totals. Empty, malformed, duplicate, nonfinite, or oversized
+  counter data fails; a valid zero is retained.
 side_effects:
-  - One read-only GraphQL POST (a query, not a mutation) to the local Vector API.
+  - One read-only HTTP GET to the configured Prometheus exporter.
   - Read-only.
 search_terms:
   - backpressure
 args: []
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      - "curl -q -fsS --globoff --proto =http,https -X POST \"${VECTOR_API:-http://127.0.0.1:8686}/graphql\" -H 'Content-Type: application/json' --data '{\"query\":\"query { sources { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } transforms { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } } } } } sinks { edges { node { componentId metrics { receivedEventsTotal { receivedEventsTotal } sentEventsTotal { sentEventsTotal } sentBytesTotal { sentBytesTotal } } } } } }\"}'"
+  script:
+    path: scripts/component_metrics.sh
+    interpreter: /bin/sh
   timeout: 20s
 output:
-  parser: json
+  parser: text
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
-  - title: Per-component event + byte totals (Vector <= 0.54)
+  - title: Per-component event and byte counters
     args: {}
