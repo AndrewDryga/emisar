@@ -108,7 +108,7 @@ func DefaultRules() []actionspec.RedactionRule {
 	// config and connection strings and matched nothing: DSNs and connection
 	// URLs, the key-derivation inputs (salt/pepper), cookie/session signing keys,
 	// and the passphrase spellings.
-	const secretName = `(?:password|passwd|passphrase|pwd|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|session[_-]?token|account[_-]?key|aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token|dsn|connection[_-]?string|conn[_-]?str|database[_-]?url|db[_-]?url|redis[_-]?url|amqp[_-]?url|smtp[_-]?url|credentials?|signing[_-]?key|encryption[_-]?key|secret[_-]?key[_-]?base|cookie[_-]?key|session[_-]?key|master[_-]?key|salt|pepper)`
+	const secretName = `(?:password|passwd|passphrase|pwd|secret ?id|secret|token|api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|session[_-]?token|account[_-]?key|aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token|dsn|connection[_-]?string|conn[_-]?str|database[_-]?url|db[_-]?url|redis[_-]?url|amqp[_-]?url|smtp[_-]?url|credentials?|signing[_-]?key|encryption[_-]?key|secret[_-]?key[_-]?base|cookie[_-]?key|session[_-]?key|master[_-]?key|salt|pepper)`
 	// Deliberately NOT here: a bare `key` or `auth`. Both are overwhelmingly
 	// non-secret in real output — cache_key, primary_key, sort_key, partition_key,
 	// object_key, and the `key: <name>` column half of tabular config dumps;

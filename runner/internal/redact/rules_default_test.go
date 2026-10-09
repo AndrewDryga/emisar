@@ -441,6 +441,9 @@ func TestDefaultRules_WidenedSecretFieldNames(t *testing.T) {
 		{"MYSQLPASSWORD", `MYSQLPASSWORD=my-secret-value`, "my-secret-value"},
 		{"ADMINPASSWORD", `ADMINPASSWORD=admin-secret-value`, "admin-secret-value"},
 		{"master_key", `RAILS_MASTER_KEY=rails-secret-value`, "rails-secret-value"},
+		{"Consul SecretID", `SecretID: 11111111-1111-4111-8111-111111111111`, "11111111-1111-4111-8111-111111111111"},
+		{"Consul Secret ID", `Secret ID: 11111111-1111-4111-8111-111111111111`, "11111111-1111-4111-8111-111111111111"},
+		{"Consul JSON SecretID", `{"SecretID":"11111111-1111-4111-8111-111111111111"}`, "11111111-1111-4111-8111-111111111111"},
 	}
 
 	for _, tc := range masked {
@@ -477,6 +480,8 @@ func TestDefaultRules_WidenedSecretFieldNames(t *testing.T) {
 		{"auth toggle", `auth=enabled`},
 		{"keyspace", `keyspace=analytics`},
 		{"tokenizer", `tokenizer=standard`},
+		{"Consul AccessorID", `AccessorID: 22222222-2222-4222-8222-222222222222`},
+		{"Consul JSON AccessorID", `{"AccessorID":"22222222-2222-4222-8222-222222222222"}`},
 	}
 
 	for _, tc := range untouched {
