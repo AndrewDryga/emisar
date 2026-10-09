@@ -2,8 +2,8 @@ schema_version: 1
 id: gh.issue_view
 title: gh issue view
 kind: exec
-risk: low
-description: Show details + comments for one issue.
+risk: medium
+description: Show one issue's details, body and comments, including arbitrary application text that may contain sensitive data.
 side_effects:
   - One API call.
   - Read-only.
@@ -30,7 +30,6 @@ execution:
       - "{{ args.issue }}"
       - "--repo"
       - "{{ args.repo }}"
-      - "--comments"
       - "--json"
       - "number,title,body,state,author,labels,comments,createdAt"
   timeout: 30s

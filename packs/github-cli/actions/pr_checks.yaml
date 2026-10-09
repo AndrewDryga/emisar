@@ -1,11 +1,17 @@
 schema_version: 1
 id: gh.pr_checks
 title: gh pr checks
-kind: exec
+kind: script
 risk: low
-description: List all CI checks for one PR + pass/fail status.
+description: >
+  List visible checks for a captured PR head commit as JSON; failed or pending
+  checks are data, not a failed query. If GitHub denies check contexts, return
+  commit statuses and up to 10 Actions runs with the first 100 jobs of each
+  observed attempt. Each REST collection is one page of up to 100; omitted
+  rows and unavailable non-Actions checks are explicit. This is a bounded
+  observation, not proof of branch-protection satisfaction or mergeability.
 side_effects:
-  - One API call.
+  - Multiple bounded read-only API calls (at most 15 CLI invocations in the fallback).
   - Read-only.
 search_terms:
   - checks red
@@ -24,18 +30,17 @@ args:
       min: 1
       max: 9999999
 execution:
-  command:
-    binary: gh
-    argv:
-      - "pr"
-      - "checks"
-      - "{{ args.pr }}"
-      - "--repo"
-      - "{{ args.repo }}"
-  timeout: 30s
+  script:
+    path: scripts/pr_checks.sh
+    interpreter: /bin/sh
+  argv:
+    - checks
+    - "{{ args.repo }}"
+    - "{{ args.pr }}"
+  timeout: 90s
 output:
-  parser: text
-  max_stdout_bytes: 65536
+  parser: json
+  max_stdout_bytes: 524288
   max_stderr_bytes: 8192
 examples:
   - title: PR checks

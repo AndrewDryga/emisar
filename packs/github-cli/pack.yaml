@@ -2,7 +2,7 @@ schema_version: 1
 
 id: github-cli
 name: GitHub CLI operations
-version: 0.1.16
+version: 0.1.17
 retired_below: 0.1.8
 description: >
   GitHub introspection — PRs, issues, repos, workflow runs, releases,
@@ -17,19 +17,22 @@ requires:
     - linux
   binaries:
     - gh
+    - jq
 
 setup:
   summary: >
-    Actions shell out to gh on the runner host. gh authenticates with `GH_TOKEN`
+    Actions use `gh` on the runner host; PR check projections also need `jq`.
+    gh authenticates with `GH_TOKEN`
     (or `GITHUB_TOKEN`) if set, otherwise with the token stored by `gh auth
     login`. Provide one of those so gh is signed in.
   env:
     - name: GH_TOKEN
-      description: 'GitHub token gh uses to authenticate. Omit if the runner host is already signed in via `gh auth login`.'
+      description: 'Create a token in GitHub Settings → Developer settings → Personal access tokens. Omit if the runner user is already signed in via `gh auth login`.'
   notes:
-    - "[Create a classic token with the repo scope preselected](https://github.com/settings/tokens/new?scopes=repo&description=emisar%20runner). Classic tokens have no read-only repo scope, so `repo` is the floor for reading private repositories and is what `repo_clone_count` needs (GitHub's traffic API requires push access); a fine-grained token limited to chosen repositories, with read-only Contents, Pull requests, and Actions, is narrower when you enable only the reads."
-    - "Token-free alternative: run `gh auth login` as the runner's user once; the credential is stored in `~/.config/gh/hosts.yml` and read from disk, so it needs no `inherit_env` entry."
-    - "The token needs repo read scope for the introspection actions; the mutators (pr_merge, pr_close, workflow_rerun, workflow_dispatch) and repo_clone_count need write/push access to the target repo."
+    - "[Create a fine-grained token](https://github.com/settings/personal-access-tokens/new) for the selected repositories. Grant read-only Contents, Pull requests, Issues, Actions, and Commit statuses for the corresponding reads. Organization approval may be required."
+    - "PR checks first use the check contexts visible to the credential. When GitHub denies those contexts, the result falls back to Actions runs/jobs and commit statuses for the captured head commit. Non-Actions check runs are explicitly not visible in that fallback; it is not an all-checks or mergeability verdict. GitHub's fine-grained PAT Checks support varies by endpoint and is still listed as a limitation in its PAT guide."
+    - "[Classic tokens](https://github.com/settings/tokens/new?scopes=repo&description=emisar%20runner) need `repo` for private repositories; that scope is not read-only. `gh auth login` stores a credential in the runner user's `~/.config/gh/hosts.yml`, rather than making the connection token-free."
+    - "Merging/closing PRs requires Pull requests write; rerunning/dispatching workflows requires Actions write (dispatch also needs Contents read). Traffic (`repo_clone_count`) requires repository write access and Administration read for a fine-grained token, or `repo` for a classic token."
   verify: gh.auth_status
 
 actions:
