@@ -7,7 +7,9 @@ services:
         PACKTEST_RUNNER_IMAGE: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
         PACKTEST_VERSION: ${PACKTEST_VERSION:-26.9.7.9-alpine}
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
-    image: emisar-packtest-clickhouse-tools:latest
+    # Matrix rows may overlap locally; each action must retain its matching
+    # native client rather than another row overwriting a shared latest tag.
+    image: emisar-packtest-clickhouse-tools:${PACKTEST_VERSION:-26.9.7.9-alpine}
 
   clickhouse:
     image: clickhouse/clickhouse-server:${PACKTEST_VERSION:-26.9.7.9-alpine}${PACKTEST_DIGEST-}
@@ -28,6 +30,25 @@ services:
       interval: 5s
       start_period: 30s
       # Poll cost scales with probe cost: this check spawns a heavyweight
-      # client, and four cases boot at once on a four-core runner.
+      # client, and two cases each boot two servers on a four-core runner.
+      start_interval: 5s
+      retries: 10
+
+  # Same native server/client family, but deliberately no Keeper configuration.
+  # A denied read is not used to simulate an absent system table.
+  clickhouse-standalone:
+    image: clickhouse/clickhouse-server:${PACKTEST_VERSION:-26.9.7.9-alpine}${PACKTEST_DIGEST-}
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: packtest-canary-clickhouse-98e4f2
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - ${EMISAR_ROOT}/packs/clickhouse/test/fixtures/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ulimits:
+      nofile: {soft: 262144, hard: 262144}
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' >/dev/null && sleep 2 && clickhouse-client --query 'SELECT 1' >/dev/null"]
+      interval: 5s
+      start_period: 30s
       start_interval: 5s
       retries: 10

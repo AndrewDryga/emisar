@@ -1,9 +1,9 @@
 schema_version: 1
 id: ch.asynchronous_metrics
-title: SELECT * FROM system.asynchronous_metrics
+title: Show server health metrics
 kind: exec
 risk: low
-description: Show periodically-computed metrics — replica lag (ReplicasMaxAbsoluteDelay), max parts per partition, filesystem and memory. The async counterpart to system.metrics.
+description: Show a bounded server-health snapshot — memory, filesystem capacity, replica lag and queue size, max parts per partition, aggregate CPU time, load and uptime. Return finite scalar metric/value pairs only; omit descriptions and per-device, interface and CPU-core series.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:
@@ -11,11 +11,21 @@ execution:
     binary: /bin/sh
     argv:
       - "-c"
-      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT metric, value, description FROM system.asynchronous_metrics ORDER BY metric FORMAT JSONEachRow\""
+      - >-
+        CLICKHOUSE_PASSWORD="${CH_PASSWORD:-}" clickhouse-client
+        --host "${CH_HOST:-localhost}" --user "${CH_USER:-default}"
+        --query "SELECT metric, value FROM system.asynchronous_metrics
+        WHERE metric IN ('MemoryResident', 'MemoryVirtual', 'MemoryCode', 'MemoryDataAndStack', 'MemoryShared',
+        'FilesystemMainPathAvailableBytes', 'FilesystemMainPathTotalBytes', 'FilesystemMainPathUsedBytes',
+        'FilesystemLogsPathAvailableBytes', 'FilesystemLogsPathTotalBytes', 'FilesystemLogsPathUsedBytes',
+        'ReplicasMaxAbsoluteDelay', 'ReplicasMaxRelativeDelay', 'ReplicasSumQueueSize', 'ReplicasMaxQueueSize',
+        'MaxPartCountForPartition', 'Uptime', 'LoadAverage1', 'LoadAverage5', 'LoadAverage15',
+        'OSUserTime', 'OSSystemTime', 'OSIdleTime', 'OSIOWaitTime', 'OSStealTime')
+        AND isFinite(value) ORDER BY metric FORMAT JSONEachRow"
   timeout: 15s
 output:
   parser: text
-  max_stdout_bytes: 262144
+  max_stdout_bytes: 8192
   max_stderr_bytes: 8192
 examples:
   - title: Async metrics

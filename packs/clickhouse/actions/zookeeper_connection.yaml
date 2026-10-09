@@ -1,17 +1,28 @@
 schema_version: 1
 id: ch.zookeeper_connection
-title: SELECT * FROM system.zookeeper_connection
+title: Show Keeper connections
 kind: exec
 risk: low
-description: List active Keeper/ZooKeeper connections — host, session age, expiry, API version. Empty on a non-replicated single node.
-side_effects: ["One SELECT.", "Read-only."]
+description: List active Keeper/ZooKeeper connections — host, session age, expiry and API version. Report no ZooKeeper/Keeper configured when the system table is absent; authentication, permission and connection errors still fail.
+side_effects: ["One table-presence read and, when present, one SELECT.", "Read-only."]
 args: []
 execution:
   command:
     binary: /bin/sh
     argv:
       - "-c"
-      - "CLICKHOUSE_PASSWORD=\"$CH_PASSWORD\" clickhouse-client --host \"${CH_HOST:-localhost}\" --user \"${CH_USER:-default}\" --query \"SELECT name, host, port, index, connected_time, session_uptime_elapsed_seconds, is_expired, keeper_api_version, client_id FROM system.zookeeper_connection FORMAT JSONEachRow\""
+      - |
+        set -eu
+        export CLICKHOUSE_PASSWORD="${CH_PASSWORD:-}"
+        if present=$(clickhouse-client --host "${CH_HOST:-localhost}" --user "${CH_USER:-default}" --query "EXISTS TABLE system.zookeeper_connection FORMAT TabSeparated"); then
+          case "$present" in
+            0) printf '%s\n' 'no ZooKeeper/Keeper configured' ;;
+            1) exec clickhouse-client --host "${CH_HOST:-localhost}" --user "${CH_USER:-default}" --query "SELECT name, host, port, index, connected_time, session_uptime_elapsed_seconds, is_expired, keeper_api_version, client_id FROM system.zookeeper_connection FORMAT JSONEachRow" ;;
+            *) printf '%s\n' 'unexpected Keeper table-presence response' >&2; exit 1 ;;
+          esac
+        else
+          exit "$?"
+        fi
   timeout: 15s
 output:
   parser: text

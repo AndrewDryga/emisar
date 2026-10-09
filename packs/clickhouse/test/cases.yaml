@@ -1,4 +1,7 @@
-services: [clickhouse]
+services: [clickhouse, clickhouse-standalone]
+# Each case now owns two heavyweight servers; cap simultaneous hostile SUTs
+# at four (6 GiB total declared memory), rather than eight (12 GiB).
+workers: 2
 versions:
   - version: "26.9.7.9-alpine"
     digest: "@sha256:aa718f827374252d34a60aed1b065b01d78d1deae9788e84d817c9e0d36618ce"
@@ -15,7 +18,54 @@ env:
 cases:
   - action: ch.asynchronous_metrics
     expect:
-      stdout_contains: ['"metric"', '"value"']
+      stdout_contains: ['"metric"', '"value"', '"metric":"MemoryResident"', '"metric":"Uptime"']
+      stdout_not_contains: ['"description"', 'CPUFrequencyMHz', 'NetworkReceive', 'BlockRead', 'OSUserTimeCPU', '"value":null']
+  - name: ch.zookeeper_connection-single-node
+    action: ch.zookeeper_connection
+    env:
+      CH_HOST: clickhouse-standalone
+    arrange:
+      - argv: [/bin/sh, -c, 'set -eu; present=$(CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "EXISTS TABLE system.zookeeper_connection FORMAT TabSeparated"); test "$present" = 0; echo ch-native-keeper-absent']
+        expect:
+          stdout_contains: [ch-native-keeper-absent]
+    expect:
+      stdout_contains: [no ZooKeeper/Keeper configured]
+  - name: ch.zookeeper_connection-keeper-present
+    action: ch.zookeeper_connection
+    arrange:
+      - argv: [/bin/sh, -c, 'set -eu; present=$(CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "EXISTS TABLE system.zookeeper_connection FORMAT TabSeparated"); test "$present" = 1; echo ch-native-keeper-present']
+        expect:
+          stdout_contains: [ch-native-keeper-present]
+    expect:
+      stdout_contains: ['"host"', '"client_id"', '"keeper_api_version"']
+      stdout_not_contains: [no ZooKeeper/Keeper configured]
+  - name: ch.zookeeper_connection-authentication-failure
+    action: ch.zookeeper_connection
+    env:
+      CH_HOST: clickhouse-standalone
+      CH_PASSWORD: packtest-canary-clickhouse-invalid-auth-c21a
+    expect:
+      status: failure
+      stderr_contains: [AUTHENTICATION_FAILED]
+      stdout_not_contains: [no ZooKeeper/Keeper configured]
+  - name: ch.zookeeper_connection-permission-failure
+    action: ch.zookeeper_connection
+    env:
+      CH_USER: packtest_no_tables
+    arrange:
+      - argv: [/bin/sh, -c, 'CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user default --query "CREATE USER packtest_no_tables IDENTIFIED BY ''packtest-canary-clickhouse-98e4f2''"']
+    expect:
+      status: failure
+      stderr_contains: [ACCESS_DENIED]
+      stdout_not_contains: [no ZooKeeper/Keeper configured]
+  - name: ch.zookeeper_connection-unavailable-server
+    action: ch.zookeeper_connection
+    env:
+      CH_HOST: 127.0.0.2
+    expect:
+      status: failure
+      stderr_contains: [NETWORK_ERROR]
+      stdout_not_contains: [no ZooKeeper/Keeper configured]
   - action: ch.disks
     expect:
       stdout_contains: ['"name":"default"', '"path"']
