@@ -129,6 +129,10 @@ defmodule Emisar.Fixtures.Runs do
     |> Repo.update!()
   end
 
+  @doc "Models a historical typed run whose trusted output snapshot is missing."
+  def clear_output_schema_snapshot(%ActionRun{} = run),
+    do: run |> change(output_schema_snapshot: nil) |> Repo.update!()
+
   @doc """
   Finalizes a run through the same connection-owned path as a runner result. A
   runner can only report work it received, so a run still queued is handed

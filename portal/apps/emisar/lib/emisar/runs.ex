@@ -83,13 +83,15 @@ defmodule Emisar.Runs do
   refused-at-dispatch, or cancelled-while-queued run has no output, so the
   column's default is not a detected gap), whether it waits on a human as
   `approval_pending?`, the durable `dispatch_deadline_at` a `:sent` run is
-  judged against, and the `local_audit_failed?` warning. Pure.
+  judged against, the `local_audit_failed?` warning, and a fixed `failure_code`
+  only for a validation failure. Never copies recorded diagnostic text. Pure.
   """
   def run_outcome_facts(%ActionRun{} = run) do
     terminal? = terminal_status?(run.status)
 
     %{
       status: run.status,
+      failure_code: run_failure_code(run),
       terminal?: terminal?,
       output_complete: if(terminal? and dispatched?(run), do: run.output_complete),
       approval_pending?: run.status == :pending_approval,
@@ -97,6 +99,20 @@ defmodule Emisar.Runs do
       local_audit_failed?: run.local_audit_failed
     }
   end
+
+  defp run_failure_code(%ActionRun{status: :validation_failed, failure_code: code}),
+    do: fixed_failure_code(code)
+
+  defp run_failure_code(%ActionRun{}), do: nil
+
+  defp fixed_failure_code(value) when is_binary(value) or is_atom(value) do
+    case Ecto.Enum.cast_value(ActionRun, :failure_code, value) do
+      {:ok, code} -> code
+      :error -> nil
+    end
+  end
+
+  defp fixed_failure_code(_value), do: nil
 
   defp dispatch_deadline_at(%ActionRun{status: :sent, queued_at: %DateTime{} = queued_at}),
     do: DateTime.add(queued_at, @sent_dispatch_deadline_secs, :second)
@@ -3549,20 +3565,21 @@ defmodule Emisar.Runs do
   @max_structured_output_bytes 8_192
   @max_structured_output_depth 16
   @max_structured_output_nodes 1_024
+  @max_result_reason_bytes 16_384
 
   defp mark_finished(%ActionRun{} = run, result_payload, connection) do
-    {status, structured_output, output_error} = result_outcome(run, result_payload)
+    {status, structured_output, output_error, failure_code} = result_outcome(run, result_payload)
 
     transition_from(
       run,
       :any_nonterminal,
       status,
-      result_attrs(run, result_payload, structured_output, output_error),
+      result_attrs(run, result_payload, structured_output, output_error, failure_code),
       connection
     )
   end
 
-  defp result_attrs(%ActionRun{} = run, payload, structured_output, output_error) do
+  defp result_attrs(%ActionRun{} = run, payload, structured_output, output_error, failure_code) do
     current = peek_run_by_id(run.id) || run
 
     %{
@@ -3582,15 +3599,29 @@ defmodule Emisar.Runs do
       executed_command: payload["executed_command"],
       executed_command_truncated: payload["executed_command_truncated"] || false,
       structured_output: structured_output,
+      failure_code: failure_code,
       # The failure cause belongs in error_message (not reason_text, which holds
       # the operator's freeform reason). The runner sends a terse `reason` code
       # (e.g. "bad_signature", "stale") AND a human `error` sentence ("refused:
       # signature does not match…") on a refusal; prefer the sentence so the
       # operator can act, falling back to the code when there's no `error`
       # (omitempty drops it on an ordinary failure, so this stays the reason).
-      error_message: output_error || payload["error"] || payload["reason"]
+      error_message: output_error || payload["error"] || result_reason(payload["reason"])
     }
   end
+
+  # The optional reason is untrusted metadata, not a prerequisite to persisting
+  # a terminal result. The explicit error retains its own changeset validation.
+  defp result_reason(value)
+       when is_binary(value) and byte_size(value) <= @max_result_reason_bytes,
+       do: value
+
+  defp result_reason(_value), do: nil
+
+  defp result_failure_code(:validation_failed, %{"reason" => reason}) when is_binary(reason),
+    do: fixed_failure_code(reason)
+
+  defp result_failure_code(_status, _payload), do: nil
 
   defp result_outcome(%ActionRun{} = run, payload) do
     status = Map.get(@result_statuses, payload["status"], :failed)
@@ -3598,31 +3629,39 @@ defmodule Emisar.Runs do
 
     cond do
       status != :success ->
-        {status, nil, nil}
+        {status, nil, nil, result_failure_code(status, payload)}
 
       run.structured_output_expected and not output_present? ->
-        {:validation_failed, nil, "runner omitted required structured output"}
+        {:validation_failed, nil, "runner omitted required structured output",
+         :output_schema_mismatch}
 
       not run.structured_output_expected and output_present? ->
-        {:validation_failed, nil, "runner sent structured output for an untyped action"}
+        {:validation_failed, nil, "runner sent structured output for an untyped action",
+         :output_schema_mismatch}
 
       not output_present? ->
-        {status, nil, nil}
+        {status, nil, nil, nil}
 
       true ->
         with {:ok, schema} <- output_contract_schema(run),
              {:ok, output} <- check_structured_output(payload["structured_output"], schema) do
-          {status, output, nil}
+          {status, output, nil, nil}
         else
           {:error, :invalid_structured_output} ->
-            {:validation_failed, nil, "runner sent an invalid structured output value"}
+            {:validation_failed, nil, "runner sent an invalid structured output value",
+             :output_invalid_json}
+
+          {:error, code} when code in [:output_too_large, :output_too_complex] ->
+            {:validation_failed, nil, "runner sent an invalid structured output value", code}
 
           {:error, :schema_mismatch} ->
             {:validation_failed, nil,
-             "runner structured output does not match the trusted schema"}
+             "runner structured output does not match the trusted schema",
+             :output_schema_mismatch}
 
           {:error, :invalid_contract} ->
-            {:validation_failed, nil, "trusted output schema snapshot is unavailable"}
+            {:validation_failed, nil, "trusted output schema snapshot is unavailable",
+             :output_schema_unavailable}
         end
     end
   end
@@ -3650,8 +3689,17 @@ defmodule Emisar.Runs do
          :ok <- Emisar.OutputSchema.validate_instance(schema, output) do
       {:ok, output}
     else
-      {:error, :schema_mismatch} = error -> error
-      _other -> {:error, :invalid_structured_output}
+      {:error, :schema_mismatch} = error ->
+        error
+
+      {:error, reason} when reason in [:too_deep, :too_many_nodes] ->
+        {:error, :output_too_complex}
+
+      false ->
+        {:error, :output_too_large}
+
+      _other ->
+        {:error, :invalid_structured_output}
     end
   end
 

@@ -536,12 +536,15 @@ output:
 			if result.Status != StatusValidationFailed {
 				t.Fatalf("status=%s, want validation_failed", result.Status)
 			}
-			if result.Reason != test.want {
-				t.Fatalf("reason=%q, want %q", result.Reason, test.want)
+			if result.Reason != "argument_invalid" {
+				t.Fatalf("reason=%q, want argument_invalid", result.Reason)
+			}
+			if result.Error != test.want {
+				t.Fatalf("error=%q, want %q", result.Error, test.want)
 			}
 			for _, leak := range test.leaks {
-				if strings.Contains(result.Reason, leak) {
-					t.Fatalf("validation reason leaked sensitive value %q: %q", leak, result.Reason)
+				if strings.Contains(result.Error, leak) {
+					t.Fatalf("validation error leaked sensitive value %q: %q", leak, result.Error)
 				}
 			}
 		})
@@ -555,6 +558,36 @@ output:
 		if strings.Contains(string(events), leak) {
 			t.Fatalf("audit journal leaked sensitive validation value %q:\n%s", leak, events)
 		}
+	}
+}
+
+func TestEngine_ReasonRequiredFixedCode(t *testing.T) {
+	e, journal, root := setupEngine(t)
+	defer journal.Close()
+	for _, reason := range []string{"", " \n\t "} {
+		t.Run(reason, func(t *testing.T) {
+			result, err := e.Run(context.Background(), Request{
+				ActionID: "t.echo",
+				Args:     map[string]any{"msg": "must not execute"},
+				Reason:   reason,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != StatusValidationFailed || result.Reason != "reason_required" || result.Error != "reason required" {
+				t.Fatalf("result = %#v, want fixed reason_required with human error", result)
+			}
+			if result.ExecutedCommand != "" {
+				t.Fatalf("reason refusal executed a command: %q", result.ExecutedCommand)
+			}
+		})
+	}
+	events, err := os.ReadFile(filepath.Join(root, "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(events), "execution_started") {
+		t.Fatalf("reason refusal started execution: %s", events)
 	}
 }
 

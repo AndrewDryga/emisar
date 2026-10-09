@@ -1,7 +1,7 @@
 ---
 name: wire-protocol
 sources: [runner/internal/cloud, runner/internal/attest, mcp/internal/attest, portal/apps/emisar_web/lib/emisar_web/runner_socket.ex, portal/apps/emisar_web/lib/emisar_web/runner_socket_drain.ex]
-updated: 2026-09-16
+updated: 2026-10-09
 ---
 
 # Runner wire protocol
@@ -403,6 +403,16 @@ For an otherwise-successful action, required JSON parse failures, output
 truncation, typed-result complexity/size failures, and schema mismatches use
 `validation_failed`. Timeout, cancellation, start failure, and an unsuccessful
 exit retain their execution status and never carry a structured result.
+
+For `validation_failed`, `reason` is a fixed code: `argument_invalid`,
+`reason_required`, `output_invalid_json`, `output_truncated`,
+`output_schema_unavailable`, `output_schema_mismatch`, `output_too_large`,
+`output_too_complex`, `output_redaction_invalid_json`, or
+`output_redaction_exceeded_limit`. Redacted human diagnostic detail remains in
+`error` and the local audit. Portal stores a recognized code separately for MCP;
+missing, malformed, and unrecognized reasons never become model-facing text or
+prevent finalization merely because the optional code is unknown. Portal-side
+output rejection uses its own classification against the trusted snapshot.
 
 Results are authenticated by the runner websocket, not end-to-end signed. The
 portal must not describe them as CA-verified runner receipts.

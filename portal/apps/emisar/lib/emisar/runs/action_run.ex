@@ -134,6 +134,21 @@ defmodule Emisar.Runs.ActionRun do
     field :local_audit_failed, :boolean, default: false
     field :reason_text, :string
     field :error_message, :string
+
+    field :failure_code, Ecto.Enum,
+      values: [
+        :argument_invalid,
+        :reason_required,
+        :output_invalid_json,
+        :output_truncated,
+        :output_schema_unavailable,
+        :output_schema_mismatch,
+        :output_too_large,
+        :output_too_complex,
+        :output_redaction_invalid_json,
+        :output_redaction_exceeded_limit
+      ]
+
     # Parsed JSON object validated against the pack's declared output schema by
     # the runner and re-validated by the portal before it is stored.
     field :structured_output, :map

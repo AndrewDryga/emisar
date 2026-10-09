@@ -298,6 +298,7 @@ defmodule EmisarWeb.MCP.Service do
       runbook_execution_id: run.runbook_execution_id,
       step_id: run.runbook_step_id,
       status: to_string(facts.status),
+      failure_code: facts.failure_code,
       created_at: run.inserted_at,
       finished_at: run.finished_at,
       exit_code: run.exit_code,

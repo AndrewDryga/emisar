@@ -75,6 +75,29 @@ defmodule Emisar.Runs.ActionRun.ChangesetTest do
   end
 
   describe "transition/3" do
+    test "casts only the fixed failure-code vocabulary" do
+      for code <- Ecto.Enum.values(ActionRun, :failure_code) do
+        changeset =
+          ActionRun.Changeset.transition(%ActionRun{}, :validation_failed, %{
+            failure_code: to_string(code)
+          })
+
+        assert changeset.valid?
+        assert changeset.changes == %{status: :validation_failed, failure_code: code}
+      end
+
+      changeset =
+        ActionRun.Changeset.transition(%ActionRun{}, :validation_failed, %{
+          failure_code: "private runner message"
+        })
+
+      refute changeset.valid?
+      assert "is invalid" in errors_on(changeset).failure_code
+      changeset = ActionRun.Changeset.create(base_attrs(%{failure_code: "argument_invalid"}))
+      assert changeset.valid?
+      refute Map.has_key?(changeset.changes, :failure_code)
+    end
+
     # A terminal result must stay recordable — rejecting it would leave the run
     # unacked and the runner's dedup ring replaying it forever — so the runner's
     # text is stripped instead. `executed_command` reaches the console panel and

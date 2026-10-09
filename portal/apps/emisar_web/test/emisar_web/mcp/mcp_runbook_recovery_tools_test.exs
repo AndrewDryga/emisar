@@ -2906,6 +2906,85 @@ defmodule EmisarWeb.MCPRunbookRecoveryToolsTest do
     refute Map.has_key?(gappy_summary, "stderr")
   end
 
+  test "wait snapshots, cursor tails and history expose only fixed validation codes", %{
+    conn: conn,
+    account: account,
+    subject: subject,
+    key: key
+  } do
+    runner = setup_runner!(account, subject, "coded-failures")
+    diagnostic = "private runner detail: do-not-relay"
+    codes = Ecto.Enum.dump_values(ActionRun, :failure_code)
+
+    for {code, index} <- Enum.with_index(codes, 1) do
+      run = create_mcp_history_run!(account, runner, key, index)
+      cursor = seed_cursor!(conn, run)
+
+      assert {:ok, finished} =
+               Fixtures.Runs.finish(run, %{
+                 "status" => "validation_failed",
+                 "reason" => code,
+                 "error" => diagnostic
+               })
+
+      assert finished.error_message == diagnostic
+
+      snapshot = call(conn, "wait_for_run", %{"run_id" => run.id, "timeout" => "0"})["run"]
+
+      tail =
+        call(conn, "wait_for_run", %{"run_id" => run.id, "cursor" => cursor, "timeout" => "0"})[
+          "run"
+        ]
+
+      assert snapshot["failure_code"] == code
+      assert tail["failure_code"] == code
+      refute Jason.encode!([snapshot, tail]) =~ diagnostic
+    end
+
+    unknown = create_mcp_history_run!(account, runner, key, 11)
+
+    assert {:ok, _} =
+             Fixtures.Runs.finish(unknown, %{
+               "status" => "validation_failed",
+               "reason" => diagnostic,
+               "error" => "argument_invalid"
+             })
+
+    success = create_mcp_history_run!(account, runner, key, 12)
+
+    assert {:ok, _} =
+             Fixtures.Runs.finish(success, %{
+               "status" => "success",
+               "reason" => "argument_invalid"
+             })
+
+    summaries = call(conn, "recent_runs", %{})["runs"]
+    assert Enum.sort(Enum.flat_map(summaries, &List.wrap(&1["failure_code"]))) == Enum.sort(codes)
+    refute Jason.encode!(summaries) =~ diagnostic
+
+    for id <- [unknown.id, success.id] do
+      refute Map.has_key?(Enum.find(summaries, &(&1["run_id"] == id)), "failure_code")
+    end
+
+    foreign = foreign_key_conn()
+
+    assert call(foreign, "wait_for_run", %{"run_id" => unknown.id, "timeout" => "0"})["error"][
+             "code"
+           ] == "run_not_found"
+
+    assert call(foreign, "recent_runs", %{})["runs"] == []
+    Fixtures.ApiKeys.mark_revoked(key)
+
+    denied =
+      rpc(conn, "tools/call", %{
+        "name" => "wait_for_run",
+        "arguments" => %{"run_id" => unknown.id, "timeout" => "0"}
+      })
+
+    assert denied.status == 401
+    refute denied.resp_body =~ diagnostic
+  end
+
   test "recent history states a terminal failure by status, never by the recorded cause", %{
     conn: conn,
     account: account,

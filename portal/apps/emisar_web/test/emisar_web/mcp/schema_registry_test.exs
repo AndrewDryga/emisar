@@ -308,6 +308,55 @@ defmodule EmisarWeb.MCP.SchemaRegistryTest do
            }
   end
 
+  test "run summaries and tails allow exactly the status-gated validation codes" do
+    registry = @schema_path |> File.read!() |> Jason.decode!()
+
+    codes =
+      ~w(argument_invalid reason_required output_invalid_json output_truncated output_schema_unavailable output_schema_mismatch output_too_large output_too_complex output_redaction_invalid_json output_redaction_exceeded_limit)
+
+    assert get_in(registry, ["$defs", "run_failure_code", "enum"]) == codes
+    assert Ecto.Enum.dump_values(Emisar.Runs.ActionRun, :failure_code) == codes
+
+    base = %{
+      "run_id" => "019f61cf-59b4-71d9-a78c-4ece74d1e163",
+      "operation_id" => "op_024NN9NMDZ1T76NARWCKM5A0D6",
+      "action_id" => "operations.health",
+      "pack_ref" => "operations@1.0.0/sha256:" <> String.duplicate("a", 64),
+      "runner_ref" => "db-primary~" <> String.duplicate("a", 32),
+      "status" => "validation_failed",
+      "created_at" => "2026-10-09T00:00:00Z"
+    }
+
+    for definition <- ~w(run_summary run_tail) do
+      bundled = Compiler.bundle!(%{"$ref" => "#/$defs/#{definition}"}, registry)
+      assert {:ok, schema} = JSONSchex.compile(bundled, format_assertion: true)
+      base = if definition == "run_tail", do: Map.put(base, "output", []), else: base
+      assert JSONSchex.validate(schema, base) == :ok
+
+      for code <- codes do
+        assert JSONSchex.validate(schema, Map.put(base, "failure_code", code)) == :ok
+
+        for status <- ~w(success failed error refused denied cancelled timed_out) do
+          rejected = Map.merge(base, %{"failure_code" => code, "status" => status})
+          assert {:error, _} = JSONSchex.validate(schema, rejected)
+        end
+      end
+
+      for value <- [
+            nil,
+            true,
+            1,
+            %{},
+            [],
+            "private message",
+            " argument_invalid",
+            "argument_invalid\n"
+          ] do
+        assert {:error, _} = JSONSchex.validate(schema, Map.put(base, "failure_code", value))
+      end
+    end
+  end
+
   test "the published pack action bound is the trusted manifest's own ceiling" do
     # list_packs emits every action the trusted manifest holds, with no take or
     # count guard on the path, so a lower bound here rejects a legitimate

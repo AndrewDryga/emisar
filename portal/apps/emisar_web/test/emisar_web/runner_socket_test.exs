@@ -763,6 +763,22 @@ defmodule EmisarWeb.RunnerSocketTest do
       assert finalized.status == :validation_failed
       assert finalized.structured_output == nil
       assert finalized.error_message == "runner sent an invalid structured output value"
+      assert finalized.failure_code == :output_invalid_json
+    end
+
+    test "unknown optional failure reasons are acknowledged without blocking persistence", %{
+      state: state,
+      run: run
+    } do
+      frame_in =
+        result_frame(run.request_id, "validation_failed", reason: %{"message" => "not a code"})
+
+      assert {:push, ack, _state} = RunnerSocket.handle_in({frame_in, text()}, state)
+      assert %{"type" => "ack_result"} = decode(ack)
+      finalized = Repo.get!(ActionRun, run.id)
+      assert finalized.status == :validation_failed
+      assert finalized.failure_code == nil
+      assert finalized.error_message == nil
     end
 
     test "an unpersistable result answers finalize_failed without echoing runner bytes", %{

@@ -146,6 +146,7 @@ defmodule Emisar.RunsTest do
 
       assert Runs.run_outcome_facts(run) == %{
                status: :sent,
+               failure_code: nil,
                terminal?: false,
                output_complete: nil,
                approval_pending?: false,
@@ -211,7 +212,9 @@ defmodule Emisar.RunsTest do
         %ActionRun{status: :error, reason_text: canary},
         %ActionRun{status: :denied, policy_reason: canary},
         %ActionRun{status: :refused, error_message: canary},
-        %ActionRun{status: :cancelled, reason_text: canary}
+        %ActionRun{status: :cancelled, reason_text: canary},
+        %ActionRun{status: :validation_failed, error_message: canary},
+        %ActionRun{status: :validation_failed, failure_code: canary}
       ]
 
       for run <- runs do
@@ -222,6 +225,29 @@ defmodule Emisar.RunsTest do
         # The facts are decided by status alone, so a run carrying untrusted
         # text produces exactly the same outcome as one without it.
         assert facts == without_text
+      end
+    end
+
+    test "exposes only known validation failure codes regardless of recorded text" do
+      for code <- Ecto.Enum.values(ActionRun, :failure_code) do
+        run = %ActionRun{
+          status: :validation_failed,
+          failure_code: code,
+          error_message: "private detail"
+        }
+
+        facts = Runs.run_outcome_facts(run)
+        assert facts.failure_code == code
+        refute inspect(facts) =~ "private detail"
+
+        for status <- Ecto.Enum.values(ActionRun, :status) -- [:validation_failed] do
+          assert Runs.run_outcome_facts(%{run | status: status}).failure_code == nil
+        end
+      end
+
+      for code <- [nil, :unknown, "argument_invalid\n", %{}, 1] do
+        assert Runs.run_outcome_facts(%ActionRun{status: :validation_failed, failure_code: code}).failure_code ==
+                 nil
       end
     end
 
@@ -5970,6 +5996,119 @@ defmodule Emisar.RunsTest do
   end
 
   describe "finalize_from_connection/5" do
+    test "persists every fixed code independently of human diagnostics and ignores replay" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      for code <- Ecto.Enum.values(ActionRun, :failure_code) do
+        {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+        payload = %{
+          "status" => "validation_failed",
+          "reason" => to_string(code),
+          "error" => "private runner detail"
+        }
+
+        assert {:ok, finished} = Fixtures.Runs.finish(run, payload)
+        assert finished.failure_code == code
+        assert finished.error_message == "private runner detail"
+        assert Repo.reload!(finished).failure_code == code
+
+        assert {:ok, replayed} =
+                 Fixtures.Runs.finish(finished, %{
+                   "status" => "success",
+                   "reason" => "argument_invalid"
+                 })
+
+        assert replayed.status == :validation_failed
+        assert replayed.failure_code == code
+        assert replayed.error_message == "private runner detail"
+      end
+    end
+
+    test "missing, malformed and free-text reasons do not block finalization or become codes" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      for reason <- [
+            nil,
+            "",
+            "unknown",
+            "argument invalid",
+            " argument_invalid",
+            "argument_invalid\n",
+            "argument_invalid\u202E",
+            %{"code" => "argument_invalid"},
+            ["argument_invalid"],
+            1,
+            true,
+            String.duplicate("x", 16_385)
+          ] do
+        {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+        assert {:ok, finished} =
+                 Fixtures.Runs.finish(run, %{"status" => "validation_failed", "reason" => reason})
+
+        assert finished.status == :validation_failed
+        assert finished.failure_code == nil
+        assert Runs.run_outcome_facts(finished).failure_code == nil
+      end
+
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, finished} =
+               Fixtures.Runs.finish(run, %{
+                 "status" => "validation_failed",
+                 "error" => "argument_invalid"
+               })
+
+      assert finished.error_message == "argument_invalid"
+      assert finished.failure_code == nil
+    end
+
+    test "other statuses never persist a runner's validation code" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      for status <-
+            ~w(success failed error timed_out cancelled unknown_action blocked_by_admission pack_hash_mismatch signature_invalid) do
+        {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+        assert {:ok, finished} =
+                 Fixtures.Runs.finish(run, %{"status" => status, "reason" => "argument_invalid"})
+
+        assert finished.failure_code == nil
+      end
+    end
+
+    test "a fixed-code run retains read permission and account isolation" do
+      account = Fixtures.Accounts.create_account()
+      member = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
+      subject = Fixtures.Subjects.subject_for(member)
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+      other_account = Fixtures.Accounts.create_account()
+
+      other_member =
+        Fixtures.Memberships.create_membership(account_id: other_account.id, role: "admin")
+
+      other_subject = Fixtures.Subjects.subject_for(other_member)
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
+
+      assert {:ok, finished} =
+               Fixtures.Runs.finish(run, %{
+                 "status" => "validation_failed",
+                 "reason" => "argument_invalid"
+               })
+
+      assert {:ok, %ActionRun{failure_code: :argument_invalid}} =
+               Runs.fetch_run_by_id(finished.id, subject)
+
+      assert Runs.fetch_run_by_id(finished.id, no_permissions_subject(account)) ==
+               {:error, :unauthorized}
+
+      assert Runs.fetch_run_by_id(finished.id, other_subject) == {:error, :not_found}
+    end
+
     test "persists bounded structured output and terminalizes hostile values" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
@@ -6007,6 +6146,7 @@ defmodule Emisar.RunsTest do
               %ActionRun{
                 status: :validation_failed,
                 structured_output: nil,
+                failure_code: :output_too_large,
                 error_message: "runner sent an invalid structured output value"
               }} =
                Runs.finalize_from_connection(
@@ -6027,7 +6167,12 @@ defmodule Emisar.RunsTest do
           ] do
         {:ok, hostile_run} = Runs.create_run(base_attrs(account.id, runner.id, typed_attrs))
 
-        assert {:ok, %ActionRun{status: :validation_failed, structured_output: nil}} =
+        assert {:ok,
+                %ActionRun{
+                  status: :validation_failed,
+                  structured_output: nil,
+                  failure_code: :output_too_complex
+                }} =
                  Runs.finalize_from_connection(
                    account.id,
                    runner.id,
@@ -6047,6 +6192,7 @@ defmodule Emisar.RunsTest do
               %ActionRun{
                 status: :validation_failed,
                 structured_output: nil,
+                failure_code: :output_schema_mismatch,
                 error_message: "runner structured output does not match the trusted schema"
               }} =
                Runs.finalize_from_connection(
@@ -6057,6 +6203,7 @@ defmodule Emisar.RunsTest do
                  %{
                    "request_id" => mismatched_run.request_id,
                    "status" => "success",
+                   "reason" => "argument_invalid",
                    "structured_output" => %{"ok" => "true"}
                  }
                )
@@ -6066,6 +6213,7 @@ defmodule Emisar.RunsTest do
       assert {:ok,
               %ActionRun{
                 status: :validation_failed,
+                failure_code: :output_schema_mismatch,
                 error_message: "runner omitted required structured output"
               }} =
                Runs.finalize_from_connection(
@@ -6081,6 +6229,7 @@ defmodule Emisar.RunsTest do
       assert {:ok,
               %ActionRun{
                 status: :validation_failed,
+                failure_code: :output_schema_mismatch,
                 error_message: "runner sent structured output for an untyped action"
               }} =
                Runs.finalize_from_connection(
@@ -6096,12 +6245,51 @@ defmodule Emisar.RunsTest do
                )
     end
 
+    test "Portal output rejection chooses its own code rather than runner diagnostics" do
+      account = Fixtures.Accounts.create_account()
+      runner = Fixtures.Runners.create_runner(account_id: account.id)
+
+      typed_attrs = %{
+        structured_output_expected: true,
+        output_schema_snapshot: %{"type" => "object"}
+      }
+
+      for output <- [nil, [], %{"value" => <<0>>}] do
+        {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id, typed_attrs))
+
+        payload = %{
+          "status" => "success",
+          "structured_output" => output,
+          "reason" => "argument_invalid",
+          "error" => "private diagnostic"
+        }
+
+        assert {:ok, finished} = Fixtures.Runs.finish(run, payload)
+        assert finished.failure_code == :output_invalid_json
+        assert finished.error_message == "runner sent an invalid structured output value"
+      end
+
+      {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id, typed_attrs))
+      run = Fixtures.Runs.clear_output_schema_snapshot(run)
+
+      payload = %{
+        "status" => "success",
+        "structured_output" => %{},
+        "reason" => "argument_invalid",
+        "error" => "private diagnostic"
+      }
+
+      assert {:ok, finished} = Fixtures.Runs.finish(run, payload)
+      assert finished.failure_code == :output_schema_unavailable
+      assert finished.error_message == "trusted output schema snapshot is unavailable"
+    end
+
     test "drops structured output attached to a stronger execution failure" do
       account = Fixtures.Accounts.create_account()
       runner = Fixtures.Runners.create_runner(account_id: account.id)
       {:ok, run} = Runs.create_run(base_attrs(account.id, runner.id))
 
-      assert {:ok, %ActionRun{status: :failed, structured_output: nil}} =
+      assert {:ok, %ActionRun{status: :failed, structured_output: nil, failure_code: nil}} =
                Runs.finalize_from_connection(
                  account.id,
                  runner.id,
@@ -6110,6 +6298,7 @@ defmodule Emisar.RunsTest do
                  %{
                    "request_id" => run.request_id,
                    "status" => "failed",
+                   "reason" => "output_schema_mismatch",
                    "structured_output" => %{"untrusted" => true}
                  }
                )
@@ -6135,18 +6324,27 @@ defmodule Emisar.RunsTest do
                runner.id,
                runner.connection_generation,
                runner.connection_lease_id,
-               %{"request_id" => sent.request_id, "status" => "success"}
+               %{
+                 "request_id" => sent.request_id,
+                 "status" => "validation_failed",
+                 "reason" => "argument_invalid"
+               }
              ) == {:error, :connection_superseded}
 
       assert Repo.reload!(sent).status == :sent
+      assert Repo.reload!(sent).failure_code == nil
 
-      assert {:ok, %ActionRun{status: :success}} =
+      assert {:ok, %ActionRun{status: :validation_failed, failure_code: :argument_invalid}} =
                Runs.finalize_from_connection(
                  account.id,
                  runner.id,
                  successor.connection_generation,
                  successor.connection_lease_id,
-                 %{"request_id" => sent.request_id, "status" => "success"}
+                 %{
+                   "request_id" => sent.request_id,
+                   "status" => "validation_failed",
+                   "reason" => "argument_invalid"
+                 }
                )
     end
 
@@ -6174,8 +6372,30 @@ defmodule Emisar.RunsTest do
                runner_b.id,
                runner_b.connection_generation,
                runner_b.connection_lease_id,
-               %{"request_id" => run.request_id, "status" => "success"}
+               %{
+                 "request_id" => run.request_id,
+                 "status" => "validation_failed",
+                 "reason" => "argument_invalid"
+               }
              ) == {:error, :unknown_request_id}
+
+      assert Repo.reload!(run).failure_code == nil
+
+      other_account = Fixtures.Accounts.create_account()
+
+      assert Runs.finalize_from_connection(
+               other_account.id,
+               runner_a.id,
+               runner_a.connection_generation,
+               runner_a.connection_lease_id,
+               %{
+                 "request_id" => run.request_id,
+                 "status" => "validation_failed",
+                 "reason" => "argument_invalid"
+               }
+             ) == {:error, :connection_superseded}
+
+      assert Repo.reload!(run).failure_code == nil
     end
 
     test "requires a request id" do

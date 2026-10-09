@@ -372,6 +372,7 @@
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
         "step_id": {"$ref": "#/$defs/step_id"},
         "status": {"$ref": "#/$defs/run_status"},
+        "failure_code": {"$ref": "#/$defs/run_failure_code"},
         "created_at": {"$ref": "#/$defs/timestamp"},
         "finished_at": {"$ref": "#/$defs/timestamp"},
         "exit_code": {"type": ["integer", "null"]},
@@ -389,6 +390,7 @@
       },
       "allOf": [
         {"oneOf": [{"required": ["runbook_execution_id", "step_id"]}, {"not": {"anyOf": [{"required": ["runbook_execution_id"]}, {"required": ["step_id"]}]}}]},
+        {"if": {"required": ["failure_code"]}, "then": {"properties": {"status": {"const": "validation_failed"}}}},
         {"if": {"properties": {"status": {"const": "pending_approval"}}}, "then": {"required": ["approval", "wait_until"]}},
         {"if": {"properties": {"status": {"const": "sent"}}}, "then": {"required": ["wait_until"]}},
         {"if": {"properties": {"status": {"enum": ["pending", "pending_approval", "sent", "running", "cancelling"]}}}, "then": {"required": ["next"]}},
@@ -902,6 +904,11 @@
         "denied"
       ]
     },
+    "run_failure_code": {
+      "type": "string",
+      "enum": ["argument_invalid", "reason_required", "output_invalid_json", "output_truncated", "output_schema_unavailable", "output_schema_mismatch", "output_too_large", "output_too_complex", "output_redaction_invalid_json", "output_redaction_exceeded_limit"],
+      "description": "Fixed validation-failure classification. Absent for other statuses or unrecognized diagnostics; never contains runner error text."
+    },
     "run_summary": {
       "type": "object",
       "required": ["run_id", "operation_id", "action_id", "pack_ref", "runner_ref", "status", "created_at"],
@@ -915,6 +922,7 @@
         "runbook_execution_id": {"$ref": "#/$defs/runbook_execution_id"},
         "step_id": {"$ref": "#/$defs/step_id"},
         "status": {"$ref": "#/$defs/run_status"},
+        "failure_code": {"$ref": "#/$defs/run_failure_code"},
         "created_at": {"$ref": "#/$defs/timestamp"},
         "finished_at": {"$ref": "#/$defs/timestamp"},
         "exit_code": {"type": ["integer", "null"]},
@@ -936,6 +944,10 @@
         "run_url": {"type": "string", "format": "uri", "maxLength": 2048}
       },
       "allOf": [
+        {
+          "if": {"required": ["failure_code"]},
+          "then": {"properties": {"status": {"const": "validation_failed"}}}
+        },
         {
           "oneOf": [
             {"required": ["runbook_execution_id", "step_id"]},

@@ -333,7 +333,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev := e.baseEvent(req, audit.EventValidationFailed, now)
 		ev.ActionID = req.ActionID
 		ev.Error = "reason required"
-		return e.refuse(ctx, ev, StatusValidationFailed, req.ActionID, "reason required"), nil
+		result := e.refuse(ctx, ev, StatusValidationFailed, req.ActionID, "reason_required")
+		result.Error = ev.Error
+		return result, nil
 	}
 
 	// Admission check — defense in depth. The control plane already
@@ -381,7 +383,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (*Result, error) {
 		ev := e.actionEvent(req, act, audit.EventValidationFailed, now)
 		ev.Request = &audit.RequestInfo{Reason: req.Reason}
 		ev.Error = detail
-		return e.refuse(ctx, ev, StatusValidationFailed, act.ID, detail), nil
+		result := e.refuse(ctx, ev, StatusValidationFailed, act.ID, "argument_invalid")
+		result.Error = detail
+		return result, nil
 	}
 
 	// Render argv/env templates against validated args.

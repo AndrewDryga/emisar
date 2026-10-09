@@ -1,7 +1,7 @@
 ---
 name: mcp-api
 sources: [portal/apps/emisar_web/priv/mcp/api-schemas.json, portal/apps/emisar_web/lib/emisar_web/controllers/mcp, portal/apps/emisar_web/lib/emisar_web/controllers/mcp_rpc_controller.ex, portal/apps/emisar/lib/emisar/mcp_operations.ex, mcp/protocol.go]
-updated: 2026-09-23
+updated: 2026-10-09
 ---
 
 # MCP action API specification
@@ -1530,8 +1530,14 @@ Every run summary carries `operation_id`, exact `action_id` and `pack_ref`,
 `runner_ref`, `status`, and `created_at`; terminal rows may add `finished_at`.
 Status is the closed outcome classification: a failed execution, control-plane
 error, timeout, trust refusal, policy denial, and operator cancellation remain
-distinct. The summary never copies runner output, a runner's recorded failure
-text, or a policy reason. Where the exact cause matters, follow `run_url`. A run
+distinct. A `validation_failed` summary may carry `failure_code` from the closed
+set `argument_invalid`, `reason_required`, `output_invalid_json`,
+`output_truncated`, `output_schema_unavailable`, `output_schema_mismatch`,
+`output_too_large`, `output_too_complex`, `output_redaction_invalid_json`, and
+`output_redaction_exceeded_limit`. Unrecognized or missing codes are omitted;
+other statuses never carry one. The same classification appears in cursor-based
+output tails. The summary never copies a runner's recorded failure
+text or a policy reason. Where the exact cause matters, follow `run_url`. A run
 a human reviewed instead carries its own `review` receipt, described in
 [Review receipt](#review-receipt).
 When a typed action succeeds, the summary may also carry the exact redacted
