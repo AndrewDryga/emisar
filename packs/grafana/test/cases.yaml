@@ -1,4 +1,4 @@
-services: [grafana]
+services: [grafana, grafana-response]
 versions:
   - version: "13.2.3"
     digest: "@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572"
@@ -11,10 +11,27 @@ env:
 defaults:
   expect:
     stdout_not_empty: true
+    stderr_not_contains:
+      - packtest-canary-grafana-unrequested-783c
+      - packtest-canary-grafana-annotation-f80a
 cases:
   - action: grafana.alerting_rules
     expect:
-      stdout_contains: [groups]
+      json:
+        /status: success
+        /data/groups/0/name: packtest-rule-group
+        /data/groups/0/file: packtest-alerts
+        /data/groups/0/rules/0/uid: packtest-paused-rule
+        /data/groups/0/rules/0/name: Packtest paused rule
+        /data/groups/0/rules/0/type: alerting
+        /data/groups/0/rules/0/isPaused: true
+        /data/groups/0/rules/0/labels/team: platform
+        /data/groups/0/rules/0/labels/environment: packtest
+      stdout_not_contains:
+        - '"query"'
+        - '"annotations"'
+        - '"alerts"'
+        - packtest-canary-grafana-annotation-f80a
   - action: grafana.alerting_state
     expect:
       stdout_contains: ["[]"]
@@ -76,4 +93,687 @@ cases:
       stderr_contains: ["401"]
   - action: grafana.version
     expect:
-      stdout_contains: [buildInfo, version]
+      json:
+        /buildInfo/version: "13.2.3"
+        /buildInfo/env: production
+        /licenseInfo/edition: Open Source
+        /licenseInfo/expiry: 0
+      stdout_not_contains:
+        - '"panels"'
+        - '"apps"'
+        - '"datasources"'
+        - '"postHogToken"'
+        - '"publicDashboardAccessToken"'
+  - name: grafana.alerting_rules-ok
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=ok"]
+    expect:
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"query\"","\"annotations\"","\"alerts\"","\"notificationSettings\"","\"lastError\""]
+      json:
+        "/data/groups/0/name": "fixture-group"
+        "/data/groups/0/rules/0/uid": "fixture-alert"
+        "/data/groups/0/rules/0/health": "error"
+        "/data/groups/0/rules/0/state": "firing"
+        "/data/groups/0/rules/0/labels/summary": "Full label λ"
+        "/data/groups/0/rules/0/labels/password": "[REDACTED]"
+        "/data/groups/0/rules/0/totals/alerting": 2
+        "/data/groups/0/rules/0/totals/error": 1
+        "/data/groups/1/name": "second-group"
+        "/data/groups/1/rules/0/uid": "fixture-recording"
+        "/data/groups/1/rules/0/type": "recording"
+        "/data/groups/1/rules/0/labels": {}
+        "/data/groups/1/rules/0/totals": {}
+        "/data/totals/firing": 1
+        "/data/totals/error": 1
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-core-jq
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+      PATH: "/opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=ok"]
+    expect:
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"query\"","\"annotations\"","\"alerts\"","\"notificationSettings\"","\"lastError\""]
+      json:
+        "/data/groups/0/name": "fixture-group"
+        "/data/groups/0/rules/0/uid": "fixture-alert"
+        "/data/groups/0/rules/0/health": "error"
+        "/data/groups/0/rules/0/state": "firing"
+        "/data/groups/0/rules/0/labels/summary": "Full label λ"
+        "/data/groups/0/rules/0/labels/password": "[REDACTED]"
+        "/data/groups/0/rules/0/totals/alerting": 2
+        "/data/groups/0/rules/0/totals/error": 1
+        "/data/groups/1/name": "second-group"
+        "/data/groups/1/rules/0/uid": "fixture-recording"
+        "/data/groups/1/rules/0/type": "recording"
+        "/data/groups/1/rules/0/labels": {}
+        "/data/groups/1/rules/0/totals": {}
+        "/data/totals/firing": 1
+        "/data/totals/error": 1
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-empty
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=empty"]
+    expect:
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"query\"","\"annotations\"","\"alerts\"","\"notificationSettings\"","\"lastError\""]
+      json:
+        "/status": "success"
+        "/data/groups": []
+        "/data/totals": {}
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-many-rules
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=many-rules"]
+    expect:
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"query\"","\"annotations\"","\"alerts\"","\"notificationSettings\"","\"lastError\""]
+      json:
+        "/data/groups/0/rules/0/uid": "rule-0"
+        "/data/groups/0/rules/199/uid": "rule-199"
+        "/data/groups/0/totals/firing": 200
+        "/data/totals/firing": 200
+        "/data/totals/error": 200
+        "/data/groups/1/rules/0/uid": "fixture-recording"
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-near-output
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=near-output"]
+    expect:
+      stdout_contains: ["𐐨𐐨𐐨𐐨","END"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"query\"","\"annotations\"","\"alerts\"","\"notificationSettings\"","\"lastError\""]
+      json:
+        "/data/groups/1/rules/0/uid": "fixture-recording"
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-bad-json
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=bad-json"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-multiple-json
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=multiple-json"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-wrong-root
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-root"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-wrong-status
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-status"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-continuation
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=continuation"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-bad-cursor
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=bad-cursor"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-wrong-groups
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-groups"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-wrong-rules
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-rules"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-wrong-labels
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-labels"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-wrong-rule
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-rule"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-wrong-totals
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-totals"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete alerting-rules JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.version-ok
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=ok"]
+    expect:
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"panels\"","\"apps\"","\"datasources\"","\"postHogToken\"","\"publicDashboardAccessToken\""]
+      json:
+        "/buildInfo/version": "13.2.3"
+        "/buildInfo/commit": "fixture-commit"
+        "/buildInfo/edition": "Open Source"
+        "/buildInfo/env": "production"
+        "/licenseInfo/expiry": 0
+        "/licenseInfo/edition": "Open Source"
+        "/licenseInfo/stateInfo": ""
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-near-output
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=near-output"]
+    expect:
+      stdout_contains: ["𐐨𐐨𐐨𐐨","END"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"panels\"","\"apps\"","\"datasources\"","\"postHogToken\"","\"publicDashboardAccessToken\""]
+      json:
+        "/buildInfo/version": "13.2.3"
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-bad-json
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=bad-json"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete version JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-multiple-json
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=multiple-json"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete version JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-wrong-root
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-root"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete version JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-wrong-build
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-build"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete version JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-wrong-license
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-license"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete version JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-wrong-version
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-version"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete version JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-wrong-expiry
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=wrong-expiry"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["invalid or incomplete version JSON"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.alerting_rules-over-output
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=over-output"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["output exceeds the 262144-byte budget; no partial result returned"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-oversize-raw
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=oversize-raw"]
+    expect:
+      status: failure
+      exit: [63]
+      stderr_contains: ["client code 63","HTTP 200"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-transport
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=transport"]
+    expect:
+      status: failure
+      exit: [18]
+      stderr_contains: ["client code 18","HTTP 200"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-redirect
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=redirect"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["unexpected HTTP 302"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+          stdout_not_contains: [redirected]
+  - name: grafana.alerting_rules-http-error
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=http-error"]
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["client code 22","HTTP 403","fixture scope denied"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/prometheus/grafana/api/v1/rules
+            /requests/0/query/limit_alerts/0: "0"
+  - name: grafana.alerting_rules-invalid-credentials
+    action: grafana.alerting_rules
+    env:
+      GRAFANA_PASSWORD: packtest-canary-grafana-invalid-2e4a
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["HTTP 401", '"message"']
+      stdout_not_contains: ['"message"', '"buildInfo"', '"groups"']
+  - name: grafana.version-over-output
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=over-output"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["output exceeds the 8192-byte budget; no partial result returned"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-oversize-raw
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=oversize-raw"]
+    expect:
+      status: failure
+      exit: [63]
+      stderr_contains: ["client code 63","HTTP 200"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-transport
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=transport"]
+    expect:
+      status: failure
+      exit: [18]
+      stderr_contains: ["client code 18","HTTP 200"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-redirect
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=redirect"]
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: ["unexpected HTTP 302"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+          stdout_not_contains: [redirected]
+  - name: grafana.version-http-error
+    action: grafana.version
+    env:
+      GRAFANA_URL: http://grafana-response:8080
+    arrange:
+      - argv: [curl, -fsS, "http://grafana-response:8080/configure?mode=http-error"]
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["client code 22","HTTP 403","fixture scope denied"]
+      stdout_not_contains: ["packtest-canary-grafana-unrequested-783c","\"buildInfo\"","\"groups\""]
+    probes:
+      - argv: [curl, -fsS, http://grafana-response:8080/probe/state]
+        expect:
+          json:
+            /requests/0/auth_ok: true
+            /requests/0/path: /api/frontend/settings
+  - name: grafana.version-invalid-credentials
+    action: grafana.version
+    env:
+      GRAFANA_PASSWORD: packtest-canary-grafana-invalid-2e4a
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["HTTP 401", '"message"']
+      stdout_not_contains: ['"message"', '"buildInfo"', '"groups"']

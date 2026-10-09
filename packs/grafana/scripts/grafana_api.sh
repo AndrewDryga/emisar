@@ -74,8 +74,99 @@ safe_datasources() {
   '
 }
 
+# These two status reads never forward the settings/query/config document.
+# Slurp requires exactly one typed JSON value; omitted labels/totals are valid
+# in native empty or recording-rule responses, but wrong types are not.
+safe_alerting_rules() {
+  jq -cse '
+    def optional($key; check): if has($key) then .[$key] | check else true end;
+    def strings: type == "object" and all(.[]; type == "string");
+    def totals: type == "object" and all(.[]; type == "number" and . >= 0 and . == floor);
+    def rule:
+      type == "object" and (.uid | type == "string" and length > 0)
+      and (.name | type == "string") and (.type | type == "string")
+      and (.isPaused | type == "boolean") and (.health | type == "string")
+      and (.lastEvaluation | type == "string") and optional("state"; type == "string")
+      and optional("labels"; strings) and optional("totals"; totals);
+    def group:
+      type == "object" and (.name | type == "string") and (.file | type == "string")
+      and (.folderUid | type == "string") and (.interval | type == "number" and . >= 0)
+      and (.lastEvaluation | type == "string") and optional("totals"; totals)
+      and (.rules | type == "array" and all(.[]; rule));
+    if length != 1 or (.[0] | type != "object") then error("invalid document") else .[0] end
+    | if .status != "success" or (.data | type != "object")
+         or (.data.groups | type != "array" or (all(.[]; group) | not))
+         or (.data | optional("totals"; totals) | not)
+         or (.data | optional("groupNextToken"; type == "string" and length == 0) | not)
+      then error("invalid or incomplete rule document") else . end
+    | {status, data: {
+        totals: (.data.totals // {}),
+        groups: [.data.groups[] | {name, file, folderUid, interval, lastEvaluation,
+          totals: (.totals // {}), rules: [.rules[] |
+            {uid, name, type, isPaused, health, lastEvaluation,
+             labels: (.labels // {}), totals: (.totals // {})}
+            + (if has("state") then {state} else {} end)]}]
+      }}
+  ' "$1"
+}
+
+safe_version() {
+  jq -cse '
+    if length != 1 or (.[0] | type != "object") then error("invalid document") else .[0] end
+    | if (.buildInfo | type != "object") or (.licenseInfo | type != "object")
+         or ([.buildInfo.version, .buildInfo.commit, .buildInfo.edition, .buildInfo.env,
+              .licenseInfo.edition, .licenseInfo.stateInfo] | all(.[]; type == "string") | not)
+         or (.licenseInfo.expiry | type != "number" or . != floor)
+      then error("invalid build or license information") else . end
+    | {buildInfo: (.buildInfo | {version, commit, edition, env}),
+       licenseInfo: (.licenseInfo | {expiry, edition, stateInfo})}
+  ' "$1"
+}
+
+projected_request() {
+  projection=$1
+  budget=$2
+  shift 2
+  umask 077
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/emisar-grafana-status.XXXXXX")
+  trap 'rm -f -- "$tmp/response" "$tmp/status" "$tmp/diagnostic" "$tmp/projected"; rmdir -- "$tmp"' EXIT HUP INT TERM
+  rc=0
+  request --output "$tmp/response" --write-out '%{http_code}' "$@" \
+    >"$tmp/status" 2>"$tmp/diagnostic" || rc=$?
+  status=$(tr -d '\n' <"$tmp/status")
+  if [ "$rc" -ne 0 ]; then
+    printf 'Grafana %s request failed (client code %s, HTTP %s)\n' "$mode" "$rc" "$status" >&2
+    # A genuine HTTP rejection is useful. A partial successful body may contain
+    # credentials, so transport/size failures never replay it or curl diagnostics.
+    case "$rc:$status" in
+      22:4??|22:5??) head -c 8192 "$tmp/response" >&2 ;;
+    esac
+    exit "$rc"
+  fi
+  case "$status" in
+    2??) ;;
+    *) printf 'Grafana returned unexpected HTTP %s\n' "$status" >&2; exit 1 ;;
+  esac
+  if [ "$(wc -c <"$tmp/response")" -gt 4194304 ]; then
+    printf '%s\n' 'Grafana response exceeds the 4 MiB transport budget' >&2
+    exit 1
+  fi
+  if ! "$projection" "$tmp/response" >"$tmp/projected" 2>"$tmp/diagnostic"; then
+    printf 'Grafana returned invalid or incomplete %s JSON\n' "$mode" >&2
+    exit 1
+  fi
+  if [ "$(wc -c <"$tmp/projected")" -gt "$budget" ]; then
+    printf 'Grafana %s output exceeds the %s-byte budget; no partial result returned\n' "$mode" "$budget" >&2
+    exit 1
+  fi
+  cat "$tmp/projected"
+}
+
 case "$mode" in
-  alerting-rules) request "$api_base/api/prometheus/grafana/api/v1/rules" ;;
+  alerting-rules)
+    projected_request safe_alerting_rules 262144 --get --data-urlencode 'limit_alerts=0' \
+      "$api_base/api/prometheus/grafana/api/v1/rules"
+    ;;
   alerting-state) request "$api_base/api/alertmanager/grafana/api/v2/alerts" ;;
   # Captured, not piped live: a pipeline exits with jq's status, so a 401 from
   # curl would be projected into an empty array and read as "no datasources".
@@ -98,7 +189,7 @@ case "$mode" in
   orgs) request "$api_base/api/orgs" ;;
   settings) request "$api_base/api/admin/settings" ;;
   users) request "$api_base/api/org/users" ;;
-  version) request "$api_base/api/frontend/settings" ;;
+  version) projected_request safe_version 8192 "$api_base/api/frontend/settings" ;;
 
   # --get + --data-urlencode so the search term is encoded by curl rather than
   # pasted into the query string, which is what the inline form did.

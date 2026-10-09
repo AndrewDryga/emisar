@@ -1,9 +1,12 @@
 schema_version: 1
 id: grafana.version
-title: GET /api/frontend/settings (build info)
+title: Show Grafana build and license information
 kind: script
 risk: low
-description: Show build info, edition, license expiry.
+description: >
+  Show build version, commit, edition and environment, plus license expiry,
+  edition and state. Omit frontend settings, plugins, datasources and analytics
+  fields. Fail on invalid JSON or a projection exceeding 8 KiB.
 side_effects: ["One API call.", "Read-only."]
 args: []
 execution:
@@ -15,6 +18,7 @@ execution:
   timeout: 15s
 output:
   parser: json
+  parser_required: true
   max_stdout_bytes: 131072
   max_stderr_bytes: 8192
 examples:

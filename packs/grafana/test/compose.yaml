@@ -6,9 +6,24 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: packtest-canary-grafana-61df
     volumes:
       - ${EMISAR_ROOT}/packs/grafana/test/fixtures/datasource.yaml:/etc/grafana/provisioning/datasources/packtest.yaml:ro
+      - ${EMISAR_ROOT}/packs/grafana/test/fixtures/alerting.yaml:/etc/grafana/provisioning/alerting/packtest.yaml:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/health"]
       interval: 2s
       start_period: 30s
       start_interval: 1s
       retries: 30
+
+  # Supplement the native Grafana cases with HTTP contract and size faults.
+  # This helper stays independent of the primary Grafana version matrix.
+  grafana-response:
+    image: python:3.14.7-alpine3.24@sha256:9e9fde4d32eedce0b661d9ab91e826b62dddf28e928c230ec55f1866cac66b01
+    entrypoint: [python3, /fixture/response-server.py]
+    volumes:
+      - ${EMISAR_ROOT}/packs/grafana/test/fixtures/response-server.py:/fixture/response-server.py:ro
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      start_period: 10s
+      start_interval: 1s
+      retries: 10
