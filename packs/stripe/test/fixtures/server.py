@@ -12,6 +12,11 @@ STATE = copy.deepcopy(SEED)
 WRITES = 0
 REQUESTS = 0
 REPLAYS = {}
+CREDIT_NOTE_REQUESTS = []
+CREDIT_NOTE_REFUNDS = []
+ALLOCATION_FIELDS = ("credit_amount", "refund_amount", "out_of_band_amount")
+CREDIT_NOTE_FIELDS = {"invoice", "amount", "reason", "email_type", *ALLOCATION_FIELDS,
+                      "refunds[0][refund]", "refunds[0][amount_refunded]", "refunds[0][type]"}
 COLLECTIONS = {"customers": "customer", "payment_intents": "payment_intent", "charges": "charge", "refunds": "refund",
                "invoices": "invoice", "invoice_payments": "invoice_payment", "subscriptions": "subscription", "subscription_items": "subscription_item",
                "disputes": "dispute", "events": "event", "balance_transactions": "balance_transaction", "payouts": "payout",
@@ -21,6 +26,52 @@ FILTERS = {"customers": {"email"}, "payment_intents": {"customer"}, "charges": {
            "invoice_payments": {"invoice", "status"}, "subscriptions": {"customer", "status"}, "subscription_items": {"subscription"},
            "disputes": {"charge", "payment_intent"}, "events": {"type"}, "balance_transactions": {"source", "payout", "currency", "type"},
            "payouts": {"status"}, "credit_notes": {"customer", "invoice"}}
+
+
+def credit_note(params):
+    """Validate decoded provider parameters independently of the client."""
+    if set(params) - CREDIT_NOTE_FIELDS:
+        raise ValueError("parameter_unknown")
+    invoice = STATE["invoice"]
+    if params.get("invoice") != invoice["id"]:
+        raise ValueError("resource_missing")
+    if invoice["status"] not in ("open", "paid"):
+        raise ValueError("invoice_not_finalized")
+    amount = int(params.get("amount", "0"))
+    if amount <= 0:
+        raise ValueError("parameter_invalid_integer")
+    allocations = {}
+    for field in ALLOCATION_FIELDS:
+        allocations[field] = int(params.get(field, "0"))
+        # Recorded live regression: omission and an explicit zero differ.
+        if field in params and allocations[field] <= 0:
+            raise ValueError("parameter_invalid_integer")
+    linked = 0
+    refund_fields = {"refunds[0][refund]", "refunds[0][amount_refunded]", "refunds[0][type]"}
+    if set(params) & refund_fields:
+        if not refund_fields <= set(params):
+            raise ValueError("invalid_refund_allocation")
+        linked = int(params["refunds[0][amount_refunded]"])
+        if (params["refunds[0][refund]"] != STATE["refund"]["id"] or params["refunds[0][type]"] != "refund"
+                or linked <= 0 or linked > STATE["refund"]["amount"]):
+            raise ValueError("invalid_refund_allocation")
+    pre_payment = min(amount, invoice["amount_remaining"])
+    post_payment = amount - pre_payment
+    if sum(allocations.values()) + linked != post_payment:
+        raise ValueError("credit_note_invalid_dispositions")
+    note = copy.deepcopy(SEED["credit_note"])
+    note.update(invoice=invoice["id"], customer=invoice["customer"], currency=invoice["currency"],
+                amount=amount, reason=params.get("reason"), status="issued", voided_at=None,
+                pre_payment_amount=pre_payment, post_payment_amount=post_payment,
+                type="post_payment" if post_payment else "pre_payment",
+                out_of_band_amount=allocations["out_of_band_amount"] or None,
+                customer_balance_transaction="cbtxn_creditnote" if allocations["credit_amount"] else None,
+                refunds=[])
+    if linked:
+        note["refunds"].append({"refund": params["refunds[0][refund]"], "amount_refunded": linked})
+    if allocations["refund_amount"]:
+        note["refunds"].append({"refund": "re_creditnote", "amount_refunded": allocations["refund_amount"]})
+    return note
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -40,7 +91,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/health":
             return self.send({"ok": True})
         if parsed.path == "/probe":
-            return self.send({"state": STATE, "writes": WRITES, "requests": REQUESTS})
+            return self.send({"state": STATE, "writes": WRITES, "requests": REQUESTS,
+                              "credit_note_requests": CREDIT_NOTE_REQUESTS, "credit_note_refunds": CREDIT_NOTE_REFUNDS})
         self.handle_api("GET")
 
     def do_POST(self):
@@ -56,6 +108,10 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["subscription"]["cancel_at_period_end"] = True
             elif scenario == "paused_collection":
                 STATE["subscription"]["pause_collection"] = {"behavior": "keep_as_draft"}
+            elif scenario == "paid_invoice":
+                STATE["invoice"].update(status="paid", amount_paid=1200, amount_remaining=0)
+            elif scenario == "partially_paid_invoice":
+                STATE["invoice"].update(status="open", amount_paid=900, amount_remaining=300)
             return self.send({"arranged": scenario})
         self.handle_api("POST")
 
@@ -85,6 +141,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({"error": {"code": "resource_missing"}}, 404)
         collection = parts[1]
         kind = COLLECTIONS.get(collection)
+        if collection == "credit_notes" and (parts == ["v1", "credit_notes"] or parts[-1] == "preview"):
+            # Probe only billing fields, never credentials or arbitrary bodies.
+            CREDIT_NOTE_REQUESTS.append({"method": method, "path": parsed.path,
+                                         "params": {k: v for k, v in params.items() if k in CREDIT_NOTE_FIELDS}})
         if any("missing" in part for part in parts):
             return self.send({"error": {"code": "resource_missing"}}, 404)
         if collection == "balance" and method == "GET":
@@ -98,6 +158,11 @@ class Handler(BaseHTTPRequestHandler):
             obj = copy.deepcopy(STATE[kind])
             if collection == "invoices":
                 obj["id"] = "upcoming_in_fixture"
+            else:
+                try:
+                    obj = credit_note(params)
+                except ValueError as exc:
+                    return self.send({"error": {"code": str(exc), "message": "packtest-canary-private-metadata-120a"}}, 400)
             return self.send(obj)
         if method == "GET":
             nested = len(parts) == 4
@@ -210,7 +275,20 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 if params.get("email_type") != "none":
                     return self.send({"error": {"code": "invalid_request"}}, 400)
-                obj.update(amount=int(params["amount"]), status="issued")
+                # Replay lookup above must precede state-dependent validation.
+                try:
+                    note = credit_note(params)
+                except ValueError as exc:
+                    return self.send({"error": {"code": str(exc), "message": "packtest-canary-private-metadata-120a"}}, 400)
+                obj.clear()
+                obj.update(note)
+                invoice = STATE["invoice"]
+                invoice["amount_remaining"] -= note["pre_payment_amount"]
+                invoice["amount_due"] -= note["pre_payment_amount"]
+                STATE["customer"]["balance"] -= int(params.get("credit_amount", "0"))
+                if "refund_amount" in params:
+                    CREDIT_NOTE_REFUNDS.append({"id": "re_creditnote", "amount": int(params["refund_amount"])})
+                    STATE["charge"]["amount_refunded"] += int(params["refund_amount"])
         else:
             return self.send({"error": {"code": "invalid_request"}}, 400)
         WRITES += 1

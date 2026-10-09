@@ -420,9 +420,9 @@ def run(client, op):
         path, kind = path_for("/v1/credit_notes/{credit_note}/void"), "credit_note"
     elif op in ("preview_credit_note", "create_credit_note"):
         path, kind = "/v1/credit_notes", "credit_note"
-        params = {"invoice": arg("invoice"), "amount": integer("amount"), "reason": arg("reason"),
-                  "credit_amount": integer("credit_amount"), "refund_amount": integer("refund_amount"),
-                  "out_of_band_amount": integer("out_of_band_amount")}
+        params = {"invoice": arg("invoice"), "amount": integer("amount"), "reason": arg("reason")}
+        params.update({name: integer(name) for name in ("credit_amount", "refund_amount", "out_of_band_amount")
+                       if integer(name) > 0})
         existing = integer("existing_refund_amount")
         if bool(arg("existing_refund")) != bool(existing):
             raise Failure("Existing refund ID and its allocation must be supplied together")

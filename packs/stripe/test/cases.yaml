@@ -22,6 +22,8 @@ defaults:
     - packtest-canary-fingerprint-55a1
     - packtest-canary-receipt-732a
     - packtest-canary-invoice-919a
+    stderr_not_contains:
+    - packtest-canary-private-metadata-120a
 cases:
 - name: stripe.dispute-dp-prefix
   action: stripe.dispute
@@ -854,6 +856,19 @@ cases:
   expect:
     json:
       "/result/id": cn_fixture
+      /result/pre_payment_amount: 500
+      /result/post_payment_amount: 0
+      /result/refunds: []
+  probes:
+  - name: Preview omits explicit zeros without changing billing state
+    argv: [curl, -fsS, http://stripe-api:8080/probe]
+    expect:
+      json:
+        /writes: 0
+        /state/invoice/amount_remaining: 1200
+        /credit_note_requests/0/method: GET
+        /credit_note_requests/0/path: /v1/credit_notes/preview
+        /credit_note_requests/0/params: {invoice: in_fixture, amount: '500', reason: duplicate}
 - action: stripe.create_credit_note
   args:
     invoice: in_fixture
@@ -870,6 +885,9 @@ cases:
   expect:
     json:
       "/result/id": cn_fixture
+      /result/pre_payment_amount: 500
+      /result/post_payment_amount: 0
+      /result/refunds: []
   probes:
   - name: Provider retained the billing correction
     argv:
@@ -880,6 +898,12 @@ cases:
       json:
         "/writes": 1
         "/state/credit_note/correction_applied": true
+        /state/invoice/amount_remaining: 700
+        /state/invoice/amount_due: 700
+        /credit_note_refunds: []
+        /credit_note_requests/0/method: POST
+        /credit_note_requests/0/path: /v1/credit_notes
+        /credit_note_requests/0/params: {invoice: in_fixture, amount: '500', reason: duplicate, email_type: none}
 - action: stripe.void_credit_note
   args:
     credit_note: cn_fixture
@@ -1374,3 +1398,514 @@ cases:
     - "/tmp/billing-evidence/oversized.pdf"
   env:
     STRIPE_EVIDENCE_DIR: "/tmp/billing-evidence"
+- name: stripe.preview_credit_note-omitted-defaults
+  action: stripe.preview_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate"}
+  expect:
+    json:
+      /result/pre_payment_amount: 500
+      /result/post_payment_amount: 0
+      /result/refunds: []
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 0
+        /state/invoice/amount_remaining: 1200
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate"}
+        /credit_note_requests/0/method: "GET"
+        /credit_note_requests/0/path: "/v1/credit_notes/preview"
+- name: stripe.preview_credit_note-credit_amount
+  action: stripe.preview_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","credit_amount":500,"refund_amount":0,"out_of_band_amount":0}
+  expect:
+    json:
+      /result/pre_payment_amount: 0
+      /result/post_payment_amount: 500
+      /result/refunds: []
+      /result/customer_balance_transaction: "cbtxn_creditnote"
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 0
+        /requests: 1
+        /state/invoice/amount_remaining: 0
+        /state/customer/balance: 0
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","credit_amount":"500"}
+        /credit_note_requests/0/method: "GET"
+        /credit_note_requests/0/path: "/v1/credit_notes/preview"
+- name: stripe.preview_credit_note-refund_amount
+  action: stripe.preview_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","credit_amount":0,"refund_amount":500,"out_of_band_amount":0}
+  expect:
+    json:
+      /result/pre_payment_amount: 0
+      /result/post_payment_amount: 500
+      /result/refunds: [{"refund":"re_creditnote","amount_refunded":500}]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 0
+        /requests: 1
+        /state/invoice/amount_remaining: 0
+        /state/customer/balance: 0
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","refund_amount":"500"}
+        /credit_note_requests/0/method: "GET"
+        /credit_note_requests/0/path: "/v1/credit_notes/preview"
+- name: stripe.preview_credit_note-out_of_band_amount
+  action: stripe.preview_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","credit_amount":0,"refund_amount":0,"out_of_band_amount":500}
+  expect:
+    json:
+      /result/pre_payment_amount: 0
+      /result/post_payment_amount: 500
+      /result/refunds: []
+      /result/out_of_band_amount: 500
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 0
+        /requests: 1
+        /state/invoice/amount_remaining: 0
+        /state/customer/balance: 0
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","out_of_band_amount":"500"}
+        /credit_note_requests/0/method: "GET"
+        /credit_note_requests/0/path: "/v1/credit_notes/preview"
+- name: stripe.preview_credit_note-mixed-positive-allocations
+  action: stripe.preview_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","credit_amount":200,"refund_amount":200,"out_of_band_amount":100}
+  expect:
+    json:
+      /result/pre_payment_amount: 0
+      /result/post_payment_amount: 500
+      /result/out_of_band_amount: 100
+      /result/customer_balance_transaction: "cbtxn_creditnote"
+      /result/refunds: [{"refund":"re_creditnote","amount_refunded":200}]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 0
+        /state/customer/balance: 0
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","credit_amount":"200","refund_amount":"200","out_of_band_amount":"100"}
+        /credit_note_requests/0/method: "GET"
+        /credit_note_requests/0/path: "/v1/credit_notes/preview"
+- name: stripe.preview_credit_note-partial-payment-linked-refund
+  action: stripe.preview_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/partially_paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","credit_amount":0,"refund_amount":0,"out_of_band_amount":0,"existing_refund":"re_fixture","existing_refund_amount":200}
+  expect:
+    json:
+      /result/pre_payment_amount: 300
+      /result/post_payment_amount: 200
+      /result/refunds: [{"refund":"re_fixture","amount_refunded":200}]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 0
+        /state/invoice/amount_remaining: 300
+        /state/invoice/amount_due: 1200
+        /state/refund/id: "re_fixture"
+        /state/refund/amount: 500
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","refunds[0][refund]":"re_fixture","refunds[0][amount_refunded]":"200","refunds[0][type]":"refund"}
+        /credit_note_requests/0/method: "GET"
+        /credit_note_requests/0/path: "/v1/credit_notes/preview"
+- name: stripe.preview_credit_note-unpaired-existing-refund
+  action: stripe.preview_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","existing_refund":"re_fixture"}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["Existing refund ID and its allocation must be supplied together"]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 0
+        /writes: 0
+        /credit_note_requests: []
+- name: stripe.preview_credit_note-allocations-exceed-total
+  action: stripe.preview_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","credit_amount":300,"refund_amount":300}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["Credit dispositions exceed the credit note amount"]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 0
+        /writes: 0
+        /credit_note_requests: []
+- name: stripe.preview_credit_note-paid-underallocation
+  action: stripe.preview_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","credit_amount":499}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["\"http_status\": 400","credit_note_invalid_dispositions","\"request_id\": \"req_fixture\""]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 1
+        /writes: 0
+        /state/customer/balance: 0
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","credit_amount":"499"}
+        /credit_note_requests/0/method: "GET"
+        /credit_note_requests/0/path: "/v1/credit_notes/preview"
+- name: stripe.preview_credit_note-permission-denied
+  action: stripe.preview_credit_note
+  env: {"STRIPE_ACCOUNT_ID":"acct_denied"}
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate"}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["\"http_status\": 403","permission_denied","\"request_id\": \"req_fixture\""]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 1
+        /writes: 0
+        /state/invoice/amount_remaining: 1200
+        /credit_note_requests: []
+- name: stripe.create_credit_note-omitted-defaults
+  action: stripe.create_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture"}
+  expect:
+    json:
+      /result/pre_payment_amount: 500
+      /result/post_payment_amount: 0
+      /result/refunds: []
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 1
+        /state/invoice/amount_remaining: 700
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","email_type":"none"}
+        /credit_note_requests/0/method: "POST"
+        /credit_note_requests/0/path: "/v1/credit_notes"
+- name: stripe.create_credit_note-credit_amount
+  action: stripe.create_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture","credit_amount":500,"refund_amount":0,"out_of_band_amount":0}
+  expect:
+    json:
+      /result/pre_payment_amount: 0
+      /result/post_payment_amount: 500
+      /result/refunds: []
+      /result/customer_balance_transaction: "cbtxn_creditnote"
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 1
+        /requests: 2
+        /state/invoice/amount_remaining: 0
+        /state/customer/balance: -500
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","email_type":"none","credit_amount":"500"}
+        /credit_note_requests/0/method: "POST"
+        /credit_note_requests/0/path: "/v1/credit_notes"
+- name: stripe.create_credit_note-refund_amount
+  action: stripe.create_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture","credit_amount":0,"refund_amount":500,"out_of_band_amount":0}
+  expect:
+    json:
+      /result/pre_payment_amount: 0
+      /result/post_payment_amount: 500
+      /result/refunds: [{"refund":"re_creditnote","amount_refunded":500}]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 1
+        /requests: 2
+        /state/invoice/amount_remaining: 0
+        /state/customer/balance: 0
+        /credit_note_refunds: [{"id":"re_creditnote","amount":500}]
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","email_type":"none","refund_amount":"500"}
+        /credit_note_requests/0/method: "POST"
+        /credit_note_requests/0/path: "/v1/credit_notes"
+- name: stripe.create_credit_note-out_of_band_amount
+  action: stripe.create_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture","credit_amount":0,"refund_amount":0,"out_of_band_amount":500}
+  expect:
+    json:
+      /result/pre_payment_amount: 0
+      /result/post_payment_amount: 500
+      /result/refunds: []
+      /result/out_of_band_amount: 500
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 1
+        /requests: 2
+        /state/invoice/amount_remaining: 0
+        /state/customer/balance: 0
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","email_type":"none","out_of_band_amount":"500"}
+        /credit_note_requests/0/method: "POST"
+        /credit_note_requests/0/path: "/v1/credit_notes"
+- name: stripe.create_credit_note-mixed-positive-allocations
+  action: stripe.create_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture","credit_amount":200,"refund_amount":200,"out_of_band_amount":100}
+  expect:
+    json:
+      /result/pre_payment_amount: 0
+      /result/post_payment_amount: 500
+      /result/out_of_band_amount: 100
+      /result/customer_balance_transaction: "cbtxn_creditnote"
+      /result/refunds: [{"refund":"re_creditnote","amount_refunded":200}]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 1
+        /state/customer/balance: -200
+        /credit_note_refunds: [{"id":"re_creditnote","amount":200}]
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","email_type":"none","credit_amount":"200","refund_amount":"200","out_of_band_amount":"100"}
+        /credit_note_requests/0/method: "POST"
+        /credit_note_requests/0/path: "/v1/credit_notes"
+- name: stripe.create_credit_note-partial-payment-linked-refund
+  action: stripe.create_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/partially_paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture","credit_amount":0,"refund_amount":0,"out_of_band_amount":0,"existing_refund":"re_fixture","existing_refund_amount":200}
+  expect:
+    json:
+      /result/pre_payment_amount: 300
+      /result/post_payment_amount: 200
+      /result/refunds: [{"refund":"re_fixture","amount_refunded":200}]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /writes: 1
+        /state/invoice/amount_remaining: 0
+        /state/invoice/amount_due: 900
+        /state/refund/id: "re_fixture"
+        /state/refund/amount: 500
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","email_type":"none","refunds[0][refund]":"re_fixture","refunds[0][amount_refunded]":"200","refunds[0][type]":"refund"}
+        /credit_note_requests/0/method: "POST"
+        /credit_note_requests/0/path: "/v1/credit_notes"
+- name: stripe.create_credit_note-unpaired-existing-refund
+  action: stripe.create_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture","existing_refund_amount":200}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["Existing refund ID and its allocation must be supplied together"]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 0
+        /writes: 0
+        /credit_note_requests: []
+- name: stripe.create_credit_note-allocations-exceed-total
+  action: stripe.create_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture","credit_amount":300,"refund_amount":300}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["Credit dispositions exceed the credit note amount"]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 0
+        /writes: 0
+        /credit_note_requests: []
+- name: stripe.create_credit_note-paid-underallocation
+  action: stripe.create_credit_note
+  arrange:
+  - argv: ["curl","-fsS","-X","POST","http://stripe-api:8080/arrange/paid_invoice"]
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture","credit_amount":499}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["\"http_status\": 400","credit_note_invalid_dispositions","\"request_id\": \"req_fixture\""]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 2
+        /writes: 0
+        /state/customer/balance: 0
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","email_type":"none","credit_amount":"499"}
+        /credit_note_requests/0/method: "POST"
+        /credit_note_requests/0/path: "/v1/credit_notes"
+- name: stripe.create_credit_note-permission-denied
+  action: stripe.create_credit_note
+  env: {"STRIPE_ACCOUNT_ID":"acct_denied"}
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture"}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["\"http_status\": 403","permission_denied","\"request_id\": \"req_fixture\""]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 1
+        /writes: 0
+        /state/invoice/amount_remaining: 1200
+        /credit_note_requests: []
+- name: stripe.preview_credit_note-negative-amount
+  action: stripe.preview_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","refund_amount":-1}
+  expect:
+    status: "failure"
+    reason: "argument_invalid"
+    error_contains: ["must be >= 0"]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 0
+        /writes: 0
+- name: stripe.create_credit_note-amount-over-bound
+  action: stripe.create_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture","out_of_band_amount":100000000}
+  expect:
+    status: "failure"
+    reason: "argument_invalid"
+    error_contains: ["argument out_of_band_amount: must be <= 9.9999999e+07"]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 0
+        /writes: 0
+- name: stripe.create_credit_note-currency-mismatch
+  action: stripe.create_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","operation_id":"correction_fixture","currency":"eur","mode":"test"}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["Invoice currency differs from the approved currency"]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 1
+        /writes: 0
+        /credit_note_requests: []
+        /state/invoice/amount_remaining: 1200
+- name: stripe.create_credit_note-mode-mismatch
+  action: stripe.create_credit_note
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","operation_id":"correction_fixture","currency":"usd","mode":"live"}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["Approved mode does not match STRIPE_MODE"]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 1
+        /writes: 0
+        /credit_note_requests: []
+        /state/invoice/amount_remaining: 1200
+- name: stripe.create_credit_note-ambiguous-provider-failure
+  action: stripe.create_credit_note
+  env: {"STRIPE_ACCOUNT_ID":"acct_ambiguous"}
+  args: {"invoice":"in_fixture","amount":500,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture"}
+  expect:
+    status: "failure"
+    exit: [1]
+    stderr_contains: ["\"http_status\": 500","api_error","\"request_id\": \"req_fixture\"","unknown; reconcile before another correction"]
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 2
+        /writes: 1
+        /state/invoice/amount_remaining: 700
+        /state/credit_note/correction_applied: true
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"500","reason":"duplicate","email_type":"none"}
+- name: stripe.create_credit_note-idempotent-replay
+  action: stripe.create_credit_note
+  arrange:
+  - argv: ["env","ARG_INVOICE=in_fixture","ARG_AMOUNT=1000","ARG_REASON=duplicate","ARG_CURRENCY=usd","ARG_MODE=test","ARG_OPERATION_ID=correction_fixture","ARG_EXISTING_REFUND=","ARG_EXISTING_REFUND_AMOUNT=0","ARG_CREDIT_AMOUNT=0","ARG_REFUND_AMOUNT=0","ARG_OUT_OF_BAND_AMOUNT=0","python3","/packs/stripe/scripts/stripe.py","create_credit_note"]
+    expect:
+      stdout_contains: ["\"pre_payment_amount\":1000","\"post_payment_amount\":0"]
+  args: {"invoice":"in_fixture","amount":1000,"reason":"duplicate","currency":"usd","mode":"test","operation_id":"correction_fixture"}
+  expect:
+    json:
+      /result/pre_payment_amount: 1000
+      /result/post_payment_amount: 0
+      /result/refunds: []
+  probes:
+  - name: Verify decoded wire fields and billing effects
+    argv: ["curl","-fsS","http://stripe-api:8080/probe"]
+    expect:
+      json:
+        /requests: 4
+        /writes: 1
+        /state/invoice/amount_remaining: 200
+        /state/credit_note/pre_payment_amount: 1000
+        /credit_note_refunds: []
+        /credit_note_requests/0/params: {"invoice":"in_fixture","amount":"1000","reason":"duplicate","email_type":"none"}
+        /credit_note_requests/1/params: {"invoice":"in_fixture","amount":"1000","reason":"duplicate","email_type":"none"}
