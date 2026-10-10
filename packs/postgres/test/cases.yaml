@@ -5,6 +5,8 @@ versions:
     default: true
   - version: "17.11"
     digest: "@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675"
+  - version: "16.15"
+    digest: "@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d"
 secret_env: [PGPASSWORD]
 env:
   PGDATABASE: testdb
@@ -16,10 +18,73 @@ cases:
     expect:
       stdout_contains: [active]
   - action: postgres.bgwriter_stats
+    expect:
+      stdout_contains: [buffers_clean, buffers_alloc, stats_reset]
     probes:
       - argv: [psql, -XAt, -c, "SELECT 'bgwriter-row' FROM pg_stat_bgwriter"]
         expect:
           stdout_contains: [bgwriter-row]
+  - name: postgres.bgwriter-stats-separate-checkpointer
+    action: postgres.bgwriter_stats
+    versions: ["17.11", "18.6"]
+    arrange:
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -f, /packs/postgres/test/fixtures/checkpoint.sql]
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -c, "SELECT 'checkpoint-ready' FROM pg_stat_checkpointer WHERE num_requested > 0 AND buffers_written > 0"]
+        expect:
+          stdout_contains: [checkpoint-ready]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: [buffers_clean, buffers_alloc, num_timed, num_requested, buffers_written, stats_reset]
+  - name: postgres.bgwriter-stats-combined-checkpointer
+    action: postgres.bgwriter_stats
+    versions: ["16.15"]
+    arrange:
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -f, /packs/postgres/test/fixtures/checkpoint.sql]
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -c, "SELECT 'checkpoint-ready' FROM pg_stat_bgwriter WHERE checkpoints_req > 0 AND buffers_checkpoint > 0"]
+        expect:
+          stdout_contains: [checkpoint-ready]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: [buffers_clean, buffers_alloc, checkpoints_timed, checkpoints_req, buffers_checkpoint, stats_reset]
+  - name: postgres.progress-vacuum-active
+    action: postgres.progress_vacuum
+    arrange:
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -f, /packs/postgres/test/fixtures/vacuum_progress.sql]
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            nohup env PGAPPNAME=packtest-vacuum-progress
+            PGOPTIONS='-c vacuum_cost_delay=100ms -c vacuum_cost_limit=1 -c statement_timeout=120s'
+            psql -XAt -v ON_ERROR_STOP=1 -c 'VACUUM (DISABLE_PAGE_SKIPPING) packtest_vacuum_progress'
+            >/tmp/packtest-vacuum-progress.log 2>&1 &
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -c, "SELECT 'vacuum-progress-ready' FROM pg_stat_progress_vacuum p WHERE relid = 'packtest_vacuum_progress'::regclass AND phase = 'scanning heap' AND heap_blks_scanned > 0 AND heap_blks_scanned < heap_blks_total AND COALESCE(to_jsonb(p)->>'num_dead_item_ids', to_jsonb(p)->>'num_dead_tuples')::bigint > 0"]
+        expect:
+          stdout_contains: [vacuum-progress-ready]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: [packtest_vacuum_progress, scanning heap]
+      stdout_not_contains: ["|0\n", "||"]
+    cleanup:
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -c, "SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE application_name = 'packtest-vacuum-progress'"]
+  - name: postgres.seq-scan-offenders-strict-filter
+    action: postgres.seq_scan_offenders
+    arrange:
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -f, /packs/postgres/test/fixtures/seq_scans_setup.sql]
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -f, /packs/postgres/test/fixtures/seq_scans_reset.sql]
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -f, /packs/postgres/test/fixtures/seq_scans_sequential.sql]
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -f, /packs/postgres/test/fixtures/seq_scans_index.sql]
+      - argv: [psql, -XAt, -v, "ON_ERROR_STOP=1", -f, /packs/postgres/test/fixtures/seq_scans_ready.sql]
+        expect:
+          stdout_contains: [seq-scans-ready]
+        retry_for: 10s
+        retry_every: 250ms
+    expect:
+      stdout_contains: [public.packtest_seq_indexless, "|100.00|"]
+      stdout_not_contains: [packtest_seq_exact_half, packtest_seq_index_dominated, packtest_seq_threshold]
   - action: postgres.connections
     expect:
       stdout_contains: [psql]
@@ -181,6 +246,23 @@ cases:
       stderr_contains: [no password supplied]
   - name: postgres.uptime-unavailable-service
     action: postgres.uptime
+    env: {PGHOST: 127.0.0.2}
+    expect:
+      status: failure
+      exit: [2]
+      reason_contains: [process exited with code 2]
+      stderr_contains: [Connection refused]
+  - name: postgres.bgwriter-stats-missing-credentials
+    action: postgres.bgwriter_stats
+    unset_env: [PGPASSWORD]
+    expect:
+      status: failure
+      exit: [2]
+      reason_contains: [process exited with code 2]
+      stderr_contains: [no password supplied]
+      stderr_not_contains: [Password for user, password authentication failed]
+  - name: postgres.bgwriter-stats-unavailable-service
+    action: postgres.bgwriter_stats
     env: {PGHOST: 127.0.0.2}
     expect:
       status: failure

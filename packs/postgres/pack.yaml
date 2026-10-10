@@ -2,7 +2,7 @@ schema_version: 1
 
 id: postgres
 name: Postgres operations
-version: 0.2.20
+version: 0.2.21
 # Versions below this ran the reads that return live query text (activity_detail,
 # slow_queries and the other pg_stat_activity and pg_stat_statements reads) at
 # low risk, so they auto-ran under a policy that gates medium. They fail closed.

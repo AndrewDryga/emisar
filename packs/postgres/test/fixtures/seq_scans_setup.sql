@@ -1,0 +1,12 @@
+CREATE TABLE packtest_seq_indexless (id integer) WITH (autovacuum_enabled = false);
+CREATE TABLE packtest_seq_exact_half (id integer PRIMARY KEY) WITH (autovacuum_enabled = false);
+CREATE TABLE packtest_seq_threshold (id integer) WITH (autovacuum_enabled = false);
+CREATE TABLE packtest_seq_index_dominated (id integer PRIMARY KEY) WITH (autovacuum_enabled = false);
+INSERT INTO packtest_seq_indexless SELECT generate_series(1, 100001);
+INSERT INTO packtest_seq_exact_half SELECT generate_series(1, 100001);
+INSERT INTO packtest_seq_threshold SELECT generate_series(1, 100000);
+INSERT INTO packtest_seq_index_dominated SELECT generate_series(1, 100001);
+ANALYZE packtest_seq_indexless;
+ANALYZE packtest_seq_exact_half;
+ANALYZE packtest_seq_threshold;
+ANALYZE packtest_seq_index_dominated;

@@ -3,16 +3,23 @@ id: postgres.bgwriter_stats
 title: pg_stat_bgwriter
 kind: exec
 risk: low
-description: Show background writer + checkpoint stats since stats reset.
-side_effects: ["One SELECT.", "Read-only."]
+description: Show labeled background writer and checkpoint statistics since stats reset. On PostgreSQL 17 and later, include the separate checkpointer view; earlier servers report both in the background writer view. Counters retain each server version's native names and meaning.
+side_effects: ["Up to three SELECTs.", "Read-only."]
 args: []
 execution:
   command:
-    binary: psql
+    binary: /bin/sh
     argv:
-      - "-XAt"
-      - "-c"
-      - "SELECT * FROM pg_stat_bgwriter;"
+      - -c
+      - |
+        set -eu
+        exec psql -Xx --no-password -v ON_ERROR_STOP=1 <<'SQL'
+        SELECT * FROM pg_stat_bgwriter;
+        SELECT current_setting('server_version_num')::integer >= 170000 AS separate_checkpointer \gset
+        \if :separate_checkpointer
+        SELECT * FROM pg_stat_checkpointer;
+        \endif
+        SQL
   timeout: 10s
 output:
   parser: text

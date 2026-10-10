@@ -3,7 +3,7 @@ id: postgres.progress_vacuum
 title: pg_stat_progress_vacuum
 kind: exec
 risk: low
-description: Show in-flight VACUUMs with phase + heap_blks_scanned.
+description: Show in-flight VACUUMs with phase, heap block progress and the dead-item counter on PostgreSQL 16 and later.
 side_effects: ["One SELECT.", "Read-only."]
 args: []
 execution:
@@ -12,7 +12,7 @@ execution:
     argv:
       - "-XAt"
       - "-c"
-      - "SELECT pid, datname, p.relid::regclass AS table, phase, heap_blks_total, heap_blks_scanned, heap_blks_vacuumed, num_dead_tuples FROM pg_stat_progress_vacuum p;"
+      - "SELECT pid, datname, p.relid::regclass AS table, phase, heap_blks_total, heap_blks_scanned, heap_blks_vacuumed, COALESCE(to_jsonb(p)->>'num_dead_item_ids', to_jsonb(p)->>'num_dead_tuples')::bigint AS num_dead_item_ids FROM pg_stat_progress_vacuum p;"
   timeout: 10s
 output:
   parser: text
