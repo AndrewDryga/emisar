@@ -10,6 +10,14 @@ never `next_page_token` or `continuation_token`. When a non-secret value
 genuinely must ship under such a name, prove it with a behavior case that
 asserts the real value round-trips unredacted.
 
+**Exact public metadata exception.** The built-in JSON field rule preserves
+`id_token_signing_alg_values_supported` and
+`token_endpoint_auth_methods_supported`, the two public OIDC discovery fields
+qualified by `oidc.discovery` behavior cases. This is a case-sensitive allowlist,
+not an exemption for every `_supported` suffix. Credential fields such as
+`client_secret_supported` still mask. The allowed fields' values still pass
+through all credential and authored rules, including nested-field masking.
+
 **Why.** The runner's `json-secret-field` and `secret-assignment` default
 redaction rules rewrite any string under a secret-named key to `[REDACTED]`
 before output leaves the host — unconditionally, with no entropy or value

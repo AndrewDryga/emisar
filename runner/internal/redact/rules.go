@@ -29,6 +29,8 @@ type Rule struct {
 	// Only the exact built-in definition can preserve operational integers.
 	// Authored rules with the same name retain their own replacement semantics.
 	builtinSecretAssignment bool
+	// The public OIDC field exception also binds to the complete built-in rule.
+	builtinJSONSecretField bool
 }
 
 // LiteralSet compiles the values of ONE masking concern — today an action's
@@ -86,7 +88,8 @@ func CompileRule(r actionspec.RedactionRule) (Rule, error) {
 			repl = "[REDACTED]"
 		}
 		return Rule{Name: r.Name, Replacement: repl, regex: re,
-			builtinSecretAssignment: isBuiltinSecretAssignment(r)}, nil
+			builtinSecretAssignment: isBuiltinRule(r, "secret-assignment"),
+			builtinJSONSecretField:  isBuiltinRule(r, "json-secret-field")}, nil
 	case "literal":
 		if r.Literal == "" {
 			return Rule{}, fmt.Errorf("redaction rule %s: missing literal", r.Name)
@@ -100,8 +103,8 @@ func CompileRule(r actionspec.RedactionRule) (Rule, error) {
 	return Rule{}, fmt.Errorf("redaction rule %s: invalid type %q", r.Name, r.Type)
 }
 
-func isBuiltinSecretAssignment(rule actionspec.RedactionRule) bool {
-	if rule.Name != "secret-assignment" || rule.Type != "regex" {
+func isBuiltinRule(rule actionspec.RedactionRule, name string) bool {
+	if rule.Name != name || rule.Type != "regex" {
 		return false
 	}
 	for _, builtin := range DefaultRules() {
@@ -313,6 +316,9 @@ func (r Rule) applyContext(s string, truncated, jsonDocument bool) (string, int)
 		if r.builtinSecretAssignment {
 			return r.applySecretAssignments(s, truncated, jsonDocument)
 		}
+		if r.builtinJSONSecretField {
+			return r.applyJSONSecretFields(s)
+		}
 		count := len(r.regex.FindAllStringIndex(s, -1))
 		if count == 0 {
 			return s, 0
@@ -333,6 +339,30 @@ func (r Rule) applyContext(s string, truncated, jsonDocument bool) (string, int)
 		return maskAll(s, r.literals, r.Replacement, truncated)
 	}
 	return s, 0
+}
+
+func (r Rule) applyJSONSecretFields(s string) (string, int) {
+	var output []byte
+	end, count := 0, 0
+	for _, match := range r.regex.FindAllStringSubmatchIndex(s, -1) {
+		// This exact built-in pattern starts its first capture with an ASCII
+		// quoted key. OIDC discovery uses these two public, case-sensitive names.
+		// There is no suffix exception: client_secret_supported still masks.
+		prefix := s[match[2]:match[3]]
+		key, _, _ := strings.Cut(prefix[1:], `"`)
+		if key == "id_token_signing_alg_values_supported" || key == "token_endpoint_auth_methods_supported" {
+			continue
+		}
+		output = append(output, s[end:match[0]]...)
+		output = r.regex.ExpandString(output, r.Replacement, s, match)
+		end = match[1]
+		count++
+	}
+	if count == 0 {
+		return s, 0
+	}
+	output = append(output, s[end:]...)
+	return string(output), count
 }
 
 func (r Rule) applySecretAssignments(s string, truncated, jsonDocument bool) (string, int) {

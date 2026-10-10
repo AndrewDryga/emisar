@@ -12,6 +12,9 @@ cases:
       json:
         /issuer: https://oidc
         /jwks_uri: https://oidc/keys
+        /id_token_signing_alg_values_supported/0: RS256
+        /token_endpoint_auth_methods_supported/0: client_secret_basic
+        /token_endpoint_auth_methods_supported/1: private_key_jwt
 
   - action: oidc.validate_discovery
     args: {issuer: https://oidc}

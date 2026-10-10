@@ -138,6 +138,8 @@ func (e *Engine) redactJSONStrings(value any) (any, []Hit) {
 // credential. This preserves reviewed rules such as json-secret-field and
 // pack-local `("PrivateKey":)"..."` rules without applying regex replacement
 // bytes directly inside the caller's potentially escape-heavy JSON string.
+// The exact built-in rule spares its two public OIDC metadata names; values
+// still recurse through every rule, and authored field rules still replace them.
 func (e *Engine) jsonFieldReplacement(key string) (string, []Hit, bool) {
 	probe, err := json.Marshal(map[string]string{key: ""})
 	if err != nil {
