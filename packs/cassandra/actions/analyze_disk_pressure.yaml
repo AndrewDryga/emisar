@@ -6,15 +6,19 @@ kind: script
 risk: low
 
 description: >
-  Run a packaged shell script that inspects filesystem usage of the
-  Cassandra data and commitlog directories. Read-only. Use as a first
-  step when disk pressure is suspected. Output is human-readable; do not
-  parse it.
+  Show filesystem usage and sizes for every data directory and the commitlog
+  directory in the selected cassandra.yaml. Include a separately configured
+  local system data directory. Show up to 20 largest immediate entries per
+  data root and, optionally, one literal keyspace's tables. Return metadata,
+  not file contents. Missing configuration, unsupported storage syntax,
+  unavailable roots or measurement failures fail the read without a root-disk
+  fallback. This is selected local configuration, not proof of the running
+  JVM's effective configuration.
 
 side_effects:
   - Reads filesystem metadata (df, du counts).
   - Does not modify Cassandra data or configuration.
-  - May create temporary files inside the runner's work directory.
+  - Reads the complete selected configuration file, capped at 1 MiB, without returning its contents.
 
 search_terms:
   - disk full
@@ -25,9 +29,10 @@ args:
     type: string
     required: false
     default: ""
-    description: Optional keyspace name to focus the analysis on.
+    description: Optional literal keyspace name, up to Cassandra's 48 ASCII word characters; no glob patterns.
     validation:
-      pattern: "^[a-zA-Z0-9_.*-]{0,80}$"
+      max_length: 48
+      pattern: "^[A-Za-z0-9_]{0,48}$"
 
 execution:
   script:

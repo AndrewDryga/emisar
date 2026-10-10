@@ -47,6 +47,18 @@ func TestValidatePackJQFilters(t *testing.T) {
 			wantErrMsg: "fixture.heredoc_gsub (gsub)",
 		},
 		{
+			name:   "Python heredoc is not a jq filter",
+			id:     "fixture.python_regex",
+			script: "#!/bin/bash\nexec python3 -I - <<'PY'\nimport re\ndef scan(value):\n    return re.match(r'^[a-z]+$', value)\nscan('path')\nPY\n",
+		},
+		{
+			name:       "jq after Python heredoc is still checked",
+			id:         "fixture.python_then_jq",
+			script:     "#!/bin/bash\npython3 -I - <<'PY'\nprint('ready')\nPY\njq -r 'gsub(\"a\"; \"b\")'\n",
+			wantErr:    true,
+			wantErrMsg: "fixture.python_then_jq (gsub)",
+		},
+		{
 			name:       "unquoted escaped filter calls gsub",
 			id:         "fixture.escaped_gsub",
 			program:    `jq -n gsub\(\"a\"\;\"b\"\)`,

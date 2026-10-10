@@ -1,12 +1,11 @@
 schema_version: 1
 id: cassandra.nodetool_clientstats
-title: nodetool clientstats
+title: Count connected clients by user
 kind: exec
 risk: low
 description: >
-  List the clients connected to this node — count per user, driver, and protocol
-  version. The read before cutting a node out of service, and the one that finds
-  an old driver still talking to it.
+  Count this node's connected clients by authenticated user, with the total.
+  Use cassandra.nodetool_clientstats_all for connection addresses and drivers.
 side_effects: ["One JMX call.", "Read-only."]
 args: []
 execution:

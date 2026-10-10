@@ -8,8 +8,13 @@ services:
         PACKTEST_IMAGE: ${PACKTEST_IMAGE:-cassandra:${PACKTEST_VERSION:-5.0.9-bookworm}${PACKTEST_DIGEST-}}
     image: emisar-packtest-cassandra-tools:latest
     network_mode: service:cassandra
+    # The service-owned storage grant this action needs; both pinned images
+    # have cassandra group999. The runner remains the nonroot65532 identity.
+    group_add: ["999"]
     volumes:
       - cassandra_data:/var/lib/cassandra:ro
+      - cassandra_extra_data:/srv/cassandra extra data:ro
+      - cassandra_commitlog:/srv/cassandra commitlog:ro
 
   cassandra:
     build:
@@ -51,6 +56,10 @@ services:
       retries: 30
     volumes:
       - cassandra_data:/var/lib/cassandra
+      - cassandra_extra_data:/srv/cassandra extra data
+      - cassandra_commitlog:/srv/cassandra commitlog
 
 volumes:
   cassandra_data:
+  cassandra_extra_data:
+  cassandra_commitlog:

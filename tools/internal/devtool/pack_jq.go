@@ -61,6 +61,12 @@ func validatePackJQFilters(input packActionLintInput) error {
 		if !ok {
 			continue
 		}
+		// Other embedded languages have their own match/scan/sub functions.
+		// With no jq spelling anywhere, this source cannot be a static jq
+		// invocation; do not interpret a Python heredoc as a jq filter.
+		if !strings.Contains(source, "jq") {
+			continue
+		}
 		if used := jqOptionalBuiltinsUsed(source); len(used) > 0 {
 			failures = append(failures,
 				fmt.Sprintf("%s (%s)", action.ID, strings.Join(used, ", ")))

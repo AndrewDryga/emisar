@@ -63,8 +63,32 @@ cases:
     expect:
       stdout_contains: [pending tasks]
   - action: cassandra.nodetool_compactionhistory
+    arrange: &real_history
+      - argv: [cqlsh, --disable-history, -e, "CREATE TABLE IF NOT EXISTS packtest.history_old (id int PRIMARY KEY, value text); CREATE TABLE IF NOT EXISTS packtest.history_new (id int PRIMARY KEY, value text);", "127.0.0.1", "9042"]
+      - argv: [nodetool, disableautocompaction, packtest, history_old, history_new]
+      - argv: [cqlsh, --disable-history, -e, "INSERT INTO packtest.history_old (id, value) VALUES (1, 'first');", "127.0.0.1", "9042"]
+      - argv: [nodetool, flush, packtest, history_old]
+      - argv: [cqlsh, --disable-history, -e, "INSERT INTO packtest.history_old (id, value) VALUES (2, 'second');", "127.0.0.1", "9042"]
+      - argv: [nodetool, flush, packtest, history_old]
+      - argv: [nodetool, compact, packtest, history_old]
+      - argv: [cqlsh, --disable-history, -e, "INSERT INTO packtest.history_new (id, value) VALUES (1, 'first');", "127.0.0.1", "9042"]
+      - argv: [nodetool, flush, packtest, history_new]
+      - argv: [cqlsh, --disable-history, -e, "INSERT INTO packtest.history_new (id, value) VALUES (2, 'second');", "127.0.0.1", "9042"]
+      - argv: [nodetool, flush, packtest, history_new]
+      - argv: [nodetool, compact, packtest, history_new]
+      - argv: [bash, /packs/cassandra/test/fixtures/check_history.sh]
+        retry_for: 60s
+        retry_every: 5s
     expect:
-      stdout_contains: [Compaction History]
+      stdout_contains: [Compaction History, history_new, history_old, "showing"]
+
+  - name: cassandra.nodetool_compactionhistory-limit-one
+    action: cassandra.nodetool_compactionhistory
+    args: {limit: 1}
+    arrange: *real_history
+    expect:
+      stdout_contains: [Compaction History, history_new, "showing 1 of"]
+      stdout_not_contains: [history_old]
   - action: cassandra.nodetool_getconcurrentcompactors
     expect:
       stdout_contains: [Current concurrent compactors]
@@ -74,7 +98,39 @@ cases:
   - action: cassandra.analyze_disk_pressure
     args: {keyspace_filter: packtest}
     expect:
-      stdout_contains: [packtest, events]
+      stdout_contains: [packtest, events, /srv/cassandra extra data, /srv/cassandra commitlog]
+      stdout_not_contains: [disk-config-extra-fixture-42c8]
+    probes:
+      - name: the live node uses both data roots and the custom commitlog
+        argv: [cqlsh, -e, "SELECT name, value FROM system_views.settings WHERE name IN ('data_file_directories', 'commitlog_directory');", "127.0.0.1", "9042"]
+        expect:
+          stdout_contains: [/var/lib/cassandra/data, /srv/cassandra extra data, /srv/cassandra commitlog]
+
+  - name: cassandra.analyze_disk_pressure-refuses-keyspace-symlink-escape
+    action: cassandra.analyze_disk_pressure
+    args: {keyspace_filter: escapeproof}
+    expect:
+      status: failure
+      exit: [1]
+      stderr_contains: [keyspace path escapes configured data root]
+      stdout_not_contains: [cassandra-outside-sentinel-9e31]
+
+  - name: cassandra.analyze_disk_pressure-refuses-parent-traversal
+    action: cassandra.analyze_disk_pressure
+    args: {keyspace_filter: ".."}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [keyspace_filter]
+      stdout_not_contains: [cassandra-parent-sentinel-4dd0]
+  - name: cassandra.analyze_disk_pressure-parser-contract
+    action: cassandra.analyze_disk_pressure
+    arrange:
+      - argv: [python3, -I, /packs/cassandra/test/fixtures/parser_contract.py]
+        expect:
+          stdout_contains: [supplemental storage/history checks passed]
+    expect:
+      stdout_contains: [/srv/cassandra extra data, /srv/cassandra commitlog]
   - action: cassandra.nodetool_listsnapshots
     expect:
       stdout_contains: [Snapshot Details]
@@ -365,6 +421,18 @@ cases:
   - action: cassandra.nodetool_clientstats
     expect:
       stdout_contains: ["Total connected clients"]
+  - name: cassandra.nodetool_clientstats_all
+    action: cassandra.nodetool_clientstats_all
+    arrange:
+      - argv: [bash, /packs/cassandra/test/fixtures/client_session.sh, start]
+      - argv: [bash, /packs/cassandra/test/fixtures/client_session.sh, check]
+        retry_for: 60s
+        retry_every: 5s
+    expect:
+      stdout_contains: [Address, User, Driver-Name, Driver-Version, "DataStax Python Driver", "127.0.0.1:", cassandra, packtest]
+      stdout_not_contains: [Client-Options, packtest-canary-cassandra-49ab]
+    cleanup:
+      - argv: [bash, /packs/cassandra/test/fixtures/client_session.sh, stop]
   - action: cassandra.nodetool_gcstats
     expect:
       stdout_contains: ["Interval (ms)", "GC Reclaimed (MB)"]

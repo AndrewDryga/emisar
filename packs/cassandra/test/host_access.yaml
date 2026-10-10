@@ -4,7 +4,10 @@ recipes:
     fixture: debian
     action: cassandra.analyze_disk_pressure
     prepare:
-      - install -d -o root -g cassandra -m 0750 /var/lib/cassandra/data /var/lib/cassandra/commitlog
+      - install -d -o root -g cassandra -m 0750 /etc/cassandra '/srv/cassandra data one/proof' '/srv/cassandra data two/proof' '/srv/cassandra commitlog/proof'
+      - >-
+        printf 'data_file_directories:\n  - "/srv/cassandra data one"\n  - "/srv/cassandra data two"\ncommitlog_directory: "/srv/cassandra commitlog"\n'
+        > /etc/cassandra/cassandra.yaml && chown root:cassandra /etc/cassandra/cassandra.yaml && chmod 0640 /etc/cassandra/cassandra.yaml
     recreate:
-      - rm -rf /var/lib/cassandra/data/proof && install -d -o root -g cassandra -m 0750 /var/lib/cassandra/data/proof
-    probe: test -r /var/lib/cassandra/data/proof && test -x /var/lib/cassandra/data/proof && test -r /var/lib/cassandra/commitlog && test -x /var/lib/cassandra/commitlog
+      - rmdir -- '/srv/cassandra data one/proof' '/srv/cassandra data two/proof' '/srv/cassandra commitlog/proof' && install -d -o root -g cassandra -m 0750 '/srv/cassandra data one/proof' '/srv/cassandra data two/proof' '/srv/cassandra commitlog/proof'
+    probe: test -r /etc/cassandra/cassandra.yaml && test -r '/srv/cassandra data one/proof' && test -x '/srv/cassandra data one/proof' && test -r '/srv/cassandra data two/proof' && test -x '/srv/cassandra data two/proof' && test -r '/srv/cassandra commitlog/proof' && test -x '/srv/cassandra commitlog/proof'

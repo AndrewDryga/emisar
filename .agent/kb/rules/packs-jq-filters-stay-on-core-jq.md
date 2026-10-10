@@ -103,6 +103,11 @@ is what closes every executable path in the catalog, which a case cannot: the
 failure is raised when the builtin is *reached*, so a case only ever proves the
 paths it runs.
 
+A source with no `jq` spelling is not a static jq invocation. Skip it before
+interpreting call names: embedded Python has its own `match` and `scan`, and
+those calls do not depend on Oniguruma. A jq filter later in the same shell
+source still receives the normal check.
+
 The cases prove the other half — that the core-jq rewrite still answers the way
 the regex spelling did on the host where the regex spelling never ran.
 `dev/test-packs/Dockerfile` builds jq `--with-oniguruma=no --disable-shared`
