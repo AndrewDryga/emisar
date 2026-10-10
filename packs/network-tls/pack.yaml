@@ -2,7 +2,7 @@ schema_version: 1
 
 id: network-tls
 name: Network + TLS diagnostics
-version: 0.3.1
+version: 0.3.2
 # Earlier chain dumps emitted TLS session identifiers, tickets and key material.
 retired_below: 0.3.1
 description: >
@@ -16,8 +16,10 @@ requires:
   os:
     - linux
   binaries:
+    - bash
     - curl
     - dig
+    - jq
     - mtr
     - nc
     - openssl

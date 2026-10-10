@@ -6,6 +6,8 @@ ARG PACKTEST_RUNNER_IMAGE=emisar-runner-tools:latest
 FROM ${PACKTEST_RUNNER_IMAGE}
 USER root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends iputils-ping mtr-tiny \
+    && apt-get install -y --no-install-recommends iputils-ping mtr-tiny whois \
     && rm -rf /var/lib/apt/lists/*
+COPY fixtures/whois-shim.sh /opt/packtest-whois/bin/whois
+RUN chmod 0755 /opt/packtest-whois/bin/whois
 USER packtest

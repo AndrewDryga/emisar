@@ -1,9 +1,107 @@
-services: [tcp]
+services: [tcp, rdap-api]
+secret_env: [RDAP_RESPONSE_CANARY]
+env:
+  RDAP_RESPONSE_CANARY: packtest-canary-rdap-contact-62c37
 versions:
   - version: "1.31.5"
     digest: "@sha256:05b8cb60c354a44ab824ea6e7dc69b46d50762cdbe728a347a5b656e6fb3d7c4"
     default: true
 cases:
+  - name: net.whois_summary-rdap
+    action: net.whois_summary
+    args: {domain: EXAMPLE.DEV.}
+    env:
+      NET_RDAP_PACKTEST: '1'
+      NET_RDAP_BOOTSTRAP_URL: http://rdap-api:8080/bootstrap.json
+      PACKTEST_WHOIS_MODE: failure
+      PATH: /opt/packtest-whois/bin:/opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      stdout_contains: [Fixture RDAP Registrar, '2030-01-02T03:04:05Z', ns1.example.dev]
+      stdout_not_contains: [contact, registrant, email, remarks, eventActor]
+    probes:
+      - argv: [bash, /packs/network-tls/test/fixtures/rdap-matrix.sh, fallback]
+        expect: {stdout_contains: ['RDAP fallback: 7 executor cases verified']}
+      - argv: [bash, /packs/network-tls/test/fixtures/rdap-matrix.sh, bootstrap]
+        expect: {stdout_contains: ['RDAP bootstrap: 11 executor cases verified']}
+      - argv: [bash, /packs/network-tls/test/fixtures/rdap-matrix.sh, responses]
+        expect: {stdout_contains: ['RDAP responses: 11 executor cases verified']}
+      - argv: [bash, /packs/network-tls/test/fixtures/rdap-matrix.sh, bounds]
+        expect: {stdout_contains: ['RDAP bounds: 4 executor cases verified']}
+      - argv: [bash, /packs/network-tls/test/fixtures/rdap-matrix.sh, inputs]
+        expect: {stdout_contains: ['RDAP inputs: 13 executor cases verified']}
+  - name: net.tls_protocol_check-tls1
+    action: net.tls_protocol_check
+    args: {host: 127.0.0.1, port: 24443}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, start, tls1]
+      - argv: [nc, -z, 127.0.0.1, '24443']
+        retry_for: 5s
+        retry_every: 100ms
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, verify-legacy, tls1]
+        expect: {stdout_contains: [completed TLSv1 handshake]}
+    expect:
+      stdout_contains: ['tls1: OK', 'tls1_1: REFUSED', 'tls1_2: REFUSED', 'tls1_3: REFUSED']
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, stop]
+  - name: net.tls_protocol_check-tls1_1
+    action: net.tls_protocol_check
+    args: {host: 127.0.0.1, port: 24443}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, start, tls1_1]
+      - argv: [nc, -z, 127.0.0.1, '24443']
+        retry_for: 5s
+        retry_every: 100ms
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, verify-legacy, tls1_1]
+        expect: {stdout_contains: [completed TLSv1.1 handshake]}
+    expect:
+      stdout_contains: ['tls1: REFUSED', 'tls1_1: OK', 'tls1_2: REFUSED', 'tls1_3: REFUSED']
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, stop]
+  - name: net.tls_protocol_check-tls1_2
+    action: net.tls_protocol_check
+    args: {host: 127.0.0.1, port: 24443}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, start, tls1_2]
+      - argv: [nc, -z, 127.0.0.1, '24443']
+        retry_for: 5s
+        retry_every: 100ms
+    expect:
+      stdout_contains: ['tls1: REFUSED', 'tls1_1: REFUSED', 'tls1_2: OK', 'tls1_3: REFUSED']
+      stdout_not_contains: [SSL-Session, Session-ID, Master-Key, Resumption PSK]
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, stop]
+  - name: net.tls_protocol_check-tls1_3
+    action: net.tls_protocol_check
+    args: {host: 127.0.0.1, port: 24443}
+    arrange:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, start, tls1_3]
+      - argv: [nc, -z, 127.0.0.1, '24443']
+        retry_for: 5s
+        retry_every: 100ms
+    expect:
+      stdout_contains: ['tls1: REFUSED', 'tls1_1: REFUSED', 'tls1_2: REFUSED', 'tls1_3: OK']
+      stdout_not_contains: [SSL-Session, Session-ID, Master-Key, Resumption PSK]
+    cleanup:
+      - argv: [/bin/sh, /packs/network-tls/test/fixtures/tls-chain-fixture.sh, stop]
+  - name: net.tls_protocol_check-closed-port
+    action: net.tls_protocol_check
+    args: {host: 127.0.0.1, port: 24444}
+    expect:
+      status: failure
+      stderr_contains: ['cannot reach 127.0.0.1:24444']
+      stdout_not_contains: ['tls1:']
+  - name: net.tls_protocol_check-dns-failure
+    action: net.tls_protocol_check
+    args: {host: does-not-exist.invalid, port: 443}
+    expect:
+      status: failure
+      stderr_contains: ['cannot reach does-not-exist.invalid:443']
+      stdout_not_contains: ['tls1:']
+  - name: net.tls_protocol_check-plaintext
+    action: net.tls_protocol_check
+    args: {host: tcp, port: 80}
+    expect:
+      stdout_contains: ['tls1: REFUSED', 'tls1_1: REFUSED', 'tls1_2: REFUSED', 'tls1_3: REFUSED']
   - name: net.http_probe-verified-address-mapping
     action: net.http_probe
     args: {url: 'https://packtest.invalid:24443/selected', resolve: 'packtest.invalid:24443:127.0.0.1'}

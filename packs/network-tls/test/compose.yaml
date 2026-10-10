@@ -20,3 +20,14 @@ services:
       start_period: 20s
       start_interval: 1s
       retries: 20
+
+  rdap-api:
+    # Independent HTTP protocol fixture, not a replacement for OpenSSL or whois.
+    image: ${PACKTEST_RUNNER_IMAGE:-emisar-runner-tools:latest}
+    entrypoint: [python3, /fixture/rdap-server.py]
+    volumes:
+      - ${EMISAR_ROOT}/packs/network-tls/test/fixtures/rdap-server.py:/fixture/rdap-server.py:ro
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS http://127.0.0.1:8080/health >/dev/null']
+      interval: 1s
+      retries: 20

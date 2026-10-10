@@ -1,12 +1,18 @@
 schema_version: 1
 id: net.whois_summary
-title: whois (registrar + expiry)
-kind: exec
+title: Domain registration summary
+kind: script
 risk: low
-description: Show filtered whois output — registrar, dates, name servers. Use to check "is this domain about to expire?"
+description: >
+  Show registrar, dates and nameservers from WHOIS, falling back to RDAP when
+  WHOIS fails or has no recognized fields. RDAP uses IANA's DNS bootstrap and
+  returns only registrar names/IDs, domain events and nameserver names, not
+  contact records. Accepts ASCII or punycode domain names. Bounds each response
+  to 16 MiB and clips the rendered summary at 8 KiB with a notice. A failed or
+  missing lookup does not establish that a domain is available to register.
 side_effects:
-  - One whois query to the registry.
-  - Read-only.
+  - One WHOIS lookup; on fallback, one IANA bootstrap and one RDAP domain request.
+  - Read-only. Does not follow HTTP redirects or RDAP referrals.
 search_terms:
   - who owns this domain
   - domain expiry
@@ -15,35 +21,21 @@ args:
   - name: domain
     type: string
     required: true
-    description: Domain.
+    description: ASCII or punycode domain; an optional trailing dot is normalized.
     validation:
-      pattern: "^[a-zA-Z0-9][a-zA-Z0-9.\\-]{0,252}$"
+      max_length: 254
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9.\\-]{0,253}$"
 execution:
-  command:
-    binary: /bin/sh
-    argv:
-      - "-c"
-      # Empty output here reads as "domain not registered", so a transport
-      # failure must never look like one. whois exits non-zero on transport
-      # errors; the pipe discarded that. Residual this cannot fix: a rate-limit
-      # reply ("WHOIS LIMIT EXCEEDED") or an unusual ccTLD field set arrives as
-      # exit-0 text that the filter drops — hence the note on a dropped reply.
-      - |
-        raw=$(whois "$1"); status=$?
-        printf '%s\n' "$raw" | grep -iE 'registrar|registry|domain name|expir|name server|status' | head -30
-        if [ "$status" -eq 0 ] && [ -n "$raw" ] && \
-           ! printf '%s\n' "$raw" | grep -qiE 'registrar|registry|domain name|expir|name server|status'; then
-          echo "whois replied but no summary fields matched — raw reply may be a rate-limit or an unusual ccTLD format" >&2
-        fi
-        exit $status
-      - "emisar"
-      - "{{ args.domain }}"
+  script:
+    path: scripts/whois_summary.sh
+    interpreter: bash
+  argv:
+    - "{{ args.domain }}"
   timeout: 30s
 output:
   parser: text
   max_stdout_bytes: 8192
   max_stderr_bytes: 8192
 examples:
-  - title: whois example.com
-    args:
-      domain: "example.com"
+  - title: Registration details for example.dev
+    args: {domain: example.dev}

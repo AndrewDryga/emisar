@@ -121,10 +121,13 @@ execution:
     - MYSQL_PWD
     - NOMAD_ADDR
     - NOMAD_TOKEN
+    - NET_RDAP_PACKTEST
+    - NET_RDAP_BOOTSTRAP_URL
     - OIDC_CA_CERT
     # Supplemental debugging parser/failure inputs; not production config.
     - PACKTEST_SS_CASE
     - PACKTEST_TAINT_CASE
+    - PACKTEST_WHOIS_MODE
     - PFSENSE_API_KEY
     - PFSENSE_INSECURE
     - PFSENSE_URL
