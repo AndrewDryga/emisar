@@ -2,7 +2,7 @@ schema_version: 1
 
 id: traefik
 name: Traefik ingress / reverse proxy
-version: 0.1.24
+version: 0.1.25
 # 0.1.22 and below rated rawdata and http_middlewares `low`, so the live
 # dynamic config — basicAuth user hashes and injected upstream auth headers
 # among it — auto-ran with no approval, three tiers under every sibling proxy's
@@ -59,6 +59,12 @@ setup:
         Base URL of the entrypoint that serves /ping. Defaults to `TRAEFIK_URL`;
         set it when liveness is deliberately separated from the API.
       example: http://127.0.0.1:8082
+    - name: TRAEFIK_METRICS_URL
+      required: false
+      description: >
+        Base URL of the entrypoint that serves /metrics. Defaults to `TRAEFIK_URL`;
+        set it when Prometheus metrics use a separate entrypoint.
+      example: http://127.0.0.1:9080
     - name: TRAEFIK_BASICAUTH
       required: false
       description: >
@@ -79,12 +85,13 @@ setup:
         non-standard location.
       example: /data/logs/traefik/access.log
   notes:
-    - "Any of `TRAEFIK_URL` / `TRAEFIK_PING_URL` / `TRAEFIK_BASICAUTH` / `TRAEFIK_INSECURE` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
+    - "Any of `TRAEFIK_URL` / `TRAEFIK_PING_URL` / `TRAEFIK_METRICS_URL` / `TRAEFIK_BASICAUTH` / `TRAEFIK_INSECURE` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - "Enable the API to use this pack: --api=true (production, behind a router + auth) or --api.insecure=true (exposes it unauthenticated on the :8080 traefik entrypoint — dev only)."
     - "Every API action is a read-only GET. The OSS Traefik API has no write endpoints; config changes only happen through providers (file/docker/k8s), never the API."
     - "Per-router health: each router/service object carries status (enabled | warning | disabled) and an error[] list. Filter for status != enabled to find broken routing. Services also expose serverStatus (per-backend UP/DOWN)."
     - "ACME certificate material lives only in the acme.json storage file, never the API."
     - "/ping defaults to `TRAEFIK_URL` but is often moved to a dedicated entrypoint; set `TRAEFIK_PING_URL` without disturbing the API actions."
+    - "/metrics defaults to `TRAEFIK_URL`; set `TRAEFIK_METRICS_URL` when metrics.prometheus.entryPoint separates it from the API."
     - "Logs outside `/var/log/traefik`: set `TRAEFIK_ACCESS_LOG` (and allowlist it in the runner's `execution.inherit_env`). The log_path argument stays contained to `/var/log/traefik` because a caller — including an LLM — supplies it; the environment is host-administrator state, and anyone who can set it can already read the file. If Traefik logs to stdout instead (no accessLog.filePath), no file exists to read at any path: query whichever store collects it, e.g. the victorialogs pack. For unrestricted `/var/log` access, install linux-core, whose name says so."
   host_access:
     - actions:

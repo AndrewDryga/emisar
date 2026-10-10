@@ -7,6 +7,86 @@ env:
   TRAEFIK_URL: http://127.0.0.1:8080
   TRAEFIK_PING_URL: http://127.0.0.1:8082
 cases:
+  - name: traefik.metrics-separated-entrypoint
+    action: traefik.metrics
+    env:
+      TRAEFIK_METRICS_URL: http://127.0.0.1:9080
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/metrics) || exit $?
+            [ "$code" = 404 ] || exit 1
+            metrics=$(curl -fsS http://127.0.0.1:9080/metrics) || exit $?
+            printf '%s' "$metrics" | grep -F 'traefik_config_reloads_total' >/dev/null
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: [traefik_config_reloads_total, traefik_config_last_reload_success]
+  - name: traefik.metrics-falls-back-to-base-url
+    action: traefik.metrics
+    env:
+      TRAEFIK_URL: http://127.0.0.1:9080
+    unset_env: [TRAEFIK_METRICS_URL]
+    expect:
+      stdout_contains: [traefik_config_reloads_total]
+  - name: traefik.metrics-http-error
+    action: traefik.metrics
+    env:
+      TRAEFIK_METRICS_URL: http://127.0.0.1:9080/does-not-exist
+    expect:
+      status: failure
+      exit: [22]
+      stderr_contains: ["curl: (22)"]
+  - name: traefik.http_services-includes-second-page
+    action: traefik.http_services
+    arrange: &complete_inventory
+      - argv: [/bin/sh, /packs/traefik/test/fixtures/check_inventory.sh]
+        retry_for: 15s
+        retry_every: 200ms
+    expect:
+      stdout_contains: ['"name":"zz-late-healthy@file"', '"name":"zz-late-down@file"']
+      stdout_not_contains: ['[REDACTED]']
+  - name: traefik.http_routers-includes-second-page
+    action: traefik.http_routers
+    arrange: *complete_inventory
+    expect:
+      stdout_contains: ['"name":"zz-late-healthy@file"', '"name":"zz-late-down@file"']
+  - name: traefik.http_services_summary-includes-second-page
+    action: traefik.http_services_summary
+    arrange: *complete_inventory
+    expect:
+      stdout_contains: ['"name":"zz-late-healthy@file"', '"name":"zz-late-down@file"']
+  - name: traefik.http_services_summary-unhealthy-second-page
+    action: traefik.http_services_summary
+    args: {only_unhealthy: true}
+    arrange: *complete_inventory
+    expect:
+      stdout_contains: ['"name":"zz-late-down@file"']
+      stdout_not_contains: ['"name":"zz-late-healthy@file"']
+  - name: traefik.http_host_readiness-healthy-second-page
+    action: traefik.http_host_readiness
+    args: {host: latehealthy.packtest.example}
+    arrange: *complete_inventory
+    expect:
+      json:
+        /ready: true
+        /router/name: zz-late-healthy@file
+        /service/name: zz-late-healthy@file
+        /backends/up: 1
+        /failures: []
+  - name: traefik.http_host_readiness-down-second-page
+    action: traefik.http_host_readiness
+    args: {host: latedown.packtest.example}
+    arrange: *complete_inventory
+    expect:
+      json:
+        /ready: false
+        /router/name: zz-late-down@file
+        /service/name: zz-late-down@file
+        /backends/down: 1
+        /failures: [no_up_backends]
   - action: traefik.version
     expect:
       stdout_contains: ['"Version":"3.7.13"']

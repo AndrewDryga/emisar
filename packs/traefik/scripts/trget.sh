@@ -9,7 +9,8 @@
 #
 #   $1     path appended to $TRAEFIK_URL, e.g. /api/http/routers. /ping
 #          uses $TRAEFIK_PING_URL when set because production deployments often
-#          keep liveness on a separate entrypoint from the API.
+#          keep liveness on a separate entrypoint from the API. /metrics
+#          similarly uses $TRAEFIK_METRICS_URL when set.
 #   $2...  extra curl flags from the action (rarely needed; e.g.
 #          --get --data-urlencode for paged endpoints). Values are rendered
 #          into argv by the cloud-validated template engine and never enter
@@ -38,13 +39,47 @@ path=$1
 shift
 
 base_url=$TRAEFIK_URL
-if [ "$path" = "/ping" ]; then
-	base_url=${TRAEFIK_PING_URL:-$TRAEFIK_URL}
-fi
+case "$path" in
+	/ping) base_url=${TRAEFIK_PING_URL:-$TRAEFIK_URL} ;;
+	/metrics) base_url=${TRAEFIK_METRICS_URL:-$TRAEFIK_URL} ;;
+esac
 
-if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
-	printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |
-		curl -q --globoff --proto '=http,https' -fsS $K -H @- "$@" "$base_url$path"
-else
-	curl -q --globoff --proto '=http,https' -fsS $K "$@" "$base_url$path"
-fi
+get() {
+	request_path=$1
+	shift
+	if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
+		printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |
+			curl -q --globoff --proto '=http,https' -fsS $K -H @- "$@" "$base_url$request_path"
+	else
+		curl -q --globoff --proto '=http,https' -fsS $K "$@" "$base_url$request_path"
+	fi
+}
+
+# Fixed bulk query avoids Traefik's default 100-row page. Bound input before
+# parsing, including bodies without Content-Length, and check the producer
+# independently of head. Keep this helper in step with both projections.
+inventory_get() (
+	umask 077
+	work=$(mktemp -d "${TMPDIR:-/tmp}/emisar-traefik.XXXXXXXX") || exit 1
+	trap 'rm -f -- "$work/body" "$work/status"; rmdir -- "$work"' 0
+	trap 'exit 129' HUP
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	{
+		rc=0
+		get "$@" --get --data-urlencode page=1 --data-urlencode per_page=2147483647 || rc=$?
+		printf '%s\n' "$rc" >"$work/status" || exit 1
+	} | head -c 4194305 >"$work/body" || exit 1
+	bytes=$(wc -c <"$work/body") || exit 1
+	[ "$bytes" -le 4194304 ] || { printf '%s\n' 'Traefik inventory exceeded 4 MiB' >&2; exit 1; }
+	rc=$(cat "$work/status") || exit 1
+	case "$rc" in ''|*[!0-9]*) exit 1 ;; esac
+	[ "$rc" -eq 0 ] || exit "$rc"
+	jq -jecs 'if length == 1 and (.[0] | type) == "array" then .[0]
+	  else error("Traefik API returned an invalid JSON array") end' "$work/body"
+)
+
+case "$path" in
+	/api/http/services|/api/http/routers) inventory_get "$path" "$@" ;;
+	*) get "$path" "$@" ;;
+esac

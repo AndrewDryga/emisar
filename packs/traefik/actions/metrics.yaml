@@ -8,7 +8,8 @@ description: >
   --metrics.prometheus=true): per-entrypoint/router/service request counts,
   durations, open connections, and TLS cert expiry gauges. Served on the
   traefik entrypoint (:8080) by default unless metrics.prometheus.entryPoint
-  moves it.
+  moves it. Set TRAEFIK_METRICS_URL for a separate metrics entrypoint;
+  otherwise uses TRAEFIK_URL.
 side_effects:
   - One read-only HTTP GET to the Traefik metrics endpoint.
   - Read-only.

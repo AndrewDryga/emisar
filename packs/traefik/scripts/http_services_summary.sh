@@ -27,20 +27,46 @@ only_unhealthy=$1
 # pack file is content-hashed on its own, so a sourced helper cannot be shared.
 # Keep the three in step — the capture below is the difference that matters.
 get() {
+	request_path=$1
+	shift
 	if [ -n "${TRAEFIK_BASICAUTH:-}" ]; then
 		printf 'Authorization: Basic %s\n' "$(printf '%s' "$TRAEFIK_BASICAUTH" | base64 | tr -d '\n')" |
-			curl -q --globoff --proto '=http,https' -fsS $K -H @- "$TRAEFIK_URL$1"
+			curl -q --globoff --proto '=http,https' -fsS $K -H @- "$@" "$TRAEFIK_URL$request_path"
 	else
-		curl -q --globoff --proto '=http,https' -fsS $K "$TRAEFIK_URL$1"
+		curl -q --globoff --proto '=http,https' -fsS $K "$@" "$TRAEFIK_URL$request_path"
 	fi
 }
+
+# Fixed bulk query avoids Traefik's default 100-row page. Bound input before
+# parsing, including bodies without Content-Length, and check the producer
+# independently of head. Keep this helper in step with trget and readiness.
+inventory_get() (
+	umask 077
+	work=$(mktemp -d "${TMPDIR:-/tmp}/emisar-traefik.XXXXXXXX") || exit 1
+	trap 'rm -f -- "$work/body" "$work/status"; rmdir -- "$work"' 0
+	trap 'exit 129' HUP
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	{
+		rc=0
+		get "$@" --get --data-urlencode page=1 --data-urlencode per_page=2147483647 || rc=$?
+		printf '%s\n' "$rc" >"$work/status" || exit 1
+	} | head -c 4194305 >"$work/body" || exit 1
+	bytes=$(wc -c <"$work/body") || exit 1
+	[ "$bytes" -le 4194304 ] || { printf '%s\n' 'Traefik inventory exceeded 4 MiB' >&2; exit 1; }
+	rc=$(cat "$work/status") || exit 1
+	case "$rc" in ''|*[!0-9]*) exit 1 ;; esac
+	[ "$rc" -eq 0 ] || exit "$rc"
+	jq -jecs 'if length == 1 and (.[0] | type) == "array" then .[0]
+	  else error("Traefik API returned an invalid JSON array") end' "$work/body"
+)
 
 # Captured, not piped: a pipeline exits with jq's status, and jq exits 0 on
 # empty stdin — so an API that is down, 401-ing, or on another port answered
 # "[]", read as "every service is healthy" during the cutover preflight this
 # action exists for. Under `set -e` the substitution fails the action instead.
 # This is the shape host_readiness.sh already uses for the same two GETs.
-services=$(get /api/http/services)
+services=$(inventory_get /api/http/services)
 
 # serverStatus is the health-check map; when absent (no health check) the
 # configured backends count as UP. "unhealthy" is computed only to drive the

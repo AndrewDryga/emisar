@@ -8,6 +8,8 @@ description: >
   serverStatus — a per-backend map of URL to "UP"/"DOWN". This is the
   "which upstream is down?" read: a service with a DOWN server (or a
   non-"enabled" status) is failing health checks.
+  Fetches the complete collection in one request and fails if the raw response
+  exceeds 4 MiB or is not a single JSON array; never returns a partial page.
 side_effects:
   - One read-only HTTP GET to the Traefik API.
   - Read-only.
@@ -21,6 +23,7 @@ execution:
   timeout: 30s
 output:
   parser: json
+  parser_required: true
   max_stdout_bytes: 4194304
   max_stderr_bytes: 8192
 examples:

@@ -12,8 +12,540 @@ http:
       middlewares:
         - packtest-auth
         - packtest-upstream-header
+    y-filler-001:
+      rule: "Host(`filler-001.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-001
+    y-filler-002:
+      rule: "Host(`filler-002.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-002
+    y-filler-003:
+      rule: "Host(`filler-003.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-003
+    y-filler-004:
+      rule: "Host(`filler-004.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-004
+    y-filler-005:
+      rule: "Host(`filler-005.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-005
+    y-filler-006:
+      rule: "Host(`filler-006.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-006
+    y-filler-007:
+      rule: "Host(`filler-007.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-007
+    y-filler-008:
+      rule: "Host(`filler-008.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-008
+    y-filler-009:
+      rule: "Host(`filler-009.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-009
+    y-filler-010:
+      rule: "Host(`filler-010.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-010
+    y-filler-011:
+      rule: "Host(`filler-011.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-011
+    y-filler-012:
+      rule: "Host(`filler-012.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-012
+    y-filler-013:
+      rule: "Host(`filler-013.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-013
+    y-filler-014:
+      rule: "Host(`filler-014.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-014
+    y-filler-015:
+      rule: "Host(`filler-015.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-015
+    y-filler-016:
+      rule: "Host(`filler-016.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-016
+    y-filler-017:
+      rule: "Host(`filler-017.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-017
+    y-filler-018:
+      rule: "Host(`filler-018.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-018
+    y-filler-019:
+      rule: "Host(`filler-019.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-019
+    y-filler-020:
+      rule: "Host(`filler-020.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-020
+    y-filler-021:
+      rule: "Host(`filler-021.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-021
+    y-filler-022:
+      rule: "Host(`filler-022.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-022
+    y-filler-023:
+      rule: "Host(`filler-023.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-023
+    y-filler-024:
+      rule: "Host(`filler-024.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-024
+    y-filler-025:
+      rule: "Host(`filler-025.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-025
+    y-filler-026:
+      rule: "Host(`filler-026.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-026
+    y-filler-027:
+      rule: "Host(`filler-027.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-027
+    y-filler-028:
+      rule: "Host(`filler-028.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-028
+    y-filler-029:
+      rule: "Host(`filler-029.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-029
+    y-filler-030:
+      rule: "Host(`filler-030.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-030
+    y-filler-031:
+      rule: "Host(`filler-031.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-031
+    y-filler-032:
+      rule: "Host(`filler-032.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-032
+    y-filler-033:
+      rule: "Host(`filler-033.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-033
+    y-filler-034:
+      rule: "Host(`filler-034.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-034
+    y-filler-035:
+      rule: "Host(`filler-035.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-035
+    y-filler-036:
+      rule: "Host(`filler-036.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-036
+    y-filler-037:
+      rule: "Host(`filler-037.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-037
+    y-filler-038:
+      rule: "Host(`filler-038.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-038
+    y-filler-039:
+      rule: "Host(`filler-039.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-039
+    y-filler-040:
+      rule: "Host(`filler-040.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-040
+    y-filler-041:
+      rule: "Host(`filler-041.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-041
+    y-filler-042:
+      rule: "Host(`filler-042.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-042
+    y-filler-043:
+      rule: "Host(`filler-043.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-043
+    y-filler-044:
+      rule: "Host(`filler-044.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-044
+    y-filler-045:
+      rule: "Host(`filler-045.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-045
+    y-filler-046:
+      rule: "Host(`filler-046.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-046
+    y-filler-047:
+      rule: "Host(`filler-047.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-047
+    y-filler-048:
+      rule: "Host(`filler-048.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-048
+    y-filler-049:
+      rule: "Host(`filler-049.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-049
+    y-filler-050:
+      rule: "Host(`filler-050.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-050
+    y-filler-051:
+      rule: "Host(`filler-051.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-051
+    y-filler-052:
+      rule: "Host(`filler-052.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-052
+    y-filler-053:
+      rule: "Host(`filler-053.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-053
+    y-filler-054:
+      rule: "Host(`filler-054.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-054
+    y-filler-055:
+      rule: "Host(`filler-055.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-055
+    y-filler-056:
+      rule: "Host(`filler-056.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-056
+    y-filler-057:
+      rule: "Host(`filler-057.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-057
+    y-filler-058:
+      rule: "Host(`filler-058.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-058
+    y-filler-059:
+      rule: "Host(`filler-059.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-059
+    y-filler-060:
+      rule: "Host(`filler-060.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-060
+    y-filler-061:
+      rule: "Host(`filler-061.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-061
+    y-filler-062:
+      rule: "Host(`filler-062.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-062
+    y-filler-063:
+      rule: "Host(`filler-063.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-063
+    y-filler-064:
+      rule: "Host(`filler-064.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-064
+    y-filler-065:
+      rule: "Host(`filler-065.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-065
+    y-filler-066:
+      rule: "Host(`filler-066.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-066
+    y-filler-067:
+      rule: "Host(`filler-067.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-067
+    y-filler-068:
+      rule: "Host(`filler-068.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-068
+    y-filler-069:
+      rule: "Host(`filler-069.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-069
+    y-filler-070:
+      rule: "Host(`filler-070.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-070
+    y-filler-071:
+      rule: "Host(`filler-071.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-071
+    y-filler-072:
+      rule: "Host(`filler-072.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-072
+    y-filler-073:
+      rule: "Host(`filler-073.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-073
+    y-filler-074:
+      rule: "Host(`filler-074.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-074
+    y-filler-075:
+      rule: "Host(`filler-075.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-075
+    y-filler-076:
+      rule: "Host(`filler-076.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-076
+    y-filler-077:
+      rule: "Host(`filler-077.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-077
+    y-filler-078:
+      rule: "Host(`filler-078.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-078
+    y-filler-079:
+      rule: "Host(`filler-079.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-079
+    y-filler-080:
+      rule: "Host(`filler-080.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-080
+    y-filler-081:
+      rule: "Host(`filler-081.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-081
+    y-filler-082:
+      rule: "Host(`filler-082.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-082
+    y-filler-083:
+      rule: "Host(`filler-083.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-083
+    y-filler-084:
+      rule: "Host(`filler-084.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-084
+    y-filler-085:
+      rule: "Host(`filler-085.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-085
+    y-filler-086:
+      rule: "Host(`filler-086.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-086
+    y-filler-087:
+      rule: "Host(`filler-087.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-087
+    y-filler-088:
+      rule: "Host(`filler-088.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-088
+    y-filler-089:
+      rule: "Host(`filler-089.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-089
+    y-filler-090:
+      rule: "Host(`filler-090.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-090
+    y-filler-091:
+      rule: "Host(`filler-091.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-091
+    y-filler-092:
+      rule: "Host(`filler-092.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-092
+    y-filler-093:
+      rule: "Host(`filler-093.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-093
+    y-filler-094:
+      rule: "Host(`filler-094.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-094
+    y-filler-095:
+      rule: "Host(`filler-095.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-095
+    y-filler-096:
+      rule: "Host(`filler-096.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-096
+    y-filler-097:
+      rule: "Host(`filler-097.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-097
+    y-filler-098:
+      rule: "Host(`filler-098.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-098
+    y-filler-099:
+      rule: "Host(`filler-099.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-099
+    y-filler-100:
+      rule: "Host(`filler-100.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-100
+    y-filler-101:
+      rule: "Host(`filler-101.packtest.example`)"
+      entryPoints: [traefik]
+      service: y-filler-101
+    zz-late-healthy:
+      rule: "Host(`latehealthy.packtest.example`)"
+      entryPoints: [traefik]
+      service: zz-late-healthy
+    zz-late-down:
+      rule: "Host(`latedown.packtest.example`)"
+      entryPoints: [traefik]
+      service: zz-late-down
   services:
     packtest-service:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:9999"
+        healthCheck:
+          path: /health
+          interval: 100ms
+          timeout: 100ms
+    y-filler-001: &filler_service
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8082"
+    y-filler-002: *filler_service
+    y-filler-003: *filler_service
+    y-filler-004: *filler_service
+    y-filler-005: *filler_service
+    y-filler-006: *filler_service
+    y-filler-007: *filler_service
+    y-filler-008: *filler_service
+    y-filler-009: *filler_service
+    y-filler-010: *filler_service
+    y-filler-011: *filler_service
+    y-filler-012: *filler_service
+    y-filler-013: *filler_service
+    y-filler-014: *filler_service
+    y-filler-015: *filler_service
+    y-filler-016: *filler_service
+    y-filler-017: *filler_service
+    y-filler-018: *filler_service
+    y-filler-019: *filler_service
+    y-filler-020: *filler_service
+    y-filler-021: *filler_service
+    y-filler-022: *filler_service
+    y-filler-023: *filler_service
+    y-filler-024: *filler_service
+    y-filler-025: *filler_service
+    y-filler-026: *filler_service
+    y-filler-027: *filler_service
+    y-filler-028: *filler_service
+    y-filler-029: *filler_service
+    y-filler-030: *filler_service
+    y-filler-031: *filler_service
+    y-filler-032: *filler_service
+    y-filler-033: *filler_service
+    y-filler-034: *filler_service
+    y-filler-035: *filler_service
+    y-filler-036: *filler_service
+    y-filler-037: *filler_service
+    y-filler-038: *filler_service
+    y-filler-039: *filler_service
+    y-filler-040: *filler_service
+    y-filler-041: *filler_service
+    y-filler-042: *filler_service
+    y-filler-043: *filler_service
+    y-filler-044: *filler_service
+    y-filler-045: *filler_service
+    y-filler-046: *filler_service
+    y-filler-047: *filler_service
+    y-filler-048: *filler_service
+    y-filler-049: *filler_service
+    y-filler-050: *filler_service
+    y-filler-051: *filler_service
+    y-filler-052: *filler_service
+    y-filler-053: *filler_service
+    y-filler-054: *filler_service
+    y-filler-055: *filler_service
+    y-filler-056: *filler_service
+    y-filler-057: *filler_service
+    y-filler-058: *filler_service
+    y-filler-059: *filler_service
+    y-filler-060: *filler_service
+    y-filler-061: *filler_service
+    y-filler-062: *filler_service
+    y-filler-063: *filler_service
+    y-filler-064: *filler_service
+    y-filler-065: *filler_service
+    y-filler-066: *filler_service
+    y-filler-067: *filler_service
+    y-filler-068: *filler_service
+    y-filler-069: *filler_service
+    y-filler-070: *filler_service
+    y-filler-071: *filler_service
+    y-filler-072: *filler_service
+    y-filler-073: *filler_service
+    y-filler-074: *filler_service
+    y-filler-075: *filler_service
+    y-filler-076: *filler_service
+    y-filler-077: *filler_service
+    y-filler-078: *filler_service
+    y-filler-079: *filler_service
+    y-filler-080: *filler_service
+    y-filler-081: *filler_service
+    y-filler-082: *filler_service
+    y-filler-083: *filler_service
+    y-filler-084: *filler_service
+    y-filler-085: *filler_service
+    y-filler-086: *filler_service
+    y-filler-087: *filler_service
+    y-filler-088: *filler_service
+    y-filler-089: *filler_service
+    y-filler-090: *filler_service
+    y-filler-091: *filler_service
+    y-filler-092: *filler_service
+    y-filler-093: *filler_service
+    y-filler-094: *filler_service
+    y-filler-095: *filler_service
+    y-filler-096: *filler_service
+    y-filler-097: *filler_service
+    y-filler-098: *filler_service
+    y-filler-099: *filler_service
+    y-filler-100: *filler_service
+    y-filler-101: *filler_service
+    zz-late-healthy:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8082"
+        healthCheck:
+          path: /ping
+          interval: 100ms
+          timeout: 100ms
+    zz-late-down:
       loadBalancer:
         servers:
           - url: "http://127.0.0.1:9999"

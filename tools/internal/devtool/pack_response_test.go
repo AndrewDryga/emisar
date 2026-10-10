@@ -112,7 +112,7 @@ func responseCommand(t *testing.T, pack responsePack, address, temp string) *exe
 		t.Fatal(err)
 	}
 	interpreter := "bash"
-	if pack.name == "pfsense" {
+	if pack.name == "pfsense" || strings.HasPrefix(pack.name, "traefik/") {
 		interpreter = "/bin/sh"
 	}
 	cmd := exec.Command(interpreter, append([]string{filepath.Join(root, "packs", pack.script)}, pack.args...)...)

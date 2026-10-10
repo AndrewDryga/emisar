@@ -14,6 +14,8 @@ description: >
   missing_router, router_not_enabled, router_errors, missing_service,
   service_not_enabled, service_errors, no_up_backends, backend_down. Use this
   before a DNS/origin cutover instead of the raw 4 MiB inventory dumps.
+  Fetches complete router and service collections, each limited to 4 MiB of
+  raw input; an oversized or invalid collection fails before the join.
 side_effects:
   - Two read-only HTTP GETs to the Traefik API.
   - Read-only.
@@ -40,6 +42,7 @@ execution:
   timeout: 30s
 output:
   parser: json
+  parser_required: true
   max_stdout_bytes: 65536
   max_stderr_bytes: 8192
 examples:

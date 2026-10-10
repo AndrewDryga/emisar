@@ -11,7 +11,9 @@ description: >
   the DOWN backends. Set only_unhealthy=true to return just the services that
   need attention (not "enabled", carrying errors, a DOWN backend, or a
   load-balancer with no UP backend). Use traefik.http_services for the full
-  raw load-balancer config of a single service.
+  raw load-balancer config of every service. Fetches the complete collection
+  in one request and fails before projection if the raw response exceeds
+  4 MiB or is not a single JSON array.
 side_effects:
   - One read-only HTTP GET to the Traefik API.
   - Read-only.
@@ -33,6 +35,7 @@ execution:
   timeout: 30s
 output:
   parser: json
+  parser_required: true
   max_stdout_bytes: 1048576
   max_stderr_bytes: 8192
 examples:
