@@ -41,6 +41,7 @@ import (
 // third.
 const composeConfigStubDocker = `#!/bin/bash
 set -uo pipefail
+if [ "$#" -eq 2 ] && [ "$1" = compose ] && [ "$2" = version ]; then exit 0; fi
 what=other
 case " $* " in
   *" --quiet "*) what=quiet ;;

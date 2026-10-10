@@ -12,8 +12,33 @@ side_effects:
 args: []
 execution:
   command:
-    binary: docker
-    argv: [compose, ls, --all, --format, json]
+    binary: /bin/sh
+    argv:
+      - -c
+      - |
+        set -eu
+        if probe=$(LC_ALL=C docker compose version 2>&1); then
+          :
+        else
+          rc=$?
+          case "$rc:$probe" in
+            "1:docker: 'compose' is not a docker command.
+        See 'docker --help'"|"1:docker: unknown command: docker compose
+
+        Run 'docker --help' for more information")
+              printf '%s\n' 'docker compose plugin is not installed' >&2
+              exit 127 ;;
+          esac
+          printf '%s\n' "$probe" >&2
+          exit "$rc"
+        fi
+        exec docker "$@"
+      - docker-compose
+      - compose
+      - ls
+      - --all
+      - --format
+      - json
   timeout: 15s
 output:
   parser: json

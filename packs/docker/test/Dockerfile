@@ -14,4 +14,6 @@ FROM docker:${PACKTEST_VERSION}${PACKTEST_DIGEST} AS client
 FROM ${PACKTEST_RUNNER_IMAGE}
 COPY --from=client /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=client /usr/local/libexec/docker/cli-plugins/docker-compose \
-    /usr/local/libexec/docker/cli-plugins/docker-compose
+    /opt/docker-fixture/plugins/docker-compose
+# The enabled fixture config discovers this private directory. The empty
+# config must genuinely have no plugin, not merely hide a global installation.

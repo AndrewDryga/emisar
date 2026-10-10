@@ -2,7 +2,7 @@ schema_version: 1
 
 id: docker
 name: Docker operations pack
-version: 0.2.30
+version: 0.2.31
 # Versions below this returned full docker exec and health-check command lines,
 # which can carry passwords, from the low-risk events_tail. They fail closed.
 retired_below: 0.2.30
@@ -33,6 +33,7 @@ setup:
     Talks to the local Docker daemon on the runner host via its Unix
     socket — no credentials needed.
   notes:
+    - "Compose actions require the Docker Compose CLI plugin. If Docker cannot discover it, they fail with `docker compose plugin is not installed` and exit 127. Other client or configuration errors keep their original status and diagnostics."
     - "Membership in the docker group is effectively root-equivalent on the host, since a container can mount and write the host filesystem."
     - "Compose actions also need ordinary read access to their selected project files. docker.compose_config needs only that file access, so no universal host-access recipe can name it."
   host_access:

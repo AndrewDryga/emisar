@@ -31,6 +31,7 @@ import (
 // the rest.
 const composeImagesStubDocker = `#!/bin/bash
 set -uo pipefail
+if [ "$#" -eq 2 ] && [ "$1" = compose ] && [ "$2" = version ]; then exit 0; fi
 case " $* " in
   *" images "*) ;;
   *) printf 'stub: unexpected argv: %s\n' "$*" >&2; exit 90 ;;

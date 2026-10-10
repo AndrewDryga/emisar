@@ -9,6 +9,7 @@ services:
         PACKTEST_DIGEST: ${PACKTEST_DIGEST-}
     image: emisar-packtest-docker-tools:latest
     volumes:
+      - ${EMISAR_ROOT}/packs/docker/test/fixtures/docker-config:/opt/docker-fixture/config:ro
       # docker.compose_config only accepts a path under an approved deployment
       # root, so the fixture is mounted where a real stack would live.
       - ${EMISAR_ROOT}/packs/docker/test/fixtures/docker-compose.yml:/opt/stack/docker-compose.yml:ro

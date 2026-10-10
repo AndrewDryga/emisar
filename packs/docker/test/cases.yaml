@@ -8,11 +8,79 @@
 services: [docker-cli, docker-dind]
 env:
   DOCKER_HOST: tcp://docker-dind:2375
+  DOCKER_CONFIG: /opt/docker-fixture/config/enabled
 versions:
   - version: "29.8.1-cli"
     digest: "@sha256:018edbc908e08fcc9dbf029c812c34251e9b4719e6f71ca0e5eae2a987d014ca"
     default: true
 cases:
+  - name: docker.compose_ls-missing-plugin
+    action: docker.compose_ls
+    env: &no_compose_plugin
+      DOCKER_CONFIG: /opt/docker-fixture/config/disabled
+    arrange: &require_missing_plugin
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            rc=0
+            probe=$(LC_ALL=C docker compose version 2>&1) || rc=$?
+            [ "$rc" -eq 1 ] || exit 1
+            printf '%s\n' "$probe" | grep -Fx 'docker: unknown command: docker compose'
+    expect: &missing_plugin_result
+      status: failure
+      exit: [127]
+      stderr_contains: [docker compose plugin is not installed]
+      stderr_not_contains: [Usage, unknown flag]
+  - name: docker.compose_ps-missing-plugin
+    action: docker.compose_ps
+    args: {file: /opt/stack/docker-compose.yml}
+    env: *no_compose_plugin
+    arrange: *require_missing_plugin
+    expect: *missing_plugin_result
+  - name: docker.compose_logs-missing-plugin
+    action: docker.compose_logs
+    args: {file: /opt/running/docker-compose.yml, service: app}
+    env: *no_compose_plugin
+    arrange: *require_missing_plugin
+    expect: *missing_plugin_result
+  - name: docker.compose_restart-missing-plugin
+    action: docker.compose_restart
+    args: {file: /opt/running/docker-compose.yml, service: app}
+    env: *no_compose_plugin
+    arrange: *require_missing_plugin
+    expect: *missing_plugin_result
+  - name: docker.compose_config-missing-plugin
+    action: docker.compose_config
+    args: {file: /opt/stack/docker-compose.yml}
+    env: *no_compose_plugin
+    arrange: *require_missing_plugin
+    expect: *missing_plugin_result
+  - name: docker.compose_images-missing-plugin
+    action: docker.compose_images
+    args: {file: /opt/running/docker-compose.yml}
+    env: *no_compose_plugin
+    arrange: *require_missing_plugin
+    expect: *missing_plugin_result
+  - name: docker.compose_ls-reports-a-real-project
+    action: docker.compose_ls
+    arrange: &running_compose_project
+      - argv: [docker, compose, -f, /opt/running/docker-compose.yml, up, -d, --wait]
+    expect:
+      json:
+        /0/Name: running
+  - name: docker.compose_ps-reports-real-services
+    action: docker.compose_ps
+    args: {file: /opt/running/docker-compose.yml}
+    arrange: *running_compose_project
+    expect:
+      stdout_contains: [running-app-1]
+  - name: docker.compose_logs-reports-real-output
+    action: docker.compose_logs
+    args: {file: /opt/running/docker-compose.yml, service: app, lines: 10}
+    arrange: *running_compose_project
+    expect:
+      stdout_contains: [compose-app-started]
   # docker.compose_config is the one action in this pack that needs no daemon —
   # it parses a file — which is what makes it testable in a disposable project
   # without handing the runner a Docker socket. It is also where the summary's

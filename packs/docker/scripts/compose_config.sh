@@ -1,6 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 
+if probe=$(LC_ALL=C docker compose version 2>&1); then
+  :
+else
+  rc=$?
+  case "$rc:$probe" in
+    "1:docker: 'compose' is not a docker command.
+See 'docker --help'"|"1:docker: unknown command: docker compose
+
+Run 'docker --help' for more information")
+      printf '%s\n' 'docker compose plugin is not installed' >&2
+      exit 127 ;;
+  esac
+  printf '%s\n' "$probe" >&2
+  exit "$rc"
+fi
+
 file=$1
 readonly max_section_bytes=65536
 # The reader below ends every capture with this byte and bounded_section strips
