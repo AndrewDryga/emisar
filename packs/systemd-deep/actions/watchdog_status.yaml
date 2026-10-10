@@ -3,7 +3,10 @@ id: systemd.watchdog_status
 title: Watchdog status across units
 kind: exec
 risk: low
-description: 'List every unit with a non-zero WatchdogUSec property — services that have systemd-level watchdog supervision.'
+description: >
+  List service units with a finite, non-zero configured WatchdogUSec interval.
+  Excludes disabled zero and infinity values. Reports configuration on listed
+  services, not proof that a watchdog is running or the application is healthy.
 side_effects:
   - Iterates systemctl show across all units.
   - Read-only.
@@ -29,9 +32,12 @@ execution:
       # emits one blank line that awk would otherwise turn into a blank unit.
       - |
         units=$(systemctl list-units --type=service --plain --no-legend --no-pager) || exit $?
-        printf '%s\n' "$units" | awk 'NF {print $1}' | while read u; do
+        printf '%s\n' "$units" | awk 'NF {print $1}' | while IFS= read -r u; do
           v=$(systemctl show "$u" -p WatchdogUSec --value 2>/dev/null)
-          if [ -n "$v" ] && [ "$v" != "0" ]; then echo "$u: $v"; fi
+          case $v in
+            ''|0|infinity) ;;
+            *) printf '%s: %s\n' "$u" "$v" ;;
+          esac
         done
   timeout: 60s
 output:

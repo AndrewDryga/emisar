@@ -64,13 +64,54 @@ cases:
     action: systemd.watchdog_status
     arrange:
       - argv: [systemd-run, --unit=packtest-watchdog.service, --property=WatchdogSec=30, /bin/sleep, "600"]
-      - argv: [/bin/sh, -c, "test \"$(systemctl show packtest-watchdog.service -p WatchdogUSec --value)\" != 0"]
+      - argv: [/bin/sh, -c, 'test "$(systemctl show packtest-watchdog.service -p WatchdogUSec --value)" = 30s']
         retry_for: 10s
         retry_every: 200ms
     expect:
-      stdout_contains: [packtest-watchdog.service]
+      stdout_contains: ['packtest-watchdog.service: 30s']
     cleanup:
       - argv: [systemctl, stop, packtest-watchdog.service]
+
+  - name: systemd.watchdog-status-preserves-escaped-unit-name
+    action: systemd.watchdog_status
+    arrange:
+      - argv: [systemd-run, '--unit=packtest-wd\x2dsupervised.service', --property=WatchdogSec=30, /bin/sleep, '600']
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            unit='packtest-wd\x2dsupervised.service'
+            identifier=$(systemctl show "$unit" -p Id --value) || exit $?
+            interval=$(systemctl show "$unit" -p WatchdogUSec --value) || exit $?
+            test "$identifier" = "$unit" && test "$interval" = 30s
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: ['packtest-wd\x2dsupervised.service: 30s']
+    cleanup:
+      - argv: [systemctl, stop, 'packtest-wd\x2dsupervised.service']
+
+  - name: systemd.watchdog-status-excludes-infinity-and-zero
+    action: systemd.watchdog_status
+    arrange:
+      - argv: [systemd-run, --unit=packtest-watchdog.service, --property=WatchdogSec=30, /bin/sleep, '600']
+      - argv: [systemd-run, --unit=packtest-wd-disabled.service, --property=WatchdogSec=infinity, /bin/sleep, '600']
+      - argv: [systemd-run, --unit=packtest-wd-zero.service, --property=WatchdogSec=0, /bin/sleep, '600']
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            supervised=$(systemctl show packtest-watchdog.service -p WatchdogUSec --value) || exit $?
+            disabled=$(systemctl show packtest-wd-disabled.service -p WatchdogUSec --value) || exit $?
+            zero=$(systemctl show packtest-wd-zero.service -p WatchdogUSec --value) || exit $?
+            test "$supervised" = 30s && test "$disabled" = infinity && test "$zero" = 0
+        retry_for: 10s
+        retry_every: 200ms
+    expect:
+      stdout_contains: ['packtest-watchdog.service: 30s']
+      stdout_not_contains: [packtest-wd-disabled.service, packtest-wd-zero.service]
+    cleanup:
+      - argv: [systemctl, stop, packtest-watchdog.service, packtest-wd-disabled.service, packtest-wd-zero.service]
 
   # The unit list ended a pipeline whose last command always succeeded, so a
   # host where systemctl cannot reach the manager answered "no service has a
