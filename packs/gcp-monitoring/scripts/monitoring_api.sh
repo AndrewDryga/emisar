@@ -148,7 +148,7 @@ case "$mode" in
       exit 2
     fi
     interval "$window_minutes"
-    resource_filter="resource.type = \"interconnect_attachment\" AND resource.labels.attachment_name = \"$attachment\" AND resource.labels.attachment_region = \"$region\""
+    resource_filter="resource.type = \"interconnect_attachment\" AND resource.labels.project_id = \"$project\" AND resource.labels.attachment = \"$attachment\" AND resource.labels.region = \"$region\""
 
     umask 077
     tmp=$(mktemp -d "${TMPDIR:-/tmp}/emisar-gcp-monitoring.XXXXXX")

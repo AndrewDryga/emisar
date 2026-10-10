@@ -1,4 +1,5 @@
 import json
+import re
 import ssl
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,12 +22,12 @@ def point(value):
     }
 
 
-def metric_series(metric_type, value, resource_type):
+def metric_series(metric_type, value, resource_type, labels=None):
     return {
         "metric": {"type": metric_type},
         "resource": {
             "type": resource_type,
-            "labels": {
+            "labels": labels if labels is not None else {
                 "instance_id": "1001",
                 "instance_name": "harness-vm",
                 "project_id": "example-prod",
@@ -36,6 +37,77 @@ def metric_series(metric_type, value, resource_type):
         "valueType": "DOUBLE",
         "points": [point(value)],
     }
+
+
+class InvalidFilter(ValueError):
+    pass
+
+
+def interconnect_series(filter_value, query):
+    # This fixture models the AND/equality selectors authored by these actions,
+    # not Google's complete filter language. In particular, a valid unmatched
+    # selector is empty data, while an unknown resource label is a descriptor error.
+    comparisons = re.findall(
+        r'(metric\.type|resource\.type|resource\.labels\.[a-z_]+)\s*=\s*"([^"\n]*)"',
+        filter_value,
+    )
+    token_pattern = re.compile(
+        r'\s*(AND\b|[()]|(?:metric\.type|resource\.type|resource\.labels\.[a-z_]+)\s*=\s*"[^"\n]*")'
+    )
+    position, depth, operand = 0, 0, True
+    while position < len(filter_value):
+        if not filter_value[position:].strip():
+            break
+        token = token_pattern.match(filter_value, position)
+        if token is None:
+            raise InvalidFilter('Malformed fixture filter')
+        position = token.end()
+        value = token.group(1)
+        if value == '(' and operand:
+            depth += 1
+        elif value == ')' and not operand and depth > 0:
+            depth -= 1
+        elif value == 'AND' and not operand:
+            operand = True
+        elif value not in ('AND', '(', ')') and operand:
+            operand = False
+        else:
+            raise InvalidFilter('Malformed fixture filter')
+    if operand or depth:
+        raise InvalidFilter('Malformed fixture filter')
+    real_labels = {'project_id', 'attachment', 'interconnect', 'region', 'interconnect_project'}
+    for key, value in comparisons:
+        if key.startswith('resource.labels.') and key.removeprefix('resource.labels.') not in real_labels:
+            raise InvalidFilter('The supplied filter does not specify a valid combination of metric and monitored resource descriptors.')
+        if key == 'resource.type' and value != 'interconnect_attachment':
+            raise InvalidFilter('The supplied filter does not specify a valid combination of metric and monitored resource descriptors.')
+    metric = next(value for key, value in comparisons if key == 'metric.type')
+    suffix = metric.removeprefix('interconnect.googleapis.com/network/attachment/')
+    values = {'capacity': 1000000, 'received_bytes_count': 250000, 'sent_bytes_count': 500000}
+    aligner = query.get('aggregation.perSeriesAligner', ['ALIGN_NONE'])[0]
+    if aligner != ('ALIGN_MEAN' if suffix == 'capacity' else 'ALIGN_RATE'):
+        raise InvalidFilter('Fixture expected capacity mean or byte rate alignment')
+    labels = {
+        'project_id': 'example-prod', 'attachment': 'harness-attachment',
+        'interconnect': 'harness-interconnect', 'region': 'us-central1',
+        'interconnect_project': 'example-prod',
+    }
+    candidates = [labels, {**labels, 'project_id': 'another-prod'},
+                  {**labels, 'attachment': 'another-attachment'},
+                  {**labels, 'region': 'us-east1'}]
+    # Existing-resource special states prove null is not fabricated zero usage.
+    candidates += [{**labels, 'attachment': name} for name in ('missing-capacity', 'zero-capacity')]
+    result = []
+    for candidate in candidates:
+        if not all(candidate[key.removeprefix('resource.labels.')] == value
+                   for key, value in comparisons if key.startswith('resource.labels.')):
+            continue
+        value = 0 if suffix == 'capacity' and candidate['attachment'] == 'zero-capacity' else values[suffix]
+        series = metric_series(metric, value, 'interconnect_attachment', candidate)
+        if suffix == 'capacity' and candidate['attachment'] == 'missing-capacity':
+            series['points'] = []
+        result.append(series)
+    return {'timeSeries': result}
 
 
 def time_series_request(query):
@@ -105,32 +177,9 @@ def response(raw_path):
     if request.path.endswith("/timeSeries"):
         REQUESTS.append(time_series_request(query))
         filter_value = query.get("filter", [""])[0]
-        if "network/attachment/capacity" in filter_value:
-            return {
-                "timeSeries": [metric_series(
-                    "interconnect.googleapis.com/network/attachment/capacity",
-                    1000000,
-                    "interconnect_attachment",
-                )]
-            }
-        if "received_bytes_count" in filter_value:
-            return {
-                "timeSeries": [metric_series(
-                    "interconnect.googleapis.com/network/attachment/"
-                    "received_bytes_count",
-                    250000,
-                    "interconnect_attachment",
-                )]
-            }
-        if "sent_bytes_count" in filter_value:
-            return {
-                "timeSeries": [metric_series(
-                    "interconnect.googleapis.com/network/attachment/"
-                    "sent_bytes_count",
-                    500000,
-                    "interconnect_attachment",
-                )]
-            }
+        if any('interconnect.googleapis.com/network/attachment/' + suffix in filter_value
+               for suffix in ('capacity', 'received_bytes_count', 'sent_bytes_count')):
+            return interconnect_series(filter_value, query)
         if (
             "compute.googleapis.com/instance/cpu/utilization"
             in filter_value
@@ -228,7 +277,11 @@ class Handler(BaseHTTPRequestHandler):
                 {"error": {"code": 503, "message": "fixture unavailable"}},
             )
             return
-        payload = response(self.path)
+        try:
+            payload = response(self.path)
+        except InvalidFilter as error:
+            self.write_json(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": str(error)}})
+            return
         if payload is None:
             self.write_json(
                 404,
