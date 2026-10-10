@@ -16,6 +16,286 @@ env:
   CH_PASSWORD: packtest-canary-clickhouse-98e4f2
   CH_USER: default
 cases:
+  - action: ch.table_definition_structure
+    args: {target: default.packtest_ddl}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            set -eu;
+            native=$(CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --param_database=default --param_table=packtest_ddl --query "SELECT normalizeQueryKeepNames(create_table_query) FROM system.tables WHERE database={database:String} AND name={table:String} LIMIT 1 FORMAT TabSeparatedRaw");
+            case "$native" in *'FixedString(?)'*'TTL occurred_at + toIntervalDay(?)'*) ;; *) exit 1 ;; esac;
+            case "$native" in *packtest-canary*) exit 1 ;; esac;
+            echo ch-native-normalization-verified
+        expect:
+          stdout_contains: [ch-native-normalization-verified]
+    expect:
+      json:
+        /database: default
+        /name: packtest_ddl
+        /engine: MergeTree
+        /literals_omitted: true
+        /recreatable_sql: false
+      stdout_contains: ['FixedString(?)', 'PARTITION BY toYYYYMM(occurred_at)', 'ORDER BY (service, occurred_at)', 'TTL occurred_at + toIntervalDay(?)']
+      stdout_not_contains: [packtest-canary-ch-ddl-default-316f, packtest-canary-ch-ddl-comment-406a, packtest-canary-ch-ddl-table-comment-54a9, 'FixedString(16)', 'toIntervalDay(30)']
+
+  - action: ch.table_ddl
+    args: {target: default.packtest_ddl}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            set -eu;
+            native=$(CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --param_database=default --param_table=packtest_ddl --query "SHOW CREATE TABLE {database:Identifier}.{table:Identifier} FORMAT TabSeparatedRaw");
+            case "$native" in *'FixedString(16)'*'TTL occurred_at + toIntervalDay(30)'*'packtest-canary-ch-ddl-table-comment-54a9'*) ;; *) exit 1 ;; esac;
+            echo ch-native-full-ddl-verified
+        expect:
+          stdout_contains: [ch-native-full-ddl-verified]
+    expect:
+      stdout_contains: ['CREATE TABLE default.packtest_ddl', 'ENGINE = MergeTree', 'PARTITION BY toYYYYMM(occurred_at)', 'ORDER BY (service, occurred_at)', 'TTL occurred_at + toIntervalDay(30)', 'FixedString(16)', packtest-canary-ch-ddl-default-316f, packtest-canary-ch-ddl-comment-406a, packtest-canary-ch-ddl-table-comment-54a9]
+
+  - name: ch.table_definition_structure-reserved-identifier
+    action: ch.table_definition_structure
+    args: {target: default.select}
+    expect:
+      json: {/database: default, /name: select, /engine: Memory}
+      stdout_contains: ['ENGINE = Memory']
+
+  - name: ch.table_ddl-hyphenated-identifiers
+    action: ch.table_ddl
+    args: {target: packtest-db.table-name}
+    expect:
+      stdout_contains: ['CREATE TABLE `packtest-db`.`table-name`', 'ENGINE = Memory']
+
+  - name: ch.table_definition_structure-missing-table
+    action: ch.table_definition_structure
+    args: {target: default.packtest_missing}
+    expect:
+      status: failure
+      stderr_contains: [table not found]
+      stdout_not_contains: ['CREATE TABLE', 'normalized_definition']
+
+  - name: ch.table_ddl-missing-table
+    action: ch.table_ddl
+    args: {target: default.packtest_missing}
+    expect:
+      status: failure
+      stderr_contains: [CANNOT_GET_CREATE_TABLE_QUERY]
+      stdout_not_contains: ['CREATE TABLE', 'statement']
+
+  - name: ch.table_definition_structure-missing-database
+    action: ch.table_definition_structure
+    args: {target: packtest_missing.packtest_ddl}
+    expect:
+      status: failure
+      stderr_contains: [table not found]
+      stdout_not_contains: ['CREATE TABLE', 'normalized_definition']
+
+  - name: ch.table_ddl-missing-database
+    action: ch.table_ddl
+    args: {target: packtest_missing.packtest_ddl}
+    expect:
+      status: failure
+      stderr_contains: [UNKNOWN_DATABASE]
+      stdout_not_contains: ['CREATE TABLE', 'statement']
+
+  - name: ch.table_definition_structure-authentication-failure
+    action: ch.table_definition_structure
+    args: {target: default.packtest_ddl}
+    env: {CH_PASSWORD: packtest-canary-ch-structure-invalid-auth-62c9}
+    expect:
+      status: failure
+      stderr_contains: [AUTHENTICATION_FAILED]
+      stdout_not_contains: ['CREATE TABLE']
+
+  - name: ch.table_ddl-authentication-failure
+    action: ch.table_ddl
+    args: {target: default.packtest_ddl}
+    env: {CH_PASSWORD: packtest-canary-ch-ddl-invalid-auth-953c}
+    expect:
+      status: failure
+      stderr_contains: [AUTHENTICATION_FAILED]
+      stdout_not_contains: ['CREATE TABLE']
+
+  - name: ch.table_definition_structure-permission-failure
+    action: ch.table_definition_structure
+    args: {target: default.packtest_ddl}
+    env: {CH_USER: packtest_no_tables}
+    arrange:
+      - argv: [/bin/sh, -c, 'CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user default --query "CREATE USER packtest_no_tables IDENTIFIED BY ''packtest-canary-clickhouse-98e4f2''"']
+    expect:
+      status: failure
+      stderr_contains: [ACCESS_DENIED]
+      stdout_not_contains: ['CREATE TABLE']
+
+  - name: ch.table_ddl-permission-failure
+    action: ch.table_ddl
+    args: {target: default.packtest_ddl}
+    env: {CH_USER: packtest_no_tables}
+    arrange:
+      - argv: [/bin/sh, -c, 'CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user default --query "CREATE USER packtest_no_tables IDENTIFIED BY ''packtest-canary-clickhouse-98e4f2''"']
+    expect:
+      status: failure
+      stderr_contains: [ACCESS_DENIED]
+      stdout_not_contains: ['CREATE TABLE']
+
+  - name: ch.table_definition_structure-unavailable-server
+    action: ch.table_definition_structure
+    args: {target: default.packtest_ddl}
+    env: {CH_HOST: 127.0.0.2}
+    expect:
+      status: failure
+      stderr_contains: [NETWORK_ERROR]
+      stdout_not_contains: ['CREATE TABLE']
+
+  - name: ch.table_ddl-unavailable-server
+    action: ch.table_ddl
+    args: {target: default.packtest_ddl}
+    env: {CH_HOST: 127.0.0.2}
+    expect:
+      status: failure
+      stderr_contains: [NETWORK_ERROR]
+      stdout_not_contains: ['CREATE TABLE']
+
+  - name: ch.table_definition_structure-rejects-injection
+    action: ch.table_definition_structure
+    args: {target: 'default.packtest_ddl; SELECT 1'}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  - name: ch.table_ddl-rejects-quotes
+    action: ch.table_ddl
+    args: {target: 'default."packtest_ddl"'}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  - name: ch.table_definition_structure-rejects-extra-dot
+    action: ch.table_definition_structure
+    args: {target: default.packtest.ddl}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  - name: ch.table_ddl-rejects-empty-component
+    action: ch.table_ddl
+    args: {target: .packtest_ddl}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  - name: ch.table_definition_structure-rejects-129-byte-identifier
+    action: ch.table_definition_structure
+    args: {target: 'default.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  - name: ch.table_ddl-rejects-129-byte-identifier
+    action: ch.table_ddl
+    args: {target: 'default.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+    expect:
+      status: failure
+      reason: argument_invalid
+      error_contains: [must match pattern]
+
+  # These fixtures contain opaque, undeclared DDL literals. The normalized
+  # read must omit them at the source, not rely on credential redaction.
+  - name: ch.table_definition_structure-omits-large-comment
+    action: ch.table_definition_structure
+    args: {target: default.packtest_big_comment}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            set -eu;
+            comment=$(printf '%070000d' 0);
+            CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "CREATE TABLE default.packtest_big_comment (id UInt8) ENGINE=Memory COMMENT '$comment'";
+            bytes=$(CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "SELECT length(create_table_query) FROM system.tables WHERE database='default' AND name='packtest_big_comment'");
+            test "$bytes" -gt 65536;
+            echo ch-native-large-comment-verified
+        expect: {stdout_contains: [ch-native-large-comment-verified]}
+    expect:
+      json: {/name: packtest_big_comment, /literals_omitted: true, /recreatable_sql: false}
+      stdout_contains: ['COMMENT ?']
+      stdout_not_contains: ['00000000000000000000000000000000']
+
+  - name: ch.table_ddl-rejects-large-comment
+    action: ch.table_ddl
+    args: {target: default.packtest_big_comment}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            set -eu;
+            comment=$(printf '%070000d' 0);
+            CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "CREATE TABLE default.packtest_big_comment (id UInt8) ENGINE=Memory COMMENT '$comment'";
+            bytes=$(CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "SELECT length(create_table_query) FROM system.tables WHERE database='default' AND name='packtest_big_comment'");
+            test "$bytes" -gt 65536;
+            echo ch-native-large-comment-verified
+        expect: {stdout_contains: [ch-native-large-comment-verified]}
+    expect:
+      status: failure
+      stderr_contains: [TOO_MANY_ROWS_OR_BYTES]
+      stdout_not_contains: ['CREATE TABLE', 'statement', '00000000000000000000000000000000']
+
+  - name: ch.table_ddl-rejects-json-escaping-overflow
+    action: ch.table_ddl
+    args: {target: default.packtest_escaped_comment}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            set -eu;
+            comment=$(printf '%040000d' 0 | tr 0 '"');
+            CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "CREATE TABLE default.packtest_escaped_comment (id UInt8) ENGINE=Memory COMMENT '$comment'";
+            bytes=$(CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "SELECT length(create_table_query) FROM system.tables WHERE database='default' AND name='packtest_escaped_comment'");
+            test "$bytes" -lt 65536;
+            native=$(CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --max_result_bytes=65536 --result_overflow_mode=throw --query 'SHOW CREATE TABLE default.packtest_escaped_comment FORMAT JSONEachRow');
+            test "${#native}" -gt 65536;
+            echo ch-native-json-escaping-overflow-verified
+        expect: {stdout_contains: [ch-native-json-escaping-overflow-verified]}
+    expect:
+      status: failure
+      stderr_contains: [table definition exceeds output limit]
+      stdout_not_contains: ['CREATE TABLE', 'statement']
+
+  - name: ch.table_definition_structure-rejects-oversized-structure
+    action: ch.table_definition_structure
+    args: {target: default.packtest_wide}
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - >-
+            set -eu;
+            query='CREATE TABLE default.packtest_wide ('; sep=''; i=0;
+            while test "$i" -lt 900; do
+              query="${query}${sep}column_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_${i} UInt8";
+              sep=','; i=$((i + 1));
+            done;
+            query="${query}) ENGINE=Memory";
+            CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "$query";
+            bytes=$(CLICKHOUSE_PASSWORD="$CH_PASSWORD" clickhouse-client --host "$CH_HOST" --user "$CH_USER" --query "SELECT length(normalizeQueryKeepNames(create_table_query)) FROM system.tables WHERE database='default' AND name='packtest_wide'");
+            test "$bytes" -gt 65536;
+            echo ch-native-large-structure-verified
+        expect: {stdout_contains: [ch-native-large-structure-verified]}
+    expect:
+      status: failure
+      stderr_contains: [TOO_MANY_ROWS_OR_BYTES]
+      stdout_not_contains: ['CREATE TABLE', 'normalized_definition', 'column_aaaaaaaa']
+
   - action: ch.asynchronous_metrics
     expect:
       stdout_contains: ['"metric"', '"value"', '"metric":"MemoryResident"', '"metric":"Uptime"']

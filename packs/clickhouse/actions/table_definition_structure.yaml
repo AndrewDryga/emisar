@@ -1,0 +1,59 @@
+schema_version: 1
+id: ch.table_definition_structure
+title: Show normalized table structure
+kind: exec
+risk: low
+description: >
+  Show one table's engine, partition key, order key and normalized definition.
+  String and numeric literals and comments are omitted, including defaults,
+  type parameters and TTL durations. This is structural evidence, not
+  recreatable SQL; ch.table_ddl returns the full server-provided definition.
+side_effects:
+  - One table-presence read and one bounded system.tables SELECT.
+  - Read-only.
+args:
+  - name: target
+    type: string
+    required: true
+    description: Table as database.table; each identifier is 1–128 ASCII letters, digits, underscores or hyphens.
+    validation:
+      max_length: 257
+      pattern: '^[A-Za-z0-9_-]{1,128}\.[A-Za-z0-9_-]{1,128}$'
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - -c
+      - |
+        set -eu
+        export LC_ALL=C
+        export CLICKHOUSE_PASSWORD="${CH_PASSWORD:-}"
+        database=${1%%.*}
+        table=${1#*.}
+        if present=$(clickhouse-client --host "${CH_HOST:-localhost}" --user "${CH_USER:-default}" --param_database="$database" --param_table="$table" --query 'EXISTS TABLE {database:Identifier}.{table:Identifier} FORMAT TabSeparated'); then
+          case "$present" in
+            1) ;;
+            0) printf '%s\n' 'table not found' >&2; exit 1 ;;
+            *) printf '%s\n' 'unexpected table-presence response' >&2; exit 1 ;;
+          esac
+        else
+          exit "$?"
+        fi
+        if result=$(clickhouse-client --host "${CH_HOST:-localhost}" --user "${CH_USER:-default}" --param_database="$database" --param_table="$table" --max_result_bytes=65536 --result_overflow_mode=throw --query 'SELECT database, name, engine, normalizeQueryKeepNames(create_table_query) AS normalized_definition, true AS literals_omitted, false AS recreatable_sql FROM system.tables WHERE database={database:String} AND name={table:String} LIMIT 1 FORMAT JSONEachRow'); then
+          test -n "$result" || { printf '%s\n' 'table definition unavailable' >&2; exit 1; }
+          test "${#result}" -le 65535 || { printf '%s\n' 'table definition exceeds output limit' >&2; exit 1; }
+          printf '%s\n' "$result"
+        else
+          exit "$?"
+        fi
+      - emisar
+      - '{{ args.target }}'
+  timeout: 15s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Normalized event table structure
+    args: {target: default.events}

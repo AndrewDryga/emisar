@@ -2,7 +2,7 @@ schema_version: 1
 
 id: clickhouse
 name: ClickHouse analytics DB
-version: 0.2.17
+version: 0.2.18
 # Versions below this returned raw Keeper node values, mutation SQL, exception
 # text and dictionary source URLs from low-risk reads (0.2.12 and below, live
 # query text too). They fail closed.
@@ -50,6 +50,7 @@ setup:
     - "Any of `CH_HOST` / `CH_USER` / `CH_PASSWORD` you set must also be allowlisted in the runner's `execution.inherit_env` — the action env is scrubbed to PATH/LANG/LC_ALL/TERM by default, so an env present on the host but not allowlisted is silently dropped (the action falls back to its local default or fails auth)."
     - Connection always uses clickhouse-client's default native port (9000); there is no port env var in this pack.
     - The user needs SELECT on the system tables for the reads, plus rights for the mutators (KILL QUERY, OPTIMIZE, SYSTEM ... for replica/config actions) you enable.
+    - "The table-definition reads accept one bounded `database.table` target and need the corresponding table visibility privileges. `ch.table_definition_structure` omits literals and comments; `ch.table_ddl` returns full server-provided DDL, is high risk, and requires approval under the default policy because defaults, comments and engine arguments can expose sensitive data. Neither read enables ClickHouse's secret-display settings."
     - Replication reads can be empty on a non-replicated server. `ch.zookeeper_connection` reports no ZooKeeper/Keeper configured when its system table is absent; connection, authentication and permission errors still fail. `ch.keeper_status` requires Keeper/ZooKeeper and fails when system.zookeeper is absent.
   verify: ch.uptime
 
@@ -70,6 +71,8 @@ actions:
   # Tables / parts
   - actions/parts_summary.yaml
   - actions/table_sizes.yaml
+  - actions/table_definition_structure.yaml
+  - actions/table_ddl.yaml
   # Errors / health
   - actions/errors.yaml
   - actions/query_errors.yaml

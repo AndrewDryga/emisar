@@ -1,0 +1,52 @@
+schema_version: 1
+id: ch.table_ddl
+title: Show full table DDL
+kind: exec
+risk: high
+description: >
+  Show one table's full server-provided CREATE definition, including engine,
+  partition key, order key and TTL. Defaults, comments and engine arguments
+  can expose credentials or sensitive application data; this read requires
+  approval under the default policy. ClickHouse and runner redaction may still
+  hide recognized secrets. Oversized definitions fail instead of returning
+  partial DDL.
+side_effects:
+  - One bounded SHOW CREATE TABLE.
+  - Read-only; the returned definition can contain sensitive literals.
+args:
+  - name: target
+    type: string
+    required: true
+    description: Table as database.table; each identifier is 1–128 ASCII letters, digits, underscores or hyphens.
+    validation:
+      max_length: 257
+      pattern: '^[A-Za-z0-9_-]{1,128}\.[A-Za-z0-9_-]{1,128}$'
+execution:
+  command:
+    binary: /bin/sh
+    argv:
+      - -c
+      - |
+        set -eu
+        export LC_ALL=C
+        export CLICKHOUSE_PASSWORD="${CH_PASSWORD:-}"
+        database=${1%%.*}
+        table=${1#*.}
+        if result=$(clickhouse-client --host "${CH_HOST:-localhost}" --user "${CH_USER:-default}" --param_database="$database" --param_table="$table" --max_result_bytes=65536 --result_overflow_mode=throw --query 'SHOW CREATE TABLE {database:Identifier}.{table:Identifier} FORMAT JSONEachRow'); then
+          test -n "$result" || { printf '%s\n' 'table definition unavailable' >&2; exit 1; }
+          test "${#result}" -le 65535 || { printf '%s\n' 'table definition exceeds output limit' >&2; exit 1; }
+          printf '%s\n' "$result"
+        else
+          exit "$?"
+        fi
+      - emisar
+      - '{{ args.target }}'
+  timeout: 15s
+output:
+  parser: json
+  parser_required: true
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 8192
+examples:
+  - title: Full event table definition
+    args: {target: default.events}
