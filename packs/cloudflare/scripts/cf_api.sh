@@ -47,17 +47,18 @@ curl_protocols() {
 }
 
 request() (
-  local method=$1 url=$2
+  local method=$1 url=$2 http_code='' header_line
   shift 2
   umask 077
   response_dir=$(mktemp -d "${TMPDIR:-/tmp}/emisar-cloudflare.XXXXXXXX") || exit 1
-  trap 'rm -f -- "$response_dir/body"; rmdir -- "$response_dir"' EXIT
+  trap 'rm -f -- "$response_dir/body" "$response_dir/headers" "$response_dir/curl-stderr"; rmdir -- "$response_dir"' EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
   if printf 'Authorization: Bearer %s\n' "$CF_API_TOKEN" |
     curl -q --globoff --proto "$(curl_protocols)" --max-filesize "$max_response_bytes" \
-      -fsS -X "$method" -H @- "$@" "$url" |
+      --fail-with-body -sS --dump-header "$response_dir/headers" \
+      -X "$method" -H @- "$@" "$url" 2>"$response_dir/curl-stderr" |
     head -c "$((max_response_bytes + 1))" >"$response_dir/body"; then
     statuses=("${PIPESTATUS[@]}")
   else
@@ -65,17 +66,66 @@ request() (
   fi
   bytes=$(wc -c <"$response_dir/body")
   ((bytes <= max_response_bytes && statuses[1] != 63)) || fail "Cloudflare API response exceeded 16 MiB"
-  ((statuses[0] == 0 && statuses[1] == 0 && statuses[2] == 0)) || fail "Cloudflare API request failed"
+  if ((statuses[0] != 0 || statuses[2] != 0 || (statuses[1] != 0 && statuses[1] != 22))); then
+    cat "$response_dir/curl-stderr" >&2
+    fail "Cloudflare API request failed"
+  fi
   ((bytes > 0)) || fail "Cloudflare API returned an empty response"
+  # Headers stay private. Match whole status lines, not a header's value, and
+  # use the last response (after an interim or proxy CONNECT response).
+  while IFS= read -r header_line; do
+    if [[ "$header_line" =~ ^HTTP/[0-9.]+[[:space:]]+([0-9]{3})([[:space:]]|$) ]]; then
+      http_code=${BASH_REMATCH[1]}
+    fi
+  done <"$response_dir/headers"
+  if ((statuses[1] != 0)) || [[ ! "$http_code" =~ ^2[0-9]{2}$ ]]; then
+    # Internal status44 carries ONLY a complete structured404 from this exact
+    # read to firewall_rules. It is not yet absence: versions must confirm it.
+    if [[ "$method" == GET && "$http_code" == 404 && "$url" == "$api_base"/zones/*/rulesets/phases/http_request_firewall_custom/entrypoint ]] &&
+      jq -es 'length == 1 and (.[0] |
+        if type != "object" then false
+        elif .success != false or (.errors | type) != "array" then false
+        else (.errors | length == 1 and all(.[];
+          if type != "object" then false
+          else (.message | type == "string" and length > 0) and
+            ((has("code") | not) or (.code | type == "number"))
+          end)) end)' <"$response_dir/body" >/dev/null 2>&1; then
+      cat "$response_dir/body"
+      exit 44
+    fi
+    cat "$response_dir/curl-stderr" >&2
+    report_errors <"$response_dir/body"
+    fail "Cloudflare API request failed"
+  fi
   cat "$response_dir/body"
 )
+
+report_errors() {
+  # Never dump the rejected envelope, result, headers or nested source fields.
+  # Parse the complete document before emitting any typed code/message pairs.
+  jq -rs '
+    if length != 1 then empty
+    elif (.[0] | type) != "object" then empty
+    elif (.[0].errors | type) != "array" then empty
+    else .[0].errors[] |
+      select(type == "object") |
+      select(.message | type == "string" and length > 0) |
+      (.message | explode | map(if . < 32 or . == 127 then 32 else . end) | implode) as $message |
+      if (.code | type) == "number" then "\(.code): \($message)"
+      else $message end
+    end
+  ' >&2 2>/dev/null || true
+}
 
 # Every REST response carries the v4 envelope. A 2xx whose envelope says
 # success:false is still a failure and must not read as a healthy run.
 respond() {
   local response=$1
-  printf '%s' "$response" | jq -e '.success == true' >/dev/null ||
+  if ! printf '%s' "$response" | jq -es 'length == 1 and
+    (.[0] | if type == "object" then .success == true and .errors == [] else false end)' >/dev/null 2>&1; then
+    printf '%s' "$response" | report_errors
     fail "Cloudflare API reported failure"
+  fi
   printf '%s\n' "$response" | jq -ce .
 }
 
@@ -164,7 +214,32 @@ dns_records() {
 }
 
 firewall_rules() {
-  rest GET "/zones/$1/rulesets/phases/http_request_firewall_custom/entrypoint"
+  local path="/zones/$1/rulesets/phases/http_request_firewall_custom/entrypoint" response versions status
+  if response=$(request GET "$api_base$path"); then
+    respond "$response"
+    return
+  else
+    status=$?
+  fi
+  ((status == 44)) || return 1
+  # Cloudflare documents an empty versions array when the specified phase
+  # entrypoint does not exist. An arbitrary404 alone cannot prove zero rules.
+  if versions=$(rest GET "$path/versions") &&
+    printf '%s' "$versions" | jq -es 'length == 1 and (.[0] |
+      .success == true and .errors == [] and .result == [] and
+      (if has("result_info") then .result_info |
+        if type != "object" then false
+        else ((keys - ["cursors"]) | length == 0) and
+          (if has("cursors") then .cursors |
+            if type == "object" then length == 0 else false end
+          else true end)
+        end
+      else true end))' >/dev/null 2>&1; then
+    printf '%s\n' '{"success":true,"errors":[],"messages":[],"result":{"phase":"http_request_firewall_custom","rules":[]}}'
+    return
+  fi
+  printf '%s' "$response" | report_errors
+  fail "Cloudflare API could not confirm absent custom entrypoint"
 }
 
 list_rulesets() {

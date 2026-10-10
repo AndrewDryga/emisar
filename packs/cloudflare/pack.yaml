@@ -2,7 +2,7 @@ schema_version: 1
 
 id: cloudflare
 name: Cloudflare edge operations
-version: 0.2.10
+version: 0.2.11
 # Earlier versions emitted customer-defined Pages environment values.
 retired_below: 0.2.10
 description: >
@@ -34,6 +34,7 @@ setup:
       required: true
       description: Cloudflare API token. Scope it to the zones, accounts, and permissions the actions you enable need, and gate mutation actions with policy.
   notes:
+    - "Requires curl 7.76.0 or newer to retain API error bodies with --fail-with-body."
     - "Create the token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) → Create Token. Start from a read-only template and add only the permissions listed below; account-scoped tokens live under Manage Account → API Tokens."
     - "Zone and account IDs are per-call action arguments — cf.list_zones and cf.list_accounts return them for use in the other actions."
     - "Token scopes by family: Zone Read + DNS Read for the zone/DNS reads; DNS Edit for the DNS record mutations; Cache Purge for the purge actions; Zone Settings Edit for development mode, security level, SSL mode, minimum TLS, Always Use HTTPS, and pause; Firewall Services Edit for IP access rules; Analytics Read for zone and DNS analytics; Cloudflare Tunnel Read for tunnels; Load Balancing Read/Edit for pools; Workers Scripts Read for Worker reads and Workers Routes Edit for route changes; Pages Read for Pages reads and Pages Edit for rollback, retry, and build-cache purge; Audit Logs Read for audit logs."

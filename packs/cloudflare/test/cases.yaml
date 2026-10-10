@@ -21,6 +21,8 @@ defaults:
       - pages-array-fixture-d40e
       - pages-type-fixture-e51f
       - pages-scalar-fixture-f62a
+      - cloudflare-error-extra-fixture-02c4
+    stderr_not_contains: [cloudflare-error-extra-fixture-02c4]
 cases:
   - action: cf.list_zones
     expect:
@@ -98,6 +100,30 @@ cases:
         /result/0/phase: http_request_firewall_custom
         /result/1/kind: managed
         /result/1/name: Cloudflare Managed Ruleset
+
+  - name: cf.firewall_rules-no-custom-entrypoint
+    action: cf.firewall_rules
+    args: {zone_id: "11111111111111111111111111111111"}
+    expect:
+      json:
+        /success: true
+        /result/phase: http_request_firewall_custom
+        /result/rules: []
+      stderr_not_contains: ["curl:", "Custom entrypoint not found"]
+    probes:
+      - name: Exactly two reads confirmed absence
+        argv: [curl, -fsS, http://cloudflare-api:8080/probe/state]
+        expect:
+          stdout_contains: ['"reads":["custom-entrypoint","custom-entrypoint-versions"]']
+
+  - name: cf.firewall_rules-no-custom-entrypoint-terminal-info
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-terminal-info"}
+    expect:
+      json:
+        /result/rules: []
+      stderr_not_contains: ["curl:", "Custom entrypoint not found", cloudflare-error-extra-fixture-02c4]
 
   - action: cf.list_ip_access_rules
     args: {zone_id: abc123def456abc123def456abc123de, mode: block}
@@ -669,7 +695,327 @@ cases:
       status: failure
       exit: [1]
       reason_contains: [process exited with code 1]
-      stderr_contains: ["curl: (22)", "Cloudflare API request failed"]
+      stderr_contains: ["9109: Invalid access token", "Cloudflare API request failed"]
+
+  - name: cf.list_zones-permission-error-body
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-permission"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["9109: Permission denied", "Cloudflare API request failed"]
+
+  - name: cf.list_zones-permission-error-without-regex
+    action: cf.list_zones
+    env:
+      CF_API_BASE: http://cloudflare-api:8080/client/v4/errors-permission
+      PATH: /opt/jq-without-regex:/opt/emisar/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["9109: Permission denied", "Cloudflare API request failed"]
+
+  - name: cf.list_zones-logical-error-body
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-logical"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["9109: Permission denied", "Cloudflare API reported failure"]
+
+  - name: cf.list_zones-html-fails-closed
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-html"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["Cloudflare API request failed"]
+
+  - name: cf.list_zones-empty-fails-closed
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-empty"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["Cloudflare API"]
+
+  - name: cf.list_zones-malformed-fails-closed
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-malformed"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["Cloudflare API request failed"]
+
+  - name: cf.list_zones-multi-fails-closed
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-multi"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["Cloudflare API request failed"]
+
+  - name: cf.list_zones-truncated-fails-closed
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-truncated"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["Cloudflare API request failed"]
+
+  - name: cf.list_zones-oversized-fails-closed
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-oversized"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["Cloudflare API response exceeded 16 MiB"]
+
+  - name: cf.list_zones-http-failure-success-fails-closed
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-http-failure-success"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["Cloudflare API request failed"]
+
+  - name: cf.list_zones-redirect-fails-closed
+    action: cf.list_zones
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-redirect"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["Cloudflare API request failed"]
+
+  - name: cf.firewall_rules-mixed-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-mixed"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["9109: Permission denied"]
+
+  - name: cf.firewall_rules-versions-existing-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-existing"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-null-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-null"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-missing-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-missing"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-errors-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-errors"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-info-null-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-info-null"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-cursors-null-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-cursors-null"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-cursor-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-cursor"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-cursor-null-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-cursor-null"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-cursor-empty-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-cursor-empty"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-info-extra-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-info-extra"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-malformed-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-malformed"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-multi-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-multi"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-truncated-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-truncated"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-versions-oversized-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-oversized"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["Cloudflare API response exceeded 16 MiB"]
+
+  - name: cf.firewall_rules-versions-denied-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-denied"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["9109: Permission denied"]
+
+  - name: cf.firewall_rules-versions-logical-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: abc123def456abc123def456abc123de}
+    env: {CF_API_BASE: "http://cloudflare-api:8080/client/v4/errors-versions-logical"}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["9109: Permission denied"]
+
+  - name: cf.firewall_rules-invalid-zone-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: ffffffffffffffffffffffffffffffff}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["1001: Invalid zone identifier", "could not confirm absent custom entrypoint"]
+
+  - name: cf.firewall_rules-invalid-token-fails-closed
+    action: cf.firewall_rules
+    args: {zone_id: "11111111111111111111111111111111"}
+    env: {CF_API_TOKEN: packtest-canary-cloudflare-invalid-1337}
+    expect:
+      status: failure
+      exit: [1]
+      stdout_not_empty: false
+      stdout_not_contains: ["success", "rules", "cloudflare-error-extra-fixture-02c4"]
+      stderr_contains: ["9109: Invalid access token"]
 
   - name: cf.zone_analytics-fails-on-graphql-errors
     action: cf.zone_analytics

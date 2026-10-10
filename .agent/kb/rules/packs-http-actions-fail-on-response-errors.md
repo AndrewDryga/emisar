@@ -35,6 +35,15 @@ curl -sS -H @- "$API_URL/resource"
 
 This exits zero after a 401, 403, 404, or 500 response.
 
+**Error diagnostics.** Retain structured provider rejections with
+`--fail-with-body`, but project only the intended error codes and messages;
+do not dump the rejected envelope, nested fields, or headers. When a parser's
+stdout belongs on stderr and its own parsing errors should be suppressed,
+use `>&2 2>/dev/null` in that order. Shell redirections are applied from left
+to right: `2>/dev/null >&2` discards the projected messages as well. A behavior
+case should require a real provider code/message and exclude an independent
+extra-field canary, not merely require a failure exit or a generic error.
+
 **Sweep.** Inspect `execution.command` and every referenced `execution.script`
 for each action path declared by `pack.yaml`. Look for curl invocations without
 a short option containing `f`, `--fail`, or an explicit 2xx status check. For

@@ -7,6 +7,8 @@ from urllib.parse import parse_qs, urlparse
 API_TOKEN = "packtest-canary-cloudflare-token-9f3e2"
 
 ZONE_ID = "abc123def456abc123def456abc123de"
+EMPTY_RULES_ZONE_ID = "11111111111111111111111111111111"
+ERROR_EXTRA = "cloudflare-error-extra-fixture-02c4"
 ACCOUNT_ID = "9f8e7d6c5b4a39281706f5e4d3c2b1a0"
 RECORD_A = "372e67954025e0ba6aaa6d586b9e0b59"
 RECORD_TXT = "7d2e3c4b5a69788796a5b4c3d2e1f012"
@@ -104,6 +106,7 @@ def initial_state():
         ],
         "purges": [],
         "events": [],
+        "reads": [],
     }
 
 
@@ -177,6 +180,80 @@ class Handler(BaseHTTPRequestHandler):
     def send_err(self, status, code, message):
         self.send_json({"success": False, "errors": [{"code": code, "message": message}], "messages": [], "result": None}, status)
 
+    def send_error_fixture(self, mode, endpoint):
+        # Provider errors may carry unrelated data. Only code/message belongs
+        # in diagnostics; this canary is not a runner-inherited secret.
+        error = {"code": 10000, "message": "Custom entrypoint not found", "source": {"pointer": ERROR_EXTRA}}
+        envelope = {"success": False, "errors": [error], "messages": [], "result": {"extra": ERROR_EXTRA}}
+        status = 404
+        versions = endpoint.endswith("/entrypoint/versions")
+        if mode in ("permission", "logical") or (versions and mode in ("versions-denied", "versions-logical")):
+            status = 200 if mode in ("logical", "versions-logical") else 403
+            envelope["errors"] = [{"code": 9109, "message": "Permission denied", "source": {"pointer": ERROR_EXTRA}}]
+        elif mode == "mixed":
+            envelope["errors"].append({"code": 9109, "message": "Permission denied"})
+        elif versions:
+            status = 200
+            envelope = {"success": True, "errors": [], "messages": [], "result": []}
+            if mode == "versions-existing":
+                envelope["result"] = [{"id": RULESET_ID, "kind": "zone", "phase": "http_request_firewall_custom", "version": "3"}]
+            elif mode == "versions-null":
+                envelope["result"] = None
+            elif mode == "versions-missing":
+                del envelope["result"]
+            elif mode == "versions-errors":
+                envelope["errors"] = [error]
+            elif mode == "versions-info-null":
+                envelope["result_info"] = None
+            elif mode == "versions-cursors-null":
+                envelope["result_info"] = {"cursors": None}
+            elif mode == "versions-cursor":
+                envelope["result_info"] = {"cursors": {"after": "more"}}
+            elif mode == "versions-cursor-null":
+                envelope["result_info"] = {"cursors": {"after": None}}
+            elif mode == "versions-cursor-empty":
+                envelope["result_info"] = {"cursors": {"after": ""}}
+            elif mode == "versions-info-extra":
+                envelope["result_info"] = {"total_pages": 2}
+            elif mode == "versions-terminal-info":
+                envelope["result_info"] = {"cursors": {}}
+
+        body = json.dumps(envelope, separators=(",", ":")).encode()
+        if mode == "malformed" or (versions and mode == "versions-malformed"):
+            body = b'{"success":false,"errors":['
+        elif mode == "html":
+            body = f"<html>{ERROR_EXTRA}</html>".encode()
+        elif mode == "empty":
+            body = b""
+        elif mode == "multi" or (versions and mode == "versions-multi"):
+            body += b'\n{"success":true,"errors":[],"result":[]}'
+        elif mode in ("http-failure-success", "redirect"):
+            status = 503 if mode == "http-failure-success" else 302
+            body = b'{"success":true,"errors":[],"result":[]}'
+        elif mode == "truncated" or (versions and mode == "versions-truncated"):
+            # Parseable JSON is not proof that curl received the entire body.
+            if not versions:
+                status = 200
+                body = b'{"success":true,"errors":[],"result":[]}'
+
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("X-Fixture-Extra", ERROR_EXTRA)
+        if mode == "redirect":
+            self.send_header("Location", "/client/v4/zones")
+        length = len(body)
+        if mode == "oversized" or (versions and mode == "versions-oversized"):
+            length = 16777217
+        elif mode == "truncated" or (versions and mode == "versions-truncated"):
+            length += 100
+        self.send_header("Content-Length", str(length))
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # Expected when the real client rejects an oversized response.
+            pass
+
     def authorized(self):
         if self.headers.get("Authorization") == f"Bearer {API_TOKEN}":
             return True
@@ -201,6 +278,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(STATE)
             return
         if not self.authorized():
+            return
+
+        error_fixture_prefix = "/client/v4/errors-"
+        if path.startswith(error_fixture_prefix):
+            mode, _, endpoint = path.removeprefix(error_fixture_prefix).partition("/")
+            STATE["reads"].append(endpoint)
+            self.send_error_fixture(mode, endpoint)
+            return
+
+        custom_entrypoint = f"/client/v4/zones/{EMPTY_RULES_ZONE_ID}/rulesets/phases/http_request_firewall_custom/entrypoint"
+        if path == custom_entrypoint:
+            STATE["reads"].append("custom-entrypoint")
+            self.send_err(404, 10000, "Custom entrypoint not found")
+            return
+        if path == custom_entrypoint + "/versions":
+            STATE["reads"].append("custom-entrypoint-versions")
+            # Documented provider shape: a missing phase entrypoint has no
+            # versions. This is separate evidence, not a guessed error code.
+            self.send_ok([])
             return
 
         # Fixed fixture-only bases exercise absent, empty, nullable and malformed

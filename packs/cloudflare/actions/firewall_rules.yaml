@@ -6,8 +6,9 @@ risk: low
 description: >
   List zone WAF custom rules — the entrypoint ruleset for the
   http_request_firewall_custom phase. Replaces the legacy /firewall/rules
-  API, which Cloudflare sunset on 2025-06-15.
-side_effects: [One read-only API request.]
+  API, which Cloudflare sunset on 2025-06-15. Return zero rules when the
+  entrypoint is absent, confirmed by its empty version history.
+side_effects: [Up to two read-only API requests.]
 args:
   - name: zone_id
     type: string
