@@ -23,8 +23,23 @@ cases:
     expect:
       stdout_contains: [packtest, Schema versions]
   - action: cassandra.nodetool_info
+    arrange:
+      - argv:
+          - /bin/sh
+          - -c
+          - |
+            info=$(nodetool info) || exit $?
+            printf '%s\n' "$info" | awk '
+              /^Token[[:space:]]*:/ {
+                tokens++
+                if ($0 !~ /^Token[[:space:]]*:[[:space:]]*[+-]?[0-9]+[[:space:]]*$/)
+                  invalid = 1
+              }
+              END { exit (invalid || tokens != 1) }
+            '
     expect:
-      stdout_contains: [Gossip active, Native Transport active]
+      stdout_contains: [Gossip active, Native Transport active, Token]
+      stdout_not_contains: ['[REDACTED]', 'invoke with -T/--tokens']
   - action: cassandra.nodetool_version
     expect:
       stdout_contains: [ReleaseVersion]
@@ -41,7 +56,8 @@ cases:
   - action: cassandra.nodetool_describering
     args: {keyspace: packtest}
     expect:
-      stdout_contains: [Schema Version, TokenRange]
+      stdout_contains: [Schema Version, TokenRange, start_token, end_token]
+      stdout_not_contains: ['[REDACTED]']
   - action: cassandra.nodetool_tpstats
     expect:
       stdout_contains: [Pool Name, Dropped]

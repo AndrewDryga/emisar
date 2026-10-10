@@ -42,8 +42,20 @@ cases:
         - '$apr1$pAcKtEsT$'
 
   - action: traefik.http_services_summary
+    arrange: &backend_down
+      - argv: [/bin/sh, -c, 'curl -fsS http://127.0.0.1:8080/api/http/services | jq -e ''any(.[]; .name == "packtest-service@file" and .serverStatus["http://127.0.0.1:9999"] == "DOWN")''']
+        retry_for: 10s
+        retry_every: 200ms
     expect:
-      stdout_contains: ['"name":"packtest-service@file"']
+      stdout_contains: ['"name":"packtest-service@file"', '"down_servers":["http://127.0.0.1:9999"]']
+      stdout_not_contains: ['[REDACTED]']
+
+  - name: traefik.http_services-preserves-pathless-backend-and-provider-name
+    action: traefik.http_services
+    arrange: *backend_down
+    expect:
+      stdout_contains: ['"name":"packtest-service@file"', '"url":"http://127.0.0.1:9999"', '"http://127.0.0.1:9999":"DOWN"']
+      stdout_not_contains: ['[REDACTED]']
 
   # The summary pipes an API read into jq, and jq exits 0 on empty stdin — so
   # before the capture, a 404 (an API that is down, moved, or 401-ing) returned

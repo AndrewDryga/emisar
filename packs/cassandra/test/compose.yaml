@@ -26,6 +26,9 @@ services:
     image: emisar-packtest-cassandra-sut:latest
     environment:
       CASSANDRA_CLUSTER_NAME: packtest
+      # Plain nodetool info prints a numeric Token only for a one-token node.
+      # Exercise that real metadata rather than its multi-token -T hint.
+      CASSANDRA_NUM_TOKENS: "1"
       # The image defaults listen (and therefore broadcast) address to the
       # container's bridge IP, which the network assigns fresh on every run, so
       # any case asserting the node's own address could only match by accident.

@@ -37,7 +37,7 @@ func (e *Engine) ApplyJSON(input []byte) ([]byte, []Hit, error) {
 		return nil, scalarHits, fmt.Errorf("redact: encode JSON: %w", err)
 	}
 
-	whole, wholeHits := e.Apply(string(encoded))
+	whole, wholeHits := e.applyOutput(string(encoded), false, true)
 	hits := MergeHits(scalarHits, wholeHits)
 	if !json.Valid([]byte(whole)) {
 		return []byte("null"), hits, ErrUnsafeJSONRedaction

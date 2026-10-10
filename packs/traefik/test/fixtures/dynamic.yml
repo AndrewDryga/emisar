@@ -16,7 +16,11 @@ http:
     packtest-service:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:9999/"
+          - url: "http://127.0.0.1:9999"
+        healthCheck:
+          path: /health
+          interval: 100ms
+          timeout: 100ms
   middlewares:
     packtest-auth:
       basicAuth:

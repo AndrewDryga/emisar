@@ -44,12 +44,16 @@ func (e *Engine) Apply(s string) (string, []Hit) {
 // ApplyOutput also masks a trailing prefix of a known literal when the raw
 // output was truncated. The missing suffix may contain the rest of a secret.
 func (e *Engine) ApplyOutput(s string, truncated bool) (string, []Hit) {
+	return e.applyOutput(s, truncated, false)
+}
+
+func (e *Engine) applyOutput(s string, truncated, jsonDocument bool) (string, []Hit) {
 	if e == nil || len(e.rules) == 0 {
 		return s, nil
 	}
 	var hits []Hit
 	for _, r := range e.rules {
-		out, n := r.apply(s, truncated)
+		out, n := r.applyContext(s, truncated, jsonDocument)
 		if n > 0 {
 			t := "regex"
 			if r.regex == nil {

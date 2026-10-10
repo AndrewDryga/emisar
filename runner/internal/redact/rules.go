@@ -4,6 +4,7 @@
 package redact
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -25,6 +26,9 @@ type Rule struct {
 	regex    *regexp.Regexp
 	literal  string
 	literals []string
+	// Only the exact built-in definition can preserve operational integers.
+	// Authored rules with the same name retain their own replacement semantics.
+	builtinSecretAssignment bool
 }
 
 // LiteralSet compiles the values of ONE masking concern — today an action's
@@ -81,7 +85,8 @@ func CompileRule(r actionspec.RedactionRule) (Rule, error) {
 		if repl == "" {
 			repl = "[REDACTED]"
 		}
-		return Rule{Name: r.Name, Replacement: repl, regex: re}, nil
+		return Rule{Name: r.Name, Replacement: repl, regex: re,
+			builtinSecretAssignment: isBuiltinSecretAssignment(r)}, nil
 	case "literal":
 		if r.Literal == "" {
 			return Rule{}, fmt.Errorf("redaction rule %s: missing literal", r.Name)
@@ -93,6 +98,18 @@ func CompileRule(r actionspec.RedactionRule) (Rule, error) {
 		return Rule{Name: r.Name, Replacement: repl, literal: r.Literal}, nil
 	}
 	return Rule{}, fmt.Errorf("redaction rule %s: invalid type %q", r.Name, r.Type)
+}
+
+func isBuiltinSecretAssignment(rule actionspec.RedactionRule) bool {
+	if rule.Name != "secret-assignment" || rule.Type != "regex" {
+		return false
+	}
+	for _, builtin := range DefaultRules() {
+		if builtin.Name == rule.Name {
+			return rule.Pattern == builtin.Pattern && rule.Replacement == builtin.Replacement && rule.Literal == builtin.Literal
+		}
+	}
+	return false
 }
 
 // DefaultRules returns redactions that are always applied as a last-resort
@@ -232,7 +249,7 @@ func DefaultRules() []actionspec.RedactionRule {
 		{
 			Name:        "url-credentials",
 			Type:        "regex",
-			Pattern:     `(?i)\b([a-z][a-z0-9+.-]*://)([^/\s:@]+):([^@\s/]+)@`,
+			Pattern:     `(?i)\b([a-z][a-z0-9+.-]*://)([^/\s:@"]+):([^@\s/"]+)@`,
 			Replacement: "${1}[REDACTED]@",
 		},
 		{
@@ -289,10 +306,13 @@ func CompileAll(rules ...[]actionspec.RedactionRule) ([]Rule, error) {
 	return out, nil
 }
 
-// apply runs a single Rule on s, returning the new string and the number of
+// applyContext runs a single Rule on s, returning the new string and the number of
 // substitutions performed.
-func (r Rule) apply(s string, truncated bool) (string, int) {
+func (r Rule) applyContext(s string, truncated, jsonDocument bool) (string, int) {
 	if r.regex != nil {
+		if r.builtinSecretAssignment {
+			return r.applySecretAssignments(s, truncated, jsonDocument)
+		}
 		count := len(r.regex.FindAllStringIndex(s, -1))
 		if count == 0 {
 			return s, 0
@@ -313,6 +333,73 @@ func (r Rule) apply(s string, truncated bool) (string, int) {
 		return maskAll(s, r.literals, r.Replacement, truncated)
 	}
 	return s, 0
+}
+
+func (r Rule) applySecretAssignments(s string, truncated, jsonDocument bool) (string, int) {
+	var output []byte
+	end, count := 0, 0
+	jsonChecked, validJSON := false, false
+	for _, match := range r.regex.FindAllStringSubmatchIndex(s, -1) {
+		prefix, value := s[match[2]:match[3]], s[match[4]:match[5]]
+		preserve := false
+		if isRingTokenLabel(prefix) && !(truncated && match[5] == len(s)) {
+			preserve = isBareSignedInteger(value)
+			// ApplyJSON has already run this rule on decoded strings. The final
+			// encoded pass includes their closing quote in an unquoted match.
+			// Raw/stream processing cannot infer this context: a later closing
+			// bracket may be outside its hold window. Keep every whole rule active.
+			if !preserve && jsonDocument && strings.HasSuffix(value, `"`) && isBareSignedInteger(strings.TrimSuffix(value, `"`)) {
+				if !jsonChecked {
+					validJSON = json.Valid([]byte(s))
+					jsonChecked = true
+				}
+				preserve = validJSON
+			}
+		}
+		if preserve {
+			continue
+		}
+		output = append(output, s[end:match[0]]...)
+		output = r.regex.ExpandString(output, r.Replacement, s, match)
+		end = match[1]
+		count++
+	}
+	if count == 0 {
+		return s, 0
+	}
+	output = append(output, s[end:]...)
+	return string(output), count
+}
+
+func isRingTokenLabel(prefix string) bool {
+	separator := strings.IndexAny(prefix, ":=")
+	if separator < 0 {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(prefix[:separator])) {
+	case "token", "start_token", "end_token":
+		return true
+	default:
+		return false
+	}
+}
+
+func isBareSignedInteger(value string) bool {
+	if value == "" {
+		return false
+	}
+	if value[0] == '+' || value[0] == '-' {
+		value = value[1:]
+	}
+	if value == "" {
+		return false
+	}
+	for index := range len(value) {
+		if value[index] < '0' || value[index] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // maskAll masks the union of literal matches in ONE left-to-right pass. It also
