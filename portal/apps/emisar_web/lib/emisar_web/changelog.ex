@@ -17,28 +17,45 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
-      date: ~D[2026-10-09],
-      slug: "tls-probe-overrides-and-generated-nomad-jobs",
-      title: "TLS probe overrides and generated Nomad jobs",
+      date: ~D[2026-10-10],
+      slug: "correct-diagnostics-and-tighter-pack-boundaries",
+      title: "Correct diagnostics and tighter pack boundaries",
       tag: "v0.53.0",
       summary:
-        "HTTP probes can connect to a chosen IP while keeping the URL hostname for Host, SNI, and certificate checks. Nomad reads now accept periodic and dispatched child job IDs, including nested children. GCP backend-service reads report whether Cloud CDN is enabled instead of returning null for every service.",
+        "Infrastructure reads now report failed commands and provider errors instead of returning misleading empty results. Pack fixes cover PostgreSQL counters, Cassandra storage boundaries, secret-free metadata, and complete Traefik inventories. MCP clients receive fixed validation codes and terminal results when the selected hosts definitely cannot run an action.",
       details: [
+        {"Security",
+         [
+           "Consul 0.2.38 omits SecretID values from token metadata. Cloudflare 0.2.11 omits Pages environment values and preserves bounded API error details; versions below 0.2.10 are retired.",
+           "Cassandra 0.6.10 confines storage reads to configured roots, rejects keyspace escapes, bounds compaction history, and adds client metadata. Grafana 0.1.20 bounds and projects alerting and build data. Earlier versions of both packs are retired.",
+           "Network/TLS versions below 0.3.1 are retired because certificate inspection could emit extra sensitive material. Inspection now returns only the presented certificate chain. Runner masking also recognizes Consul SecretID spellings."
+         ]},
+        {"MCP",
+         [
+           "Validation failures carry fixed codes separately from their readable explanations. Definite host exclusions finish with a terminal result instead of leaving the client waiting.",
+           "MCP Bridge v0.17.1 is rebuilt with Go 1.27.2."
+         ]},
+        {"Runner",
+         [
+           "Runner v0.31.1 uses Go 1.27.2 and preserves complete bare signed Cassandra ring tokens, pathless JSON backend URLs, and the two public OIDC algorithm and authentication-method metadata fields. Credential values and other token-shaped fields remain masked."
+         ]},
         {"Packs",
          [
-           "Update Network/TLS to 0.3.0 for hostname-to-IP HTTP overrides and IPv6 certificate inspection. Certificate verification stays on unless you explicitly disable it; certificate inspection alone does not verify trust or hostname.",
-           "Nomad 0.4.15 accepts generated child IDs in seven job reads. Mutation targets retain their existing validation.",
-           "GCP Load Balancing 0.1.4 preserves true, false, and absent Cloud CDN evidence in the public enableCdn field."
+           "PostgreSQL 0.2.21 reads the native VACUUM dead-item counter across versions, includes labeled checkpoint statistics, and applies the promised sequential-scan filter, including indexless tables. Native behavior checks cover 16.15, 17.11, and 18.6.",
+           "Network/TLS 0.3.2 adds hostname-to-IP HTTP overrides, IPv6 certificate inspection, legacy TLS probes, and bounded WHOIS-to-RDAP fallback. HTTP overrides retain Host, SNI, and certificate checks. Certificate inspection alone does not verify trust or hostname.",
+           "Nomad 0.4.16 accepts generated child IDs in seven reads and fails API calls on HTTP errors. Mutation targets retain their existing validation. Redis 0.3.20 rejects CLI error replies and preserves setup diagnostics.",
+           "Traefik 0.1.25 reads a separate metrics entrypoint and complete bounded HTTP router and service inventories. Docker 0.2.31 reports a missing Compose plugin plainly without hiding unrelated client failures.",
+           "GCP Compute 0.2.6 and DNS 0.2.4 add bounded inventory reads. Load Balancing 0.1.4 preserves true, false, and absent Cloud CDN evidence. Storage 0.1.3 distinguishes live and explicitly requested noncurrent objects; Monitoring 0.3.12 uses the actual Interconnect resource labels.",
+           "Linux Core 0.5.3 excludes pseudo-filesystems from inode diagnostics. Debugging 0.3.4 repairs kernel, TCP, and port diagnostics and adds peer counts. Firewall 0.1.19 groups protocol states and resolves inline port-set membership. Systemd Deep 0.3.1 preserves escaped unit names and omits disabled watchdog intervals.",
+           "Vector 0.1.16 reads bounded finite component metrics. ClickHouse 0.2.18 handles absent Keeper, bounds server metrics, and adds two table-definition reads: normalized structure without literals, or full server-provided DDL with approval under the default policy.",
+           "Tailscale 0.1.9 accepts relay replies and sends the requested probe count. GitHub CLI 0.1.17 preserves literal search arguments and permission-limited PR visibility. JVM 0.1.20 rejects unavailable performance counters. Stripe 0.2.2 omits zero credit-note allocations."
          ]},
         {"Platform",
          [
            "Infrastructure delivery adds a separately qualified native diagnostics bundle. Publication and saved plans bind its immutable image to the exact tested source; infrastructure Apply remains a manual step.",
            "Bucket-policy reads are restricted to the two required buckets. Log and bucket inventory permissions do not grant log payload or object access.",
-           "Review checks use a resolved baseline for each invocation. Terraform checks match the selected 1.16.5 release, and MySQL behavior fixtures wait for the bridge TCP listener."
-         ]},
-        {"Also",
-         [
-           "Regression tests cover runner admission denials, fixed-view log access, generated Nomad children, and HTTP/TLS overrides. Runner remains at v0.31.0 and MCP Bridge at v0.17.0."
+           "Review checks use a resolved baseline for each invocation. Terraform checks match the selected 1.16.5 release, and MySQL behavior fixtures wait for the bridge TCP listener.",
+           "Regression coverage retains current runner admission, pack trust, and fixed-view log authorization."
          ]}
       ]
     },
