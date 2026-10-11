@@ -12,10 +12,10 @@ locals {
   # on COS — there is no gh or cosign and no package manager to add one — so the
   # signature check happens HERE, when a human changes this value, not at boot:
   #
-  #   gh attestation verify emisar-0.31.0-linux-amd64.tar.gz \
+  #   gh attestation verify emisar-0.31.1-linux-amd64.tar.gz \
   #     --repo andrewdryga/emisar \
   #     --signer-workflow AndrewDryga/emisar/.github/workflows/runner-release-trusted.yml \
-  #     --signer-digest a1876129e37e6d848622980a339c88a2a5ddaf46
+  #     --signer-digest 9898f3486f46286aabb65ca4719b0d0e88e020a7
   #
   # (the owner casing is the certificate's, not the lowercase repo spelling; the
   # attesting job runs inside the -trusted reusable workflow, so that ref — not

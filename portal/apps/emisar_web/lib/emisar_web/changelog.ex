@@ -17,7 +17,7 @@ defmodule EmisarWeb.Changelog do
 
   @entries [
     %{
-      date: ~D[2026-10-10],
+      date: ~D[2026-10-11],
       slug: "correct-diagnostics-and-tighter-pack-boundaries",
       title: "Correct diagnostics and tighter pack boundaries",
       tag: "v0.53.0",
