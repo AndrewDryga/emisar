@@ -26,6 +26,7 @@ defmodule EmisarWeb.Changelog do
       details: [
         {"Security",
          [
+           "Decimal 3.1.2 fixes excessive memory allocation when rounding with an extreme precision argument.",
            "Consul 0.2.38 omits SecretID values from token metadata. Cloudflare 0.2.11 omits Pages environment values and preserves bounded API error details; versions below 0.2.10 are retired.",
            "Cassandra 0.6.10 confines storage reads to configured roots, rejects keyspace escapes, bounds compaction history, and adds client metadata. Grafana 0.1.20 bounds and projects alerting and build data. Earlier versions of both packs are retired.",
            "Network/TLS versions below 0.3.1 are retired because certificate inspection could emit extra sensitive material. Inspection now returns only the presented certificate chain. Runner masking also recognizes Consul SecretID spellings."
