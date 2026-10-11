@@ -67,7 +67,11 @@ test -s compose-build.txt && test -s compose-buildinfo.txt && test -s compose/LI
   read -r line; [ "$line" = toolchain_version=go1.27.2 ]
   read -r line; [ "$line" = go_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868 ]
   read -r line; [ "$line" = go_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10 ]
-  read -r line; [ "$line" = 'build_flags=GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1' ]
+  read -r line; [ "$line" = 'module_update=go get golang.org/x/net@v0.60.0 github.com/containerd/containerd/v2@v2.3.6' ]
+  read -r line; [ "$line" = 'module_update_advisories=CVE-2026-78669 / GO-2026-6611; CVE-2026-53493 / GO-2026-6597; CVE-2026-53495 / GO-2026-6444' ]
+  read -r line; [ "$line" = derived_go_mod_sha256=b0d21d722c2c107ef015d5bf9124861069233d0d3d8c9efc886d7097810d6188 ]
+  read -r line; [ "$line" = derived_go_sum_sha256=bedd903633cc37dbcd3864196cfd1bacc420376e7c46301bab8b1a6e14a4a434 ]
+  read -r line; [ "$line" = 'build_flags=GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1' ]
   read -r line; [ "$line" = "binary_sha256=$(sha256sum cli-plugins/docker-compose | cut -d' ' -f1)" ]
   read -r line; [ "$line" = "build_info_sha256=$(sha256sum compose-buildinfo.txt | cut -d' ' -f1)" ]
   if read -r line; then exit 1; fi

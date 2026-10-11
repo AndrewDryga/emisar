@@ -81,7 +81,21 @@ func diagnosticsFixture(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	build := fmt.Sprintf("source_url=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de\nsource_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2\nsource_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de\ntoolchain_image=golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673\ntoolchain_version=go1.27.2\ngo_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868\ngo_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10\nbuild_flags=GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1\nbinary_sha256=%x\nbuild_info_sha256=%x\n", sha256.Sum256(binary), sha256.Sum256(info))
+	build := fmt.Sprintf(`source_url=https://codeload.github.com/docker/compose/tar.gz/5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
+source_sha256=c72877db37172d8ee55f565e4fed20067af89015e986b190768fd4ee621025f2
+source_commit=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
+toolchain_image=golang:1.27.2-alpine3.24@sha256:85dc1069ac644ea3c527b177303a406eb3358192816cd7f9e5848eb658851673
+toolchain_version=go1.27.2
+go_mod_sha256=cdf5424bec2a7c75fa955a56efc88fb1731db5cca019cf63d4a1980a218e0868
+go_sum_sha256=8e96090883306abcd19ed57025a3e108b0b1cf6a6dff220c73d1aa77bb408a10
+module_update=go get golang.org/x/net@v0.60.0 github.com/containerd/containerd/v2@v2.3.6
+module_update_advisories=CVE-2026-78669 / GO-2026-6611; CVE-2026-53493 / GO-2026-6597; CVE-2026-53495 / GO-2026-6444
+derived_go_mod_sha256=b0d21d722c2c107ef015d5bf9124861069233d0d3d8c9efc886d7097810d6188
+derived_go_sum_sha256=bedd903633cc37dbcd3864196cfd1bacc420376e7c46301bab8b1a6e14a4a434
+build_flags=GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -mod=readonly -trimpath -tags=e2e -ldflags=-w -X github.com/docker/compose/v5/internal.Version=v5.5.1
+binary_sha256=%x
+build_info_sha256=%x
+`, sha256.Sum256(binary), sha256.Sum256(info))
 	if err := os.WriteFile(filepath.Join(bundle, "compose-build.txt"), []byte(build), 0o600); err != nil {
 		t.Fatal(err)
 	}
