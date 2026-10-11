@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -68,6 +69,12 @@ func (m *Manager) isolatedSessionWithOptions(ctx context.Context, baseURL string
 		chromedp.NoFirstRun, chromedp.NoDefaultBrowserCheck,
 		chromedp.Flag("headless", "new"),
 		chromedp.Flag("force-prefers-reduced-motion", true),
+	}
+	if runtime.GOOS == "darwin" {
+		// Cookie storage can block on personal Keychain approval. A mock key
+		// avoids that prompt only in this private, disposable profile; persistent
+		// profiles must retain their normal Keychain-backed encryption.
+		options = append(options, chromedp.Flag("use-mock-keychain", true))
 	}
 	if m.SPKI != "" {
 		options = append(options, chromedp.Flag("ignore-certificate-errors-spki-list", m.SPKI))
