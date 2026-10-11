@@ -18,7 +18,7 @@ cases:
   - action: linux.inode_usage
     runner_user: nonroot
     arrange:
-      - name: Real disk volume and excluded rows exist in native inode output
+      - name: One real disk source and excluded rows exist in native inode output
         argv:
           - /bin/sh
           - -c
@@ -29,18 +29,30 @@ cases:
               ''|tmpfs|devtmpfs|overlay|squashfs)
                 printf '%s\n' '/run needs a disk-backed fixture filesystem' >&2; exit 1 ;;
             esac
-            table=$(df -i -h) || exit $?
-            printf '%s\n' "$table" | awk '
-              $NF == "/run" { disk = 1 }
-              $1 == "overlay" || $1 == "tmpfs" { excluded = 1 }
+            source=$(df --output=source /run) || exit $?
+            source=$(printf '%s\n' "$source" | awk 'NR == 2 { print }')
+            case "$source" in
+              /dev/*) ;;
+              *) printf '%s\n' '/run needs a native disk device source' >&2; exit 1 ;;
+            esac
+            # GNU df may represent this device at another bind mount instead
+            # of /run. Host-sharing rows can also exist; require the sole
+            # eligible /dev/ source, not a host-chosen path or total row count.
+            table=$(df --output=source,fstype,itotal,iused,iavail,ipcent,target) || exit $?
+            printf '%s\n' "$table" | awk -v source="$source" '
+              NR == 1 { next }
+              { inventory = inventory $0 "\n" }
+              $2 ~ /^(tmpfs|devtmpfs|overlay|squashfs)$/ { excluded = 1; next }
+              $1 ~ /^\/dev\// { disks++; if ($1 != source) foreign = 1 }
               END {
-                if (!disk || !excluded) {
-                  print "Native inode fixture needs /run and excluded rows" > "/dev/stderr"
+                if (disks != 1 || foreign || !excluded) {
+                  print "Native inode fixture needs one matching disk source and excluded rows" > "/dev/stderr"
+                  printf "%s", inventory > "/dev/stderr"
                   exit 1
                 }
               }'
     expect:
-      stdout_contains: [Inodes, IUsed, IFree, /run]
+      stdout_contains: [Inodes, IUsed, IFree, /dev/]
       stdout_not_contains: [overlay, tmpfs, devtmpfs, squashfs]
   - action: linux.journalctl_grep
     args:
