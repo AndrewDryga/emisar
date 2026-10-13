@@ -101,6 +101,18 @@ safe_pull_zone() {
   # must come before any / (an @ inside a path is not userinfo). split is the
   # cut rather than index, whose offsets are bytes while a slice counts
   # codepoints.
+  #
+  # Edge rules carry operator-written values whose meaning depends on the rule
+  # type: SetRequestHeader (6) and SetResponseHeader (5) keep a header's name in
+  # parameter 1 and its value in parameter 2, which is where an origin-auth
+  # secret lives, and RequestHeader (1), ResponseHeader (2), UrlQueryString (6)
+  # and CookieValue (10) triggers match on values that unlock the rule. So each
+  # rule is rebuilt from its known fields and shows a parameter only where its
+  # type makes it a URL (userinfo cut), a number, or an id. A header action
+  # keeps its header name, those triggers keep the header, query or cookie
+  # name, and everything else reads [REDACTED]: an unknown action or trigger
+  # type, a parameter on a parameterless action, and the undocumented trigger
+  # Parameter2.
   jq -ce '
     def strip_userinfo($scheme):
       ltrimstr($scheme) as $rest
@@ -116,6 +128,44 @@ safe_pull_zone() {
       if type == "string" then
         strip_userinfo("https://") // strip_userinfo("http://") // .
       else . end;
+    def redacted: if . == null or . == "" then . else "[REDACTED]" end;
+    def keep_fields($names): with_entries(select(.key as $key | any($names[]; . == $key)));
+    def redact_fields($names):
+      reduce $names[] as $name (.; if has($name) then .[$name] |= redacted else . end);
+    def safe_parameters:
+      .ActionType as $type
+      | if $type | IN(5, 6) then
+          redact_fields(["ActionParameter2", "ActionParameter3"])
+        elif $type | IN(1, 2) then
+          (if has("ActionParameter1") then .ActionParameter1 |= sanitize_origin else . end)
+          | redact_fields(if $type == 1 then ["ActionParameter3"] else ["ActionParameter2", "ActionParameter3"] end)
+        elif $type | IN(3, 10, 14, 16, 17, 18, 19, 20, 21, 22, 24, 35) then .
+        else redact_fields(["ActionParameter1", "ActionParameter2", "ActionParameter3"])
+        end;
+    def safe_trigger:
+      keep_fields(["Type", "PatternMatchingType", "PatternMatches", "Parameter1", "Parameter2"])
+      | redact_fields(["Parameter2"])
+      | if .Type | IN(0, 3, 4, 5, 7, 8, 9, 11, 12, 13) then .
+        else
+          (if .Type | IN(1, 2, 6, 10) then . else redact_fields(["Parameter1"]) end)
+          | if has("PatternMatches") then
+              .PatternMatches |= (if type == "array" then map(redacted) else redacted end)
+            else . end
+        end;
+    def safe_edge_rule:
+      keep_fields([
+        "Guid", "ActionType", "ActionParameter1", "ActionParameter2", "ActionParameter3",
+        "Triggers", "ExtraActions", "TriggerMatchingType", "Description", "Enabled",
+        "OrderIndex", "ReadOnly"
+      ])
+      | safe_parameters
+      | if (.Triggers | type) == "array" then .Triggers |= map(safe_trigger) else . end
+      | if (.ExtraActions | type) == "array" then
+          .ExtraActions |= map(
+            keep_fields(["ActionType", "ActionParameter1", "ActionParameter2", "ActionParameter3"])
+            | safe_parameters
+          )
+        else . end;
     walk(
       if type == "object" then
         del(
@@ -127,6 +177,8 @@ safe_pull_zone() {
           .CertificateKey
         )
         | if has("OriginUrl") then .OriginUrl |= sanitize_origin else . end
+        | if has("OriginLinkValue") then .OriginLinkValue |= sanitize_origin else . end
+        | if (.EdgeRules | type) == "array" then .EdgeRules |= map(safe_edge_rule) else . end
       else . end
     )
   '

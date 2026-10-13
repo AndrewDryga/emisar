@@ -2,7 +2,12 @@ schema_version: 1
 
 id: bunnycdn
 name: bunny.net CDN operations
-version: 0.1.10
+version: 0.1.11
+# 0.1.10 and earlier returned edge rules unfiltered from the low-risk Pull Zone
+# reads, so an origin-auth header value or a header-match secret reached run
+# output and the audit trail without approval. A secret-emitting read is a
+# security fix.
+retired_below: 0.1.11
 description: >
   Governed bunny.net Pull Zone lifecycle, cache, hostname, access-control,
   statistics, request-log, origin-error, and billing-usage operations. Auth via
@@ -34,7 +39,7 @@ setup:
   notes:
     - "The account API key is at [dash.bunny.net/account/settings](https://dash.bunny.net/account/settings) → API."
     - "Request logs are retained by bunny.net for three days; bunny.logs returns one bounded page and bunny.log_usage_summary aggregates one bounded page."
-    - "Pull Zone credentials, certificate material, log-forwarding tokens, request authorization headers, and URL query strings are removed before output leaves the runner."
+    - "Pull Zone credentials, certificate material, log-forwarding tokens, edge-rule header and match values, request authorization headers, and URL query strings are removed or redacted before output leaves the runner."
     - "The pack covers Bunny CDN Pull Zones. Bunny Storage, DNS, Stream, Shield/WAF, custom-certificate private keys, token-key reset, and arbitrary edge-rule documents are separate trust surfaces."
   verify: bunny.list_pull_zones
 

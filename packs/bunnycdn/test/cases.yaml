@@ -30,6 +30,19 @@ defaults:
       - packtest-canary-origin-log-extra-372a
       - packtest-canary-payment-id-a810
       - packtest-canary-payment-token-883a
+      - packtest-canary-origin-link-password-5e07
+      - packtest-canary-edge-auth-value-41d7
+      - packtest-canary-response-header-9d3e
+      - packtest-canary-bypass-header-c3f0
+      - packtest-canary-cookie-value-7b12
+      - packtest-canary-trigger-parameter-e8a4
+      - packtest-canary-query-match-2d9b
+      - packtest-canary-edge-origin-password-0c66
+      - packtest-canary-edge-rule-field-a51b
+      - packtest-canary-unknown-action-6f2e
+      - packtest-canary-unknown-trigger-1c8d
+      - packtest-canary-unknown-trigger-name-b07a
+      - packtest-canary-stray-parameter-93f1
 cases:
   - action: bunny.list_pull_zones
     expect:
@@ -37,6 +50,9 @@ cases:
         /Items/0/Id: 123456
         /Items/0/Name: fixture-cdn
         /Items/0/OriginUrl: https://origin.example.test/assets
+        /Items/0/EdgeRules/0/ActionParameter1: X-Edge-Auth
+        /Items/0/EdgeRules/0/ActionParameter2: "[REDACTED]"
+        /Items/0/EdgeRules/1/Triggers/0/PatternMatches/0: "[REDACTED]"
         /TotalItems: 1
 
   - action: bunny.get_pull_zone
@@ -47,6 +63,47 @@ cases:
         /Name: fixture-cdn
         /OriginUrl: https://origin.example.test/assets
         /MonthlyBandwidthUsed: 987654321
+
+  # Edge rules hold the values that unlock a zone: an origin-auth header set by
+  # SetRequestHeader, and header, cookie and query-string triggers that match a
+  # secret. The fixture puts a canary in every such slot, plus an unlisted rule
+  # field, an unknown action and trigger type, and a stray parameter on a
+  # parameterless action; the defaults forbid each canary. The pointers below
+  # prove the operational half survives: header, cookie and query names, URL,
+  # country and IP patterns, cache TTL, redirect, and an origin URL without
+  # its userinfo.
+  - name: bunny.get_pull_zone-redacts-edge-rule-secrets
+    action: bunny.get_pull_zone
+    args: {pull_zone_id: 123456}
+    expect:
+      stdout_not_contains: [edge-user, UnlistedField]
+      json:
+        /OriginLinkValue: https://origin.example.test/assets
+        /EdgeRules/0/ActionType: 6
+        /EdgeRules/0/ActionParameter1: X-Edge-Auth
+        /EdgeRules/0/ActionParameter2: "[REDACTED]"
+        /EdgeRules/0/Description: Authenticate origin requests
+        /EdgeRules/0/Triggers/0/PatternMatches/0: https://fixture-cdn.b-cdn.net/*
+        /EdgeRules/0/ExtraActions/0/ActionParameter1: X-Debug-Token
+        /EdgeRules/0/ExtraActions/0/ActionParameter2: "[REDACTED]"
+        /EdgeRules/0/ExtraActions/1/ActionParameter1: "86400"
+        /EdgeRules/1/Triggers/0/Parameter1: X-Bypass-Ratelimit
+        /EdgeRules/1/Triggers/0/PatternMatches/0: "[REDACTED]"
+        /EdgeRules/1/Triggers/1/Parameter1: session
+        /EdgeRules/1/Triggers/1/Parameter2: "[REDACTED]"
+        /EdgeRules/1/Triggers/1/PatternMatches/0: "[REDACTED]"
+        /EdgeRules/1/Triggers/2/Parameter1: token
+        /EdgeRules/1/Triggers/2/PatternMatches/0: "[REDACTED]"
+        /EdgeRules/1/Triggers/3/PatternMatches/0: 203.0.113.7
+        /EdgeRules/2/ActionParameter1: https://backup-origin.example.test/assets
+        /EdgeRules/2/Triggers/0/PatternMatches/0: DE
+        /EdgeRules/2/ExtraActions/0/ActionParameter1: https://www.example.test/moved
+        /EdgeRules/2/ExtraActions/0/ActionParameter2: "301"
+        /EdgeRules/3/ActionParameter1: "[REDACTED]"
+        /EdgeRules/3/Triggers/0/Parameter1: "[REDACTED]"
+        /EdgeRules/3/Triggers/0/PatternMatches/0: "[REDACTED]"
+        /EdgeRules/3/ExtraActions/0/ActionParameter1: "[REDACTED]"
+        /EdgeRules/3/ExtraActions/0/ActionParameter2: "[REDACTED]"
 
   # The same read under the jq built --with-oniguruma=no: stripping the
   # origin credentials used to be a test() plus capture() pair, and a jq
@@ -66,9 +123,12 @@ cases:
       stdout_not_contains:
         - origin-user
         - packtest-canary-origin-password
+        - edge-user
       json:
         /Id: 123456
         /OriginUrl: https://origin.example.test/assets
+        /EdgeRules/0/ActionParameter2: "[REDACTED]"
+        /EdgeRules/2/ActionParameter1: https://backup-origin.example.test/assets
 
   - action: bunny.list_regions
     expect:

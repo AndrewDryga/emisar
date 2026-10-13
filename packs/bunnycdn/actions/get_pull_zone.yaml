@@ -3,7 +3,10 @@ id: bunny.get_pull_zone
 title: Get Pull Zone
 kind: script
 risk: low
-description: Show one Pull Zone's configuration and current monthly usage without credential or certificate fields.
+description: >
+  Show one Pull Zone's configuration and current monthly usage without
+  credential or certificate fields. Edge-rule header values and header, cookie,
+  and query-string match values read [REDACTED].
 side_effects: [One read-only Core API request.]
 args:
   - name: pull_zone_id

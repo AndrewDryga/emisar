@@ -3,7 +3,10 @@ id: bunny.list_pull_zones
 title: List Pull Zones
 kind: script
 risk: low
-description: List one bounded page of Pull Zones accessible to the account API key.
+description: >
+  List one bounded page of Pull Zones accessible to the account API key without
+  credential or certificate fields. Edge-rule header values and header, cookie,
+  and query-string match values read [REDACTED].
 side_effects: [One read-only Core API request.]
 args:
   - name: search
