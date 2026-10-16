@@ -4,7 +4,7 @@ COPY infra/runtime/admin-runner/diagnostics/build-compose.sh /build-compose.sh
 RUN --mount=type=cache,id=emisar-diagnostics-compose-go1.27.2-modules,target=/go/pkg/mod,sharing=locked \
     /bin/sh /build-compose.sh
 
-FROM debian:bookworm-20260918-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS build
+FROM debian:bookworm-20261005-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS build
 COPY portal/docker/debian.sources /etc/apt/sources.list.d/debian.sources
 RUN sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get upgrade -y --no-install-recommends \
