@@ -12,8 +12,6 @@ defmodule Emisar.Config do
   and a real browser session each override config for its own request without
   mutating global `Application` env — the replacement for `Application.put_env`,
   which races under `async: true`.
-
-  Mirrors Firezone's `Domain.Config` / `Domain.Config.Resolver`.
   """
 
   # The override lives in the owning (test) process's dictionary, so it dies

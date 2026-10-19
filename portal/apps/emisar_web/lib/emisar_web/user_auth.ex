@@ -29,7 +29,7 @@ defmodule EmisarWeb.UserAuth do
   alias EmisarWeb.{Analytics, BillingIntent, MarketingAttribution, RecentAccounts}
   alias EmisarWeb.{RequestContext, ShellChrome}
 
-  # Firezone's cap: six entries stay far under the 4 KB cookie limit.
+  # Six entries stay far under the 4 KB cookie limit.
   @max_sessions 6
   # The cookie session is ~4 KiB, so a stored return path is bounded.
   @return_to_max_bytes 1024

@@ -67,7 +67,7 @@ lifecycle.
   takes the grantee. Neither adds a credential type; both bind `created_by_membership`
   to the service account and record the issuing person in `issued_by_membership_id`.
 
-- 2026-10-04: one session row per workspace Member (Firezone model); member grants,
+- 2026-10-04: one session row per workspace Member; member grants,
   personal proof routes, email change and confirmation tokens are gone; added the
   staff realm's tokens.
 
