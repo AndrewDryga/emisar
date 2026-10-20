@@ -827,90 +827,6 @@ defmodule Emisar.PoliciesTest do
     end
   end
 
-  describe "list_scoped_policy_summaries/2" do
-    test "lists the account's scoped overrides, excluding the account default" do
-      {_owner, account, subject} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      {:ok, scoped} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, subject)
-
-      assert {:ok, [listed], _metadata} = Policies.list_scoped_policy_summaries(subject)
-      assert listed.id == scoped.id
-      # The account default isn't a scoped override, so it never lists here.
-      refute listed.scope_type == :account
-    end
-
-    test "an operator (view_policies) can list; an api_client cannot" do
-      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, owner)
-
-      operator_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-
-      operator = Fixtures.Subjects.subject_for(operator_membership)
-
-      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(operator)
-
-      {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
-      api_subject = Subject.for_api_key(api_key, account)
-      assert Policies.list_scoped_policy_summaries(api_subject) == {:error, :unauthorized}
-    end
-
-    test "cross-account: never lists another account's overrides" do
-      {_owner_a, account_a, subject_a} = Fixtures.Subjects.owner_subject()
-      runner_a = Fixtures.Runners.create_runner(account_id: account_a.id, connected?: false)
-      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_a)
-
-      {_owner_b, _account_b, subject_b} = Fixtures.Subjects.owner_subject()
-      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject_b)
-    end
-
-    test "a restricted member reads all account rulesets" do
-      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
-      db = Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
-
-      Fixtures.Runners.create_runner(account_id: account.id, group: "edge", connected?: false)
-
-      {:ok, db_policy} = Policies.save_scoped_rules(allow_all_rules(), :runner, db.id, owner)
-      {:ok, edge_policy} = Policies.save_scoped_rules(deny_all_rules(), :group, "edge", owner)
-
-      member = restricted_member(account, owner, "operator", ["db"])
-
-      assert {:ok, listed, _metadata} = Policies.list_scoped_policy_summaries(member)
-      assert MapSet.new(listed, & &1.id) == MapSet.new([db_policy.id, edge_policy.id])
-    end
-
-    test "a member with no runner access still reads account rulesets" do
-      {_owner, account, owner} = Fixtures.Subjects.owner_subject()
-      runner = Fixtures.Runners.create_runner(account_id: account.id, connected?: false)
-      {:ok, _} = Policies.save_scoped_rules(allow_all_rules(), :runner, runner.id, owner)
-
-      member_membership =
-        Fixtures.Memberships.create_membership(account_id: account.id, role: "operator")
-
-      member = Fixtures.Subjects.subject_for(member_membership)
-
-      {:ok, _updated} =
-        Accounts.update_membership_runner_access(member_membership, RunnerAccess.none(), owner)
-
-      assert {:ok, [_policy], _metadata} = Policies.list_scoped_policy_summaries(member)
-    end
-
-    # Group names are not account-unique, and the narrowing matches on the name.
-    test "cross-account: a group name shared with another account lists nothing of theirs" do
-      {_owner_a, account_a, owner_a} = Fixtures.Subjects.owner_subject()
-      Fixtures.Runners.create_runner(account_id: account_a.id, group: "db", connected?: false)
-
-      {_owner_b, account_b, owner_b} = Fixtures.Subjects.owner_subject()
-      Fixtures.Runners.create_runner(account_id: account_b.id, group: "db", connected?: false)
-      {:ok, _policy_b} = Policies.save_scoped_rules(deny_all_rules(), :group, "db", owner_b)
-
-      member_a = restricted_member(account_a, owner_a, "operator", ["db"])
-
-      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(member_a)
-    end
-  end
-
   describe "delete_scoped_policy/2" do
     test "soft-deletes an override so its scope falls back to the next-broader scope" do
       {_owner, account, subject} = Fixtures.Subjects.owner_subject()
@@ -922,7 +838,7 @@ defmodule Emisar.PoliciesTest do
       refute is_nil(deleted.deleted_at)
 
       # Gone from the editor's list; the scope now resolves to the broader default.
-      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [], _metadata} = Policies.list_scoped_policies(subject)
     end
 
     test "a viewer can't delete an override (no manage_policies)" do
@@ -937,7 +853,7 @@ defmodule Emisar.PoliciesTest do
 
       assert Policies.delete_scoped_policy(policy, viewer) == {:error, :unauthorized}
       # The row is untouched — still live.
-      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(owner)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policies(owner)
     end
 
     # Removing a ruleset changes what may run on its hosts, so the scope is
@@ -955,7 +871,7 @@ defmodule Emisar.PoliciesTest do
       admin = restricted_member(account, owner, "admin", ["db"])
 
       assert Policies.delete_scoped_policy(policy, admin) == {:error, :unauthorized}
-      assert {:ok, [_still_live], _metadata} = Policies.list_scoped_policy_summaries(owner)
+      assert {:ok, [_still_live], _metadata} = Policies.list_scoped_policies(owner)
     end
 
     test "cross-account: B can't delete A's override (:not_found, row untouched)" do
@@ -970,7 +886,7 @@ defmodule Emisar.PoliciesTest do
       # The locked re-fetch is scoped by Authorizer.for_subject, so A's override
       # scopes out to :not_found for B without being touched.
       assert Policies.delete_scoped_policy(policy_a, subject_b) == {:error, :not_found}
-      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(subject_a)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policies(subject_a)
     end
 
     test "a forged struct claiming a reachable scope cannot delete another account's row" do
@@ -990,7 +906,7 @@ defmodule Emisar.PoliciesTest do
 
       assert Policies.delete_scoped_policy(forged, subject_b) == {:error, :not_found}
       refute Repo.reload!(policy_a).deleted_at
-      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(subject_a)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policies(subject_a)
     end
 
     test "a forged scoped snapshot cannot delete the account default" do
@@ -1045,7 +961,7 @@ defmodule Emisar.PoliciesTest do
       assert Policies.save_scoped_rules(deny_all_rules(), :runner, foreign_runner.id, subject) ==
                {:error, :runner_not_found}
 
-      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [], _metadata} = Policies.list_scoped_policies(subject)
     end
 
     test "rejects a nonexistent and a malformed runner id (:runner_not_found)" do
@@ -1083,7 +999,7 @@ defmodule Emisar.PoliciesTest do
       assert saved.scope_value == "not-enrolled-yet"
 
       # The read side has to agree, or they would write a ruleset they cannot see.
-      assert {:ok, [listed], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [listed], _metadata} = Policies.list_scoped_policies(subject)
       assert listed.id == saved.id
       assert listed.scope_value == "not-enrolled-yet"
     end
@@ -1110,7 +1026,7 @@ defmodule Emisar.PoliciesTest do
       assert Policies.save_scoped_rules(deny_all_rules(), :group, "no-such-group", admin) ==
                {:error, :group_not_found}
 
-      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(owner)
+      assert {:ok, [], _metadata} = Policies.list_scoped_policies(owner)
     end
 
     test "a viewer can't save a scoped override (no manage_policies)" do
@@ -1137,11 +1053,10 @@ defmodule Emisar.PoliciesTest do
       assert Policies.save_scoped_rules(allow_all_rules(), :runner, runner_a.id, subject_b) ==
                {:error, :runner_not_found}
 
-      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject_b)
+      assert {:ok, [], _metadata} = Policies.list_scoped_policies(subject_b)
 
-      assert {:ok, [fetched_a], _metadata} = Policies.list_scoped_policy_summaries(subject_a)
+      assert {:ok, [fetched_a], _metadata} = Policies.list_scoped_policies(subject_a)
       assert fetched_a.id == policy_a.id
-      assert {:ok, fetched_a} = Policies.fetch_scoped_policy_by_id(fetched_a.id, subject_a)
       assert fetched_a.rules["defaults"]["low"] == "deny"
       assert fetched_a.vsn == policy_a.vsn
     end
@@ -1196,9 +1111,8 @@ defmodule Emisar.PoliciesTest do
       assert default_after.rules == default_before.rules
       assert default_after.vsn == default_before.vsn
 
-      assert {:ok, [still_live], _metadata} = Policies.list_scoped_policy_summaries(owner)
+      assert {:ok, [still_live], _metadata} = Policies.list_scoped_policies(owner)
       assert still_live.id == scoped.id
-      assert {:ok, still_live} = Policies.fetch_scoped_policy_by_id(still_live.id, owner)
       assert still_live.rules == scoped.rules
     end
   end

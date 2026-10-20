@@ -24,6 +24,9 @@ defmodule Emisar.Policies.Policy do
     # `:runner`, the group name for `:group`, and "" for the account default.
     field :scope_type, Ecto.Enum, values: [:account, :runner, :group], default: :account
     field :scope_value, :string, default: ""
+    # Set by `Policies.list_scoped_policies/2`: the runner's current name (its id
+    # once deleted) or the group name.
+    field :target_label, :string, virtual: true
 
     field :deleted_at, :utc_datetime_usec
 

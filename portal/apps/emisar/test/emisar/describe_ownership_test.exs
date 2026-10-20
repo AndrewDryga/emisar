@@ -45,8 +45,7 @@ defmodule Emisar.DescribeOwnershipTest do
     "list_group_access/3",
     "cancel_run/3",
     "cancel_execution/2",
-    "resolve_slug/2",
-    "list_scoped_policy_summaries/2"
+    "resolve_slug/2"
   ]
 
   test "no context function is described in two test files" do

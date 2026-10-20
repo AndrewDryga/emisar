@@ -251,6 +251,12 @@ defmodule Emisar.Repo.Paginator do
   defp encode_value(%Time{} = time), do: ["time", Time.to_iso8601(time)]
   defp encode_value(value) when is_binary(value), do: ["binary", value]
   defp encode_value(value) when is_boolean(value), do: ["boolean", value]
+
+  # An `Ecto.Enum` field loads as an atom. Its cursor carries the stored string,
+  # which the keyset comparison casts back through the field's type.
+  defp encode_value(value) when is_atom(value) and not is_nil(value),
+    do: ["binary", Atom.to_string(value)]
+
   defp encode_value(value) when is_integer(value), do: ["integer", value]
   defp encode_value(value) when is_float(value), do: ["float", value]
 

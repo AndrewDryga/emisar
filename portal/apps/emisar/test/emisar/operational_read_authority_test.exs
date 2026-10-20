@@ -23,7 +23,9 @@ defmodule Emisar.OperationalReadAuthorityTest do
       assert {:ok, [listed], _} = Runs.list_runs(subject)
       assert listed.id == run.id
       assert {:ok, ^event} = Audit.fetch_event_by_id(event.id, subject)
-      assert {:ok, ^policy} = Policies.fetch_scoped_policy_by_id(policy.id, subject)
+      assert {:ok, [listed_policy], _} = Policies.list_scoped_policies(subject)
+      assert listed_policy.id == policy.id
+      assert listed_policy.rules == policy.rules
 
       assert {:ok, %{target: {:group, "production"}}} =
                Policies.preview_policy(Policies.editor_input(policy.rules), policy.id, subject)
@@ -36,12 +38,11 @@ defmodule Emisar.OperationalReadAuthorityTest do
       subject = Fixtures.Subjects.subject_for(membership)
       run = Fixtures.Runs.create_run(account_id: subject.account.id)
 
-      policy =
-        Fixtures.Policies.create_policy(
-          account_id: subject.account.id,
-          scope_type: :group,
-          scope_value: "production"
-        )
+      Fixtures.Policies.create_policy(
+        account_id: subject.account.id,
+        scope_type: :group,
+        scope_value: "production"
+      )
 
       {:ok, event} = Audit.log(subject.account.id, "runner.created")
       invalidate(membership, subject, unquote(invalidation))
@@ -60,8 +61,7 @@ defmodule Emisar.OperationalReadAuthorityTest do
             fn -> Audit.list_actor_options("user", subject) end,
             fn -> Audit.list_target_options("runner", subject) end,
             fn -> Policies.fetch_policy(subject) end,
-            fn -> Policies.list_scoped_policy_summaries(subject) end,
-            fn -> Policies.fetch_scoped_policy_by_id(policy.id, subject) end
+            fn -> Policies.list_scoped_policies(subject) end
           ] do
         assert read.() == {:error, :unauthorized}
       end
@@ -87,7 +87,7 @@ defmodule Emisar.OperationalReadAuthorityTest do
     assert Audit.list_for_export(subject) == {:error, :unauthorized}
     assert Audit.resolve_references([operational], subject)["runner"] in [nil, %{}]
     assert Runs.list_runs(subject) == {:error, :unauthorized}
-    assert Policies.list_scoped_policy_summaries(subject) == {:error, :unauthorized}
+    assert Policies.list_scoped_policies(subject) == {:error, :unauthorized}
   end
 
   test "permission denials never query identity" do

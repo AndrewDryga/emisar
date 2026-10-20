@@ -6,7 +6,8 @@ defmodule EmisarWeb.PoliciesLive do
       :account`, labeled "Default policy" in the UI). Risk-tier defaults +
       per-action overrides. Applies to every runner.
     * **Targeted rulesets** — an inline list of per-runner / per-group
-      policies. Add one, pick a runner or group, edit its rules. A ruleset
+      policies, each saved one open in its own editor (a bounded page of them).
+      Add one, pick a runner or group, edit its rules. A ruleset
       **replaces** the default policy for that target (most specific wins:
       runner > group > account), it doesn't layer on top — so what a unit
       shows is exactly what runs there.
@@ -33,14 +34,13 @@ defmodule EmisarWeb.PoliciesLive do
         load_error?: false,
         account_error?: false,
         rulesets: [],
-        summaries: [],
+        ruleset_page_count: 0,
         metadata: %Emisar.Repo.Paginator.Metadata{},
         filter_params: %{},
         preview_active: nil,
         preview_cancel: nil,
         preview_queue: []
       )
-      |> stream(:policies, [])
 
     # Gate BEFORE any policy read: a role without view_policies must see
     # nothing, not the account posture with only the scoped read errored.
@@ -63,7 +63,7 @@ defmodule EmisarWeb.PoliciesLive do
     if connected?(socket) and not is_nil(socket.assigns[:account]) do
       socket =
         if policy_cursor(params) != policy_cursor(socket.assigns.filter_params) or
-             socket.assigns.loading?, do: load_summaries(socket, params), else: socket
+             socket.assigns.loading?, do: load_rulesets(socket, params), else: socket
 
       socket =
         Enum.reduce(socket.assigns.rulesets, socket, fn editor, socket ->
@@ -127,25 +127,40 @@ defmodule EmisarWeb.PoliciesLive do
     )
   end
 
-  defp load_summaries(socket, params, keep_uid \\ nil) do
+  # Every saved ruleset on the page renders open. An editor already open keeps
+  # its in-progress edits; off the page, only unsaved work stays (a draft, a
+  # dirty saved ruleset, or the one just saved) and clean editors are dropped.
+  defp load_rulesets(socket, params, keep_uid \\ nil) do
     opts = LiveTable.params_to_opts(params, [], prefix: "policies_")
 
-    case Policies.list_scoped_policy_summaries(socket.assigns.current_subject, opts) do
-      {:ok, summaries, metadata} ->
-        ids = MapSet.new(summaries, & &1.id)
+    case Policies.list_scoped_policies(socket.assigns.current_subject, opts) do
+      {:ok, policies, metadata} ->
+        open = Map.new(socket.assigns.rulesets, &{&1.uid, &1})
+        page = for policy <- policies, do: open[policy.id] || build_ruleset_editor(policy)
+        page_ids = MapSet.new(page, & &1.uid)
+
+        {kept, dropped} =
+          socket.assigns.rulesets
+          |> Enum.reject(&MapSet.member?(page_ids, &1.uid))
+          |> Enum.split_with(&(&1.uid == keep_uid or editor_dirty?(&1)))
 
         socket =
-          Enum.reduce(socket.assigns.rulesets, socket, fn editor, socket ->
-            if editor.policy && editor.uid != keep_uid && not MapSet.member?(ids, editor.uid) &&
-                 not editor_dirty?(editor), do: drop_editor(socket, editor.uid), else: socket
-          end)
+          dropped
+          |> Enum.reduce(socket, &drop_editor(&2, &1.uid))
+          |> assign(
+            rulesets: page ++ kept,
+            ruleset_page_count: length(page),
+            metadata: metadata,
+            load_error?: false
+          )
 
-        socket
-        |> assign(summaries: summaries, metadata: metadata, load_error?: false)
-        |> stream(:policies, summaries, reset: true)
+        page
+        |> Enum.reject(&Map.has_key?(open, &1.uid))
+        |> Enum.reduce(socket, &schedule_preview(&2, &1.uid, 0))
+        |> refresh_management_capabilities()
 
       {:error, _} ->
-        socket |> assign(summaries: [], load_error?: true) |> stream(:policies, [], reset: true)
+        assign(socket, ruleset_page_count: 0, load_error?: true)
     end
   end
 
@@ -185,7 +200,7 @@ defmodule EmisarWeb.PoliciesLive do
       baseline_rules: stored_baseline(policy, input),
       policy: policy,
       rules_errors: [],
-      target_label: policy.scope_value,
+      target_label: policy.target_label,
       preview: :pending,
       preview_generation: nil,
       preview_timer: nil
@@ -228,50 +243,6 @@ defmodule EmisarWeb.PoliciesLive do
   # account. Never seed drafts or compare approval gates against invented rules.
   def handle_event(_event, _params, %{assigns: %{account_error?: true}} = socket),
     do: {:noreply, socket}
-
-  def handle_event("open_ruleset", %{"uid" => uid}, socket) when is_binary(uid) do
-    if find_ruleset(socket, uid) do
-      {:noreply, socket}
-    else
-      case Policies.fetch_scoped_policy_by_id(uid, socket.assigns.current_subject) do
-        {:ok, policy} ->
-          summary = Enum.find(socket.assigns.summaries, &(&1.id == uid))
-
-          editor = %{
-            build_ruleset_editor(policy)
-            | target_label: if(summary, do: summary.target_label, else: policy.scope_value)
-          }
-
-          {:noreply,
-           socket
-           |> assign(:rulesets, socket.assigns.rulesets ++ [editor])
-           |> refresh_management_capabilities()
-           |> schedule_preview(uid, 0)}
-
-        {:error, _} ->
-          {:noreply,
-           put_flash(socket, :error, "Couldn't open this ruleset. Your access may have changed.")}
-      end
-    end
-  end
-
-  def handle_event("open_ruleset", _params, socket), do: {:noreply, socket}
-
-  def handle_event("close_ruleset", %{"uid" => uid}, socket) do
-    case find_ruleset(socket, uid) do
-      nil ->
-        {:noreply, socket}
-
-      editor ->
-        if editor_dirty?(editor) do
-          {:noreply, put_flash(socket, :error, "Save your changes before closing this ruleset.")}
-        else
-          {:noreply, drop_editor(socket, uid)}
-        end
-    end
-  end
-
-  def handle_event("close_ruleset", _params, socket), do: {:noreply, socket}
 
   def handle_event("search_targets", %{"uid" => uid, "search" => search}, socket)
       when is_binary(uid) do
@@ -478,7 +449,7 @@ defmodule EmisarWeb.PoliciesLive do
     |> assign(:rulesets, rulesets)
     |> refresh_target_availability()
     |> refresh_open_target_options()
-    |> load_summaries(socket.assigns.filter_params, policy.id)
+    |> load_rulesets(socket.assigns.filter_params, policy.id)
     |> schedule_preview(policy.id, 0)
   end
 
@@ -491,7 +462,7 @@ defmodule EmisarWeb.PoliciesLive do
          |> drop_editor(uid)
          |> refresh_target_availability()
          |> refresh_open_target_options()
-         |> load_summaries(socket.assigns.filter_params)}
+         |> load_rulesets(socket.assigns.filter_params)}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't remove this ruleset. Try again.")}
@@ -546,7 +517,7 @@ defmodule EmisarWeb.PoliciesLive do
       changes = %{
         defaults: params["defaults"] || %{},
         overrides: normalize_indexed(params["overrides"] || []),
-        approval: parse_approval(editor.approval, params["approval"] || %{})
+        approval: parse_approval(editor.approval, params["approval"])
       }
 
       input = Policies.update_editor_input(policy_input(editor), changes)
@@ -571,7 +542,9 @@ defmodule EmisarWeb.PoliciesLive do
   end
 
   # The choice cards post an explicit boolean string. Treat a missing value as
-  # false, and floor the number input at 1 to mirror the changeset.
+  # false, and floor the number input at 1 to mirror the changeset. A form that
+  # posts no gate at all (no decision requires approval, so the section isn't
+  # rendered) keeps the current one rather than resetting it.
   defp parse_approval(current, form) when is_map(form) do
     %{
       "min_approvals" => parse_min_approvals(form["min_approvals"], current["min_approvals"]),
@@ -607,6 +580,14 @@ defmodule EmisarWeb.PoliciesLive do
         else: []
 
     fewer_approvals ++ self_approval
+  end
+
+  # The approval gate only governs actions a rule sends to approval. With no tier
+  # or override deciding `require_approval` it can't take effect, so the editor
+  # and rail leave it out; the stored gate is kept for when one does.
+  defp requires_approval?(defaults, overrides) do
+    "require_approval" in Map.values(defaults) or
+      Enum.any?(overrides, &(&1["decision"] == "require_approval"))
   end
 
   # A "require approval" gate that adds no SECOND party — one approval needed and
@@ -1095,41 +1076,14 @@ defmodule EmisarWeb.PoliciesLive do
                the Add-ruleset composer below IS the empty state (the runbook
                precedent — no dashed hint above a dashed composer). --%>
           <p
-            :if={
-              not @load_error? and @summaries == [] and @rulesets == [] and not @can_manage_scoped?
-            }
+            :if={not @load_error? and @rulesets == [] and not @can_manage_scoped?}
             class="text-sm text-zinc-400"
           >
             No targeted rulesets yet.
           </p>
 
-          <div id="saved-policies" phx-update="stream" class="divide-y divide-zinc-800/70">
-            <div
-              :for={{dom_id, summary} <- @streams.policies}
-              id={dom_id}
-              class="flex items-center justify-between gap-4 py-4"
-            >
-              <div class="min-w-0 flex items-center gap-2">
-                <.chip upcase>{summary.scope_type}</.chip>
-                <span class="truncate text-sm font-semibold text-zinc-100">{summary.target_label}</span>
-                <span class="text-xs tabular-nums text-zinc-400">v{summary.vsn}</span>
-              </div>
-              <.button variant={:secondary} phx-click="open_ruleset" phx-value-uid={summary.id}>
-                Open ruleset
-              </.button>
-            </div>
-          </div>
-          <LiveTable.paginator
-            id="saved-policies"
-            path={~p"/app/#{@current_account}/policies"}
-            metadata={@metadata}
-            filter_params={@filter_params}
-            prefix="policies_"
-            page_count={length(@summaries)}
-          />
-
-          <div :if={@rulesets != []} class="mt-8 space-y-8">
-            <div :for={ruleset <- @rulesets}>
+          <div :if={@rulesets != []} id="rulesets" class="space-y-8">
+            <div :for={ruleset <- @rulesets} id={"ruleset-#{ruleset.uid}"}>
               <.ruleset_unit
                 ruleset={ruleset}
                 current_account={@current_account}
@@ -1148,6 +1102,23 @@ defmodule EmisarWeb.PoliciesLive do
                 catalog_path={~p"/app/#{@current_account}/packs"}
               />
             </div>
+          </div>
+
+          <div
+            :if={
+              @ruleset_page_count > 0 or
+                LiveTable.stale_page?(0, @metadata, @filter_params, "policies_")
+            }
+            class={[@rulesets != [] && "mt-8"]}
+          >
+            <LiveTable.paginator
+              id="rulesets"
+              path={~p"/app/#{@current_account}/policies"}
+              metadata={@metadata}
+              filter_params={@filter_params}
+              prefix="policies_"
+              page_count={@ruleset_page_count}
+            />
           </div>
 
           <div
@@ -1202,7 +1173,9 @@ defmodule EmisarWeb.PoliciesLive do
       assign(assigns,
         outcome: result.outcome,
         breakdown: result.breakdown,
-        single_reviewer?: single_reviewer_gate?(assigns.approval),
+        single_reviewer?:
+          requires_approval?(assigns.defaults, assigns.overrides) and
+            single_reviewer_gate?(assigns.approval),
         total: result.total
       )
 
@@ -1376,12 +1349,6 @@ defmodule EmisarWeb.PoliciesLive do
               </p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
-              <.button
-                variant={:secondary}
-                phx-click="close_ruleset"
-                phx-value-uid={@ruleset.uid}
-                disabled={editor_dirty?(@ruleset)}
-              >Close editor</.button>
               <%!-- Navigation, but it shares this header row with the bordered
                    Remove — one button grammar per row, at the peer's optical
                    height (§7.47). --%>
@@ -1547,12 +1514,10 @@ defmodule EmisarWeb.PoliciesLive do
       "top gap above the box. `mt-6` separates a ruleset box from its header; the default policy passes `mt-0` — its section header already spaces it (and it lines up with the rail)"
 
   defp policy_fields(assigns) do
-    # Self-approval + a single approval adds no SECOND party — the one case worth an
-    # amber callout (guidance folded in). A healthy gate shows none.
     assigns =
       assign(assigns,
         shadowed_overrides: shadowed_overrides_by_index(assigns.overrides),
-        single_reviewer?: single_reviewer_gate?(assigns.approval)
+        requires_approval?: requires_approval?(assigns.defaults, assigns.overrides)
       )
 
     ~H"""
@@ -1651,8 +1616,10 @@ defmodule EmisarWeb.PoliciesLive do
            count input are self-contained controls; the recessed wash that used to
            group them was one more island). The brand ring marks the active input;
            the neutral card surface and check avoid turning that choice into a safe
-           verdict. The verdict below resolves who + count into English. --%>
-      <div>
+           verdict. The verdict below resolves who + count into English. Rendered
+           only while a tier or override requires approval — otherwise the gate
+           can't take effect. --%>
+      <div :if={@requires_approval?}>
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
           Approval requirements
         </h3>

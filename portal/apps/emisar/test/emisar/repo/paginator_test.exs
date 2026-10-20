@@ -160,6 +160,13 @@ defmodule Emisar.Repo.PaginatorTest do
   end
 
   describe "encode_cursor/3" do
+    test "an Ecto.Enum value travels as its stored string" do
+      cursor = Paginator.encode_cursor(:after, CursorQuery.cursor_fields(), %{id: :group})
+
+      assert {:ok, %{direction: :after, values: ["group"]}} =
+               Paginator.init(CursorQuery, [], cursor: cursor)
+    end
+
     test "raises rather than emitting a cursor for a value with no cursor type" do
       assert_raise ArgumentError, ~r/has no cursor type/, fn ->
         Paginator.encode_cursor(:after, CursorQuery.cursor_fields(), %{id: nil})

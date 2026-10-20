@@ -128,7 +128,10 @@ not a way to reclaim vertical space.
 
 Do not show a control in a mode where it has no effect. If a value still changes
 execution, keep it visible beside the choice it qualifies and explain the
-interaction. On narrow screens, lifecycle actions may lead, but the primary
+interaction. Hiding an inert control keeps its stored value: a form that no
+longer posts the field must not read the absence as a new value. Saved units of
+active behavior, such as a policy's targeted rulesets, render open; bound a long
+list by paging whole units, not by collapsing them behind an Open control. On narrow screens, lifecycle actions may lead, but the primary
 editing workflow renders before details, validation, canonical output, or other
 secondary rails. Keep lifecycle rails limited to state transitions such as Save
 and Publish. Self-labeling lifecycle controls need no generic `Actions` heading.
@@ -181,6 +184,12 @@ never a reduced model.
 - An argument named `file` reads `Optional JSON value`, then shows `Use` and the
   applicable value control. Choosing Omit leaves only the compact source control.
 - Parallel stages show a concurrency cap; sequential stages do not.
+- A policy shows Approval requirements only while a risk tier or action
+  override decides `Require approval`. An all-Allow ruleset shows neither the
+  section nor a self-approval warning, and its stored gate returns unchanged
+  once a decision needs approval again.
+- Every saved targeted ruleset on the Policy page renders as its open editor;
+  the page reads 25 rulesets at a time instead of listing collapsed summaries.
 - A secondary review rail becomes sticky only when it sits beside a visibly
   wider task column; otherwise it follows the workflow.
 - Save and Publish stay together; the existing page navigation remains the one
@@ -246,6 +255,10 @@ never a reduced model.
   boolean.
 - Review and canonical JSON before the editable workflow on a phone.
 - Showing a concurrency value in sequential mode where it does nothing.
+- Approval requirements, or a warning about self-approval, on a policy whose
+  tiers and overrides only allow or deny.
+- Saved rulesets listed as summary rows behind `Open ruleset` and
+  `Close editor`, so an operator must open each one to see the rules in force.
 - A Cancel editing link in the lifecycle rail that only navigates back.
 - A generic `Actions` heading above self-labeling Save and Publish controls, or
   unrelated panels separating those controls from their publish check.
@@ -284,7 +297,9 @@ their spacing remains part of the collection contract.
 
 Sweep complex editors for ID/version fields detached from the workflow overview,
 behavior choices that are not derived from earlier scope choices, controls shown
-in modes where they have no effect, conditional fields whose presence changes the
+in modes where they have no effect (and form adapters that reset a hidden control's
+stored value), saved units of active behavior collapsed behind an Open control,
+conditional fields whose presence changes the
 width of fields before their trigger, lifecycle rails that duplicate existing
 exit navigation, generic headings above self-labeling controls, controls
 separated from the validation panel they govern, breakpoint ordering that puts

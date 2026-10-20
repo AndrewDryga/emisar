@@ -31,7 +31,8 @@ defmodule Emisar.PolicyManagementAuthorityTest do
     {:ok, partial} = RunnerAccess.new(:restricted, [], [first.id], :all)
     Fixtures.Memberships.force_runner_access(membership, partial)
 
-    assert {:ok, ^policy} = Policies.fetch_scoped_policy_by_id(policy.id, subject)
+    assert {:ok, [listed], _} = Policies.list_scoped_policies(subject)
+    assert listed.id == policy.id
 
     assert Policies.save_scoped_rules(Policies.default_rules(), :group, "production", subject) ==
              {:error, :unauthorized}

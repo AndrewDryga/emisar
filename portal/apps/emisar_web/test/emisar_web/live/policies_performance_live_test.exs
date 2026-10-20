@@ -13,43 +13,37 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     }
   end
 
-  test "initial page retains only 25 rule-free summaries and opens one editor on demand", %{
-    conn: conn,
-    account: account,
-    user: user
-  } do
+  test "the first page opens 25 ruleset editors with their rules and the next page replaces them",
+       %{conn: conn, account: account, user: user} do
     policies =
       for i <- 1..28,
           do: scoped(account, user, "group-#{String.pad_leading(to_string(i), 2, "0")}")
 
+    {first_page, second_page} = Enum.split(policies, 25)
     {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
     state = assigns(lv)
-    assert length(state.summaries) == 25
-    assert state.rulesets == []
+    assert Enum.map(state.rulesets, & &1.uid) == Enum.map(first_page, & &1.id)
+    assert Enum.map(state.rulesets, & &1.policy.rules) == Enum.map(first_page, & &1.rules)
+    assert state.ruleset_page_count == 25
     refute Map.has_key?(state, :catalog_index)
     refute Map.has_key?(state, :runners)
-    refute Enum.any?(state.summaries, &Map.has_key?(&1, :rules))
-    refute html =~ "Save ruleset"
-    render_click(lv, "open_ruleset", %{"uid" => hd(policies).id})
-    assert [%{uid: uid, policy: %{rules: rules}}] = assigns(lv).rulesets
-    assert uid == hd(policies).id
-    assert rules == hd(policies).rules
-    lv |> element("#saved-policies-pager a", "Next") |> render_click()
-    assert length(assigns(lv).summaries) == 3
-    assert assigns(lv).rulesets == []
+    refute html =~ "Open ruleset"
+    lv |> element("#rulesets-pager a", "Next") |> render_click()
+    assert Enum.map(assigns(lv).rulesets, & &1.uid) == Enum.map(second_page, & &1.id)
+    assert assigns(lv).ruleset_page_count == 3
+    settle(lv, 40)
   end
 
   test "dirty saved editors, the account draft and a new draft survive paging and sibling save",
        %{account: account, conn: conn, user: user} do
-    [first, second, clean | _] =
+    policies =
       for i <- 1..28,
           do: scoped(account, user, "group-#{String.pad_leading(to_string(i), 2, "0")}")
 
+    [first, second, clean | _] = policies
+    second_page = policies |> Enum.drop(25) |> Enum.map(& &1.id)
     Fixtures.Runners.create_runner(account_id: account.id, group: "free", connected?: false)
     {:ok, lv, _} = live(conn, ~p"/app/#{account}/policies")
-
-    for policy <- [first, second, clean],
-        do: render_click(lv, "open_ruleset", %{"uid" => policy.id})
 
     for uid <- ["account", first.id, second.id] do
       render_hook(lv, "form_change", %{
@@ -61,15 +55,23 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     render_click(lv, "add_ruleset", %{})
     new_uid = List.last(assigns(lv).rulesets).uid
     render_hook(lv, "set_target", %{"uid" => new_uid, "target" => "group:free"})
-    lv |> element("#saved-policies-pager a", "Next") |> render_click()
-    assert Enum.map(assigns(lv).rulesets, & &1.uid) == [first.id, second.id, new_uid]
+    lv |> element("#rulesets-pager a", "Next") |> render_click()
+
+    # The next page opens its own rulesets; of the first page, only unsaved work stays.
+    assert Enum.map(assigns(lv).rulesets, & &1.uid) ==
+             second_page ++ [first.id, second.id, new_uid]
+
+    refute editor(lv, clean.id)
     assert assigns(lv).account.defaults["low"] == "deny"
     render_hook(lv, "save", %{"editor" => first.id})
-    assert Enum.map(assigns(lv).rulesets, & &1.uid) == [first.id, second.id, new_uid]
+
+    assert Enum.map(assigns(lv).rulesets, & &1.uid) ==
+             second_page ++ [first.id, second.id, new_uid]
+
     assert editor(lv, second.id).defaults["low"] == "deny"
     assert editor(lv, new_uid).scope_value == "free"
-    assert length(assigns(lv).summaries) == 3
-    settle(lv)
+    assert assigns(lv).ruleset_page_count == 3
+    settle(lv, 40)
   end
 
   test "target search is paged, preserves an off-search selection and refreshes taken status after sibling save",
@@ -126,7 +128,6 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     membership = Fixtures.Memberships.create_membership(account_id: account.id, role: "admin")
     admin = Fixtures.Subjects.subject_for(membership)
     {:ok, lv, _} = live(log_in_member(conn, admin.actor), ~p"/app/#{account}/policies")
-    render_click(lv, "open_ruleset", %{"uid" => policy.id})
     render_click(lv, "add_ruleset", %{})
     uid = List.last(assigns(lv).rulesets).uid
     assert has_element?(lv, "#policy-target-#{uid}:not([disabled])")
@@ -244,18 +245,16 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     settle(lv)
   end
 
-  test "saved targets cannot be retargeted and foreign editor ids cannot be opened", %{
+  test "saved targets cannot be retargeted and another account's rulesets never load", %{
     conn: conn,
     account: account,
     user: user
   } do
     policy = scoped(account, user, "db")
-    foreign = Fixtures.Policies.create_policy(scope_type: :group, scope_value: "private")
+    Fixtures.Policies.create_policy(scope_type: :group, scope_value: "private")
     {:ok, lv, _} = live(conn, ~p"/app/#{account}/policies")
-    render_click(lv, "open_ruleset", %{"uid" => policy.id})
     render_hook(lv, "set_target", %{"uid" => policy.id, "target" => "group:other"})
     assert editor(lv, policy.id).scope_value == "db"
-    render_hook(lv, "open_ruleset", %{"uid" => foreign.id})
     assert Enum.map(assigns(lv).rulesets, & &1.uid) == [policy.id]
     refute render(lv) =~ "private"
     settle(lv)
@@ -299,19 +298,20 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     assert assigns(lv).preview_queue == []
   end
 
-  test "closing an active editor cooperatively cancels it and starts the already queued editor",
+  test "removing a ruleset cooperatively cancels its running preview and starts the queued one",
        %{conn: conn, account: account, user: user} do
     first = scoped(account, user, "a")
     second = scoped(account, user, "b")
     {:ok, lv, _} = live(conn, ~p"/app/#{account}/policies")
     settle(lv)
     hold_next_preview(account.id)
-    render_click(lv, "open_ruleset", %{"uid" => first.id})
+    render_click(lv, "retry_preview", %{"editor" => first.id})
+    flush_timer(lv, first.id)
     assert_receive {:held_preview, task}, 2_000
-    render_click(lv, "open_ruleset", %{"uid" => second.id})
+    render_click(lv, "retry_preview", %{"editor" => second.id})
     flush_timer(lv, second.id)
     assert assigns(lv).preview_queue == [second.id]
-    render_click(lv, "close_ruleset", %{"uid" => first.id})
+    render_click(lv, "remove_ruleset", %{"uid" => first.id})
     assert Process.alive?(task)
     send(task, :continue_preview)
     settle(lv)
@@ -356,7 +356,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
       assigns: %{assigns(lv) | account: nil, account_error?: true}
     }
 
-    for event <- ~w(add_ruleset open_ruleset set_target save form_change retry_preview) do
+    for event <- ~w(add_ruleset set_target save form_change retry_preview) do
       assert {:noreply, ^failed} =
                EmisarWeb.PoliciesLive.handle_event(
                  event,
@@ -429,7 +429,8 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
       {:ok, lv, _} = live(conn, ~p"/app/#{account}/policies")
       settle(lv)
       hold_next_preview(account.id)
-      render_click(lv, "open_ruleset", %{"uid" => policy.id})
+      render_click(lv, "retry_preview", %{"editor" => policy.id})
+      flush_timer(lv, policy.id)
       assert_receive {:held_preview, task}, 2_000
 
       case unquote(invalidation) do

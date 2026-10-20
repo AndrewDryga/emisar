@@ -25,16 +25,6 @@ defmodule Emisar.Policies.Policy.Query do
   def scoped_overrides(queryable),
     do: where(queryable, [policies: p], p.scope_type != :account)
 
-  def select_summary(queryable) do
-    select(queryable, [policies: p], %{
-      id: p.id,
-      scope_type: fragment("?::text", p.scope_type),
-      scope_value: p.scope_value,
-      vsn: p.vsn,
-      updated_at: p.updated_at
-    })
-  end
-
   def select_scope(queryable),
     do: select(queryable, [policies: p], map(p, [:scope_type, :scope_value]))
 

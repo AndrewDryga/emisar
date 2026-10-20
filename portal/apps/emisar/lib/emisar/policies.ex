@@ -455,55 +455,37 @@ defmodule Emisar.Policies do
 
   defp approval_snapshot(_decision, _policy), do: nil
 
-  @doc "Lists a bounded page of saved account targets, without policy rules."
-  def list_scoped_policy_summaries(%Subject{} = subject, opts \\ []) do
+  @doc """
+  Lists a bounded page of saved runner and group rulesets, rules included, each
+  with its `target_label`: the runner's current name (its id once the runner is
+  deleted) or the group name.
+  """
+  def list_scoped_policies(%Subject{} = subject, opts \\ []) do
     with {:ok, subject} <-
            Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject),
-         {:ok, summaries, metadata} <- scoped_summary_page(subject, opts) do
-      summaries =
-        Enum.map(summaries, fn summary ->
-          %{summary | scope_type: if(summary.scope_type == "runner", do: :runner, else: :group)}
-        end)
-
-      ids = for %{scope_type: :runner, scope_value: id} <- summaries, Repo.valid_uuid?(id), do: id
+         {:ok, policies, metadata} <- scoped_policy_page(subject, opts) do
+      ids = for %{scope_type: :runner, scope_value: id} <- policies, Repo.valid_uuid?(id), do: id
       labels = Runners.current_runner_labels_for_ids(subject.account.id, ids)
 
-      summaries =
-        Enum.map(summaries, fn summary ->
+      policies =
+        Enum.map(policies, fn policy ->
           label =
-            if summary.scope_type == :runner,
-              do: Map.get(labels, summary.scope_value, summary.scope_value),
-              else: summary.scope_value
+            if policy.scope_type == :runner,
+              do: Map.get(labels, policy.scope_value, policy.scope_value),
+              else: policy.scope_value
 
-          Map.put(summary, :target_label, label)
+          %{policy | target_label: label}
         end)
 
-      {:ok, summaries, metadata}
+      {:ok, policies, metadata}
     end
   end
 
-  defp scoped_summary_page(subject, opts) do
+  defp scoped_policy_page(subject, opts) do
     Policy.Query.not_deleted()
     |> Policy.Query.scoped_overrides()
-    |> Policy.Query.select_summary()
     |> Authorizer.for_subject(subject)
     |> Repo.list(Policy.Query, bounded_page(opts, 25, :auto))
-  end
-
-  @doc "Loads one saved editor; foreign and deleted rows are not found."
-  def fetch_scoped_policy_by_id(id, %Subject{} = subject) do
-    with {:ok, subject} <-
-           Auth.fetch_current_subject(Authorizer.view_policies_permission(), subject),
-         true <- Repo.valid_uuid?(id) do
-      Policy.Query.not_deleted()
-      |> Policy.Query.scoped_overrides()
-      |> Policy.Query.by_id(id)
-      |> Authorizer.for_subject(subject)
-      |> Repo.fetch(Policy.Query)
-    else
-      false -> {:error, :not_found}
-      error -> error
-    end
   end
 
   @doc """

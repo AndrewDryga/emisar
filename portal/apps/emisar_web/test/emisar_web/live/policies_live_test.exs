@@ -591,10 +591,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _} =
         Policies.save_rules(
-          %{
-            "schema_version" => 2,
-            "approval" => %{"min_approvals" => 3, "allow_self_approval" => false}
-          },
+          gated_rules(%{"min_approvals" => 3, "allow_self_approval" => false}),
           subject
         )
 
@@ -622,10 +619,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _} =
         Policies.save_rules(
-          %{
-            "schema_version" => 2,
-            "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
-          },
+          gated_rules(%{"min_approvals" => 1, "allow_self_approval" => false}),
           subject
         )
 
@@ -636,10 +630,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _} =
         Policies.save_rules(
-          %{
-            "schema_version" => 2,
-            "approval" => %{"min_approvals" => 2, "allow_self_approval" => false}
-          },
+          gated_rules(%{"min_approvals" => 2, "allow_self_approval" => false}),
           subject
         )
 
@@ -658,10 +649,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _} =
         Policies.save_rules(
-          %{
-            "schema_version" => 2,
-            "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
-          },
+          gated_rules(%{"min_approvals" => 1, "allow_self_approval" => true}),
           subject
         )
 
@@ -710,10 +698,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _} =
         Policies.save_rules(
-          %{
-            "schema_version" => 2,
-            "approval" => %{"min_approvals" => 2, "allow_self_approval" => true}
-          },
+          gated_rules(%{"min_approvals" => 2, "allow_self_approval" => true}),
           subject
         )
 
@@ -740,10 +725,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, _} =
         Policies.save_rules(
-          %{
-            "schema_version" => 2,
-            "approval" => %{"min_approvals" => 1, "allow_self_approval" => false}
-          },
+          gated_rules(%{"min_approvals" => 1, "allow_self_approval" => false}),
           subject
         )
 
@@ -753,6 +735,81 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # for the weak self-single-approval case, so nothing shows here.
       refute html =~ "A requester with approval permission can provide the only approval needed."
       refute html =~ "No independent approval required"
+    end
+
+    test "approval requirements and their warning stay hidden until a decision requires approval",
+         %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+
+      {:ok, _} =
+        Policies.save_rules(
+          allow_all(%{"min_approvals" => 1, "allow_self_approval" => true}),
+          Fixtures.Subjects.subject_for(owner)
+        )
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+
+      # Nothing goes to approval, so the gate can't take effect: no section, no
+      # controls, and no warning about self-approval.
+      refute has_element?(lv, "#policy-form-account h3", "Approval requirements")
+      refute has_element?(lv, "#policy-account-min-approvals")
+      refute has_element?(lv, ~s(#policy-form-account input[type="radio"]))
+      refute has_element?(lv, "#policy-single-reviewer-warning-account")
+
+      render_change(lv, "form_change", %{
+        "editor" => "account",
+        "policy" => %{"defaults" => %{"high" => "require_approval"}}
+      })
+
+      assert has_element?(lv, "#policy-form-account h3", "Approval requirements")
+      assert has_element?(lv, "#policy-account-min-approvals")
+      assert has_element?(lv, "#policy-single-reviewer-warning-account")
+    end
+
+    test "an override that requires approval shows the approval requirements", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+
+      rules =
+        Map.put(allow_all(%{"min_approvals" => 1, "allow_self_approval" => false}), "overrides", [
+          %{"name" => "db-needs-approval", "action" => "db.*", "decision" => "require_approval"}
+        ])
+
+      {:ok, _} = Policies.save_rules(rules, Fixtures.Subjects.subject_for(owner))
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert has_element?(lv, "#policy-form-account h3", "Approval requirements")
+      assert has_element?(lv, "#policy-account-min-approvals")
+    end
+
+    test "saving while approval requirements are hidden keeps the stored gate", %{conn: conn} do
+      {conn, owner, account} = register_and_log_in(conn)
+      gate = %{"min_approvals" => 2, "allow_self_approval" => true}
+      {:ok, _} = Policies.save_rules(allow_all(gate), Fixtures.Subjects.subject_for(owner))
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+
+      # The hidden section posts no approval fields; their absence must not turn
+      # self-approval off.
+      assert lv
+             |> form("#policy-form-account", %{
+               "policy" => %{"defaults" => %{"critical" => "deny"}}
+             })
+             |> render_submit() =~ "Default policy saved."
+
+      rules = Policies.peek_policy_for_account(account.id).rules
+      assert rules["defaults"]["critical"] == "deny"
+      assert rules["approval"] == gate
+
+      # Requiring approval again brings the gate back exactly as stored.
+      html =
+        render_change(lv, "form_change", %{
+          "editor" => "account",
+          "policy" => %{"defaults" => %{"high" => "require_approval"}}
+        })
+
+      assert html =~ ~r/name="policy\[approval\]\[min_approvals\]"[^>]*value="2"/
+
+      assert html =~
+               ~r/<input[^>]*type="radio"[^>]*name="policy\[approval\]\[allow_self_approval\]"[^>]*value="true"[^>]*checked/
     end
 
     test "an operator sees the policy read-only — no manage affordances, save denied", %{
@@ -932,7 +989,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     end
 
     test "another account's default policy + rulesets never appear on this page", %{conn: conn} do
-      # `fetch_policy` / `list_scoped_policy_summaries` scope to the
+      # `fetch_policy` / `list_scoped_policies` scope to the
       # subject's account via `for_subject`, so a foreign account's saved default
       # and runner ruleset are invisible here.
       {conn, _owner, account} = register_and_log_in(conn)
@@ -1117,8 +1174,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
         Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
 
       admin_conn = log_in_member(build_conn(), membership)
-      {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
-      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
+      {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
 
       assert html =~ "You need access to all runners to edit the default policy."
       refute has_element?(lv, "#policy-form-account button[type=submit]")
@@ -1177,7 +1233,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       assert html =~ "Applies when no ruleset targets the runner or its group."
       assert html =~ "Targeted rulesets"
-      assert render_click(lv, "open_ruleset", %{"uid" => scoped.id}) =~ "db-1"
+      assert html =~ "db-1"
       refute has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]")
       assert settle_previews(lv) =~ "reported action"
       refute has_element?(lv, "#policy-form-account button[type=submit]")
@@ -1199,8 +1255,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
         Emisar.Accounts.update_membership_runner_access(membership, restricted, subject)
 
       admin_conn = log_in_member(build_conn(), membership)
-      {:ok, lv, _html} = live(admin_conn, ~p"/app/#{account}/policies")
-      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
+      {:ok, lv, html} = live(admin_conn, ~p"/app/#{account}/policies")
 
       assert html =~ "You need access to all packs to edit policy rules."
       refute has_element?(lv, "#policy-form-account button[type=submit]")
@@ -1219,15 +1274,35 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "Default policy"
       assert html =~ "Targeted rulesets"
       # The card shows the runner name, its own Save, and a Remove.
       assert html =~ "web-1"
-      assert html =~ "Save ruleset"
+      assert has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]", "Save ruleset")
       assert html =~ "Remove"
+    end
+
+    test "every saved ruleset renders open, with no open or close control", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
+      {:ok, runner_rules} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+      {:ok, group_rules} = Policies.save_scoped_rules(deny_all(), :group, "web", subject)
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      for policy <- [runner_rules, group_rules] do
+        assert has_element?(lv, "#ruleset-#{policy.id} #policy-form-#{policy.id}")
+        assert has_element?(lv, "#policy-rail-#{policy.id}")
+      end
+
+      refute html =~ "Open ruleset"
+      refute html =~ "Close editor"
+      refute has_element?(lv, "#rulesets-pager")
     end
 
     test "a ruleset whose runner was deleted falls back to the runner id, still renders", %{
@@ -1250,8 +1325,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       |> Emisar.Runners.Runner.Query.by_id(runner.id)
       |> Emisar.Repo.update_all(set: [deleted_at: DateTime.utc_now()])
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       # The deleted runner's name is gone; the card identifies the scope by its id.
       refute html =~ "ghost-1"
@@ -1286,20 +1360,17 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # A strict account default: two approvers, no self-approval.
       {:ok, _} =
         Policies.save_rules(
-          %{
-            "schema_version" => 2,
-            "approval" => %{"min_approvals" => 2, "allow_self_approval" => false}
-          },
+          gated_rules(%{"min_approvals" => 2, "allow_self_approval" => false}),
           subject
         )
 
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
-      # deny_all/0 carries the lax explicit gate (1 approver, self-approval
-      # allowed), so this scope is weaker than the strict account default.
-      {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+      # The seeded rules send high risk to approval under the lax gate (1 approver,
+      # self-approval allowed), so this scope is weaker than the account default.
+      {:ok, scoped} =
+        Policies.save_scoped_rules(Policies.default_rules(), :runner, runner.id, subject)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
       assert html =~ "Less restrictive approval requirements"
       assert html =~ "Requires 1 approver instead of 2."
@@ -1333,13 +1404,45 @@ defmodule EmisarWeb.PoliciesLiveTest do
     } do
       runner = Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
       # The account default is the lax baseline (1 approver, self-approval on), so
-      # a deny_all ruleset matches it — nothing weaker to warn about.
-      {:ok, scoped} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
+      # a ruleset with the same gate is not weaker — nothing to warn about.
+      {:ok, scoped} =
+        Policies.save_scoped_rules(Policies.default_rules(), :runner, runner.id, subject)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      html = render_click(lv, "open_ruleset", %{"uid" => scoped.id})
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
+      assert has_element?(lv, "#policy-form-#{scoped.id} h3", "Approval requirements")
       refute html =~ "Less restrictive approval requirements"
+    end
+
+    test "a ruleset that sends nothing to approval hides its approval requirements", %{
+      conn: conn,
+      account: account,
+      subject: subject
+    } do
+      # A stricter default would otherwise make the lax gate below read as weaker.
+      {:ok, _} =
+        Policies.save_rules(
+          gated_rules(%{"min_approvals" => 2, "allow_self_approval" => false}),
+          subject
+        )
+
+      Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
+
+      {:ok, scoped} =
+        Policies.save_scoped_rules(
+          allow_all(%{"min_approvals" => 1, "allow_self_approval" => true}),
+          :group,
+          "web",
+          subject
+        )
+
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
+
+      assert has_element?(lv, "#policy-form-account h3", "Approval requirements")
+      refute has_element?(lv, "#policy-form-#{scoped.id} h3", "Approval requirements")
+      refute has_element?(lv, "#policy-#{scoped.id}-min-approvals")
+      refute html =~ "Less restrictive approval requirements"
+      refute has_element?(lv, "#policy-single-reviewer-warning-#{scoped.id}")
     end
 
     test "add a ruleset → pick a runner → save → persists a runner-scoped policy", %{
@@ -1367,7 +1470,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       assert lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit() =~ "Ruleset saved."
 
-      assert {:ok, [policy], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [policy], _metadata} = Policies.list_scoped_policies(subject)
       assert policy.scope_type == :runner
       assert policy.scope_value == runner.id
     end
@@ -1409,7 +1512,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       end
 
       # The crafted scopes persisted nothing — no override exists.
-      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [], _metadata} = Policies.list_scoped_policies(subject)
     end
 
     test "add a ruleset → pick a group → save → persists a group-scoped policy", %{
@@ -1430,7 +1533,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
 
-      assert {:ok, [policy], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [policy], _metadata} = Policies.list_scoped_policies(subject)
       assert policy.scope_type == :group
       assert policy.scope_value == "prod"
     end
@@ -1487,15 +1590,14 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      html = render_click(lv, "open_ruleset", %{"uid" => saved.id})
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
       assert rendered_text(html) =~ "This runner will use its group's ruleset, if one exists."
       assert html =~ "Otherwise, the default policy applies."
       refute html =~ "Remove ruleset"
       html = lv |> render_click("remove_ruleset", %{"uid" => saved.id})
 
       assert html =~ "Ruleset removed."
-      assert {:ok, [], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [], _metadata} = Policies.list_scoped_policies(subject)
     end
 
     test "group ruleset removal explains that runner rulesets still take priority", %{
@@ -1506,11 +1608,13 @@ defmodule EmisarWeb.PoliciesLiveTest do
       Fixtures.Runners.create_runner(account_id: account.id, name: "db-1", group: "db")
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :group, "db", subject)
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      html = render_click(lv, "open_ruleset", %{"uid" => saved.id})
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
 
-      assert html =~
+      assert has_element?(
+               lv,
+               "#remove-ruleset-#{saved.id}",
                "Runners in this group will use the default policy unless they have their own ruleset."
+             )
 
       refute html =~ "This runner will use its group's ruleset"
     end
@@ -1568,13 +1672,11 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} =
         build_conn() |> log_in_member(operator) |> live(~p"/app/#{account}/policies")
 
-      render_click(lv, "open_ruleset", %{"uid" => saved.id})
-
       assert render_hook(lv, "remove_ruleset", %{"uid" => saved.id}) =~
                "have permission to do that"
 
       # The ruleset is still there.
-      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policies(subject)
     end
 
     test "a viewer's crafted remove_ruleset is denied", %{
@@ -1592,12 +1694,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} =
         build_conn() |> log_in_member(viewer) |> live(~p"/app/#{account}/policies")
 
-      render_click(lv, "open_ruleset", %{"uid" => saved.id})
-
       assert render_hook(lv, "remove_ruleset", %{"uid" => saved.id}) =~
                "have permission to do that"
 
-      assert {:ok, [_], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [_], _metadata} = Policies.list_scoped_policies(subject)
     end
 
     test "an operator's crafted add_ruleset is a no-op — no card added", %{
@@ -1639,7 +1739,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       # First save persists the row and rebuilds the card under the policy id.
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
-      assert {:ok, [policy], _metadata} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, [policy], _metadata} = Policies.list_scoped_policies(subject)
 
       # The card now submits under the policy id, not `new-…`.
       html = render(lv)
@@ -1649,7 +1749,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       # Second save edits the same scope — still exactly one runner ruleset.
       lv |> form(~s(form[id="policy-form-#{policy.id}"])) |> render_submit()
 
-      {:ok, scoped, _metadata} = Policies.list_scoped_policy_summaries(subject)
+      {:ok, scoped, _metadata} = Policies.list_scoped_policies(subject)
       assert Enum.count(scoped, &(&1.scope_type == :runner and &1.scope_value == runner.id)) == 1
     end
 
@@ -1817,7 +1917,6 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, saved} = Policies.save_scoped_rules(deny_all(), :runner, runner.id, subject)
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      render_click(lv, "open_ruleset", %{"uid" => saved.id})
 
       html = lv |> render_click("add_override", %{"editor" => saved.id})
 
@@ -1854,8 +1953,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
           subject
         )
 
-      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      html = render_click(lv, "open_ruleset", %{"uid" => saved.id})
+      {:ok, lv, html} = live(conn, ~p"/app/#{account}/policies")
       assert html =~ ~s(value="scoped-one")
 
       html = lv |> render_click("remove_override", %{"editor" => saved.id, "index" => "0"})
@@ -1922,6 +2020,25 @@ defmodule EmisarWeb.PoliciesLiveTest do
       "approval" => %{"min_approvals" => 1, "allow_self_approval" => true}
     }
   end
+
+  # No tier sends an action to approval, so the approval gate has no effect.
+  defp allow_all(approval) do
+    %{
+      "schema_version" => 2,
+      "defaults" => %{
+        "low" => "allow",
+        "medium" => "allow",
+        "high" => "allow",
+        "critical" => "allow"
+      },
+      "overrides" => [],
+      "approval" => approval
+    }
+  end
+
+  # The seeded tiers (high requires approval) with a chosen approval gate, so the
+  # editor shows its Approval requirements.
+  defp gated_rules(approval), do: Map.put(Policies.default_rules(), "approval", approval)
 
   # The box classes of one named control — the geometry a blocked row must keep.
   # Attribute order varies, so anchor on the name with a lookahead.

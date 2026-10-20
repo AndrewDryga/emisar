@@ -1,6 +1,7 @@
 defmodule Emisar.PoliciesEditorReadsTest do
   use Emisar.DataCase, async: true
   alias Emisar.Accounts.RunnerAccess
+  alias Emisar.Auth.Subject
   alias Emisar.{Catalog, Fixtures, Policies, Repo, Runners}
 
   setup do
@@ -14,7 +15,7 @@ defmodule Emisar.PoliciesEditorReadsTest do
     }
   end
 
-  describe "list_scoped_policy_summaries/2" do
+  describe "list_scoped_policies/2" do
     test "preserves runner type and current label, with a UUID fallback after deletion", %{
       account: account,
       subject: subject,
@@ -30,12 +31,12 @@ defmodule Emisar.PoliciesEditorReadsTest do
       scoped(account, user, :runner, runner.id)
 
       assert {:ok, [%{scope_type: :runner, target_label: "database"}], _} =
-               Policies.list_scoped_policy_summaries(subject)
+               Policies.list_scoped_policies(subject)
 
       Fixtures.Runners.mark_deleted(runner)
 
       assert {:ok, [%{scope_type: :runner, target_label: label}], _} =
-               Policies.list_scoped_policy_summaries(subject)
+               Policies.list_scoped_policies(subject)
 
       assert label == runner.id
     end
@@ -59,42 +60,63 @@ defmodule Emisar.PoliciesEditorReadsTest do
               [
                 %{scope_type: :group, target_label: group},
                 %{scope_type: :runner, target_label: "database"}
-              ], _} = Policies.list_scoped_policy_summaries(subject)
+              ], _} = Policies.list_scoped_policies(subject)
 
       assert group == runner.id
     end
 
-    test "pages summaries without loading rules, including empty configured groups", %{
-      subject: subject,
-      account: account,
-      user: user
-    } do
+    test "pages rulesets with their rules, including empty configured groups, never the default",
+         %{subject: subject, account: account, user: user} do
       policies =
         for i <- 1..27,
             do: scoped(account, user, :group, "group-#{String.pad_leading(to_string(i), 2, "0")}")
 
-      assert {:ok, first, meta} = Policies.list_scoped_policy_summaries(subject)
+      assert {:ok, first, meta} = Policies.list_scoped_policies(subject)
       assert length(first) == 25
       assert meta.next_page_cursor
-      refute Enum.any?(first, &Map.has_key?(&1, :rules))
+      assert Enum.map(first, & &1.rules) == policies |> Enum.take(25) |> Enum.map(& &1.rules)
 
       assert {:ok, last, _} =
-               Policies.list_scoped_policy_summaries(subject,
+               Policies.list_scoped_policies(subject,
                  page: [cursor: meta.next_page_cursor]
                )
 
+      # Exactly the 27 rulesets: the account default is not a scoped policy.
       assert Enum.map(first ++ last, & &1.id) == Enum.map(policies, & &1.id)
     end
 
-    test "denies permissionless and isolates accounts", %{
+    test "denies permissionless and API-key subjects and isolates accounts", %{
       denied: denied,
       account: account,
       user: user
     } do
       scoped(account, user, :group, "db")
-      assert {:error, :unauthorized} = Policies.list_scoped_policy_summaries(denied)
+      assert {:error, :unauthorized} = Policies.list_scoped_policies(denied)
+      {_raw, api_key} = Fixtures.ApiKeys.create_api_key(account_id: account.id)
+      api_subject = Subject.for_api_key(api_key, account)
+      assert {:error, :unauthorized} = Policies.list_scoped_policies(api_subject)
       {_, _, other} = Fixtures.Subjects.owner_subject()
-      assert {:ok, [], _} = Policies.list_scoped_policy_summaries(other)
+      assert {:ok, [], _} = Policies.list_scoped_policies(other)
+    end
+
+    # Group names are not account-unique: a restricted reader in one account
+    # never sees another account's ruleset for the same group name.
+    test "a group name shared with another account lists nothing of theirs", %{
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, group: "db", connected?: false)
+      {other_owner, other_account, _other} = Fixtures.Subjects.owner_subject()
+
+      Fixtures.Runners.create_runner(
+        account_id: other_account.id,
+        group: "db",
+        connected?: false
+      )
+
+      scoped(other_account, other_owner, :group, "db")
+      reader = account |> member(["db"]) |> Fixtures.Subjects.subject_for()
+
+      assert {:ok, [], _} = Policies.list_scoped_policies(reader)
     end
 
     test "reads saved targets independently of action scope, including empty groups", %{
@@ -106,30 +128,15 @@ defmodule Emisar.PoliciesEditorReadsTest do
       member = member(account, ["empty"])
 
       assert {:ok, rows, _} =
-               Policies.list_scoped_policy_summaries(Fixtures.Subjects.subject_for(member))
+               Policies.list_scoped_policies(Fixtures.Subjects.subject_for(member))
 
       assert MapSet.new(rows, & &1.id) == MapSet.new([empty.id, hidden.id])
       Fixtures.Memberships.force_runner_access(member, RunnerAccess.none())
 
       assert {:ok, rows, _} =
-               Policies.list_scoped_policy_summaries(Fixtures.Subjects.subject_for(member))
+               Policies.list_scoped_policies(Fixtures.Subjects.subject_for(member))
 
       assert MapSet.new(rows, & &1.id) == MapSet.new([empty.id, hidden.id])
-    end
-  end
-
-  describe "fetch_scoped_policy_by_id/2" do
-    test "loads one full policy regardless of action scope and refuses foreign, malformed and unauthorized ids",
-         %{subject: subject, account: account, denied: denied, user: user} do
-      policy = scoped(account, user, :group, "db")
-      assert {:ok, loaded} = Policies.fetch_scoped_policy_by_id(policy.id, subject)
-      assert loaded.rules == policy.rules
-      {_, _, other} = Fixtures.Subjects.owner_subject()
-      assert {:error, :not_found} = Policies.fetch_scoped_policy_by_id(policy.id, other)
-      restricted = account |> member(["elsewhere"]) |> Fixtures.Subjects.subject_for()
-      assert {:ok, ^policy} = Policies.fetch_scoped_policy_by_id(policy.id, restricted)
-      assert {:error, :not_found} = Policies.fetch_scoped_policy_by_id("bad", subject)
-      assert {:error, :unauthorized} = Policies.fetch_scoped_policy_by_id(policy.id, denied)
     end
   end
 
