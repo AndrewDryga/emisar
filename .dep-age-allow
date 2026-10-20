@@ -20,5 +20,6 @@
 # fresh reason. An exemption also covers a DOWNGRADE, because a patched older
 # line is a real answer to an urgent advisory; the date is what keeps that a
 # decision rather than a permanent hole.
-hex decimal 3.1.2 2026-10-17 CVE-2026-97853 / GHSA-6c27-994x-c52f owner-approved 2026-10-11 urgent patch exception without an active-exploitation claim; verified Hex archive/upstream diff; replaces advisory-flagged 3.1.1 before release.
 go golang.org/x/net v0.60.0 2026-10-22 CVE-2026-78669 / GO-2026-6611 owner-approved 2026-10-11 urgent patch exception without an active-exploitation claim; native Compose source and derived module files authenticated; five companion upgrades already aged.
+hex bandit 1.13.1 2026-10-30 EEF-CVE-2026-105659 (HIGH) / GHSA-69m6-wcv4-rwcf and EEF-CVE-2026-105660 / GHSA-v53v-9hvg-37jf owner-approved 2026-10-20 urgent patch exception without an active-exploitation claim — a client can pin portal HTTP/2 stream processes with a trickle of WINDOW_UPDATE frames and choose conn.host/conn.port through an unvalidated HTTP/1 request target; the fix exists only in the 1.13 line (published 2026-10-15) and both advisories fail mix hex.audit on 1.12.5; verified Hex checksum and release diff.
+hex thousand_island 1.6.0 2026-10-30 required by bandit 1.13 (thousand_island ~> 1.6) for EEF-CVE-2026-105659 / EEF-CVE-2026-105660; owner-approved 2026-10-20 with the Bandit exception; published 2026-10-15; verified Hex checksum and release diff.
