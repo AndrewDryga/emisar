@@ -50,11 +50,21 @@ func scanELFFixture(t *testing.T, path, symbol string, class elf.Class) {
 
 func scanFixture(t *testing.T) (string, []byte, diagnosticsScan) {
 	t.Helper()
+	// Keep the real scanner's literal epoch in PURL and escaped epoch in BOMRef.
+	pkg := scanPackage{ID: "zlib1g@1:1.2.13.dfsg-1", Name: "zlib1g", Version: "1:1.2.13.dfsg-1", Arch: "amd64", SrcName: "zlib", SrcVersion: "1.2.13.dfsg", SrcRelease: "1", SrcEpoch: 1}
+	pkg.Identifier.PURL = "pkg:deb/debian/zlib1g@1:1.2.13.dfsg-1?arch=amd64&distro=debian-12"
+	return packageScanFixture(t, "zlib1g\t1:1.2.13.dfsg-1\tamd64\tzlib\t1:1.2.13.dfsg-1", "lib/libz.so.1",
+		"/usr/lib/x86_64-linux-gnu/libz.so.1.2.13", "zlibVersion", pkg, "CVE-2023-45853", "CRITICAL")
+}
+
+// packageScanFixture ships one Debian package file and reports one finding
+// against it, bound to the runtime inventory and SBOM the classifier checks.
+func packageScanFixture(t *testing.T, row, path, origin, symbol string, pkg scanPackage, cve, severity string) (string, []byte, diagnosticsScan) {
+	t.Helper()
 	bundle := t.TempDir()
-	row := "zlib1g\t1:1.2.13.dfsg-1\tamd64\tzlib\t1:1.2.13.dfsg-1"
 	writeFixture(t, bundle, "debian-runtime.tsv", row+"\n")
-	writeFixture(t, bundle, "file-origins.tsv", "./lib/libz.so.1\tdebian\t/usr/lib/x86_64-linux-gnu/libz.so.1.2.13\t"+row+"\n")
-	scanELFFixture(t, filepath.Join(bundle, "lib/libz.so.1"), "zlibVersion", elf.ELFCLASS64)
+	writeFixture(t, bundle, "file-origins.tsv", "./"+path+"\tdebian\t"+origin+"\t"+row+"\n")
+	scanELFFixture(t, filepath.Join(bundle, path), symbol, elf.ELFCLASS64)
 	component, err := debianInventoryComponent(row)
 	if err != nil {
 		t.Fatal(err)
@@ -67,11 +77,8 @@ func scanFixture(t *testing.T) (string, []byte, diagnosticsScan) {
 	var report diagnosticsScan
 	report.SchemaVersion, report.ArtifactType = 2, "cyclonedx"
 	report.Metadata.OS.Family, report.Metadata.OS.Name = "debian", "12"
-	// Keep the real scanner's literal epoch in PURL and escaped epoch in BOMRef.
-	pkg := scanPackage{ID: "zlib1g@1:1.2.13.dfsg-1", Name: "zlib1g", Version: "1:1.2.13.dfsg-1", Arch: "amd64", SrcName: "zlib", SrcVersion: "1.2.13.dfsg", SrcRelease: "1", SrcEpoch: 1}
-	pkg.Identifier.PURL = "pkg:deb/debian/zlib1g@1:1.2.13.dfsg-1?arch=amd64&distro=debian-12"
 	pkg.Identifier.BOMRef = component.PURL
-	finding := scanFinding{VulnerabilityID: "CVE-2023-45853", PkgID: pkg.ID, PkgName: pkg.Name, InstalledVersion: pkg.Version, Severity: "CRITICAL", PkgIdentifier: pkg.Identifier}
+	finding := scanFinding{VulnerabilityID: cve, PkgID: pkg.ID, PkgName: pkg.Name, InstalledVersion: pkg.Version, Severity: severity, PkgIdentifier: pkg.Identifier}
 	rawFinding, _ := json.Marshal(finding)
 	reportData := map[string]any{"SchemaVersion": 2, "ArtifactType": "cyclonedx", "Metadata": report.Metadata, "Results": []any{
 		map[string]any{"Class": "os-pkgs", "Type": "debian", "Target": "/tmp/bound.cdx.json (debian 12)", "Packages": []scanPackage{pkg}, "Vulnerabilities": []json.RawMessage{rawFinding}},
@@ -89,9 +96,9 @@ func TestDiagnosticsScanExactArtifactAssessmentAndUnchangedDuplicates(t *testing
 	report.Results[0].Vulnerabilities = append(report.Results[0].Vulnerabilities, report.Results[0].Vulnerabilities[0])
 	raw, _ := json.Marshal(report)
 	before := bytes.Clone(raw)
-	assessed, blocking, err := classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC))
-	if err != nil || len(assessed) != 2 || len(blocking) != 0 || !bytes.Equal(before, raw) {
-		t.Fatalf("exact non-affected assessment: assessed=%d blocking=%d err=%v", len(assessed), len(blocking), err)
+	assessed, accepted, blocking, err := classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(assessed) != 2 || len(accepted) != 0 || len(blocking) != 0 || !bytes.Equal(before, raw) {
+		t.Fatalf("exact non-affected assessment: assessed=%d accepted=%d blocking=%d err=%v", len(assessed), len(accepted), len(blocking), err)
 	}
 	if !bytes.Equal(assessed[0].Finding, report.Results[0].Vulnerabilities[0]) {
 		t.Fatal("raw finding was rewritten")
@@ -133,7 +140,7 @@ func TestDiagnosticsScanFailsClosedForMissingOrChangedEvidence(t *testing.T) {
 			bundle, sbom, report := scanFixture(t)
 			tc.edit(bundle, &report)
 			raw, _ := json.Marshal(report)
-			if _, _, err := classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)); err == nil {
+			if _, _, _, err := classifyDiagnosticsScan(bundle, sbom, raw, time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)); err == nil {
 				t.Fatal("incomplete evidence accepted")
 			}
 		})
@@ -164,11 +171,48 @@ func TestDiagnosticsScanBlocksUnknownExpiredAndLanguageFindings(t *testing.T) {
 				report.Results[0].Vulnerabilities = []json.RawMessage{rawFinding}
 			}
 			raw, _ := json.Marshal(report)
-			assessed, blocking, err := classifyDiagnosticsScan(bundle, sbom, raw, now)
-			if err != nil || len(assessed) != 0 || len(blocking) != 1 || !bytes.Equal(blocking[0], rawFinding) {
-				t.Fatalf("finding silently lost: assessed=%d blocking=%d err=%v", len(assessed), len(blocking), err)
+			assessed, accepted, blocking, err := classifyDiagnosticsScan(bundle, sbom, raw, now)
+			if err != nil || len(assessed) != 0 || len(accepted) != 0 || len(blocking) != 1 || !bytes.Equal(blocking[0], rawFinding) {
+				t.Fatalf("finding silently lost: assessed=%d accepted=%d blocking=%d err=%v", len(assessed), len(accepted), len(blocking), err)
 			}
 		})
+	}
+}
+
+func TestDiagnosticsScanRecordsOwnerAcceptedRiskApartFromProof(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		now      time.Time
+		release  string
+		accepted bool
+	}{
+		{"accepted before expiry", time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC), "5+deb12u3", true},
+		{"expires with the assessments", time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC), "5+deb12u3", false},
+		{"changed source build", time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC), "5+deb12u4", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			version := "2.38.1-" + tc.release
+			pkg := scanPackage{ID: "libblkid1@" + version, Name: "libblkid1", Version: version, Arch: "amd64", SrcName: "util-linux", SrcVersion: "2.38.1", SrcRelease: tc.release}
+			pkg.Identifier.PURL = "pkg:deb/debian/libblkid1@" + strings.ReplaceAll(version, "+", "%2B") + "?arch=amd64&distro=debian-12"
+			bundle, sbom, report := packageScanFixture(t, "libblkid1\t"+version+"\tamd64\tutil-linux\t"+version, "lib/libblkid.so.1",
+				"/usr/lib/x86_64-linux-gnu/libblkid.so.1.1.0", "blkid_get_library_version", pkg, "CVE-2026-53615", "HIGH")
+			raw, _ := json.Marshal(report)
+			assessed, accepted, blocking, err := classifyDiagnosticsScan(bundle, sbom, raw, tc.now)
+			if err != nil || len(assessed) != 0 {
+				t.Fatalf("owner-accepted risk reported as proved: assessed=%d err=%v", len(assessed), err)
+			}
+			if tc.accepted && (len(accepted) != 1 || len(blocking) != 0 || accepted[0].Rule.Predicate != "owner-accepted") {
+				t.Fatalf("dated acceptance not applied: accepted=%d blocking=%d", len(accepted), len(blocking))
+			}
+			if !tc.accepted && (len(accepted) != 0 || len(blocking) != 1) {
+				t.Fatalf("acceptance outlived its date or source build: accepted=%d blocking=%d", len(accepted), len(blocking))
+			}
+		})
+	}
+	for cve := range diagnosticsOwnerAccepted {
+		if _, proved := diagnosticsNonaffected[cve]; proved {
+			t.Fatalf("%s is both proved non-affected and owner-accepted", cve)
+		}
 	}
 }
 

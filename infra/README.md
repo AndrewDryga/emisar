@@ -220,9 +220,11 @@ inspectable. Debian source name/version, epoch and revision are preserved for
 advisory matching. The scan must cover every bound Debian, Go and Python package.
 Its raw HIGH/CRITICAL findings remain unchanged. A diagnostics-only classifier
 accepts finite, expiring non-affected assessments only for the exact reviewed
-source/binary versions and successful final-file/ELF predicates. Missing evidence,
-changed identities and new findings block publication; Portal exceptions never
-apply. The assessment record binds the raw report, SBOM, policy and image hashes.
+source/binary versions and successful final-file/ELF predicates. A finding the
+bundle cannot prove unreachable passes only as an owner-accepted risk named in
+the classifier, with the same exact identity and expiry; the record lists it
+apart from the proved assessments. Missing evidence, changed identities and new
+findings block publication; Portal exceptions never apply. The assessment record binds the raw report, SBOM, policy and image hashes.
 The final image is also scanned without exceptions. CD publishes those exact image
 and SBOM bytes, verifies their contract again, and supplies the diagnostics
 digest alongside the Portal digest to the saved plan. No HCP workspace pin

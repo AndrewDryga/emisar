@@ -7,18 +7,6 @@
 # batches of three or four keep re-triage a task rather than an incident. Give a
 # renewed entry a date in the least-crowded batch.
 vulnerabilities:
-  - id: CVE-2026-42497
-    statement: the running portal does not execute Perl; Debian has deferred a package fix.
-    expired_at: 2026-10-14
-  - id: CVE-2026-48962
-    statement: the running portal does not execute Perl.
-    expired_at: 2026-10-14
-  - id: CVE-2026-53615
-    statement: the non-root portal process does not invoke the affected util-linux command suite.
-    expired_at: 2026-10-14
-  - id: CVE-2025-69720
-    statement: infocmp is present, but the noninteractive portal neither invokes it nor processes attacker-supplied terminal descriptions.
-    expired_at: 2026-10-14
   - id: CVE-2026-54369
     statement: the running portal does not invoke ACL utilities or accept ACL input.
     expired_at: 2026-11-11
@@ -33,6 +21,12 @@ vulnerabilities:
     expired_at: 2026-11-11
   - id: CVE-2026-84782
     statement: only the openssl command links the affected libssl DTLS code and the portal never runs it; the BEAM loads libcrypto alone. Debian has fixed trixie and not yet bookworm.
+    expired_at: 2026-11-25
+  - id: CVE-2026-53615
+    statement: the portal runs as nobody with all capabilities dropped and no-new-privileges, cannot read block devices, and never invokes external commands, so libblkid's DOS partition parser is unreachable. Upstream fixed it in 2.41.4; Debian has no bookworm fix yet.
+    expired_at: 2026-11-25
+  - id: CVE-2025-69720
+    statement: infocmp is present, but the portal never invokes external commands or processes attacker-supplied terminal descriptions; Debian rates it a minor CLI issue with no bookworm fix planned (no-dsa).
     expired_at: 2026-11-25
   - id: CVE-2026-13221
     statement: the non-root portal process does not execute Perl or process attacker-supplied regular expressions through Perl.

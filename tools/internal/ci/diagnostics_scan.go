@@ -63,6 +63,18 @@ var diagnosticsNonaffected = map[string]nonaffectedRule{
 	"CVE-2026-78410": {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-rh77-686x-2f2m", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
 }
 
+// Owner-accepted risks, not non-affected assessments: the final bundle cannot
+// prove these unreachable, so the founder accepted each one by name and date.
+// They require the same exact source/binary identity and expire with the
+// assessments, and the decision file lists them apart from proved ones.
+var diagnosticsOwnerAccepted = map[string]nonaffectedRule{
+	// Accepted 2026-10-20. On the privileged host, findmnt's tag lookups and lvm
+	// can reach libblkid partition probing, but exploiting the DOS partition
+	// parser needs a crafted partition table on an attached disk, which already
+	// takes root or hypervisor access. Bookworm has no fix; upstream 2.41.4 does.
+	"CVE-2026-53615": {"util-linux", "2.38.1-5+deb12u3", "owner-accepted", "https://github.com/util-linux/util-linux/security/advisories/GHSA-h4rw-gv36-wmp5", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
+}
+
 const diagnosticsAssessmentExpiry = "2026-11-08"
 
 type diagnosticAssessment struct {
@@ -102,7 +114,7 @@ func DiagnosticsScan(ctx context.Context, root, revision, image, sbomPath, rawPa
 	if err != nil {
 		return err
 	}
-	assessments, blocking, err := classifyDiagnosticsScan(bundle, sbomData, raw, time.Now().UTC())
+	assessments, accepted, blocking, err := classifyDiagnosticsScan(bundle, sbomData, raw, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -114,12 +126,13 @@ func DiagnosticsScan(ctx context.Context, root, revision, image, sbomPath, rawPa
 		}
 	}
 	decision := struct {
-		Bindings    map[string]string      `json:"bindings"`
-		Expires     string                 `json:"expires"`
-		Assessed    []diagnosticAssessment `json:"non_affected"`
-		Blocking    []json.RawMessage      `json:"blocking"`
-		EvaluatedAt time.Time              `json:"evaluated_at"`
-	}{bindings, diagnosticsAssessmentExpiry, assessments, blocking, time.Now().UTC()}
+		Bindings      map[string]string      `json:"bindings"`
+		Expires       string                 `json:"expires"`
+		Assessed      []diagnosticAssessment `json:"non_affected"`
+		OwnerAccepted []diagnosticAssessment `json:"owner_accepted"`
+		Blocking      []json.RawMessage      `json:"blocking"`
+		EvaluatedAt   time.Time              `json:"evaluated_at"`
+	}{bindings, diagnosticsAssessmentExpiry, assessments, accepted, blocking, time.Now().UTC()}
 	data, err := json.MarshalIndent(decision, "", "  ")
 	if err != nil {
 		return err
@@ -130,7 +143,7 @@ func DiagnosticsScan(ctx context.Context, root, revision, image, sbomPath, rawPa
 	if len(blocking) != 0 {
 		return fmt.Errorf("diagnostics scan has %d unassessed HIGH/CRITICAL findings; see %s", len(blocking), decisionPath)
 	}
-	fmt.Printf("Diagnostics scan: %d exact-artifact non-affected assessments; no blocking findings\n", len(assessments))
+	fmt.Printf("Diagnostics scan: %d exact-artifact non-affected assessments, %d owner-accepted risks; no blocking findings\n", len(assessments), len(accepted))
 	return nil
 }
 
@@ -156,17 +169,17 @@ func scanSourceVersion(pkg scanPackage) string {
 	return version
 }
 
-func classifyDiagnosticsScan(bundle string, sbomData, raw []byte, now time.Time) ([]diagnosticAssessment, []json.RawMessage, error) {
+func classifyDiagnosticsScan(bundle string, sbomData, raw []byte, now time.Time) ([]diagnosticAssessment, []diagnosticAssessment, []json.RawMessage, error) {
 	var report diagnosticsScan
 	if err := json.Unmarshal(raw, &report); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if report.SchemaVersion != 2 || report.ArtifactType != "cyclonedx" || report.Metadata.OS.Family != "debian" || report.Metadata.OS.Name != "12" || len(report.Results) == 0 {
-		return nil, nil, fmt.Errorf("malformed diagnostics scan identity")
+		return nil, nil, nil, fmt.Errorf("malformed diagnostics scan identity")
 	}
 	expected, err := diagnosticsDebianComponents(bundle)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	components := map[string]sbomComponent{}
 	for _, component := range expected {
@@ -174,13 +187,13 @@ func classifyDiagnosticsScan(bundle string, sbomData, raw []byte, now time.Time)
 	}
 	var sbom diagnosticSBOM
 	if err := json.Unmarshal(sbomData, &sbom); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	languages := map[string]sbomComponent{}
 	for _, component := range sbom.Components {
 		if strings.HasPrefix(component.PURL, "pkg:golang/") || strings.HasPrefix(component.PURL, "pkg:pypi/") {
 			if _, duplicate := languages[component.PURL]; duplicate {
-				return nil, nil, fmt.Errorf("duplicate language SBOM component")
+				return nil, nil, nil, fmt.Errorf("duplicate language SBOM component")
 			}
 			languages[component.PURL] = component
 		}
@@ -192,7 +205,7 @@ func classifyDiagnosticsScan(bundle string, sbomData, raw []byte, now time.Time)
 		switch result.Type {
 		case "debian":
 			if result.Class != "os-pkgs" || !strings.HasSuffix(result.Target, " (debian 12)") {
-				return nil, nil, fmt.Errorf("malformed Debian scan target")
+				return nil, nil, nil, fmt.Errorf("malformed Debian scan target")
 			}
 			debianTargets++
 			for _, pkg := range result.Packages {
@@ -207,17 +220,17 @@ func classifyDiagnosticsScan(bundle string, sbomData, raw []byte, now time.Time)
 					!debianPURL(pkg.Identifier.BOMRef, pkg.Name, pkg.Version, pkg.Arch) ||
 					pkg.SrcName != props["aquasecurity:trivy:SrcName"] || pkg.SrcVersion != props["aquasecurity:trivy:SrcVersion"] ||
 					pkg.SrcRelease != props["aquasecurity:trivy:SrcRelease"] || epochErr != nil || pkg.SrcEpoch != epoch {
-					return nil, nil, fmt.Errorf("scan package differs from bound runtime inventory: %s", pkg.Name)
+					return nil, nil, nil, fmt.Errorf("scan package differs from bound runtime inventory: %s", pkg.Name)
 				}
 				// Match the inventory's actual architecture, not just an accepted one.
 				if !debianPURL(component.PURL, pkg.Name, pkg.Version, pkg.Arch) {
-					return nil, nil, fmt.Errorf("scan package architecture differs: %s", pkg.Name)
+					return nil, nil, nil, fmt.Errorf("scan package architecture differs: %s", pkg.Name)
 				}
 				seen[pkg.Name], packages[pkg.Name] = true, pkg
 			}
 		case "gobinary", "python-pkg":
 			if result.Class != "lang-pkgs" || len(result.Packages) == 0 {
-				return nil, nil, fmt.Errorf("malformed language scan target")
+				return nil, nil, nil, fmt.Errorf("malformed language scan target")
 			}
 			prefix := "pkg:golang/"
 			if result.Type == "python-pkg" {
@@ -227,58 +240,66 @@ func classifyDiagnosticsScan(bundle string, sbomData, raw []byte, now time.Time)
 				component, exists := languages[pkg.Identifier.PURL]
 				_, duplicate := languagePackages[pkg.Identifier.PURL]
 				if !exists || duplicate || !strings.HasPrefix(pkg.Identifier.PURL, prefix) || pkg.Identifier.BOMRef != component.Reference || pkg.Name != component.Name || pkg.Version != component.Version || pkg.ID != pkg.Name+"@"+pkg.Version {
-					return nil, nil, fmt.Errorf("language scan package differs from bound SBOM: %s", pkg.Name)
+					return nil, nil, nil, fmt.Errorf("language scan package differs from bound SBOM: %s", pkg.Name)
 				}
 				languagePackages[pkg.Identifier.PURL] = pkg
 			}
 		default:
-			return nil, nil, fmt.Errorf("unknown diagnostics scan target: %s", result.Type)
+			return nil, nil, nil, fmt.Errorf("unknown diagnostics scan target: %s", result.Type)
 		}
 	}
 	if debianTargets != 1 || len(seen) != len(components) || len(languagePackages) != len(languages) {
-		return nil, nil, fmt.Errorf("scan omits or duplicates bound runtime packages")
+		return nil, nil, nil, fmt.Errorf("scan omits or duplicates bound runtime packages")
 	}
-	var assessed []diagnosticAssessment
+	var assessed, accepted []diagnosticAssessment
 	var blocking []json.RawMessage
 	proved := map[string]bool{}
 	for _, result := range report.Results {
 		for _, rawFinding := range result.Vulnerabilities {
 			var finding scanFinding
 			if err := json.Unmarshal(rawFinding, &finding); err != nil || finding.VulnerabilityID == "" || finding.PkgName == "" || finding.InstalledVersion == "" || (finding.Severity != "HIGH" && finding.Severity != "CRITICAL") {
-				return nil, nil, fmt.Errorf("malformed HIGH/CRITICAL scan finding")
+				return nil, nil, nil, fmt.Errorf("malformed HIGH/CRITICAL scan finding")
 			}
 			pkg, exists := packages[finding.PkgName]
 			if result.Type == "debian" && (!exists || finding.PkgID != pkg.ID || finding.InstalledVersion != pkg.Version ||
 				!debianPURL(finding.PkgIdentifier.PURL, pkg.Name, pkg.Version, pkg.Arch) ||
 				!debianPURL(finding.PkgIdentifier.BOMRef, pkg.Name, pkg.Version, pkg.Arch)) {
-				return nil, nil, fmt.Errorf("finding lacks exact bound Debian identity: %s", finding.VulnerabilityID)
+				return nil, nil, nil, fmt.Errorf("finding lacks exact bound Debian identity: %s", finding.VulnerabilityID)
 			}
 			if result.Type != "debian" {
 				language, exists := languagePackages[finding.PkgIdentifier.PURL]
 				if !exists || finding.PkgName != language.Name || finding.PkgID != language.ID || finding.InstalledVersion != language.Version || finding.PkgIdentifier.BOMRef != language.Identifier.BOMRef {
-					return nil, nil, fmt.Errorf("finding lacks exact bound language identity: %s", finding.VulnerabilityID)
+					return nil, nil, nil, fmt.Errorf("finding lacks exact bound language identity: %s", finding.VulnerabilityID)
 				}
 			}
 			rule, known := diagnosticsNonaffected[finding.VulnerabilityID]
+			ownerAccepted := false
+			if !known {
+				rule, ownerAccepted = diagnosticsOwnerAccepted[finding.VulnerabilityID]
+			}
 			binaryVersion := rule.Version
 			if rule.Source == "util-linux" && pkg.Name == "bsdutils" {
 				binaryVersion = "1:" + binaryVersion
 			}
-			if result.Type != "debian" || !known || now.Format("2006-01-02") >= diagnosticsAssessmentExpiry ||
+			if result.Type != "debian" || !(known || ownerAccepted) || now.Format("2006-01-02") >= diagnosticsAssessmentExpiry ||
 				pkg.SrcName != rule.Source || scanSourceVersion(pkg) != rule.Version || pkg.Version != binaryVersion || !slices.Contains(rule.Binaries, pkg.Name) {
 				blocking = append(blocking, rawFinding)
 				continue
 			}
+			if ownerAccepted {
+				accepted = append(accepted, diagnosticAssessment{rawFinding, pkg, rule})
+				continue
+			}
 			if !proved[rule.Predicate] {
 				if err := proveDiagnosticsNonaffected(bundle, rule); err != nil {
-					return nil, nil, fmt.Errorf("%s non-affected predicate failed: %w", finding.VulnerabilityID, err)
+					return nil, nil, nil, fmt.Errorf("%s non-affected predicate failed: %w", finding.VulnerabilityID, err)
 				}
 				proved[rule.Predicate] = true
 			}
 			assessed = append(assessed, diagnosticAssessment{rawFinding, pkg, rule})
 		}
 	}
-	return assessed, blocking, nil
+	return assessed, accepted, blocking, nil
 }
 
 type diagnosticELF struct {
