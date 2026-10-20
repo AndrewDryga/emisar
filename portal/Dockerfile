@@ -16,13 +16,13 @@
 # (ELIXIR_VERSION drops the asdf `-otp-NN` suffix; the hexpm image tag doesn't
 # carry it.)
 ARG ELIXIR_VERSION=1.20.4
-ARG OTP_VERSION=29.1.1
-ARG DEBIAN_VERSION=bookworm-20260918-slim
+ARG OTP_VERSION=29.1.2
+ARG DEBIAN_VERSION=bookworm-20261005-slim
 
-ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:037687742ae12c329b59a681a230d62ef3ddd555c0275e577ce41c61539e5248"
+ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:94157a01ad1a93a419cd9824df3b8dcc6af35afba3e6b57467a87b540968f449"
 # The runtime base needs to match the builder's libc/ssl; use the same
 # debian snapshot so any compiled NIFs link against compatible libs.
-ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251"
+ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587"
 
 # --- Build stage ---------------------------------------------------
 FROM ${BUILDER_IMAGE} AS builder
