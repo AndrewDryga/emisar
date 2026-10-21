@@ -91,25 +91,25 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     render_click(lv, "add_ruleset", %{})
     uid = List.last(assigns(lv).rulesets).uid
     assert length(editor(lv, uid).target_options) == 25
+    refute has_element?(lv, "#policy-target-#{uid} button", target.name)
+
+    # The pager rides inside the dropdown panel, and its next page reaches the rest.
+    assert has_element?(lv, "details#policy-target-#{uid} #policy-targets-#{uid}-pager")
+    lv |> element("#policy-targets-#{uid}-pager a", "Next") |> render_click()
+    assert has_element?(lv, "#policy-target-#{uid} button", target.name)
+
     render_hook(lv, "search_targets", %{"uid" => uid, "search" => target.name})
     render_hook(lv, "set_target", %{"uid" => uid, "target" => "runner:#{target.id}"})
     render_hook(lv, "search_targets", %{"uid" => uid, "search" => "runner-01"})
-    assert has_element?(lv, "#policy-target-#{uid} option[value='runner:#{target.id}'][selected]")
+    # Off the search page, the trigger still names the chosen target.
+    assert has_element?(lv, "#policy-target-#{uid} summary", target.name)
     render_click(lv, "add_ruleset", %{})
     sibling = List.last(assigns(lv).rulesets).uid
     render_hook(lv, "search_targets", %{"uid" => sibling, "search" => target.name})
-
-    assert has_element?(
-             lv,
-             "#policy-target-#{sibling} option[value='runner:#{target.id}'][disabled]"
-           )
+    assert has_element?(lv, "#policy-target-#{sibling} button[disabled]", target.name)
 
     render_hook(lv, "save", %{"editor" => uid})
-
-    assert has_element?(
-             lv,
-             "#policy-target-#{sibling} option[value='runner:#{target.id}'][disabled]"
-           )
+    assert has_element?(lv, "#policy-target-#{sibling} button[disabled]", target.name)
 
     assert editor(lv, sibling).target_search == target.name
     settle(lv)
@@ -130,7 +130,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     {:ok, lv, _} = live(log_in_member(conn, admin.actor), ~p"/app/#{account}/policies")
     render_click(lv, "add_ruleset", %{})
     uid = List.last(assigns(lv).rulesets).uid
-    assert has_element?(lv, "#policy-target-#{uid}:not([disabled])")
+    assert has_element?(lv, "details#policy-target-#{uid}")
     render_hook(lv, "set_target", %{"uid" => uid, "target" => "group:free"})
 
     for editor <- ["account", policy.id, uid] do
@@ -154,12 +154,9 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     for id <- ["account", policy.id, uid],
         do: refute(has_element?(lv, "#policy-form-#{id} button[type=submit]"))
 
-    assert has_element?(lv, "#policy-target-#{uid}:not([disabled])")
-
-    assert has_element?(
-             lv,
-             "#policy-target-#{uid} option[value='group:free'][disabled][selected]"
-           )
+    # Still retargetable, while naming the chosen group as no longer manageable.
+    assert has_element?(lv, "details#policy-target-#{uid}")
+    assert has_element?(lv, "#policy-target-#{uid} summary", ~r/free\s+Group · unavailable/)
 
     original =
       Emisar.Repo.peek(Policies.Policy.Query.all() |> Policies.Policy.Query.by_id(policy.id))
@@ -230,11 +227,7 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
       assert editor(lv, uid).target_search == "database"
       assert editor(lv, uid).scope_value == target.id
       assert editor(lv, uid).defaults["low"] == "deny"
-
-      assert has_element?(
-               lv,
-               "#policy-target-#{uid} option[value='runner:#{target.id}'][selected]"
-             )
+      assert has_element?(lv, "#policy-target-#{uid} summary", "database")
     end
 
     html = render_hook(lv, "search_targets", %{"uid" => uid, "search" => "missing"})
@@ -482,15 +475,9 @@ defmodule EmisarWeb.PoliciesPerformanceLiveTest do
     uid = List.last(assigns(lv).rulesets).uid
     render_hook(lv, "set_target", %{"uid" => uid, "target" => "runner:#{runner.id}"})
     Fixtures.Runners.mark_deleted(runner)
-    html = render_hook(lv, "search_targets", %{"uid" => uid, "search" => "missing"})
-    assert html =~ "#{runner.id} — unavailable"
+    render_hook(lv, "search_targets", %{"uid" => uid, "search" => "missing"})
+    assert has_element?(lv, "#policy-target-#{uid} summary", ~r/#{runner.id}\s+Unavailable/)
     assert editor(lv, uid).scope_value == runner.id
-
-    assert has_element?(
-             lv,
-             "#policy-target-#{uid} option[value='runner:#{runner.id}'][selected][disabled]"
-           )
-
     settle(lv)
   end
 

@@ -1278,10 +1278,10 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       assert html =~ "Default policy"
       assert html =~ "Targeted rulesets"
-      # The card shows the runner name, its own Save, and a Remove.
+      # The card shows the runner name, and its Remove sits beside its own Save.
       assert html =~ "web-1"
       assert has_element?(lv, "#policy-form-#{scoped.id} button[type=submit]", "Save ruleset")
-      assert html =~ "Remove"
+      assert has_element?(lv, "#policy-form-#{scoped.id} button[type=button]", "Remove")
     end
 
     test "every saved ruleset renders open, with no open or close control", %{
@@ -1457,15 +1457,12 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       assert lv |> render_click("add_ruleset", %{}) =~ "Starts with the current default rules."
 
-      # Pick the runner target on the new (unsaved) card — the change fires on
-      # the picker form, which carries the ruleset uid as a hidden field.
-      html =
-        lv
-        |> form(~s(form[phx-change="set_target"]), %{"target" => "runner:" <> runner.id})
-        |> render_change()
+      # Pick the runner from the new (unsaved) card's target dropdown.
+      html = pick_target(lv, "web-1")
 
-      # The card now exposes its policy form (Save ruleset).
+      # The card now exposes its policy form, with Remove beside Save ruleset.
       assert html =~ "Save ruleset"
+      assert has_element?(lv, ~s(form[id^="policy-form-new-"] button[phx-click="remove_ruleset"]))
       assert rendered_text(html) =~ "Later changes to the default won't update this ruleset."
 
       assert lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit() =~ "Ruleset saved."
@@ -1526,11 +1523,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
 
       lv |> render_click("add_ruleset", %{})
-
-      lv
-      |> form(~s(form[phx-change="set_target"]), %{"target" => "group:prod"})
-      |> render_change()
-
+      pick_target(lv, ~r/prod\s+Group/)
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
 
       assert {:ok, [policy], _metadata} = Policies.list_scoped_policies(subject)
@@ -1538,23 +1531,24 @@ defmodule EmisarWeb.PoliciesLiveTest do
       assert policy.scope_value == "prod"
     end
 
-    test "the target picker lists groups as selectable options with their runners nested", %{
+    test "one target dropdown holds the search and lists each group with its runners", %{
       conn: conn,
       account: account
     } do
-      runner =
-        Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
+      Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = lv |> render_click("add_ruleset", %{})
+      [uid] = Regex.run(~r/new-\d+/, html)
 
-      # One combined tree: the group is a selectable <option> (not an <optgroup>
-      # label that can't be picked), and its runner is an <option> too — no
-      # separate runners-vs-groups categories.
-      assert html =~ ~s(value="group:web")
-      assert html =~ ~s(value="runner:#{runner.id}")
-      assert html =~ "web-1"
-      refute html =~ "<optgroup"
+      # The search lives inside the dropdown; there is no separate search field.
+      assert has_element?(lv, "details#policy-target-#{uid} input[name=search]")
+      refute html =~ "Find a runner or group"
+
+      # One combined tree: the group is a pickable row of its own, marked as a
+      # group, and its runner is a separate choice.
+      assert has_element?(lv, "#policy-target-#{uid} button", ~r/web\s+Group/)
+      assert has_element?(lv, "#policy-target-#{uid} button", "web-1")
     end
 
     test "a target another ruleset already claims renders disabled in a new picker", %{
@@ -1564,8 +1558,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
     } do
       # The picker shows every runner/group, but one already bound to a saved
       # ruleset is disabled-but-visible so the operator sees why it can't be
-      # re-targeted. This per-option `disabled` is exactly why the picker uses
-      # the shared <.select> rather than <.input type="select">.
+      # re-targeted.
       runner =
         Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
 
@@ -1573,11 +1566,11 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = lv |> render_click("add_ruleset", %{})
+      [uid] = Regex.run(~r/new-\d+/, html)
 
       # In the new (unsaved) card's picker, the taken runner is disabled and
       # labelled as already having a ruleset.
-      assert html =~ ~r/<option(?=[^>]*\bvalue="runner:#{runner.id}")(?=[^>]*\bdisabled)[^>]*>/
-      assert html =~ "web-1 — has a ruleset"
+      assert has_element?(lv, "#policy-target-#{uid} button[disabled]", ~r/web-1\s+Has a ruleset/)
     end
 
     test "removing a runner ruleset explains group precedence and confirms removal", %{
@@ -1616,6 +1609,9 @@ defmodule EmisarWeb.PoliciesLiveTest do
                "Runners in this group will use the default policy unless they have their own ruleset."
              )
 
+      # The fixed-position dialog stays outside the editor's `@container` form,
+      # whose containment could pin it to the card instead of the viewport.
+      refute has_element?(lv, "#policy-form-#{saved.id} #remove-ruleset-#{saved.id}")
       refute html =~ "This runner will use its group's ruleset"
     end
 
@@ -1732,10 +1728,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       lv |> render_click("add_ruleset", %{})
-
-      lv
-      |> form(~s(form[phx-change="set_target"]), %{"target" => "runner:" <> runner.id})
-      |> render_change()
+      pick_target(lv, "web-1")
 
       # First save persists the row and rebuilds the card under the policy id.
       lv |> form(~s(form[id^="policy-form-new-"])) |> render_submit()
@@ -1768,10 +1761,25 @@ defmodule EmisarWeb.PoliciesLiveTest do
       lv |> render_click("add_ruleset", %{})
       html = lv |> render_click("add_ruleset", %{})
 
-      # Two separate picker forms, each carrying its own hidden uid.
-      uids = Regex.scan(~r/id="policy-target-form-(new-\d+)"/, html, capture: :all_but_first)
+      # Two separate target dropdowns, one per card.
+      uids = Regex.scan(~r/id="policy-target-(new-\d+)"/, html, capture: :all_but_first)
       assert length(uids) == 2
       assert uids |> List.flatten() |> Enum.uniq() |> length() == 2
+    end
+
+    test "a new card without a target yet still offers Remove, which drops it", %{
+      conn: conn,
+      account: account
+    } do
+      Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "web")
+
+      {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
+      html = lv |> render_click("add_ruleset", %{})
+      [uid] = Regex.run(~r/new-\d+/, html)
+      refute has_element?(lv, "#policy-form-#{uid}")
+
+      lv |> element(~s(#ruleset-#{uid} button[phx-click="remove_ruleset"])) |> render_click()
+      refute has_element?(lv, "#ruleset-#{uid}")
     end
 
     test "Add ruleset is disabled once every runner and group is taken", %{
@@ -1821,10 +1829,7 @@ defmodule EmisarWeb.PoliciesLiveTest do
       lv |> render_click("add_ruleset", %{})
 
       # Pick a target to reveal the new card's policy form, then read its overrides.
-      html =
-        lv
-        |> form(~s(form[phx-change="set_target"]), %{"target" => "group:web"})
-        |> render_change()
+      html = pick_target(lv, ~r/web\s+Group/)
 
       assert html =~ ~s(value="*.drop_*")
       assert html =~ ~s(value="block-drop")
@@ -1840,21 +1845,17 @@ defmodule EmisarWeb.PoliciesLiveTest do
         Fixtures.Runners.create_runner(account_id: account.id, name: "web-1", group: "prod")
 
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
-      lv |> render_click("add_ruleset", %{})
+      html = lv |> render_click("add_ruleset", %{})
+      [uid] = Regex.run(~r/new-\d+/, html)
 
-      # First pick the runner.
-      lv
-      |> form(~s(form[phx-change="set_target"]), %{"target" => "runner:" <> runner.id})
-      |> render_change()
+      # First pick the runner, then retarget to the group: the dropdown now
+      # names the group and marks it, not the runner, as the current choice.
+      pick_target(lv, runner.name)
+      pick_target(lv, ~r/prod\s+Group/)
 
-      # Then retarget to the group — the option marked selected is now the group.
-      html =
-        lv
-        |> form(~s(form[phx-change="set_target"]), %{"target" => "group:prod"})
-        |> render_change()
-
-      assert html =~ ~r/<option(?=[^>]*\bvalue="group:prod")(?=[^>]*\bselected)[^>]*>/
-      refute html =~ ~r/<option(?=[^>]*\bvalue="runner:#{runner.id}")(?=[^>]*\bselected)[^>]*>/
+      assert has_element?(lv, "#policy-target-#{uid} summary", ~r/prod\s+Group/)
+      assert has_element?(lv, "#policy-target-#{uid} button[aria-current]", ~r/prod\s+Group/)
+      refute has_element?(lv, "#policy-target-#{uid} button[aria-current]", runner.name)
     end
 
     test "an unparseable target clears the scope back to the picker", %{
@@ -1869,16 +1870,12 @@ defmodule EmisarWeb.PoliciesLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/app/#{account}/policies")
       html = lv |> render_click("add_ruleset", %{})
 
-      # The picker form carries the card's uid as a hidden field — read it so a
-      # crafted, prefix-less target can be posted (a real <select> change can't
-      # send an out-of-options value).
+      # Read the card's uid so a crafted, prefix-less target can be posted (a
+      # click in the dropdown can't send a value outside its list).
       [uid] = Regex.run(~r/name="uid" value="(new-\d+)"/, html, capture: :all_but_first)
 
       # Set a real scope first so there's something to clear.
-      html =
-        lv
-        |> form(~s(form[phx-change="set_target"]), %{"target" => "runner:" <> runner.id})
-        |> render_change()
+      html = pick_target(lv, runner.name)
 
       assert html =~ "Save ruleset"
 
@@ -2061,5 +2058,12 @@ defmodule EmisarWeb.PoliciesLiveTest do
 
   defp rendered_text(html) do
     html |> LazyHTML.from_document() |> LazyHTML.text() |> String.replace(~r/\s+/, " ")
+  end
+
+  # Picks a row in the new card's target dropdown, the way an operator clicks it.
+  defp pick_target(lv, label) do
+    lv
+    |> element(~s(details[id^="policy-target-new-"] button), label)
+    |> render_click()
   end
 end

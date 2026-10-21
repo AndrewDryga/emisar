@@ -1000,6 +1000,8 @@ defmodule EmisarWeb.LiveTable do
     required: true,
     doc: "rows on THIS page — renders the count as \"50 / 608 total\""
 
+  attr :class, :string, default: nil, doc: "spacing from the list above, when the pager renders"
+
   def paginator(assigns) do
     assigns =
       assign(
@@ -1015,7 +1017,7 @@ defmodule EmisarWeb.LiveTable do
           (@metadata.count || 0) > @page_count
       }
       id={"#{@id}-pager"}
-      class="flex items-center justify-between text-xs text-zinc-400"
+      class={["flex items-center justify-between text-xs text-zinc-400", @class]}
     >
       <%!-- An estimated total is marked with `~` that explains itself through the
            shared tooltip — the number is the planner's row estimate for an

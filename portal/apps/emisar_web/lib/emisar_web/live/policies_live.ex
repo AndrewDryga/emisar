@@ -21,10 +21,6 @@ defmodule EmisarWeb.PoliciesLive do
   alias Emisar.Policies
   alias EmisarWeb.{LiveTable, Permissions}
 
-  # Non-breaking spaces so the browser keeps the indent (ASCII whitespace in an
-  # <option> is stripped) — nests runners under their group in the target picker.
-  @runner_indent "    "
-
   def mount(_params, _session, socket) do
     socket =
       socket
@@ -774,37 +770,58 @@ defmodule EmisarWeb.PoliciesLive do
     |> refresh_target_availability()
   end
 
+  # The rows of the current search page, in the server's tree order: ungrouped
+  # runners, then each group followed by its runners. A target another ruleset
+  # or open draft already claims, or one this member can't manage, stays
+  # listed but can't be picked, so the operator sees why.
   defp target_options(ruleset, rulesets, management) do
     reserved = MapSet.new(reserved_targets(rulesets, ruleset.uid))
 
-    rows =
-      if ruleset.selected_target,
-        do: [ruleset.selected_target | ruleset.target_options],
-        else: ruleset.target_options
-
-    rows
-    |> Enum.uniq_by(&{&1.scope_type, &1.scope_value})
-    |> Enum.map(fn row ->
+    Enum.map(ruleset.target_options, fn row ->
       type = if row.scope_type == "runner", do: :runner, else: :group
       taken? = row.taken? or MapSet.member?(reserved, {type, row.scope_value})
       unavailable? = not Map.get(management, {type, row.scope_value}, false)
 
-      suffix =
-        cond do
-          unavailable? -> " — unavailable"
-          taken? -> " — has a ruleset"
-          true -> ""
-        end
-
       %{
         value: "#{type}:#{row.scope_value}",
-        label:
-          if(type == :runner, do: @runner_indent, else: "") <>
-            row.label <> suffix,
+        label: row.label,
+        group?: type == :group,
+        nested?: type == :runner and row.group_sort not in [nil, ""],
+        note: target_note(type, unavailable?, taken?),
         disabled: taken? or unavailable?,
         selected: ruleset.scope_type == type and ruleset.scope_value == row.scope_value
       }
     end)
+  end
+
+  # The trigger keeps naming the chosen target while the panel searches for
+  # others, so it resolves from the selection, not from the current page.
+  defp selected_target(%{selected_target: nil}, _management), do: nil
+
+  defp selected_target(ruleset, management) do
+    unavailable? =
+      Map.get(ruleset.selected_target, :unavailable?, false) or
+        not Map.get(management, {ruleset.scope_type, ruleset.scope_value}, false)
+
+    %{
+      label: ruleset.selected_target.label,
+      unavailable?: unavailable?,
+      note: target_note(ruleset.scope_type, unavailable?, false)
+    }
+  end
+
+  defp target_note(type, unavailable?, taken?) do
+    status =
+      cond do
+        unavailable? -> "unavailable"
+        taken? -> "has a ruleset"
+        true -> nil
+      end
+
+    case Enum.filter([type == :group && "group", status], & &1) do
+      [] -> nil
+      parts -> parts |> Enum.join(" · ") |> String.capitalize()
+    end
   end
 
   defp drop_editor(socket, uid) do
@@ -986,7 +1003,7 @@ defmodule EmisarWeb.PoliciesLive do
              The editor sits naked on the canvas; the only boxes are the
              self-contained controls and the earned amber warnings. --%>
         <section id="default-policy">
-          <.section_header title="Default policy">
+          <.section_header title="Default policy" actions_align={:baseline}>
             <:badge :if={not @can_manage_account?}>
               <.chip
                 id="policy-read-only"
@@ -1000,21 +1017,19 @@ defmodule EmisarWeb.PoliciesLive do
             <:subtitle>
               Applies when no ruleset targets the runner or its group.
             </:subtitle>
-            <%!-- Navigation, but the SAME verb repeats on every targeted-ruleset
-                 header below, where the Remove peer forces the bordered face —
-                 and one repeated verb wears ONE face per page (the founder read
-                 the mixed faces as the rulesets lacking the affordance). --%>
+            <%!-- Navigation standing alone is a link (§2). The same verb repeats
+                 on every targeted-ruleset header below, and one repeated verb
+                 wears ONE face per page (the founder read mixed faces as the
+                 rulesets lacking the affordance). --%>
             <:actions :if={@account.policy}>
-              <.button
+              <.link
                 navigate={
                   ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @account.policy.id]}"
                 }
-                variant={:secondary}
-                size={:lg}
-                class="h-10"
+                class="group text-xs font-medium text-brand-400 hover:text-brand-300"
               >
-                View audit trail
-              </.button>
+                View audit trail <.cta_arrow class="ml-0.5 h-3.5 w-3.5" />
+              </.link>
             </:actions>
           </.section_header>
 
@@ -1334,9 +1349,9 @@ defmodule EmisarWeb.PoliciesLive do
     <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
       <div class="lg:col-span-3">
         <%= if @ruleset.policy do %>
-          <%!-- Saved ruleset: entity chip + name, and a red modal-confirmed Remove
-           (removing it loses the overrides, so it earns the confirm). --%>
-          <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <%!-- Saved ruleset: entity chip + name. Its Remove sits beside Save at
+           the bottom, so the header's one verb is navigation: a link (§2). --%>
+          <header class="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <.chip upcase>{@ruleset.scope_type}</.chip>
@@ -1348,113 +1363,32 @@ defmodule EmisarWeb.PoliciesLive do
                 Replaces the default policy for this {@ruleset.scope_type}.
               </p>
             </div>
-            <div class="flex flex-wrap items-center gap-3">
-              <%!-- Navigation, but it shares this header row with the bordered
-                   Remove — one button grammar per row, at the peer's optical
-                   height (§7.47). --%>
-              <.button
-                navigate={
-                  ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @ruleset.policy.id]}"
-                }
-                variant={:secondary}
-                size={:lg}
-                class="h-10"
-              >
-                View audit trail
-              </.button>
-              <.confirm_button
-                :if={@can_remove}
-                id={"remove-ruleset-#{@ruleset.uid}"}
-                title="Remove this ruleset?"
-                confirm_label="Remove"
-                variant={:secondary}
-                tone={:rose}
-                size={:lg}
-                icon="action.delete"
-                class="h-10"
-                on_confirm={JS.push("remove_ruleset", value: %{uid: @ruleset.uid})}
-              >
-                <:body>
-                  <%= if @ruleset.scope_type == :runner do %>
-                    This runner will use its group's ruleset, if one exists. Otherwise, the default policy applies.
-                  <% else %>
-                    Runners in this group will use the default policy unless they have their own ruleset.
-                  <% end %>
-                </:body>
-                Remove
-              </.confirm_button>
-            </div>
+            <.link
+              navigate={
+                ~p"/app/#{@current_account}/audit?#{[target_kind: "policy", target_id: @ruleset.policy.id]}"
+              }
+              class="group shrink-0 text-xs font-medium text-brand-400 hover:text-brand-300"
+            >
+              View audit trail <.cta_arrow class="ml-0.5 h-3.5 w-3.5" />
+            </.link>
           </header>
         <% else %>
-          <form
-            id={"policy-target-search-#{@ruleset.uid}"}
-            phx-change="search_targets"
-            class="mb-3 sm:max-w-xs"
-          >
-            <input type="hidden" name="uid" value={@ruleset.uid} />
-            <.input
-              type="search"
-              name="search"
-              id={"target-search-#{@ruleset.uid}"}
-              label="Find a runner or group"
-              value={@ruleset.target_search}
-              phx-debounce="300"
-              disabled={not @can_choose_target}
-            />
-          </form>
-          <%!-- Unsaved ruleset: the target picker with a red Remove aligned to the
-           select box (items-end + matching size). Nothing's persisted, so Remove
-           drops the card directly — no confirm modal. A form (not a lone select)
-           carries the uid as a hidden field on the change event. --%>
-          <header class="flex items-end gap-3">
-            <form
-              id={"policy-target-form-#{@ruleset.uid}"}
-              phx-change="set_target"
-              class="w-full sm:max-w-xs"
-            >
-              <input type="hidden" name="uid" value={@ruleset.uid} />
-              <%!-- One tree: each group is a selectable header with its runners
-               indented beneath it. A native <optgroup> label can't be picked,
-               so groups are plain options; a target another ruleset already
-               claims is shown disabled. --%>
-              <.select
-                id={"policy-target-#{@ruleset.uid}"}
-                name="target"
-                label="Apply this ruleset to"
-                label_variant={:eyebrow}
-                disabled={not @can_choose_target}
-                prompt="Choose a runner or group…"
-                prompt_selected={is_nil(@ruleset.scope_type)}
-                options={target_options(@ruleset, @rulesets, @target_management)}
-              />
-            </form>
-            <.button
-              variant={:secondary}
-              tone={:rose}
-              size={:lg}
-              type="button"
-              phx-click="remove_ruleset"
-              phx-value-uid={@ruleset.uid}
-              icon="action.delete"
-              class="h-10"
-            >
-              Remove
-            </.button>
-          </header>
-          <p :if={@ruleset.target_error} role="alert" class="mt-2 text-xs text-rose-300">
-            {@ruleset.target_error}
-          </p>
+          <.target_picker
+            ruleset={@ruleset}
+            rulesets={@rulesets}
+            target_management={@target_management}
+            can_choose_target={@can_choose_target}
+            current_account={@current_account}
+            filter_params={@filter_params}
+          />
           <p class="mt-4 text-xs text-zinc-400">
             Starts with the current default rules. Later changes to the default won't update this ruleset.
           </p>
-          <LiveTable.paginator
-            id={"policy-targets-#{@ruleset.uid}"}
-            path={~p"/app/#{@current_account}/policies"}
-            metadata={@ruleset.target_metadata}
-            filter_params={@filter_params}
-            prefix={"target_#{@ruleset.uid}_"}
-            page_count={length(@ruleset.target_options)}
-          />
+          <%!-- Until a target is chosen there is no rules card or Save yet, so
+               Remove holds the place the action row will take. --%>
+          <div :if={is_nil(@ruleset.scope_type)} class="mt-6">
+            <.remove_ruleset_button ruleset={@ruleset} />
+          </div>
         <% end %>
 
         <p :if={@ruleset.scope_type && not @can_manage} class="mt-4 text-xs text-zinc-400">
@@ -1474,7 +1408,33 @@ defmodule EmisarWeb.PoliciesLive do
           can_manage={@can_manage}
           save_label="Save ruleset"
           dirty={editor_dirty?(@ruleset)}
-        />
+        >
+          <:actions :if={is_nil(@ruleset.policy) or @can_remove}>
+            <.remove_ruleset_button ruleset={@ruleset} />
+          </:actions>
+        </.policy_fields>
+
+        <%!-- Outside the editor form: the form is an `@container`, and its
+             containment can make it the containing block for a fixed overlay,
+             which would pin the modal to the card instead of the viewport. --%>
+        <.confirm_dialog
+          :if={@ruleset.policy && @can_remove}
+          id={"remove-ruleset-#{@ruleset.uid}"}
+          title="Remove this ruleset?"
+          confirm_label="Remove"
+          on_confirm={
+            JS.push("remove_ruleset", value: %{uid: @ruleset.uid})
+            |> close_confirm("remove-ruleset-#{@ruleset.uid}")
+          }
+        >
+          <:body>
+            <%= if @ruleset.scope_type == :runner do %>
+              This runner will use its group's ruleset, if one exists. Otherwise, the default policy applies.
+            <% else %>
+              Runners in this group will use the default policy unless they have their own ruleset.
+            <% end %>
+          </:body>
+        </.confirm_dialog>
       </div>
       <aside :if={@ruleset.scope_type} class="lg:col-span-1">
         <.policy_rail
@@ -1487,6 +1447,199 @@ defmodule EmisarWeb.PoliciesLive do
         />
       </aside>
     </div>
+    """
+  end
+
+  attr :ruleset, :map, required: true
+  attr :rulesets, :list, required: true
+  attr :target_management, :map, required: true
+  attr :can_choose_target, :boolean, required: true
+  attr :current_account, :map, required: true
+  attr :filter_params, :map, required: true
+
+  # One control: the trigger names the chosen target, and its panel holds the
+  # search field and the matching runners and groups. A fleet can outgrow one
+  # page, so the server searches and pages it (the LiveTable picker filter's
+  # shape); the finite-catalog searchable_select would hide every target past
+  # the first page.
+  defp target_picker(assigns) do
+    %{ruleset: ruleset} = assigns
+    prefix = "target_#{ruleset.uid}_"
+
+    assigns =
+      assign(assigns,
+        dropdown_id: "policy-target-#{ruleset.uid}",
+        prefix: prefix,
+        options: target_options(ruleset, assigns.rulesets, assigns.target_management),
+        selected: selected_target(ruleset, assigns.target_management),
+        # A cursor past the end is the pager's to explain, not an empty fleet.
+        stale_page?:
+          LiveTable.stale_page?(
+            length(ruleset.target_options),
+            ruleset.target_metadata,
+            assigns.filter_params,
+            prefix
+          )
+      )
+
+    ~H"""
+    <div class="w-full sm:max-w-xs">
+      <.label id={"#{@dropdown_id}-label"} variant={:eyebrow}>Apply this ruleset to</.label>
+      <div
+        :if={not @can_choose_target}
+        id={@dropdown_id}
+        aria-labelledby={"#{@dropdown_id}-label"}
+        aria-disabled="true"
+        class={[target_trigger_class(), "mt-2 cursor-not-allowed opacity-60"]}
+      >
+        <.target_face selected={@selected} />
+      </div>
+      <.dropdown
+        :if={@can_choose_target}
+        id={@dropdown_id}
+        align={:left}
+        aria-labelledby={"#{@dropdown_id}-label"}
+        phx-mounted={JS.ignore_attributes("open")}
+        class="mt-2"
+        summary_class={target_trigger_class()}
+        panel_class="z-30 mt-1 w-full p-2 text-sm"
+      >
+        <:trigger>
+          <.target_face selected={@selected} />
+        </:trigger>
+        <form id={"policy-target-search-#{@ruleset.uid}"} phx-change="search_targets">
+          <input type="hidden" name="uid" value={@ruleset.uid} />
+          <.input
+            id={"target-search-#{@ruleset.uid}"}
+            type="search"
+            name="search"
+            value={@ruleset.target_search}
+            size={:compact}
+            aria-label="Search runners and groups"
+            placeholder="Search runners or groups…"
+            autocomplete="off"
+            maxlength="512"
+            phx-debounce="300"
+            data-dropdown-search
+          />
+        </form>
+        <p :if={@ruleset.target_error} role="alert" class="mt-2 px-1 text-xs text-rose-300">
+          {@ruleset.target_error}
+        </p>
+        <div :if={@options != []} class="scrollbar-control mt-2 max-h-64 overflow-y-auto">
+          <.menu_item
+            :for={option <- @options}
+            disabled={option.disabled}
+            tone={if option.selected, do: :brand, else: :neutral}
+            aria-current={option.selected && "true"}
+            class={target_option_class(option)}
+            phx-click={
+              JS.push("set_target", value: %{uid: @ruleset.uid, target: option.value})
+              |> JS.remove_attribute("open", to: "##{@dropdown_id}")
+              |> JS.focus(to: "##{@dropdown_id} > summary")
+            }
+          >
+            <span class="min-w-0 flex-1 truncate">{option.label}</span>
+            <span :if={option.note} class="shrink-0 text-xs font-normal text-zinc-500">
+              {option.note}
+            </span>
+          </.menu_item>
+        </div>
+        <p
+          :if={@options == [] and is_nil(@ruleset.target_error) and not @stale_page?}
+          role="status"
+          class="px-3 py-4 text-center text-xs text-zinc-400"
+        >
+          <%= if @ruleset.target_search == "" do %>
+            No runners or groups yet.
+          <% else %>
+            No runner or group matches that search.
+          <% end %>
+        </p>
+        <LiveTable.paginator
+          id={"policy-targets-#{@ruleset.uid}"}
+          path={~p"/app/#{@current_account}/policies"}
+          metadata={@ruleset.target_metadata}
+          filter_params={@filter_params}
+          prefix={@prefix}
+          page_count={length(@ruleset.target_options)}
+          class="mt-2"
+        />
+      </.dropdown>
+    </div>
+    """
+  end
+
+  attr :selected, :map, required: true
+
+  defp target_face(assigns) do
+    ~H"""
+    <span class={["min-w-0 flex-1 truncate text-left", is_nil(@selected) && "text-zinc-500"]}>
+      {if @selected, do: @selected.label, else: "Choose a runner or group…"}
+    </span>
+    <span
+      :if={@selected && @selected.note}
+      class={[
+        "shrink-0 text-xs",
+        if(@selected.unavailable?, do: "text-rose-300", else: "text-zinc-500")
+      ]}
+    >
+      {@selected.note}
+    </span>
+    <.icon
+      name="action.disclose"
+      class="h-5 w-5 shrink-0 text-zinc-500 transition-transform group-open:rotate-180"
+    />
+    """
+  end
+
+  # A group reads as the parent row and its runners indent beneath it, the
+  # heading and child rows of the Audit Type control.
+  defp target_option_class(option) do
+    [option.nested? && "pl-6", option.group? && "font-medium"]
+    |> Enum.filter(& &1)
+    |> Enum.join(" ")
+  end
+
+  # The same box as the shared <.select>, so the closed picker matches the rule
+  # selects below it.
+  defp target_trigger_class do
+    "flex min-h-10 w-full items-center gap-2 rounded-lg bg-zinc-900 px-3 py-2.5 text-sm leading-5 " <>
+      "text-zinc-100 ring-1 ring-inset ring-zinc-800 focus-visible:outline-none " <>
+      "focus-visible:ring-2 focus-visible:ring-brand-500 group-open:ring-zinc-700"
+  end
+
+  attr :ruleset, :map, required: true
+
+  # Remove sits beside Save. Removing a saved ruleset deletes its rules, so it
+  # opens the confirm dialog; an unsaved card is only page state, so it goes
+  # at once.
+  defp remove_ruleset_button(%{ruleset: %{policy: %Policies.Policy{}}} = assigns) do
+    ~H"""
+    <.button
+      variant={:secondary}
+      tone={:rose}
+      type="button"
+      icon="action.delete"
+      phx-click={open_confirm("remove-ruleset-#{@ruleset.uid}")}
+    >
+      Remove
+    </.button>
+    """
+  end
+
+  defp remove_ruleset_button(assigns) do
+    ~H"""
+    <.button
+      variant={:secondary}
+      tone={:rose}
+      type="button"
+      icon="action.delete"
+      phx-click="remove_ruleset"
+      phx-value-uid={@ruleset.uid}
+    >
+      Remove
+    </.button>
     """
   end
 
@@ -1507,6 +1660,8 @@ defmodule EmisarWeb.PoliciesLive do
   attr :can_manage, :boolean, required: true
   attr :save_label, :string, required: true
   attr :dirty, :boolean, default: false
+
+  slot :actions, doc: "buttons beside Save in the bottom row — a ruleset's Remove"
 
   attr :top_margin, :string,
     default: "mt-6",
@@ -1689,15 +1844,21 @@ defmodule EmisarWeb.PoliciesLive do
 
       <%!-- The Save button IS the dirty indicator: emerald (primary) when there
            are unsaved edits, quiet outlined (secondary) when the form is clean —
-           the house pattern that replaced a trailing "Unsaved changes" chip. --%>
-      <div :if={@can_manage} class="flex items-center border-t border-zinc-800/70 pt-5">
+           the house pattern that replaced a trailing "Unsaved changes" chip.
+           A member who may remove but not edit gets the row without Save. --%>
+      <div
+        :if={@can_manage or @actions != []}
+        class="flex flex-wrap items-center gap-3 border-t border-zinc-800/70 pt-5"
+      >
         <.button
+          :if={@can_manage}
           type="submit"
           variant={if @dirty, do: :primary, else: :secondary}
           phx-disable-with="Saving..."
         >
           {@save_label}
         </.button>
+        {render_slot(@actions)}
       </div>
     </form>
     """
