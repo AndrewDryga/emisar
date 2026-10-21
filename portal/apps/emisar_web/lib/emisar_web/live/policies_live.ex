@@ -1349,11 +1349,13 @@ defmodule EmisarWeb.PoliciesLive do
 
   # A NAKED unit in the rulesets stack (the runbook step grammar) — the
   # hairline + header row delimit it; a card wash around a whole editor was
-  # the island §8.1 bans.
+  # the island §8.1 bans. The same section grid as the default policy
+  # (console-ux §7.76): the header keeps to the editor column on the first
+  # row, and the rail starts beside the editor on the second.
   defp ruleset_unit(assigns) do
     ~H"""
-    <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
-      <div class="lg:col-span-3">
+    <div class="grid grid-cols-1 gap-x-8 lg:grid-cols-4 lg:items-start">
+      <div class={["lg:col-span-3", @ruleset.scope_type && "mb-6"]}>
         <%= if @ruleset.policy do %>
           <%!-- Saved ruleset: entity chip + name. Its Remove sits beside Save at
            the bottom, so the header's one verb is navigation: a link (§2). --%>
@@ -1400,9 +1402,10 @@ defmodule EmisarWeb.PoliciesLive do
         <p :if={@ruleset.scope_type && not @can_manage} class="mt-4 text-xs text-zinc-400">
           Read-only. To edit, you need permission for every runner in this target and all packs.
         </p>
+      </div>
 
+      <div :if={@ruleset.scope_type} class="lg:col-span-3">
         <.policy_fields
-          :if={@ruleset.scope_type}
           editor_id={@ruleset.uid}
           defaults={@ruleset.defaults}
           overrides={@ruleset.overrides}
@@ -1414,6 +1417,7 @@ defmodule EmisarWeb.PoliciesLive do
           can_manage={@can_manage}
           save_label="Save ruleset"
           dirty={editor_dirty?(@ruleset)}
+          top_margin="mt-0"
         >
           <:actions :if={is_nil(@ruleset.policy) or @can_remove}>
             <.remove_ruleset_button ruleset={@ruleset} />
@@ -1442,7 +1446,7 @@ defmodule EmisarWeb.PoliciesLive do
           </:body>
         </.confirm_dialog>
       </div>
-      <aside :if={@ruleset.scope_type} class="lg:col-span-1">
+      <aside :if={@ruleset.scope_type} class="mt-8 lg:col-span-1 lg:mt-0">
         <.policy_rail
           editor_id={@ruleset.uid}
           preview={@ruleset.preview}
