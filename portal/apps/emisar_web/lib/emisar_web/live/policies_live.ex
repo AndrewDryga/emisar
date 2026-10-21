@@ -1002,8 +1002,16 @@ defmodule EmisarWeb.PoliciesLive do
              over that target's catalog, shown as allow / needs-approval / deny.
              The editor sits naked on the canvas; the only boxes are the
              self-contained controls and the earned amber warnings. --%>
-        <section id="default-policy">
-          <.section_header title="Default policy" actions_align={:baseline}>
+        <%!-- One section grid (console-ux §7.76): the header and its link keep to
+             the editor column on the first row, so View audit trail ends on
+             the same edge as every ruleset's below; the rail starts beside the
+             editor. --%>
+        <section id="default-policy" class="grid grid-cols-1 gap-x-8 lg:grid-cols-4 lg:items-start">
+          <.section_header
+            title="Default policy"
+            actions_align={:baseline}
+            class="lg:col-span-3"
+          >
             <:badge :if={not @can_manage_account?}>
               <.chip
                 id="policy-read-only"
@@ -1035,38 +1043,36 @@ defmodule EmisarWeb.PoliciesLive do
 
           <p
             :if={@can_manage_scoped? and not @can_manage_account?}
-            class="mb-4 text-xs text-zinc-400"
+            class="mb-4 text-xs text-zinc-400 lg:col-span-3"
           >
             You need access to all runners to edit the default policy.
           </p>
 
-          <div class="grid grid-cols-1 gap-8 lg:grid-cols-4 lg:items-start">
-            <div class="lg:col-span-3">
-              <.policy_fields
-                editor_id="account"
-                defaults={@account.defaults}
-                overrides={@account.overrides}
-                unmatched_overrides={preview_unmatched(@account.preview)}
-                approval={@account.approval}
-                rules_errors={@account.rules_errors}
-                show_override_errors={@account.show_override_errors?}
-                can_manage={@can_manage_account?}
-                save_label="Save default policy"
-                dirty={editor_dirty?(@account)}
-                top_margin="mt-0"
-              />
-            </div>
-            <aside class="lg:col-span-1">
-              <.policy_rail
-                editor_id="account"
-                preview={@account.preview}
-                defaults={@account.defaults}
-                overrides={@account.overrides}
-                approval={@account.approval}
-                catalog_path={~p"/app/#{@current_account}/packs"}
-              />
-            </aside>
+          <div class="lg:col-span-3">
+            <.policy_fields
+              editor_id="account"
+              defaults={@account.defaults}
+              overrides={@account.overrides}
+              unmatched_overrides={preview_unmatched(@account.preview)}
+              approval={@account.approval}
+              rules_errors={@account.rules_errors}
+              show_override_errors={@account.show_override_errors?}
+              can_manage={@can_manage_account?}
+              save_label="Save default policy"
+              dirty={editor_dirty?(@account)}
+              top_margin="mt-0"
+            />
           </div>
+          <aside class="mt-8 lg:col-span-1 lg:mt-0">
+            <.policy_rail
+              editor_id="account"
+              preview={@account.preview}
+              defaults={@account.defaults}
+              overrides={@account.overrides}
+              approval={@account.approval}
+              catalog_path={~p"/app/#{@current_account}/packs"}
+            />
+          </aside>
         </section>
 
         <section>

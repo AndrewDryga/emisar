@@ -957,12 +957,14 @@ the commit button, where the operator can reach the action before reading what i
     where grammar forces it at the start of a sentence; prefer rewriting the sentence when that keeps
     the brand form natural. Sweep: user-visible string literals such as `Emisar group`, `Emisar
     access`, or `Open Emisar`; exclude Elixir aliases, module names, and proper external titles.
-76. **A help rail never widens the section header or its actions.** A help-bearing section owns both
-    columns, but its heading and controls stay in the primary column on row one; only the section body
-    and help share row two. Reuse one section grid for every help block instead of making one section
-    span the rail or aligning siblings independently. On narrow screens keep DOM order as heading,
-    body, help. Sweep: an Add/Edit action pinned to the page edge above a help rail, and mixed section
-    structures where some help starts beside the title while one starts beside the body.
+76. **A side rail never widens the section header or its actions.** A section with a help or preview
+    rail owns both columns, but its heading and controls stay in the primary column on row one; only
+    the section body and rail share row two. Reuse one section grid for every such block instead of
+    making one section span the rail or aligning siblings independently. On narrow screens keep DOM
+    order as heading, body, rail. Sweep: an Add/Edit action pinned to the page edge above a rail; a
+    repeated header link that ends at the page edge in one section and at the body's edge in its
+    siblings (the founder asked for the Policy page's View audit trail links to align); and mixed
+    section structures where some rail starts beside the title while one starts beside the body.
 77. **A mixed-height queue row aligns its primary scan line to the top, not the control bottom.** A
     labeled select may be taller than the identity beside it; bottom-aligning the whole row pushes the
     identity down and makes the normal section-header margin look like an oversized blank band. Keep
