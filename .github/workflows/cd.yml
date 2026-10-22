@@ -44,7 +44,7 @@ jobs:
           cache: true
           cache-dependency-path: tools/go.*
       - name: Download tested image
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: portal-image-${{ github.sha }}
           path: /tmp/portal-image
@@ -55,7 +55,7 @@ jobs:
           gunzip -c /tmp/portal-image/emisar-portal-image.tar.gz | docker load
 
       - name: Download tested image SBOM
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: portal-sbom-${{ github.sha }}
           path: /tmp/portal-sbom
@@ -171,7 +171,7 @@ jobs:
           cache: true
           cache-dependency-path: tools/go.*
       - name: Download qualified artifacts from this CI run
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: admin-diagnostics-${{ github.sha }}
           path: /tmp/admin-diagnostics
@@ -530,19 +530,19 @@ jobs:
           cache-dependency-path: tools/go.*
       - name: Download tested portal image contract
         if: steps.current.outputs.current == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: portal-image-${{ github.sha }}
           path: /tmp/portal-image
       - name: Download tested portal SBOM
         if: steps.current.outputs.current == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: portal-sbom-${{ github.sha }}
           path: /tmp/portal-sbom
       - name: Download qualified diagnostics contract
         if: steps.current.outputs.current == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: admin-diagnostics-${{ github.sha }}
           path: /tmp/admin-diagnostics

@@ -464,7 +464,7 @@ jobs:
 
       - name: Upload tested image
         if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: portal-image-${{ github.sha }}
           path: |
@@ -476,7 +476,7 @@ jobs:
 
       - name: Upload tested image SBOM
         if: github.event_name == 'push' && needs.changes.outputs.portal_release == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: portal-sbom-${{ github.sha }}
           path: /tmp/emisar-portal.cdx.json
@@ -547,7 +547,7 @@ jobs:
           trivy image --exit-code 1 --severity HIGH,CRITICAL emisar/admin-diagnostics:ci
       - name: Preserve diagnostic scan evidence even on failure
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: admin-diagnostics-scan-${{ github.sha }}
           path: |
@@ -566,7 +566,7 @@ jobs:
             /tmp/emisar-admin-diagnostics-image.tar.gz /tmp/emisar-admin-diagnostics.cdx.json /tmp/emisar-admin-diagnostics-contract.json
       - name: Upload qualified artifacts
         if: github.event_name == 'push'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: admin-diagnostics-${{ github.sha }}
           path: |
@@ -652,7 +652,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.module }}-coverage
           path: ${{ matrix.module }}/coverage.out
