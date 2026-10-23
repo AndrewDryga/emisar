@@ -81,6 +81,15 @@ resource "google_dns_record_set" "www" {
   rrdatas      = ["${var.domain}."]
 }
 
+# GitHub Pages serves Ryker independently of the Emisar control-plane load balancer.
+resource "google_dns_record_set" "ryker" {
+  name         = "ryker.${var.domain}."
+  managed_zone = google_dns_managed_zone.emisar.name
+  type         = "CNAME"
+  ttl          = 300
+  rrdatas      = ["andrewdryga.github.io."]
+}
+
 # ── TLS: Certificate Manager DNS authorization ────────────────────────────────
 # Proves domain control so the Google-managed cert (certificates.tf) provisions. One record
 # per SAN — apex, www, and mta-sts (the latter two CNAME to the apex/LB, so they
