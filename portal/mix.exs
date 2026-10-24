@@ -41,7 +41,7 @@ defmodule Emisar.Umbrella.MixProject do
       # Security gate (run in CI). Sobelow = static analysis for the
       # Phoenix surface; mix_audit = CVE/advisory scan of the lockfile.
       # dev/test only + runtime: false — never compiled into the release.
-      {:sobelow, "~> 0.15.0", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.16.0", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
