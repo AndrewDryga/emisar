@@ -21,6 +21,20 @@ Do not make approvals the centerpiece. An approval queue is a familiar control, 
 the distinctive product outcome. The value is useful agent work continuing inside a
 bounded action system.
 
+For marketing comparisons, start with an agent that already has production access,
+such as a host login and SSH keys. Show that it can investigate and operate systems
+in either approach, then show the controls emisar adds. Do not sell a smaller scope
+of work as the benefit or turn the landing page into a cautious first-read exercise.
+Keep that setup advice in task documentation. Explain custom actions where the
+reader needs to understand how to extend the available work; do not promise arbitrary
+shell freedom or risk-free execution.
+
+Plain-English editing must preserve the product's position and approved strong
+headlines. Keep meaningful category terms such as Zero Trust and use the actual
+feature name: a standing grant is not a "limited approval." Compact comparison
+tables should state capabilities and controls in short cells; put the comparison's
+assumptions in the surrounding prose.
+
 ## Why
 
 Feature-first copy understates the actual job. Operators are not shopping for one
