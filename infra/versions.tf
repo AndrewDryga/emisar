@@ -9,7 +9,7 @@
 terraform {
   # Keep exact parity with /.tool-versions and the HCP workspace. A broader
   # constraint lets local CI validate with semantics production never uses.
-  required_version = "= 1.16.7"
+  required_version = "= 1.17.1"
 
   required_providers {
     google = {
