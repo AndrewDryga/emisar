@@ -91,5 +91,100 @@ defmodule EmisarWeb.Components.ConsoleShellTest do
       refute html =~ "Verify your email"
       refute html =~ "Resend email"
     end
+
+    defp render_shell_as(assigns, role, section \\ :dashboard) do
+      membership = %{assigns.current_membership | role: role}
+
+      assigns =
+        assigns
+        |> Map.put(:current_membership, membership)
+        |> Map.put(:current_subject, Subject.for_member(membership, assigns.current_account))
+        |> Map.put(:section, section)
+
+      rendered_to_string(~H"""
+      <ShellComponents.console_shell
+        current_account={@current_account}
+        current_membership={@current_membership}
+        current_subject={@current_subject}
+        chrome={@chrome}
+        section={@section}
+      >
+        <:title>Console</:title>
+        Content
+      </ShellComponents.console_shell>
+      """)
+    end
+
+    # Group headings and link labels of the desktop sidebar, in order.
+    defp sidebar(html) do
+      html
+      |> LazyHTML.from_fragment()
+      |> LazyHTML.query("nav.scrollbar-subtle")
+      |> Enum.at(0)
+      |> LazyHTML.query("p, a span.flex-1")
+      |> Enum.map(&(&1 |> LazyHTML.text() |> String.trim()))
+    end
+
+    test "groups the sidebar into Connect, Operate, and Control", %{assigns: assigns} do
+      assert sidebar(render_shell_as(assigns, :admin)) == [
+               "Dashboard",
+               "Connect",
+               "Runners",
+               "AI agents",
+               "Service accounts",
+               "Operate",
+               "Runs",
+               "Runbooks",
+               "Approvals",
+               "Audit log",
+               "Control",
+               "Policy",
+               "Packs",
+               "Team",
+               "Billing",
+               "Resources",
+               "Docs",
+               "Changelog",
+               "Status"
+             ]
+    end
+
+    test "a billing manager sees only links they can open, each under its group", %{
+      assigns: assigns
+    } do
+      # The finance seat can read the audit log, so Operate shows with that
+      # one link; Runs, Runbooks, Approvals, Policy, and Packs stay hidden.
+      assert sidebar(render_shell_as(assigns, :billing_manager)) == [
+               "Connect",
+               "Service accounts",
+               "Operate",
+               "Audit log",
+               "Control",
+               "Team",
+               "Billing",
+               "Resources",
+               "Docs",
+               "Changelog",
+               "Status"
+             ]
+    end
+
+    test "the moved links stay active on their own sections", %{assigns: assigns} do
+      for {section, path} <- [
+            runbooks: "runbooks",
+            service_accounts: "settings/service-accounts",
+            audit: "audit"
+          ] do
+        classes =
+          assigns
+          |> render_shell_as(:admin, section)
+          |> LazyHTML.from_fragment()
+          |> LazyHTML.query(~s(a[href="/app/both-connected/#{path}"]))
+          |> LazyHTML.attribute("class")
+
+        assert [_ | _] = classes
+        assert Enum.all?(classes, &(&1 =~ "font-medium text-zinc-50"))
+      end
+    end
   end
 end

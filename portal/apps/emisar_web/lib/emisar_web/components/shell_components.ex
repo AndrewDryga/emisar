@@ -385,8 +385,8 @@ defmodule EmisarWeb.ShellComponents do
       )
 
     ~H"""
-    <%!-- pt-2/pb-4 + the tightened group air below keep the WHOLE nav (18 links,
-         5 groups) under ~730px, so at common laptop heights (≥860px with the
+    <%!-- pt-2/pb-4 + the tightened group air below keep the WHOLE nav (17 links,
+         4 groups) under ~730px, so at common laptop heights (≥860px with the
          brand + user blocks) nothing sits half-clipped at the scroll fold —
          "Support" cut in half read as a rendering defect on every screenshot. --%>
     <nav class="scrollbar-subtle flex-1 space-y-0.5 overflow-y-auto px-3 pb-4 pt-2 text-sm">
@@ -401,9 +401,10 @@ defmodule EmisarWeb.ShellComponents do
         Dashboard
       </.nav_link>
 
-      <%!-- Connect — the two things you need to USE emisar: a runner to execute and
-           an agent to call it. Surfaced at the top so setup is one glance away. --%>
-      <.nav_group :if={@can_view_runners? or @can_view_agents?} label="Connect" />
+      <%!-- Connect — what calls into emisar and where it runs: runners, AI
+           agents, and the service accounts that own non-human keys. Service
+           accounts is visible to every member, so the heading always renders. --%>
+      <.nav_group label="Connect" />
       <.nav_link
         :if={@can_view_runners?}
         to={~p"/app/#{@current_account}/runners"}
@@ -424,9 +425,16 @@ defmodule EmisarWeb.ShellComponents do
       >
         AI agents
       </.nav_link>
+      <.nav_link
+        to={~p"/app/#{@current_account}/settings/service-accounts"}
+        active={@section == :service_accounts}
+        icon="identity.service_account"
+      >
+        Service accounts
+      </.nav_link>
 
       <.nav_group
-        :if={@can_view_runs? or @can_view_approvals? or @can_view_audit?}
+        :if={@can_view_runs? or @can_view_runbooks? or @can_view_approvals? or @can_view_audit?}
         label="Operate"
       />
       <.nav_link
@@ -436,6 +444,14 @@ defmodule EmisarWeb.ShellComponents do
         icon="product.run"
       >
         Runs
+      </.nav_link>
+      <.nav_link
+        :if={@can_view_runbooks?}
+        to={~p"/app/#{@current_account}/runbooks"}
+        active={@section == :runbooks}
+        icon="product.runbook"
+      >
+        Runbooks
       </.nav_link>
       <.nav_link
         :if={@can_view_approvals?}
@@ -452,13 +468,20 @@ defmodule EmisarWeb.ShellComponents do
         active={@section == :audit}
         icon="product.audit"
       >
-        Audit
+        Audit log
       </.nav_link>
 
-      <.nav_group
-        :if={@can_view_packs? or @can_view_policies? or @can_view_runbooks?}
-        label="Control"
-      />
+      <%!-- Control — the rules and the account: Team and Billing are visible to
+           every member, so the heading always renders. --%>
+      <.nav_group label="Control" />
+      <.nav_link
+        :if={@can_view_policies?}
+        to={~p"/app/#{@current_account}/policies"}
+        active={@section == :policies}
+        icon="product.policy"
+      >
+        Policy
+      </.nav_link>
       <.nav_link
         :if={@can_view_packs?}
         to={~p"/app/#{@current_account}/packs"}
@@ -469,37 +492,12 @@ defmodule EmisarWeb.ShellComponents do
         Packs
       </.nav_link>
       <.nav_link
-        :if={@can_view_policies?}
-        to={~p"/app/#{@current_account}/policies"}
-        active={@section == :policies}
-        icon="product.policy"
-      >
-        Policy
-      </.nav_link>
-      <.nav_link
-        :if={@can_view_runbooks?}
-        to={~p"/app/#{@current_account}/runbooks"}
-        active={@section == :runbooks}
-        icon="product.runbook"
-      >
-        Runbooks
-      </.nav_link>
-
-      <.nav_group label="Settings" />
-      <.nav_link
         to={~p"/app/#{@current_account}/settings/team"}
         active={@section == :team}
         icon="product.team"
         badge={@pending_access_requests_count}
       >
         Team
-      </.nav_link>
-      <.nav_link
-        to={~p"/app/#{@current_account}/settings/service-accounts"}
-        active={@section == :service_accounts}
-        icon="identity.service_account"
-      >
-        Service accounts
       </.nav_link>
       <.nav_link
         to={~p"/app/#{@current_account}/settings/billing"}
