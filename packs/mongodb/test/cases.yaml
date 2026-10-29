@@ -1,10 +1,12 @@
 services: [mongodb]
+# MongoDB 8.3 refuses to start on Linux 6.19+ kernels (its tcmalloc rseq
+# check), and through 8.3.13 that check also blocks Ubuntu's patched 7.0.14
+# kernels that GitHub's runners now use (SERVER-136848; the exemption lands in
+# 8.3.14 via SERVER-131779). Restore an 8.3 row once 8.3.14 has aged.
 versions:
-  - version: "8.3.9"
-    digest: "@sha256:81a1c8842a09589fc8d5f285266f3340bf4abdf66700ba22988f14cc9b2b3118"
-    default: true
   - version: "8.2.12"
     digest: "@sha256:e0ce8c35124d4a9f9785532d1f268f39e9728ffa1cb38f46fa482436424c4bd3"
+    default: true
   - version: "7.0.41"
     digest: "@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0"
 secret_env: [MONGO_URI]
