@@ -49,17 +49,20 @@ type nonaffectedRule struct {
 // the exact signed source/binary identity AND proof from the final bundle. New
 // advisories, package updates and expired assessments block publication.
 var diagnosticsNonaffected = map[string]nonaffectedRule{
-	"CVE-2023-33204": {"sysstat", "12.6.1-1", "sysstat-elf64", "https://security-tracker.debian.org/tracker/CVE-2023-33204", []string{"sysstat"}},
-	"CVE-2023-45853": {"zlib", "1:1.2.13.dfsg-1", "no-minizip", "https://security-tracker.debian.org/tracker/CVE-2023-45853", []string{"zlib1g"}},
-	"CVE-2025-69720": {"ncurses", "6.4-4", "no-infocmp", "https://security-tracker.debian.org/tracker/CVE-2025-69720", []string{"libncursesw6", "libtinfo6"}},
-	"CVE-2026-16742": {"systemd", "252.39-1~deb12u2", "no-homed", "https://github.com/systemd/systemd/security/advisories/GHSA-jm29-p7hh-vjhv", []string{"libsystemd0", "libudev1"}},
-	"CVE-2026-11940": {"python3.11", "3.11.2-6+deb12u9", "no-tarfile", "https://github.com/python/cpython/commit/be13e86f6b9788a6f4d0419dffef72cbae5865c9", []string{"libpython3.11-minimal", "libpython3.11-stdlib", "python3.11-minimal"}},
-	"CVE-2026-7210":  {"python3.11", "3.11.2-6+deb12u9", "no-expat", "https://mail.python.org/archives/list/security-announce@python.org/message/PNY5OMBDPM2FRUZTWFFPJ6LISWKV627K/", []string{"libpython3.11-minimal", "libpython3.11-stdlib", "python3.11-minimal"}},
-	"CVE-2026-53613": {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-8gj5-72r3-428g", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
-	"CVE-2026-76642": {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-m25x-3hj9-m26f", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
-	"CVE-2026-78408": {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-55fx-f4gg-cfhj", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
-	"CVE-2026-78409": {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-8f2p-47x3-43mv", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
-	"CVE-2026-78410": {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-rh77-686x-2f2m", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
+	// The fix changes ntpd/nts_extens.c::extens_server_recv. This exact Debian
+	// subset ships the Python query client and its separate libntpc, not ntpd.
+	"CVE-2026-102486": {"ntpsec", "1.2.2+dfsg1-1+deb12u1", "ntpq-no-nts-daemon", "https://github.com/ntpsec/ntpsec/commit/7cc079387a0c8f94a4a82ebd0fc3cbe32f705557", []string{"ntpsec", "python3-ntp"}},
+	"CVE-2023-33204":  {"sysstat", "12.6.1-1", "sysstat-elf64", "https://security-tracker.debian.org/tracker/CVE-2023-33204", []string{"sysstat"}},
+	"CVE-2023-45853":  {"zlib", "1:1.2.13.dfsg-1", "no-minizip", "https://security-tracker.debian.org/tracker/CVE-2023-45853", []string{"zlib1g"}},
+	"CVE-2025-69720":  {"ncurses", "6.4-4", "no-infocmp", "https://security-tracker.debian.org/tracker/CVE-2025-69720", []string{"libncursesw6", "libtinfo6"}},
+	"CVE-2026-16742":  {"systemd", "252.39-1~deb12u2", "no-homed", "https://github.com/systemd/systemd/security/advisories/GHSA-jm29-p7hh-vjhv", []string{"libsystemd0", "libudev1"}},
+	"CVE-2026-11940":  {"python3.11", "3.11.2-6+deb12u9", "no-tarfile", "https://github.com/python/cpython/commit/be13e86f6b9788a6f4d0419dffef72cbae5865c9", []string{"libpython3.11-minimal", "libpython3.11-stdlib", "python3.11-minimal"}},
+	"CVE-2026-7210":   {"python3.11", "3.11.2-6+deb12u9", "no-expat", "https://mail.python.org/archives/list/security-announce@python.org/message/PNY5OMBDPM2FRUZTWFFPJ6LISWKV627K/", []string{"libpython3.11-minimal", "libpython3.11-stdlib", "python3.11-minimal"}},
+	"CVE-2026-53613":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-8gj5-72r3-428g", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
+	"CVE-2026-76642":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-m25x-3hj9-m26f", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
+	"CVE-2026-78408":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-55fx-f4gg-cfhj", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
+	"CVE-2026-78409":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-8f2p-47x3-43mv", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
+	"CVE-2026-78410":  {"util-linux", "2.38.1-5+deb12u3", "findmnt-read-only", "https://github.com/util-linux/util-linux/security/advisories/GHSA-rh77-686x-2f2m", []string{"bsdutils", "libblkid1", "libmount1", "libsmartcols1", "libuuid1", "util-linux", "util-linux-extra"}},
 }
 
 // Owner-accepted risks, not non-affected assessments: the final bundle cannot
@@ -419,6 +422,10 @@ func proveDiagnosticsNonaffected(bundle string, rule nonaffectedRule) error {
 		if err := proveReadOnlyFindmnt(bundle, elfs); err != nil {
 			return err
 		}
+	case "ntpq-no-nts-daemon":
+		if err := proveNTPQueryClient(bundle, owned, elfs); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown non-affected predicate")
 	}
@@ -444,6 +451,73 @@ func proveDiagnosticsNonaffected(bundle string, rule nonaffectedRule) error {
 		if strings.Contains(name, "minizip") || strings.Contains(name, "infocmp") || strings.Contains(name, "homed") || strings.Contains(name, "homework") ||
 			strings.HasPrefix(name, "libexpat") || strings.Contains(name, "pyexpat") || strings.Contains(name, "_elementtree") || strings.HasPrefix(name, "tarfile.") || name == "xml" {
 			return fmt.Errorf("affected implementation present: %s", path)
+		}
+		return nil
+	})
+}
+
+// NTPsec 1.2.2's ntpd/wscript links nts_extens.c only into the daemon.
+// libntp/wscript builds libntpc from separate FFI/support sources. Keep this
+// predicate closed over the reviewed Debian payload, including Python files;
+// absence of a process or a filename alone would not prove parser absence.
+func proveNTPQueryClient(bundle string, owned []string, elfs map[string]diagnosticELF) error {
+	const python = "./python/lib/python3/dist-packages/"
+	const library = python + "ntp/libntpc.so"
+	allowed := map[string]bool{"./libexec/ntpq": true, library: true, python + "ntp-1.2.2.egg-info": true}
+	for _, module := range []string{"__init__", "agentx", "agentx_packet", "control", "magic", "ntpc", "packet", "poly", "statfiles", "util"} {
+		allowed[python+"ntp/"+module+".py"] = true
+		allowed[python+"ntp/__pycache__/"+module+".cpython-311.pyc"] = true
+	}
+	for _, path := range owned {
+		if !allowed[path] {
+			return fmt.Errorf("unexpected NTPsec client file: %s", path)
+		}
+		info, err := os.Lstat(filepath.Join(bundle, path))
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("NTPsec client file is missing or not regular: %s", path)
+		}
+		if _, native := elfs[path]; native && path != library {
+			return fmt.Errorf("unexpected native NTPsec payload: %s", path)
+		}
+	}
+	client, err := os.ReadFile(filepath.Join(bundle, "libexec/ntpq"))
+	if err != nil || !slices.Contains(owned, "./libexec/ntpq") || !strings.HasPrefix(string(client), "#! /usr/bin/python3\n") {
+		return fmt.Errorf("NTPsec query client is not the reviewed Python entry point")
+	}
+	file, exists := elfs[library]
+	if !slices.Contains(owned, library) || !exists || file.Class != elf.ELFCLASS64 || file.Machine != elf.EM_X86_64 {
+		return fmt.Errorf("NTPsec helper is not inspectable native amd64 libntpc")
+	}
+	if !slices.ContainsFunc(file.Symbols, func(symbol elf.Symbol) bool { return symbol.Name == "ntpc_lfptofloat" }) {
+		return fmt.Errorf("NTPsec helper lacks its reviewed FFI interface")
+	}
+	// Both hashes match the exact Debian package payload and the reviewed CI
+	// bundle. A copied/renamed parser cannot gain approval by retaining a known
+	// FFI symbol or the client's Python shebang under the same package identity.
+	for path, expected := range map[string]string{
+		"./libexec/ntpq": "b0cb0e98273e72575cb139a95719a15afad153a50749b653980850bb9161035a",
+		library:          "61474fc2808110c2a0a791b89d04fd93471411536aab87ccb0cf4bd4a65d0681",
+	} {
+		actual, err := hashFile(filepath.Join(bundle, path))
+		if err != nil || actual != expected {
+			return fmt.Errorf("NTPsec assessment requires exact authenticated %s", path)
+		}
+	}
+	// A renamed/copied implementation outside the assessed package also blocks.
+	for path, file := range elfs {
+		for _, symbol := range file.Symbols {
+			if strings.HasPrefix(symbol.Name, "extens_") {
+				return fmt.Errorf("NTPsec NTS implementation symbol in %s: %s", path, symbol.Name)
+			}
+		}
+	}
+	return filepath.WalkDir(bundle, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		name := entry.Name()
+		if name == "ntpd" || strings.HasPrefix(name, "libntpd") || strings.HasPrefix(name, "nts_extens.") {
+			return fmt.Errorf("NTPsec daemon implementation present: %s", path)
 		}
 		return nil
 	})
