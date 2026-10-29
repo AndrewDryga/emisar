@@ -3404,6 +3404,10 @@ defmodule Emisar.Catalog do
   @spec published_action_count() :: non_neg_integer()
   def published_action_count, do: PublishedRegistry.action_count()
 
+  @doc "How many published actions sit in each risk tier, keyed by tier."
+  @spec published_action_count_by_risk() :: %{String.t() => non_neg_integer()}
+  def published_action_count_by_risk, do: PublishedRegistry.action_count_by_risk()
+
   @doc "The lean host-matching index `emisar pack suggest` reads."
   @spec published_pack_suggestion_index() :: [map()]
   def published_pack_suggestion_index, do: PublishedRegistry.suggest_index()

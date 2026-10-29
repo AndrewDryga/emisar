@@ -72,7 +72,7 @@
 
   <%!-- How you shape it: one policy for the whole team, then each runner's own rules --%>
   <section class="border-t border-zinc-900 py-20 sm:py-28">
-    <div class="mx-auto max-w-5xl px-6 lg:px-8">
+    <div class="mx-auto max-w-6xl px-6 lg:px-8">
       <div class="mx-auto max-w-2xl text-center">
         <h2 class="text-3xl font-bold tracking-tight text-white text-balance sm:text-4xl">
           You set the rules once.
@@ -89,25 +89,67 @@
           <p class="mt-1 text-sm leading-relaxed text-zinc-400">
             Every action has a risk tier, and the tier decides what happens.
           </p>
-          <ul class="mt-4 divide-y divide-zinc-900">
+          <%!-- The four tiers on one track, low to critical, each node lit in its
+               decision's color: the mobile menu's gate track (a hairline, nodes cut
+               out of it) in the console's policy colors. Each tier is a column of
+               five subgrid rows, so a wrapped line can't knock its neighbors out of
+               step. Below sm the track runs down the left edge instead. --%>
+          <ol class="mt-6 sm:mt-8 sm:grid sm:grid-cols-4">
             <li
               :for={
-                {tier, state, what, example} <- [
-                  {"low", :pass, "Runs right away", "linux.disk_usage"},
-                  {"medium", :pass, "Runs right away", "docker.logs"},
-                  {"high", :pending, "Waits for a person", "nomad.job_revert"},
-                  {"critical", :deny, "Never runs", "kubernetes.drain"}
-                ]
+                {{tier, state, what, example, segment}, index} <-
+                  Enum.with_index([
+                    {"low", :pass, "Runs right away", "linux.disk_usage",
+                     "from-brand-500/50 to-brand-500/50"},
+                    {"medium", :pass, "Runs right away", "docker.logs",
+                     "from-brand-500/50 to-amber-500/50"},
+                    {"high", :pending, "Waits for a person", "nomad.job_revert",
+                     "from-amber-500/50 to-rose-500/50"},
+                    {"critical", :deny, "Never runs", "kubernetes.drain", nil}
+                  ])
               }
-              class="grid grid-cols-[auto_auto] items-center justify-between gap-x-4 gap-y-1.5 py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+              class="relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 py-3 pl-7 sm:row-span-5 sm:grid-cols-1 sm:grid-rows-subgrid sm:justify-items-center sm:gap-0 sm:p-0 sm:text-center"
             >
-              <.risk_pill risk={tier} variant={:track} id={"policy-tier-#{tier}"} />
-              <span class="order-last col-span-2 text-sm text-zinc-300 sm:order-none sm:col-span-1">
-                {what} <span class="text-zinc-500">· {example}</span>
+              <div class="flex flex-wrap items-baseline gap-x-2 sm:flex-col sm:items-center sm:gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  {tier}
+                </span>
+                <span class="whitespace-nowrap text-sm text-zinc-500">
+                  <span class="text-base font-semibold tabular-nums text-zinc-50 sm:text-2xl">
+                    {@action_count_by_risk[tier]}
+                  </span>
+                  actions
+                </span>
+              </div>
+              <span
+                class="absolute inset-y-0 left-0 w-5 sm:relative sm:mt-5 sm:h-5 sm:w-full sm:justify-self-stretch"
+                aria-hidden="true"
+              >
+                <span
+                  :if={segment}
+                  class={[
+                    "absolute left-1/2 top-6 h-full w-px -translate-x-1/2 bg-linear-to-b sm:hidden",
+                    segment
+                  ]}
+                ></span>
+                <span
+                  :if={index == 0}
+                  class="absolute left-0 top-1/2 hidden h-px w-[400%] -translate-y-1/2 bg-[linear-gradient(to_right,transparent,var(--color-brand-500)_12.5%,var(--color-brand-500)_37.5%,var(--color-amber-500)_62.5%,var(--color-rose-500)_87.5%,transparent)] opacity-50 sm:block"
+                ></span>
+                <span class={[
+                  "absolute left-1/2 top-6 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-[5px] ring-zinc-950 shadow-[0_0_12px_2px] sm:top-1/2",
+                  state == :pass && "bg-brand-400 shadow-brand-400/30",
+                  state == :pending && "bg-amber-400 shadow-amber-400/30",
+                  state == :deny && "bg-rose-400 shadow-rose-400/30"
+                ]}></span>
               </span>
-              <.state_chip state={state} class="justify-self-end" />
+              <.state_chip state={state} class="sm:mt-5" />
+              <span class="col-span-2 text-sm text-zinc-300 sm:col-span-1 sm:mt-3">{what}</span>
+              <span class="col-span-2 font-mono text-xs text-zinc-500 sm:col-span-1 sm:mt-1">
+                {example}
+              </span>
             </li>
-          </ul>
+          </ol>
         </div>
 
         <div class="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-6">

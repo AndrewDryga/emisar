@@ -60,6 +60,15 @@ defmodule Emisar.Catalog.PublishedRegistryTest do
     end
   end
 
+  describe "action_count_by_risk/0" do
+    test "puts every declared action under exactly one of the four risk tiers" do
+      counts = PublishedRegistry.action_count_by_risk()
+
+      assert counts |> Map.keys() |> Enum.sort() == ~w(critical high low medium)
+      assert counts |> Map.values() |> Enum.sum() == PublishedRegistry.action_count()
+    end
+  end
+
   describe "suggest_index/0" do
     test "carries pack-authored detect evidence and lists every pack" do
       by_id = Map.new(PublishedRegistry.suggest_index(), &{&1.id, &1})

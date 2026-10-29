@@ -17,6 +17,7 @@ defmodule EmisarWeb.MarketingController do
 
   plug :put_layout, html: {EmisarWeb.Layouts, :app}
   plug :assign_detected_os
+  plug :assign_action_count_by_risk when action in [:how_it_works]
 
   @base "https://emisar.dev"
 
@@ -781,6 +782,19 @@ defmodule EmisarWeb.MarketingController do
   defp assign_detected_os(conn, _opts) do
     user_agent = List.first(get_req_header(conn, "user-agent"))
     assign(conn, :detected_os, UserAgent.platform(user_agent))
+  end
+
+  # How it works draws the default policy as a line of the four risk tiers, each
+  # with its live action count from the published catalog (like the home page's
+  # total), so the numbers never go stale. A tier with no actions shows 0.
+  defp assign_action_count_by_risk(conn, _opts) do
+    counts = Catalog.published_action_count_by_risk()
+
+    assign(
+      conn,
+      :action_count_by_risk,
+      Map.new(~w(low medium high critical), &{&1, delimit_int(Map.get(counts, &1, 0))})
+    )
   end
 
   # One dynamic action for every guide. The guide template (named by the

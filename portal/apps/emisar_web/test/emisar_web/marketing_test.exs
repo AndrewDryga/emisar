@@ -625,8 +625,21 @@ defmodule EmisarWeb.MarketingTest do
 
     # One policy for the whole team: the tier defaults, your overrides, the host's own rules.
     assert text =~ "You set the rules once."
-    assert text =~ "Waits for a person · nomad.job_revert"
     assert text =~ "admission: deny"
+
+    # Each tier on the line carries its live count from the published catalog.
+    counts = Emisar.Catalog.published_action_count_by_risk()
+
+    count = fn tier ->
+      counts
+      |> Map.get(tier, 0)
+      |> Integer.to_string()
+      |> String.replace(~r/(\d)(?=(\d{3})+$)/, "\\1,")
+    end
+
+    assert text =~ "low #{count.("low")} actions Allowed Runs right away linux.disk_usage"
+    assert text =~ "high #{count.("high")} actions Approval Waits for a person nomad.job_revert"
+    assert text =~ "critical #{count.("critical")} actions Denied Never runs kubernetes.drain"
 
     assert document |> LazyHTML.query(~s(a[href="/docs/policies-and-approvals"])) |> Enum.count() >
              0

@@ -7191,6 +7191,15 @@ defmodule Emisar.CatalogTest do
     end
   end
 
+  describe "published_action_count_by_risk/0" do
+    test "splits the published action count across the four risk tiers" do
+      counts = Catalog.published_action_count_by_risk()
+
+      assert counts |> Map.keys() |> Enum.sort() == ~w(critical high low medium)
+      assert counts |> Map.values() |> Enum.sum() == Catalog.published_action_count()
+    end
+  end
+
   describe "published_pack_suggestion_index/0" do
     test "carries authored detect evidence for every pack" do
       by_id = Map.new(Catalog.published_pack_suggestion_index(), &{&1.id, &1})

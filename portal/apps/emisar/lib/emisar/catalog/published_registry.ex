@@ -55,6 +55,11 @@ defmodule Emisar.Catalog.PublishedRegistry do
   @spec action_count() :: non_neg_integer()
   def action_count, do: list() |> Enum.map(&length(&1.actions)) |> Enum.sum()
 
+  @doc "Declared actions per risk tier across every published pack, keyed by tier."
+  @spec action_count_by_risk() :: %{String.t() => non_neg_integer()}
+  def action_count_by_risk,
+    do: list() |> Enum.flat_map(& &1.actions) |> Enum.frequencies_by(& &1.risk)
+
   @doc """
   Lean index for `emisar pack suggest` — per pack, only what host-matching
   needs: id, name, OS allowlist, and the detect signal (binaries/processes/
