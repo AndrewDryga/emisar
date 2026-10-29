@@ -4,7 +4,7 @@ locals {
   # was skipped in the 2026-09-15 bump because it lives in a different file and
   # is a TFC variable; keep it on this same cadence so the host layer does not
   # drift while the app and proxy layers stay current.
-  cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.2@sha256:e8c76356fb586300c63f0d29c8c75cfeeba33c29736f9d4afa2df2d78cd0fa19"
+  cloud_sql_proxy_image = "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.3@sha256:f333a9c59890c3c67b8505166c5dbdcc0b29fca9173a2e09ca0446ab6997a736"
   gcloud_image          = "gcr.io/google.com/cloudsdktool/google-cloud-cli:590.0.0-stable@sha256:1855ee6031f03bb7d4b251cfd0e5b88a18fd9a2552a742cf86d269810832c80b"
   # Boot verifies this release against SHA256SUMS from the same release, which
   # proves the bytes match a list published beside them and nothing about who
