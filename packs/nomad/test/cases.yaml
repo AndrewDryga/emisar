@@ -1,11 +1,11 @@
-services: [nomad, nomad-response]
+services: [nomad, nomad-response, nomad-node]
 versions:
   - version: "2.0.7"
     digest: "@sha256:e3f31dad30ec4ae6ab2f3799cea40a87d12bb4be88bbb75234f63f4f90c6c52d"
     default: true
   - version: "1.10.5"
     digest: "@sha256:d52fdb89745d8309de690d53c29d6baec8867e920051eb50b2c7f7f85c127e43"
-secret_env: [NOMAD_PACKTEST_CANARY]
+secret_env: [NOMAD_PACKTEST_CANARY, NOMAD_NODE_PRELOAD_CANARY, NOMAD_NODE_RESPONSE_CANARY]
 env:
   NOMAD_ADDR: "http://nomad:4646"
   # The ACL management token every case authenticates with (the SUT bootstraps
@@ -16,7 +16,154 @@ env:
   # Mirrors the PACKTEST_DB_PASSWORD literal in test/fixtures/inspect.nomad.hcl —
   # declaring it here makes the harness fail any surface that leaks it unredacted.
   NOMAD_PACKTEST_CANARY: packtest-canary-nomad-e57d31
+  NOMAD_NODE_PRELOAD_CANARY: packtest-canary-node-preload-4bf235
+  NOMAD_NODE_RESPONSE_CANARY: packtest-canary-node-response-15f351
 cases:
+  - name: nomad.alloc_exec_node_dns-task-resolver
+    action: nomad.alloc_exec_node_dns
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: node, hostname: consul, namespace: packtest-ns}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup, packtest-ns]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id, packtest-ns]}
+    expect:
+      json:
+        /scope: fresh_node_process_in_task
+        /lookup/addresses/0/family: 4
+        /lookup/truncated: false
+        /resolve4/truncated: false
+        /resolv_conf/truncated: false
+      stdout_contains: ['"nameservers":[', '"node_servers":[']
+    probes:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, bounds]
+        expect: {stdout_contains: [Node probe argument bounds verified]}
+  - name: nomad.alloc_exec_node_dns-missing-host
+    action: nomad.alloc_exec_node_dns
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: node, hostname: missing.packtest.invalid, seconds: 3}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id]}
+    expect:
+      status: failure
+      exit: [1]
+      json: {/lookup/error: ENOTFOUND}
+  - name: nomad.alloc_exec_node_dns-deadline-keeps-successful-os-lookup
+    action: nomad.alloc_exec_node_dns
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: node, hostname: stall.packtest.invalid, seconds: 1}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id]}
+    expect:
+      status: failure
+      exit: [1]
+      json:
+        /timed_out: true
+        /lookup/addresses/0/family: 4
+        /resolve4/error: TIMEOUT
+        /resolve6/error: TIMEOUT
+  - name: nomad.alloc_exec_node_https-trusted-ca
+    action: nomad.alloc_exec_node_https
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: node, url: 'https://consul:8444/node-ok'}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id]}
+    expect:
+      json: {/status: 200, /tls_verified: true, /scope: fresh_node_process_in_task}
+      stdout_contains: ['"timings_ms":{', '"headers":']
+    probes:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, private]
+        expect: {stdout_contains: [Node probe did not forward credentials]}
+  - name: nomad.alloc_exec_node_https-untrusted-even-with-tls-bypass-env
+    action: nomad.alloc_exec_node_https
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: untrusted, url: 'https://consul:8444/node-ok'}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id]}
+    expect:
+      status: failure
+      exit: [1]
+      json: {/tls_verified: false, /error: UNABLE_TO_VERIFY_LEAF_SIGNATURE}
+  - name: nomad.alloc_exec_node_https-hostname-mismatch
+    action: nomad.alloc_exec_node_https
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: node, url: 'https://nomad-response:8444/node-ok'}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id]}
+    expect:
+      status: failure
+      exit: [1]
+      json: {/tls_verified: false, /error: ERR_TLS_CERT_ALTNAME_INVALID}
+  - name: nomad.alloc_exec_node_https-deadline
+    action: nomad.alloc_exec_node_https
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: node, url: 'https://consul:8444/node-slow', seconds: 1}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id]}
+    expect:
+      status: failure
+      exit: [1]
+      json: {/tls_verified: true, /error: TIMEOUT}
+  - name: nomad.alloc_exec_node_https-redirect-not-followed
+    action: nomad.alloc_exec_node_https
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: node, url: 'https://consul:8444/node-redirect'}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id]}
+    expect:
+      json: {/status: 302, /tls_verified: true}
+    probes:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, private]
+        expect: {stdout_contains: [Node probe did not forward credentials]}
+  - name: nomad.alloc_exec_node_https-response-bounded
+    action: nomad.alloc_exec_node_https
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: node, url: 'https://consul:8444/node-large-headers'}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id]}
+    expect:
+      status: failure
+      exit: [1]
+      json: {/tls_verified: true, /error: HPE_HEADER_OVERFLOW}
+  - name: nomad.alloc_exec_node_https-http-error
+    action: nomad.alloc_exec_node_https
+    env: {NOMAD_ADDR: 'http://nomad-node:4646'}
+    args: {task: node, url: 'https://consul:8444/node-failure'}
+    arrange:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, setup]
+    resolve_args:
+      alloc_id: {argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, id]}
+    expect:
+      json: {/status: 503, /tls_verified: true}
+    probes:
+      - argv: [/bin/sh, /packs/nomad/test/fixtures/node-diagnostics.sh, private]
+        expect: {stdout_contains: [Node probe did not forward credentials]}
+  - name: nomad.alloc_exec_node_dns-denied
+    action: nomad.alloc_exec_node_dns
+    args: {alloc_id: abc12345, task: node, hostname: consul}
+    unset_env: [NOMAD_TOKEN]
+    expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
+  - name: nomad.alloc_exec_node_https-denied
+    action: nomad.alloc_exec_node_https
+    args: {alloc_id: abc12345, task: node, url: 'https://consul:8444/node-ok'}
+    unset_env: [NOMAD_TOKEN]
+    expect: {status: failure, exit: [1], stderr_contains: [Permission denied]}
   - name: nomad.job_health_snapshot-generated-children
     action: nomad.job_health_snapshot
     arrange:
