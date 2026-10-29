@@ -129,10 +129,10 @@ jobs:
   behavior:
     name: ${{ matrix.pack }} ${{ matrix.version }}${{ matrix.shards > 1 && format(' shard {0}/{1}', matrix.shard, matrix.shards) || '' }}
     needs: tools
-    # Pinned, not ubuntu-latest: on the ubuntu-26.04 image (Linux 7.0) MongoDB
-    # 8.3 refuses to start (SERVER-136848) and the snmp FRR peer's ospfd cannot
-    # create its pid file, while both pass on 24.04. The rows test each pack
-    # against its SUT, not the runner kernel; move them once both run on 26.04.
+    # Pinned, not ubuntu-latest: on the ubuntu-26.04 image the snmp fixture's
+    # second FRR ospfd cannot create its pid file, while it passes on 24.04.
+    # The rows test each pack against its SUT, not the runner image; move them
+    # once the snmp row runs on 26.04.
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
