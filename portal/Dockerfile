@@ -17,12 +17,12 @@
 # carry it.)
 ARG ELIXIR_VERSION=1.20.4
 ARG OTP_VERSION=29.1.2
-ARG DEBIAN_VERSION=bookworm-20261005-slim
+ARG DEBIAN_VERSION=bookworm-20261020-slim
 
-ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:94157a01ad1a93a419cd9824df3b8dcc6af35afba3e6b57467a87b540968f449"
+ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}@sha256:11ab449084960993491cdc3493be292464c5a63e8f753ed2afe351486471b69a"
 # The runtime base needs to match the builder's libc/ssl; use the same
 # debian snapshot so any compiled NIFs link against compatible libs.
-ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587"
+ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8"
 
 # --- Build stage ---------------------------------------------------
 FROM ${BUILDER_IMAGE} AS builder
@@ -34,9 +34,9 @@ RUN apt-get update -y \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-ARG HEX_VERSION=2.5.1
-ARG REBAR3_VERSION=3.27.1
-ARG REBAR3_SHA512=cd9a88e42a1d804b9b01581ea24aacf4563f2746a2bf4900215331c36400fc8f1f19a8272632e83a2da3206e42f1f46425966d4dee51bf16f19538a0b5e0632a
+ARG HEX_VERSION=2.5.4
+ARG REBAR3_VERSION=3.28.0
+ARG REBAR3_SHA512=33bbd38c624f179a507ea0db611217aa3e9d99b6e65a96cdaebd933224e73af271c4d348171698f69c907dcf4f246757c8ea925a4153048bfdb6c7c5ca0835cf
 RUN mix local.hex "${HEX_VERSION}" --force \
   && curl -fsSL "https://github.com/erlang/rebar3/releases/download/${REBAR3_VERSION}/rebar3" -o /tmp/rebar3 \
   && printf '%s  %s\n' "$REBAR3_SHA512" /tmp/rebar3 | sha512sum --check -- \

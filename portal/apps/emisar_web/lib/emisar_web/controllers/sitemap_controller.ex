@@ -45,6 +45,11 @@ defmodule EmisarWeb.SitemapController do
     @paths ++ docs_paths ++ EmisarWeb.MarketingController.guide_paths()
   end
 
+  # The body is XML served as application/xml. Its paths are static routes,
+  # guide paths, and published pack ids, which the pack version changeset
+  # limits to lowercase letters, digits, dots, dashes, and underscores;
+  # nothing from the request reaches it.
+  # sobelow_skip ["XSS.SendResp"]
   def show(conn, _params) do
     # Static marketing routes + derived guide paths + a synthesized entry per
     # published pack (so /packs/linux-core etc. show up in search engines

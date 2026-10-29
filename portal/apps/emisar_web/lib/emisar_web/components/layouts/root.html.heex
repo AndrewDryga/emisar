@@ -74,11 +74,7 @@
     />
 
     <%!-- JSON-LD: only emitted on routes that set @json_ld --%>
-    <%= if assigns[:json_ld] do %>
-      <script type="application/ld+json" nonce={assigns[:csp_nonce]}>
-        <%= Phoenix.HTML.raw(@json_ld) %>
-      </script>
-    <% end %>
+    <.json_ld_script :if={assigns[:json_ld]} json_ld={@json_ld} nonce={assigns[:csp_nonce]} />
 
     <link rel="icon" type="image/svg+xml" href={~p"/favicon.svg"} />
     <link rel="alternate icon" type="image/x-icon" href={~p"/favicon.ico"} />

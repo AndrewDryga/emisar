@@ -498,6 +498,9 @@ defmodule EmisarWeb.MarketingController do
   end
 
   # GET /changelog.xml — RSS 2.0 from the same EmisarWeb.Changelog source.
+  # The body is XML served as application/rss+xml, built from the compiled
+  # changelog with every text field passed through xml_escape/1.
+  # sobelow_skip ["XSS.SendResp"]
   def changelog_feed(conn, _params) do
     items =
       Enum.map_join(EmisarWeb.Changelog.entries(), "\n", fn entry ->

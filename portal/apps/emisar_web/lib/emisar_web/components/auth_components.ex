@@ -515,6 +515,9 @@ defmodule EmisarWeb.AuthComponents do
   slot :instructions
   slot :actions, required: true
 
+  # @qr_svg is the SVG MfaQr renders server-side from our own provisioning URI;
+  # no request input reaches the raw/1 below (IL-16).
+  # sobelow_skip ["XSS.Raw"]
   def mfa_enrollment(assigns) do
     ~H"""
     <p :if={@instructions != []} class="mb-4 text-pretty text-sm leading-6 text-zinc-300">
